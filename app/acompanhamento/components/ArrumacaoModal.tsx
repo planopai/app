@@ -1,9 +1,9 @@
+// INSUMOS POR TECNICO FIX V1: Sandro ID 7 / Joseildo ID 16
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { ArrumacaoState, Registro } from "./types";
-
 
 type EstoqueRow = {
     id?: number;
@@ -21,23 +21,45 @@ type InsumoSel = {
     codigo_barras?: string;
 };
 
-type DepInsumos = "ARMARIO SANDRO" | "ARMARIO ILDO" | "";
+type DepInsumos = "ARMARIO SANDRO" | "ARMARIO ILDO";
+
+type MeInfo = {
+    id: number;
+    usuario: string;
+    cargo: string;
+    deposito_insumos: DepInsumos | null;
+    pode_conservacao: boolean;
+};
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
+const ME_API = `${ENDPOINT}/informativo.php?me=1`;
 
-function normUpper(v: any) {
-    return String(v ?? "")
+function normUpper(value: unknown): string {
+    return String(value ?? "")
         .trim()
         .replace(/\s+/g, " ")
         .toUpperCase();
 }
 
-function getPidFromRow(it: EstoqueRow): number {
-    return Number((it as any).id ?? (it as any).produto_id ?? (it as any).est_produto_id ?? 0) || 0;
+function depositoPorUsuario(id: number): DepInsumos | null {
+    if (id === 7) return "ARMARIO SANDRO";
+    if (id === 16) return "ARMARIO ILDO";
+    return null;
 }
 
-function safeParseJson(raw: any): any {
+function getPidFromRow(item: EstoqueRow): number {
+    return (
+        Number(
+            (item as any).id ??
+            (item as any).produto_id ??
+            (item as any).est_produto_id ??
+            0,
+        ) || 0
+    );
+}
+
+function safeParseJson(raw: unknown): any {
     try {
         if (!raw) return {};
         return typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -46,72 +68,146 @@ function safeParseJson(raw: any): any {
     }
 }
 
-// ✅ Pré-preenche depósito + itens a partir do arrumacao_json (suporta aliases)
-function parseArrumacaoJson(raw: any): { deposito_nome: DepInsumos; itens: Record<number, InsumoSel> } {
-    const out: { deposito_nome: DepInsumos; itens: Record<number, InsumoSel> } = { deposito_nome: "", itens: {} };
+function parseArrumacaoJson(raw: unknown): {
+    deposito_nome: DepInsumos | null;
+    itens: Record<number, InsumoSel>;
+} {
+    const out: {
+        deposito_nome: DepInsumos | null;
+        itens: Record<number, InsumoSel>;
+    } = {
+        deposito_nome: null,
+        itens: {},
+    };
 
     const obj = safeParseJson(raw);
     if (!obj || typeof obj !== "object") return out;
 
-    const dep = normUpper((obj as any).deposito_nome ?? (obj as any).deposito ?? "");
-    out.deposito_nome = dep === "ARMARIO ILDO" ? "ARMARIO ILDO" : dep === "ARMARIO SANDRO" ? "ARMARIO SANDRO" : "";
+    const deposito = normUpper(
+        (obj as any).deposito_nome ?? (obj as any).deposito ?? "",
+    );
+
+    if (deposito === "ARMARIO SANDRO" || deposito === "ARMARIO ILDO") {
+        out.deposito_nome = deposito;
+    }
 
     const itensRaw = (obj as any).itens ?? (obj as any).items ?? null;
 
-    // ✅ formato array
     if (Array.isArray(itensRaw)) {
-        for (const it of itensRaw) {
-            const pid = Number((it as any)?.produto_id ?? (it as any)?.id ?? 0) || 0;
+        for (const item of itensRaw) {
+            const pid =
+                Number((item as any)?.produto_id ?? (item as any)?.id ?? 0) || 0;
             if (pid <= 0) continue;
 
             const checked =
-                (it as any)?.checked !== false &&
-                (it as any)?.checked !== 0 &&
-                (it as any)?.checked !== "0" &&
-                (it as any)?.checked !== "false";
+                (item as any)?.checked !== false &&
+                (item as any)?.checked !== 0 &&
+                (item as any)?.checked !== "0" &&
+                (item as any)?.checked !== "false";
 
             if (!checked) continue;
 
-            const qtd = Math.max(1, Math.floor(Number((it as any)?.qtd ?? (it as any)?.quantidade ?? 1) || 1));
-
             out.itens[pid] = {
                 checked: true,
-                qtd,
-                nome: String((it as any)?.nome ?? "").trim() || `Produto ${pid}`,
-                codigo_barras: String((it as any)?.codigo_barras ?? (it as any)?.cb ?? "").trim() || undefined,
+                qtd: Math.max(
+                    1,
+                    Math.floor(
+                        Number(
+                            (item as any)?.qtd ??
+                            (item as any)?.quantidade ??
+                            1,
+                        ) || 1,
+                    ),
+                ),
+                nome:
+                    String((item as any)?.nome ?? "").trim() ||
+                    `Produto ${pid}`,
+                codigo_barras:
+                    String(
+                        (item as any)?.codigo_barras ??
+                        (item as any)?.cb ??
+                        "",
+                    ).trim() || undefined,
             };
         }
+
         return out;
     }
 
-    // ✅ formato object/dict
     if (itensRaw && typeof itensRaw === "object") {
-        for (const [k, v] of Object.entries(itensRaw)) {
-            const vv: any = v || {};
-            let pid = Number(vv?.produto_id ?? 0) || 0;
+        for (const [key, value] of Object.entries(itensRaw)) {
+            const item: any = value || {};
+            let pid = Number(item?.produto_id ?? 0) || 0;
 
-            if (!pid) {
-                const m = String(k).match(/(\d+)/);
-                if (m) pid = Number(m[1]) || 0;
+            if (pid <= 0) {
+                const match = String(key).match(/(\d+)/);
+                if (match) pid = Number(match[1]) || 0;
             }
+
             if (pid <= 0) continue;
 
             const checked =
-                vv?.checked !== false && vv?.checked !== 0 && vv?.checked !== "0" && vv?.checked !== "false";
-            if (!checked) continue;
+                item?.checked !== false &&
+                item?.checked !== 0 &&
+                item?.checked !== "0" &&
+                item?.checked !== "false";
 
-            const qtd = Math.max(1, Math.floor(Number(vv?.qtd ?? vv?.quantidade ?? 1) || 1));
+            if (!checked) continue;
 
             out.itens[pid] = {
                 checked: true,
-                qtd,
-                nome: String(vv?.nome ?? "").trim() || `Produto ${pid}`,
-                codigo_barras: String(vv?.codigo_barras ?? vv?.cb ?? "").trim() || undefined,
+                qtd: Math.max(
+                    1,
+                    Math.floor(
+                        Number(item?.qtd ?? item?.quantidade ?? 1) || 1,
+                    ),
+                ),
+                nome: String(item?.nome ?? "").trim() || `Produto ${pid}`,
+                codigo_barras:
+                    String(item?.codigo_barras ?? item?.cb ?? "").trim() ||
+                    undefined,
             };
         }
     }
 
     return out;
+}
+
+async function consultarMe(signal: AbortSignal): Promise<MeInfo> {
+    const response = await fetch(ME_API, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal,
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || data?.erro) {
+        throw new Error(
+            data?.msg || `Erro ao consultar usuário (${response.status}).`,
+        );
+    }
+
+    const id = Number(data?.id ?? 0) || 0;
+    const depositoServidor = normUpper(data?.deposito_insumos ?? "");
+    const deposito =
+        depositoServidor === "ARMARIO SANDRO" ||
+            depositoServidor === "ARMARIO ILDO"
+            ? depositoServidor
+            : depositoPorUsuario(id);
+
+    return {
+        id,
+        usuario: String(data?.usuario ?? ""),
+        cargo: String(data?.cargo ?? "").trim().toLowerCase(),
+        deposito_insumos: deposito,
+        pode_conservacao:
+            data?.pode_conservacao === true ||
+            data?.pode_conservacao === 1 ||
+            data?.pode_conservacao === "1",
+    };
 }
 
 export default function ArrumacaoModal({
@@ -120,17 +216,15 @@ export default function ArrumacaoModal({
     arrumacao,
     setArrumacao,
     setWizardData,
-    // ✅ passe o wizardData para pré-preencher corretamente ao editar
     wizardData,
 }: {
     open: boolean;
-    setOpen: (b: boolean) => void;
+    setOpen: (open: boolean) => void;
     arrumacao: ArrumacaoState;
     setArrumacao: React.Dispatch<React.SetStateAction<ArrumacaoState>>;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     wizardData?: Registro;
 }) {
-    // ✅ checks visíveis
     const campos: { key: keyof ArrumacaoState; label: string }[] = [
         { key: "luvas", label: "Luvas" },
         { key: "palha", label: "Palha" },
@@ -140,137 +234,190 @@ export default function ArrumacaoModal({
         { key: "mascara", label: "Máscara" },
     ];
 
-    // =========================
-    // INSUMOS TANATOPRAXIA
-    // =========================
-    const [depInsumos, setDepInsumos] = useState<DepInsumos>("");
-    const [q, setQ] = useState("");
-    const [loading, setLoading] = useState(false);
+    const [me, setMe] = useState<MeInfo | null>(null);
+    const [depInsumos, setDepInsumos] = useState<DepInsumos | null>(null);
+    const [loadingMe, setLoadingMe] = useState(false);
+    const [loadingItens, setLoadingItens] = useState(false);
     const [err, setErr] = useState("");
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const [sel, setSel] = useState<Record<number, InsumoSel>>({});
 
-    const abortRef = useRef<AbortController | null>(null);
+    const meAbortRef = useRef<AbortController | null>(null);
+    const itensAbortRef = useRef<AbortController | null>(null);
 
-    // ✅ Pré-preenche depósito/itens ao abrir (quando editando)
     useEffect(() => {
         if (!open) return;
 
-        setErr("");
-        setQ("");
-        setRows([]);
+        meAbortRef.current?.abort();
+        itensAbortRef.current?.abort();
 
-        const raw = (wizardData as any)?.arrumacao_json ?? (wizardData as any)?.arrumacao ?? null;
+        const controller = new AbortController();
+        meAbortRef.current = controller;
+
+        const raw =
+            (wizardData as any)?.arrumacao_json ??
+            (wizardData as any)?.arrumacao ??
+            null;
         const parsed = parseArrumacaoJson(raw);
 
-        // se não houver nada salvo, limpa
-        if (!parsed.deposito_nome) setDepInsumos("");
-        else setDepInsumos(parsed.deposito_nome);
+        setMe(null);
+        setDepInsumos(null);
+        setRows([]);
+        setErr("");
+        setLoadingMe(true);
 
-        if (Object.keys(parsed.itens).length) setSel(parsed.itens);
-        else setSel({});
+        consultarMe(controller.signal)
+            .then((usuario) => {
+                const deposito = usuario.deposito_insumos;
 
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+                if (
+                    !deposito ||
+                    (usuario.id !== 7 && usuario.id !== 16) ||
+                    usuario.cargo !== "tanatopraxista"
+                ) {
+                    throw new Error(
+                        "Somente Sandro ou Joseildo podem selecionar insumos de tanatopraxia.",
+                    );
+                }
 
-    // ✅ Busca insumos quando depósito muda (e quando digita busca)
-    useEffect(() => {
-        if (!open) return;
+                setMe(usuario);
+                setDepInsumos(deposito);
 
-        // sem depósito: zera lista e cancela request
-        if (!depInsumos) {
-            setRows([]);
-            setErr("");
-            if (abortRef.current) abortRef.current.abort();
-            return;
-        }
-
-        const qq = q.trim();
-
-        // opcional: evita 1 caractere (ruído)
-        if (qq.length === 1) {
-            setRows([]);
-            setErr("");
-            return;
-        }
-
-        if (abortRef.current) abortRef.current.abort();
-        const ac = new AbortController();
-        abortRef.current = ac;
-
-        const t = setTimeout(async () => {
-            setLoading(true);
-            setErr("");
-
-            try {
-                const url = new URL(ESTOQUE_API);
-                url.searchParams.set("action", "insumos_tanato_listar");
-                url.searchParams.set("deposito_nome", depInsumos);
-                url.searchParams.set("somente_com_saldo", "1");
-                url.searchParams.set("limit", "300");
-                if (qq.length >= 2) url.searchParams.set("q", qq);
-
-                const r = await fetch(url.toString(), {
-                    method: "GET",
-                    cache: "no-store",
-                    credentials: "include",
-                    signal: ac.signal,
-                });
-
-                if (r.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
-                const data = await r.json().catch(() => null);
-
-                if (!data?.ok) throw new Error(data?.msg || "Falha ao buscar insumos");
-                setRows((data.rows || []) as EstoqueRow[]);
-            } catch (e: any) {
-                if (e?.name === "AbortError") return;
+                if (parsed.deposito_nome === deposito) {
+                    setSel(parsed.itens);
+                } else {
+                    setSel({});
+                }
+            })
+            .catch((error: any) => {
+                if (error?.name === "AbortError") return;
+                setMe(null);
+                setDepInsumos(null);
+                setSel({});
                 setRows([]);
-                setErr(e?.message || "Falha ao buscar insumos");
-            } finally {
-                setLoading(false);
-            }
-        }, 250);
+                setErr(
+                    error?.message ||
+                    "Não foi possível identificar o armário do usuário.",
+                );
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoadingMe(false);
+            });
 
-        return () => {
-            clearTimeout(t);
-            ac.abort();
-        };
-    }, [open, depInsumos, q]);
+        return () => controller.abort();
+    }, [open, wizardData]);
 
-    const selectedCount = useMemo(() => {
-        return Object.values(sel).filter((x) => x?.checked && (x?.qtd ?? 0) > 0).length;
-    }, [sel]);
+    useEffect(() => {
+        if (!open || !depInsumos || !me) return;
 
-    // ✅ monta JSON mesclando o que já existia + booleans + insumos atuais
-    const buildArrumacaoJson = () => {
-        // pega o json anterior para não “sumir” com campos não relacionados
+        itensAbortRef.current?.abort();
+        const controller = new AbortController();
+        itensAbortRef.current = controller;
+
+        setLoadingItens(true);
+        setErr("");
+
+        const url = new URL(ESTOQUE_API);
+        url.searchParams.set("action", "insumos_tanato_listar");
+        url.searchParams.set("somente_com_saldo", "1");
+        url.searchParams.set("limit", "300");
+        url.searchParams.set("_nocache", String(Date.now()));
+
+        fetch(url.toString(), {
+            method: "GET",
+            cache: "no-store",
+            credentials: "include",
+            signal: controller.signal,
+        })
+            .then(async (response) => {
+                const data = await response.json().catch(() => null);
+
+                if (response.status === 401) {
+                    throw new Error("Sessão expirada. Faça login novamente.");
+                }
+
+                if (!response.ok || !data?.ok) {
+                    throw new Error(
+                        data?.msg || "Falha ao buscar insumos.",
+                    );
+                }
+
+                const depositoRetornado = normUpper(
+                    data?.deposito_nome ?? "",
+                );
+
+                if (
+                    depositoRetornado &&
+                    depositoRetornado !== depInsumos
+                ) {
+                    throw new Error(
+                        "O servidor retornou um depósito diferente do permitido.",
+                    );
+                }
+
+                setRows(
+                    Array.isArray(data?.rows)
+                        ? (data.rows as EstoqueRow[])
+                        : [],
+                );
+            })
+            .catch((error: any) => {
+                if (error?.name === "AbortError") return;
+                setRows([]);
+                setErr(error?.message || "Falha ao buscar insumos.");
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoadingItens(false);
+            });
+
+        return () => controller.abort();
+    }, [open, depInsumos, me]);
+
+    const selectedCount = useMemo(
+        () =>
+            Object.values(sel).filter(
+                (item) => item?.checked && (item?.qtd ?? 0) > 0,
+            ).length,
+        [sel],
+    );
+
+    const buildArrumacaoJson = (): string => {
         const oldRaw = (wizardData as any)?.arrumacao_json ?? null;
         const oldObj = safeParseJson(oldRaw);
 
         const itens = Object.entries(sel)
-            .map(([pidStr, v]) => ({
-                produto_id: Number(pidStr) || 0,
-                qtd: Math.max(1, Math.floor(Number(v?.qtd ?? 1) || 1)),
-                nome: String(v?.nome ?? "").trim(),
-                codigo_barras: String(v?.codigo_barras ?? "").trim(),
-                checked: !!v?.checked,
+            .map(([pidString, value]) => ({
+                produto_id: Number(pidString) || 0,
+                qtd: Math.max(
+                    1,
+                    Math.floor(Number(value?.qtd ?? 1) || 1),
+                ),
+                nome: String(value?.nome ?? "").trim(),
+                codigo_barras: String(
+                    value?.codigo_barras ?? "",
+                ).trim(),
+                checked: !!value?.checked,
             }))
-            .filter((x) => x.produto_id > 0 && x.checked && x.qtd > 0);
+            .filter(
+                (item) =>
+                    item.produto_id > 0 &&
+                    item.checked &&
+                    item.qtd > 0,
+            );
 
-        // base: mantém campos antigos + atualiza booleans
         const payload: any = {
             ...(oldObj && typeof oldObj === "object" ? oldObj : {}),
-            ...(arrumacao && typeof arrumacao === "object" ? arrumacao : {}),
+            ...(arrumacao && typeof arrumacao === "object"
+                ? arrumacao
+                : {}),
         };
 
-        // se tem itens -> grava bloco insumos (com aliases)
-        if (itens.length > 0) {
+        if (itens.length > 0 && depInsumos) {
             payload.deposito_nome = depInsumos;
-            payload.deposito = depInsumos; // alias
+            payload.deposito = depInsumos;
             payload.itens = itens;
-            payload.items = itens; // alias
+            payload.items = itens;
         } else {
-            // se zerou seleções, remove bloco insumos
             delete payload.deposito_nome;
             delete payload.deposito;
             delete payload.itens;
@@ -280,31 +427,49 @@ export default function ArrumacaoModal({
         return JSON.stringify(payload);
     };
 
-    return (
-        <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Arrumação do Corpo" maxWidth={720}>
-            <h3 className="text-lg font-semibold">Conservação do Corpo</h3>
+    const podeSalvar = !!me && !!depInsumos && !loadingMe && !err;
 
-            {/* CHECKS */}
+    return (
+        <Modal
+            open={open}
+            onClose={() => setOpen(false)}
+            ariaLabel="Arrumação do Corpo"
+            maxWidth={720}
+        >
+            <h3 className="text-lg font-semibold">
+                Conservação do Corpo
+            </h3>
+
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {campos.map((o) => (
-                    <label key={o.key} className="inline-flex items-center gap-2">
+                {campos.map((campo) => (
+                    <label
+                        key={campo.key}
+                        className="inline-flex items-center gap-2"
+                    >
                         <input
                             type="checkbox"
-                            checked={!!arrumacao[o.key]}
-                            onChange={(e) => setArrumacao((prev) => ({ ...prev, [o.key]: e.target.checked }))}
+                            checked={!!arrumacao[campo.key]}
+                            onChange={(event) =>
+                                setArrumacao((previous) => ({
+                                    ...previous,
+                                    [campo.key]: event.target.checked,
+                                }))
+                            }
                         />
-                        <span>{o.label}</span>
+                        <span>{campo.label}</span>
                     </label>
                 ))}
             </div>
 
-            {/* INSUMOS TANATO */}
             <div className="mt-6 rounded-xl border p-4">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                        <div className="text-sm font-semibold">Insumos Tanatopraxia</div>
+                        <div className="text-sm font-semibold">
+                            Insumos Tanatopraxia
+                        </div>
                         <div className="text-xs text-muted-foreground">
-                            Selecionados aqui serão descontados automaticamente na <b>fase05</b> (início da ornamentação).
+                            Os itens serão descontados automaticamente na{" "}
+                            <b>fase05</b>.
                         </div>
                     </div>
 
@@ -319,164 +484,211 @@ export default function ArrumacaoModal({
                     </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[220px_1fr]">
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-700">Local dos Insumos</label>
-                        <select
-                            className="w-full rounded-md border px-3 py-2 text-sm"
-                            value={depInsumos}
-                            onChange={(e) => {
-                                const up = normUpper(e.target.value);
-                                const next: DepInsumos = up === "ARMARIO ILDO" ? "ARMARIO ILDO" : up === "ARMARIO SANDRO" ? "ARMARIO SANDRO" : "";
-                                setDepInsumos(next);
-                                setErr("");
-                                setRows([]);
-                                // ✅ trocar depósito normalmente invalida seleção anterior
-                                setSel({});
-                            }}
-                        >
-                            <option value="">Selecione…</option>
-                            <option value="ARMARIO SANDRO">ARMARIO SANDRO</option>
-                            <option value="ARMARIO ILDO">ARMARIO ILDO</option>
-                        </select>
-
-                        <div className="mt-2">
-                            <label className="mb-1 block text-xs font-medium text-slate-700">Buscar</label>
-                            <input
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                placeholder="Digite para filtrar (opcional)"
-                                value={q}
-                                onChange={(e) => setQ(e.target.value)}
-                                disabled={!depInsumos}
-                            />
-                            <div className="mt-1 text-[11px] text-slate-500">
-                                Dica: deixe vazio para listar (o PHP já aceita q vazio).
-                            </div>
+                <div className="mt-3">
+                    {loadingMe || loadingItens ? (
+                        <div className="rounded-md border p-3 text-sm text-slate-600">
+                            Carregando itens…
                         </div>
-                    </div>
-
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-700">Itens</label>
-
-                        {!depInsumos ? (
-                            <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">
-                                Selecione o depósito para carregar os insumos.
+                    ) : err ? (
+                        <div className="rounded-md border p-3 text-sm text-red-600">
+                            {err}
+                        </div>
+                    ) : rows.length === 0 ? (
+                        <div className="rounded-md border p-3 text-sm text-slate-600">
+                            Nenhum insumo com saldo disponível.
+                        </div>
+                    ) : (
+                        <div className="max-h-72 overflow-auto rounded-md border">
+                            <div className="grid grid-cols-[1fr_92px_72px] gap-2 border-b bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+                                <div>Produto</div>
+                                <div className="text-right">Estoque</div>
+                                <div className="text-right">Qtd</div>
                             </div>
-                        ) : loading ? (
-                            <div className="rounded-md border p-3 text-sm text-slate-600">Carregando…</div>
-                        ) : err ? (
-                            <div className="rounded-md border p-3 text-sm text-red-600">{err}</div>
-                        ) : rows.length === 0 ? (
-                            <div className="rounded-md border p-3 text-sm text-slate-600">
-                                Nenhum insumo encontrado com saldo no depósito <b>{depInsumos}</b>.
-                            </div>
-                        ) : (
-                            <div className="max-h-72 overflow-auto rounded-md border">
-                                <div className="grid grid-cols-[1fr_92px_72px] gap-2 border-b bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
-                                    <div>Produto</div>
-                                    <div className="text-right">Estoque</div>
-                                    <div className="text-right">Qtd</div>
-                                </div>
 
-                                <ul className="divide-y">
-                                    {rows.map((it) => {
-                                        const pid = getPidFromRow(it);
-                                        if (!pid) return null;
+                            <ul className="divide-y">
+                                {rows.map((item) => {
+                                    const pid = getPidFromRow(item);
+                                    if (!pid) return null;
 
-                                        const current = sel[pid];
-                                        const checked = !!current?.checked;
-                                        const qtd = Math.max(1, Math.floor(Number(current?.qtd ?? 1) || 1));
+                                    const current = sel[pid];
+                                    const checked = !!current?.checked;
+                                    const qtd = Math.max(
+                                        1,
+                                        Math.floor(
+                                            Number(current?.qtd ?? 1) || 1,
+                                        ),
+                                    );
 
-                                        return (
-                                            <li key={pid} className="grid grid-cols-[1fr_92px_72px] items-center gap-2 px-3 py-2">
-                                                <label className="flex items-center gap-2">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={checked}
-                                                        onChange={(e) => {
-                                                            const on = e.target.checked;
-                                                            setSel((prev) => ({
-                                                                ...prev,
+                                    return (
+                                        <li
+                                            key={pid}
+                                            className="grid grid-cols-[1fr_92px_72px] items-center gap-2 px-3 py-2"
+                                        >
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={(event) => {
+                                                        const enabled =
+                                                            event.target
+                                                                .checked;
+
+                                                        setSel(
+                                                            (previous) => ({
+                                                                ...previous,
                                                                 [pid]: {
-                                                                    checked: on,
-                                                                    qtd: Math.max(1, Math.floor(Number(prev?.[pid]?.qtd ?? 1) || 1)),
-                                                                    nome: String(it.nome || "").trim(),
-                                                                    codigo_barras: String((it as any).codigo_barras || "").trim() || undefined,
-                                                                },
-                                                            }));
-                                                        }}
-                                                    />
-                                                    <div className="min-w-0">
-                                                        <div className="truncate text-sm font-medium text-slate-900">{it.nome}</div>
-                                                        <div className="truncate text-[11px] text-slate-500">
-                                                            CB: <b>{String((it as any).codigo_barras || "")}</b>
-                                                        </div>
-                                                    </div>
-                                                </label>
-
-                                                <div className="text-right text-sm text-slate-700">
-                                                    <b>{Number(it.saldo_total) || 0}</b>
-                                                </div>
-
-                                                <div className="text-right">
-                                                    <input
-                                                        type="number"
-                                                        min={1}
-                                                        step={1}
-                                                        className="w-full rounded-md border px-2 py-1 text-sm"
-                                                        value={qtd}
-                                                        disabled={!checked}
-                                                        onChange={(e) => {
-                                                            const nextQtd = Math.max(1, Math.floor(Number(e.target.value) || 1));
-                                                            setSel((prev) => ({
-                                                                ...prev,
-                                                                [pid]: {
-                                                                    checked: true,
-                                                                    qtd: nextQtd,
-                                                                    nome: String(prev?.[pid]?.nome ?? it.nome ?? "").trim(),
+                                                                    checked:
+                                                                        enabled,
+                                                                    qtd: Math.max(
+                                                                        1,
+                                                                        Math.floor(
+                                                                            Number(
+                                                                                previous?.[
+                                                                                    pid
+                                                                                ]
+                                                                                    ?.qtd ??
+                                                                                1,
+                                                                            ) ||
+                                                                            1,
+                                                                        ),
+                                                                    ),
+                                                                    nome: String(
+                                                                        item.nome ||
+                                                                        "",
+                                                                    ).trim(),
                                                                     codigo_barras:
-                                                                        String(prev?.[pid]?.codigo_barras ?? (it as any).codigo_barras ?? "").trim() ||
+                                                                        String(
+                                                                            (
+                                                                                item as any
+                                                                            )
+                                                                                .codigo_barras ||
+                                                                            "",
+                                                                        ).trim() ||
                                                                         undefined,
                                                                 },
-                                                            }));
-                                                        }}
-                                                        title="Quantidade"
-                                                    />
-                                                </div>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            </div>
-                        )}
+                                                            }),
+                                                        );
+                                                    }}
+                                                />
 
-                        <div className="mt-2 text-[11px] text-slate-500">
-                            * Estes itens serão descontados automaticamente no estoque quando registrar <b>fase05</b>.
+                                                <div className="min-w-0">
+                                                    <div className="truncate text-sm font-medium text-slate-900">
+                                                        {item.nome}
+                                                    </div>
+                                                    <div className="truncate text-[11px] text-slate-500">
+                                                        CB:{" "}
+                                                        <b>
+                                                            {String(
+                                                                (
+                                                                    item as any
+                                                                )
+                                                                    .codigo_barras ||
+                                                                "",
+                                                            )}
+                                                        </b>
+                                                    </div>
+                                                </div>
+                                            </label>
+
+                                            <div className="text-right text-sm text-slate-700">
+                                                <b>
+                                                    {Number(
+                                                        item.saldo_total,
+                                                    ) || 0}
+                                                </b>
+                                            </div>
+
+                                            <div className="text-right">
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    step={1}
+                                                    className="w-full rounded-md border px-2 py-1 text-sm"
+                                                    value={qtd}
+                                                    disabled={!checked}
+                                                    onChange={(event) => {
+                                                        const nextQtd =
+                                                            Math.max(
+                                                                1,
+                                                                Math.floor(
+                                                                    Number(
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    ) || 1,
+                                                                ),
+                                                            );
+
+                                                        setSel(
+                                                            (previous) => ({
+                                                                ...previous,
+                                                                [pid]: {
+                                                                    checked:
+                                                                        true,
+                                                                    qtd: nextQtd,
+                                                                    nome: String(
+                                                                        previous?.[
+                                                                            pid
+                                                                        ]
+                                                                            ?.nome ??
+                                                                        item.nome ??
+                                                                        "",
+                                                                    ).trim(),
+                                                                    codigo_barras:
+                                                                        String(
+                                                                            previous?.[
+                                                                                pid
+                                                                            ]
+                                                                                ?.codigo_barras ??
+                                                                            (
+                                                                                item as any
+                                                                            )
+                                                                                .codigo_barras ??
+                                                                            "",
+                                                                        ).trim() ||
+                                                                        undefined,
+                                                                },
+                                                            }),
+                                                        );
+                                                    }}
+                                                    title="Quantidade"
+                                                />
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
-            {/* AÇÕES */}
             <div className="mt-5 flex justify-end gap-2">
-                <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setOpen(false)}>
+                <button
+                    type="button"
+                    className="rounded-md border px-3 py-2 text-sm"
+                    onClick={() => setOpen(false)}
+                >
                     Cancelar
                 </button>
 
                 <button
-                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                    type="button"
+                    disabled={!podeSalvar}
+                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => {
                         const json = buildArrumacaoJson();
 
-                        setWizardData((d: Registro) => ({
-                            ...d,
-                            arrumacao, // mantém booleans no objeto (compatibilidade)
-                            arrumacao_json: json, // ✅ fonte da verdade (booleans + insumos)
-
-                            // ✅ informa ao page.tsx que o próximo salvamento é só da conservação
-                            // Isso evita o informativo.php validar a aba Itens inteira e cobrar Roupa/Urna.
-                            _wizard_restrict_ids: ["arrumacao_json"] as any,
-                            _wizard_modal_restrict_ids: ["arrumacao_json"] as any,
+                        setWizardData((previous: Registro) => ({
+                            ...previous,
+                            arrumacao,
+                            arrumacao_json: json,
+                            _wizard_restrict_ids: [
+                                "arrumacao_json",
+                            ] as any,
+                            _wizard_modal_restrict_ids: [
+                                "arrumacao_json",
+                            ] as any,
                             _wizard_modal_scope: "arrumacao" as any,
                         }));
 

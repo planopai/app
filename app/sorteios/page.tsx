@@ -96,8 +96,8 @@ type ExecutionSnapshot = {
 type ConfirmationStep = "form" | "review" | "notification";
 
 type PageDataState = {
-    latestSorteio: Sorteio | null;
-    latestResultados: Resultado[];
+    selectedSorteio: Sorteio | null;
+    selectedResultados: Resultado[];
     history: Sorteio[];
 };
 
@@ -792,8 +792,8 @@ function NovoSorteioModal({
                             {confirmationStep === "notification" && snapshot ? (
                                 <div className="space-y-5">
                                     <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5 text-center text-sm font-extrabold uppercase leading-6 tracking-wide text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
-                                        AO CLICAR EM CONFIRMAR, TODOS OS ASSOCIADOS RECEBERÃO UMA
-                                        MENSAGEM COM O RESULTADO DO SORTEIO.
+                                        AO CLICAR EM CONFIRMAR, O RESULTADO DESTE SORTEIO FICARÁ
+                                        DISPONÍVEL PARA TODOS OS ASSOCIADOS NA PÁGINA DE SORTEIOS.
                                     </div>
 
                                     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
@@ -897,6 +897,7 @@ export default function SorteiosAdminPage() {
     const progressTimeoutRef = useRef<number | null>(null);
     const closeTimeoutRef = useRef<number | null>(null);
     const pendingSorteioIdRef = useRef<number | null>(null);
+    const selectedSorteioIdRef = useRef<number | null>(null);
     const executionLockRef = useRef(false);
     const isMountedRef = useRef(true);
 
@@ -905,10 +906,11 @@ export default function SorteiosAdminPage() {
     const [pdfGenerating, setPdfGenerating] = useState(false);
     const [pdfError, setPdfError] = useState<string | null>(null);
     const [pageData, setPageData] = useState<PageDataState>({
-        latestSorteio: null,
-        latestResultados: [],
+        selectedSorteio: null,
+        selectedResultados: [],
         history: [],
     });
+    const [selectedLoading, setSelectedLoading] = useState(false);
 
     const [modalStep, setModalStep] = useState<ModalStep>("hidden");
     const [progressValue, setProgressValue] = useState(0);
@@ -928,16 +930,16 @@ export default function SorteiosAdminPage() {
 
     const modalOpen = modalStep === "form";
     const progressOpen = modalStep === "progress";
-    const latestResultados = pageData.latestResultados;
-    const latestSorteio = pageData.latestSorteio;
+    const selectedResultados = pageData.selectedResultados;
+    const selectedSorteio = pageData.selectedSorteio;
     const history = pageData.history;
 
     const premiosResumo = useMemo(() => getPremiosResumo(form.premios), [form.premios]);
     const totalPremios = useMemo(() => getTotalPremios(premiosResumo), [premiosResumo]);
 
     const canGenerateDeclaration =
-        sanitizeStatus(latestSorteio?.status) === "done" &&
-        latestResultados.length > 0;
+        sanitizeStatus(selectedSorteio?.status) === "done" &&
+        selectedResultados.length > 0;
 
     const clearProgressTimers = useCallback(() => {
         if (progressIntervalRef.current !== null) {
@@ -1008,13 +1010,22 @@ export default function SorteiosAdminPage() {
         setModalStep("hidden");
     }, [resetModalState]);
 
-    const loadDashboard = useCallback(async () => {
+    const loadDashboard = useCallback(async (sorteioId?: number | null) => {
         dashboardAbortRef.current?.abort();
         const ac = new AbortController();
         dashboardAbortRef.current = ac;
 
+        const params = new URLSearchParams({
+            op: "admin_dashboard",
+            _: String(Date.now()),
+        });
+
+        if (sorteioId && sorteioId > 0) {
+            params.set("sorteio_id", String(sorteioId));
+        }
+
         const data = await apiJson<DashboardResp>(
-            `${API_URL}?op=admin_dashboard&_=${Date.now()}`,
+            `${API_URL}?${params.toString()}`,
             "GET",
             undefined,
             ac.signal
@@ -1050,25 +1061,74 @@ export default function SorteiosAdminPage() {
         }
     }, []);
 
-    const refreshPageData = useCallback(async () => {
-        setPageError(null);
+    const refreshPageData = useCallback(
+        async (preferredSorteioId?: number | null) => {
+            setPageError(null);
 
-        const [dashboardResp, historyResp] = await Promise.all([loadDashboard(), loadHistory()]);
+            const historyResp = await loadHistory();
+            const sortedHistory = Array.isArray(historyResp)
+                ? [...historyResp].sort((a, b) => b.id - a.id)
+                : [];
 
-        if (!isMountedRef.current) return;
+            const requestedId =
+                preferredSorteioId ??
+                selectedSorteioIdRef.current ??
+                sortedHistory[0]?.id ??
+                null;
 
-        const latest = dashboardResp.sorteio ?? null;
-        const fallbackHistory = latest ? [latest] : [];
+            const dashboardResp = await loadDashboard(requestedId);
 
-        setPageData({
-            latestSorteio: latest,
-            latestResultados: dashboardResp.resultados || [],
-            history:
-                historyResp?.length && Array.isArray(historyResp)
-                    ? [...historyResp].sort((a, b) => b.id - a.id)
-                    : fallbackHistory,
-        });
-    }, [loadDashboard, loadHistory]);
+            if (!isMountedRef.current) return;
+
+            const selected = dashboardResp.sorteio ?? null;
+            const fallbackHistory = selected ? [selected] : [];
+            const finalHistory = sortedHistory.length > 0 ? sortedHistory : fallbackHistory;
+
+            selectedSorteioIdRef.current = selected?.id ?? null;
+
+            setPageData({
+                selectedSorteio: selected,
+                selectedResultados: dashboardResp.resultados || [],
+                history: finalHistory,
+            });
+        },
+        [loadDashboard, loadHistory]
+    );
+
+    const selectSorteio = useCallback(
+        async (sorteioId: number) => {
+            if (sorteioId <= 0 || selectedLoading) return;
+            if (selectedSorteioIdRef.current === sorteioId) return;
+
+            setSelectedLoading(true);
+            setPageError(null);
+            setPdfError(null);
+
+            try {
+                const dashboardResp = await loadDashboard(sorteioId);
+
+                if (!isMountedRef.current) return;
+
+                selectedSorteioIdRef.current = dashboardResp.sorteio?.id ?? sorteioId;
+                setPageData((current) => ({
+                    ...current,
+                    selectedSorteio: dashboardResp.sorteio ?? null,
+                    selectedResultados: dashboardResp.resultados || [],
+                }));
+            } catch (error) {
+                if ((error as { name?: string })?.name === "AbortError") return;
+                if (!isMountedRef.current) return;
+                setPageError(
+                    getErrorMessage(error, "Falha ao carregar o sorteio selecionado.")
+                );
+            } finally {
+                if (isMountedRef.current) {
+                    setSelectedLoading(false);
+                }
+            }
+        },
+        [loadDashboard, selectedLoading]
+    );
 
     const openNovoSorteioFlow = useCallback(async () => {
         resetModalState();
@@ -1238,8 +1298,8 @@ export default function SorteiosAdminPage() {
         return sorteioId;
     }, []);
 
-    const finishSuccessfulRun = useCallback(async () => {
-        await refreshPageData();
+    const finishSuccessfulRun = useCallback(async (sorteioId: number) => {
+        await refreshPageData(sorteioId);
 
         if (!isMountedRef.current) return;
 
@@ -1260,19 +1320,19 @@ export default function SorteiosAdminPage() {
     const downloadDeclaracaoEntrega = useCallback(async () => {
         if (pdfGenerating) return;
 
-        if (sanitizeStatus(latestSorteio?.status) !== "done" || !latestSorteio) {
+        if (sanitizeStatus(selectedSorteio?.status) !== "done" || !selectedSorteio) {
             setPdfError("A declaração só pode ser gerada após a realização do sorteio.");
             return;
         }
 
-        if (latestResultados.length === 0) {
+        if (selectedResultados.length === 0) {
             setPdfError("Não há ganhadores disponíveis para gerar a declaração.");
             return;
         }
 
         // Referências locais: a geração do PDF não altera o sorteio nem o banco.
-        const sorteio = latestSorteio;
-        const resultados = [...latestResultados];
+        const sorteio = selectedSorteio;
+        const resultados = [...selectedResultados];
 
         setPdfGenerating(true);
         setPdfError(null);
@@ -1559,7 +1619,7 @@ export default function SorteiosAdminPage() {
         } finally {
             setPdfGenerating(false);
         }
-    }, [latestResultados, latestSorteio, pdfGenerating]);
+    }, [selectedResultados, selectedSorteio, pdfGenerating]);
 
     const runNow = useCallback(async () => {
         if (executionLockRef.current) return;
@@ -1600,7 +1660,7 @@ export default function SorteiosAdminPage() {
                 throw new Error(runResp?.error || "Falha ao realizar sorteio.");
             }
 
-            await finishSuccessfulRun();
+            await finishSuccessfulRun(sorteioId);
         } catch (error) {
             if (!isMountedRef.current) return;
 
@@ -1608,7 +1668,7 @@ export default function SorteiosAdminPage() {
 
             if (sorteioId) {
                 try {
-                    const dashboard = await loadDashboard();
+                    const dashboard = await loadDashboard(sorteioId);
                     completedDespiteError =
                         dashboard.sorteio?.id === sorteioId &&
                         sanitizeStatus(dashboard.sorteio.status) === "done";
@@ -1617,8 +1677,12 @@ export default function SorteiosAdminPage() {
                 }
             }
 
-            if (completedDespiteError) {
-                await finishSuccessfulRun();
+            if (
+                completedDespiteError &&
+                typeof sorteioId === "number" &&
+                sorteioId > 0
+            ) {
+                await finishSuccessfulRun(sorteioId);
                 return;
             }
 
@@ -1760,9 +1824,14 @@ export default function SorteiosAdminPage() {
 
                     <section className="rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                Lista de sorteios
-                            </h2>
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                    Lista de sorteios
+                                </h2>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    Clique em um sorteio para visualizar seus ganhadores.
+                                </p>
+                            </div>
                         </div>
 
                         <div className="overflow-x-auto">
@@ -1795,28 +1864,55 @@ export default function SorteiosAdminPage() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        history.map((item) => (
-                                            <tr key={item.id} className="h-14">
-                                                <td className="px-6 py-3 text-sm text-gray-800 dark:text-gray-200">
-                                                    #{item.id}
-                                                </td>
-                                                <td className="px-6 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                                    {item.titulo}
-                                                </td>
-                                                <td className="px-6 py-3 text-sm">
-                                                    <span
-                                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${getStatusBadge(
-                                                            sanitizeStatus(item.status)
-                                                        )}`}
-                                                    >
-                                                        {getStatusLabel(item.status)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-200">
-                                                    {formatBR(item.executed_at)}
-                                                </td>
-                                            </tr>
-                                        ))
+                                        history.map((item) => {
+                                            const isSelected = selectedSorteio?.id === item.id;
+
+                                            return (
+                                                <tr
+                                                    key={item.id}
+                                                    tabIndex={0}
+                                                    role="button"
+                                                    aria-selected={isSelected}
+                                                    onClick={() => void selectSorteio(item.id)}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === "Enter" || event.key === " ") {
+                                                            event.preventDefault();
+                                                            void selectSorteio(item.id);
+                                                        }
+                                                    }}
+                                                    className={`h-14 cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-inset focus:ring-emerald-500 ${isSelected
+                                                        ? "bg-emerald-50 dark:bg-emerald-950/20"
+                                                        : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                                                        }`}
+                                                >
+                                                    <td className="px-6 py-3 text-sm text-gray-800 dark:text-gray-200">
+                                                        #{item.id}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                        <div className="flex items-center gap-2">
+                                                            <span>{item.titulo}</span>
+                                                            {isSelected ? (
+                                                                <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                                                    Selecionado
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-3 text-sm">
+                                                        <span
+                                                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${getStatusBadge(
+                                                                sanitizeStatus(item.status)
+                                                            )}`}
+                                                        >
+                                                            {getStatusLabel(item.status)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-3 text-sm text-gray-700 dark:text-gray-200">
+                                                        {formatBR(item.executed_at)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
@@ -1827,11 +1923,11 @@ export default function SorteiosAdminPage() {
                         <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                                 <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                    Últimos ganhadores
+                                    Ganhadores do sorteio selecionado
                                 </h2>
                                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                                    Sorteio atual:{" "}
-                                    <strong>{latestSorteio?.titulo || "Nenhum sorteio disponível"}</strong>
+                                    Sorteio selecionado:{" "}
+                                    <strong>{selectedSorteio?.titulo || "Nenhum sorteio disponível"}</strong>
                                 </div>
                             </div>
                         </div>
@@ -1853,17 +1949,31 @@ export default function SorteiosAdminPage() {
                                 </thead>
 
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                                    {latestResultados.length === 0 ? (
+                                    {selectedLoading ? (
                                         <tr>
                                             <td
                                                 colSpan={3}
                                                 className="px-6 py-8 text-sm text-gray-600 dark:text-gray-300"
                                             >
-                                                Nenhum ganhador disponível no momento.
+                                                <span className="inline-flex items-center gap-2">
+                                                    <Spinner size={16} />
+                                                    Carregando ganhadores do sorteio selecionado...
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ) : selectedResultados.length === 0 ? (
+                                        <tr>
+                                            <td
+                                                colSpan={3}
+                                                className="px-6 py-8 text-sm text-gray-600 dark:text-gray-300"
+                                            >
+                                                {selectedSorteio
+                                                    ? "Este sorteio ainda não possui ganhadores disponíveis."
+                                                    : "Nenhum sorteio foi selecionado."}
                                             </td>
                                         </tr>
                                     ) : (
-                                        latestResultados.map((resultado, idx) => (
+                                        selectedResultados.map((resultado, idx) => (
                                             <tr
                                                 key={
                                                     resultado.id ??
@@ -1888,7 +1998,7 @@ export default function SorteiosAdminPage() {
                         </div>
 
                         <div className="border-t border-gray-200 px-5 py-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                            Executado em: <strong>{formatBR(latestSorteio?.executed_at || null)}</strong>
+                            Executado em: <strong>{formatBR(selectedSorteio?.executed_at || null)}</strong>
                         </div>
                     </section>
                 </div>

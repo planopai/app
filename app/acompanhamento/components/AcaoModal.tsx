@@ -1,3 +1,4 @@
+// CONSERVACAO POR USUARIO FIX V1: IDs 7 (Sandro) e 16 (Joseildo)
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -50,22 +51,45 @@ function getFotoAcaoTipo(fase: Fase): FotoAcaoTipo | null {
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
-async function consultarMe(): Promise<{ usuario: string; cargo: string }> {
+type MeInfo = {
+    id: number;
+    usuario: string;
+    cargo: string;
+    deposito_insumos: string | null;
+    pode_conservacao: boolean;
+};
+
+async function consultarMe(): Promise<MeInfo> {
     const res = await fetch(`${ENDPOINT}/informativo.php?me=1`, {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
+        cache: "no-store",
     });
 
     const data = await res.json().catch(() => null);
 
-    if (!res.ok) {
+    if (!res.ok || data?.erro) {
         throw new Error(data?.msg || `Erro ao consultar usuário (${res.status})`);
     }
 
+    const id = Number(data?.id ?? 0) || 0;
+    const cargo = String(data?.cargo ?? "").trim().toLowerCase();
+    const podeConservacao =
+        data?.pode_conservacao === true ||
+        data?.pode_conservacao === 1 ||
+        data?.pode_conservacao === "1" ||
+        ((id === 7 || id === 16) && cargo === "tanatopraxista");
+
     return {
-        usuario: (data?.usuario || "").toString(),
-        cargo: (data?.cargo || "").toString().trim().toLowerCase(),
+        id,
+        usuario: String(data?.usuario ?? ""),
+        cargo,
+        deposito_insumos:
+            typeof data?.deposito_insumos === "string" && data.deposito_insumos.trim()
+                ? data.deposito_insumos.trim()
+                : null,
+        pode_conservacao: podeConservacao,
     };
 }
 
@@ -115,7 +139,9 @@ export default function AcaoModal({
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
+    const [meId, setMeId] = useState<number>(0);
     const [meCargo, setMeCargo] = useState<string>("");
+    const [mePodeConservacao, setMePodeConservacao] = useState(false);
     const [meLoading, setMeLoading] = useState(false);
     const [meError, setMeError] = useState<string | null>(null);
 
@@ -125,13 +151,19 @@ export default function AcaoModal({
 
         async function run() {
             setMeError(null);
+            setMeId(0);
             setMeCargo("");
+            setMePodeConservacao(false);
             if (!open) return;
 
             setMeLoading(true);
             try {
                 const me = await consultarMe();
-                if (!cancel) setMeCargo((me.cargo || "").toLowerCase().trim());
+                if (!cancel) {
+                    setMeId(me.id);
+                    setMeCargo((me.cargo || "").toLowerCase().trim());
+                    setMePodeConservacao(!!me.pode_conservacao);
+                }
             } catch (e: any) {
                 if (!cancel) setMeError(e?.message || "Falha ao consultar permissões.");
             } finally {
@@ -221,13 +253,9 @@ export default function AcaoModal({
 
     const isTerceiro =
         isTerceiroBySession(acaoId) ||
-        (registroLocal as any)?.tipo_atendimento === "terceiro" ||
-        (typeof registroLocal?.assistencia === "string" &&
-            typeof registroLocal?.tanato === "string" &&
-            typeof (registroLocal as any)?.ornamentacao === "string" &&
-            (registroLocal.assistencia || "").toLowerCase() === "não" &&
-            (registroLocal.tanato || "").toLowerCase() === "não" &&
-            ((registroLocal as any).ornamentacao || "").toLowerCase() === "não");
+        String((registroLocal as any)?.tipo_atendimento ?? "")
+            .trim()
+            .toLowerCase() === "terceiro";
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
@@ -278,7 +306,11 @@ export default function AcaoModal({
     const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
 
     function podeConservacao(): boolean {
-        return meCargo === "tanatopraxista";
+        return (
+            mePodeConservacao &&
+            (meId === 7 || meId === 16) &&
+            meCargo === "tanatopraxista"
+        );
     }
 
     async function handleClickFase(f: Fase) {
@@ -301,7 +333,7 @@ export default function AcaoModal({
                 return;
             }
             if (!podeConservacao()) {
-                setFrontMsg({ ok: false, text: "Este usuário não pode realizar essa ação. Apenas Tanatopraxista." });
+                setFrontMsg({ ok: false, text: "Somente Sandro ou Joseildo podem iniciar ou finalizar a conservação." });
                 return;
             }
 
@@ -388,7 +420,7 @@ export default function AcaoModal({
                                         }`}
                                     title={
                                         bloqueadoPorCargo
-                                            ? "Apenas Tanatopraxista"
+                                            ? "Somente Sandro ou Joseildo"
                                             : habilitar && exigeFoto
                                                 ? "Anexar foto para confirmar esta etapa"
                                                 : habilitar
