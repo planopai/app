@@ -56,6 +56,7 @@ type ContractsByCpfsResp = {
     sorteio_id?: number;
     contratos?: Record<string, string | number>;
     nomes?: Record<string, string>;
+    origens?: Record<string, string>;
     nao_encontrados?: string[];
     consultados?: number;
     encontrados?: number;
@@ -1290,6 +1291,26 @@ export default function SorteiosAdminPage() {
                 }
             );
 
+            const cpfsSemContrato = cpfs.filter(
+                (cpf) => !contratosPorCpf[cpf]
+            );
+
+            if (cpfsSemContrato.length > 0) {
+                const lista = cpfsSemContrato
+                    .slice(0, 5)
+                    .map((cpf) => maskCpf(cpf))
+                    .join(", ");
+
+                const restante =
+                    cpfsSemContrato.length > 5
+                        ? ` e mais ${cpfsSemContrato.length - 5}`
+                        : "";
+
+                throw new Error(
+                    `Não foi possível localizar o número correto do contrato para: ${lista}${restante}. O PDF não foi gerado para evitar informações incorretas.`
+                );
+            }
+
             const { jsPDF } = await import("jspdf");
 
             let logoDataUrl: string | null = null;
@@ -1434,8 +1455,7 @@ export default function SorteiosAdminPage() {
                 y += 7;
 
                 const cpfKey = onlyDigits(resultado.cpf);
-                const numeroContrato =
-                    contratosPorCpf[cpfKey] || "NÃO LOCALIZADO";
+                const numeroContrato = contratosPorCpf[cpfKey];
 
                 doc.text(`CONTRATO: ${numeroContrato}`, marginX, y);
                 y += 8;
