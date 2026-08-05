@@ -6347,12 +6347,6 @@ export default function Page() {
                                             <span className="rounded-full bg-slate-100 px-3 py-1">
                                                 Código: <b>{p?.codigo_barras || "—"}</b>
                                             </span>
-                                            <span className="rounded-full bg-slate-100 px-3 py-1">
-                                                Saldo total: <b>{totalSaldo}</b>
-                                            </span>
-                                            <span className="rounded-full bg-slate-100 px-3 py-1">
-                                                Atualizado: <b>{p?.atualizado_em ? fmtDateTime(p.atualizado_em) : "—"}</b>
-                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -6369,15 +6363,15 @@ export default function Page() {
                                                 onClick={() => setProdEditTab(item.key)}
                                                 aria-pressed={active}
                                                 className={[
-                                                    "group flex min-h-[74px] items-center gap-3 rounded-2xl border p-3 text-left shadow-sm transition-all",
+                                                    "group flex min-h-[116px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-4 text-center shadow-sm transition-all hover:-translate-y-px hover:shadow-md sm:min-h-[124px] sm:p-5",
                                                     active
                                                         ? "border-sky-300 bg-sky-50 text-slate-950 ring-2 ring-sky-100"
-                                                        : "border-slate-200 bg-white text-slate-700 hover:-translate-y-px hover:border-slate-300 hover:shadow-md",
+                                                        : "border-slate-200 text-slate-700 hover:border-slate-300",
                                                 ].join(" ")}
                                             >
                                                 <span
                                                     className={[
-                                                        "grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors",
+                                                        "grid h-12 w-12 shrink-0 place-items-center rounded-full transition-colors sm:h-14 sm:w-14",
                                                         active
                                                             ? "bg-sky-600 text-white"
                                                             : "bg-sky-100 text-sky-700 group-hover:bg-sky-600 group-hover:text-white",
@@ -6385,7 +6379,7 @@ export default function Page() {
                                                 >
                                                     {item.icon}
                                                 </span>
-                                                <span className="min-w-0 text-sm font-bold sm:text-base">
+                                                <span className="block max-w-full text-center text-[13px] font-extrabold leading-tight tracking-tight text-current sm:text-sm">
                                                     {item.label}
                                                 </span>
                                             </button>
