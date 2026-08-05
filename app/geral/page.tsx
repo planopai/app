@@ -2236,7 +2236,7 @@ export default function Page() {
         }
 
         const sep = ";";
-        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)", "Preço de Custo (un)"];
+        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)", "Preço de Custo (un)", "Custo Total"];
 
 
         const lines: string[] = [];
@@ -2247,9 +2247,10 @@ export default function Page() {
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
             const valorNum = Number(p.valor) || 0;
             const precoCustoNum = Number(p.preco_custo) || 0;
+            const custoTotalItem = clampInt(qtd) * precoCustoNum;
 
             lines.push(
-                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), moneyBRL(precoCustoNum)]
+                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), moneyBRL(precoCustoNum), moneyBRL(custoTotalItem)]
 
                     .map((x) => escapeCsvCell(x, sep))
                     .join(sep)
@@ -5502,6 +5503,7 @@ export default function Page() {
                                             {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
                                                 const low = hasMinMax && qtd <= min;
                                                 const precoCustoNum = Number(p.preco_custo) || 0;
+                                                const custoTotalItem = clampInt(qtd) * precoCustoNum;
                                                 const foto = normalizeImgUrl(p.foto_url);
 
                                                 const cat =
@@ -5560,7 +5562,10 @@ export default function Page() {
                                                                     Qtd: {clampInt(qtd)}
                                                                 </p>
                                                                 <p className="mt-1 text-xs text-slate-500">
-                                                                    Custo: <b className="text-slate-700">{precoCustoNum ? moneyBRL(precoCustoNum) : "—"}</b>
+                                                                    Custo unit.: <b className="text-slate-700">{precoCustoNum ? moneyBRL(precoCustoNum) : "—"}</b>
+                                                                </p>
+                                                                <p className="mt-1 text-xs text-slate-500">
+                                                                    Total: <b className="text-slate-900">{precoCustoNum ? moneyBRL(custoTotalItem) : "—"}</b>
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -5581,6 +5586,7 @@ export default function Page() {
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Preço de Custo</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Total</th>
                                                         </tr>
                                                     </thead>
 
@@ -5602,6 +5608,7 @@ export default function Page() {
                                                                 "—";
 
                                                             const precoCustoNum = Number(p.preco_custo) || 0;
+                                                            const custoTotalItem = clampInt(qtd) * precoCustoNum;
                                                             const foto = normalizeImgUrl(p.foto_url);
 
                                                             return (
@@ -5646,6 +5653,10 @@ export default function Page() {
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
                                                                         {precoCustoNum ? moneyBRL(precoCustoNum) : "—"}
                                                                     </td>
+
+                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-slate-900">
+                                                                        {precoCustoNum ? moneyBRL(custoTotalItem) : "—"}
+                                                                    </td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -5658,6 +5669,9 @@ export default function Page() {
                                                             </td>
                                                             <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
                                                                 {estoqueResumo.totalUnidades}
+                                                            </td>
+                                                            <td className="border-t border-slate-200 px-3 py-3 text-right text-slate-500">
+                                                                —
                                                             </td>
                                                             <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
                                                                 {moneyBRL(estoqueResumo.totalCusto)}
