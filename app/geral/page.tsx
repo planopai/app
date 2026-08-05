@@ -787,7 +787,7 @@ function FilterOptionPanel({
     }
 
     return (
-        <section className="flex min-h-[300px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section className="flex min-h-[240px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div className="border-b border-slate-100 p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
@@ -827,7 +827,7 @@ function FilterOptionPanel({
                 </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 sm:max-h-[330px]">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-2 sm:max-h-[280px] [scrollbar-gutter:stable]">
                 {filteredOptions.length === 0 ? (
                     <div className="p-4 text-center text-sm text-slate-500">
                         Nenhuma opção encontrada.
@@ -955,8 +955,13 @@ function Modal({
                 if (e.target === e.currentTarget) onClose();
             }}
         >
-            <div className={["w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl", panelClassName].join(" ")}>
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+            <div
+                className={[
+                    "flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-h-[94dvh] sm:max-w-2xl",
+                    panelClassName,
+                ].join(" ")}
+            >
+                <div className="shrink-0 flex items-start justify-between gap-3 border-b border-slate-100 p-4">
                     <div className="min-w-0">
                         <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
                         {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
@@ -972,7 +977,15 @@ function Modal({
                     </button>
                 </div>
 
-                <div className={["max-h-[82dvh] overflow-y-auto p-4", bodyClassName].join(" ")}>{children}</div>
+                <div
+                    className={[
+                        "min-h-0 flex-1 overflow-y-auto overscroll-auto touch-pan-y p-4 [scrollbar-gutter:stable]",
+                        bodyClassName,
+                    ].join(" ")}
+                    style={{ WebkitOverflowScrolling: "touch" }}
+                >
+                    {children}
+                </div>
             </div>
         </div>
     );
@@ -1045,7 +1058,7 @@ function FilterPanelModal({
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto touch-pan-y p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 [scrollbar-gutter:stable]" style={{ WebkitOverflowScrolling: "touch" }}>
                     {children}
                 </div>
 
@@ -6207,7 +6220,6 @@ export default function Page() {
             <Modal
                 open={prodEditOpen}
                 title="Editar produto"
-                subtitle="Dados, estoque, valor e histórico de custos em áreas separadas."
                 onClose={() => setProdEditOpen(false)}
                 closeOnEsc
                 panelClassName="sm:max-w-5xl"
@@ -6264,27 +6276,47 @@ export default function Page() {
                     const tabs: Array<{
                         key: ProdutoEditTab;
                         label: string;
-                        description: string;
+                        icon: React.ReactNode;
                     }> = [
                             {
                                 key: "DADOS",
                                 label: "Dados",
-                                description: "Cadastro, classificação e fotos",
+                                icon: (
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                                        <path d="M14 3v5h5M9 12h6M9 16h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    </svg>
+                                ),
                             },
                             {
                                 key: "ESTOQUE",
                                 label: "Estoque",
-                                description: "Saldo e mínimo/máximo por depósito",
+                                icon: (
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M4 8.5L12 4l8 4.5v8L12 21l-8-4.5v-8z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                                        <path d="M4 8.5l8 4.5 8-4.5M12 13v8" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                                    </svg>
+                                ),
                             },
                             {
                                 key: "VALOR",
                                 label: "Valor",
-                                description: "Preço de venda do produto",
+                                icon: (
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z" stroke="currentColor" strokeWidth="1.8" />
+                                        <path d="M4 9h16M8 15h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    </svg>
+                                ),
                             },
                             {
                                 key: "CUSTO",
                                 label: "Preço de custo",
-                                description: "Visualização e entradas por lote",
+                                icon: (
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M7 3h10a2 2 0 0 1 2 2v16l-3-2-4 2-4-2-3 2V5a2 2 0 0 1 2-2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                                        <path d="M9 8h6M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    </svg>
+                                ),
                             },
                         ];
 
@@ -6326,8 +6358,8 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="border-b border-slate-200 bg-slate-50 px-3 pt-3 sm:px-5">
-                                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                            <div className="border-b border-slate-100 bg-slate-50/80 p-4 sm:p-5">
+                                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                                     {tabs.map((item) => {
                                         const active = prodEditTab === item.key;
                                         return (
@@ -6335,18 +6367,26 @@ export default function Page() {
                                                 key={item.key}
                                                 type="button"
                                                 onClick={() => setProdEditTab(item.key)}
+                                                aria-pressed={active}
                                                 className={[
-                                                    "rounded-t-2xl border px-3 py-3 text-left transition",
+                                                    "group flex min-h-[74px] items-center gap-3 rounded-2xl border p-3 text-left shadow-sm transition-all",
                                                     active
-                                                        ? "border-slate-200 border-b-white bg-white text-slate-950 shadow-sm"
-                                                        : "border-transparent bg-transparent text-slate-600 hover:bg-white/70 hover:text-slate-900",
+                                                        ? "border-sky-300 bg-sky-50 text-slate-950 ring-2 ring-sky-100"
+                                                        : "border-slate-200 bg-white text-slate-700 hover:-translate-y-px hover:border-slate-300 hover:shadow-md",
                                                 ].join(" ")}
                                             >
-                                                <span className="block text-sm font-bold">
-                                                    {item.label}
+                                                <span
+                                                    className={[
+                                                        "grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors",
+                                                        active
+                                                            ? "bg-sky-600 text-white"
+                                                            : "bg-sky-100 text-sky-700 group-hover:bg-sky-600 group-hover:text-white",
+                                                    ].join(" ")}
+                                                >
+                                                    {item.icon}
                                                 </span>
-                                                <span className="mt-1 hidden text-[11px] leading-4 text-slate-500 sm:block">
-                                                    {item.description}
+                                                <span className="min-w-0 text-sm font-bold sm:text-base">
+                                                    {item.label}
                                                 </span>
                                             </button>
                                         );
@@ -6354,7 +6394,7 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+                            <div className="p-4 sm:p-5">
                                 {prodEditTab === "DADOS" ? (
                                     <div className="space-y-5">
                                         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -6371,10 +6411,7 @@ export default function Page() {
                                                 </div>
 
                                                 <div className="sm:col-span-2">
-                                                    <Field
-                                                        label="Descrição"
-                                                        hint="Informações, observações e especificações do produto."
-                                                    >
+                                                    <Field label="Descrição">
                                                         <TextArea
                                                             value={editDescricao}
                                                             onChange={(e) =>
@@ -6637,9 +6674,6 @@ export default function Page() {
                                                     <h3 className="text-sm font-bold text-slate-900">
                                                         Saldo por depósito
                                                     </h3>
-                                                    <p className="mt-1 text-xs text-slate-500">
-                                                        Quantidade atual deste produto em cada estoque cadastrado.
-                                                    </p>
                                                 </div>
                                                 <div className="rounded-2xl bg-slate-900 px-4 py-2 text-white">
                                                     <p className="text-[10px] uppercase tracking-wide text-slate-300">
@@ -6889,10 +6923,7 @@ export default function Page() {
                                         </div>
 
                                         <div className="mt-5">
-                                            <Field
-                                                label="Valor do produto (R$)"
-                                                hint="Altere o preço de venda e salve as alterações."
-                                            >
+                                            <Field label="Valor do produto (R$)">
                                                 <TextInput
                                                     type="text"
                                                     inputMode="numeric"
@@ -6922,9 +6953,6 @@ export default function Page() {
                                                 <p className="mt-2 text-3xl font-bold text-slate-900">
                                                     {editPrecoCusto}
                                                 </p>
-                                                <p className="mt-2 text-xs leading-5 text-slate-500">
-                                                    Campo somente para visualização. Ele é atualizado pelas entradas de estoque e não pode ser alterado neste cadastro.
-                                                </p>
                                             </div>
                                             <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
                                                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
@@ -6942,9 +6970,6 @@ export default function Page() {
                                                     <h3 className="text-sm font-bold text-slate-900">
                                                         Entradas e preços de custo por lote
                                                     </h3>
-                                                    <p className="mt-1 text-xs text-slate-500">
-                                                        Cada linha corresponde a uma entrada registrada para este produto.
-                                                    </p>
                                                 </div>
                                                 <Button
                                                     variant="ghost"
@@ -7121,29 +7146,24 @@ export default function Page() {
                             </div>
 
                             <div className="border-t border-slate-200 bg-white p-4 sm:p-5">
-                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <p className="text-xs text-slate-500">
-                                        O preço de custo é somente leitura. Os demais dados são salvos pelo botão ao lado.
-                                    </p>
-                                    <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                                        <Button
-                                            variant="ghost"
-                                            onClick={() => setProdEditOpen(false)}
-                                            disabled={prodBusy}
-                                            type="button"
-                                        >
-                                            Fechar
-                                        </Button>
-                                        <Button
-                                            onClick={salvarCadastroProduto}
-                                            disabled={prodBusy || !editNome.trim()}
-                                            type="button"
-                                        >
-                                            {prodBusy
-                                                ? "Salvando..."
-                                                : "Salvar alterações"}
-                                        </Button>
-                                    </div>
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                    <Button
+                                        variant="ghost"
+                                        onClick={() => setProdEditOpen(false)}
+                                        disabled={prodBusy}
+                                        type="button"
+                                    >
+                                        Fechar
+                                    </Button>
+                                    <Button
+                                        onClick={salvarCadastroProduto}
+                                        disabled={prodBusy || !editNome.trim()}
+                                        type="button"
+                                    >
+                                        {prodBusy
+                                            ? "Salvando..."
+                                            : "Salvar alterações"}
+                                    </Button>
                                 </div>
                             </div>
                         </div>
@@ -9189,7 +9209,6 @@ export default function Page() {
                 open={estoqueFilterOpen}
                 onClose={() => setEstoqueFilterOpen(false)}
                 title="Filtros de produtos"
-                subtitle="As listas ficam abertas e maiores para facilitar a seleção no computador e no celular."
                 panelClassName="sm:max-w-7xl"
                 footer={
                     <>
