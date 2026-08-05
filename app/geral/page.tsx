@@ -1742,7 +1742,7 @@ export default function Page() {
     const estoqueRows = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
 
-        const rows: Array<{
+        type EstoqueProdutoRow = {
             p: Produto;
             d: Deposito;
             qtd: number;
@@ -1751,62 +1751,122 @@ export default function Page() {
             max: number;
             rep: number;
             hasMinMax: boolean;
-        }> = [];
+            depositoIds: ID[];
+            depositoNomes: string[];
+        };
+
+        type EstoqueProdutoAcumulado = {
+            p: Produto;
+            primeiroDeposito: Deposito;
+            primeiroSaldo?: Saldo;
+            qtd: number;
+            min: number;
+            max: number;
+            depositos: Map<ID, string>;
+        };
 
         const depSet = depFiltroEstoque.length ? new Set(depFiltroEstoque.map(Number)) : null;
         const catSet = catFiltroEstoque.length ? new Set(catFiltroEstoque.map(Number)) : null;
         const fabSet = fabFiltroEstoque.length ? new Set(fabFiltroEstoque.map(Number)) : null;
         const clsSet = classFiltroEstoque.length ? new Set(classFiltroEstoque.map(Number)) : null;
 
+        const agrupados = new Map<ID, EstoqueProdutoAcumulado>();
+
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
 
-            if (depSet && !depSet.has(d.id)) continue;
+            if (depSet && !depSet.has(Number(d.id))) continue;
 
             if (catSet) {
-                const pid = Number(p.categoria_id || 0);
-                if (!catSet.has(pid)) continue;
+                const categoriaId = Number(p.categoria_id || 0);
+                if (!catSet.has(categoriaId)) continue;
             }
 
             if (fabSet) {
-                const fid = Number(p.fabricante_id || 0);
-                if (!fabSet.has(fid)) continue;
+                const fabricanteId = Number(p.fabricante_id || 0);
+                if (!fabSet.has(fabricanteId)) continue;
             }
 
             if (clsSet) {
-                const cid = Number(p.classificacao_id || 0);
-                if (!clsSet.has(cid)) continue;
+                const classificacaoId = Number(p.classificacao_id || 0);
+                if (!clsSet.has(classificacaoId)) continue;
             }
 
-            const qtd = clampInt(s.quantidade);
-            // ✅ NOVO: oculta itens zerados
-            if (onlyPositive && qtd <= 0) continue;
-            const min = clampInt((s as any).minimo ?? 0);
-            const max = clampInt((s as any).maximo ?? 0);
+            const atual = agrupados.get(p.id);
+            const qtdSaldo = clampInt(s.quantidade);
+            const minSaldo = clampInt(s.minimo ?? 0);
+            const maxSaldo = clampInt(s.maximo ?? 0);
 
-            // ✅ definido = tem Min e Max > 0
+            if (atual) {
+                atual.qtd += qtdSaldo;
+                atual.min += minSaldo;
+                atual.max += maxSaldo;
+                atual.depositos.set(d.id, d.nome);
+            } else {
+                agrupados.set(p.id, {
+                    p,
+                    primeiroDeposito: d,
+                    primeiroSaldo: s,
+                    qtd: qtdSaldo,
+                    min: minSaldo,
+                    max: maxSaldo,
+                    depositos: new Map<ID, string>([[d.id, d.nome]]),
+                });
+            }
+        }
+
+        const rows: EstoqueProdutoRow[] = [];
+
+        for (const grupo of agrupados.values()) {
+            const { p, qtd, min, max } = grupo;
             const hasMinMax = min > 0 && max > 0;
-
-            // ✅ REP só faz sentido quando tem Min+Max definido
             const rep = hasMinMax ? Math.max(0, max - qtd) : 0;
 
-            // ✅ "Somente alerta" só entra se tiver Min/Max definido e qtd <= min
+            // A regra de saldo positivo é aplicada depois da soma dos depósitos selecionados.
+            if (onlyPositive && qtd <= 0) continue;
+
+            // O alerta também considera o saldo e os limites consolidados dos depósitos selecionados.
             if (onlyLow && !(hasMinMax && qtd <= min)) continue;
+
+            const depositoNomes = Array.from(grupo.depositos.values()).sort((a, b) =>
+                a.localeCompare(b, "pt-BR")
+            );
+            const depositoIds = Array.from(grupo.depositos.keys());
 
             if (qq) {
                 const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
                 const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
                 const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || "";
-                const blob = `${p.nome} ${p.codigo_barras} ${d.nome} ${cat} ${fab} ${cls}`.toLowerCase();
+                const blob = `${p.nome} ${p.codigo_barras} ${depositoNomes.join(" ")} ${cat} ${fab} ${cls}`.toLowerCase();
                 if (!blob.includes(qq)) continue;
             }
 
-            rows.push({ p, d, qtd, s, min, max, rep, hasMinMax });
+            rows.push({
+                p,
+                // Mantido como referência para abrir o editor e para os relatórios existentes.
+                // O nome consolidado representa todos os depósitos atualmente filtrados.
+                d: {
+                    id: grupo.primeiroDeposito.id,
+                    nome: depositoNomes.join(", "),
+                },
+                qtd,
+                s: grupo.primeiroSaldo,
+                min,
+                max,
+                rep,
+                hasMinMax,
+                depositoIds,
+                depositoNomes,
+            });
         }
 
-        rows.sort((a, b) => a.p.nome.localeCompare(b.p.nome, "pt-BR") || a.d.nome.localeCompare(b.d.nome, "pt-BR"));
+        rows.sort((a, b) =>
+            a.p.nome.localeCompare(b.p.nome, "pt-BR") ||
+            a.p.codigo_barras.localeCompare(b.p.codigo_barras, "pt-BR")
+        );
+
         return rows;
     }, [
         saldos,
@@ -1983,6 +2043,7 @@ export default function Page() {
     const estoqueResumo = useMemo(() => {
         let totalUnidades = 0;
         let totalValor = 0;
+        let totalCusto = 0;
 
         const modelosSet = new Set<number>();
 
@@ -1992,13 +2053,17 @@ export default function Page() {
             const q = clampInt(qtd);
             totalUnidades += q;
 
-            const v = Number(p.valor) || 0;
-            totalValor += q * v;
+            const valorVenda = Number(p.valor) || 0;
+            const precoCusto = Number(p.preco_custo) || 0;
+
+            totalValor += q * valorVenda;
+            totalCusto += q * precoCusto;
         }
 
         return {
             totalUnidades,
             totalValor,
+            totalCusto,
             totalModelos: modelosSet.size,
         };
     }, [estoqueRows]);
@@ -5193,7 +5258,7 @@ export default function Page() {
                         <Card className="p-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div>
-                                    <h2 className="text-base font-semibold text-slate-900">Estoque (por depósito)</h2>
+                                    <h2 className="text-base font-semibold text-slate-900">Produtos</h2>
 
                                 </div>
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
@@ -5215,7 +5280,7 @@ export default function Page() {
                                             <TextInput
                                                 value={qEstoque}
                                                 onChange={(e) => setQEstoque(e.target.value)}
-                                                placeholder="Nome, código de barras, depósito, categoria..."
+                                                placeholder="Nome, código de barras, categoria, fabricante ou classificação..."
                                             />
                                         </Field>
                                     </div>
@@ -5253,20 +5318,26 @@ export default function Page() {
                                     <>
                                         {/* MOBILE */}
                                         <ul className="divide-y divide-slate-200 sm:hidden">
-                                            {estoqueRows.map(({ p, d, qtd, min, max, rep, hasMinMax }) => {
+                                            {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
                                                 const low = hasMinMax && qtd <= min;
-                                                const valorNum = Number(p.valor) || 0;
-
+                                                const precoCustoNum = Number(p.preco_custo) || 0;
                                                 const foto = normalizeImgUrl(p.foto_url);
 
-                                                const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : null);
-                                                const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null);
-
-                                                // ✅ NOVO: Classificação (fallback)
-                                                const cls = p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : null);
+                                                const cat =
+                                                    p.categoria_nome ||
+                                                    (p.categoria_id ? catById.get(p.categoria_id)?.nome : null) ||
+                                                    "—";
+                                                const fab =
+                                                    p.fabricante_nome ||
+                                                    (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : null) ||
+                                                    "—";
+                                                const cls =
+                                                    p.classificacao_nome ||
+                                                    (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : null) ||
+                                                    "—";
 
                                                 return (
-                                                    <li key={`${p.id}_${d.id}`}>
+                                                    <li key={p.id}>
                                                         <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
                                                             <div className="flex min-w-0 items-center gap-3">
                                                                 <PhotoThumb
@@ -5278,8 +5349,9 @@ export default function Page() {
                                                                         setImgOpen(true);
                                                                     }}
                                                                 />
+
                                                                 <div className="min-w-0">
-                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                    <div className="flex min-w-0 items-center gap-2">
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => openProdutoEditor(p.id, d.id)}
@@ -5289,53 +5361,27 @@ export default function Page() {
                                                                             {p.nome}
                                                                         </button>
 
-                                                                        {low ? <span className="text-xs text-red-600 shrink-0">• alerta</span> : null}
+                                                                        {low ? <span className="shrink-0 text-xs text-red-600">• alerta</span> : null}
                                                                     </div>
+
                                                                     <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                        CB: <b>{p.codigo_barras}</b> • Depósito: <b>{d.nome}</b> • Valor {moneyBRL(valorNum)}
-                                                                    </p>
-                                                                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                                                                        {cat ? (
-                                                                            <>
-                                                                                Categoria: <b>{cat}</b>
-                                                                            </>
-                                                                        ) : null}
-
-                                                                        {cat && fab ? " • " : null}
-
-                                                                        {fab ? (
-                                                                            <>
-                                                                                Fabricante: <b>{fab}</b>
-                                                                            </>
-                                                                        ) : null}
-
-                                                                        {/* ✅ NOVO: Classificação */}
-                                                                        {cls ? (
-                                                                            <>
-                                                                                {(cat || fab) ? " • " : null}
-                                                                                Classificação: <b>{cls}</b>
-                                                                            </>
-                                                                        ) : null}
+                                                                        CB: <b>{p.codigo_barras}</b>
                                                                     </p>
 
+                                                                    <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                                                                        Categoria: <b>{cat}</b> • Fabricante: <b>{fab}</b> • Classificação: <b>{cls}</b>
+                                                                    </p>
                                                                 </div>
                                                             </div>
 
                                                             <div className="shrink-0 text-right">
                                                                 <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
-                                                                    {qtd}
+                                                                    Qtd: {clampInt(qtd)}
                                                                 </p>
-
-                                                                {showMinRepColumns ? (
-                                                                    <p className="text-xs text-slate-500">
-                                                                        Min {hasMinMax ? min : "—"} • Rep{" "}
-                                                                        <span className={hasMinMax ? "font-semibold text-emerald-700" : "text-slate-500"}>
-                                                                            {hasMinMax ? rep : "—"}
-                                                                        </span>
-                                                                    </p>
-                                                                ) : null}
+                                                                <p className="mt-1 text-xs text-slate-500">
+                                                                    Custo: <b className="text-slate-700">{precoCustoNum ? moneyBRL(precoCustoNum) : "—"}</b>
+                                                                </p>
                                                             </div>
-
                                                         </div>
                                                     </li>
                                                 );
@@ -5343,53 +5389,44 @@ export default function Page() {
                                         </ul>
 
                                         {/* PC */}
-                                        {/* PC (ESTOQUE - correto, independente do PDF) */}
                                         <div className="hidden sm:block">
                                             <div className="overflow-auto">
                                                 <table className="min-w-full border-separate border-spacing-0">
                                                     <thead>
                                                         <tr className="bg-slate-50 text-left text-xs text-slate-700">
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Depósito</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
-
                                                             <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
-
-                                                            {showMinRepColumns ? (
-                                                                <>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Mín</th>
-                                                                    <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Rep</th>
-                                                                </>
-                                                            ) : null}
-
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Valor (un)</th>
+                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Preço de Custo</th>
                                                         </tr>
                                                     </thead>
 
-
                                                     <tbody>
-                                                        {estoqueRows.map(({ p, d, qtd, min, max, rep, hasMinMax }) => {
+                                                        {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
                                                             const low = hasMinMax && clampInt(qtd) <= clampInt(min);
 
                                                             const cat =
-                                                                p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "—";
+                                                                p.categoria_nome ||
+                                                                (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
+                                                                "—";
                                                             const fab =
-                                                                p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "—";
+                                                                p.fabricante_nome ||
+                                                                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                                                                "—";
                                                             const cls =
                                                                 p.classificacao_nome ||
                                                                 (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") ||
                                                                 "—";
 
-                                                            const valorNum = Number(p.valor) || 0;
+                                                            const precoCustoNum = Number(p.preco_custo) || 0;
                                                             const foto = normalizeImgUrl(p.foto_url);
 
                                                             return (
-                                                                <tr key={`${p.id}_${d.id}`} className="bg-white hover:bg-slate-50">
-                                                                    {/* Produto (com editar) */}
+                                                                <tr key={p.id} className="bg-white hover:bg-slate-50">
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
-                                                                        <div className="flex items-center gap-3 min-w-0">
+                                                                        <div className="flex min-w-0 items-center gap-3">
                                                                             <PhotoThumb
                                                                                 url={foto}
                                                                                 onClick={() => {
@@ -5401,89 +5438,51 @@ export default function Page() {
                                                                             />
 
                                                                             <div className="min-w-0">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => openProdutoEditor(p.id, d.id)}
-                                                                                    className="block truncate text-left font-semibold text-slate-900 hover:underline"
-                                                                                    title="Clique para editar"
-                                                                                >
-                                                                                    {p.nome}
-                                                                                </button>
-                                                                                <div className="text-xs text-slate-500 font-mono">CB: {p.codigo_barras}</div>
+                                                                                <div className="flex min-w-0 items-center gap-2">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => openProdutoEditor(p.id, d.id)}
+                                                                                        className="block truncate text-left font-semibold text-slate-900 hover:underline"
+                                                                                        title="Clique para editar"
+                                                                                    >
+                                                                                        {p.nome}
+                                                                                    </button>
+                                                                                    {low ? <span className="shrink-0 text-xs text-rose-600">• alerta</span> : null}
+                                                                                </div>
+                                                                                <div className="font-mono text-xs text-slate-500">CB: {p.codigo_barras}</div>
                                                                             </div>
                                                                         </div>
                                                                     </td>
 
-                                                                    {/* Depósito */}
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{d.nome}</td>
-
-                                                                    {/* Categoria */}
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat}</td>
-
-                                                                    {/* Fabricante */}
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab}</td>
-
-                                                                    {/* Classificação */}
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls}</td>
 
-                                                                    {/* Qtd */}
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
                                                                         <span className={low ? "text-rose-700" : "text-slate-900"}>{clampInt(qtd)}</span>
                                                                     </td>
 
-                                                                    {showMinRepColumns ? (
-                                                                        <>
-                                                                            {/* Mín */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
-                                                                                {hasMinMax ? clampInt(min) : "—"}
-                                                                            </td>
-
-                                                                            {/* Rep */}
-                                                                            <td className="border-b border-slate-200 px-3 py-2 text-right text-sm">
-                                                                                {hasMinMax ? (
-                                                                                    <span className="font-semibold text-emerald-700">{clampInt(rep)}</span>
-                                                                                ) : (
-                                                                                    <span className="text-slate-500">—</span>
-                                                                                )}
-                                                                            </td>
-                                                                        </>
-                                                                    ) : null}
-
-                                                                    {/* Valor */}
                                                                     <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
-                                                                        {valorNum ? moneyBRL(valorNum) : "—"}
+                                                                        {precoCustoNum ? moneyBRL(precoCustoNum) : "—"}
                                                                     </td>
                                                                 </tr>
                                                             );
                                                         })}
                                                     </tbody>
 
-
                                                     <tfoot>
                                                         <tr className="bg-slate-50 text-xs text-slate-700">
-                                                            <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={5}>
-                                                                Total de modelos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
+                                                            <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={4}>
+                                                                Total de produtos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
                                                             </td>
-
-                                                            {/* Total Qtd */}
                                                             <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
                                                                 {estoqueResumo.totalUnidades}
                                                             </td>
-
-                                                            {showMinRepColumns ? (
-                                                                <>
-                                                                    <td className="border-t border-slate-200 px-3 py-3" />
-                                                                    <td className="border-t border-slate-200 px-3 py-3" />
-                                                                </>
-                                                            ) : null}
-
-                                                            {/* Total Valor */}
                                                             <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
-                                                                {moneyBRL(estoqueResumo.totalValor)}
+                                                                {moneyBRL(estoqueResumo.totalCusto)}
                                                             </td>
                                                         </tr>
                                                     </tfoot>
-
                                                 </table>
                                             </div>
                                         </div>
@@ -5498,7 +5497,7 @@ export default function Page() {
                                 </div>
 
                                 <div className="text-sm text-slate-700">
-                                    Valor total (mercadoria): <b>{moneyBRL(estoqueResumo.totalValor)}</b>
+                                    Custo total do estoque: <b>{moneyBRL(estoqueResumo.totalCusto)}</b>
                                 </div>
                             </div>
 
