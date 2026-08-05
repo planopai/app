@@ -286,7 +286,7 @@ const tabActions: TabAction[] = [
     },
     {
         key: "ESTOQUE",
-        label: "Estoque",
+        label: "Produtos",
         icon: (
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                 <path d="M7 8l5-3 5 3v10l-5 3-5-3V8z" stroke="currentColor" strokeWidth="1.8" />
