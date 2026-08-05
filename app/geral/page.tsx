@@ -106,6 +106,9 @@ type HistoricoResp = {
 };
 
 
+type ProdutoEditTab = "DADOS" | "ESTOQUE" | "VALOR" | "CUSTO";
+
+
 
 // ✅ CONFERÊNCIAS (REGISTROS SALVOS)
 type ConferenciaRegistro = {
@@ -747,6 +750,121 @@ function MultiSelectDropdown({
 }
 
 
+function FilterOptionPanel({
+    title,
+    options,
+    selectedIds,
+    onChangeIds,
+    allLabel = "Todos",
+}: {
+    title: string;
+    options: Opt[];
+    selectedIds: ID[];
+    onChangeIds: (ids: ID[]) => void;
+    allLabel?: string;
+}) {
+    const [query, setQuery] = useState("");
+
+    const selectedSet = useMemo(
+        () => new Set(selectedIds.map(Number)),
+        [selectedIds]
+    );
+
+    const filteredOptions = useMemo(() => {
+        const q = query.trim().toLocaleLowerCase("pt-BR");
+        if (!q) return options;
+        return options.filter((option) =>
+            option.nome.toLocaleLowerCase("pt-BR").includes(q)
+        );
+    }, [options, query]);
+
+    function toggle(id: ID) {
+        const numericId = Number(id);
+        const next = selectedSet.has(numericId)
+            ? selectedIds.filter((currentId) => Number(currentId) !== numericId)
+            : [...selectedIds, numericId];
+        onChangeIds(next);
+    }
+
+    return (
+        <section className="flex min-h-[300px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 p-4">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                            {selectedIds.length
+                                ? `${selectedIds.length} selecionado(s)`
+                                : allLabel}
+                        </p>
+                    </div>
+
+                    {selectedIds.length ? (
+                        <button
+                            type="button"
+                            onClick={() => onChangeIds([])}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                            Mostrar todos
+                        </button>
+                    ) : (
+                        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                            {allLabel}
+                        </span>
+                    )}
+                </div>
+
+                <div className="relative mt-3">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        ⌕
+                    </span>
+                    <TextInput
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder={`Buscar em ${title.toLocaleLowerCase("pt-BR")}...`}
+                        className="pl-9"
+                    />
+                </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 sm:max-h-[330px]">
+                {filteredOptions.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-slate-500">
+                        Nenhuma opção encontrada.
+                    </div>
+                ) : (
+                    <div className="space-y-1">
+                        {filteredOptions.map((option) => {
+                            const checked = selectedSet.has(Number(option.id));
+                            return (
+                                <label
+                                    key={option.id}
+                                    className={[
+                                        "flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition",
+                                        checked
+                                            ? "border-sky-300 bg-sky-50 text-sky-950"
+                                            : "border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50",
+                                    ].join(" ")}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggle(option.id)}
+                                        className="h-5 w-5 shrink-0 accent-sky-600"
+                                    />
+                                    <span className="min-w-0 flex-1 break-words text-sm font-medium">
+                                        {option.nome}
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
 function Button({
     children,
     variant = "solid",
@@ -792,6 +910,8 @@ function Modal({
     children,
     closeOnBackdrop = false,
     closeOnEsc = false,
+    panelClassName = "",
+    bodyClassName = "",
 }: {
     open: boolean;
     title: string;
@@ -800,6 +920,8 @@ function Modal({
     children: React.ReactNode;
     closeOnBackdrop?: boolean;
     closeOnEsc?: boolean;
+    panelClassName?: string;
+    bodyClassName?: string;
 }) {
     useEffect(() => {
         if (!open) return;
@@ -833,7 +955,7 @@ function Modal({
                 if (e.target === e.currentTarget) onClose();
             }}
         >
-            <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl">
+            <div className={["w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-w-2xl", panelClassName].join(" ")}>
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
                     <div className="min-w-0">
                         <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
@@ -850,7 +972,7 @@ function Modal({
                     </button>
                 </div>
 
-                <div className="max-h-[82dvh] overflow-y-auto p-4">{children}</div>
+                <div className={["max-h-[82dvh] overflow-y-auto p-4", bodyClassName].join(" ")}>{children}</div>
             </div>
         </div>
     );
@@ -863,6 +985,7 @@ function FilterPanelModal({
     onClose,
     children,
     footer,
+    panelClassName = "",
 }: {
     open: boolean;
     title: string;
@@ -870,6 +993,7 @@ function FilterPanelModal({
     onClose: () => void;
     children: React.ReactNode;
     footer?: React.ReactNode;
+    panelClassName?: string;
 }) {
     useEffect(() => {
         if (!open) return;
@@ -897,7 +1021,7 @@ function FilterPanelModal({
             aria-modal="true"
             className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-slate-950/55 p-3 pt-6 sm:items-center sm:p-4"
         >
-            <div className="flex max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:max-h-[92dvh] sm:max-w-5xl">
+            <div className={["flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl sm:max-h-[94dvh] sm:max-w-5xl", panelClassName].join(" ")}>
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
                     <div className="min-w-0">
                         <h2 className="text-lg font-bold text-slate-900">
@@ -1463,9 +1587,12 @@ export default function Page() {
     // modal editar produto
     const [prodEditOpen, setProdEditOpen] = useState(false);
     const [prodEditId, setProdEditId] = useState<ID | 0>(0);
+    const [prodEditTab, setProdEditTab] = useState<ProdutoEditTab>("DADOS");
     const [prodBusy, setProdBusy] = useState(false);
-    // ✅ NOVO: busy do salvamento min/max por depósito
     const [minMaxBusy, setMinMaxBusy] = useState(false);
+    const [prodEntradasCusto, setProdEntradasCusto] = useState<HistoricoRow[]>([]);
+    const [prodEntradasCustoLoading, setProdEntradasCustoLoading] = useState(false);
+    const [prodEntradasCustoErr, setProdEntradasCustoErr] = useState("");
 
     // campos do cadastro
     const [editNome, setEditNome] = useState("");
@@ -3727,11 +3854,53 @@ export default function Page() {
 
     // ======= PRODUTO EDITOR =======
 
+    async function carregarEntradasCustoProduto(produtoId: ID, codigoBarras: string) {
+        setProdEntradasCustoLoading(true);
+        setProdEntradasCustoErr("");
+        setProdEntradasCusto([]);
+
+        try {
+            const resp = await apiGet<HistoricoResp>({
+                historico: 1,
+                tipo: "ENTRADA",
+                q: codigoBarras,
+                limit: 500,
+                _ts: Date.now(),
+            });
+
+            if (!resp.ok) {
+                throw new Error(resp.msg || "Falha ao carregar as entradas do produto.");
+            }
+
+            const rows = (resp.rows || [])
+                .filter(
+                    (row) =>
+                        row.tipo === "ENTRADA" &&
+                        Number(row.produto_id) === Number(produtoId)
+                )
+                .sort(
+                    (a, b) =>
+                        new Date(b.criado_em).getTime() -
+                        new Date(a.criado_em).getTime()
+                );
+
+            setProdEntradasCusto(rows);
+        } catch (e: any) {
+            setProdEntradasCustoErr(
+                e?.message || "Erro ao carregar as entradas do produto."
+            );
+        } finally {
+            setProdEntradasCustoLoading(false);
+        }
+    }
+
     function openProdutoEditor(produtoId: ID, depositoId?: ID) {
         const p = prodById.get(produtoId);
         if (!p) return;
 
         setProdEditId(produtoId);
+        setProdEditTab("DADOS");
+        void carregarEntradasCustoProduto(produtoId, p.codigo_barras || "");
 
         setEditNome(p.nome || "");
         setEditDescricao((p as any).descricao || ""); // ✅ NOVO
@@ -3885,7 +4054,6 @@ export default function Page() {
                 nome: editNome.trim(),
                 descricao: editDescricao.trim() || "",
                 valor: parseBRLToNumber(editValor),
-                preco_custo: parseBRLToNumber(editPrecoCusto),
                 minimo: clampInt(editMin),
                 maximo: clampInt(editMax),
                 categoria_id: editCatId ? Number(editCatId) : 0,
@@ -6039,333 +6207,945 @@ export default function Page() {
             <Modal
                 open={prodEditOpen}
                 title="Editar produto"
-                subtitle="Edite o cadastro do produto."
+                subtitle="Dados, estoque, valor e histórico de custos em áreas separadas."
                 onClose={() => setProdEditOpen(false)}
+                closeOnEsc
+                panelClassName="sm:max-w-5xl"
+                bodyClassName="p-0"
             >
                 {(() => {
                     const p = prodEditId ? prodById.get(prodEditId) : null;
 
                     const fotoAtual = getProdutoFotoPrincipal(p);
                     const fotoPrincipalExistente =
-                        editFotosExistentes.find((f) => Number(f.is_principal || 0) === 1) || editFotosExistentes[0];
-
+                        editFotosExistentes.find(
+                            (f) => Number(f.is_principal || 0) === 1
+                        ) || editFotosExistentes[0];
                     const fotoPrincipalNova =
-                        editFotosNovas.find((f) => Number(f.is_principal) === 1) || editFotosNovas[0];
-
+                        editFotosNovas.find(
+                            (f) => Number(f.is_principal) === 1
+                        ) || editFotosNovas[0];
                     const fotoPreview =
                         fotoPrincipalNova?.foto_url ||
                         resolveProdutoFotoUrl(fotoPrincipalExistente) ||
                         editFotoNova ||
                         fotoAtual;
 
-                    return (
-                        <div className="space-y-4">
-                            <div className="flex items-start gap-3">
-                                <div className="h-20 w-20 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                                    {fotoPreview ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={fotoPreview} alt="Foto do produto" className="h-20 w-20 object-cover" />
-                                    ) : (
-                                        <div className="flex h-20 w-20 items-center justify-center text-2xl">🖼️</div>
-                                    )}
-                                </div>
+                    const saldoRows = saldos
+                        .filter(
+                            (saldo) =>
+                                Number(saldo.produto_id) === Number(prodEditId)
+                        )
+                        .map((saldo) => ({
+                            saldo,
+                            deposito: depById.get(Number(saldo.deposito_id)),
+                        }))
+                        .filter(
+                            (
+                                row
+                            ): row is {
+                                saldo: Saldo;
+                                deposito: Deposito;
+                            } => Boolean(row.deposito)
+                        )
+                        .sort((a, b) =>
+                            a.deposito.nome.localeCompare(
+                                b.deposito.nome,
+                                "pt-BR"
+                            )
+                        );
 
-                                <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-slate-900">{p?.nome || "—"}</p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                        Código de barras: <b>{p?.codigo_barras || "—"}</b>
-                                    </p>
-                                    <p className="mt-1 text-[11px] text-slate-500">Atualizado: {p?.atualizado_em ? fmtDateTime(p.atualizado_em) : "—"}</p>
+                    const totalSaldo = saldoRows.reduce(
+                        (total, row) =>
+                            total + clampInt(row.saldo.quantidade),
+                        0
+                    );
+
+                    const tabs: Array<{
+                        key: ProdutoEditTab;
+                        label: string;
+                        description: string;
+                    }> = [
+                            {
+                                key: "DADOS",
+                                label: "Dados",
+                                description: "Cadastro, classificação e fotos",
+                            },
+                            {
+                                key: "ESTOQUE",
+                                label: "Estoque",
+                                description: "Saldo e mínimo/máximo por depósito",
+                            },
+                            {
+                                key: "VALOR",
+                                label: "Valor",
+                                description: "Preço de venda do produto",
+                            },
+                            {
+                                key: "CUSTO",
+                                label: "Preço de custo",
+                                description: "Visualização e entradas por lote",
+                            },
+                        ];
+
+                    return (
+                        <div className="flex min-h-0 flex-col">
+                            <div className="border-b border-slate-100 bg-white p-4 sm:p-5">
+                                <div className="flex items-start gap-4">
+                                    <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 sm:h-24 sm:w-24">
+                                        {fotoPreview ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                                src={fotoPreview}
+                                                alt="Foto do produto"
+                                                className="h-full w-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center text-2xl">
+                                                🖼️
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="min-w-0 flex-1">
+                                        <p className="line-clamp-2 text-base font-bold text-slate-900 sm:text-lg">
+                                            {p?.nome || "Produto"}
+                                        </p>
+                                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+                                            <span className="rounded-full bg-slate-100 px-3 py-1">
+                                                Código: <b>{p?.codigo_barras || "—"}</b>
+                                            </span>
+                                            <span className="rounded-full bg-slate-100 px-3 py-1">
+                                                Saldo total: <b>{totalSaldo}</b>
+                                            </span>
+                                            <span className="rounded-full bg-slate-100 px-3 py-1">
+                                                Atualizado: <b>{p?.atualizado_em ? fmtDateTime(p.atualizado_em) : "—"}</b>
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200 p-3">
-                                <p className="text-sm font-semibold text-slate-900">Cadastro</p>
-
-                                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <Field label="Nome">
-                                        <TextInput value={editNome} onChange={(e) => setEditNome(e.target.value)} />
-                                    </Field>
-
-                                    <Field label="Valor (R$)">
-                                        <TextInput
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={editValor}
-                                            onChange={(e) => setEditValor(maskBRLInput(e.target.value))}
-                                            placeholder="R$ 0,00"
-                                        />
-                                    </Field>
-
-                                    <Field label="Preço de Custo (R$)">
-                                        <TextInput
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={editPrecoCusto}
-                                            onChange={(e) => setEditPrecoCusto(maskBRLInput(e.target.value))}
-                                            placeholder="R$ 0,00"
-                                        />
-                                    </Field>
-
-                                    {/* ✅ NOVO: DESCRIÇÃO */}
-                                    <div className="sm:col-span-2">
-                                        <Field label="Descrição (opcional)" hint="Texto livre, aparece no cadastro do produto.">
-                                            <TextArea
-                                                value={editDescricao}
-                                                onChange={(e) => setEditDescricao(e.target.value)}
-                                                placeholder="Ex: Observações do produto, especificações, etc..."
-                                                rows={3}
-                                            />
-                                        </Field>
-                                    </div>
-
-                                    <Field label="Mínimo (padrão do produto)">
-                                        <TextInput
-                                            type="number"
-                                            min={0}
-                                            value={editMin}
-                                            onChange={(e) => setEditMin(clampInt(e.target.value))}
-                                        />
-                                    </Field>
-
-                                    <Field label="Máximo (padrão do produto)">
-                                        <TextInput
-                                            type="number"
-                                            min={0}
-                                            value={editMax}
-                                            onChange={(e) => setEditMax(clampInt(e.target.value))}
-                                        />
-                                    </Field>
-
-                                    {/* ✅ NOVO: Min/Max por depósito */}
-                                    <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                        <p className="text-sm font-semibold text-slate-900">Mín/Máx por depósito</p>
-                                        <p className="mt-1 text-xs text-slate-600">
-                                            Escolha o depósito e ajuste o mínimo/máximo daquele estoque.
-                                        </p>
-
-                                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                            <Field label="Depósito">
-                                                <Select
-                                                    value={editMinMaxDepId}
-                                                    onChange={(e) => setEditMinMaxDepId(Number(e.target.value))}
-                                                >
-                                                    <option value={0} disabled>Selecionar...</option>
-                                                    {depositos.map((d) => (
-                                                        <option key={d.id} value={d.id}>
-                                                            {d.nome}
-                                                        </option>
-                                                    ))}
-                                                </Select>
-                                            </Field>
-
-                                            <Field label="Mínimo (depósito)">
-                                                <TextInput
-                                                    type="number"
-                                                    min={0}
-                                                    value={editMinDep}
-                                                    onChange={(e) => setEditMinDep(clampInt(e.target.value))}
-                                                    disabled={!editMinMaxDepId}
-                                                />
-                                            </Field>
-
-                                            <Field label="Máximo (depósito)">
-                                                <TextInput
-                                                    type="number"
-                                                    min={0}
-                                                    value={editMaxDep}
-                                                    onChange={(e) => setEditMaxDep(clampInt(e.target.value))}
-                                                    disabled={!editMinMaxDepId}
-                                                />
-                                            </Field>
-                                        </div>
-
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            <Button
-                                                variant="soft"
+                            <div className="border-b border-slate-200 bg-slate-50 px-3 pt-3 sm:px-5">
+                                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                                    {tabs.map((item) => {
+                                        const active = prodEditTab === item.key;
+                                        return (
+                                            <button
+                                                key={item.key}
                                                 type="button"
-                                                onClick={salvarMinMaxDoDeposito}
-                                                disabled={!prodEditId || !editMinMaxDepId || minMaxBusy}
+                                                onClick={() => setProdEditTab(item.key)}
+                                                className={[
+                                                    "rounded-t-2xl border px-3 py-3 text-left transition",
+                                                    active
+                                                        ? "border-slate-200 border-b-white bg-white text-slate-950 shadow-sm"
+                                                        : "border-transparent bg-transparent text-slate-600 hover:bg-white/70 hover:text-slate-900",
+                                                ].join(" ")}
                                             >
-                                                {minMaxBusy ? "Salvando..." : "Salvar mín/máx deste depósito"}
-                                            </Button>
+                                                <span className="block text-sm font-bold">
+                                                    {item.label}
+                                                </span>
+                                                <span className="mt-1 hidden text-[11px] leading-4 text-slate-500 sm:block">
+                                                    {item.description}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
 
-                                            <Button
-                                                variant="ghost"
-                                                type="button"
-                                                onClick={() => {
-                                                    setEditMinMaxDepId(0);
-                                                    setEditMinDep(0);
-                                                    setEditMaxDep(0);
-                                                }}
-                                            >
-                                                Limpar
-                                            </Button>
-                                        </div>
-                                    </div>
+                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+                                {prodEditTab === "DADOS" ? (
+                                    <div className="space-y-5">
+                                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                                <div className="sm:col-span-2">
+                                                    <Field label="Nome">
+                                                        <TextInput
+                                                            value={editNome}
+                                                            onChange={(e) =>
+                                                                setEditNome(e.target.value)
+                                                            }
+                                                        />
+                                                    </Field>
+                                                </div>
 
-                                    <Field label="Categoria">
-                                        <Select value={editCatId} onChange={(e) => setEditCatId(Number(e.target.value))}>
-                                            <option value={0}>—</option>
-                                            {categorias.map((c) => (
-                                                <option key={c.id} value={c.id}>
-                                                    {c.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
+                                                <div className="sm:col-span-2">
+                                                    <Field
+                                                        label="Descrição"
+                                                        hint="Informações, observações e especificações do produto."
+                                                    >
+                                                        <TextArea
+                                                            value={editDescricao}
+                                                            onChange={(e) =>
+                                                                setEditDescricao(
+                                                                    e.target.value
+                                                                )
+                                                            }
+                                                            placeholder="Descreva o produto..."
+                                                            rows={5}
+                                                        />
+                                                    </Field>
+                                                </div>
 
-                                    <Field label="Fabricante">
-                                        <Select value={editFabId} onChange={(e) => setEditFabId(Number(e.target.value))}>
-                                            <option value={0}>—</option>
-                                            {fabricantes.map((f) => (
-                                                <option key={f.id} value={f.id}>
-                                                    {f.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
+                                                <Field label="Categoria">
+                                                    <Select
+                                                        value={editCatId}
+                                                        onChange={(e) =>
+                                                            setEditCatId(
+                                                                Number(e.target.value)
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value={0}>—</option>
+                                                        {categorias.map((c) => (
+                                                            <option key={c.id} value={c.id}>
+                                                                {c.nome}
+                                                            </option>
+                                                        ))}
+                                                    </Select>
+                                                </Field>
 
-                                    <Field label="Classificação">
-                                        <Select value={editClassId} onChange={(e) => setEditClassId(Number(e.target.value))}>
-                                            <option value={0}>—</option>
-                                            {classificacoes.map((c) => (
-                                                <option key={c.id} value={c.id}>
-                                                    {c.nome}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
+                                                <Field label="Fabricante">
+                                                    <Select
+                                                        value={editFabId}
+                                                        onChange={(e) =>
+                                                            setEditFabId(
+                                                                Number(e.target.value)
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value={0}>—</option>
+                                                        {fabricantes.map((f) => (
+                                                            <option key={f.id} value={f.id}>
+                                                                {f.nome}
+                                                            </option>
+                                                        ))}
+                                                    </Select>
+                                                </Field>
 
-                                    <div className="sm:col-span-2">
-                                        <Field label="Galeria de fotos" hint="Envie uma foto principal e quantas fotos pequenas quiser.">
-                                            <input
-                                                type="file"
-                                                accept="image/*"
-                                                multiple
-                                                onChange={(e) => onProdutoFotoNova(e.target.files)}
-                                                className="block w-full text-sm text-slate-700"
-                                            />
-                                        </Field>
-
-                                        <div className="mt-3">
-                                            <p className="mb-2 text-xs font-medium text-slate-700">Foto principal</p>
-
-                                            <div className="h-28 w-28 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                                                {fotoPreview ? (
-                                                    <img src={fotoPreview} alt="Foto principal" className="h-28 w-28 object-cover" />
-                                                ) : (
-                                                    <div className="flex h-28 w-28 items-center justify-center text-2xl">🖼️</div>
-                                                )}
+                                                <Field label="Classificação">
+                                                    <Select
+                                                        value={editClassId}
+                                                        onChange={(e) =>
+                                                            setEditClassId(
+                                                                Number(e.target.value)
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value={0}>—</option>
+                                                        {classificacoes.map((c) => (
+                                                            <option key={c.id} value={c.id}>
+                                                                {c.nome}
+                                                            </option>
+                                                        ))}
+                                                    </Select>
+                                                </Field>
                                             </div>
+                                        </section>
 
-                                            <div className="mt-2 flex flex-wrap gap-2">
+                                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-slate-900">
+                                                        Fotos do produto
+                                                    </h3>
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        Defina uma foto principal e mantenha as demais na galeria.
+                                                    </p>
+                                                </div>
+
                                                 {fotoPreview ? (
                                                     <Button
                                                         variant="ghost"
                                                         type="button"
                                                         onClick={() => {
                                                             setImgUrl(fotoPreview);
-                                                            setImgTitle(p?.nome || "Imagem do produto");
+                                                            setImgTitle(
+                                                                p?.nome ||
+                                                                "Imagem do produto"
+                                                            );
                                                             setImgOpen(true);
                                                         }}
                                                     >
-                                                        Ver imagem principal
+                                                        Ampliar principal
                                                     </Button>
                                                 ) : null}
                                             </div>
-                                        </div>
 
-                                        {(editFotosExistentes.length > 0 || editFotosNovas.length > 0) ? (
                                             <div className="mt-4">
-                                                <p className="mb-2 text-xs font-medium text-slate-700">Miniaturas</p>
+                                                <Field
+                                                    label="Adicionar fotos"
+                                                    hint="É possível selecionar vários arquivos de uma vez."
+                                                >
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        multiple
+                                                        onChange={(e) =>
+                                                            onProdutoFotoNova(
+                                                                e.target.files
+                                                            )
+                                                        }
+                                                        className="block w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-700"
+                                                    />
+                                                </Field>
+                                            </div>
 
-                                                <div className="flex flex-wrap gap-3">
-                                                    {editFotosExistentes.map((foto) => {
-                                                        const url = resolveProdutoFotoUrl(foto);
-                                                        const isPrincipal = Number(foto.is_principal || 0) === 1;
+                                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                                                {editFotosExistentes.map((foto) => {
+                                                    const url =
+                                                        resolveProdutoFotoUrl(foto);
+                                                    const isPrincipal =
+                                                        Number(
+                                                            foto.is_principal || 0
+                                                        ) === 1;
 
-                                                        return (
-                                                            <div key={`exist_${foto.id}`} className="w-[110px] rounded-2xl border border-slate-200 bg-white p-2">
-                                                                <div className="h-20 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                                                                    {url ? (
-                                                                        <img src={url} alt="Foto do produto" className="h-20 w-full object-cover" />
-                                                                    ) : (
-                                                                        <div className="flex h-20 items-center justify-center text-lg">🖼️</div>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="mt-2 flex flex-col gap-1">
-                                                                    <Button
-                                                                        variant={isPrincipal ? "solid" : "ghost"}
-                                                                        type="button"
-                                                                        className="px-2 py-1 text-xs"
-                                                                        onClick={() => marcarFotoPrincipalExistente(foto.id)}
-                                                                    >
-                                                                        {isPrincipal ? "Principal" : "Tornar principal"}
-                                                                    </Button>
-
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        type="button"
-                                                                        className="px-2 py-1 text-xs"
-                                                                        onClick={() => removerFotoExistente(foto.id)}
-                                                                    >
-                                                                        Remover
-                                                                    </Button>
-                                                                </div>
+                                                    return (
+                                                        <div
+                                                            key={`exist_${foto.id}`}
+                                                            className={[
+                                                                "overflow-hidden rounded-2xl border bg-white p-2",
+                                                                isPrincipal
+                                                                    ? "border-sky-300 ring-2 ring-sky-100"
+                                                                    : "border-slate-200",
+                                                            ].join(" ")}
+                                                        >
+                                                            <div className="aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                                                {url ? (
+                                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                                    <img
+                                                                        src={url}
+                                                                        alt="Foto do produto"
+                                                                        className="h-full w-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="flex h-full items-center justify-center text-xl">
+                                                                        🖼️
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        );
-                                                    })}
-
-                                                    {editFotosNovas.map((foto) => {
-                                                        const isPrincipal = Number(foto.is_principal) === 1;
-
-                                                        return (
-                                                            <div key={`new_${foto.temp_id}`} className="w-[110px] rounded-2xl border border-slate-200 bg-white p-2">
-                                                                <div className="h-20 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                                                                    <img src={foto.foto_url} alt="Nova foto" className="h-20 w-full object-cover" />
-                                                                </div>
-
-                                                                <div className="mt-2 flex flex-col gap-1">
-                                                                    <Button
-                                                                        variant={isPrincipal ? "solid" : "ghost"}
-                                                                        type="button"
-                                                                        className="px-2 py-1 text-xs"
-                                                                        onClick={() => marcarFotoPrincipalNova(foto.temp_id)}
-                                                                    >
-                                                                        {isPrincipal ? "Principal" : "Tornar principal"}
-                                                                    </Button>
-
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        type="button"
-                                                                        className="px-2 py-1 text-xs"
-                                                                        onClick={() => removerFotoNova(foto.temp_id)}
-                                                                    >
-                                                                        Remover
-                                                                    </Button>
-                                                                </div>
+                                                            <div className="mt-2 space-y-1">
+                                                                <Button
+                                                                    variant={
+                                                                        isPrincipal
+                                                                            ? "solid"
+                                                                            : "ghost"
+                                                                    }
+                                                                    type="button"
+                                                                    className="w-full px-2 py-1 text-xs"
+                                                                    onClick={() =>
+                                                                        marcarFotoPrincipalExistente(
+                                                                            foto.id
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    {isPrincipal
+                                                                        ? "Principal"
+                                                                        : "Tornar principal"}
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    type="button"
+                                                                    className="w-full px-2 py-1 text-xs"
+                                                                    onClick={() =>
+                                                                        removerFotoExistente(
+                                                                            foto.id
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Remover
+                                                                </Button>
                                                             </div>
-                                                        );
-                                                    })}
+                                                        </div>
+                                                    );
+                                                })}
+
+                                                {editFotosNovas.map((foto) => {
+                                                    const isPrincipal =
+                                                        Number(foto.is_principal) === 1;
+                                                    return (
+                                                        <div
+                                                            key={`new_${foto.temp_id}`}
+                                                            className={[
+                                                                "overflow-hidden rounded-2xl border bg-white p-2",
+                                                                isPrincipal
+                                                                    ? "border-sky-300 ring-2 ring-sky-100"
+                                                                    : "border-slate-200",
+                                                            ].join(" ")}
+                                                        >
+                                                            <div className="aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                <img
+                                                                    src={foto.foto_url}
+                                                                    alt="Nova foto"
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            </div>
+                                                            <div className="mt-2 space-y-1">
+                                                                <Button
+                                                                    variant={
+                                                                        isPrincipal
+                                                                            ? "solid"
+                                                                            : "ghost"
+                                                                    }
+                                                                    type="button"
+                                                                    className="w-full px-2 py-1 text-xs"
+                                                                    onClick={() =>
+                                                                        marcarFotoPrincipalNova(
+                                                                            foto.temp_id
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    {isPrincipal
+                                                                        ? "Principal"
+                                                                        : "Tornar principal"}
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    type="button"
+                                                                    className="w-full px-2 py-1 text-xs"
+                                                                    onClick={() =>
+                                                                        removerFotoNova(
+                                                                            foto.temp_id
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Remover
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+
+                                                {!editFotosExistentes.length &&
+                                                    !editFotosNovas.length ? (
+                                                    <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                                                        Este produto ainda não possui fotos.
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </section>
+                                    </div>
+                                ) : null}
+
+                                {prodEditTab === "ESTOQUE" ? (
+                                    <div className="space-y-5">
+                                        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                            <div className="flex flex-col gap-2 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-slate-900">
+                                                        Saldo por depósito
+                                                    </h3>
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        Quantidade atual deste produto em cada estoque cadastrado.
+                                                    </p>
+                                                </div>
+                                                <div className="rounded-2xl bg-slate-900 px-4 py-2 text-white">
+                                                    <p className="text-[10px] uppercase tracking-wide text-slate-300">
+                                                        Total
+                                                    </p>
+                                                    <p className="text-xl font-bold">
+                                                        {totalSaldo}
+                                                    </p>
                                                 </div>
                                             </div>
-                                        ) : null}
-                                    </div>
-                                </div>
 
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    <Button onClick={salvarCadastroProduto} disabled={prodBusy || !editNome.trim()} type="button">
-                                        Salvar cadastro
-                                    </Button>
-                                    <Button variant="ghost" onClick={() => setProdEditOpen(false)} disabled={prodBusy} type="button">
-                                        Fechar
-                                    </Button>
-                                </div>
+                                            {saldoRows.length === 0 ? (
+                                                <div className="p-6 text-center text-sm text-slate-500">
+                                                    Nenhum saldo por depósito foi encontrado.
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="hidden overflow-x-auto md:block">
+                                                        <table className="w-full min-w-[680px] border-collapse">
+                                                            <thead className="bg-slate-50">
+                                                                <tr className="text-left text-xs font-semibold text-slate-600">
+                                                                    <th className="px-4 py-3">
+                                                                        Depósito
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Quantidade
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Mínimo
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Máximo
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Reposição
+                                                                    </th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {saldoRows.map(
+                                                                    ({
+                                                                        saldo,
+                                                                        deposito,
+                                                                    }) => {
+                                                                        const qtd =
+                                                                            clampInt(
+                                                                                saldo.quantidade
+                                                                            );
+                                                                        const min =
+                                                                            clampInt(
+                                                                                saldo.minimo
+                                                                            );
+                                                                        const max =
+                                                                            clampInt(
+                                                                                saldo.maximo
+                                                                            );
+                                                                        const rep =
+                                                                            max > 0
+                                                                                ? Math.max(
+                                                                                    0,
+                                                                                    max - qtd
+                                                                                )
+                                                                                : 0;
+                                                                        return (
+                                                                            <tr
+                                                                                key={
+                                                                                    saldo.id
+                                                                                }
+                                                                                className="border-t border-slate-100"
+                                                                            >
+                                                                                <td className="px-4 py-3 text-sm font-semibold text-slate-900">
+                                                                                    {
+                                                                                        deposito.nome
+                                                                                    }
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-right text-base font-bold text-slate-900">
+                                                                                    {qtd}
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-right text-sm text-slate-600">
+                                                                                    {min}
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-right text-sm text-slate-600">
+                                                                                    {max}
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-right text-sm text-slate-600">
+                                                                                    {rep}
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    }
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 gap-3 p-4 md:hidden">
+                                                        {saldoRows.map(
+                                                            ({ saldo, deposito }) => {
+                                                                const qtd = clampInt(
+                                                                    saldo.quantidade
+                                                                );
+                                                                const min = clampInt(
+                                                                    saldo.minimo
+                                                                );
+                                                                const max = clampInt(
+                                                                    saldo.maximo
+                                                                );
+                                                                const rep =
+                                                                    max > 0
+                                                                        ? Math.max(
+                                                                            0,
+                                                                            max - qtd
+                                                                        )
+                                                                        : 0;
+                                                                return (
+                                                                    <div
+                                                                        key={saldo.id}
+                                                                        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                                                                    >
+                                                                        <div className="flex items-start justify-between gap-3">
+                                                                            <div className="min-w-0">
+                                                                                <p className="break-words text-sm font-bold text-slate-900">
+                                                                                    {
+                                                                                        deposito.nome
+                                                                                    }
+                                                                                </p>
+                                                                                <p className="mt-1 text-xs text-slate-500">
+                                                                                    Mín {min} · Máx {max} · Rep {rep}
+                                                                                </p>
+                                                                            </div>
+                                                                            <div className="text-right">
+                                                                                <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                                                                                    Saldo
+                                                                                </p>
+                                                                                <p className="text-2xl font-bold text-slate-900">
+                                                                                    {qtd}
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </section>
+
+                                        <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                Mín/Máx por depósito
+                                            </h3>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Escolha um depósito para alterar os limites daquele estoque.
+                                            </p>
+
+                                            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                                                <Field label="Depósito">
+                                                    <Select
+                                                        value={editMinMaxDepId}
+                                                        onChange={(e) =>
+                                                            setEditMinMaxDepId(
+                                                                Number(e.target.value)
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value={0} disabled>
+                                                            Selecionar...
+                                                        </option>
+                                                        {depositos.map((d) => (
+                                                            <option key={d.id} value={d.id}>
+                                                                {d.nome}
+                                                            </option>
+                                                        ))}
+                                                    </Select>
+                                                </Field>
+
+                                                <Field label="Mínimo">
+                                                    <TextInput
+                                                        type="number"
+                                                        min={0}
+                                                        value={editMinDep}
+                                                        onChange={(e) =>
+                                                            setEditMinDep(
+                                                                clampInt(e.target.value)
+                                                            )
+                                                        }
+                                                        disabled={!editMinMaxDepId}
+                                                    />
+                                                </Field>
+
+                                                <Field label="Máximo">
+                                                    <TextInput
+                                                        type="number"
+                                                        min={0}
+                                                        value={editMaxDep}
+                                                        onChange={(e) =>
+                                                            setEditMaxDep(
+                                                                clampInt(e.target.value)
+                                                            )
+                                                        }
+                                                        disabled={!editMinMaxDepId}
+                                                    />
+                                                </Field>
+                                            </div>
+
+                                            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                                                <Button
+                                                    variant="solid"
+                                                    type="button"
+                                                    onClick={salvarMinMaxDoDeposito}
+                                                    disabled={
+                                                        !prodEditId ||
+                                                        !editMinMaxDepId ||
+                                                        minMaxBusy
+                                                    }
+                                                >
+                                                    {minMaxBusy
+                                                        ? "Salvando..."
+                                                        : "Salvar mín/máx do depósito"}
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setEditMinMaxDepId(0);
+                                                        setEditMinDep(0);
+                                                        setEditMaxDep(0);
+                                                    }}
+                                                >
+                                                    Limpar seleção
+                                                </Button>
+                                            </div>
+                                        </section>
+                                    </div>
+                                ) : null}
+
+                                {prodEditTab === "VALOR" ? (
+                                    <section className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                        <div className="rounded-2xl bg-slate-50 p-4">
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                                Valor atual
+                                            </p>
+                                            <p className="mt-2 text-3xl font-bold text-slate-900">
+                                                {editValor}
+                                            </p>
+                                        </div>
+
+                                        <div className="mt-5">
+                                            <Field
+                                                label="Valor do produto (R$)"
+                                                hint="Altere o preço de venda e salve as alterações."
+                                            >
+                                                <TextInput
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={editValor}
+                                                    onChange={(e) =>
+                                                        setEditValor(
+                                                            maskBRLInput(
+                                                                e.target.value
+                                                            )
+                                                        )
+                                                    }
+                                                    placeholder="R$ 0,00"
+                                                    className="py-3 text-lg font-semibold"
+                                                />
+                                            </Field>
+                                        </div>
+                                    </section>
+                                ) : null}
+
+                                {prodEditTab === "CUSTO" ? (
+                                    <div className="space-y-5">
+                                        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:col-span-2">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                                    Preço de custo de referência
+                                                </p>
+                                                <p className="mt-2 text-3xl font-bold text-slate-900">
+                                                    {editPrecoCusto}
+                                                </p>
+                                                <p className="mt-2 text-xs leading-5 text-slate-500">
+                                                    Campo somente para visualização. Ele é atualizado pelas entradas de estoque e não pode ser alterado neste cadastro.
+                                                </p>
+                                            </div>
+                                            <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                                                    Entradas encontradas
+                                                </p>
+                                                <p className="mt-2 text-3xl font-bold">
+                                                    {prodEntradasCusto.length}
+                                                </p>
+                                            </div>
+                                        </section>
+
+                                        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                            <div className="flex flex-col gap-2 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-slate-900">
+                                                        Entradas e preços de custo por lote
+                                                    </h3>
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        Cada linha corresponde a uma entrada registrada para este produto.
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    type="button"
+                                                    onClick={() =>
+                                                        p &&
+                                                        carregarEntradasCustoProduto(
+                                                            p.id,
+                                                            p.codigo_barras || ""
+                                                        )
+                                                    }
+                                                    disabled={prodEntradasCustoLoading || !p}
+                                                >
+                                                    {prodEntradasCustoLoading
+                                                        ? "Atualizando..."
+                                                        : "Atualizar lista"}
+                                                </Button>
+                                            </div>
+
+                                            {prodEntradasCustoErr ? (
+                                                <div className="border-b border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
+                                                    {prodEntradasCustoErr}
+                                                </div>
+                                            ) : null}
+
+                                            {prodEntradasCustoLoading ? (
+                                                <div className="p-8 text-center text-sm text-slate-500">
+                                                    Carregando entradas...
+                                                </div>
+                                            ) : prodEntradasCusto.length === 0 ? (
+                                                <div className="p-8 text-center text-sm text-slate-500">
+                                                    Nenhuma entrada com custo foi encontrada para este produto.
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="hidden overflow-x-auto md:block">
+                                                        <table className="w-full min-w-[860px] border-collapse">
+                                                            <thead className="bg-slate-50">
+                                                                <tr className="text-left text-xs font-semibold text-slate-600">
+                                                                    <th className="px-4 py-3">
+                                                                        Data
+                                                                    </th>
+                                                                    <th className="px-4 py-3">
+                                                                        Lote
+                                                                    </th>
+                                                                    <th className="px-4 py-3">
+                                                                        Depósito
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Quantidade
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Custo unitário
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Custo total
+                                                                    </th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {prodEntradasCusto.map(
+                                                                    (entrada) => (
+                                                                        <tr
+                                                                            key={entrada.id}
+                                                                            className="border-t border-slate-100"
+                                                                        >
+                                                                            <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
+                                                                                {fmtDateTime(
+                                                                                    entrada.criado_em
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm font-semibold text-slate-900">
+                                                                                {entrada.numero_lote_snapshot ||
+                                                                                    "—"}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm text-slate-700">
+                                                                                {entrada.deposito_destino_nome ||
+                                                                                    "—"}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
+                                                                                {clampInt(
+                                                                                    entrada.quantidade
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-right text-sm text-slate-700">
+                                                                                {moneyBRL(
+                                                                                    Number(
+                                                                                        entrada.custo_unitario_snapshot
+                                                                                    ) || 0
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-right text-sm font-bold text-slate-900">
+                                                                                {moneyBRL(
+                                                                                    Number(
+                                                                                        entrada.custo_total_snapshot
+                                                                                    ) || 0
+                                                                                )}
+                                                                            </td>
+                                                                        </tr>
+                                                                    )
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 gap-3 p-4 md:hidden">
+                                                        {prodEntradasCusto.map(
+                                                            (entrada) => (
+                                                                <div
+                                                                    key={entrada.id}
+                                                                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                                                                >
+                                                                    <div className="flex items-start justify-between gap-3">
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-sm font-bold text-slate-900">
+                                                                                Lote {entrada.numero_lote_snapshot || "—"}
+                                                                            </p>
+                                                                            <p className="mt-1 text-xs text-slate-500">
+                                                                                {fmtDateTime(
+                                                                                    entrada.criado_em
+                                                                                )}
+                                                                            </p>
+                                                                            <p className="mt-1 break-words text-xs text-slate-600">
+                                                                                {entrada.deposito_destino_nome ||
+                                                                                    "Depósito não informado"}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                                                                                Quantidade
+                                                                            </p>
+                                                                            <p className="text-xl font-bold text-slate-900">
+                                                                                {clampInt(
+                                                                                    entrada.quantidade
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3">
+                                                                        <div>
+                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                                                                                Unitário
+                                                                            </p>
+                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                {moneyBRL(
+                                                                                    Number(
+                                                                                        entrada.custo_unitario_snapshot
+                                                                                    ) || 0
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                                                                                Total
+                                                                            </p>
+                                                                            <p className="mt-1 text-sm font-bold text-slate-900">
+                                                                                {moneyBRL(
+                                                                                    Number(
+                                                                                        entrada.custo_total_snapshot
+                                                                                    ) || 0
+                                                                                )}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </section>
+                                    </div>
+                                ) : null}
                             </div>
 
-
+                            <div className="border-t border-slate-200 bg-white p-4 sm:p-5">
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="text-xs text-slate-500">
+                                        O preço de custo é somente leitura. Os demais dados são salvos pelo botão ao lado.
+                                    </p>
+                                    <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => setProdEditOpen(false)}
+                                            disabled={prodBusy}
+                                            type="button"
+                                        >
+                                            Fechar
+                                        </Button>
+                                        <Button
+                                            onClick={salvarCadastroProduto}
+                                            disabled={prodBusy || !editNome.trim()}
+                                            type="button"
+                                        >
+                                            {prodBusy
+                                                ? "Salvando..."
+                                                : "Salvar alterações"}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     );
                 })()}
@@ -8408,11 +9188,13 @@ export default function Page() {
             <FilterPanelModal
                 open={estoqueFilterOpen}
                 onClose={() => setEstoqueFilterOpen(false)}
-                title="Filtros do estoque"
+                title="Filtros de produtos"
+                subtitle="As listas ficam abertas e maiores para facilitar a seleção no computador e no celular."
+                panelClassName="sm:max-w-7xl"
                 footer={
                     <>
                         <div className="mb-3 text-xs text-slate-600">
-                            Resultado atual: <b>{estoqueRows.length}</b> linha(s)
+                            Resultado atual: <b>{estoqueRows.length}</b> item(ns)
                         </div>
 
                         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -8437,62 +9219,75 @@ export default function Page() {
                     </>
                 }
             >
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <Field label="Filtros rápidos">
-                        <div className="grid min-h-[42px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:grid-cols-2">
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
-                                <input
-                                    type="checkbox"
-                                    checked={onlyLow}
-                                    onChange={(e) => setOnlyLow(e.target.checked)}
-                                    className="h-4 w-4"
-                                />
-                                Somente alerta
-                            </label>
+                <div className="space-y-5">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
+                        <Field label="Pesquisar produto">
+                            <TextInput
+                                value={qEstoque}
+                                onChange={(e) => setQEstoque(e.target.value)}
+                                placeholder="Nome, código de barras, categoria, fabricante ou classificação..."
+                                className="py-3"
+                            />
+                        </Field>
 
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
-                                <input
-                                    type="checkbox"
-                                    checked={onlyPositive}
-                                    onChange={(e) => setOnlyPositive(e.target.checked)}
-                                    className="h-4 w-4"
-                                />
-                                Somente saldo &gt; 0
-                            </label>
-                        </div>
-                    </Field>
+                        <Field label="Filtros rápidos">
+                            <div className="grid min-h-[46px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:grid-cols-2">
+                                <label className="flex min-h-8 cursor-pointer items-center gap-3 text-sm font-medium text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={onlyLow}
+                                        onChange={(e) => setOnlyLow(e.target.checked)}
+                                        className="h-5 w-5 accent-sky-600"
+                                    />
+                                    Somente alerta
+                                </label>
 
-                    <MultiSelectDropdown
-                        label="Depósito"
-                        options={estoqueFiltroOptions.depositos}
-                        selectedIds={depFiltroEstoque}
-                        onChangeIds={setDepFiltroEstoque}
-                        allLabel="Todos"
-                    />
+                                <label className="flex min-h-8 cursor-pointer items-center gap-3 text-sm font-medium text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={onlyPositive}
+                                        onChange={(e) => setOnlyPositive(e.target.checked)}
+                                        className="h-5 w-5 accent-sky-600"
+                                    />
+                                    Somente saldo &gt; 0
+                                </label>
+                            </div>
+                        </Field>
+                    </div>
 
-                    <MultiSelectDropdown
-                        label="Categoria"
-                        options={estoqueFiltroOptions.categorias}
-                        selectedIds={catFiltroEstoque}
-                        onChangeIds={setCatFiltroEstoque}
-                        allLabel="Todas"
-                    />
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <FilterOptionPanel
+                            title="Depósitos"
+                            options={estoqueFiltroOptions.depositos}
+                            selectedIds={depFiltroEstoque}
+                            onChangeIds={setDepFiltroEstoque}
+                            allLabel="Todos os depósitos"
+                        />
 
-                    <MultiSelectDropdown
-                        label="Fabricante"
-                        options={estoqueFiltroOptions.fabricantes}
-                        selectedIds={fabFiltroEstoque}
-                        onChangeIds={setFabFiltroEstoque}
-                        allLabel="Todos"
-                    />
+                        <FilterOptionPanel
+                            title="Categorias"
+                            options={estoqueFiltroOptions.categorias}
+                            selectedIds={catFiltroEstoque}
+                            onChangeIds={setCatFiltroEstoque}
+                            allLabel="Todas as categorias"
+                        />
 
-                    <MultiSelectDropdown
-                        label="Classificação"
-                        options={estoqueFiltroOptions.classificacoes}
-                        selectedIds={classFiltroEstoque}
-                        onChangeIds={setClassFiltroEstoque}
-                        allLabel="Todas"
-                    />
+                        <FilterOptionPanel
+                            title="Fabricantes"
+                            options={estoqueFiltroOptions.fabricantes}
+                            selectedIds={fabFiltroEstoque}
+                            onChangeIds={setFabFiltroEstoque}
+                            allLabel="Todos os fabricantes"
+                        />
+
+                        <FilterOptionPanel
+                            title="Classificações"
+                            options={estoqueFiltroOptions.classificacoes}
+                            selectedIds={classFiltroEstoque}
+                            onChangeIds={setClassFiltroEstoque}
+                            allLabel="Todas as classificações"
+                        />
+                    </div>
                 </div>
             </FilterPanelModal>
 
