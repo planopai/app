@@ -108,6 +108,64 @@ type HistoricoResp = {
 
 type ProdutoEditTab = "DADOS" | "ESTOQUE" | "VALOR" | "CUSTO";
 
+
+type CustoAjusteTipo = "REFERENCIA" | "LOTE" | "REAVALIACAO";
+
+type CustoProdutoLote = {
+    id: ID;
+    produto_id: ID;
+    deposito_id: ID;
+    deposito_nome?: string | null;
+    numero_lote: string;
+    quantidade_inicial: number;
+    quantidade_atual: number;
+    custo_unitario: string | number;
+    custo_entrada_original?: string | number | null;
+    criado_em: string;
+    origem_movimento_id?: ID | null;
+};
+
+type CustoAjusteHistorico = {
+    id: number;
+    operacao_uuid: string;
+    produto_id: ID;
+    tipo: CustoAjusteTipo;
+    custo_referencia_anterior: string | number;
+    custo_referencia_novo: string | number;
+    novo_custo: string | number;
+    motivo: string;
+    observacao?: string | null;
+    usuario_id: ID;
+    usuario_nome?: string | null;
+    criado_em: string;
+    lotes_afetados: number;
+    quantidade_afetada: number;
+    valor_anterior: string | number;
+    valor_novo: string | number;
+    valor_diferenca: string | number;
+};
+
+type CustoProdutoDetalheResp = {
+    ok: boolean;
+    produto?: {
+        id: ID;
+        nome: string;
+        codigo_barras: string;
+        preco_custo: string | number;
+    };
+    resumo?: {
+        quantidade_disponivel: number;
+        lotes_disponiveis: number;
+        valor_estoque: string | number;
+        custo_medio: string | number;
+    };
+    lotes?: CustoProdutoLote[];
+    entradas?: HistoricoRow[];
+    ajustes?: CustoAjusteHistorico[];
+    msg?: string;
+    need_login?: 1;
+};
+
 type EstoqueColumnKey =
     | "produto"
     | "categoria"
@@ -437,6 +495,23 @@ function parseBRLToNumber(brlText: string) {
 function maskBRLInput(raw: string) {
     const digits = (raw || "").replace(/\D/g, "");
     return maskBRLFromDigits(digits);
+}
+
+
+function createOperationUuid() {
+    try {
+        if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+            return crypto.randomUUID();
+        }
+    } catch {
+        // fallback abaixo
+    }
+
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+        const random = Math.floor(Math.random() * 16);
+        const value = char === "x" ? random : (random & 0x3) | 0x8;
+        return value.toString(16);
+    });
 }
 
 function escapeCsvCell(v: any, sep = ";") {
@@ -1753,6 +1828,17 @@ export default function Page() {
     const [prodEntradasCusto, setProdEntradasCusto] = useState<HistoricoRow[]>([]);
     const [prodEntradasCustoLoading, setProdEntradasCustoLoading] = useState(false);
     const [prodEntradasCustoErr, setProdEntradasCustoErr] = useState("");
+
+    const [prodCustoDetalhe, setProdCustoDetalhe] = useState<CustoProdutoDetalheResp | null>(null);
+    const [custoAjusteOpen, setCustoAjusteOpen] = useState(false);
+    const [custoAjusteTipo, setCustoAjusteTipo] = useState<CustoAjusteTipo>("REFERENCIA");
+    const [custoAjusteLoteId, setCustoAjusteLoteId] = useState<ID>(0);
+    const [custoAjusteDepositoIds, setCustoAjusteDepositoIds] = useState<ID[]>([]);
+    const [custoAjusteNovo, setCustoAjusteNovo] = useState<string>("R$ 0,00");
+    const [custoAjusteMotivo, setCustoAjusteMotivo] = useState("");
+    const [custoAjusteObservacao, setCustoAjusteObservacao] = useState("");
+    const [custoAjusteAtualizarReferencia, setCustoAjusteAtualizarReferencia] = useState(true);
+    const [custoAjusteBusy, setCustoAjusteBusy] = useState(false);
 
     // campos do cadastro
     const [editNome, setEditNome] = useState("");
@@ -4140,43 +4226,137 @@ export default function Page() {
 
     // ======= PRODUTO EDITOR =======
 
-    async function carregarEntradasCustoProduto(produtoId: ID, codigoBarras: string) {
+    async function carregarEntradasCustoProduto(produtoId: ID, _codigoBarras = "") {
         setProdEntradasCustoLoading(true);
         setProdEntradasCustoErr("");
         setProdEntradasCusto([]);
+        setProdCustoDetalhe(null);
 
         try {
-            const resp = await apiGet<HistoricoResp>({
-                historico: 1,
-                tipo: "ENTRADA",
-                q: codigoBarras,
-                limit: 500,
+            const resp = await apiGet<CustoProdutoDetalheResp>({
+                action: "custo_produto_detalhe",
+                produto_id: produtoId,
                 _ts: Date.now(),
             });
 
             if (!resp.ok) {
-                throw new Error(resp.msg || "Falha ao carregar as entradas do produto.");
+                throw new Error(resp.msg || "Falha ao carregar os custos do produto.");
             }
 
-            const rows = (resp.rows || [])
-                .filter(
-                    (row) =>
-                        row.tipo === "ENTRADA" &&
-                        Number(row.produto_id) === Number(produtoId)
-                )
-                .sort(
-                    (a, b) =>
-                        new Date(b.criado_em).getTime() -
-                        new Date(a.criado_em).getTime()
-                );
+            const entradas = (resp.entradas || []).sort(
+                (a, b) =>
+                    new Date(b.criado_em).getTime() -
+                    new Date(a.criado_em).getTime()
+            );
 
-            setProdEntradasCusto(rows);
+            setProdCustoDetalhe(resp);
+            setProdEntradasCusto(entradas);
+
+            const precoReferencia = Number(resp.produto?.preco_custo ?? 0) || 0;
+            setEditPrecoCusto(
+                maskBRLFromDigits(
+                    String(Math.round(Math.max(0, precoReferencia) * 100))
+                )
+            );
         } catch (e: any) {
             setProdEntradasCustoErr(
-                e?.message || "Erro ao carregar as entradas do produto."
+                e?.message || "Erro ao carregar os custos do produto."
             );
         } finally {
             setProdEntradasCustoLoading(false);
+        }
+    }
+
+    function abrirAjusteCusto(tipo: CustoAjusteTipo = "REFERENCIA", loteId: ID = 0) {
+        const p = prodEditId ? prodById.get(prodEditId) : null;
+        if (!p) return;
+
+        const lotesDisponiveis = (prodCustoDetalhe?.lotes || []).filter(
+            (lote) => clampInt(lote.quantidade_atual) > 0
+        );
+        const loteSelecionado = loteId
+            ? lotesDisponiveis.find((lote) => Number(lote.id) === Number(loteId))
+            : lotesDisponiveis[0];
+
+        let valorInicial = Number(p.preco_custo) || 0;
+        if (tipo === "LOTE" && loteSelecionado) {
+            valorInicial = Number(loteSelecionado.custo_unitario) || 0;
+        } else if (tipo === "REAVALIACAO") {
+            valorInicial =
+                Number(prodCustoDetalhe?.resumo?.custo_medio) ||
+                Number(p.preco_custo) ||
+                0;
+        }
+
+        setCustoAjusteTipo(tipo);
+        setCustoAjusteLoteId(loteSelecionado?.id || 0);
+        setCustoAjusteDepositoIds([]);
+        setCustoAjusteNovo(
+            maskBRLFromDigits(
+                String(Math.round(Math.max(0, valorInicial) * 100))
+            )
+        );
+        setCustoAjusteMotivo("");
+        setCustoAjusteObservacao("");
+        setCustoAjusteAtualizarReferencia(true);
+        setCustoAjusteOpen(true);
+    }
+
+    async function salvarAjusteCusto() {
+        if (!prodEditId) return;
+
+        const novoCusto = parseBRLToNumber(custoAjusteNovo);
+        if (!Number.isFinite(novoCusto) || novoCusto < 0) {
+            return alert("Informe um novo custo válido.");
+        }
+        if (custoAjusteMotivo.trim().length < 3) {
+            return alert("Informe o motivo do ajuste com pelo menos 3 caracteres.");
+        }
+        if (custoAjusteTipo === "LOTE" && !custoAjusteLoteId) {
+            return alert("Selecione o lote que será corrigido.");
+        }
+
+        setCustoAjusteBusy(true);
+        try {
+            const resp = await apiPost<{
+                ok: boolean;
+                msg?: string;
+                preco_custo_referencia?: number;
+            }>({
+                action: "custo_ajustar",
+                operacao_uuid: createOperationUuid(),
+                produto_id: prodEditId,
+                tipo: custoAjusteTipo,
+                lote_id: custoAjusteTipo === "LOTE" ? custoAjusteLoteId : null,
+                deposito_ids:
+                    custoAjusteTipo === "REAVALIACAO"
+                        ? custoAjusteDepositoIds
+                        : [],
+                novo_custo: novoCusto,
+                atualizar_referencia:
+                    custoAjusteTipo === "REFERENCIA"
+                        ? 1
+                        : custoAjusteAtualizarReferencia
+                            ? 1
+                            : 0,
+                motivo: custoAjusteMotivo.trim(),
+                observacao: custoAjusteObservacao.trim() || null,
+            });
+
+            if (!resp.ok) {
+                return alert(resp.msg || "Falha ao registrar o ajuste de custo.");
+            }
+
+            setCustoAjusteOpen(false);
+            await Promise.all([
+                carregarEntradasCustoProduto(prodEditId),
+                refreshInit(),
+            ]);
+            alert(resp.msg || "Ajuste de custo registrado.");
+        } catch (e: any) {
+            alert(e?.message || "Erro ao registrar o ajuste de custo.");
+        } finally {
+            setCustoAjusteBusy(false);
         }
     }
 
@@ -7389,47 +7569,67 @@ export default function Page() {
 
                                 {prodEditTab === "CUSTO" ? (
                                     <div className="space-y-5">
-                                        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:col-span-2">
-                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                                    Preço de custo de referência
+                                        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                    Custo de referência
                                                 </p>
-                                                <p className="mt-2 text-3xl font-bold text-slate-900">
+                                                <p className="mt-2 text-2xl font-bold text-slate-900">
                                                     {editPrecoCusto}
                                                 </p>
                                             </div>
-                                            <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
-                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-                                                    Entradas encontradas
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                    Custo médio disponível
                                                 </p>
-                                                <p className="mt-2 text-3xl font-bold">
-                                                    {prodEntradasCusto.length}
+                                                <p className="mt-2 text-2xl font-bold text-slate-900">
+                                                    {moneyBRL(Number(prodCustoDetalhe?.resumo?.custo_medio) || 0)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                    Valor em estoque
+                                                </p>
+                                                <p className="mt-2 text-2xl font-bold text-slate-900">
+                                                    {moneyBRL(Number(prodCustoDetalhe?.resumo?.valor_estoque) || 0)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
+                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                                                    Lotes disponíveis
+                                                </p>
+                                                <p className="mt-2 text-2xl font-bold">
+                                                    {clampInt(prodCustoDetalhe?.resumo?.lotes_disponiveis)}
                                                 </p>
                                             </div>
                                         </section>
 
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="text-sm text-slate-600">
+                                                Ajustes alteram somente custos futuros dos lotes ainda disponíveis; os movimentos já realizados permanecem preservados.
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                onClick={() => abrirAjusteCusto("REFERENCIA")}
+                                                disabled={!p || prodEntradasCustoLoading}
+                                                className="shrink-0"
+                                            >
+                                                Ajustar custo
+                                            </Button>
+                                        </div>
+
                                         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                                             <div className="flex flex-col gap-2 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-                                                <div>
-                                                    <h3 className="text-sm font-bold text-slate-900">
-                                                        Entradas e preços de custo por lote
-                                                    </h3>
-                                                </div>
+                                                <h3 className="text-sm font-bold text-slate-900">
+                                                    Entradas e preços de custo por lote
+                                                </h3>
                                                 <Button
                                                     variant="ghost"
                                                     type="button"
-                                                    onClick={() =>
-                                                        p &&
-                                                        carregarEntradasCustoProduto(
-                                                            p.id,
-                                                            p.codigo_barras || ""
-                                                        )
-                                                    }
+                                                    onClick={() => p && carregarEntradasCustoProduto(p.id)}
                                                     disabled={prodEntradasCustoLoading || !p}
                                                 >
-                                                    {prodEntradasCustoLoading
-                                                        ? "Atualizando..."
-                                                        : "Atualizar lista"}
+                                                    {prodEntradasCustoLoading ? "Atualizando..." : "Atualizar lista"}
                                                 </Button>
                                             </div>
 
@@ -7445,144 +7645,129 @@ export default function Page() {
                                                 </div>
                                             ) : prodEntradasCusto.length === 0 ? (
                                                 <div className="p-8 text-center text-sm text-slate-500">
-                                                    Nenhuma entrada com custo foi encontrada para este produto.
+                                                    Nenhuma entrada foi encontrada para este produto.
                                                 </div>
                                             ) : (
                                                 <>
                                                     <div className="hidden overflow-x-auto md:block">
-                                                        <table className="w-full min-w-[860px] border-collapse">
+                                                        <table className="w-full min-w-[960px] border-collapse">
                                                             <thead className="bg-slate-50">
                                                                 <tr className="text-left text-xs font-semibold text-slate-600">
-                                                                    <th className="px-4 py-3">
-                                                                        Data
-                                                                    </th>
-                                                                    <th className="px-4 py-3">
-                                                                        Lote
-                                                                    </th>
-                                                                    <th className="px-4 py-3">
-                                                                        Depósito
-                                                                    </th>
-                                                                    <th className="px-4 py-3 text-right">
-                                                                        Quantidade
-                                                                    </th>
-                                                                    <th className="px-4 py-3 text-right">
-                                                                        Custo unitário
-                                                                    </th>
-                                                                    <th className="px-4 py-3 text-right">
-                                                                        Custo total
-                                                                    </th>
+                                                                    <th className="px-4 py-3">Data</th>
+                                                                    <th className="px-4 py-3">Lote</th>
+                                                                    <th className="px-4 py-3">Depósito</th>
+                                                                    <th className="px-4 py-3 text-right">Entrada</th>
+                                                                    <th className="px-4 py-3 text-right">Disponível</th>
+                                                                    <th className="px-4 py-3 text-right">Custo da entrada</th>
+                                                                    <th className="px-4 py-3 text-right">Custo atual</th>
+                                                                    <th className="px-4 py-3 text-right">Ação</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
-                                                                {prodEntradasCusto.map(
-                                                                    (entrada) => (
-                                                                        <tr
-                                                                            key={entrada.id}
-                                                                            className="border-t border-slate-100"
-                                                                        >
-                                                                            <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
-                                                                                {fmtDateTime(
-                                                                                    entrada.criado_em
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-sm font-semibold text-slate-900">
-                                                                                {entrada.numero_lote_snapshot ||
-                                                                                    "—"}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-sm text-slate-700">
-                                                                                {entrada.deposito_destino_nome ||
-                                                                                    "—"}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">
-                                                                                {clampInt(
-                                                                                    entrada.quantidade
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-right text-sm text-slate-700">
-                                                                                {moneyBRL(
-                                                                                    Number(
-                                                                                        entrada.custo_unitario_snapshot
-                                                                                    ) || 0
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-right text-sm font-bold text-slate-900">
-                                                                                {moneyBRL(
-                                                                                    Number(
-                                                                                        entrada.custo_total_snapshot
-                                                                                    ) || 0
-                                                                                )}
+                                                                {prodEntradasCusto.map((entrada) => {
+                                                                    const lote = (prodCustoDetalhe?.lotes || []).find(
+                                                                        (item) => Number(item.id) === Number(entrada.lote_id)
+                                                                    );
+                                                                    const disponivel = clampInt(lote?.quantidade_atual);
+                                                                    const custoAtual = Number(lote?.custo_unitario ?? entrada.custo_unitario_snapshot) || 0;
+                                                                    return (
+                                                                        <tr key={entrada.id} className="border-t border-slate-100">
+                                                                            <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{fmtDateTime(entrada.criado_em)}</td>
+                                                                            <td className="px-4 py-3 text-sm font-semibold text-slate-900">{entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</td>
+                                                                            <td className="px-4 py-3 text-sm text-slate-700">{entrada.deposito_destino_nome || lote?.deposito_nome || "—"}</td>
+                                                                            <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">{clampInt(entrada.quantidade)}</td>
+                                                                            <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">{disponivel}</td>
+                                                                            <td className="px-4 py-3 text-right text-sm text-slate-700">{moneyBRL(Number(entrada.custo_unitario_snapshot) || 0)}</td>
+                                                                            <td className="px-4 py-3 text-right text-sm font-bold text-slate-900">{moneyBRL(custoAtual)}</td>
+                                                                            <td className="px-4 py-3 text-right">
+                                                                                <Button
+                                                                                    type="button"
+                                                                                    variant="ghost"
+                                                                                    disabled={!lote || disponivel <= 0}
+                                                                                    onClick={() => abrirAjusteCusto("LOTE", lote?.id || 0)}
+                                                                                >
+                                                                                    Corrigir lote
+                                                                                </Button>
                                                                             </td>
                                                                         </tr>
-                                                                    )
-                                                                )}
+                                                                    );
+                                                                })}
                                                             </tbody>
                                                         </table>
                                                     </div>
 
                                                     <div className="grid grid-cols-1 gap-3 p-4 md:hidden">
-                                                        {prodEntradasCusto.map(
-                                                            (entrada) => (
-                                                                <div
-                                                                    key={entrada.id}
-                                                                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                                                                >
+                                                        {prodEntradasCusto.map((entrada) => {
+                                                            const lote = (prodCustoDetalhe?.lotes || []).find(
+                                                                (item) => Number(item.id) === Number(entrada.lote_id)
+                                                            );
+                                                            const disponivel = clampInt(lote?.quantidade_atual);
+                                                            const custoAtual = Number(lote?.custo_unitario ?? entrada.custo_unitario_snapshot) || 0;
+                                                            return (
+                                                                <div key={entrada.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                                                                     <div className="flex items-start justify-between gap-3">
                                                                         <div className="min-w-0">
-                                                                            <p className="text-sm font-bold text-slate-900">
-                                                                                Lote {entrada.numero_lote_snapshot || "—"}
-                                                                            </p>
-                                                                            <p className="mt-1 text-xs text-slate-500">
-                                                                                {fmtDateTime(
-                                                                                    entrada.criado_em
-                                                                                )}
-                                                                            </p>
-                                                                            <p className="mt-1 break-words text-xs text-slate-600">
-                                                                                {entrada.deposito_destino_nome ||
-                                                                                    "Depósito não informado"}
-                                                                            </p>
+                                                                            <p className="break-words text-sm font-bold text-slate-900">Lote {entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</p>
+                                                                            <p className="mt-1 text-xs text-slate-500">{fmtDateTime(entrada.criado_em)}</p>
+                                                                            <p className="mt-1 break-words text-xs text-slate-600">{entrada.deposito_destino_nome || lote?.deposito_nome || "Depósito não informado"}</p>
                                                                         </div>
                                                                         <div className="text-right">
-                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
-                                                                                Quantidade
-                                                                            </p>
-                                                                            <p className="text-xl font-bold text-slate-900">
-                                                                                {clampInt(
-                                                                                    entrada.quantidade
-                                                                                )}
-                                                                            </p>
+                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">Disponível</p>
+                                                                            <p className="text-xl font-bold text-slate-900">{disponivel}</p>
                                                                         </div>
                                                                     </div>
                                                                     <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3">
                                                                         <div>
-                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
-                                                                                Unitário
-                                                                            </p>
-                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                {moneyBRL(
-                                                                                    Number(
-                                                                                        entrada.custo_unitario_snapshot
-                                                                                    ) || 0
-                                                                                )}
-                                                                            </p>
+                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">Custo entrada</p>
+                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">{moneyBRL(Number(entrada.custo_unitario_snapshot) || 0)}</p>
                                                                         </div>
                                                                         <div className="text-right">
-                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
-                                                                                Total
-                                                                            </p>
-                                                                            <p className="mt-1 text-sm font-bold text-slate-900">
-                                                                                {moneyBRL(
-                                                                                    Number(
-                                                                                        entrada.custo_total_snapshot
-                                                                                    ) || 0
-                                                                                )}
-                                                                            </p>
+                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">Custo atual</p>
+                                                                            <p className="mt-1 text-sm font-bold text-slate-900">{moneyBRL(custoAtual)}</p>
                                                                         </div>
                                                                     </div>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        className="mt-3 w-full"
+                                                                        disabled={!lote || disponivel <= 0}
+                                                                        onClick={() => abrirAjusteCusto("LOTE", lote?.id || 0)}
+                                                                    >
+                                                                        Corrigir custo deste lote
+                                                                    </Button>
                                                                 </div>
-                                                            )
-                                                        )}
+                                                            );
+                                                        })}
                                                     </div>
                                                 </>
+                                            )}
+                                        </section>
+
+                                        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                            <div className="border-b border-slate-100 p-4">
+                                                <h3 className="text-sm font-bold text-slate-900">Histórico de ajustes manuais</h3>
+                                            </div>
+                                            {(prodCustoDetalhe?.ajustes || []).length === 0 ? (
+                                                <div className="p-6 text-center text-sm text-slate-500">Nenhum ajuste manual registrado.</div>
+                                            ) : (
+                                                <div className="divide-y divide-slate-100">
+                                                    {(prodCustoDetalhe?.ajustes || []).map((ajuste) => (
+                                                        <div key={ajuste.id} className="grid gap-2 p-4 text-sm sm:grid-cols-[160px_1fr_auto] sm:items-center">
+                                                            <div className="text-slate-600">
+                                                                <p className="font-semibold text-slate-900">{ajuste.tipo === "REFERENCIA" ? "Custo de referência" : ajuste.tipo === "LOTE" ? "Correção de lote" : "Reavaliação do estoque"}</p>
+                                                                <p className="mt-1 text-xs">{fmtDateTime(ajuste.criado_em)}</p>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="break-words font-medium text-slate-900">{ajuste.motivo}</p>
+                                                                <p className="mt-1 text-xs text-slate-500">Por {ajuste.usuario_nome || `Usuário #${ajuste.usuario_id}`} • {clampInt(ajuste.quantidade_afetada)} unidade(s)</p>
+                                                            </div>
+                                                            <div className="text-left sm:text-right">
+                                                                <p className="font-bold text-slate-900">{moneyBRL(Number(ajuste.novo_custo) || 0)}</p>
+                                                                <p className={["mt-1 text-xs font-semibold", Number(ajuste.valor_diferenca) > 0 ? "text-emerald-700" : Number(ajuste.valor_diferenca) < 0 ? "text-rose-700" : "text-slate-500"].join(" ")}>{Number(ajuste.valor_diferenca) > 0 ? "+" : ""}{moneyBRL(Number(ajuste.valor_diferenca) || 0)}</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             )}
                                         </section>
                                     </div>
@@ -7609,6 +7794,243 @@ export default function Page() {
                                             : "Salvar alterações"}
                                     </Button>
                                 </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
+            {/* MODAL: AJUSTE MANUAL DE CUSTO */}
+            <Modal
+                open={custoAjusteOpen}
+                title="Ajustar preço de custo"
+                onClose={() => !custoAjusteBusy && setCustoAjusteOpen(false)}
+                closeOnEsc={!custoAjusteBusy}
+                panelClassName="sm:max-w-3xl"
+            >
+                {(() => {
+                    const lotesDisponiveis = (prodCustoDetalhe?.lotes || []).filter(
+                        (lote) => clampInt(lote.quantidade_atual) > 0
+                    );
+                    const loteSelecionado = lotesDisponiveis.find(
+                        (lote) => Number(lote.id) === Number(custoAjusteLoteId)
+                    );
+                    const depositosComLote = uniqOptions(
+                        lotesDisponiveis.map((lote) => ({
+                            id: Number(lote.deposito_id),
+                            nome: lote.deposito_nome || `Depósito #${lote.deposito_id}`,
+                        }))
+                    );
+                    const lotesReavaliacao = lotesDisponiveis.filter(
+                        (lote) =>
+                            !custoAjusteDepositoIds.length ||
+                            custoAjusteDepositoIds.includes(Number(lote.deposito_id))
+                    );
+                    const novoCusto = parseBRLToNumber(custoAjusteNovo);
+
+                    let quantidadeAfetada = 0;
+                    let valorAnterior = 0;
+                    if (custoAjusteTipo === "LOTE" && loteSelecionado) {
+                        quantidadeAfetada = clampInt(loteSelecionado.quantidade_atual);
+                        valorAnterior = quantidadeAfetada * (Number(loteSelecionado.custo_unitario) || 0);
+                    } else if (custoAjusteTipo === "REAVALIACAO") {
+                        quantidadeAfetada = lotesReavaliacao.reduce(
+                            (total, lote) => total + clampInt(lote.quantidade_atual),
+                            0
+                        );
+                        valorAnterior = lotesReavaliacao.reduce(
+                            (total, lote) =>
+                                total +
+                                clampInt(lote.quantidade_atual) *
+                                (Number(lote.custo_unitario) || 0),
+                            0
+                        );
+                    }
+                    const valorNovo = quantidadeAfetada * novoCusto;
+                    const diferenca = valorNovo - valorAnterior;
+
+                    return (
+                        <div className="space-y-5">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                {([
+                                    ["REFERENCIA", "Referência", "Altera somente o custo exibido como referência."],
+                                    ["LOTE", "Corrigir lote", "Altera o custo efetivo de um lote ainda disponível."],
+                                    ["REAVALIACAO", "Reavaliar estoque", "Aplica um novo custo aos lotes disponíveis selecionados."],
+                                ] as Array<[CustoAjusteTipo, string, string]>).map(([tipo, titulo, descricao]) => {
+                                    const active = custoAjusteTipo === tipo;
+                                    return (
+                                        <button
+                                            key={tipo}
+                                            type="button"
+                                            onClick={() => {
+                                                setCustoAjusteTipo(tipo);
+                                                if (tipo === "LOTE" && !custoAjusteLoteId) {
+                                                    setCustoAjusteLoteId(lotesDisponiveis[0]?.id || 0);
+                                                }
+                                            }}
+                                            className={[
+                                                "rounded-2xl border p-4 text-left transition",
+                                                active
+                                                    ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100"
+                                                    : "border-slate-200 bg-white hover:border-slate-300",
+                                            ].join(" ")}
+                                        >
+                                            <p className="font-bold text-slate-900">{titulo}</p>
+                                            <p className="mt-1 text-xs leading-relaxed text-slate-600">{descricao}</p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {custoAjusteTipo === "LOTE" ? (
+                                <Field label="Lote a corrigir">
+                                    <Select
+                                        value={custoAjusteLoteId}
+                                        onChange={(e) => {
+                                            const loteId = Number(e.target.value);
+                                            setCustoAjusteLoteId(loteId);
+                                            const lote = lotesDisponiveis.find((item) => Number(item.id) === loteId);
+                                            if (lote) {
+                                                setCustoAjusteNovo(
+                                                    maskBRLFromDigits(
+                                                        String(Math.round((Number(lote.custo_unitario) || 0) * 100))
+                                                    )
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        <option value={0}>Selecione...</option>
+                                        {lotesDisponiveis.map((lote) => (
+                                            <option key={lote.id} value={lote.id}>
+                                                {lote.numero_lote} • {lote.deposito_nome || `Depósito #${lote.deposito_id}`} • saldo {clampInt(lote.quantidade_atual)} • {moneyBRL(Number(lote.custo_unitario) || 0)}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+                            ) : null}
+
+                            {custoAjusteTipo === "REAVALIACAO" ? (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-sm font-bold text-slate-900">Depósitos afetados</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCustoAjusteDepositoIds([])}
+                                            className="text-xs font-semibold text-sky-700 hover:underline"
+                                        >
+                                            Todos
+                                        </button>
+                                    </div>
+                                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        {depositosComLote.map((deposito) => {
+                                            const checked = custoAjusteDepositoIds.includes(Number(deposito.id));
+                                            return (
+                                                <label key={deposito.id} className="flex cursor-pointer items-center gap-3 rounded-xl bg-white p-3 ring-1 ring-slate-200">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() =>
+                                                            setCustoAjusteDepositoIds((prev) =>
+                                                                checked
+                                                                    ? prev.filter((id) => Number(id) !== Number(deposito.id))
+                                                                    : [...prev, Number(deposito.id)]
+                                                            )
+                                                        }
+                                                        className="h-5 w-5 accent-sky-600"
+                                                    />
+                                                    <span className="text-sm font-medium text-slate-800">{deposito.nome}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    {!custoAjusteDepositoIds.length ? (
+                                        <p className="mt-3 text-xs text-slate-500">Nenhum depósito marcado: todos os depósitos com saldo serão reavaliados.</p>
+                                    ) : null}
+                                </div>
+                            ) : null}
+
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <Field label="Novo custo unitário">
+                                    <TextInput
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={custoAjusteNovo}
+                                        onChange={(e) => setCustoAjusteNovo(maskBRLInput(e.target.value))}
+                                        className="py-3 text-lg font-bold"
+                                    />
+                                </Field>
+                                <Field label="Motivo obrigatório">
+                                    <TextInput
+                                        value={custoAjusteMotivo}
+                                        onChange={(e) => setCustoAjusteMotivo(e.target.value)}
+                                        maxLength={255}
+                                        placeholder="Ex.: correção da nota fiscal"
+                                    />
+                                </Field>
+                            </div>
+
+                            <Field label="Observação">
+                                <TextArea
+                                    value={custoAjusteObservacao}
+                                    onChange={(e) => setCustoAjusteObservacao(e.target.value)}
+                                    rows={3}
+                                    maxLength={2000}
+                                    placeholder="Detalhes adicionais do ajuste..."
+                                />
+                            </Field>
+
+                            {custoAjusteTipo !== "REFERENCIA" ? (
+                                <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                                    <input
+                                        type="checkbox"
+                                        checked={custoAjusteAtualizarReferencia}
+                                        onChange={(e) => setCustoAjusteAtualizarReferencia(e.target.checked)}
+                                        className="h-5 w-5 accent-sky-600"
+                                    />
+                                    <span className="text-sm font-medium text-slate-800">Usar o novo valor também como custo de referência do produto</span>
+                                </label>
+                            ) : null}
+
+                            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-900 p-4 text-white sm:grid-cols-4">
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Quantidade</p>
+                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? "—" : quantidadeAfetada}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Valor anterior</p>
+                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? editPrecoCusto : moneyBRL(valorAnterior)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Valor novo</p>
+                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? custoAjusteNovo : moneyBRL(valorNovo)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Diferença</p>
+                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? "—" : `${diferenca > 0 ? "+" : ""}${moneyBRL(diferenca)}`}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={() => setCustoAjusteOpen(false)}
+                                    disabled={custoAjusteBusy}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    type="button"
+                                    onClick={salvarAjusteCusto}
+                                    disabled={
+                                        custoAjusteBusy ||
+                                        custoAjusteMotivo.trim().length < 3 ||
+                                        (custoAjusteTipo === "LOTE" && !custoAjusteLoteId) ||
+                                        (custoAjusteTipo === "REAVALIACAO" && quantidadeAfetada <= 0)
+                                    }
+                                >
+                                    {custoAjusteBusy ? "Registrando..." : "Confirmar ajuste"}
+                                </Button>
                             </div>
                         </div>
                     );
