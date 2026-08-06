@@ -797,12 +797,16 @@ function FilterOptionPanel({
     selectedIds,
     onChangeIds,
     allLabel = "Todos",
+    open,
+    onToggle,
 }: {
     title: string;
     options: Opt[];
     selectedIds: ID[];
     onChangeIds: (ids: ID[]) => void;
     allLabel?: string;
+    open: boolean;
+    onToggle: () => void;
 }) {
     const [query, setQuery] = useState("");
 
@@ -828,80 +832,110 @@ function FilterOptionPanel({
     }
 
     return (
-        <section className="flex min-h-[240px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
-                        <p className="mt-1 text-xs text-slate-500">
-                            {selectedIds.length
-                                ? `${selectedIds.length} selecionado(s)`
-                                : allLabel}
-                        </p>
-                    </div>
-
-                    {selectedIds.length ? (
-                        <button
-                            type="button"
-                            onClick={() => onChangeIds([])}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                            Mostrar todos
-                        </button>
-                    ) : (
-                        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
-                            {allLabel}
-                        </span>
-                    )}
-                </div>
-
-                <div className="relative mt-3">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                        ⌕
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={open}
+                className={[
+                    "flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition sm:px-5",
+                    open ? "bg-slate-50" : "bg-white hover:bg-slate-50",
+                ].join(" ")}
+            >
+                <span className="min-w-0">
+                    <span className="block text-sm font-bold text-slate-900 sm:text-base">
+                        {title}
                     </span>
-                    <TextInput
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder={`Buscar em ${title.toLocaleLowerCase("pt-BR")}...`}
-                        className="pl-9"
-                    />
-                </div>
-            </div>
+                    <span className="mt-1 block truncate text-xs text-slate-500">
+                        {selectedIds.length
+                            ? `${selectedIds.length} selecionado(s)`
+                            : allLabel}
+                    </span>
+                </span>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-2 sm:max-h-[280px] [scrollbar-gutter:stable]">
-                {filteredOptions.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-slate-500">
-                        Nenhuma opção encontrada.
-                    </div>
-                ) : (
-                    <div className="space-y-1">
-                        {filteredOptions.map((option) => {
-                            const checked = selectedSet.has(Number(option.id));
-                            return (
-                                <label
-                                    key={option.id}
-                                    className={[
-                                        "flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition",
-                                        checked
-                                            ? "border-sky-300 bg-sky-50 text-sky-950"
-                                            : "border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50",
-                                    ].join(" ")}
+                <span className="flex shrink-0 items-center gap-3">
+                    {selectedIds.length ? (
+                        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800">
+                            {selectedIds.length}
+                        </span>
+                    ) : null}
+                    <span
+                        aria-hidden="true"
+                        className={[
+                            "grid h-9 w-9 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 transition-transform",
+                            open ? "rotate-180" : "rotate-0",
+                        ].join(" ")}
+                    >
+                        ▾
+                    </span>
+                </span>
+            </button>
+
+            {open ? (
+                <div className="border-t border-slate-100">
+                    <div className="border-b border-slate-100 p-3 sm:p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <div className="relative min-w-0 flex-1">
+                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                    ⌕
+                                </span>
+                                <TextInput
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder={`Buscar em ${title.toLocaleLowerCase("pt-BR")}...`}
+                                    className="pl-9"
+                                />
+                            </div>
+
+                            {selectedIds.length ? (
+                                <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={() => onChangeIds([])}
+                                    className="w-full whitespace-nowrap sm:w-auto"
                                 >
-                                    <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={() => toggle(option.id)}
-                                        className="h-5 w-5 shrink-0 accent-sky-600"
-                                    />
-                                    <span className="min-w-0 flex-1 break-words text-sm font-medium">
-                                        {option.nome}
-                                    </span>
-                                </label>
-                            );
-                        })}
+                                    Mostrar todos
+                                </Button>
+                            ) : null}
+                        </div>
                     </div>
-                )}
-            </div>
+
+                    <div className="max-h-[42dvh] overflow-y-auto overscroll-contain p-2 sm:max-h-[330px] [scrollbar-gutter:stable]">
+                        {filteredOptions.length === 0 ? (
+                            <div className="p-5 text-center text-sm text-slate-500">
+                                Nenhuma opção encontrada.
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 gap-1">
+                                {filteredOptions.map((option) => {
+                                    const checked = selectedSet.has(Number(option.id));
+                                    return (
+                                        <label
+                                            key={option.id}
+                                            className={[
+                                                "flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition",
+                                                checked
+                                                    ? "border-sky-300 bg-sky-50 text-sky-950"
+                                                    : "border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50",
+                                            ].join(" ")}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => toggle(option.id)}
+                                                className="h-5 w-5 shrink-0 accent-sky-600"
+                                            />
+                                            <span className="min-w-0 flex-1 break-words text-sm font-medium">
+                                                {option.nome}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : null}
         </section>
     );
 }
@@ -1857,6 +1891,15 @@ export default function Page() {
 
     // ✅ NOVO: abre/fecha o filtro da aba Estoque
     const [estoqueFilterOpen, setEstoqueFilterOpen] = useState(false);
+    const [estoqueFilterSectionOpen, setEstoqueFilterSectionOpen] = useState<
+        "DEPOSITOS" | "CATEGORIAS" | "FABRICANTES" | "CLASSIFICACOES" | null
+    >(null);
+
+    useEffect(() => {
+        if (!estoqueFilterOpen) {
+            setEstoqueFilterSectionOpen(null);
+        }
+    }, [estoqueFilterOpen]);
 
     const [estoqueColumnWidths, setEstoqueColumnWidths] = useState<
         Record<EstoqueColumnKey, number>
@@ -9610,7 +9653,7 @@ export default function Page() {
                 open={estoqueFilterOpen}
                 onClose={() => setEstoqueFilterOpen(false)}
                 title="Filtros de produtos"
-                panelClassName="sm:max-w-7xl"
+                panelClassName="sm:max-w-4xl"
                 footer={
                     <>
                         <div className="mb-3 text-xs text-slate-600">
@@ -9675,13 +9718,19 @@ export default function Page() {
                         </Field>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div className="space-y-3">
                         <FilterOptionPanel
                             title="Depósitos"
                             options={estoqueFiltroOptions.depositos}
                             selectedIds={depFiltroEstoque}
                             onChangeIds={setDepFiltroEstoque}
                             allLabel="Todos os depósitos"
+                            open={estoqueFilterSectionOpen === "DEPOSITOS"}
+                            onToggle={() =>
+                                setEstoqueFilterSectionOpen((current) =>
+                                    current === "DEPOSITOS" ? null : "DEPOSITOS"
+                                )
+                            }
                         />
 
                         <FilterOptionPanel
@@ -9690,6 +9739,12 @@ export default function Page() {
                             selectedIds={catFiltroEstoque}
                             onChangeIds={setCatFiltroEstoque}
                             allLabel="Todas as categorias"
+                            open={estoqueFilterSectionOpen === "CATEGORIAS"}
+                            onToggle={() =>
+                                setEstoqueFilterSectionOpen((current) =>
+                                    current === "CATEGORIAS" ? null : "CATEGORIAS"
+                                )
+                            }
                         />
 
                         <FilterOptionPanel
@@ -9698,6 +9753,12 @@ export default function Page() {
                             selectedIds={fabFiltroEstoque}
                             onChangeIds={setFabFiltroEstoque}
                             allLabel="Todos os fabricantes"
+                            open={estoqueFilterSectionOpen === "FABRICANTES"}
+                            onToggle={() =>
+                                setEstoqueFilterSectionOpen((current) =>
+                                    current === "FABRICANTES" ? null : "FABRICANTES"
+                                )
+                            }
                         />
 
                         <FilterOptionPanel
@@ -9706,6 +9767,12 @@ export default function Page() {
                             selectedIds={classFiltroEstoque}
                             onChangeIds={setClassFiltroEstoque}
                             allLabel="Todas as classificações"
+                            open={estoqueFilterSectionOpen === "CLASSIFICACOES"}
+                            onToggle={() =>
+                                setEstoqueFilterSectionOpen((current) =>
+                                    current === "CLASSIFICACOES" ? null : "CLASSIFICACOES"
+                                )
+                            }
                         />
                     </div>
                 </div>
