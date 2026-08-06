@@ -1,5 +1,7 @@
 "use client";
 
+// v12: compatível com o endpoint de custo corrigido (NOVO_PRECO sem ID negativo no SQL).
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 
