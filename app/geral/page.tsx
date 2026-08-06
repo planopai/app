@@ -80,8 +80,15 @@ type HistoricoRow = {
     codigo_barras_snapshot: string;
     lote_id?: ID | null;
     numero_lote_snapshot?: string | null;
+    custo_base_unitario_snapshot?: string | number | null;
+    frete_total_snapshot?: string | number | null;
+    frete_unitario_snapshot?: string | number | null;
     custo_unitario_snapshot?: string | number | null;
     custo_total_snapshot?: string | number | null;
+    custo_atual?: string | number | null;
+    custo_base_atual?: string | number | null;
+    frete_total_atual?: string | number | null;
+    frete_unitario_atual?: string | number | null;
     quantidade: number | null;
     deposito_origem_id: ID | null;
     deposito_destino_id: ID | null;
@@ -109,7 +116,8 @@ type HistoricoResp = {
 type ProdutoEditTab = "DADOS" | "ESTOQUE" | "VALOR" | "CUSTO";
 
 
-type CustoAjusteTipo = "REFERENCIA" | "LOTE" | "REAVALIACAO";
+type CustoAjusteTipo = "NOVO_PRECO" | "LOTE";
+type CustoAjusteHistoricoTipo = CustoAjusteTipo | "REFERENCIA" | "REAVALIACAO";
 
 type CustoProdutoLote = {
     id: ID;
@@ -119,8 +127,12 @@ type CustoProdutoLote = {
     numero_lote: string;
     quantidade_inicial: number;
     quantidade_atual: number;
+    custo_base_unitario?: string | number | null;
+    frete_total?: string | number | null;
+    frete_unitario?: string | number | null;
     custo_unitario: string | number;
     custo_entrada_original?: string | number | null;
+    usuario_nome?: string | null;
     criado_em: string;
     origem_movimento_id?: ID | null;
 };
@@ -129,11 +141,15 @@ type CustoAjusteHistorico = {
     id: number;
     operacao_uuid: string;
     produto_id: ID;
-    tipo: CustoAjusteTipo;
+    tipo: CustoAjusteHistoricoTipo;
     custo_referencia_anterior: string | number;
     custo_referencia_novo: string | number;
     novo_custo: string | number;
-    motivo: string;
+    custo_base_novo?: string | number | null;
+    frete_total?: string | number | null;
+    frete_unitario?: string | number | null;
+    quantidade_rateio?: number | null;
+    motivo?: string | null;
     observacao?: string | null;
     usuario_id: ID;
     usuario_nome?: string | null;
@@ -158,6 +174,7 @@ type CustoProdutoDetalheResp = {
         lotes_disponiveis: number;
         valor_estoque: string | number;
         custo_medio: string | number;
+        quantidade_saldo_total?: number;
     };
     lotes?: CustoProdutoLote[];
     entradas?: HistoricoRow[];
@@ -434,7 +451,18 @@ const tabActions: TabAction[] = [
 
 type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
 
-type EntradaItem = { id: number; payload: any; resumo: string; nome: string; qtd: number; custoUnitario: number };
+type EntradaItem = {
+    id: number;
+    payload: any;
+    resumo: string;
+    nome: string;
+    qtd: number;
+    custoBaseUnitario: number;
+    freteTotal: number;
+    freteUnitario: number;
+    custoUnitario: number;
+    custoTotal: number;
+};
 type SaidaItem = { id: number; payload: any; resumo: string };
 type TrfItem = { id: number; payload: any; resumo: string };
 
@@ -1831,13 +1859,12 @@ export default function Page() {
 
     const [prodCustoDetalhe, setProdCustoDetalhe] = useState<CustoProdutoDetalheResp | null>(null);
     const [custoAjusteOpen, setCustoAjusteOpen] = useState(false);
-    const [custoAjusteTipo, setCustoAjusteTipo] = useState<CustoAjusteTipo>("REFERENCIA");
+    const [custoAjusteConfirmOpen, setCustoAjusteConfirmOpen] = useState(false);
+    const [custoAjusteTipo, setCustoAjusteTipo] = useState<CustoAjusteTipo>("NOVO_PRECO");
     const [custoAjusteLoteId, setCustoAjusteLoteId] = useState<ID>(0);
-    const [custoAjusteDepositoIds, setCustoAjusteDepositoIds] = useState<ID[]>([]);
     const [custoAjusteNovo, setCustoAjusteNovo] = useState<string>("R$ 0,00");
-    const [custoAjusteMotivo, setCustoAjusteMotivo] = useState("");
+    const [custoAjusteFreteTotal, setCustoAjusteFreteTotal] = useState<string>("R$ 0,00");
     const [custoAjusteObservacao, setCustoAjusteObservacao] = useState("");
-    const [custoAjusteAtualizarReferencia, setCustoAjusteAtualizarReferencia] = useState(true);
     const [custoAjusteBusy, setCustoAjusteBusy] = useState(false);
 
     // campos do cadastro
@@ -1855,6 +1882,10 @@ export default function Page() {
     const [editCatId, setEditCatId] = useState<ID>(0);
     const [editFabId, setEditFabId] = useState<ID>(0);
     const [editClassId, setEditClassId] = useState<ID>(0);
+    const [editAtivo, setEditAtivo] = useState<0 | 1>(1);
+    const [produtoStatusBusy, setProdutoStatusBusy] = useState(false);
+    const [produtoDepositoBusy, setProdutoDepositoBusy] = useState(false);
+    const [editNovoDepositoId, setEditNovoDepositoId] = useState<ID>(0);
 
     // galeria de fotos do produto
     const [editFotosExistentes, setEditFotosExistentes] = useState<ProdutoFoto[]>([]);
@@ -3710,14 +3741,13 @@ export default function Page() {
     const [entradaSucessoOpen, setEntradaSucessoOpen] = useState(false);
 
     // itens que serão confirmados no popup (snapshot)
-    const [entradaConcluirItens, setEntradaConcluirItens] = useState<
-        Array<{ payload: any; resumo: string; nome: string; qtd: number; custoUnitario: number }>
-    >([]);
+    const [entradaConcluirItens, setEntradaConcluirItens] = useState<EntradaItem[]>([]);
 
     const [entradaBarcode, setEntradaBarcode] = useState("");
     const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
     const [entradaQtd, setEntradaQtd] = useState<string>("1");
     const [entradaCustoUnitario, setEntradaCustoUnitario] = useState<string>("R$ 0,00");
+    const [entradaFreteTotal, setEntradaFreteTotal] = useState<string>("R$ 0,00");
 
     // ✅ agora a observação fica visualmente abaixo da fila (mas continua sendo usada)
     const [entradaObs, setEntradaObs] = useState("");
@@ -4007,6 +4037,7 @@ export default function Page() {
         setEntradaCatFiltroId("Todas");
         setEntradaQtd("1");
         setEntradaCustoUnitario("R$ 0,00");
+        setEntradaFreteTotal("R$ 0,00");
         setEntradaObs("");
     }
 
@@ -4018,6 +4049,7 @@ export default function Page() {
         setEntradaProdQuery("");
         setEntradaQtd("1");
         setEntradaCustoUnitario("R$ 0,00");
+        setEntradaFreteTotal("R$ 0,00");
     }
 
     // ✅ NOVO: cancelar fecha e limpa tudo
@@ -4027,7 +4059,7 @@ export default function Page() {
         setEntradaOpen(false);
     }
 
-    function buildEntradaPayloadFromForm(): { payload: any; resumo: string; nome: string; qtd: number; custoUnitario: number } | null {
+    function buildEntradaPayloadFromForm(): Omit<EntradaItem, "id"> | null {
         if (!me) {
             alert("Sessão inválida. Recarregue a página.");
             return null;
@@ -4035,7 +4067,11 @@ export default function Page() {
 
         const deposito_id = Number(entradaDepositoId);
         const quantidade = clampInt(entradaQtd || "0");
-        const custo_unitario = parseBRLToNumber(entradaCustoUnitario);
+        const custoBaseUnitario = parseBRLToNumber(entradaCustoUnitario);
+        const freteTotal = parseBRLToNumber(entradaFreteTotal);
+        const freteUnitario = quantidade > 0 ? freteTotal / quantidade : 0;
+        const custoUnitario = custoBaseUnitario + freteUnitario;
+        const custoTotal = custoUnitario * quantidade;
         const produtoSelecionado = entradaProdutoExistente;
         const codigo_barras = String(produtoSelecionado?.codigo_barras || entradaBarcode).trim();
 
@@ -4043,25 +4079,34 @@ export default function Page() {
         if (!produtoSelecionado) return alert("Selecione um produto."), null;
         if (!codigo_barras) return alert("O produto selecionado não possui código de barras."), null;
         if (quantidade <= 0) return alert("Quantidade inválida."), null;
-        if (custo_unitario <= 0) return alert("Informe o preço de custo desta entrada."), null;
+        if (custoBaseUnitario <= 0) return alert("Informe o preço de custo unitário desta entrada."), null;
+        if (freteTotal < 0) return alert("O valor do frete não pode ser negativo."), null;
 
         const payload: any = {
             action: "entrada",
             deposito_id,
             quantidade,
             codigo_barras,
-            custo_unitario,
+            custo_unitario: custoBaseUnitario,
+            frete_total: freteTotal,
             observacao: entradaObs.trim() || undefined,
         };
 
         const nomeProduto = produtoSelecionado.nome || "";
+        const resumo = `${nomeProduto} — CB ${codigo_barras} — qtd ${quantidade} — custo final ${moneyBRL(custoUnitario)} — Dep ${depById.get(deposito_id)?.nome || deposito_id}`;
 
-        const resumo = `${nomeProduto} — CB ${codigo_barras} — qtd ${quantidade} — custo ${moneyBRL(custo_unitario)} — Dep ${depById.get(deposito_id)?.nome || deposito_id
-            }`;
-
-        return { payload, resumo, nome: nomeProduto, qtd: quantidade, custoUnitario: custo_unitario };
+        return {
+            payload,
+            resumo,
+            nome: nomeProduto,
+            qtd: quantidade,
+            custoBaseUnitario,
+            freteTotal,
+            freteUnitario,
+            custoUnitario,
+            custoTotal,
+        };
     }
-
 
     async function applyEntradaSingle() {
         const built = buildEntradaPayloadFromForm();
@@ -4117,39 +4162,18 @@ export default function Page() {
         setTab("ESTOQUE");
     }
 
-    function montarSnapshotConcluirEntrada() {
+    function montarSnapshotConcluirEntrada(): EntradaItem[] | null {
         const obs = entradaObs.trim();
 
-        // começa com os itens já na fila
-        const base = entradaItens.map((it) => {
-            const cb = String(it.payload?.codigo_barras || "").trim();
-            const prod = cb ? produtos.find((p) => p.codigo_barras === cb) : null;
+        const base: EntradaItem[] = entradaItens.map((it) => ({
+            ...it,
+            payload: obs ? { ...it.payload, observacao: obs } : { ...it.payload },
+        }));
 
-            const nome = String(it.payload?.nome || prod?.nome || "(sem nome)");
-            const qtd = clampInt(it.payload?.quantidade);
-            const custoUnitario = Number(it.payload?.custo_unitario || it.custoUnitario || 0);
-
-            // ✅ aplica observação do lote no momento da conclusão
-            const payload = obs ? { ...it.payload, observacao: obs } : { ...it.payload };
-
-            return { payload, resumo: it.resumo, nome, qtd, custoUnitario };
-        });
-
-        // se o usuário deixou um item “no formulário” (barcode preenchido), inclui no snapshot também
-        if (entradaBarcode.trim()) {
+        if (entradaBarcode.trim() || entradaProdutoId) {
             const built = buildEntradaPayloadFromForm();
             if (!built) return null;
-
-            const cb = String(built.payload?.codigo_barras || "").trim();
-            const prod = cb ? produtos.find((p) => p.codigo_barras === cb) : null;
-
-            const nome = String(built.payload?.nome || prod?.nome || "(sem nome)");
-            const qtd = clampInt(built.payload?.quantidade);
-            const custoUnitario = Number(built.payload?.custo_unitario || built.custoUnitario || 0);
-
-            const payload = obs ? { ...built.payload, observacao: obs } : { ...built.payload };
-
-            base.push({ payload, resumo: built.resumo, nome, qtd, custoUnitario });
+            base.push({ id: entradaSeqRef.current++, ...built });
         }
 
         return base;
@@ -4267,7 +4291,48 @@ export default function Page() {
         }
     }
 
-    function abrirAjusteCusto(tipo: CustoAjusteTipo = "REFERENCIA", loteId: ID = 0) {
+    function calcularResumoAjusteCusto() {
+        const produto = prodEditId ? prodById.get(prodEditId) : null;
+        const lotesDisponiveis = (prodCustoDetalhe?.lotes || []).filter(
+            (lote) => clampInt(lote.quantidade_atual) > 0
+        );
+        const lote = lotesDisponiveis.find(
+            (item) => Number(item.id) === Number(custoAjusteLoteId)
+        );
+
+        const custoBase = parseBRLToNumber(custoAjusteNovo);
+        const freteTotal = parseBRLToNumber(custoAjusteFreteTotal);
+        const quantidadeRateio = custoAjusteTipo === "LOTE"
+            ? clampInt(lote?.quantidade_inicial)
+            : clampInt(prodCustoDetalhe?.resumo?.quantidade_saldo_total);
+        const freteUnitario = quantidadeRateio > 0 ? freteTotal / quantidadeRateio : 0;
+        const custoFinal = custoBase + freteUnitario;
+        const quantidadeAfetada = custoAjusteTipo === "LOTE"
+            ? clampInt(lote?.quantidade_atual)
+            : quantidadeRateio;
+        const custoAnterior = custoAjusteTipo === "LOTE"
+            ? Number(lote?.custo_unitario || 0)
+            : Number(produto?.preco_custo || 0);
+        const valorAnterior = custoAnterior * quantidadeAfetada;
+        const valorNovo = custoFinal * quantidadeAfetada;
+
+        return {
+            produto,
+            lote,
+            custoBase,
+            freteTotal,
+            quantidadeRateio,
+            freteUnitario,
+            custoFinal,
+            quantidadeAfetada,
+            custoAnterior,
+            valorAnterior,
+            valorNovo,
+            diferenca: valorNovo - valorAnterior,
+        };
+    }
+
+    function abrirAjusteCusto(tipo: CustoAjusteTipo = "NOVO_PRECO", loteId: ID = 0) {
         const p = prodEditId ? prodById.get(prodEditId) : null;
         if (!p) return;
 
@@ -4278,41 +4343,52 @@ export default function Page() {
             ? lotesDisponiveis.find((lote) => Number(lote.id) === Number(loteId))
             : lotesDisponiveis[0];
 
-        let valorInicial = Number(p.preco_custo) || 0;
+        let custoBase = Number(p.preco_custo) || 0;
+        let freteTotal = 0;
+
         if (tipo === "LOTE" && loteSelecionado) {
-            valorInicial = Number(loteSelecionado.custo_unitario) || 0;
-        } else if (tipo === "REAVALIACAO") {
-            valorInicial =
-                Number(prodCustoDetalhe?.resumo?.custo_medio) ||
-                Number(p.preco_custo) ||
-                0;
+            const freteUnit = Number(loteSelecionado.frete_unitario) || 0;
+            custoBase = Number(loteSelecionado.custo_base_unitario);
+            if (!Number.isFinite(custoBase)) {
+                custoBase = Math.max(0, (Number(loteSelecionado.custo_unitario) || 0) - freteUnit);
+            }
+            freteTotal = Number(loteSelecionado.frete_total) || 0;
         }
 
         setCustoAjusteTipo(tipo);
         setCustoAjusteLoteId(loteSelecionado?.id || 0);
-        setCustoAjusteDepositoIds([]);
         setCustoAjusteNovo(
-            maskBRLFromDigits(
-                String(Math.round(Math.max(0, valorInicial) * 100))
-            )
+            maskBRLFromDigits(String(Math.round(Math.max(0, custoBase) * 100)))
         );
-        setCustoAjusteMotivo("");
+        setCustoAjusteFreteTotal(
+            maskBRLFromDigits(String(Math.round(Math.max(0, freteTotal) * 100)))
+        );
         setCustoAjusteObservacao("");
-        setCustoAjusteAtualizarReferencia(true);
+        setCustoAjusteConfirmOpen(false);
         setCustoAjusteOpen(true);
+    }
+
+    function prepararConfirmacaoAjusteCusto() {
+        const resumo = calcularResumoAjusteCusto();
+
+        if (!Number.isFinite(resumo.custoBase) || resumo.custoBase < 0) {
+            return alert("Informe um preço de custo válido.");
+        }
+        if (custoAjusteTipo === "LOTE" && !resumo.lote) {
+            return alert("Selecione o lote que será corrigido.");
+        }
+        if (resumo.freteTotal > 0 && resumo.quantidadeRateio <= 0) {
+            return alert("Não há quantidade disponível para dividir o valor do frete.");
+        }
+
+        setCustoAjusteConfirmOpen(true);
     }
 
     async function salvarAjusteCusto() {
         if (!prodEditId) return;
 
-        const novoCusto = parseBRLToNumber(custoAjusteNovo);
-        if (!Number.isFinite(novoCusto) || novoCusto < 0) {
-            return alert("Informe um novo custo válido.");
-        }
-        if (custoAjusteMotivo.trim().length < 3) {
-            return alert("Informe o motivo do ajuste com pelo menos 3 caracteres.");
-        }
-        if (custoAjusteTipo === "LOTE" && !custoAjusteLoteId) {
+        const resumo = calcularResumoAjusteCusto();
+        if (custoAjusteTipo === "LOTE" && !resumo.lote) {
             return alert("Selecione o lote que será corrigido.");
         }
 
@@ -4328,18 +4404,8 @@ export default function Page() {
                 produto_id: prodEditId,
                 tipo: custoAjusteTipo,
                 lote_id: custoAjusteTipo === "LOTE" ? custoAjusteLoteId : null,
-                deposito_ids:
-                    custoAjusteTipo === "REAVALIACAO"
-                        ? custoAjusteDepositoIds
-                        : [],
-                novo_custo: novoCusto,
-                atualizar_referencia:
-                    custoAjusteTipo === "REFERENCIA"
-                        ? 1
-                        : custoAjusteAtualizarReferencia
-                            ? 1
-                            : 0,
-                motivo: custoAjusteMotivo.trim(),
+                novo_custo_base: resumo.custoBase,
+                frete_total: resumo.freteTotal,
                 observacao: custoAjusteObservacao.trim() || null,
             });
 
@@ -4347,12 +4413,13 @@ export default function Page() {
                 return alert(resp.msg || "Falha ao registrar o ajuste de custo.");
             }
 
+            setCustoAjusteConfirmOpen(false);
             setCustoAjusteOpen(false);
             await Promise.all([
                 carregarEntradasCustoProduto(prodEditId),
                 refreshInit(),
             ]);
-            alert(resp.msg || "Ajuste de custo registrado.");
+            alert(resp.msg || "Preço de custo atualizado.");
         } catch (e: any) {
             alert(e?.message || "Erro ao registrar o ajuste de custo.");
         } finally {
@@ -4386,6 +4453,8 @@ export default function Page() {
         setEditCatId(Number(p.categoria_id || 0));
         setEditFabId(Number(p.fabricante_id || 0));
         setEditClassId(Number(p.classificacao_id || 0));
+        setEditAtivo(Number(p.ativo) === 1 ? 1 : 0);
+        setEditNovoDepositoId(0);
 
         setEditFotosExistentes(getProdutoFotos(p));
         setEditFotosNovas([]);
@@ -4401,6 +4470,93 @@ export default function Page() {
         setEditMaxDep(clampInt(s?.maximo ?? 0));
 
         setProdEditOpen(true);
+    }
+
+    async function alternarStatusProduto() {
+        if (!prodEditId) return;
+
+        const novoStatus: 0 | 1 = editAtivo === 1 ? 0 : 1;
+        const acao = novoStatus === 1 ? "ativar" : "inativar";
+        const confirmado = window.confirm(
+            novoStatus === 1
+                ? "Deseja ativar este produto? Ele voltará a aparecer nas telas do sistema."
+                : "Deseja inativar este produto? Ele deixará de aparecer nas telas operacionais."
+        );
+        if (!confirmado) return;
+
+        setProdutoStatusBusy(true);
+        try {
+            const resp = await apiPost<{ ok: boolean; msg?: string; ativo?: 0 | 1 }>({
+                action: "produto_status_setar",
+                produto_id: prodEditId,
+                ativo: novoStatus,
+            });
+            if (!resp.ok) return alert(resp.msg || `Falha ao ${acao} o produto.`);
+
+            setEditAtivo(novoStatus);
+            if (novoStatus === 0) setProdEditOpen(false);
+            await refreshInit();
+            alert(resp.msg || `Produto ${novoStatus === 1 ? "ativado" : "inativado"}.`);
+        } catch (e: any) {
+            alert(e?.message || `Erro ao ${acao} o produto.`);
+        } finally {
+            setProdutoStatusBusy(false);
+        }
+    }
+
+    async function adicionarProdutoAoDeposito() {
+        if (!prodEditId || !editNovoDepositoId) {
+            return alert("Selecione o depósito que receberá o produto.");
+        }
+
+        setProdutoDepositoBusy(true);
+        try {
+            const resp = await apiPost<{ ok: boolean; msg?: string }>({
+                action: "produto_deposito_adicionar",
+                produto_id: prodEditId,
+                deposito_id: editNovoDepositoId,
+            });
+            if (!resp.ok) return alert(resp.msg || "Falha ao adicionar o produto ao depósito.");
+
+            const novoDep = editNovoDepositoId;
+            setEditNovoDepositoId(0);
+            await refreshInit();
+            setEditMinMaxDepId(novoDep);
+            setEditMinDep(clampInt(prodById.get(prodEditId)?.minimo));
+            setEditMaxDep(clampInt(prodById.get(prodEditId)?.maximo));
+            alert(resp.msg || "Produto adicionado ao depósito.");
+        } catch (e: any) {
+            alert(e?.message || "Erro ao adicionar o produto ao depósito.");
+        } finally {
+            setProdutoDepositoBusy(false);
+        }
+    }
+
+    async function removerProdutoDoDeposito(depositoId: ID, depositoNome: string) {
+        if (!prodEditId) return;
+        if (!window.confirm(`Remover este produto do depósito ${depositoNome}?`)) return;
+
+        setProdutoDepositoBusy(true);
+        try {
+            const resp = await apiPost<{ ok: boolean; msg?: string }>({
+                action: "produto_deposito_remover",
+                produto_id: prodEditId,
+                deposito_id: depositoId,
+            });
+            if (!resp.ok) return alert(resp.msg || "Falha ao remover o produto do depósito.");
+
+            if (Number(editMinMaxDepId) === Number(depositoId)) {
+                setEditMinMaxDepId(0);
+                setEditMinDep(0);
+                setEditMaxDep(0);
+            }
+            await refreshInit();
+            alert(resp.msg || "Produto removido do depósito.");
+        } catch (e: any) {
+            alert(e?.message || "Erro ao remover o produto do depósito.");
+        } finally {
+            setProdutoDepositoBusy(false);
+        }
     }
 
     async function onProdutoFotoNova(files?: FileList | File[] | null) {
@@ -6900,6 +7056,12 @@ export default function Page() {
                             total + clampInt(row.saldo.quantidade),
                         0
                     );
+                    const depositosVinculadosIds = new Set(
+                        saldoRows.map((row) => Number(row.deposito.id))
+                    );
+                    const depositosDisponiveisParaAdicionar = depositos.filter(
+                        (deposito) => !depositosVinculadosIds.has(Number(deposito.id))
+                    );
 
                     const tabs: Array<{
                         key: ProdutoEditTab;
@@ -7028,21 +7190,6 @@ export default function Page() {
                                                             onChange={(e) =>
                                                                 setEditNome(e.target.value)
                                                             }
-                                                        />
-                                                    </Field>
-                                                </div>
-
-                                                <div className="sm:col-span-2">
-                                                    <Field label="Descrição">
-                                                        <TextArea
-                                                            value={editDescricao}
-                                                            onChange={(e) =>
-                                                                setEditDescricao(
-                                                                    e.target.value
-                                                                )
-                                                            }
-                                                            placeholder="Descreva o produto..."
-                                                            rows={5}
                                                         />
                                                     </Field>
                                                 </div>
@@ -7285,6 +7432,49 @@ export default function Page() {
                                                 ) : null}
                                             </div>
                                         </section>
+
+                                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                            <Field label="Descrição">
+                                                <TextArea
+                                                    value={editDescricao}
+                                                    onChange={(e) => setEditDescricao(e.target.value)}
+                                                    placeholder="Descreva o produto..."
+                                                    rows={5}
+                                                />
+                                            </Field>
+                                        </section>
+
+                                        <section className={[
+                                            "rounded-2xl border p-4 shadow-sm",
+                                            editAtivo === 1
+                                                ? "border-emerald-200 bg-emerald-50"
+                                                : "border-rose-200 bg-rose-50",
+                                        ].join(" ")}>
+                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-900">
+                                                        Produto {editAtivo === 1 ? "ativo" : "inativo"}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-slate-600">
+                                                        {editAtivo === 1
+                                                            ? "O produto aparece nas telas operacionais e pode receber movimentações."
+                                                            : "O produto está oculto das telas operacionais."}
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant={editAtivo === 1 ? "ghost" : "solid"}
+                                                    onClick={alternarStatusProduto}
+                                                    disabled={produtoStatusBusy}
+                                                >
+                                                    {produtoStatusBusy
+                                                        ? "Processando..."
+                                                        : editAtivo === 1
+                                                            ? "Inativar produto"
+                                                            : "Ativar produto"}
+                                                </Button>
+                                            </div>
+                                        </section>
                                     </div>
                                 ) : null}
 
@@ -7331,6 +7521,9 @@ export default function Page() {
                                                                     </th>
                                                                     <th className="px-4 py-3 text-right">
                                                                         Reposição
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-right">
+                                                                        Ação
                                                                     </th>
                                                                 </tr>
                                                             </thead>
@@ -7382,6 +7575,17 @@ export default function Page() {
                                                                                 </td>
                                                                                 <td className="px-4 py-3 text-right text-sm text-slate-600">
                                                                                     {rep}
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-right">
+                                                                                    <Button
+                                                                                        type="button"
+                                                                                        variant="ghost"
+                                                                                        className="w-auto px-3 py-2 text-xs"
+                                                                                        disabled={produtoDepositoBusy || qtd > 0}
+                                                                                        onClick={() => removerProdutoDoDeposito(deposito.id, deposito.nome)}
+                                                                                    >
+                                                                                        Remover
+                                                                                    </Button>
                                                                                 </td>
                                                                             </tr>
                                                                         );
@@ -7435,6 +7639,15 @@ export default function Page() {
                                                                                 </p>
                                                                             </div>
                                                                         </div>
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            className="mt-3 w-full"
+                                                                            disabled={produtoDepositoBusy || qtd > 0}
+                                                                            onClick={() => removerProdutoDoDeposito(deposito.id, deposito.nome)}
+                                                                        >
+                                                                            {qtd > 0 ? "Remova o saldo antes" : "Remover deste depósito"}
+                                                                        </Button>
                                                                     </div>
                                                                 );
                                                             }
@@ -7442,6 +7655,38 @@ export default function Page() {
                                                     </div>
                                                 </>
                                             )}
+                                        </section>
+
+                                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                            <h3 className="text-sm font-bold text-slate-900">Adicionar a outro depósito</h3>
+                                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                                                <div className="min-w-0 flex-1">
+                                                    <Field label="Novo depósito">
+                                                        <Select
+                                                            value={editNovoDepositoId}
+                                                            onChange={(e) => setEditNovoDepositoId(Number(e.target.value))}
+                                                            disabled={produtoDepositoBusy || depositosDisponiveisParaAdicionar.length === 0}
+                                                        >
+                                                            <option value={0}>Selecionar...</option>
+                                                            {depositosDisponiveisParaAdicionar.map((deposito) => (
+                                                                <option key={deposito.id} value={deposito.id}>
+                                                                    {deposito.nome}
+                                                                </option>
+                                                            ))}
+                                                        </Select>
+                                                    </Field>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    onClick={adicionarProdutoAoDeposito}
+                                                    disabled={produtoDepositoBusy || !editNovoDepositoId}
+                                                >
+                                                    {produtoDepositoBusy ? "Processando..." : "+ Adicionar depósito"}
+                                                </Button>
+                                            </div>
+                                            {depositosDisponiveisParaAdicionar.length === 0 ? (
+                                                <p className="mt-3 text-xs text-slate-500">O produto já está vinculado a todos os depósitos.</p>
+                                            ) : null}
                                         </section>
 
                                         <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -7465,9 +7710,9 @@ export default function Page() {
                                                         <option value={0} disabled>
                                                             Selecionar...
                                                         </option>
-                                                        {depositos.map((d) => (
-                                                            <option key={d.id} value={d.id}>
-                                                                {d.nome}
+                                                        {saldoRows.map(({ deposito }) => (
+                                                            <option key={deposito.id} value={deposito.id}>
+                                                                {deposito.nome}
                                                             </option>
                                                         ))}
                                                     </Select>
@@ -7569,98 +7814,71 @@ export default function Page() {
 
                                 {prodEditTab === "CUSTO" ? (
                                     <div className="space-y-5">
-                                        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                                        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                                    Custo de referência
-                                                </p>
-                                                <p className="mt-2 text-2xl font-bold text-slate-900">
-                                                    {editPrecoCusto}
-                                                </p>
-                                            </div>
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                                    Custo médio disponível
-                                                </p>
-                                                <p className="mt-2 text-2xl font-bold text-slate-900">
-                                                    {moneyBRL(Number(prodCustoDetalhe?.resumo?.custo_medio) || 0)}
-                                                </p>
-                                            </div>
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                                    Valor em estoque
-                                                </p>
-                                                <p className="mt-2 text-2xl font-bold text-slate-900">
-                                                    {moneyBRL(Number(prodCustoDetalhe?.resumo?.valor_estoque) || 0)}
-                                                </p>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Preço de custo atual</p>
+                                                <p className="mt-2 text-3xl font-bold text-slate-900">{editPrecoCusto}</p>
                                             </div>
                                             <div className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
-                                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">
-                                                    Lotes disponíveis
-                                                </p>
-                                                <p className="mt-2 text-2xl font-bold">
-                                                    {clampInt(prodCustoDetalhe?.resumo?.lotes_disponiveis)}
-                                                </p>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Lotes com saldo</p>
+                                                <p className="mt-2 text-3xl font-bold">{clampInt(prodCustoDetalhe?.resumo?.lotes_disponiveis)}</p>
                                             </div>
                                         </section>
 
-                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="text-sm text-slate-600">
-                                                Ajustes alteram somente custos futuros dos lotes ainda disponíveis; os movimentos já realizados permanecem preservados.
+                                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => abrirAjusteCusto("NOVO_PRECO")}
+                                                    className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-sky-300 hover:bg-sky-50"
+                                                >
+                                                    <span className="grid h-11 w-11 place-items-center rounded-full bg-sky-100 text-xl text-sky-700">＋</span>
+                                                    <span className="mt-3 block text-sm font-bold text-slate-900">Novo preço de custo</span>
+                                                    <span className="mt-1 block text-xs text-slate-500">Preenche ou atualiza o custo do cadastro. O frete é rateado pelo saldo atual.</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => abrirAjusteCusto("LOTE")}
+                                                    disabled={!(prodCustoDetalhe?.lotes || []).some((lote) => clampInt(lote.quantidade_atual) > 0)}
+                                                    className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    <span className="grid h-11 w-11 place-items-center rounded-full bg-sky-100 text-xl text-sky-700">✎</span>
+                                                    <span className="mt-3 block text-sm font-bold text-slate-900">Corrigir lote</span>
+                                                    <span className="mt-1 block text-xs text-slate-500">Corrige custo e frete de um lote que ainda possui quantidade disponível.</span>
+                                                </button>
                                             </div>
-                                            <Button
-                                                type="button"
-                                                onClick={() => abrirAjusteCusto("REFERENCIA")}
-                                                disabled={!p || prodEntradasCustoLoading}
-                                                className="shrink-0"
-                                            >
-                                                Ajustar custo
-                                            </Button>
-                                        </div>
+                                        </section>
 
                                         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                                            <div className="flex flex-col gap-2 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-                                                <h3 className="text-sm font-bold text-slate-900">
-                                                    Entradas e preços de custo por lote
-                                                </h3>
+                                            <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4">
+                                                <h3 className="text-sm font-bold text-slate-900">Entradas e preços de custo por lote</h3>
                                                 <Button
-                                                    variant="ghost"
                                                     type="button"
-                                                    onClick={() => p && carregarEntradasCustoProduto(p.id)}
-                                                    disabled={prodEntradasCustoLoading || !p}
+                                                    variant="ghost"
+                                                    className="w-auto"
+                                                    onClick={() => prodEditId && carregarEntradasCustoProduto(prodEditId)}
+                                                    disabled={prodEntradasCustoLoading}
                                                 >
                                                     {prodEntradasCustoLoading ? "Atualizando..." : "Atualizar lista"}
                                                 </Button>
                                             </div>
 
                                             {prodEntradasCustoErr ? (
-                                                <div className="border-b border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
-                                                    {prodEntradasCustoErr}
-                                                </div>
-                                            ) : null}
-
-                                            {prodEntradasCustoLoading ? (
-                                                <div className="p-8 text-center text-sm text-slate-500">
-                                                    Carregando entradas...
-                                                </div>
+                                                <div className="p-4 text-sm text-rose-700">{prodEntradasCustoErr}</div>
+                                            ) : prodEntradasCustoLoading ? (
+                                                <div className="p-6 text-center text-sm text-slate-500">Carregando entradas...</div>
                                             ) : prodEntradasCusto.length === 0 ? (
-                                                <div className="p-8 text-center text-sm text-slate-500">
-                                                    Nenhuma entrada foi encontrada para este produto.
-                                                </div>
+                                                <div className="p-6 text-center text-sm text-slate-500">Nenhuma entrada registrada para este produto.</div>
                                             ) : (
                                                 <>
                                                     <div className="hidden overflow-x-auto md:block">
-                                                        <table className="w-full min-w-[960px] border-collapse">
+                                                        <table className="w-full min-w-[650px] border-collapse">
                                                             <thead className="bg-slate-50">
                                                                 <tr className="text-left text-xs font-semibold text-slate-600">
                                                                     <th className="px-4 py-3">Data</th>
                                                                     <th className="px-4 py-3">Lote</th>
-                                                                    <th className="px-4 py-3">Depósito</th>
-                                                                    <th className="px-4 py-3 text-right">Entrada</th>
-                                                                    <th className="px-4 py-3 text-right">Disponível</th>
-                                                                    <th className="px-4 py-3 text-right">Custo da entrada</th>
+                                                                    <th className="px-4 py-3">Usuário</th>
                                                                     <th className="px-4 py-3 text-right">Custo atual</th>
-                                                                    <th className="px-4 py-3 text-right">Ação</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
@@ -7668,27 +7886,15 @@ export default function Page() {
                                                                     const lote = (prodCustoDetalhe?.lotes || []).find(
                                                                         (item) => Number(item.id) === Number(entrada.lote_id)
                                                                     );
-                                                                    const disponivel = clampInt(lote?.quantidade_atual);
-                                                                    const custoAtual = Number(lote?.custo_unitario ?? entrada.custo_unitario_snapshot) || 0;
+                                                                    const custoAtual = Number(
+                                                                        entrada.custo_atual ?? lote?.custo_unitario ?? entrada.custo_unitario_snapshot ?? 0
+                                                                    ) || 0;
                                                                     return (
-                                                                        <tr key={entrada.id} className="border-t border-slate-100">
-                                                                            <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{fmtDateTime(entrada.criado_em)}</td>
-                                                                            <td className="px-4 py-3 text-sm font-semibold text-slate-900">{entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</td>
-                                                                            <td className="px-4 py-3 text-sm text-slate-700">{entrada.deposito_destino_nome || lote?.deposito_nome || "—"}</td>
-                                                                            <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">{clampInt(entrada.quantidade)}</td>
-                                                                            <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900">{disponivel}</td>
-                                                                            <td className="px-4 py-3 text-right text-sm text-slate-700">{moneyBRL(Number(entrada.custo_unitario_snapshot) || 0)}</td>
-                                                                            <td className="px-4 py-3 text-right text-sm font-bold text-slate-900">{moneyBRL(custoAtual)}</td>
-                                                                            <td className="px-4 py-3 text-right">
-                                                                                <Button
-                                                                                    type="button"
-                                                                                    variant="ghost"
-                                                                                    disabled={!lote || disponivel <= 0}
-                                                                                    onClick={() => abrirAjusteCusto("LOTE", lote?.id || 0)}
-                                                                                >
-                                                                                    Corrigir lote
-                                                                                </Button>
-                                                                            </td>
+                                                                        <tr key={entrada.id} className="border-t border-slate-100 text-sm">
+                                                                            <td className="px-4 py-3 text-slate-600">{fmtDateTime(entrada.criado_em)}</td>
+                                                                            <td className="px-4 py-3 font-mono text-xs text-slate-900">{entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</td>
+                                                                            <td className="px-4 py-3 text-slate-700">{entrada.operador_nome || "—"}</td>
+                                                                            <td className="px-4 py-3 text-right font-bold text-slate-900">{moneyBRL(custoAtual)}</td>
                                                                         </tr>
                                                                     );
                                                                 })}
@@ -7701,40 +7907,22 @@ export default function Page() {
                                                             const lote = (prodCustoDetalhe?.lotes || []).find(
                                                                 (item) => Number(item.id) === Number(entrada.lote_id)
                                                             );
-                                                            const disponivel = clampInt(lote?.quantidade_atual);
-                                                            const custoAtual = Number(lote?.custo_unitario ?? entrada.custo_unitario_snapshot) || 0;
+                                                            const custoAtual = Number(
+                                                                entrada.custo_atual ?? lote?.custo_unitario ?? entrada.custo_unitario_snapshot ?? 0
+                                                            ) || 0;
                                                             return (
                                                                 <div key={entrada.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                                                                     <div className="flex items-start justify-between gap-3">
                                                                         <div className="min-w-0">
-                                                                            <p className="break-words text-sm font-bold text-slate-900">Lote {entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</p>
+                                                                            <p className="break-all text-sm font-bold text-slate-900">Lote {entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</p>
                                                                             <p className="mt-1 text-xs text-slate-500">{fmtDateTime(entrada.criado_em)}</p>
-                                                                            <p className="mt-1 break-words text-xs text-slate-600">{entrada.deposito_destino_nome || lote?.deposito_nome || "Depósito não informado"}</p>
-                                                                        </div>
-                                                                        <div className="text-right">
-                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">Disponível</p>
-                                                                            <p className="text-xl font-bold text-slate-900">{disponivel}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3">
-                                                                        <div>
-                                                                            <p className="text-[10px] uppercase tracking-wide text-slate-500">Custo entrada</p>
-                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">{moneyBRL(Number(entrada.custo_unitario_snapshot) || 0)}</p>
+                                                                            <p className="mt-1 text-xs text-slate-600">Usuário: {entrada.operador_nome || "—"}</p>
                                                                         </div>
                                                                         <div className="text-right">
                                                                             <p className="text-[10px] uppercase tracking-wide text-slate-500">Custo atual</p>
-                                                                            <p className="mt-1 text-sm font-bold text-slate-900">{moneyBRL(custoAtual)}</p>
+                                                                            <p className="mt-1 text-base font-bold text-slate-900">{moneyBRL(custoAtual)}</p>
                                                                         </div>
                                                                     </div>
-                                                                    <Button
-                                                                        type="button"
-                                                                        variant="ghost"
-                                                                        className="mt-3 w-full"
-                                                                        disabled={!lote || disponivel <= 0}
-                                                                        onClick={() => abrirAjusteCusto("LOTE", lote?.id || 0)}
-                                                                    >
-                                                                        Corrigir custo deste lote
-                                                                    </Button>
                                                                 </div>
                                                             );
                                                         })}
@@ -7745,28 +7933,40 @@ export default function Page() {
 
                                         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                                             <div className="border-b border-slate-100 p-4">
-                                                <h3 className="text-sm font-bold text-slate-900">Histórico de ajustes manuais</h3>
+                                                <h3 className="text-sm font-bold text-slate-900">Histórico de ajustes</h3>
                                             </div>
                                             {(prodCustoDetalhe?.ajustes || []).length === 0 ? (
-                                                <div className="p-6 text-center text-sm text-slate-500">Nenhum ajuste manual registrado.</div>
+                                                <div className="p-6 text-center text-sm text-slate-500">Nenhum ajuste registrado.</div>
                                             ) : (
                                                 <div className="divide-y divide-slate-100">
-                                                    {(prodCustoDetalhe?.ajustes || []).map((ajuste) => (
-                                                        <div key={ajuste.id} className="grid gap-2 p-4 text-sm sm:grid-cols-[160px_1fr_auto] sm:items-center">
-                                                            <div className="text-slate-600">
-                                                                <p className="font-semibold text-slate-900">{ajuste.tipo === "REFERENCIA" ? "Custo de referência" : ajuste.tipo === "LOTE" ? "Correção de lote" : "Reavaliação do estoque"}</p>
-                                                                <p className="mt-1 text-xs">{fmtDateTime(ajuste.criado_em)}</p>
+                                                    {(prodCustoDetalhe?.ajustes || []).map((ajuste) => {
+                                                        const titulo = ajuste.tipo === "LOTE"
+                                                            ? "Correção de lote"
+                                                            : ajuste.tipo === "REAVALIACAO"
+                                                                ? "Reavaliação anterior"
+                                                                : "Novo preço de custo";
+                                                        return (
+                                                            <div key={ajuste.id} className="grid gap-2 p-4 text-sm sm:grid-cols-[170px_1fr_auto] sm:items-center">
+                                                                <div className="text-slate-600">
+                                                                    <p className="font-semibold text-slate-900">{titulo}</p>
+                                                                    <p className="mt-1 text-xs">{fmtDateTime(ajuste.criado_em)}</p>
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="break-words text-slate-700">{ajuste.observacao || "Sem observação."}</p>
+                                                                    <p className="mt-1 text-xs text-slate-500">Por {ajuste.usuario_nome || `Usuário #${ajuste.usuario_id}`}</p>
+                                                                    <p className="mt-1 text-xs text-slate-500">Base {moneyBRL(Number(ajuste.custo_base_novo ?? ajuste.novo_custo) || 0)} · Frete {moneyBRL(Number(ajuste.frete_total) || 0)}</p>
+                                                                </div>
+                                                                <div className="text-left sm:text-right">
+                                                                    <p className="font-bold text-slate-900">{moneyBRL(Number(ajuste.novo_custo) || 0)}</p>
+                                                                    {Number(ajuste.valor_diferenca) !== 0 ? (
+                                                                        <p className={["mt-1 text-xs font-semibold", Number(ajuste.valor_diferenca) > 0 ? "text-emerald-700" : "text-rose-700"].join(" ")}>
+                                                                            {Number(ajuste.valor_diferenca) > 0 ? "+" : ""}{moneyBRL(Number(ajuste.valor_diferenca) || 0)}
+                                                                        </p>
+                                                                    ) : null}
+                                                                </div>
                                                             </div>
-                                                            <div className="min-w-0">
-                                                                <p className="break-words font-medium text-slate-900">{ajuste.motivo}</p>
-                                                                <p className="mt-1 text-xs text-slate-500">Por {ajuste.usuario_nome || `Usuário #${ajuste.usuario_id}`} • {clampInt(ajuste.quantidade_afetada)} unidade(s)</p>
-                                                            </div>
-                                                            <div className="text-left sm:text-right">
-                                                                <p className="font-bold text-slate-900">{moneyBRL(Number(ajuste.novo_custo) || 0)}</p>
-                                                                <p className={["mt-1 text-xs font-semibold", Number(ajuste.valor_diferenca) > 0 ? "text-emerald-700" : Number(ajuste.valor_diferenca) < 0 ? "text-rose-700" : "text-slate-500"].join(" ")}>{Number(ajuste.valor_diferenca) > 0 ? "+" : ""}{moneyBRL(Number(ajuste.valor_diferenca) || 0)}</p>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </section>
@@ -7800,11 +8000,15 @@ export default function Page() {
                 })()}
             </Modal>
 
-            {/* MODAL: AJUSTE MANUAL DE CUSTO */}
+            {/* MODAL: AJUSTE DE PREÇO DE CUSTO */}
             <Modal
                 open={custoAjusteOpen}
-                title="Ajustar preço de custo"
-                onClose={() => !custoAjusteBusy && setCustoAjusteOpen(false)}
+                title={custoAjusteConfirmOpen ? "Confirmar ajuste de custo" : "Ajustar preço de custo"}
+                onClose={() => {
+                    if (custoAjusteBusy) return;
+                    setCustoAjusteConfirmOpen(false);
+                    setCustoAjusteOpen(false);
+                }}
                 closeOnEsc={!custoAjusteBusy}
                 panelClassName="sm:max-w-3xl"
             >
@@ -7812,56 +8016,116 @@ export default function Page() {
                     const lotesDisponiveis = (prodCustoDetalhe?.lotes || []).filter(
                         (lote) => clampInt(lote.quantidade_atual) > 0
                     );
-                    const loteSelecionado = lotesDisponiveis.find(
-                        (lote) => Number(lote.id) === Number(custoAjusteLoteId)
-                    );
-                    const depositosComLote = uniqOptions(
-                        lotesDisponiveis.map((lote) => ({
-                            id: Number(lote.deposito_id),
-                            nome: lote.deposito_nome || `Depósito #${lote.deposito_id}`,
-                        }))
-                    );
-                    const lotesReavaliacao = lotesDisponiveis.filter(
-                        (lote) =>
-                            !custoAjusteDepositoIds.length ||
-                            custoAjusteDepositoIds.includes(Number(lote.deposito_id))
-                    );
-                    const novoCusto = parseBRLToNumber(custoAjusteNovo);
+                    const resumo = calcularResumoAjusteCusto();
 
-                    let quantidadeAfetada = 0;
-                    let valorAnterior = 0;
-                    if (custoAjusteTipo === "LOTE" && loteSelecionado) {
-                        quantidadeAfetada = clampInt(loteSelecionado.quantidade_atual);
-                        valorAnterior = quantidadeAfetada * (Number(loteSelecionado.custo_unitario) || 0);
-                    } else if (custoAjusteTipo === "REAVALIACAO") {
-                        quantidadeAfetada = lotesReavaliacao.reduce(
-                            (total, lote) => total + clampInt(lote.quantidade_atual),
-                            0
-                        );
-                        valorAnterior = lotesReavaliacao.reduce(
-                            (total, lote) =>
-                                total +
-                                clampInt(lote.quantidade_atual) *
-                                (Number(lote.custo_unitario) || 0),
-                            0
+                    if (custoAjusteConfirmOpen) {
+                        return (
+                            <div className="space-y-4">
+                                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                                    <p className="text-sm font-bold text-slate-900">Resumo do ajuste</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                        Confira os valores abaixo. O ajuste será registrado no histórico depois da confirmação.
+                                    </p>
+                                </div>
+
+                                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                                    <dl className="divide-y divide-slate-100 text-sm">
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                            <dt className="text-slate-500">Produto</dt>
+                                            <dd className="font-semibold text-slate-900">{resumo.produto?.nome || "—"}</dd>
+                                        </div>
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                            <dt className="text-slate-500">Operação</dt>
+                                            <dd className="font-semibold text-slate-900">{custoAjusteTipo === "LOTE" ? "Corrigir lote" : "Novo preço de custo"}</dd>
+                                        </div>
+                                        {custoAjusteTipo === "LOTE" ? (
+                                            <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                                <dt className="text-slate-500">Lote</dt>
+                                                <dd className="break-all font-mono text-xs font-semibold text-slate-900">{resumo.lote?.numero_lote || "—"}</dd>
+                                            </div>
+                                        ) : null}
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                            <dt className="text-slate-500">Custo base</dt>
+                                            <dd className="font-semibold text-slate-900">{moneyBRL(resumo.custoBase)}</dd>
+                                        </div>
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                            <dt className="text-slate-500">Frete total</dt>
+                                            <dd className="font-semibold text-slate-900">{moneyBRL(resumo.freteTotal)}</dd>
+                                        </div>
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                            <dt className="text-slate-500">Quantidade do rateio</dt>
+                                            <dd className="font-semibold text-slate-900">{resumo.quantidadeRateio}</dd>
+                                        </div>
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                            <dt className="text-slate-500">Frete por unidade</dt>
+                                            <dd className="font-semibold text-slate-900">{moneyBRL(resumo.freteUnitario)}</dd>
+                                        </div>
+                                        <div className="grid grid-cols-[140px_1fr] gap-3 bg-slate-50 p-3">
+                                            <dt className="font-semibold text-slate-700">Novo custo final</dt>
+                                            <dd className="text-lg font-bold text-slate-950">{moneyBRL(resumo.custoFinal)}</dd>
+                                        </div>
+                                        {custoAjusteTipo === "LOTE" ? (
+                                            <>
+                                                <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                                    <dt className="text-slate-500">Saldo afetado</dt>
+                                                    <dd className="font-semibold text-slate-900">{resumo.quantidadeAfetada}</dd>
+                                                </div>
+                                                <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                                    <dt className="text-slate-500">Valor atual</dt>
+                                                    <dd className="font-semibold text-slate-900">{moneyBRL(resumo.valorAnterior)}</dd>
+                                                </div>
+                                                <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                                    <dt className="text-slate-500">Novo valor</dt>
+                                                    <dd className="font-semibold text-slate-900">{moneyBRL(resumo.valorNovo)}</dd>
+                                                </div>
+                                                <div className="grid grid-cols-[140px_1fr] gap-3 p-3">
+                                                    <dt className="text-slate-500">Diferença</dt>
+                                                    <dd className={resumo.diferenca > 0 ? "font-bold text-emerald-700" : resumo.diferenca < 0 ? "font-bold text-rose-700" : "font-bold text-slate-700"}>
+                                                        {resumo.diferenca > 0 ? "+" : ""}{moneyBRL(resumo.diferenca)}
+                                                    </dd>
+                                                </div>
+                                            </>
+                                        ) : null}
+                                    </dl>
+                                </div>
+
+                                {custoAjusteObservacao.trim() ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                                        <span className="font-semibold">Observação:</span> {custoAjusteObservacao.trim()}
+                                    </div>
+                                ) : null}
+
+                                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        disabled={custoAjusteBusy}
+                                        onClick={() => setCustoAjusteConfirmOpen(false)}
+                                    >
+                                        Voltar
+                                    </Button>
+                                    <Button type="button" disabled={custoAjusteBusy} onClick={salvarAjusteCusto}>
+                                        {custoAjusteBusy ? "Confirmando..." : "Confirmar ajuste"}
+                                    </Button>
+                                </div>
+                            </div>
                         );
                     }
-                    const valorNovo = quantidadeAfetada * novoCusto;
-                    const diferenca = valorNovo - valorAnterior;
 
                     return (
-                        <div className="space-y-5">
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 {([
-                                    ["REFERENCIA", "Referência", "Altera somente o custo exibido como referência."],
-                                    ["LOTE", "Corrigir lote", "Altera o custo efetivo de um lote ainda disponível."],
-                                    ["REAVALIACAO", "Reavaliar estoque", "Aplica um novo custo aos lotes disponíveis selecionados."],
+                                    ["NOVO_PRECO", "Novo preço de custo", "Define o custo do cadastro e permite ratear o frete pelo saldo atual."],
+                                    ["LOTE", "Corrigir lote", "Corrige custo e frete de um lote que ainda possui saldo."],
                                 ] as Array<[CustoAjusteTipo, string, string]>).map(([tipo, titulo, descricao]) => {
-                                    const active = custoAjusteTipo === tipo;
+                                    const ativo = custoAjusteTipo === tipo;
+                                    const indisponivel = tipo === "LOTE" && lotesDisponiveis.length === 0;
                                     return (
                                         <button
                                             key={tipo}
                                             type="button"
+                                            disabled={indisponivel}
                                             onClick={() => {
                                                 setCustoAjusteTipo(tipo);
                                                 if (tipo === "LOTE" && !custoAjusteLoteId) {
@@ -7869,167 +8133,103 @@ export default function Page() {
                                                 }
                                             }}
                                             className={[
-                                                "rounded-2xl border p-4 text-left transition",
-                                                active
-                                                    ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100"
-                                                    : "border-slate-200 bg-white hover:border-slate-300",
+                                                "rounded-2xl border p-4 text-left shadow-sm transition",
+                                                ativo ? "border-sky-300 bg-sky-50 ring-2 ring-sky-100" : "border-slate-200 bg-white hover:border-slate-300",
+                                                indisponivel ? "cursor-not-allowed opacity-50" : "",
                                             ].join(" ")}
                                         >
-                                            <p className="font-bold text-slate-900">{titulo}</p>
-                                            <p className="mt-1 text-xs leading-relaxed text-slate-600">{descricao}</p>
+                                            <p className="text-sm font-bold text-slate-900">{titulo}</p>
+                                            <p className="mt-1 text-xs text-slate-500">{descricao}</p>
                                         </button>
                                     );
                                 })}
                             </div>
 
                             {custoAjusteTipo === "LOTE" ? (
-                                <Field label="Lote a corrigir">
+                                <Field label="Lote">
                                     <Select
                                         value={custoAjusteLoteId}
                                         onChange={(e) => {
-                                            const loteId = Number(e.target.value);
-                                            setCustoAjusteLoteId(loteId);
-                                            const lote = lotesDisponiveis.find((item) => Number(item.id) === loteId);
+                                            const id = Number(e.target.value);
+                                            setCustoAjusteLoteId(id);
+                                            const lote = lotesDisponiveis.find((item) => Number(item.id) === id);
                                             if (lote) {
-                                                setCustoAjusteNovo(
-                                                    maskBRLFromDigits(
-                                                        String(Math.round((Number(lote.custo_unitario) || 0) * 100))
-                                                    )
-                                                );
+                                                const freteUnit = Number(lote.frete_unitario) || 0;
+                                                const base = Number(lote.custo_base_unitario);
+                                                const baseSeguro = Number.isFinite(base)
+                                                    ? base
+                                                    : Math.max(0, (Number(lote.custo_unitario) || 0) - freteUnit);
+                                                setCustoAjusteNovo(maskBRLFromDigits(String(Math.round(baseSeguro * 100))));
+                                                setCustoAjusteFreteTotal(maskBRLFromDigits(String(Math.round((Number(lote.frete_total) || 0) * 100))));
                                             }
                                         }}
                                     >
-                                        <option value={0}>Selecione...</option>
+                                        <option value={0}>Selecionar...</option>
                                         {lotesDisponiveis.map((lote) => (
                                             <option key={lote.id} value={lote.id}>
-                                                {lote.numero_lote} • {lote.deposito_nome || `Depósito #${lote.deposito_id}`} • saldo {clampInt(lote.quantidade_atual)} • {moneyBRL(Number(lote.custo_unitario) || 0)}
+                                                {lote.numero_lote} — entrada {clampInt(lote.quantidade_inicial)} — disponível {clampInt(lote.quantidade_atual)}
                                             </option>
                                         ))}
                                     </Select>
                                 </Field>
                             ) : null}
 
-                            {custoAjusteTipo === "REAVALIACAO" ? (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <p className="text-sm font-bold text-slate-900">Depósitos afetados</p>
-                                        <button
-                                            type="button"
-                                            onClick={() => setCustoAjusteDepositoIds([])}
-                                            className="text-xs font-semibold text-sky-700 hover:underline"
-                                        >
-                                            Todos
-                                        </button>
-                                    </div>
-                                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        {depositosComLote.map((deposito) => {
-                                            const checked = custoAjusteDepositoIds.includes(Number(deposito.id));
-                                            return (
-                                                <label key={deposito.id} className="flex cursor-pointer items-center gap-3 rounded-xl bg-white p-3 ring-1 ring-slate-200">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={checked}
-                                                        onChange={() =>
-                                                            setCustoAjusteDepositoIds((prev) =>
-                                                                checked
-                                                                    ? prev.filter((id) => Number(id) !== Number(deposito.id))
-                                                                    : [...prev, Number(deposito.id)]
-                                                            )
-                                                        }
-                                                        className="h-5 w-5 accent-sky-600"
-                                                    />
-                                                    <span className="text-sm font-medium text-slate-800">{deposito.nome}</span>
-                                                </label>
-                                            );
-                                        })}
-                                    </div>
-                                    {!custoAjusteDepositoIds.length ? (
-                                        <p className="mt-3 text-xs text-slate-500">Nenhum depósito marcado: todos os depósitos com saldo serão reavaliados.</p>
-                                    ) : null}
-                                </div>
-                            ) : null}
-
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                <Field label="Novo custo unitário">
+                                <Field label="Preço de custo por unidade">
                                     <TextInput
-                                        type="text"
-                                        inputMode="numeric"
                                         value={custoAjusteNovo}
                                         onChange={(e) => setCustoAjusteNovo(maskBRLInput(e.target.value))}
-                                        className="py-3 text-lg font-bold"
+                                        placeholder="R$ 0,00"
                                     />
                                 </Field>
-                                <Field label="Motivo obrigatório">
+                                <Field label="Frete total">
                                     <TextInput
-                                        value={custoAjusteMotivo}
-                                        onChange={(e) => setCustoAjusteMotivo(e.target.value)}
-                                        maxLength={255}
-                                        placeholder="Ex.: correção da nota fiscal"
+                                        value={custoAjusteFreteTotal}
+                                        onChange={(e) => setCustoAjusteFreteTotal(maskBRLInput(e.target.value))}
+                                        placeholder="R$ 0,00"
                                     />
                                 </Field>
                             </div>
 
-                            <Field label="Observação">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                <div className="rounded-2xl bg-slate-50 p-3">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Quantidade rateio</p>
+                                    <p className="mt-1 text-lg font-bold text-slate-900">{resumo.quantidadeRateio}</p>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-3">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Frete unitário</p>
+                                    <p className="mt-1 text-lg font-bold text-slate-900">{moneyBRL(resumo.freteUnitario)}</p>
+                                </div>
+                                <div className="col-span-2 rounded-2xl bg-slate-900 p-3 text-white">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-300">Custo final por unidade</p>
+                                    <p className="mt-1 text-xl font-bold">{moneyBRL(resumo.custoFinal)}</p>
+                                </div>
+                            </div>
+
+                            <Field label="Observação (opcional)">
                                 <TextArea
+                                    rows={4}
                                     value={custoAjusteObservacao}
                                     onChange={(e) => setCustoAjusteObservacao(e.target.value)}
-                                    rows={3}
-                                    maxLength={2000}
-                                    placeholder="Detalhes adicionais do ajuste..."
+                                    placeholder="Ex: correção conforme nota fiscal, inclusão de frete..."
                                 />
                             </Field>
 
-                            {custoAjusteTipo !== "REFERENCIA" ? (
-                                <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-                                    <input
-                                        type="checkbox"
-                                        checked={custoAjusteAtualizarReferencia}
-                                        onChange={(e) => setCustoAjusteAtualizarReferencia(e.target.checked)}
-                                        className="h-5 w-5 accent-sky-600"
-                                    />
-                                    <span className="text-sm font-medium text-slate-800">Usar o novo valor também como custo de referência do produto</span>
-                                </label>
-                            ) : null}
-
-                            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-900 p-4 text-white sm:grid-cols-4">
-                                <div>
-                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Quantidade</p>
-                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? "—" : quantidadeAfetada}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Valor anterior</p>
-                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? editPrecoCusto : moneyBRL(valorAnterior)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Valor novo</p>
-                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? custoAjusteNovo : moneyBRL(valorNovo)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Diferença</p>
-                                    <p className="mt-1 text-lg font-bold">{custoAjusteTipo === "REFERENCIA" ? "—" : `${diferenca > 0 ? "+" : ""}${moneyBRL(diferenca)}`}</p>
-                                </div>
-                            </div>
-
                             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                                 <Button
-                                    variant="ghost"
                                     type="button"
-                                    onClick={() => setCustoAjusteOpen(false)}
+                                    variant="ghost"
                                     disabled={custoAjusteBusy}
+                                    onClick={() => setCustoAjusteOpen(false)}
                                 >
                                     Cancelar
                                 </Button>
                                 <Button
                                     type="button"
-                                    onClick={salvarAjusteCusto}
-                                    disabled={
-                                        custoAjusteBusy ||
-                                        custoAjusteMotivo.trim().length < 3 ||
-                                        (custoAjusteTipo === "LOTE" && !custoAjusteLoteId) ||
-                                        (custoAjusteTipo === "REAVALIACAO" && quantidadeAfetada <= 0)
-                                    }
+                                    disabled={custoAjusteBusy || (custoAjusteTipo === "LOTE" && !custoAjusteLoteId)}
+                                    onClick={prepararConfirmacaoAjusteCusto}
                                 >
-                                    {custoAjusteBusy ? "Registrando..." : "Confirmar ajuste"}
+                                    Revisar ajuste
                                 </Button>
                             </div>
                         </div>
@@ -8142,13 +8342,33 @@ export default function Page() {
                             />
                         </Field>
 
-                        <Field label="Preço de custo desta entrada" hint="Começa zerado. Informe o novo custo do lote.">
+                        <Field label="Preço de custo por unidade" hint="Valor unitário antes do frete.">
                             <TextInput
                                 value={entradaCustoUnitario}
                                 onChange={(e) => setEntradaCustoUnitario(maskBRLInput(e.target.value))}
                                 placeholder="R$ 0,00"
                             />
                         </Field>
+
+                        <Field label="Frete total" hint="O frete será dividido pela quantidade e somado ao custo de cada unidade.">
+                            <TextInput
+                                value={entradaFreteTotal}
+                                onChange={(e) => setEntradaFreteTotal(maskBRLInput(e.target.value))}
+                                placeholder="R$ 0,00"
+                            />
+                        </Field>
+
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-xs text-slate-500">Custo final por unidade</p>
+                            <p className="mt-1 text-lg font-bold text-slate-900">
+                                {moneyBRL(
+                                    parseBRLToNumber(entradaCustoUnitario) +
+                                    (clampInt(entradaQtd) > 0
+                                        ? parseBRLToNumber(entradaFreteTotal) / clampInt(entradaQtd)
+                                        : 0)
+                                )}
+                            </p>
+                        </div>
 
                         <Field label="Adicionar à lista" hint="Adiciona o item atual na fila.">
                             <Button
@@ -8204,8 +8424,20 @@ export default function Page() {
                                                     <span className="text-lg font-bold leading-none text-slate-900">{it.qtd}</span>
                                                 </div>
                                                 <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <span className="text-xs text-slate-600">Custo</span>
+                                                    <span className="text-xs text-slate-600">Base</span>
+                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoBaseUnitario || 0)}</span>
+                                                </div>
+                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Frete</span>
+                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.freteTotal || 0)}</span>
+                                                </div>
+                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Custo final</span>
                                                     <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoUnitario || 0)}</span>
+                                                </div>
+                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                                    <span className="text-xs text-slate-600">Total</span>
+                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoTotal || 0)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -8293,7 +8525,10 @@ export default function Page() {
                                     <div className="min-w-0">
                                         <p className="truncate text-sm font-semibold text-slate-900">{it.nome}</p>
                                         <p className="text-xs text-slate-500">
-                                            Quantidade: <b>{it.qtd}</b> • Custo: <b>{moneyBRL(it.custoUnitario || 0)}</b>
+                                            Quantidade: <b>{it.qtd}</b> • Base: <b>{moneyBRL(it.custoBaseUnitario || 0)}</b>
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            Frete: <b>{moneyBRL(it.freteTotal || 0)}</b> • Custo final: <b>{moneyBRL(it.custoUnitario || 0)}</b> • Total: <b>{moneyBRL(it.custoTotal || 0)}</b>
                                         </p>
                                     </div>
                                 </li>
