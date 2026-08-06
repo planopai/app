@@ -520,6 +520,58 @@ function parseBRLToNumber(brlText: string) {
     return cents / 100;
 }
 
+function roundCost(value: number) {
+    if (!Number.isFinite(value)) return 0;
+    return Math.round(Math.max(0, value) * 10000) / 10000;
+}
+
+function ratearFreteEntrada(items: EntradaItem[], freteTotalInformado: number): EntradaItem[] {
+    const totalQuantidade = items.reduce((total, item) => total + clampInt(item.qtd), 0);
+    const freteTotal = roundCost(freteTotalInformado);
+
+    if (!items.length || totalQuantidade <= 0) {
+        return items.map((item) => ({
+            ...item,
+            freteTotal: 0,
+            freteUnitario: 0,
+            custoUnitario: roundCost(item.custoBaseUnitario),
+            custoTotal: roundCost(item.custoBaseUnitario * item.qtd),
+            payload: { ...item.payload, frete_total: 0 },
+        }));
+    }
+
+    const fretePorUnidadeTeorico = freteTotal / totalQuantidade;
+    let freteDistribuido = 0;
+
+    return items.map((item, index) => {
+        const quantidade = clampInt(item.qtd);
+        const isLast = index === items.length - 1;
+        const freteRestante = roundCost(Math.max(0, freteTotal - freteDistribuido));
+        const freteCalculado = roundCost(fretePorUnidadeTeorico * quantidade);
+        const freteDoItem = isLast
+            ? freteRestante
+            : Math.min(freteCalculado, freteRestante);
+
+        freteDistribuido = roundCost(freteDistribuido + freteDoItem);
+
+        const freteUnitario = quantidade > 0 ? roundCost(freteDoItem / quantidade) : 0;
+        const custoUnitario = roundCost(item.custoBaseUnitario + freteUnitario);
+        const custoTotal = roundCost(custoUnitario * quantidade);
+
+        return {
+            ...item,
+            freteTotal: freteDoItem,
+            freteUnitario,
+            custoUnitario,
+            custoTotal,
+            payload: {
+                ...item.payload,
+                frete_total: freteDoItem,
+            },
+        };
+    });
+}
+
 function maskBRLInput(raw: string) {
     const digits = (raw || "").replace(/\D/g, "");
     return maskBRLFromDigits(digits);
@@ -1883,7 +1935,6 @@ export default function Page() {
     const [editFabId, setEditFabId] = useState<ID>(0);
     const [editClassId, setEditClassId] = useState<ID>(0);
     const [editAtivo, setEditAtivo] = useState<0 | 1>(1);
-    const [produtoStatusBusy, setProdutoStatusBusy] = useState(false);
     const [produtoDepositoBusy, setProdutoDepositoBusy] = useState(false);
     const [editNovoDepositoId, setEditNovoDepositoId] = useState<ID>(0);
 
@@ -1903,6 +1954,10 @@ export default function Page() {
 
     const depById = useMemo(() => new Map(depositos.map((d) => [d.id, d])), [depositos]);
     const prodById = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
+    const produtosAtivos = useMemo(
+        () => produtos.filter((p) => Number(p.ativo) === 1),
+        [produtos]
+    );
     const userById = useMemo(() => new Map(usuarios.map((u) => [u.id, u])), [usuarios]);
     const catById = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias]);
     const fabById = useMemo(() => new Map(fabricantes.map((f) => [f.id, f])), [fabricantes]);
@@ -1936,7 +1991,8 @@ export default function Page() {
 
             setCategorias((j.categorias || []).filter((c) => Number(c.ativo) === 1));
             setFabricantes((j.fabricantes || []).filter((f) => Number(f.ativo) === 1));
-            setProdutos((j.produtos || []).filter((p) => Number(p.ativo) === 1));
+            // Mantém ativos e inativos em memória. As telas operacionais usam produtosAtivos.
+            setProdutos(j.produtos || []);
             setClassificacoes((j.classificacoes || []).filter((c) => Number(c.ativo) === 1));
 
             setSaldos(j.saldos || []);
@@ -1963,9 +2019,9 @@ export default function Page() {
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
-            if (!p || !d) continue;
+            if (!p || !d || Number(p.ativo) !== 1) continue;
 
-            const min = clampInt((s as any).minimo ?? 0);
+            const min = clampInt(s.minimo ?? 0);
             const max = clampInt((s as any).maximo ?? 0);
             const qtd = clampInt(s.quantidade);
 
@@ -2005,6 +2061,9 @@ export default function Page() {
 
     // ✅ NOVO: ocultar itens zerados
     const [onlyPositive, setOnlyPositive] = useState(false);
+
+    // Quando marcado, a listagem troca dos produtos ativos para os inativos.
+    const [onlyInactive, setOnlyInactive] = useState(false);
 
     // ✅ NOVO: abre/fecha o filtro da aba Estoque
     const [estoqueFilterOpen, setEstoqueFilterOpen] = useState(false);
@@ -2306,6 +2365,9 @@ export default function Page() {
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
 
+            const produtoInativo = Number(p.ativo) !== 1;
+            if (onlyInactive ? !produtoInativo : produtoInativo) continue;
+
             if (depSet && !depSet.has(Number(d.id))) continue;
 
             if (catSet) {
@@ -2342,6 +2404,30 @@ export default function Page() {
                     min: minSaldo,
                     max: maxSaldo,
                     depositos: new Map<ID, string>([[d.id, d.nome]]),
+                });
+            }
+        }
+
+        // Também inclui produtos sem linha em est_saldo quando nenhum depósito específico foi filtrado.
+        // Isso garante que a opção Produtos inativos mostre todos os cadastros inativos.
+        if (!depSet) {
+            for (const p of produtos) {
+                const produtoInativo = Number(p.ativo) !== 1;
+                if (onlyInactive ? !produtoInativo : produtoInativo) continue;
+                if (agrupados.has(p.id)) continue;
+
+                if (catSet && !catSet.has(Number(p.categoria_id || 0))) continue;
+                if (fabSet && !fabSet.has(Number(p.fabricante_id || 0))) continue;
+                if (clsSet && !clsSet.has(Number(p.classificacao_id || 0))) continue;
+
+                agrupados.set(p.id, {
+                    p,
+                    primeiroDeposito: depositos[0] || { id: 0, nome: "" },
+                    primeiroSaldo: undefined,
+                    qtd: 0,
+                    min: 0,
+                    max: 0,
+                    depositos: new Map<ID, string>(),
                 });
             }
         }
@@ -2399,6 +2485,8 @@ export default function Page() {
         return rows;
     }, [
         saldos,
+        produtos,
+        depositos,
         prodById,
         depById,
         qEstoque,
@@ -2408,6 +2496,7 @@ export default function Page() {
         classFiltroEstoque,
         onlyLow,
         onlyPositive,
+        onlyInactive,
         catById,
         fabById,
         classById,
@@ -2431,6 +2520,9 @@ export default function Page() {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
+
+            const produtoInativo = Number(p.ativo) !== 1;
+            if (onlyInactive ? !produtoInativo : produtoInativo) continue;
 
             const qtd = clampInt(s.quantidade);
             if (onlyPositive && qtd <= 0) continue;
@@ -2560,6 +2652,7 @@ export default function Page() {
         qEstoque,
         onlyPositive,
         onlyLow,
+        onlyInactive,
         depFiltroEstoque,
         catFiltroEstoque,
         fabFiltroEstoque,
@@ -3790,13 +3883,13 @@ export default function Page() {
 
     const entradaProdutoExistente = useMemo(() => {
         if (entradaProdutoId) {
-            return produtos.find((p) => p.id === entradaProdutoId) ?? null;
+            return produtosAtivos.find((p) => p.id === entradaProdutoId) ?? null;
         }
 
         const cb = entradaBarcode.trim();
         if (!cb) return null;
-        return produtos.find((p) => p.codigo_barras === cb) ?? null;
-    }, [entradaBarcode, entradaProdutoId, produtos]);
+        return produtosAtivos.find((p) => p.codigo_barras === cb) ?? null;
+    }, [entradaBarcode, entradaProdutoId, produtosAtivos]);
 
     // NOVO: quando digitar/scanear CB, sincroniza com a barra de pesquisa (Entrada)
     useEffect(() => {
@@ -3806,7 +3899,7 @@ export default function Page() {
             // não zera query para não atrapalhar digitação do usuário
             return;
         }
-        const p = produtos.find((x) => x.codigo_barras === cb) ?? null;
+        const p = produtosAtivos.find((x) => x.codigo_barras === cb) ?? null;
         if (p) {
             setEntradaProdutoId(p.id);
             setEntradaProdQuery(p.nome);
@@ -3892,7 +3985,7 @@ export default function Page() {
         const ids = new Set<ID>();
         for (const s of saldos) if (s.deposito_id === depId) ids.add(s.produto_id);
 
-        let list = produtos.filter((p) => ids.has(p.id));
+        let list = produtosAtivos.filter((p) => ids.has(p.id));
 
         if (entradaCatFiltroId !== "Todas") {
             list = list.filter((p) => Number(p.categoria_id || 0) === Number(entradaCatFiltroId));
@@ -3903,7 +3996,7 @@ export default function Page() {
         }
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [saldos, produtos, entradaDepositoId, entradaCatFiltroId, entradaFabFiltroId]);
+    }, [saldos, produtosAtivos, entradaDepositoId, entradaCatFiltroId, entradaFabFiltroId]);
 
     useEffect(() => {
         const produtoAindaExiste = entradaProdutoId && entradaProdutosNoDeposito.some((p) => p.id === entradaProdutoId);
@@ -4049,7 +4142,7 @@ export default function Page() {
         setEntradaProdQuery("");
         setEntradaQtd("1");
         setEntradaCustoUnitario("R$ 0,00");
-        setEntradaFreteTotal("R$ 0,00");
+        // O frete é único para toda a entrada e permanece ao adicionar novos itens.
     }
 
     // ✅ NOVO: cancelar fecha e limpa tudo
@@ -4068,10 +4161,11 @@ export default function Page() {
         const deposito_id = Number(entradaDepositoId);
         const quantidade = clampInt(entradaQtd || "0");
         const custoBaseUnitario = parseBRLToNumber(entradaCustoUnitario);
-        const freteTotal = parseBRLToNumber(entradaFreteTotal);
-        const freteUnitario = quantidade > 0 ? freteTotal / quantidade : 0;
-        const custoUnitario = custoBaseUnitario + freteUnitario;
-        const custoTotal = custoUnitario * quantidade;
+        // O frete é rateado somente ao concluir a entrada completa.
+        const freteTotal = 0;
+        const freteUnitario = 0;
+        const custoUnitario = roundCost(custoBaseUnitario);
+        const custoTotal = roundCost(custoUnitario * quantidade);
         const produtoSelecionado = entradaProdutoExistente;
         const codigo_barras = String(produtoSelecionado?.codigo_barras || entradaBarcode).trim();
 
@@ -4080,7 +4174,6 @@ export default function Page() {
         if (!codigo_barras) return alert("O produto selecionado não possui código de barras."), null;
         if (quantidade <= 0) return alert("Quantidade inválida."), null;
         if (custoBaseUnitario <= 0) return alert("Informe o preço de custo unitário desta entrada."), null;
-        if (freteTotal < 0) return alert("O valor do frete não pode ser negativo."), null;
 
         const payload: any = {
             action: "entrada",
@@ -4108,11 +4201,44 @@ export default function Page() {
         };
     }
 
+    function montarPayloadEntradaLote(items: EntradaItem[]) {
+        const freteTotal = parseBRLToNumber(entradaFreteTotal);
+        const totalQuantidade = items.reduce((total, item) => total + clampInt(item.qtd), 0);
+
+        if (freteTotal < 0) {
+            alert("O valor do frete não pode ser negativo.");
+            return null;
+        }
+        if (freteTotal > 0 && totalQuantidade <= 0) {
+            alert("Adicione itens com quantidade válida para ratear o frete.");
+            return null;
+        }
+
+        return {
+            action: "entrada_lote",
+            deposito_id: Number(entradaDepositoId),
+            frete_total: freteTotal,
+            observacao: entradaObs.trim() || undefined,
+            itens: items.map((item) => ({
+                codigo_barras: String(item.payload.codigo_barras || "").trim(),
+                quantidade: clampInt(item.qtd),
+                custo_unitario: roundCost(item.custoBaseUnitario),
+            })),
+        };
+    }
+
     async function applyEntradaSingle() {
         const built = buildEntradaPayloadFromForm();
         if (!built) return;
 
-        const r = await apiPost<{ ok: boolean; msg?: string }>(built.payload);
+        const items = ratearFreteEntrada(
+            [{ id: entradaSeqRef.current++, ...built }],
+            parseBRLToNumber(entradaFreteTotal)
+        );
+        const payload = montarPayloadEntradaLote(items);
+        if (!payload) return;
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
         if (!r.ok) return alert(r.msg || "Falha na entrada.");
 
         resetEntradaForm();
@@ -4127,33 +4253,22 @@ export default function Page() {
         const id = entradaSeqRef.current++;
         setEntradaItens((prev) => [...prev, { id, ...built }]);
 
-        // ✅ mantém depósito/filtros/observação para continuar montando o lote
+        // Mantém depósito, filtros, observação e o frete global.
         resetEntradaItemFieldsOnly();
     }
 
-
     async function applyEntradaLote() {
-        let items = [...entradaItens];
-
-        if (entradaBarcode.trim()) {
-            const built = buildEntradaPayloadFromForm();
-            if (!built) return;
-            const id = entradaSeqRef.current++;
-            items = [...items, { id, ...built }];
-        }
-
-        if (!items.length) {
+        const snap = montarSnapshotConcluirEntrada();
+        if (!snap || !snap.length) {
             alert("Adicione pelo menos um item para entrada.");
             return;
         }
 
-        for (const it of items) {
-            const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
-            if (!r.ok) {
-                alert(`Erro na entrada de "${it.resumo}": ${r.msg || "Falha."}`);
-                return;
-            }
-        }
+        const payload = montarPayloadEntradaLote(snap);
+        if (!payload) return;
+
+        const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
+        if (!r.ok) return alert(r.msg || "Falha na entrada.");
 
         resetEntradaForm();
         setEntradaItens([]);
@@ -4176,12 +4291,12 @@ export default function Page() {
             base.push({ id: entradaSeqRef.current++, ...built });
         }
 
-        return base;
+        return ratearFreteEntrada(base, parseBRLToNumber(entradaFreteTotal));
     }
 
     function abrirConcluirEntrada() {
         const snap = montarSnapshotConcluirEntrada();
-        if (!snap) return; // buildEntradaPayloadFromForm já alerta se inválido
+        if (!snap) return;
         if (!snap.length) {
             alert("Adicione pelo menos um item para entrada.");
             return;
@@ -4194,17 +4309,17 @@ export default function Page() {
     async function confirmarEntradaDoSnapshot() {
         if (!entradaConcluirItens.length) return;
 
+        const payload = montarPayloadEntradaLote(entradaConcluirItens);
+        if (!payload) return;
+
         setEntradaConcluirBusy(true);
         try {
-            for (const it of entradaConcluirItens) {
-                const r = await apiPost<{ ok: boolean; msg?: string }>(it.payload);
-                if (!r.ok) {
-                    alert(`Erro na entrada de "${it.nome}": ${r.msg || "Falha."}`);
-                    return;
-                }
+            const r = await apiPost<{ ok: boolean; msg?: string }>(payload);
+            if (!r.ok) {
+                alert(r.msg || "Falha ao registrar a entrada.");
+                return;
             }
 
-            // ✅ sucesso
             setEntradaConcluirOpen(false);
             setEntradaItens([]);
             resetEntradaForm();
@@ -4212,7 +4327,6 @@ export default function Page() {
 
             await refreshInit();
             setTab("ESTOQUE");
-
             setEntradaSucessoOpen(true);
         } finally {
             setEntradaConcluirBusy(false);
@@ -4472,37 +4586,6 @@ export default function Page() {
         setProdEditOpen(true);
     }
 
-    async function alternarStatusProduto() {
-        if (!prodEditId) return;
-
-        const novoStatus: 0 | 1 = editAtivo === 1 ? 0 : 1;
-        const acao = novoStatus === 1 ? "ativar" : "inativar";
-        const confirmado = window.confirm(
-            novoStatus === 1
-                ? "Deseja ativar este produto? Ele voltará a aparecer nas telas do sistema."
-                : "Deseja inativar este produto? Ele deixará de aparecer nas telas operacionais."
-        );
-        if (!confirmado) return;
-
-        setProdutoStatusBusy(true);
-        try {
-            const resp = await apiPost<{ ok: boolean; msg?: string; ativo?: 0 | 1 }>({
-                action: "produto_status_setar",
-                produto_id: prodEditId,
-                ativo: novoStatus,
-            });
-            if (!resp.ok) return alert(resp.msg || `Falha ao ${acao} o produto.`);
-
-            setEditAtivo(novoStatus);
-            if (novoStatus === 0) setProdEditOpen(false);
-            await refreshInit();
-            alert(resp.msg || `Produto ${novoStatus === 1 ? "ativado" : "inativado"}.`);
-        } catch (e: any) {
-            alert(e?.message || `Erro ao ${acao} o produto.`);
-        } finally {
-            setProdutoStatusBusy(false);
-        }
-    }
 
     async function adicionarProdutoAoDeposito() {
         if (!prodEditId || !editNovoDepositoId) {
@@ -4681,6 +4764,7 @@ export default function Page() {
                 categoria_id: editCatId ? Number(editCatId) : 0,
                 fabricante_id: editFabId ? Number(editFabId) : 0,
                 classificacao_id: editClassId ? Number(editClassId) : 0,
+                ativo: editAtivo,
 
                 // ✅ nova estrutura de galeria
                 fotos: [
@@ -4969,14 +5053,14 @@ export default function Page() {
             if (s.deposito_id === depId && clampInt(s.quantidade) > 0) ids.add(s.produto_id);
         }
 
-        let list = produtos.filter((p) => ids.has(p.id));
+        let list = produtosAtivos.filter((p) => ids.has(p.id));
 
         if (saidaCategoriaId !== "Todas") {
             list = list.filter((p) => Number(p.categoria_id || 0) === Number(saidaCategoriaId));
         }
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [saldos, produtos, saidaDepositoId, saidaCategoriaId]);
+    }, [saldos, produtosAtivos, saidaDepositoId, saidaCategoriaId]);
 
     useEffect(() => {
         const produtoAindaExiste = saidaProdutoId && saidaProdutosNoDeposito.some((p) => p.id === saidaProdutoId);
@@ -4990,7 +5074,7 @@ export default function Page() {
     function onSaidaBarcodePick(code: string) {
         // mantém para digitação manual no campo (sem popup)
         setSaidaBarcode(code);
-        const p = produtos.find((x) => x.codigo_barras === code);
+        const p = produtosAtivos.find((x) => x.codigo_barras === code);
         if (p) {
             setSaidaProdutoId(p.id);
             setSaidaProdQuery(p.nome);
@@ -5008,7 +5092,7 @@ export default function Page() {
         if (!deposito_id) return alert("Selecione o depósito (origem) antes de usar o scanner.");
         if (!destino_texto) return alert("Selecione o destino antes de usar o scanner.");
 
-        const p = produtos.find((x) => x.codigo_barras === code.trim()) ?? null;
+        const p = produtosAtivos.find((x) => x.codigo_barras === code.trim()) ?? null;
         if (!p) {
             alert(`Produto não encontrado para o código: ${code}`);
             return;
@@ -5350,14 +5434,14 @@ export default function Page() {
             if (s.deposito_id === depId && clampInt(s.quantidade) > 0) ids.add(s.produto_id);
         }
 
-        let list = produtos.filter((p) => ids.has(p.id));
+        let list = produtosAtivos.filter((p) => ids.has(p.id));
 
         if (trfCategoriaId !== "Todas") {
             list = list.filter((p) => Number(p.categoria_id || 0) === Number(trfCategoriaId));
         }
 
         return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [saldos, produtos, trfOrigemId, trfCategoriaId]);
+    }, [saldos, produtosAtivos, trfOrigemId, trfCategoriaId]);
 
     useEffect(() => {
         const produtoAindaExiste = trfProdutoId && trfProdutosNaOrigem.some((p) => p.id === trfProdutoId);
@@ -5371,7 +5455,7 @@ export default function Page() {
     function onTrfBarcodePick(code: string) {
         // mantém para digitação manual no campo (sem popup)
         setTrfBarcode(code);
-        const p = produtos.find((x) => x.codigo_barras === code);
+        const p = produtosAtivos.find((x) => x.codigo_barras === code);
         if (p) {
             setTrfProdutoId(p.id);
             setTrfProdQuery(p.nome);
@@ -5388,7 +5472,7 @@ export default function Page() {
         if (!deposito_origem_id || !deposito_destino_id) return alert("Selecione origem e destino antes de usar o scanner.");
         if (deposito_origem_id === deposito_destino_id) return alert("Origem e destino não podem ser iguais.");
 
-        const p = produtos.find((x) => x.codigo_barras === code.trim()) ?? null;
+        const p = produtosAtivos.find((x) => x.codigo_barras === code.trim()) ?? null;
         if (!p) {
             alert(`Produto não encontrado para o código: ${code}`);
             return;
@@ -5857,6 +5941,7 @@ export default function Page() {
         setClassFiltroEstoque([]);
         setOnlyLow(false);
         setOnlyPositive(false);
+        setOnlyInactive(false);
     }
 
     function limparFiltrosConferencia() {
@@ -7247,6 +7332,18 @@ export default function Page() {
                                                         ))}
                                                     </Select>
                                                 </Field>
+
+                                                <Field label="Situação">
+                                                    <Select
+                                                        value={editAtivo}
+                                                        onChange={(e) =>
+                                                            setEditAtivo(Number(e.target.value) === 1 ? 1 : 0)
+                                                        }
+                                                    >
+                                                        <option value={1}>Ativo</option>
+                                                        <option value={0}>Inativo</option>
+                                                    </Select>
+                                                </Field>
                                             </div>
                                         </section>
 
@@ -7444,37 +7541,6 @@ export default function Page() {
                                             </Field>
                                         </section>
 
-                                        <section className={[
-                                            "rounded-2xl border p-4 shadow-sm",
-                                            editAtivo === 1
-                                                ? "border-emerald-200 bg-emerald-50"
-                                                : "border-rose-200 bg-rose-50",
-                                        ].join(" ")}>
-                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-900">
-                                                        Produto {editAtivo === 1 ? "ativo" : "inativo"}
-                                                    </p>
-                                                    <p className="mt-1 text-xs text-slate-600">
-                                                        {editAtivo === 1
-                                                            ? "O produto aparece nas telas operacionais e pode receber movimentações."
-                                                            : "O produto está oculto das telas operacionais."}
-                                                    </p>
-                                                </div>
-                                                <Button
-                                                    type="button"
-                                                    variant={editAtivo === 1 ? "ghost" : "solid"}
-                                                    onClick={alternarStatusProduto}
-                                                    disabled={produtoStatusBusy}
-                                                >
-                                                    {produtoStatusBusy
-                                                        ? "Processando..."
-                                                        : editAtivo === 1
-                                                            ? "Inativar produto"
-                                                            : "Ativar produto"}
-                                                </Button>
-                                            </div>
-                                        </section>
                                     </div>
                                 ) : null}
 
@@ -8350,26 +8416,6 @@ export default function Page() {
                             />
                         </Field>
 
-                        <Field label="Frete total" hint="O frete será dividido pela quantidade e somado ao custo de cada unidade.">
-                            <TextInput
-                                value={entradaFreteTotal}
-                                onChange={(e) => setEntradaFreteTotal(maskBRLInput(e.target.value))}
-                                placeholder="R$ 0,00"
-                            />
-                        </Field>
-
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <p className="text-xs text-slate-500">Custo final por unidade</p>
-                            <p className="mt-1 text-lg font-bold text-slate-900">
-                                {moneyBRL(
-                                    parseBRLToNumber(entradaCustoUnitario) +
-                                    (clampInt(entradaQtd) > 0
-                                        ? parseBRLToNumber(entradaFreteTotal) / clampInt(entradaQtd)
-                                        : 0)
-                                )}
-                            </p>
-                        </div>
-
                         <Field label="Adicionar à lista" hint="Adiciona o item atual na fila.">
                             <Button
                                 variant="soft"
@@ -8383,6 +8429,40 @@ export default function Page() {
 
                         </Field>
                     </div>
+
+                    <section className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                            <Field
+                                label="Frete total da entrada"
+                                hint="Informe uma única vez. O valor será rateado entre todas as unidades de todos os produtos desta entrada."
+                            >
+                                <TextInput
+                                    value={entradaFreteTotal}
+                                    onChange={(e) => setEntradaFreteTotal(maskBRLInput(e.target.value))}
+                                    placeholder="R$ 0,00"
+                                />
+                            </Field>
+
+                            <div className="rounded-xl border border-sky-200 bg-white px-4 py-3">
+                                <p className="text-xs text-slate-500">Unidades na entrada</p>
+                                <p className="mt-1 text-lg font-bold text-slate-900">
+                                    {entradaItens.reduce((total, item) => total + clampInt(item.qtd), 0) +
+                                        (entradaProdutoExistente ? clampInt(entradaQtd) : 0)}
+                                </p>
+                            </div>
+
+                            <div className="rounded-xl border border-sky-200 bg-white px-4 py-3">
+                                <p className="text-xs text-slate-500">Frete estimado por unidade</p>
+                                <p className="mt-1 text-lg font-bold text-slate-900">
+                                    {moneyBRL((() => {
+                                        const totalQtd = entradaItens.reduce((total, item) => total + clampInt(item.qtd), 0) +
+                                            (entradaProdutoExistente ? clampInt(entradaQtd) : 0);
+                                        return totalQtd > 0 ? parseBRLToNumber(entradaFreteTotal) / totalQtd : 0;
+                                    })())}
+                                </p>
+                            </div>
+                        </div>
+                    </section>
 
                     {/* status produto */}
                     {entradaProdutoExistente ? (
@@ -8401,7 +8481,7 @@ export default function Page() {
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
                             <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
                             <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
-                                {entradaItens.map((it) => (
+                                {ratearFreteEntrada(entradaItens, parseBRLToNumber(entradaFreteTotal)).map((it) => (
                                     <li key={it.id} className="flex items-start justify-between gap-3 p-3">
                                         <div className="min-w-0 flex-1">
                                             {/* ✅ Nome em 2 linhas (sem plugin) */}
@@ -8426,10 +8506,6 @@ export default function Page() {
                                                 <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                                                     <span className="text-xs text-slate-600">Base</span>
                                                     <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoBaseUnitario || 0)}</span>
-                                                </div>
-                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <span className="text-xs text-slate-600">Frete</span>
-                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.freteTotal || 0)}</span>
                                                 </div>
                                                 <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                                                     <span className="text-xs text-slate-600">Custo final</span>
@@ -8511,6 +8587,17 @@ export default function Page() {
                                         ? (depById.get(Number(entradaDepositoId))?.nome || `#${entradaDepositoId}`)
                                         : "—"}
                                 </b>
+                            </span>
+
+
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Frete total:</span>{" "}
+                                <b>{moneyBRL(parseBRLToNumber(entradaFreteTotal))}</b>
+                            </span>
+
+                            <span className="whitespace-nowrap">
+                                <span className="text-slate-500">Unidades:</span>{" "}
+                                <b>{entradaConcluirItens.reduce((total, item) => total + clampInt(item.qtd), 0)}</b>
                             </span>
                         </div>
                     </div>
@@ -8690,7 +8777,7 @@ export default function Page() {
                                         onChange={(e) => {
                                             const v = e.target.value;
                                             setSaidaBarcode(v);
-                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                            const p = produtosAtivos.find((x) => x.codigo_barras === v.trim());
                                             if (p) {
                                                 setSaidaProdutoId(p.id);
                                                 setSaidaProdQuery(p.nome);
@@ -8926,7 +9013,7 @@ export default function Page() {
                                         onChange={(e) => {
                                             const v = e.target.value;
                                             setTrfBarcode(v);
-                                            const p = produtos.find((x) => x.codigo_barras === v.trim());
+                                            const p = produtosAtivos.find((x) => x.codigo_barras === v.trim());
                                             if (p) {
                                                 setTrfProdutoId(p.id);
                                                 setTrfProdQuery(p.nome);
@@ -9550,7 +9637,7 @@ export default function Page() {
                     <ProductCombobox
                         label="Produto"
                         placeholder="Digite para buscar..."
-                        produtos={produtos}
+                        produtos={produtosAtivos}
                         valueId={ajusteProdId}
                         onChangeId={(id) => setAjusteProdId(id)}
                         query={ajusteProdQuery}
@@ -10351,7 +10438,7 @@ export default function Page() {
                         </Field>
 
                         <Field label="Filtros rápidos">
-                            <div className="grid min-h-[46px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:grid-cols-2">
+                            <div className="grid min-h-[46px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:grid-cols-3">
                                 <label className="flex min-h-8 cursor-pointer items-center gap-3 text-sm font-medium text-slate-700">
                                     <input
                                         type="checkbox"
@@ -10370,6 +10457,17 @@ export default function Page() {
                                         className="h-5 w-5 accent-sky-600"
                                     />
                                     Somente saldo &gt; 0
+                                </label>
+
+
+                                <label className="flex min-h-8 cursor-pointer items-center gap-3 text-sm font-medium text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={onlyInactive}
+                                        onChange={(e) => setOnlyInactive(e.target.checked)}
+                                        className="h-5 w-5 accent-sky-600"
+                                    />
+                                    Produtos inativos
                                 </label>
                             </div>
                         </Field>
