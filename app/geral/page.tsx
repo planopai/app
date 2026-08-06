@@ -108,6 +108,47 @@ type HistoricoResp = {
 
 type ProdutoEditTab = "DADOS" | "ESTOQUE" | "VALOR" | "CUSTO";
 
+type EstoqueColumnKey =
+    | "produto"
+    | "categoria"
+    | "fabricante"
+    | "classificacao"
+    | "qtd"
+    | "custo"
+    | "total";
+
+const ESTOQUE_COLUMN_ORDER: EstoqueColumnKey[] = [
+    "produto",
+    "categoria",
+    "fabricante",
+    "classificacao",
+    "qtd",
+    "custo",
+    "total",
+];
+
+const ESTOQUE_DEFAULT_COLUMN_WIDTHS: Record<EstoqueColumnKey, number> = {
+    produto: 270,
+    categoria: 130,
+    fabricante: 115,
+    classificacao: 155,
+    qtd: 65,
+    custo: 115,
+    total: 115,
+};
+
+const ESTOQUE_MIN_COLUMN_WIDTHS: Record<EstoqueColumnKey, number> = {
+    produto: 190,
+    categoria: 95,
+    fabricante: 90,
+    classificacao: 115,
+    qtd: 58,
+    custo: 95,
+    total: 95,
+};
+
+const ESTOQUE_COLUMN_STORAGE_KEY = "estoque-produtos-column-widths-v1";
+
 
 
 // ✅ CONFERÊNCIAS (REGISTROS SALVOS)
@@ -1271,7 +1312,15 @@ function ImagePreviewModal({
    FOTO MINI
 ========================= */
 
-function PhotoThumb({ url, onClick }: { url?: string | null; onClick?: () => void }) {
+function PhotoThumb({
+    url,
+    onClick,
+    className = "",
+}: {
+    url?: string | null;
+    onClick?: () => void;
+    className?: string;
+}) {
     const cleanUrl = normalizeImgUrl(url);
     const clickable = !!cleanUrl && !!onClick;
 
@@ -1280,15 +1329,22 @@ function PhotoThumb({ url, onClick }: { url?: string | null; onClick?: () => voi
             type="button"
             onClick={clickable ? onClick : undefined}
             className={[
-                "relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600",
+                "relative flex h-10 w-10 shrink-0 items-center justify-center overflow-visible rounded-xl border border-slate-200 bg-slate-50 text-slate-600",
                 clickable ? "cursor-zoom-in hover:ring-2 hover:ring-slate-200" : "cursor-default",
+                className,
             ].join(" ")}
             aria-label={clickable ? "Abrir imagem do produto" : "Sem imagem"}
             title={clickable ? "Clique para ampliar" : "Sem imagem"}
         >
             {cleanUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={cleanUrl} alt="Foto do produto" className="h-10 w-10 rounded-xl object-cover" />
+                <img
+                    src={cleanUrl}
+                    alt="Foto do produto"
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full rounded-[inherit] object-cover"
+                />
             ) : (
                 <span className="text-lg">🖼️</span>
             )}
@@ -1426,6 +1482,63 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
     );
 }
 
+
+function EstoqueResizableHeader({
+    label,
+    columnKey,
+    align = "left",
+    isLast = false,
+    stickyRight,
+    onResizeStart,
+    onReset,
+}: {
+    label: string;
+    columnKey: EstoqueColumnKey;
+    align?: "left" | "right";
+    isLast?: boolean;
+    stickyRight?: number;
+    onResizeStart: (
+        columnKey: EstoqueColumnKey,
+        event: React.PointerEvent<HTMLSpanElement>
+    ) => void;
+    onReset: (columnKey: EstoqueColumnKey) => void;
+}) {
+    return (
+        <th
+            style={
+                typeof stickyRight === "number"
+                    ? { right: stickyRight }
+                    : undefined
+            }
+            className={[
+                "sticky top-0 select-none border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-700",
+                typeof stickyRight === "number"
+                    ? "z-20 shadow-[-1px_0_0_0_#e2e8f0]"
+                    : "z-10",
+                align === "right" ? "text-right" : "text-left",
+                isLast ? "" : "border-r border-slate-200",
+            ].join(" ")}
+        >
+            <span className="block break-words">{label}</span>
+
+            {!isLast ? (
+                <span
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={`Redimensionar coluna ${label}`}
+                    title="Arraste para ajustar. Clique duas vezes para restaurar."
+                    onPointerDown={(event) =>
+                        onResizeStart(columnKey, event)
+                    }
+                    onDoubleClick={() => onReset(columnKey)}
+                    className="group absolute right-0 top-0 z-20 h-full w-3 translate-x-1/2 cursor-col-resize touch-none select-none"
+                >
+                    <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-slate-300 transition-all group-hover:w-0.5 group-hover:bg-sky-500" />
+                </span>
+            ) : null}
+        </th>
+    );
+}
 
 /* =========================
    COMBOBOX (Produto) - CORRIGIDO (seleciona e FECHA SEMPRE)
@@ -1744,6 +1857,122 @@ export default function Page() {
 
     // ✅ NOVO: abre/fecha o filtro da aba Estoque
     const [estoqueFilterOpen, setEstoqueFilterOpen] = useState(false);
+
+    const [estoqueColumnWidths, setEstoqueColumnWidths] = useState<
+        Record<EstoqueColumnKey, number>
+    >({ ...ESTOQUE_DEFAULT_COLUMN_WIDTHS });
+    const [estoqueColumnWidthsLoaded, setEstoqueColumnWidthsLoaded] =
+        useState(false);
+
+    const estoqueResizeCleanupRef = useRef<(() => void) | null>(null);
+
+    const estoqueTableWidth = useMemo(
+        () =>
+            ESTOQUE_COLUMN_ORDER.reduce(
+                (total, key) => total + estoqueColumnWidths[key],
+                0
+            ),
+        [estoqueColumnWidths]
+    );
+
+    useEffect(() => {
+        try {
+            const raw = window.localStorage.getItem(
+                ESTOQUE_COLUMN_STORAGE_KEY
+            );
+            const saved = raw
+                ? (JSON.parse(raw) as Partial<
+                    Record<EstoqueColumnKey, number>
+                >)
+                : {};
+
+            const normalized = ESTOQUE_COLUMN_ORDER.reduce((acc, key) => {
+                const savedWidth = Number(saved[key]);
+                acc[key] = Number.isFinite(savedWidth)
+                    ? Math.max(
+                        ESTOQUE_MIN_COLUMN_WIDTHS[key],
+                        Math.round(savedWidth)
+                    )
+                    : ESTOQUE_DEFAULT_COLUMN_WIDTHS[key];
+                return acc;
+            }, {} as Record<EstoqueColumnKey, number>);
+
+            setEstoqueColumnWidths(normalized);
+        } catch {
+            setEstoqueColumnWidths({ ...ESTOQUE_DEFAULT_COLUMN_WIDTHS });
+        } finally {
+            setEstoqueColumnWidthsLoaded(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!estoqueColumnWidthsLoaded) return;
+
+        try {
+            window.localStorage.setItem(
+                ESTOQUE_COLUMN_STORAGE_KEY,
+                JSON.stringify(estoqueColumnWidths)
+            );
+        } catch {
+            // O navegador pode bloquear o armazenamento local.
+        }
+    }, [estoqueColumnWidths, estoqueColumnWidthsLoaded]);
+
+    useEffect(() => {
+        return () => estoqueResizeCleanupRef.current?.();
+    }, []);
+
+    function iniciarRedimensionamentoColunaEstoque(
+        columnKey: EstoqueColumnKey,
+        event: React.PointerEvent<HTMLSpanElement>
+    ) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        estoqueResizeCleanupRef.current?.();
+
+        const startX = event.clientX;
+        const startWidth = estoqueColumnWidths[columnKey];
+        const previousCursor = document.body.style.cursor;
+        const previousUserSelect = document.body.style.userSelect;
+
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const delta = moveEvent.clientX - startX;
+            const nextWidth = Math.max(
+                ESTOQUE_MIN_COLUMN_WIDTHS[columnKey],
+                Math.round(startWidth + delta)
+            );
+
+            setEstoqueColumnWidths((current) => ({
+                ...current,
+                [columnKey]: nextWidth,
+            }));
+        };
+
+        const cleanup = () => {
+            window.removeEventListener("pointermove", onPointerMove);
+            window.removeEventListener("pointerup", cleanup);
+            window.removeEventListener("pointercancel", cleanup);
+            document.body.style.cursor = previousCursor;
+            document.body.style.userSelect = previousUserSelect;
+            estoqueResizeCleanupRef.current = null;
+        };
+
+        estoqueResizeCleanupRef.current = cleanup;
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", cleanup, { once: true });
+        window.addEventListener("pointercancel", cleanup, { once: true });
+    }
+
+    function restaurarLarguraColunaEstoque(columnKey: EstoqueColumnKey) {
+        setEstoqueColumnWidths((current) => ({
+            ...current,
+            [columnKey]: ESTOQUE_DEFAULT_COLUMN_WIDTHS[columnKey],
+        }));
+    }
 
     // =========================
     // CONFERÊNCIA (não altera saldo)
@@ -5498,13 +5727,13 @@ export default function Page() {
                                     <div className="p-6 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>
                                 ) : (
                                     <>
-                                        {/* MOBILE */}
-                                        <ul className="divide-y divide-slate-200 sm:hidden">
+                                        {/* CELULAR E TABLET */}
+                                        <div className="space-y-3 p-3 lg:hidden">
                                             {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
                                                 const low = hasMinMax && qtd <= min;
                                                 const precoCustoNum = Number(p.preco_custo) || 0;
                                                 const custoTotalItem = clampInt(qtd) * precoCustoNum;
-                                                const foto = normalizeImgUrl(p.foto_url);
+                                                const foto = getProdutoFotoPrincipal(p);
 
                                                 const cat =
                                                     p.categoria_nome ||
@@ -5520,100 +5749,211 @@ export default function Page() {
                                                     "—";
 
                                                 return (
-                                                    <li key={p.id}>
-                                                        <div className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
-                                                            <div className="flex min-w-0 items-center gap-3">
-                                                                <PhotoThumb
-                                                                    url={foto}
-                                                                    onClick={() => {
-                                                                        if (!foto) return;
-                                                                        setImgUrl(foto);
-                                                                        setImgTitle(p.nome);
-                                                                        setImgOpen(true);
-                                                                    }}
-                                                                />
+                                                    <article
+                                                        key={p.id}
+                                                        className={[
+                                                            "rounded-2xl border bg-white p-3 shadow-sm",
+                                                            low
+                                                                ? "border-rose-200 bg-rose-50/40"
+                                                                : "border-slate-200",
+                                                        ].join(" ")}
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <PhotoThumb
+                                                                url={foto}
+                                                                className="h-20 w-20 rounded-2xl"
+                                                                onClick={() => {
+                                                                    if (!foto) return;
+                                                                    setImgUrl(foto);
+                                                                    setImgTitle(p.nome);
+                                                                    setImgOpen(true);
+                                                                }}
+                                                            />
 
-                                                                <div className="min-w-0">
-                                                                    <div className="flex min-w-0 items-center gap-2">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => openProdutoEditor(p.id, d.id)}
-                                                                            className="truncate text-left text-sm font-semibold text-slate-900 hover:underline"
-                                                                            title="Clique para editar"
-                                                                        >
-                                                                            {p.nome}
-                                                                        </button>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex min-w-0 items-start gap-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openProdutoEditor(p.id, d.id)}
+                                                                        className="line-clamp-2 text-left text-base font-semibold leading-tight text-slate-900 hover:underline"
+                                                                        title="Clique para editar"
+                                                                    >
+                                                                        {p.nome}
+                                                                    </button>
+                                                                    {low ? (
+                                                                        <span className="mt-0.5 shrink-0 text-[11px] font-semibold text-rose-600">
+                                                                            alerta
+                                                                        </span>
+                                                                    ) : null}
+                                                                </div>
 
-                                                                        {low ? <span className="shrink-0 text-xs text-red-600">• alerta</span> : null}
-                                                                    </div>
-
-                                                                    <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                                        CB: <b>{p.codigo_barras}</b>
+                                                                <p className="mt-1 truncate font-mono text-[11px] text-slate-500">
+                                                                    CB: {p.codigo_barras}
+                                                                </p>
+                                                                <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-700">
+                                                                    {cat}
+                                                                </p>
+                                                                {fab !== "—" ? (
+                                                                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                                                                        {fab}
                                                                     </p>
+                                                                ) : null}
+                                                                {cls !== "—" ? (
+                                                                    <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
+                                                                        {cls}
+                                                                    </p>
+                                                                ) : null}
+                                                            </div>
 
-                                                                    <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                                                                        Categoria: <b>{cat}</b> • Fabricante: <b>{fab}</b> • Classificação: <b>{cls}</b>
+                                                            <div className="w-[92px] shrink-0 text-right">
+                                                                <p className="text-xs text-slate-500">Qtd</p>
+                                                                <p
+                                                                    className={[
+                                                                        "text-xl font-bold",
+                                                                        low
+                                                                            ? "text-rose-700"
+                                                                            : "text-slate-900",
+                                                                    ].join(" ")}
+                                                                >
+                                                                    {clampInt(qtd)}
+                                                                </p>
+
+                                                                <div className="mt-2">
+                                                                    <p className="text-xs text-slate-500">Custo</p>
+                                                                    <p className="text-sm font-semibold text-slate-700">
+                                                                        {precoCustoNum
+                                                                            ? moneyBRL(precoCustoNum)
+                                                                            : "—"}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="mt-2">
+                                                                    <p className="text-xs text-slate-500">Total</p>
+                                                                    <p className="text-sm font-bold text-slate-900">
+                                                                        {precoCustoNum
+                                                                            ? moneyBRL(custoTotalItem)
+                                                                            : "—"}
                                                                     </p>
                                                                 </div>
                                                             </div>
-
-                                                            <div className="shrink-0 text-right">
-                                                                <p className={["text-sm font-semibold", low ? "text-red-700" : "text-slate-900"].join(" ")}>
-                                                                    Qtd: {clampInt(qtd)}
-                                                                </p>
-                                                                <p className="mt-1 text-xs text-slate-500">
-                                                                    Custo unit.: <b className="text-slate-700">{precoCustoNum ? moneyBRL(precoCustoNum) : "—"}</b>
-                                                                </p>
-                                                                <p className="mt-1 text-xs text-slate-500">
-                                                                    Total: <b className="text-slate-900">{precoCustoNum ? moneyBRL(custoTotalItem) : "—"}</b>
-                                                                </p>
-                                                            </div>
                                                         </div>
-                                                    </li>
+                                                    </article>
                                                 );
                                             })}
-                                        </ul>
+                                        </div>
 
-                                        {/* PC */}
-                                        <div className="hidden sm:block">
-                                            <div className="overflow-auto">
-                                                <table className="min-w-full border-separate border-spacing-0">
+                                        {/* COMPUTADOR */}
+                                        <div className="hidden lg:block">
+                                            <div className="overflow-x-auto pb-2 [scrollbar-gutter:stable]">
+                                                <table
+                                                    className="table-fixed border-separate border-spacing-0"
+                                                    style={{
+                                                        width: `${estoqueTableWidth}px`,
+                                                        minWidth: "100%",
+                                                    }}
+                                                >
+                                                    <colgroup>
+                                                        {ESTOQUE_COLUMN_ORDER.map((columnKey) => (
+                                                            <col
+                                                                key={columnKey}
+                                                                style={{
+                                                                    width: estoqueColumnWidths[columnKey],
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </colgroup>
+
                                                     <thead>
-                                                        <tr className="bg-slate-50 text-left text-xs text-slate-700">
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Produto</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Categoria</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Fabricante</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3">Classificação</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Qtd</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Preço de Custo</th>
-                                                            <th className="sticky top-0 z-10 border-b border-slate-200 px-3 py-3 text-right">Total</th>
+                                                        <tr>
+                                                            <EstoqueResizableHeader
+                                                                label="Produto"
+                                                                columnKey="produto"
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
+                                                            <EstoqueResizableHeader
+                                                                label="Categoria"
+                                                                columnKey="categoria"
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
+                                                            <EstoqueResizableHeader
+                                                                label="Fabricante"
+                                                                columnKey="fabricante"
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
+                                                            <EstoqueResizableHeader
+                                                                label="Classificação"
+                                                                columnKey="classificacao"
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
+                                                            <EstoqueResizableHeader
+                                                                label="Qtd"
+                                                                columnKey="qtd"
+                                                                align="right"
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
+                                                            <EstoqueResizableHeader
+                                                                label="Preço de custo"
+                                                                columnKey="custo"
+                                                                align="right"
+                                                                stickyRight={estoqueColumnWidths.total}
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
+                                                            <EstoqueResizableHeader
+                                                                label="Total"
+                                                                columnKey="total"
+                                                                align="right"
+                                                                isLast
+                                                                stickyRight={0}
+                                                                onResizeStart={iniciarRedimensionamentoColunaEstoque}
+                                                                onReset={restaurarLarguraColunaEstoque}
+                                                            />
                                                         </tr>
                                                     </thead>
 
                                                     <tbody>
                                                         {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
-                                                            const low = hasMinMax && clampInt(qtd) <= clampInt(min);
+                                                            const low =
+                                                                hasMinMax &&
+                                                                clampInt(qtd) <= clampInt(min);
 
                                                             const cat =
                                                                 p.categoria_nome ||
-                                                                (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
+                                                                (p.categoria_id
+                                                                    ? catById.get(p.categoria_id)?.nome
+                                                                    : "") ||
                                                                 "—";
                                                             const fab =
                                                                 p.fabricante_nome ||
-                                                                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                                                                (p.fabricante_id
+                                                                    ? fabById.get(p.fabricante_id)?.nome
+                                                                    : "") ||
                                                                 "—";
                                                             const cls =
                                                                 p.classificacao_nome ||
-                                                                (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") ||
+                                                                (p.classificacao_id
+                                                                    ? classById.get(p.classificacao_id)?.nome
+                                                                    : "") ||
                                                                 "—";
 
-                                                            const precoCustoNum = Number(p.preco_custo) || 0;
-                                                            const custoTotalItem = clampInt(qtd) * precoCustoNum;
-                                                            const foto = normalizeImgUrl(p.foto_url);
+                                                            const precoCustoNum =
+                                                                Number(p.preco_custo) || 0;
+                                                            const custoTotalItem =
+                                                                clampInt(qtd) * precoCustoNum;
+                                                            const foto =
+                                                                getProdutoFotoPrincipal(p);
 
                                                             return (
-                                                                <tr key={p.id} className="bg-white hover:bg-slate-50">
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-900">
+                                                                <tr
+                                                                    key={p.id}
+                                                                    className="group bg-white hover:bg-slate-50"
+                                                                >
+                                                                    <td className="overflow-hidden border-b border-r border-slate-200 px-3 py-2 text-sm text-slate-900">
                                                                         <div className="flex min-w-0 items-center gap-3">
                                                                             <PhotoThumb
                                                                                 url={foto}
@@ -5625,37 +5965,74 @@ export default function Page() {
                                                                                 }}
                                                                             />
 
-                                                                            <div className="min-w-0">
-                                                                                <div className="flex min-w-0 items-center gap-2">
+                                                                            <div className="min-w-0 flex-1">
+                                                                                <div className="flex min-w-0 items-start gap-2">
                                                                                     <button
                                                                                         type="button"
-                                                                                        onClick={() => openProdutoEditor(p.id, d.id)}
-                                                                                        className="block truncate text-left font-semibold text-slate-900 hover:underline"
-                                                                                        title="Clique para editar"
+                                                                                        onClick={() =>
+                                                                                            openProdutoEditor(
+                                                                                                p.id,
+                                                                                                d.id
+                                                                                            )
+                                                                                        }
+                                                                                        className="line-clamp-2 break-words text-left font-semibold leading-snug text-slate-900 hover:underline"
+                                                                                        title={p.nome}
                                                                                     >
                                                                                         {p.nome}
                                                                                     </button>
-                                                                                    {low ? <span className="shrink-0 text-xs text-rose-600">• alerta</span> : null}
+                                                                                    {low ? (
+                                                                                        <span className="mt-0.5 shrink-0 text-xs text-rose-600">
+                                                                                            • alerta
+                                                                                        </span>
+                                                                                    ) : null}
                                                                                 </div>
-                                                                                <div className="font-mono text-xs text-slate-500">CB: {p.codigo_barras}</div>
+                                                                                <div className="truncate font-mono text-xs text-slate-500">
+                                                                                    CB: {p.codigo_barras}
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     </td>
 
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cat}</td>
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{fab}</td>
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-sm text-slate-700">{cls}</td>
-
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold">
-                                                                        <span className={low ? "text-rose-700" : "text-slate-900"}>{clampInt(qtd)}</span>
+                                                                    <td className="border-b border-r border-slate-200 px-3 py-2 align-middle text-sm text-slate-700">
+                                                                        <div className="break-words">{cat}</div>
+                                                                    </td>
+                                                                    <td className="border-b border-r border-slate-200 px-3 py-2 align-middle text-sm text-slate-700">
+                                                                        <div className="break-words">{fab}</div>
+                                                                    </td>
+                                                                    <td className="border-b border-r border-slate-200 px-3 py-2 align-middle text-sm text-slate-700">
+                                                                        <div className="break-words">{cls}</div>
                                                                     </td>
 
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm text-slate-700">
-                                                                        {precoCustoNum ? moneyBRL(precoCustoNum) : "—"}
+                                                                    <td className="border-b border-r border-slate-200 px-3 py-2 text-right align-middle text-sm font-semibold">
+                                                                        <span
+                                                                            className={
+                                                                                low
+                                                                                    ? "text-rose-700"
+                                                                                    : "text-slate-900"
+                                                                            }
+                                                                        >
+                                                                            {clampInt(qtd)}
+                                                                        </span>
                                                                     </td>
 
-                                                                    <td className="border-b border-slate-200 px-3 py-2 text-right text-sm font-semibold text-slate-900">
-                                                                        {precoCustoNum ? moneyBRL(custoTotalItem) : "—"}
+                                                                    <td
+                                                                        style={{
+                                                                            right: estoqueColumnWidths.total,
+                                                                        }}
+                                                                        className="sticky z-[5] whitespace-nowrap border-b border-r border-slate-200 bg-white px-3 py-2 text-right align-middle text-sm text-slate-700 shadow-[-1px_0_0_0_#e2e8f0] group-hover:bg-slate-50"
+                                                                    >
+                                                                        {precoCustoNum
+                                                                            ? moneyBRL(precoCustoNum)
+                                                                            : "—"}
+                                                                    </td>
+
+                                                                    <td
+                                                                        style={{ right: 0 }}
+                                                                        className="sticky z-[6] whitespace-nowrap border-b border-slate-200 bg-white px-3 py-2 text-right align-middle text-sm font-semibold text-slate-900 group-hover:bg-slate-50"
+                                                                    >
+                                                                        {precoCustoNum
+                                                                            ? moneyBRL(custoTotalItem)
+                                                                            : "—"}
                                                                     </td>
                                                                 </tr>
                                                             );
@@ -5664,16 +6041,30 @@ export default function Page() {
 
                                                     <tfoot>
                                                         <tr className="bg-slate-50 text-xs text-slate-700">
-                                                            <td className="border-t border-slate-200 px-3 py-3 font-semibold" colSpan={4}>
-                                                                Total de produtos: <span className="text-slate-900">{estoqueResumo.totalModelos}</span>
+                                                            <td
+                                                                className="border-r border-t border-slate-200 px-3 py-3 font-semibold"
+                                                                colSpan={4}
+                                                            >
+                                                                Total de produtos:{" "}
+                                                                <span className="text-slate-900">
+                                                                    {estoqueResumo.totalModelos}
+                                                                </span>
                                                             </td>
-                                                            <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
+                                                            <td className="border-r border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
                                                                 {estoqueResumo.totalUnidades}
                                                             </td>
-                                                            <td className="border-t border-slate-200 px-3 py-3 text-right text-slate-500">
+                                                            <td
+                                                                style={{
+                                                                    right: estoqueColumnWidths.total,
+                                                                }}
+                                                                className="sticky z-[5] border-r border-t border-slate-200 bg-slate-50 px-3 py-3 text-right text-slate-500 shadow-[-1px_0_0_0_#e2e8f0]"
+                                                            >
                                                                 —
                                                             </td>
-                                                            <td className="border-t border-slate-200 px-3 py-3 text-right font-bold text-slate-900">
+                                                            <td
+                                                                style={{ right: 0 }}
+                                                                className="sticky z-[6] border-t border-slate-200 bg-slate-50 px-3 py-3 text-right font-bold text-slate-900"
+                                                            >
                                                                 {moneyBRL(estoqueResumo.totalCusto)}
                                                             </td>
                                                         </tr>
@@ -6920,33 +7311,35 @@ export default function Page() {
                                 ) : null}
 
                                 {prodEditTab === "VALOR" ? (
-                                    <section className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                                        <div className="rounded-2xl bg-slate-50 p-4">
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                                Valor atual
-                                            </p>
-                                            <p className="mt-2 text-3xl font-bold text-slate-900">
-                                                {editValor}
-                                            </p>
-                                        </div>
+                                    <section className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-end">
+                                            <div className="rounded-2xl bg-slate-50 p-4 sm:p-5">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                                    Valor atual
+                                                </p>
+                                                <p className="mt-2 break-words text-3xl font-bold text-slate-900">
+                                                    {editValor}
+                                                </p>
+                                            </div>
 
-                                        <div className="mt-5">
-                                            <Field label="Valor do produto (R$)">
-                                                <TextInput
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    value={editValor}
-                                                    onChange={(e) =>
-                                                        setEditValor(
-                                                            maskBRLInput(
-                                                                e.target.value
+                                            <div className="rounded-2xl border border-slate-100 bg-white p-1">
+                                                <Field label="Valor do produto (R$)">
+                                                    <TextInput
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        value={editValor}
+                                                        onChange={(e) =>
+                                                            setEditValor(
+                                                                maskBRLInput(
+                                                                    e.target.value
+                                                                )
                                                             )
-                                                        )
-                                                    }
-                                                    placeholder="R$ 0,00"
-                                                    className="py-3 text-lg font-semibold"
-                                                />
-                                            </Field>
+                                                        }
+                                                        placeholder="R$ 0,00"
+                                                        className="py-3 text-lg font-semibold"
+                                                    />
+                                                </Field>
+                                            </div>
                                         </div>
                                     </section>
                                 ) : null}
