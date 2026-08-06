@@ -122,8 +122,11 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
+type MovimentoCustoTipo = "SALDO_INICIAL" | "ENTRADA" | "SAIDA" | "AJUSTE_SALDO";
+
 type CustoMedioPasso = {
     movimento_id: number;
+    tipo: MovimentoCustoTipo;
     criado_em: string;
     numero_lote?: string | null;
     quantidade_anterior: number;
@@ -200,6 +203,27 @@ function intBR(value: number): string {
     } catch {
         return String(value);
     }
+}
+
+function signedIntBR(value: number): string {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    if (safeValue > 0) return `+${intBR(safeValue)}`;
+    if (safeValue < 0) return `-${intBR(Math.abs(safeValue))}`;
+    return "0";
+}
+
+function signedMoneyBRL(value: number): string {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    if (safeValue > 0) return `+${moneyBRL(safeValue)}`;
+    if (safeValue < 0) return `-${moneyBRL(Math.abs(safeValue))}`;
+    return moneyBRL(0);
+}
+
+function roundInternal(value: number, digits = 8): number {
+    if (!Number.isFinite(value)) return 0;
+    const factor = 10 ** digits;
+    const rounded = Math.round((value + Number.EPSILON) * factor) / factor;
+    return Math.abs(rounded) < 1 / factor ? 0 : rounded;
 }
 
 function decimalBR(value: number, digits = 1): string {
@@ -580,67 +604,298 @@ export default function Page() {
             });
     }, [lotes, produtoSelecionado, depositoById]);
 
+    const estoqueAtualProduto = useMemo(
+        () =>
+            saldosProduto.reduce(
+                (total, saldo) => total + clampInt(saldo.quantidade),
+                0
+            ),
+        [saldosProduto]
+    );
+
     const memoriaCustoMedio = useMemo(() => {
         const custoCadastro = num(produtoSelecionado?.preco_custo);
+        let entradasSemCusto = 0;
+        let quantidadeSaidaNaoProcessada = 0;
+
+        const movimentos = [
+            ...entradas.map((movimento) => ({
+                ...movimento,
+                tipoCalculo: "ENTRADA" as const,
+            })),
+            ...historico.map((movimento) => ({
+                ...movimento,
+                tipoCalculo: "SAIDA" as const,
+            })),
+        ]
+            .filter((movimento) => clampInt(movimento.quantidade) > 0)
+            .sort(
+                (a, b) =>
+                    new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime() ||
+                    Number(a.id) - Number(b.id)
+            );
+
+        const custoConhecidoPrimeiraEntrada = movimentos.reduce<number>(
+            (custoEncontrado, movimento) => {
+                if (custoEncontrado > 0 || movimento.tipoCalculo !== "ENTRADA") {
+                    return custoEncontrado;
+                }
+
+                const quantidade = clampInt(movimento.quantidade);
+                const custoUnitario = num(movimento.custo_unitario_snapshot);
+                const custoTotal = num(movimento.custo_total_snapshot);
+
+                if (custoUnitario > 0) return custoUnitario;
+                if (custoTotal > 0 && quantidade > 0) return custoTotal / quantidade;
+                return 0;
+            },
+            0
+        );
+
+        const custoBaseEstimado =
+            custoCadastro > 0 ? custoCadastro : custoConhecidoPrimeiraEntrada;
+
+        let totalEntradas = 0;
+        let totalSaidas = 0;
+        let saldoSequencial = 0;
+        let menorSaldoSequencial = 0;
+
+        for (const movimento of movimentos) {
+            const quantidade = clampInt(movimento.quantidade);
+
+            if (movimento.tipoCalculo === "ENTRADA") {
+                totalEntradas += quantidade;
+                saldoSequencial += quantidade;
+            } else {
+                totalSaidas += quantidade;
+                saldoSequencial -= quantidade;
+                menorSaldoSequencial = Math.min(menorSaldoSequencial, saldoSequencial);
+            }
+        }
+
+        const saldoInicialPeloSaldoAtual =
+            estoqueAtualProduto - totalEntradas + totalSaidas;
+        const saldoInicialNecessarioParaSequencia = Math.max(
+            0,
+            -menorSaldoSequencial
+        );
+        const quantidadeSaldoInicial = Math.max(
+            0,
+            saldoInicialPeloSaldoAtual,
+            saldoInicialNecessarioParaSequencia
+        );
+
         let valorAcumulado = 0;
         let quantidadeAcumulada = 0;
-        let entradasSemCusto = 0;
+        let ultimoCustoMedio = custoBaseEstimado;
 
         const passos: CustoMedioPasso[] = [];
 
-        for (const entrada of entradas) {
-            const quantidadeNova = clampInt(entrada.quantidade);
-            if (quantidadeNova <= 0) continue;
-
-            const custoSnapshot = num(entrada.custo_unitario_snapshot);
-            const custoUnitarioNovo = custoSnapshot > 0 ? custoSnapshot : custoCadastro;
-            const custoEstimado = custoSnapshot <= 0;
-
-            if (custoEstimado) entradasSemCusto += 1;
-
-            const totalSnapshot = num(entrada.custo_total_snapshot);
-            const valorNovo =
-                totalSnapshot > 0
-                    ? totalSnapshot
-                    : quantidadeNova * custoUnitarioNovo;
-
-            const valorAnterior = valorAcumulado;
-            const quantidadeAnterior = quantidadeAcumulada;
-
-            valorAcumulado = valorAnterior + valorNovo;
-            quantidadeAcumulada = quantidadeAnterior + quantidadeNova;
+        if (quantidadeSaldoInicial > 0) {
+            quantidadeAcumulada = quantidadeSaldoInicial;
+            valorAcumulado = roundInternal(
+                quantidadeSaldoInicial * custoBaseEstimado
+            );
 
             passos.push({
-                movimento_id: Number(entrada.id),
-                criado_em: entrada.criado_em,
-                numero_lote: entrada.numero_lote_snapshot,
+                movimento_id: -1,
+                tipo: "SALDO_INICIAL",
+                criado_em: movimentos[0]?.criado_em || produtoSelecionado?.atualizado_em || "",
+                numero_lote: "Saldo inicial inferido",
+                quantidade_anterior: 0,
+                quantidade_nova: quantidadeSaldoInicial,
+                quantidade_acumulada: quantidadeAcumulada,
+                valor_anterior: 0,
+                valor_novo: valorAcumulado,
+                valor_acumulado: valorAcumulado,
+                custo_unitario_novo: custoBaseEstimado,
+                custo_medio: custoBaseEstimado,
+                custo_estimado: true,
+            });
+        }
+
+        for (const movimento of movimentos) {
+            const quantidadeMovimento = clampInt(movimento.quantidade);
+            if (quantidadeMovimento <= 0) continue;
+
+            const quantidadeAnterior = quantidadeAcumulada;
+            const valorAnterior = valorAcumulado;
+
+            if (movimento.tipoCalculo === "ENTRADA") {
+                const custoUnitarioSnapshot = num(
+                    movimento.custo_unitario_snapshot
+                );
+                const custoTotalSnapshot = num(
+                    movimento.custo_total_snapshot
+                );
+
+                let custoUnitarioEntrada = custoBaseEstimado;
+                let valorEntrada = quantidadeMovimento * custoUnitarioEntrada;
+                let custoEstimado = true;
+
+                if (custoTotalSnapshot > 0) {
+                    valorEntrada = custoTotalSnapshot;
+                    custoUnitarioEntrada =
+                        custoTotalSnapshot / quantidadeMovimento;
+                    custoEstimado = false;
+                } else if (custoUnitarioSnapshot > 0) {
+                    custoUnitarioEntrada = custoUnitarioSnapshot;
+                    valorEntrada = quantidadeMovimento * custoUnitarioEntrada;
+                    custoEstimado = false;
+                } else {
+                    entradasSemCusto += 1;
+                }
+
+                quantidadeAcumulada += quantidadeMovimento;
+                valorAcumulado = roundInternal(valorAcumulado + valorEntrada);
+                ultimoCustoMedio =
+                    quantidadeAcumulada > 0
+                        ? valorAcumulado / quantidadeAcumulada
+                        : ultimoCustoMedio;
+
+                passos.push({
+                    movimento_id: Number(movimento.id),
+                    tipo: "ENTRADA",
+                    criado_em: movimento.criado_em,
+                    numero_lote: movimento.numero_lote_snapshot,
+                    quantidade_anterior: quantidadeAnterior,
+                    quantidade_nova: quantidadeMovimento,
+                    quantidade_acumulada: quantidadeAcumulada,
+                    valor_anterior: valorAnterior,
+                    valor_novo: roundInternal(valorEntrada),
+                    valor_acumulado: valorAcumulado,
+                    custo_unitario_novo: custoUnitarioEntrada,
+                    custo_medio: ultimoCustoMedio,
+                    custo_estimado: custoEstimado,
+                });
+
+                continue;
+            }
+
+            const custoMedioAntesDaSaida =
+                quantidadeAcumulada > 0
+                    ? valorAcumulado / quantidadeAcumulada
+                    : ultimoCustoMedio;
+            const quantidadeBaixada = Math.min(
+                quantidadeMovimento,
+                quantidadeAcumulada
+            );
+            const quantidadeNaoBaixada =
+                quantidadeMovimento - quantidadeBaixada;
+
+            if (quantidadeNaoBaixada > 0) {
+                quantidadeSaidaNaoProcessada += quantidadeNaoBaixada;
+            }
+
+            const valorSaida = roundInternal(
+                quantidadeBaixada * custoMedioAntesDaSaida
+            );
+
+            quantidadeAcumulada -= quantidadeBaixada;
+            valorAcumulado = roundInternal(valorAcumulado - valorSaida);
+
+            if (quantidadeAcumulada === 0) {
+                valorAcumulado = 0;
+            }
+
+            if (custoMedioAntesDaSaida > 0) {
+                ultimoCustoMedio = custoMedioAntesDaSaida;
+            }
+
+            passos.push({
+                movimento_id: Number(movimento.id),
+                tipo: "SAIDA",
+                criado_em: movimento.criado_em,
+                numero_lote: movimento.numero_lote_snapshot,
                 quantidade_anterior: quantidadeAnterior,
-                quantidade_nova: quantidadeNova,
+                quantidade_nova: -quantidadeBaixada,
                 quantidade_acumulada: quantidadeAcumulada,
                 valor_anterior: valorAnterior,
-                valor_novo: valorNovo,
+                valor_novo: -valorSaida,
                 valor_acumulado: valorAcumulado,
-                custo_unitario_novo: custoUnitarioNovo,
+                custo_unitario_novo: custoMedioAntesDaSaida,
                 custo_medio:
                     quantidadeAcumulada > 0
                         ? valorAcumulado / quantidadeAcumulada
-                        : custoCadastro,
-                custo_estimado: custoEstimado,
+                        : ultimoCustoMedio,
+                custo_estimado: false,
             });
         }
+
+        const quantidadeAntesConciliacao = quantidadeAcumulada;
+        const valorAntesConciliacao = valorAcumulado;
+        const diferencaQuantidade =
+            estoqueAtualProduto - quantidadeAntesConciliacao;
+        const ajusteSaldoAplicado = diferencaQuantidade !== 0;
+
+        if (ajusteSaldoAplicado) {
+            const custoMedioConciliacao =
+                quantidadeAcumulada > 0
+                    ? valorAcumulado / quantidadeAcumulada
+                    : ultimoCustoMedio || custoBaseEstimado;
+            const valorAjuste = roundInternal(
+                diferencaQuantidade * custoMedioConciliacao
+            );
+
+            quantidadeAcumulada += diferencaQuantidade;
+            valorAcumulado = roundInternal(valorAcumulado + valorAjuste);
+
+            if (quantidadeAcumulada === 0) {
+                valorAcumulado = 0;
+            }
+
+            if (quantidadeAcumulada > 0) {
+                ultimoCustoMedio = valorAcumulado / quantidadeAcumulada;
+            }
+
+            passos.push({
+                movimento_id: -2,
+                tipo: "AJUSTE_SALDO",
+                criado_em:
+                    produtoSelecionado?.atualizado_em ||
+                    movimentos[movimentos.length - 1]?.criado_em ||
+                    "",
+                numero_lote: "Conciliação com saldo atual",
+                quantidade_anterior: quantidadeAntesConciliacao,
+                quantidade_nova: diferencaQuantidade,
+                quantidade_acumulada: quantidadeAcumulada,
+                valor_anterior: valorAntesConciliacao,
+                valor_novo: valorAjuste,
+                valor_acumulado: valorAcumulado,
+                custo_unitario_novo: custoMedioConciliacao,
+                custo_medio:
+                    quantidadeAcumulada > 0
+                        ? valorAcumulado / quantidadeAcumulada
+                        : ultimoCustoMedio,
+                custo_estimado: true,
+            });
+        }
+
+        const custoMedioCompra =
+            quantidadeAcumulada > 0
+                ? valorAcumulado / quantidadeAcumulada
+                : ultimoCustoMedio || custoBaseEstimado;
 
         return {
             passos,
             valorAcumulado,
             quantidadeAcumulada,
             entradasSemCusto,
-            custoMedioCompra:
-                quantidadeAcumulada > 0
-                    ? valorAcumulado / quantidadeAcumulada
-                    : custoCadastro,
-            ultimaEntrada: passos.length > 0 ? passos[passos.length - 1] : null,
+            quantidadeSaidaNaoProcessada,
+            custoMedioCompra,
+            saldoInicialEstimado: quantidadeSaldoInicial > 0,
+            quantidadeSaldoInicial,
+            custoSaldoInicial: custoBaseEstimado,
+            ajusteSaldoAplicado,
+            quantidadeAntesConciliacao,
+            diferencaQuantidade,
         };
-    }, [entradas, produtoSelecionado]);
+    }, [
+        entradas,
+        historico,
+        produtoSelecionado,
+        estoqueAtualProduto,
+    ]);
 
     const estoquePorDeposito = useMemo<EstoqueDeposito[]>(() => {
         if (!produtoSelecionado) return [];
@@ -705,7 +960,7 @@ export default function Page() {
         );
 
         const custoMedioCompra = memoriaCustoMedio.custoMedioCompra;
-        const valorEstoque = estoqueAtual * custoMedioCompra;
+        const valorEstoque = memoriaCustoMedio.valorAcumulado;
 
         const precoVenda = num(produtoSelecionado.valor);
         const margemUnitaria = precoVenda - custoMedioCompra;
@@ -734,10 +989,18 @@ export default function Page() {
             valorEstoque,
             qtdSemLote,
             custoMedioCompra,
-            valorComprasAcumulado: memoriaCustoMedio.valorAcumulado,
-            quantidadeCompradaAcumulada: memoriaCustoMedio.quantidadeAcumulada,
-            entradasCalculadas: memoriaCustoMedio.passos.length,
+            valorContabilAcumulado: memoriaCustoMedio.valorAcumulado,
+            quantidadeContabilAcumulada: memoriaCustoMedio.quantidadeAcumulada,
             entradasSemCusto: memoriaCustoMedio.entradasSemCusto,
+            quantidadeSaidaNaoProcessada:
+                memoriaCustoMedio.quantidadeSaidaNaoProcessada,
+            saldoInicialEstimado: memoriaCustoMedio.saldoInicialEstimado,
+            quantidadeSaldoInicial: memoriaCustoMedio.quantidadeSaldoInicial,
+            custoSaldoInicial: memoriaCustoMedio.custoSaldoInicial,
+            ajusteSaldoAplicado: memoriaCustoMedio.ajusteSaldoAplicado,
+            quantidadeAntesConciliacao:
+                memoriaCustoMedio.quantidadeAntesConciliacao,
+            diferencaQuantidade: memoriaCustoMedio.diferencaQuantidade,
             precoVenda,
             margemUnitaria,
             margemPercentual,
@@ -975,9 +1238,9 @@ export default function Page() {
                                 }
                             />
                             <KpiCard
-                                label="Custo médio de compra"
-                                value={moneyBRL(resumo?.custoMedioCompra || 0)}
-                                hint="V antigo + V novo, Q antiga + Q nova, depois V/Q"
+                                label="Custo médio móvel"
+                                value={loadingHistorico ? "..." : moneyBRL(resumo?.custoMedioCompra || 0)}
+                                hint={loadingHistorico ? "Carregando movimentações" : "Entradas somam; saídas baixam VA e Q pelo custo médio vigente"}
                             />
                             <KpiCard
                                 label="Preço de venda"
@@ -986,15 +1249,19 @@ export default function Page() {
                             />
                             <KpiCard
                                 label="Margem bruta unitária"
-                                value={moneyBRL(resumo?.margemUnitaria || 0)}
-                                hint={`${decimalBR(resumo?.margemPercentual || 0, 1)}% sobre a venda${resumo?.markupPercentual === null || resumo?.markupPercentual === undefined
-                                    ? ""
-                                    : ` | markup ${decimalBR(resumo.markupPercentual, 1)}%`
-                                    }`}
+                                value={loadingHistorico ? "..." : moneyBRL(resumo?.margemUnitaria || 0)}
+                                hint={
+                                    loadingHistorico
+                                        ? "Carregando custo médio"
+                                        : `${decimalBR(resumo?.margemPercentual || 0, 1)}% sobre a venda${resumo?.markupPercentual === null || resumo?.markupPercentual === undefined
+                                            ? ""
+                                            : ` | markup ${decimalBR(resumo.markupPercentual, 1)}%`
+                                        }`
+                                }
                             />
                             <KpiCard
                                 label="Valor em estoque"
-                                value={moneyBRL(resumo?.valorEstoque || 0)}
+                                value={loadingHistorico ? "..." : moneyBRL(resumo?.valorEstoque || 0)}
                                 hint={
                                     resumo?.coberturaDias === null || resumo?.coberturaDias === undefined
                                         ? "Sem saída nos últimos 30 dias"
@@ -1009,19 +1276,43 @@ export default function Page() {
                             </Panel>
                         ) : null}
 
-                        {resumo && resumo.entradasSemCusto > 0 ? (
+                        {resumo && !loadingHistorico && resumo.entradasSemCusto > 0 ? (
                             <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                Existem <b>{intBR(resumo.entradasSemCusto)}</b> entrada(s) sem custo gravado no histórico. Nessas entradas, o cálculo usou o preço de custo atual do cadastro.
+                                Existem <b>{intBR(resumo.entradasSemCusto)}</b> entrada(s) sem custo gravado no histórico. Nessas entradas, o cálculo usou o preço de custo atual do cadastro ou o primeiro custo conhecido.
+                            </Panel>
+                        ) : null}
+
+                        {resumo && !loadingHistorico && resumo.saldoInicialEstimado ? (
+                            <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                Foi inferido um saldo inicial de <b>{intBR(resumo.quantidadeSaldoInicial)}</b> unidade(s), valorizado a <b>{moneyBRL(resumo.custoSaldoInicial)}</b> por unidade. Esse valor é estimado porque o histórico carregado não informa o custo contábil de abertura.
+                            </Panel>
+                        ) : null}
+
+                        {resumo && !loadingHistorico && resumo.ajusteSaldoAplicado ? (
+                            <Panel className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                A sequência de movimentos terminou com <b>{intBR(resumo.quantidadeAntesConciliacao)}</b> unidade(s), enquanto o saldo atual informa <b>{intBR(resumo.estoqueAtual)}</b>. Foi aplicada uma conciliação de <b>{signedIntBR(resumo.diferencaQuantidade)}</b> unidade(s), sem alterar o custo médio. Verifique ajustes de estoque, movimentos anteriores ao histórico ou o limite da consulta.
+                            </Panel>
+                        ) : null}
+
+                        {resumo && !loadingHistorico && resumo.quantidadeSaidaNaoProcessada > 0 ? (
+                            <Panel className="border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+                                Não foi possível baixar <b>{intBR(resumo.quantidadeSaidaNaoProcessada)}</b> unidade(s) de saída porque a memória calculada não possuía quantidade suficiente naquele ponto do histórico.
                             </Panel>
                         ) : null}
 
                         {resumo ? (
                             <Panel className="p-4">
                                 <div className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                                    Memória acumulada do custo médio
+                                    Valor contábil atual do estoque
                                 </div>
                                 <div className="mt-2 text-sm leading-6 text-slate-700">
-                                    V = <b>{moneyBRL(resumo.valorComprasAcumulado)}</b>, Q = <b>{intBR(resumo.quantidadeCompradaAcumulada)}</b>. O custo médio é V/Q, usando o acumulado anterior mais cada nova entrada.
+                                    {loadingHistorico ? (
+                                        "Carregando a memória de entradas e saídas..."
+                                    ) : (
+                                        <>
+                                            VA = <b>{moneyBRL(resumo.valorContabilAcumulado)}</b>, Q = <b>{intBR(resumo.quantidadeContabilAcumulada)}</b> e custo médio = <b>{moneyBRL(resumo.custoMedioCompra)}</b>. As entradas aumentam VA e Q; cada saída reduz Q e baixa o VA pelo custo médio vigente antes da saída.
+                                        </>
+                                    )}
                                 </div>
                             </Panel>
                         ) : null}
@@ -1138,45 +1429,67 @@ export default function Page() {
 
                         <Panel className="overflow-hidden">
                             <SectionHeader
-                                title="Memória do custo médio"
-                                subtitle="Cada nova entrada soma o V e o Q anteriores; o resultado é recalculado por V/Q"
+                                title="Memória do custo médio móvel"
+                                subtitle="Entradas aumentam VA e Q; saídas reduzem ambos pelo custo médio vigente"
                             />
 
                             <div className="overflow-auto">
-                                <table className="w-full min-w-[1080px] border-collapse text-sm">
+                                <table className="w-full min-w-[1240px] border-collapse text-sm">
                                     <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                                         <tr>
                                             <th className="border-b border-slate-200 px-4 py-3">Data</th>
-                                            <th className="border-b border-slate-200 px-4 py-3">Lote</th>
-                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Q antiga</th>
-                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Q nova</th>
-                                            <th className="border-b border-slate-200 px-4 py-3 text-right">V antigo</th>
-                                            <th className="border-b border-slate-200 px-4 py-3 text-right">V novo</th>
-                                            <th className="border-b border-slate-200 px-4 py-3 text-right">V / Q acumulados</th>
-                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Novo custo médio</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Movimento</th>
+                                            <th className="border-b border-slate-200 px-4 py-3">Lote / referência</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Q anterior</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Mov. Q</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">VA anterior</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Mov. VA</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">VA / Q após</th>
+                                            <th className="border-b border-slate-200 px-4 py-3 text-right">Custo médio</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {loadingHistorico ? (
                                             <tr>
-                                                <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
-                                                    Carregando entradas do produto...
+                                                <td colSpan={9} className="px-4 py-6 text-center text-slate-500">
+                                                    Carregando entradas e saídas do produto...
                                                 </td>
                                             </tr>
                                         ) : memoriaCustoMedio.passos.length === 0 ? (
                                             <tr>
-                                                <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
-                                                    Nenhuma entrada com quantidade foi encontrada. O custo cadastrado está sendo usado como fallback.
+                                                <td colSpan={9} className="px-4 py-6 text-center text-slate-500">
+                                                    Nenhum movimento com quantidade foi encontrado. O custo cadastrado está sendo usado como fallback.
                                                 </td>
                                             </tr>
                                         ) : (
                                             [...memoriaCustoMedio.passos]
                                                 .reverse()
-                                                .slice(0, 30)
+                                                .slice(0, 50)
                                                 .map((passo) => (
-                                                    <tr key={passo.movimento_id} className="odd:bg-white even:bg-slate-50/60">
+                                                    <tr
+                                                        key={`${passo.tipo}-${passo.movimento_id}`}
+                                                        className="odd:bg-white even:bg-slate-50/60"
+                                                    >
                                                         <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
-                                                            {fmtDateTime(passo.criado_em)}
+                                                            {fmtDateTime(passo.criado_em) || "Não informado"}
+                                                        </td>
+                                                        <td className="border-b border-slate-100 px-4 py-3">
+                                                            <span
+                                                                className={[
+                                                                    "inline-flex rounded-full px-2.5 py-1 text-[11px] font-black",
+                                                                    passo.tipo === "ENTRADA"
+                                                                        ? "bg-emerald-50 text-emerald-700"
+                                                                        : passo.tipo === "SAIDA"
+                                                                            ? "bg-rose-50 text-rose-700"
+                                                                            : "bg-amber-50 text-amber-800",
+                                                                ].join(" ")}
+                                                            >
+                                                                {passo.tipo === "SALDO_INICIAL"
+                                                                    ? "SALDO INICIAL"
+                                                                    : passo.tipo === "AJUSTE_SALDO"
+                                                                        ? "CONCILIAÇÃO"
+                                                                        : passo.tipo}
+                                                            </span>
                                                         </td>
                                                         <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
                                                             {passo.numero_lote || "Não informado"}
@@ -1185,13 +1498,13 @@ export default function Page() {
                                                             {intBR(passo.quantidade_anterior)}
                                                         </td>
                                                         <td className="border-b border-slate-100 px-4 py-3 text-right font-bold">
-                                                            {intBR(passo.quantidade_nova)}
+                                                            {signedIntBR(passo.quantidade_nova)}
                                                         </td>
                                                         <td className="border-b border-slate-100 px-4 py-3 text-right">
                                                             {moneyBRL(passo.valor_anterior)}
                                                         </td>
                                                         <td className="border-b border-slate-100 px-4 py-3 text-right">
-                                                            {moneyBRL(passo.valor_novo)}
+                                                            {signedMoneyBRL(passo.valor_novo)}
                                                             {passo.custo_estimado ? (
                                                                 <div className="mt-0.5 text-[11px] text-amber-700">estimado</div>
                                                             ) : null}
@@ -1348,7 +1661,7 @@ export default function Page() {
                         </Panel>
 
                         <Panel className="p-4 text-xs leading-5 text-slate-500">
-                            O custo médio segue a memória acumulada das entradas: V antigo + V da nova compra, Q antiga + Q da nova compra e, ao final, V/Q. As saídas não reduzem essa memória de compra. O valor em estoque é o estoque atual multiplicado pelo custo médio calculado. Quando não há entradas válidas, a página usa o preço de custo cadastrado como fallback.
+                            O cálculo usa custo médio móvel. Nas entradas, o valor e a quantidade comprados são somados ao VA e ao Q anteriores. Nas saídas, a quantidade é baixada pelo custo médio existente imediatamente antes do movimento, reduzindo o VA na mesma proporção. Ao final, o VA representa o valor contábil das unidades que permanecem no estoque. Quando o histórico não fecha com o saldo atual, a página exibe uma conciliação explícita.
                         </Panel>
                     </>
                 )}
