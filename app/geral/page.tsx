@@ -85,6 +85,8 @@ type HistoricoRow = {
     frete_unitario_snapshot?: string | number | null;
     custo_unitario_snapshot?: string | number | null;
     custo_total_snapshot?: string | number | null;
+    registro_custo_tipo?: "ENTRADA" | "NOVO_PRECO" | string;
+    ajuste_custo_id?: ID | null;
     custo_atual?: string | number | null;
     custo_base_atual?: string | number | null;
     frete_total_atual?: string | number | null;
@@ -4250,8 +4252,56 @@ export default function Page() {
     function addEntradaItemToList() {
         const built = buildEntradaPayloadFromForm();
         if (!built) return;
-        const id = entradaSeqRef.current++;
-        setEntradaItens((prev) => [...prev, { id, ...built }]);
+
+        const codigoBarras = String(built.payload.codigo_barras || "").trim();
+
+        setEntradaItens((prev) => {
+            const index = prev.findIndex(
+                (item) => String(item.payload.codigo_barras || "").trim() === codigoBarras
+            );
+
+            if (index < 0) {
+                return [...prev, { id: entradaSeqRef.current++, ...built }];
+            }
+
+            const atual = prev[index];
+            const qtdAtual = clampInt(atual.qtd);
+            const qtdNova = clampInt(built.qtd);
+            const qtdTotal = qtdAtual + qtdNova;
+
+            // Mantém uma única linha por produto. Caso o mesmo produto seja
+            // adicionado novamente com outro custo-base, usa a média ponderada
+            // para preservar o valor total informado nos dois lançamentos.
+            const valorBaseTotal =
+                roundCost(atual.custoBaseUnitario * qtdAtual) +
+                roundCost(built.custoBaseUnitario * qtdNova);
+            const custoBasePonderado = qtdTotal > 0
+                ? roundCost(valorBaseTotal / qtdTotal)
+                : roundCost(built.custoBaseUnitario);
+
+            const atualizado: EntradaItem = {
+                ...atual,
+                nome: built.nome || atual.nome,
+                qtd: qtdTotal,
+                custoBaseUnitario: custoBasePonderado,
+                freteTotal: 0,
+                freteUnitario: 0,
+                custoUnitario: custoBasePonderado,
+                custoTotal: roundCost(custoBasePonderado * qtdTotal),
+                resumo: `${built.nome || atual.nome} — qtd ${qtdTotal} — base ${moneyBRL(custoBasePonderado)}`,
+                payload: {
+                    ...atual.payload,
+                    ...built.payload,
+                    quantidade: qtdTotal,
+                    custo_unitario: custoBasePonderado,
+                    frete_total: 0,
+                },
+            };
+
+            return prev.map((item, itemIndex) =>
+                itemIndex === index ? atualizado : item
+            );
+        });
 
         // Mantém depósito, filtros, observação e o frete global.
         resetEntradaItemFieldsOnly();
@@ -7952,13 +8002,20 @@ export default function Page() {
                                                                     const lote = (prodCustoDetalhe?.lotes || []).find(
                                                                         (item) => Number(item.id) === Number(entrada.lote_id)
                                                                     );
+                                                                    const isNovoPreco = entrada.registro_custo_tipo === "NOVO_PRECO";
+                                                                    const numeroLote = isNovoPreco
+                                                                        ? ""
+                                                                        : String(entrada.numero_lote_snapshot || lote?.numero_lote || "");
                                                                     const custoAtual = Number(
                                                                         entrada.custo_atual ?? lote?.custo_unitario ?? entrada.custo_unitario_snapshot ?? 0
                                                                     ) || 0;
                                                                     return (
-                                                                        <tr key={entrada.id} className="border-t border-slate-100 text-sm">
+                                                                        <tr
+                                                                            key={`${entrada.registro_custo_tipo || "ENTRADA"}-${entrada.id}`}
+                                                                            className="border-t border-slate-100 text-sm"
+                                                                        >
                                                                             <td className="px-4 py-3 text-slate-600">{fmtDateTime(entrada.criado_em)}</td>
-                                                                            <td className="px-4 py-3 font-mono text-xs text-slate-900">{entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</td>
+                                                                            <td className="px-4 py-3 font-mono text-xs text-slate-900">{numeroLote}</td>
                                                                             <td className="px-4 py-3 text-slate-700">{entrada.operador_nome || "—"}</td>
                                                                             <td className="px-4 py-3 text-right font-bold text-slate-900">{moneyBRL(custoAtual)}</td>
                                                                         </tr>
@@ -7973,15 +8030,26 @@ export default function Page() {
                                                             const lote = (prodCustoDetalhe?.lotes || []).find(
                                                                 (item) => Number(item.id) === Number(entrada.lote_id)
                                                             );
+                                                            const isNovoPreco = entrada.registro_custo_tipo === "NOVO_PRECO";
+                                                            const numeroLote = isNovoPreco
+                                                                ? ""
+                                                                : String(entrada.numero_lote_snapshot || lote?.numero_lote || "");
                                                             const custoAtual = Number(
                                                                 entrada.custo_atual ?? lote?.custo_unitario ?? entrada.custo_unitario_snapshot ?? 0
                                                             ) || 0;
                                                             return (
-                                                                <div key={entrada.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                                <div
+                                                                    key={`${entrada.registro_custo_tipo || "ENTRADA"}-${entrada.id}`}
+                                                                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                                                                >
                                                                     <div className="flex items-start justify-between gap-3">
                                                                         <div className="min-w-0">
-                                                                            <p className="break-all text-sm font-bold text-slate-900">Lote {entrada.numero_lote_snapshot || lote?.numero_lote || "—"}</p>
-                                                                            <p className="mt-1 text-xs text-slate-500">{fmtDateTime(entrada.criado_em)}</p>
+                                                                            {numeroLote ? (
+                                                                                <p className="break-all text-sm font-bold text-slate-900">Lote {numeroLote}</p>
+                                                                            ) : null}
+                                                                            <p className={numeroLote ? "mt-1 text-xs text-slate-500" : "text-xs text-slate-500"}>
+                                                                                {fmtDateTime(entrada.criado_em)}
+                                                                            </p>
                                                                             <p className="mt-1 text-xs text-slate-600">Usuário: {entrada.operador_nome || "—"}</p>
                                                                         </div>
                                                                         <div className="text-right">
@@ -8476,61 +8544,69 @@ export default function Page() {
                         </div>
                     )}
 
-                    {/* ✅ Itens na fila */}
+                    {/* ✅ Itens na fila: uma linha por produto */}
                     {entradaItens.length ? (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                            <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
-                            <ul className="mt-2 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200">
-                                {ratearFreteEntrada(entradaItens, parseBRLToNumber(entradaFreteTotal)).map((it) => (
-                                    <li key={it.id} className="flex items-start justify-between gap-3 p-3">
-                                        <div className="min-w-0 flex-1">
-                                            {/* ✅ Nome em 2 linhas (sem plugin) */}
-                                            <p
-                                                className="text-sm font-semibold text-slate-900 leading-snug"
-                                                style={{
-                                                    display: "-webkit-box",
-                                                    WebkitLineClamp: 2,
-                                                    WebkitBoxOrient: "vertical",
-                                                    overflow: "hidden",
-                                                }}
-                                            >
-                                                {it.nome}
-                                            </p>
+                        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                            <div className="border-b border-slate-100 px-4 py-3">
+                                <p className="text-sm font-semibold text-slate-900">Itens na fila</p>
+                            </div>
 
-                                            {/* ✅ Quantidade maior e mais visível */}
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <span className="text-xs text-slate-600">Qtd</span>
-                                                    <span className="text-lg font-bold leading-none text-slate-900">{it.qtd}</span>
-                                                </div>
-                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <span className="text-xs text-slate-600">Base</span>
-                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoBaseUnitario || 0)}</span>
-                                                </div>
-                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <span className="text-xs text-slate-600">Custo final</span>
-                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoUnitario || 0)}</span>
-                                                </div>
-                                                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                                    <span className="text-xs text-slate-600">Total</span>
-                                                    <span className="text-sm font-bold leading-none text-slate-900">{moneyBRL(it.custoTotal || 0)}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* ✅ Botão pequeno (não ocupa tudo) */}
-                                        <Button
-                                            variant="ghost"
-                                            type="button"
-                                            className="w-auto px-3 py-2 text-sm"
-                                            onClick={() => setEntradaItens((prev) => prev.filter((x) => x.id !== it.id))}
-                                        >
-                                            Remover
-                                        </Button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[720px] border-collapse text-sm">
+                                    <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-600">
+                                        <tr>
+                                            <th className="px-4 py-3">Produto</th>
+                                            <th className="w-20 px-3 py-3 text-right">Qtd</th>
+                                            <th className="w-32 px-3 py-3 text-right">Base</th>
+                                            <th className="w-32 px-3 py-3 text-right">Custo final</th>
+                                            <th className="w-32 px-3 py-3 text-right">Total</th>
+                                            <th className="w-12 px-2 py-3 text-center" aria-label="Ações" />
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {ratearFreteEntrada(
+                                            entradaItens,
+                                            parseBRLToNumber(entradaFreteTotal)
+                                        ).map((it) => (
+                                            <tr key={it.id} className="border-t border-slate-100">
+                                                <td className="max-w-[320px] px-4 py-3 font-semibold text-slate-900">
+                                                    <span className="block truncate" title={it.nome}>
+                                                        {it.nome}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-bold text-slate-900">
+                                                    {it.qtd}
+                                                </td>
+                                                <td className="px-3 py-3 text-right text-slate-700">
+                                                    {moneyBRL(it.custoBaseUnitario || 0)}
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-semibold text-slate-900">
+                                                    {moneyBRL(it.custoUnitario || 0)}
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-bold text-slate-900">
+                                                    {moneyBRL(it.custoTotal || 0)}
+                                                </td>
+                                                <td className="px-2 py-2 text-center">
+                                                    <button
+                                                        type="button"
+                                                        title={`Remover ${it.nome}`}
+                                                        aria-label={`Remover ${it.nome}`}
+                                                        onClick={() =>
+                                                            setEntradaItens((prev) =>
+                                                                prev.filter((item) => item.id !== it.id)
+                                                            )
+                                                        }
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-xl leading-none text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
                     ) : null}
 
 
