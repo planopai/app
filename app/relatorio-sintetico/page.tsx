@@ -122,7 +122,32 @@ type HistoricoResp = {
     need_login?: 1;
 };
 
-type MovimentoCustoTipo = "SALDO_INICIAL" | "ENTRADA" | "SAIDA" | "AJUSTE_SALDO";
+type MovimentoCustoTipo =
+    | "SALDO_INICIAL"
+    | "ENTRADA"
+    | "SAIDA"
+    | "AJUSTE_CUSTO"
+    | "AJUSTE_SALDO";
+
+type CustoAjusteRow = {
+    id: number;
+    produto_id: ID;
+    tipo: string;
+    novo_custo: string | number;
+    custo_base_novo?: string | number | null;
+    frete_total?: string | number | null;
+    frete_unitario?: string | number | null;
+    observacao?: string | null;
+    usuario_nome?: string | null;
+    criado_em: string;
+};
+
+type CustoProdutoDetalheResp = {
+    ok: boolean;
+    ajustes?: CustoAjusteRow[];
+    msg?: string;
+    need_login?: 1;
+};
 
 type CustoMedioPasso = {
     movimento_id: number;
@@ -378,6 +403,7 @@ export default function Page() {
     const [lotes, setLotes] = useState<LoteRow[]>([]);
     const [historico, setHistorico] = useState<HistoricoRow[]>([]);
     const [entradas, setEntradas] = useState<HistoricoRow[]>([]);
+    const [ajustesCusto, setAjustesCusto] = useState<CustoAjusteRow[]>([]);
 
     const [busca, setBusca] = useState("");
     const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<ID | null>(null);
@@ -438,6 +464,7 @@ export default function Page() {
                 setProdutoSelecionadoId(null);
                 setHistorico([]);
                 setEntradas([]);
+                setAjustesCusto([]);
                 setBusca("");
             }
         } catch (error: unknown) {
@@ -452,12 +479,13 @@ export default function Page() {
         setErroHistorico("");
         setHistorico([]);
         setEntradas([]);
+        setAjustesCusto([]);
 
         try {
             const produto = produtos.find((item) => Number(item.id) === Number(produtoId));
             const termoBusca = String(produto?.codigo_barras || produto?.nome || "").trim();
 
-            const [saidasResp, entradasResp] = await Promise.all([
+            const [saidasResp, entradasResp, custoResp] = await Promise.all([
                 apiGet<HistoricoResp>({
                     historico: 1,
                     tipo: "SAIDA",
@@ -474,6 +502,11 @@ export default function Page() {
                     limit: HISTORICO_LIMIT,
                     _ts: Date.now() + 1,
                 }),
+                apiGet<CustoProdutoDetalheResp>({
+                    action: "custo_produto_detalhe",
+                    produto_id: produtoId,
+                    _ts: Date.now() + 2,
+                }),
             ]);
 
             if (!saidasResp.ok) {
@@ -482,6 +515,10 @@ export default function Page() {
 
             if (!entradasResp.ok) {
                 throw new Error(entradasResp.msg || "Falha ao carregar as entradas do produto.");
+            }
+
+            if (!custoResp.ok) {
+                throw new Error(custoResp.msg || "Falha ao carregar os ajustes de custo do produto.");
             }
 
             const saidasRows = (saidasResp.rows || [])
@@ -504,8 +541,21 @@ export default function Page() {
                         Number(a.id) - Number(b.id)
                 );
 
+            const ajustesRows = (custoResp.ajustes || [])
+                .filter(
+                    (ajuste) =>
+                        Number(ajuste.produto_id) === Number(produtoId) &&
+                        String(ajuste.tipo || "").toUpperCase() === "NOVO_PRECO"
+                )
+                .sort(
+                    (a, b) =>
+                        new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime() ||
+                        Number(a.id) - Number(b.id)
+                );
+
             setHistorico(saidasRows);
             setEntradas(entradasRows);
+            setAjustesCusto(ajustesRows);
         } catch (error: unknown) {
             setErroHistorico(
                 error instanceof Error
@@ -627,8 +677,22 @@ export default function Page() {
                 ...movimento,
                 tipoCalculo: "SAIDA" as const,
             })),
+            ...ajustesCusto.map((ajuste) => ({
+                id: ajuste.id,
+                produto_id: ajuste.produto_id,
+                criado_em: ajuste.criado_em,
+                quantidade: null,
+                numero_lote_snapshot: null,
+                novo_custo: ajuste.novo_custo,
+                observacao: ajuste.observacao,
+                tipoCalculo: "AJUSTE_CUSTO" as const,
+            })),
         ]
-            .filter((movimento) => clampInt(movimento.quantidade) > 0)
+            .filter(
+                (movimento) =>
+                    movimento.tipoCalculo === "AJUSTE_CUSTO" ||
+                    clampInt(movimento.quantidade) > 0
+            )
             .sort(
                 (a, b) =>
                     new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime() ||
@@ -661,6 +725,8 @@ export default function Page() {
         let menorSaldoSequencial = 0;
 
         for (const movimento of movimentos) {
+            if (movimento.tipoCalculo === "AJUSTE_CUSTO") continue;
+
             const quantidade = clampInt(movimento.quantidade);
 
             if (movimento.tipoCalculo === "ENTRADA") {
@@ -715,11 +781,48 @@ export default function Page() {
         }
 
         for (const movimento of movimentos) {
-            const quantidadeMovimento = clampInt(movimento.quantidade);
-            if (quantidadeMovimento <= 0) continue;
-
             const quantidadeAnterior = quantidadeAcumulada;
             const valorAnterior = valorAcumulado;
+
+            if (movimento.tipoCalculo === "AJUSTE_CUSTO") {
+                const novoCusto = num(movimento.novo_custo);
+                if (novoCusto <= 0) continue;
+
+                // O novo preço de custo é um evento sem lote e sem alteração
+                // de quantidade. No custo médio móvel, ele passa a ser a
+                // referência vigente e reexpressa o valor das unidades que
+                // permanecem contabilizadas naquele instante.
+                const novoValorAcumulado = roundInternal(
+                    quantidadeAcumulada * novoCusto
+                );
+                const diferencaValor = roundInternal(
+                    novoValorAcumulado - valorAcumulado
+                );
+
+                valorAcumulado = novoValorAcumulado;
+                ultimoCustoMedio = novoCusto;
+
+                passos.push({
+                    movimento_id: Number(movimento.id),
+                    tipo: "AJUSTE_CUSTO",
+                    criado_em: movimento.criado_em,
+                    numero_lote: "Novo preço de custo",
+                    quantidade_anterior: quantidadeAnterior,
+                    quantidade_nova: 0,
+                    quantidade_acumulada: quantidadeAcumulada,
+                    valor_anterior: valorAnterior,
+                    valor_novo: diferencaValor,
+                    valor_acumulado: valorAcumulado,
+                    custo_unitario_novo: novoCusto,
+                    custo_medio: novoCusto,
+                    custo_estimado: false,
+                });
+
+                continue;
+            }
+
+            const quantidadeMovimento = clampInt(movimento.quantidade);
+            if (quantidadeMovimento <= 0) continue;
 
             if (movimento.tipoCalculo === "ENTRADA") {
                 const custoUnitarioSnapshot = num(
@@ -893,6 +996,7 @@ export default function Page() {
     }, [
         entradas,
         historico,
+        ajustesCusto,
         produtoSelecionado,
         estoqueAtualProduto,
     ]);
@@ -1488,7 +1592,9 @@ export default function Page() {
                                                                     ? "SALDO INICIAL"
                                                                     : passo.tipo === "AJUSTE_SALDO"
                                                                         ? "CONCILIAÇÃO"
-                                                                        : passo.tipo}
+                                                                        : passo.tipo === "AJUSTE_CUSTO"
+                                                                            ? "NOVO CUSTO"
+                                                                            : passo.tipo}
                                                             </span>
                                                         </td>
                                                         <td className="border-b border-slate-100 px-4 py-3 text-slate-700">
@@ -1661,7 +1767,7 @@ export default function Page() {
                         </Panel>
 
                         <Panel className="p-4 text-xs leading-5 text-slate-500">
-                            O cálculo usa custo médio móvel. Nas entradas, o valor e a quantidade comprados são somados ao VA e ao Q anteriores. Nas saídas, a quantidade é baixada pelo custo médio existente imediatamente antes do movimento, reduzindo o VA na mesma proporção. Ao final, o VA representa o valor contábil das unidades que permanecem no estoque. Quando o histórico não fecha com o saldo atual, a página exibe uma conciliação explícita.
+                            O cálculo usa custo médio móvel. Nas entradas, o valor e a quantidade comprados são somados ao VA e ao Q anteriores. Nas saídas, a quantidade é baixada pelo custo médio existente imediatamente antes do movimento, reduzindo o VA na mesma proporção. Um Novo preço de custo aparece como evento sem lote e sem quantidade, passando a ser o custo vigente das unidades contabilizadas naquele instante. Ao final, o VA representa o valor contábil das unidades que permanecem no estoque. Quando o histórico não fecha com o saldo atual, a página exibe uma conciliação explícita.
                         </Panel>
                     </>
                 )}
