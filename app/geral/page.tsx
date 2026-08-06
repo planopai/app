@@ -9920,7 +9920,7 @@ export default function Page() {
                 </div>
             </FilterPanelModal>
 
-            {/* SCANNERS */}
+            {/* SCANNERSs */}
             <BarcodeScannerModal
                 open={saidaScanOpen}
                 title="Ler código de barras (Saída)"
