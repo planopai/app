@@ -1,6 +1,6 @@
 "use client";
 
-// v13: Preço de custo atual acompanha o custo médio móvel; texto auxiliar do frete removido.
+// v14: custo médio móvel padronizado na listagem de produtos + paginação 10/50/100/500/Tudo.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -186,6 +186,22 @@ type CustoProdutoDetalheResp = {
     msg?: string;
     need_login?: 1;
 };
+
+type CustoMedioMovelProduto = {
+    produto_id: ID;
+    quantidade_atual: number;
+    custo_medio: string | number;
+    valor_estoque: string | number;
+};
+
+type CustosMediosMoveisResp = {
+    ok: boolean;
+    rows?: CustoMedioMovelProduto[];
+    msg?: string;
+    need_login?: 1;
+};
+
+type EstoquePageSize = 10 | 50 | 100 | 500 | "ALL";
 
 type EstoqueColumnKey =
     | "produto"
@@ -1879,6 +1895,15 @@ export default function Page() {
     const [produtos, setProdutos] = useState<Produto[]>([]);
     const [saldos, setSaldos] = useState<Saldo[]>([]);
 
+    // Custo médio móvel oficial usado nas telas consolidadas de estoque.
+    const [custosMediosMoveis, setCustosMediosMoveis] = useState<
+        Record<number, CustoMedioMovelProduto>
+    >({});
+    const custosMediosMoveisRef = useRef<Record<number, CustoMedioMovelProduto>>({});
+    const [custosMediosLoading, setCustosMediosLoading] = useState(false);
+    const [custosMediosErr, setCustosMediosErr] = useState("");
+    const [custosMediosVersion, setCustosMediosVersion] = useState(0);
+
     // =========================
     // AVANÇADO (POPUPS)
     // =========================
@@ -2000,6 +2025,13 @@ export default function Page() {
             setClassificacoes((j.classificacoes || []).filter((c) => Number(c.ativo) === 1));
 
             setSaldos(j.saldos || []);
+
+            // Uma atualização pode conter novas entradas/saídas/ajustes.
+            // Limpa o cache para recalcular o custo médio móvel oficial.
+            custosMediosMoveisRef.current = {};
+            setCustosMediosMoveis({});
+            setCustosMediosErr("");
+            setCustosMediosVersion((v) => v + 1);
         } catch (e: any) {
             setInitErr(e?.message || "Erro ao carregar.");
         } finally {
@@ -2068,6 +2100,10 @@ export default function Page() {
 
     // Quando marcado, a listagem troca dos produtos ativos para os inativos.
     const [onlyInactive, setOnlyInactive] = useState(false);
+
+    // Paginação da listagem de produtos.
+    const [estoquePageSize, setEstoquePageSize] = useState<EstoquePageSize>(50);
+    const [estoquePage, setEstoquePage] = useState(1);
 
     // ✅ NOVO: abre/fecha o filtro da aba Estoque
     const [estoqueFilterOpen, setEstoqueFilterOpen] = useState(false);
@@ -2506,6 +2542,140 @@ export default function Page() {
         classById,
     ]);
 
+    const estoqueProdutoIds = useMemo(
+        () => Array.from(new Set(estoqueRows.map((row) => Number(row.p.id)))).filter((id) => id > 0),
+        [estoqueRows]
+    );
+
+    const estoqueProdutoIdsKey = useMemo(
+        () => estoqueProdutoIds.join(","),
+        [estoqueProdutoIds]
+    );
+
+    useEffect(() => {
+        if (!estoqueProdutoIds.length) return;
+
+        const faltantes = estoqueProdutoIds.filter(
+            (id) => !Object.prototype.hasOwnProperty.call(custosMediosMoveisRef.current, id)
+        );
+        if (!faltantes.length) return;
+
+        let cancelled = false;
+
+        async function carregarCustosMediosMoveis() {
+            setCustosMediosLoading(true);
+            setCustosMediosErr("");
+
+            try {
+                const chunks: number[][] = [];
+                for (let i = 0; i < faltantes.length; i += 180) {
+                    chunks.push(faltantes.slice(i, i + 180));
+                }
+
+                const respostas = await Promise.all(
+                    chunks.map((ids, index) =>
+                        apiGet<CustosMediosMoveisResp>({
+                            action: "custos_medios_produtos",
+                            produto_ids: ids.join(","),
+                            _ts: Date.now() + index,
+                        })
+                    )
+                );
+
+                const novos: Record<number, CustoMedioMovelProduto> = {};
+                for (const resp of respostas) {
+                    if (!resp.ok) {
+                        throw new Error(resp.msg || "Falha ao carregar custos médios móveis.");
+                    }
+
+                    for (const row of resp.rows || []) {
+                        const produtoId = Number(row.produto_id);
+                        if (!produtoId) continue;
+                        novos[produtoId] = row;
+                    }
+                }
+
+                if (cancelled) return;
+
+                custosMediosMoveisRef.current = {
+                    ...custosMediosMoveisRef.current,
+                    ...novos,
+                };
+                setCustosMediosMoveis({ ...custosMediosMoveisRef.current });
+            } catch (e: any) {
+                if (!cancelled) {
+                    setCustosMediosErr(
+                        e?.message || "Não foi possível carregar o custo médio móvel dos produtos."
+                    );
+                }
+            } finally {
+                if (!cancelled) setCustosMediosLoading(false);
+            }
+        }
+
+        void carregarCustosMediosMoveis();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [estoqueProdutoIdsKey, custosMediosVersion]);
+
+    function custoMedioMovelProduto(produtoId: ID): number {
+        const registro = custosMediosMoveis[Number(produtoId)];
+        const valor = Number(registro?.custo_medio);
+        return Number.isFinite(valor) ? Math.max(0, valor) : 0;
+    }
+
+    function custoTotalMovelProduto(produtoId: ID, quantidadeFiltrada: number): number {
+        return roundCost(custoMedioMovelProduto(produtoId) * clampInt(quantidadeFiltrada));
+    }
+
+    const estoqueTotalPages = useMemo(() => {
+        if (estoquePageSize === "ALL") return 1;
+        return Math.max(1, Math.ceil(estoqueRows.length / estoquePageSize));
+    }, [estoqueRows.length, estoquePageSize]);
+
+    useEffect(() => {
+        setEstoquePage(1);
+    }, [
+        qEstoque,
+        depFiltroEstoque,
+        catFiltroEstoque,
+        fabFiltroEstoque,
+        classFiltroEstoque,
+        onlyLow,
+        onlyPositive,
+        onlyInactive,
+        estoquePageSize,
+    ]);
+
+    useEffect(() => {
+        setEstoquePage((paginaAtual) =>
+            Math.min(Math.max(1, paginaAtual), estoqueTotalPages)
+        );
+    }, [estoqueTotalPages]);
+
+    const estoqueRowsPaginados = useMemo(() => {
+        if (estoquePageSize === "ALL") return estoqueRows;
+
+        const inicio = (estoquePage - 1) * estoquePageSize;
+        return estoqueRows.slice(inicio, inicio + estoquePageSize);
+    }, [estoqueRows, estoquePage, estoquePageSize]);
+
+    const estoquePaginaInicio =
+        estoqueRows.length === 0
+            ? 0
+            : estoquePageSize === "ALL"
+                ? 1
+                : (estoquePage - 1) * estoquePageSize + 1;
+
+    const estoquePaginaFim =
+        estoqueRows.length === 0
+            ? 0
+            : estoquePageSize === "ALL"
+                ? estoqueRows.length
+                : Math.min(estoqueRows.length, estoquePage * estoquePageSize);
+
 
     const estoqueFiltroOptions = useMemo(() => {
         type EstoqueFiltroOptionRow = {
@@ -2680,7 +2850,7 @@ export default function Page() {
             totalUnidades += q;
 
             const valorVenda = Number(p.valor) || 0;
-            const precoCusto = Number(p.preco_custo) || 0;
+            const precoCusto = custoMedioMovelProduto(p.id);
 
             totalValor += q * valorVenda;
             totalCusto += q * precoCusto;
@@ -2692,7 +2862,7 @@ export default function Page() {
             totalCusto,
             totalModelos: modelosSet.size,
         };
-    }, [estoqueRows]);
+    }, [estoqueRows, custosMediosMoveis]);
 
 
 
@@ -2732,8 +2902,8 @@ export default function Page() {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
             const valorNum = Number(p.valor) || 0;
-            const precoCustoNum = Number(p.preco_custo) || 0;
-            const custoTotalItem = clampInt(qtd) * precoCustoNum;
+            const precoCustoNum = custoMedioMovelProduto(p.id);
+            const custoTotalItem = custoTotalMovelProduto(p.id, qtd);
 
             lines.push(
                 [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), moneyBRL(precoCustoNum), moneyBRL(custoTotalItem)]
@@ -6193,10 +6363,10 @@ export default function Page() {
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
 
 
-                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || !estoqueRows.length}>
+                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || !estoqueRows.length}>
+                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         🧾 PDF
                                     </Button>
                                 </div>
@@ -6247,10 +6417,14 @@ export default function Page() {
                                     <>
                                         {/* CELULAR E TABLET */}
                                         <div className="space-y-3 p-3 lg:hidden">
-                                            {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
+                                            {estoqueRowsPaginados.map(({ p, d, qtd, min, hasMinMax }) => {
                                                 const low = hasMinMax && qtd <= min;
-                                                const precoCustoNum = Number(p.preco_custo) || 0;
-                                                const custoTotalItem = clampInt(qtd) * precoCustoNum;
+                                                const precoCustoNum = custoMedioMovelProduto(p.id);
+                                                const custoTotalItem = custoTotalMovelProduto(p.id, qtd);
+                                                const custoCarregado = Object.prototype.hasOwnProperty.call(
+                                                    custosMediosMoveis,
+                                                    Number(p.id)
+                                                );
                                                 const foto = getProdutoFotoPrincipal(p);
 
                                                 const cat =
@@ -6339,18 +6513,22 @@ export default function Page() {
                                                                 <div className="mt-2">
                                                                     <p className="text-xs text-slate-500">Custo</p>
                                                                     <p className="text-sm font-semibold text-slate-700">
-                                                                        {precoCustoNum
-                                                                            ? moneyBRL(precoCustoNum)
-                                                                            : "—"}
+                                                                        {!custoCarregado
+                                                                            ? "..."
+                                                                            : precoCustoNum
+                                                                                ? moneyBRL(precoCustoNum)
+                                                                                : "—"}
                                                                     </p>
                                                                 </div>
 
                                                                 <div className="mt-2">
                                                                     <p className="text-xs text-slate-500">Total</p>
                                                                     <p className="text-sm font-bold text-slate-900">
-                                                                        {precoCustoNum
-                                                                            ? moneyBRL(custoTotalItem)
-                                                                            : "—"}
+                                                                        {!custoCarregado
+                                                                            ? "..."
+                                                                            : precoCustoNum
+                                                                                ? moneyBRL(custoTotalItem)
+                                                                                : "—"}
                                                                     </p>
                                                                 </div>
                                                             </div>
@@ -6435,7 +6613,7 @@ export default function Page() {
                                                     </thead>
 
                                                     <tbody>
-                                                        {estoqueRows.map(({ p, d, qtd, min, hasMinMax }) => {
+                                                        {estoqueRowsPaginados.map(({ p, d, qtd, min, hasMinMax }) => {
                                                             const low =
                                                                 hasMinMax &&
                                                                 clampInt(qtd) <= clampInt(min);
@@ -6460,9 +6638,14 @@ export default function Page() {
                                                                 "—";
 
                                                             const precoCustoNum =
-                                                                Number(p.preco_custo) || 0;
+                                                                custoMedioMovelProduto(p.id);
                                                             const custoTotalItem =
-                                                                clampInt(qtd) * precoCustoNum;
+                                                                custoTotalMovelProduto(p.id, qtd);
+                                                            const custoCarregado =
+                                                                Object.prototype.hasOwnProperty.call(
+                                                                    custosMediosMoveis,
+                                                                    Number(p.id)
+                                                                );
                                                             const foto =
                                                                 getProdutoFotoPrincipal(p);
 
@@ -6539,18 +6722,22 @@ export default function Page() {
                                                                         }}
                                                                         className="sticky z-[5] whitespace-nowrap border-b border-r border-slate-200 bg-white px-3 py-2 text-right align-middle text-sm text-slate-700 shadow-[-1px_0_0_0_#e2e8f0] group-hover:bg-slate-50"
                                                                     >
-                                                                        {precoCustoNum
-                                                                            ? moneyBRL(precoCustoNum)
-                                                                            : "—"}
+                                                                        {!custoCarregado
+                                                                            ? "..."
+                                                                            : precoCustoNum
+                                                                                ? moneyBRL(precoCustoNum)
+                                                                                : "—"}
                                                                     </td>
 
                                                                     <td
                                                                         style={{ right: 0 }}
                                                                         className="sticky z-[6] whitespace-nowrap border-b border-slate-200 bg-white px-3 py-2 text-right align-middle text-sm font-semibold text-slate-900 group-hover:bg-slate-50"
                                                                     >
-                                                                        {precoCustoNum
-                                                                            ? moneyBRL(custoTotalItem)
-                                                                            : "—"}
+                                                                        {!custoCarregado
+                                                                            ? "..."
+                                                                            : precoCustoNum
+                                                                                ? moneyBRL(custoTotalItem)
+                                                                                : "—"}
                                                                     </td>
                                                                 </tr>
                                                             );
@@ -6583,7 +6770,11 @@ export default function Page() {
                                                                 style={{ right: 0 }}
                                                                 className="sticky z-[6] border-t border-slate-200 bg-slate-50 px-3 py-3 text-right font-bold text-slate-900"
                                                             >
-                                                                {moneyBRL(estoqueResumo.totalCusto)}
+                                                                {custosMediosLoading
+                                                                    ? "..."
+                                                                    : custosMediosErr
+                                                                        ? "—"
+                                                                        : moneyBRL(estoqueResumo.totalCusto)}
                                                             </td>
                                                         </tr>
                                                     </tfoot>
@@ -6595,13 +6786,118 @@ export default function Page() {
                                 )}
                             </div>
 
+                            {custosMediosErr ? (
+                                <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                                    {custosMediosErr}
+                                </div>
+                            ) : null}
+
+                            <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                                        <span>Itens por página</span>
+                                        <select
+                                            value={String(estoquePageSize)}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setEstoquePageSize(
+                                                    value === "ALL"
+                                                        ? "ALL"
+                                                        : (Number(value) as EstoquePageSize)
+                                                );
+                                            }}
+                                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                                        >
+                                            <option value="10">10</option>
+                                            <option value="50">50</option>
+                                            <option value="100">100</option>
+                                            <option value="500">500</option>
+                                            <option value="ALL">Tudo</option>
+                                        </select>
+                                    </label>
+
+                                    <span className="text-sm text-slate-600">
+                                        Mostrando{" "}
+                                        <b className="text-slate-900">
+                                            {estoquePaginaInicio}-{estoquePaginaFim}
+                                        </b>{" "}
+                                        de <b className="text-slate-900">{estoqueRows.length}</b>
+                                    </span>
+                                </div>
+
+                                {estoquePageSize !== "ALL" && estoqueRows.length > 0 ? (
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            className="h-10 w-10 px-0"
+                                            onClick={() => setEstoquePage(1)}
+                                            disabled={estoquePage <= 1}
+                                            title="Primeira página"
+                                            aria-label="Primeira página"
+                                        >
+                                            «
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            className="h-10 w-10 px-0"
+                                            onClick={() => setEstoquePage((p) => Math.max(1, p - 1))}
+                                            disabled={estoquePage <= 1}
+                                            title="Página anterior"
+                                            aria-label="Página anterior"
+                                        >
+                                            ‹
+                                        </Button>
+
+                                        <span className="min-w-[110px] text-center text-sm text-slate-700">
+                                            Página <b>{estoquePage}</b> de <b>{estoqueTotalPages}</b>
+                                        </span>
+
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            className="h-10 w-10 px-0"
+                                            onClick={() =>
+                                                setEstoquePage((p) =>
+                                                    Math.min(estoqueTotalPages, p + 1)
+                                                )
+                                            }
+                                            disabled={estoquePage >= estoqueTotalPages}
+                                            title="Próxima página"
+                                            aria-label="Próxima página"
+                                        >
+                                            ›
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            type="button"
+                                            className="h-10 w-10 px-0"
+                                            onClick={() => setEstoquePage(estoqueTotalPages)}
+                                            disabled={estoquePage >= estoqueTotalPages}
+                                            title="Última página"
+                                            aria-label="Última página"
+                                        >
+                                            »
+                                        </Button>
+                                    </div>
+                                ) : null}
+                            </div>
+
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                                 <div className="text-sm text-slate-700">
                                     Itens (unidades): <b>{estoqueResumo.totalUnidades}</b>
                                 </div>
 
                                 <div className="text-sm text-slate-700">
-                                    Custo total do estoque: <b>{moneyBRL(estoqueResumo.totalCusto)}</b>
+                                    Custo total do estoque:{" "}
+                                    <b>
+                                        {custosMediosLoading
+                                            ? "Calculando..."
+                                            : custosMediosErr
+                                                ? "Indisponível"
+                                                : moneyBRL(estoqueResumo.totalCusto)}
+                                    </b>
                                 </div>
                             </div>
 
