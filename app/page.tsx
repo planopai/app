@@ -128,7 +128,7 @@ const quickActions: QuickAction[] = [
     ),
   },
   {
-    label: "Produtos",
+    label: "Consulta",
     href: "/produtos",
     slug: "produtos",
     icon: (
