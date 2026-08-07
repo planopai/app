@@ -1,6 +1,6 @@
 "use client";
 
-// v12: compatível com o endpoint de custo corrigido (NOVO_PRECO sem ID negativo no SQL).
+// v13: Preço de custo atual acompanha o custo médio móvel; texto auxiliar do frete removido.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -4442,10 +4442,12 @@ export default function Page() {
             setProdCustoDetalhe(resp);
             setProdEntradasCusto(entradas);
 
-            const precoReferencia = Number(resp.produto?.preco_custo ?? 0) || 0;
+            // O indicador "Preço de custo atual" deve refletir o custo médio móvel
+            // retornado no resumo do produto, e não apenas o custo da última entrada.
+            const precoCustoAtual = Number(resp.resumo?.custo_medio ?? 0) || 0;
             setEditPrecoCusto(
                 maskBRLFromDigits(
-                    String(Math.round(Math.max(0, precoReferencia) * 100))
+                    String(Math.round(Math.max(0, precoCustoAtual) * 100))
                 )
             );
         } catch (e: any) {
@@ -8502,10 +8504,7 @@ export default function Page() {
 
                     <section className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-                            <Field
-                                label="Frete total da entrada"
-                                hint="Informe uma única vez. O valor será rateado entre todas as unidades de todos os produtos desta entrada."
-                            >
+                            <Field label="Frete total da entrada">
                                 <TextInput
                                     value={entradaFreteTotal}
                                     onChange={(e) => setEntradaFreteTotal(maskBRLInput(e.target.value))}
