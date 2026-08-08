@@ -2240,6 +2240,7 @@ export default function QuadroAtendimentoPage() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
                                     <Field label="Falecido" value={shown(detail.falecido)} />
                                     <Field label="Religião" value={shown(detail.religiao)} />
+                                    <Field label="Nome do Responsável" value={shown(detail.nome_responsavel)} className="sm:col-span-2" />
                                     <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
                                     <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
                                     <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
