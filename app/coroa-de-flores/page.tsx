@@ -24,6 +24,8 @@ export const dynamic = "force-dynamic";
    ========================================================= */
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
 const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
+const MATERIAIS_API = "https://api.planoassistencialintegrado.com.br/materiais_gerais.php";
+const API_PUBLIC_BASE = "https://api.planoassistencialintegrado.com.br";
 
 /* =========================================================
    PEDIDOS MANUAIS
@@ -76,6 +78,49 @@ type AtendimentoResumo = {
     tanato?: string;
     ornamentacao?: string;
     tipo_atendimento?: string;
+};
+
+type CoroaTipo = "" | "natural" | "artificial";
+
+type EstoqueProdutoFoto = {
+    id?: number;
+    produto_id?: number;
+    arquivo?: string | null;
+    foto_url?: string | null;
+    legenda?: string | null;
+    ordem?: number;
+    is_principal?: 0 | 1 | number;
+};
+
+type EstoqueProduto = {
+    id: number;
+    nome: string;
+    descricao?: string | null;
+    codigo_barras?: string | null;
+    valor?: string | number;
+    preco_custo?: string | number;
+    foto_url?: string | null;
+    fotos?: EstoqueProdutoFoto[];
+    ativo?: 0 | 1 | number;
+    categoria_id?: number | null;
+    categoria_nome?: string | null;
+    fabricante_nome?: string | null;
+    classificacao_nome?: string | null;
+};
+
+type EstoqueSaldo = {
+    id?: number;
+    produto_id: number;
+    deposito_id?: number;
+    quantidade: number;
+};
+
+type MateriaisInitResponse = {
+    ok?: boolean;
+    produtos?: EstoqueProduto[];
+    saldos?: EstoqueSaldo[];
+    msg?: string;
+    need_login?: 1;
 };
 
 const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: string }> = [
@@ -270,6 +315,72 @@ function atendimentoEstaNoQuadro(r: AtendimentoResumo) {
     }
 
     return true;
+}
+
+function normalizarTextoEstoque(v?: string | null) {
+    return String(v || "")
+        .trim()
+        .toLocaleLowerCase("pt-BR")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ");
+}
+
+function categoriaEhCoroaNatural(nome?: string | null) {
+    return normalizarTextoEstoque(nome) === "coroas naturais";
+}
+
+function categoriaEhCoroaArtificial(nome?: string | null) {
+    return normalizarTextoEstoque(nome) === "coroas artificiais";
+}
+
+function dinheiroBRL(v?: string | number | null) {
+    const n = Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+    }).format(safe);
+}
+
+function normalizarFotoProduto(url?: string | null) {
+    const raw = String(url || "").trim();
+    if (!raw || raw === "null" || raw === "undefined") return null;
+    if (/^data:image\//i.test(raw) || /^blob:/i.test(raw) || /^https?:\/\//i.test(raw)) {
+        return raw;
+    }
+
+    const clean = raw.startsWith("/") ? raw : `/${raw}`;
+    if (clean.startsWith("/uploads/")) {
+        return `${API_PUBLIC_BASE}${clean}`;
+    }
+
+    return `${API_PUBLIC_BASE}/uploads/produtos/${raw.replace(/^\/+/, "")}`;
+}
+
+function fotoPrincipalProduto(produto?: EstoqueProduto | null) {
+    if (!produto) return null;
+
+    const fotos = Array.isArray(produto.fotos) ? [...produto.fotos] : [];
+    if (fotos.length) {
+        fotos.sort((a, b) => {
+            const principalA = Number(a.is_principal || 0) === 1 ? 0 : 1;
+            const principalB = Number(b.is_principal || 0) === 1 ? 0 : 1;
+            if (principalA !== principalB) return principalA - principalB;
+            return Number(a.ordem || 0) - Number(b.ordem || 0);
+        });
+
+        const primeira = fotos[0];
+        return normalizarFotoProduto(primeira?.foto_url || primeira?.arquivo || null);
+    }
+
+    return normalizarFotoProduto(produto.foto_url || null);
+}
+
+function rotuloTipoCoroa(tipo: CoroaTipo) {
+    if (tipo === "natural") return "Natural";
+    if (tipo === "artificial") return "Artificial";
+    return "";
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -669,6 +780,120 @@ export default function Page() {
     }, [carregarFalecidosQuadro]);
 
     /* -------------------------
+       Modelos de Coroa no estoque
+       ------------------------- */
+    const [modeloTipo, setModeloTipo] = React.useState<CoroaTipo>("");
+    const [modeloModalOpen, setModeloModalOpen] = React.useState(false);
+    const [modeloLoading, setModeloLoading] = React.useState(false);
+    const [modeloError, setModeloError] = React.useState<string | null>(null);
+    const [modeloBusca, setModeloBusca] = React.useState("");
+    const [estoqueProdutos, setEstoqueProdutos] = React.useState<EstoqueProduto[]>([]);
+    const [estoqueSaldos, setEstoqueSaldos] = React.useState<EstoqueSaldo[]>([]);
+    const [modeloSelecionado, setModeloSelecionado] = React.useState<EstoqueProduto | null>(null);
+
+    const saldoTotalPorProduto = React.useMemo(() => {
+        const map = new Map<number, number>();
+
+        for (const saldo of estoqueSaldos) {
+            const produtoId = Number(saldo?.produto_id || 0);
+            if (produtoId <= 0) continue;
+
+            const quantidade = Math.max(0, Number(saldo?.quantidade || 0));
+            map.set(produtoId, (map.get(produtoId) || 0) + quantidade);
+        }
+
+        return map;
+    }, [estoqueSaldos]);
+
+    const modelosDisponiveis = React.useMemo(() => {
+        const busca = normalizarTextoEstoque(modeloBusca);
+
+        return estoqueProdutos
+            .filter((produto) => Number(produto?.ativo ?? 1) === 1)
+            .filter((produto) => {
+                if (modeloTipo === "natural") {
+                    // Coroas naturais aparecem mesmo com estoque zerado.
+                    return categoriaEhCoroaNatural(produto.categoria_nome);
+                }
+
+                if (modeloTipo === "artificial") {
+                    // Coroas artificiais somente aparecem quando existe saldo positivo
+                    // somando todos os depósitos do estoque.
+                    return (
+                        categoriaEhCoroaArtificial(produto.categoria_nome) &&
+                        (saldoTotalPorProduto.get(Number(produto.id)) || 0) > 0
+                    );
+                }
+
+                return false;
+            })
+            .filter((produto) => {
+                if (!busca) return true;
+
+                return (
+                    normalizarTextoEstoque(produto.nome).includes(busca) ||
+                    normalizarTextoEstoque(produto.codigo_barras).includes(busca)
+                );
+            })
+            .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+    }, [estoqueProdutos, saldoTotalPorProduto, modeloTipo, modeloBusca]);
+
+    const carregarModelosCoroa = React.useCallback(async () => {
+        setModeloLoading(true);
+        setModeloError(null);
+
+        try {
+            const url = new URL(MATERIAIS_API, window.location.origin);
+            url.searchParams.set("init", "1");
+            url.searchParams.set("_ts", String(Date.now()));
+
+            const res = await fetch(url.toString(), {
+                method: "GET",
+                cache: "no-store",
+                credentials: "include",
+                headers: { Accept: "application/json" },
+            });
+
+            const json: MateriaisInitResponse = await res.json().catch(() => ({}));
+
+            if (res.status === 401 || json?.need_login) {
+                throw new Error("Login necessário para consultar o estoque.");
+            }
+
+            if (!res.ok || !json?.ok) {
+                throw new Error(json?.msg || `Não foi possível consultar o estoque (${res.status}).`);
+            }
+
+            setEstoqueProdutos(Array.isArray(json.produtos) ? json.produtos : []);
+            setEstoqueSaldos(Array.isArray(json.saldos) ? json.saldos : []);
+        } catch (e: any) {
+            setModeloError(e?.message || "Erro ao carregar os modelos de coroas.");
+            setEstoqueProdutos([]);
+            setEstoqueSaldos([]);
+        } finally {
+            setModeloLoading(false);
+        }
+    }, []);
+
+    function abrirSeletorModelo(tipo: CoroaTipo) {
+        setModeloTipo(tipo);
+        setModeloBusca("");
+        setModeloError(null);
+        setModeloModalOpen(true);
+        void carregarModelosCoroa();
+    }
+
+    function selecionarModeloCoroa(produto: EstoqueProduto) {
+        setModeloSelecionado(produto);
+        setNewForm((prev) => ({
+            ...prev,
+            modelo_coroa: String(produto.nome || "").trim(),
+        }));
+        setModeloModalOpen(false);
+        setModeloBusca("");
+    }
+
+    /* -------------------------
        Manual: lista/filtros
        ------------------------- */
     const [manualOrders, setManualOrders] = React.useState<ManualOrder[]>([]);
@@ -734,6 +959,11 @@ export default function Page() {
             origem: "ordem_servico",
         });
         setNewFraseSugestao("");
+        setModeloTipo("");
+        setModeloSelecionado(null);
+        setModeloModalOpen(false);
+        setModeloBusca("");
+        setModeloError(null);
         setNewError(null);
     }
 
@@ -1509,12 +1739,87 @@ export default function Page() {
                             </div>
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Modelo de Coroa *</label>
-                                <input
-                                    value={newForm.modelo_coroa}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, modelo_coroa: e.target.value }))}
+
+                                <select
+                                    value={modeloTipo}
+                                    onChange={(e) => {
+                                        const tipo = e.target.value as CoroaTipo;
+
+                                        setModeloSelecionado(null);
+                                        setNewForm((p) => ({ ...p, modelo_coroa: "" }));
+
+                                        if (!tipo) {
+                                            setModeloTipo("");
+                                            return;
+                                        }
+
+                                        abrirSeletorModelo(tipo);
+                                    }}
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Ex.: Coroa Luxo 01"
-                                />
+                                >
+                                    <option value="">Selecione o tipo da coroa</option>
+                                    <option value="natural">Natural</option>
+                                    <option value="artificial">Artificial</option>
+                                </select>
+
+                                <div className="mt-2">
+                                    {modeloSelecionado ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => abrirSeletorModelo(modeloTipo)}
+                                            className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
+                                        >
+                                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
+                                                {fotoPrincipalProduto(modeloSelecionado) ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img
+                                                        src={fotoPrincipalProduto(modeloSelecionado) || ""}
+                                                        alt={modeloSelecionado.nome}
+                                                        className="h-full w-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                                                        Sem foto
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs text-muted-foreground">
+                                                    Coroa {rotuloTipoCoroa(modeloTipo)}
+                                                </div>
+                                                <div className="line-clamp-2 font-semibold">
+                                                    {modeloSelecionado.nome}
+                                                </div>
+                                                <div className="mt-1 text-sm font-medium">
+                                                    {dinheiroBRL(modeloSelecionado.valor)}
+                                                </div>
+                                            </div>
+
+                                            <div className="shrink-0 text-xs text-blue-600">
+                                                Alterar
+                                            </div>
+                                        </button>
+                                    ) : modeloTipo ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => abrirSeletorModelo(modeloTipo)}
+                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40"
+                                        >
+                                            <IconSearch className="size-4" />
+                                            Escolher modelo {rotuloTipoCoroa(modeloTipo)}
+                                        </button>
+                                    ) : (
+                                        <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
+                                            Primeiro selecione Natural ou Artificial.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    Naturais: todos os modelos da categoria COROAS NATURAIS são exibidos, mesmo com estoque zero.
+                                    Artificiais: somente modelos da categoria COROAS ARTIFICIAIS com saldo positivo são exibidos.
+                                </div>
                             </div>
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
@@ -1624,6 +1929,233 @@ export default function Page() {
             )}
 
             {/* Drawer manual */}
+            {modeloModalOpen && (
+                <div
+                    className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-2 sm:p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Selecionar Coroa ${rotuloTipoCoroa(modeloTipo)}`}
+                >
+                    <div className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
+                        <div className="flex items-start justify-between gap-3 border-b p-4">
+                            <div className="min-w-0">
+                                <h2 className="text-lg font-semibold">
+                                    Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
+                                </h2>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {modeloTipo === "natural"
+                                        ? "Todos os modelos naturais são exibidos, mesmo com estoque zerado."
+                                        : "Somente coroas artificiais com saldo positivo no estoque são exibidas."}
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                className="rounded-md p-2 hover:bg-muted"
+                                onClick={() => setModeloModalOpen(false)}
+                                aria-label="Fechar"
+                            >
+                                <IconX className="size-5" />
+                            </button>
+                        </div>
+
+                        <div className="border-b p-4">
+                            <div className="relative">
+                                <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                <input
+                                    value={modeloBusca}
+                                    onChange={(e) => setModeloBusca(e.target.value)}
+                                    className="w-full rounded-xl border bg-background py-2 pl-9 pr-3 text-[16px] sm:text-sm"
+                                    placeholder="Pesquisar modelo pelo nome ou código..."
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                                <span>
+                                    {modeloLoading
+                                        ? "Consultando estoque..."
+                                        : `${modelosDisponiveis.length} modelo(s) disponível(is).`}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted"
+                                    onClick={() => void carregarModelosCoroa()}
+                                    disabled={modeloLoading}
+                                >
+                                    <IconRefresh className={`size-3.5 ${modeloLoading ? "animate-spin" : ""}`} />
+                                    Atualizar
+                                </button>
+                            </div>
+
+                            {modeloError && (
+                                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                    {modeloError}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto">
+                            {modeloLoading && modelosDisponiveis.length === 0 ? (
+                                <div className="p-8 text-center text-sm text-muted-foreground">
+                                    Carregando modelos...
+                                </div>
+                            ) : !modeloError && modelosDisponiveis.length === 0 ? (
+                                <div className="p-8 text-center text-sm text-muted-foreground">
+                                    {modeloTipo === "artificial"
+                                        ? "Nenhuma coroa artificial com estoque disponível."
+                                        : "Nenhum modelo cadastrado em COROAS NATURAIS."}
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Desktop: tabela simples */}
+                                    <div className="hidden overflow-x-auto lg:block">
+                                        <table className="min-w-full text-left text-sm">
+                                            <thead className="sticky top-0 bg-muted/80 text-xs">
+                                                <tr>
+                                                    <th className="w-24 px-4 py-3">Foto</th>
+                                                    <th className="px-4 py-3">Modelo</th>
+                                                    <th className="px-4 py-3">Categoria</th>
+                                                    {modeloTipo === "artificial" && (
+                                                        <th className="px-4 py-3 text-right">Qtd.</th>
+                                                    )}
+                                                    <th className="px-4 py-3 text-right">Preço</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y">
+                                                {modelosDisponiveis.map((produto) => {
+                                                    const foto = fotoPrincipalProduto(produto);
+                                                    const saldo = saldoTotalPorProduto.get(Number(produto.id)) || 0;
+
+                                                    return (
+                                                        <tr
+                                                            key={produto.id}
+                                                            onClick={() => selecionarModeloCoroa(produto)}
+                                                            className="cursor-pointer transition hover:bg-muted/50"
+                                                        >
+                                                            <td className="px-4 py-3">
+                                                                <div className="h-16 w-16 overflow-hidden rounded-xl border bg-muted/30">
+                                                                    {foto ? (
+                                                                        // eslint-disable-next-line @next/next/no-img-element
+                                                                        <img
+                                                                            src={foto}
+                                                                            alt={produto.nome}
+                                                                            className="h-full w-full object-cover"
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+                                                                            Sem foto
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <div className="font-semibold">{produto.nome}</div>
+                                                                {produto.codigo_barras ? (
+                                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                                        CB: {produto.codigo_barras}
+                                                                    </div>
+                                                                ) : null}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-muted-foreground">
+                                                                {produto.categoria_nome || "—"}
+                                                            </td>
+                                                            {modeloTipo === "artificial" && (
+                                                                <td className="px-4 py-3 text-right font-semibold">
+                                                                    {saldo}
+                                                                </td>
+                                                            )}
+                                                            <td className="px-4 py-3 text-right font-semibold">
+                                                                {dinheiroBRL(produto.valor)}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Mobile/tablet: mesmo padrão de cartões da consulta de produtos */}
+                                    <div className="grid grid-cols-1 gap-3 p-3 lg:hidden">
+                                        {modelosDisponiveis.map((produto) => {
+                                            const foto = fotoPrincipalProduto(produto);
+                                            const saldo = saldoTotalPorProduto.get(Number(produto.id)) || 0;
+
+                                            return (
+                                                <button
+                                                    key={produto.id}
+                                                    type="button"
+                                                    onClick={() => selecionarModeloCoroa(produto)}
+                                                    className="w-full rounded-2xl border bg-background p-3 text-left outline-none transition hover:border-slate-300 hover:shadow-sm focus:ring-2 focus:ring-slate-200"
+                                                >
+                                                    <div className="flex gap-4">
+                                                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
+                                                            {foto ? (
+                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                <img
+                                                                    src={foto}
+                                                                    alt={produto.nome}
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+                                                                    Sem foto
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="line-clamp-2 font-semibold">
+                                                                {produto.nome}
+                                                            </p>
+                                                            <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
+                                                                {produto.categoria_nome || "—"}
+                                                            </p>
+                                                            {produto.codigo_barras ? (
+                                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                                                    CB: {produto.codigo_barras}
+                                                                </p>
+                                                            ) : null}
+                                                            <p className="mt-1 text-sm font-semibold">
+                                                                {dinheiroBRL(produto.valor)}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="shrink-0 text-right">
+                                                            {modeloTipo === "artificial" ? (
+                                                                <>
+                                                                    <p className="text-xs text-muted-foreground">Qtd</p>
+                                                                    <p className="text-xl font-bold">{saldo}</p>
+                                                                </>
+                                                            ) : (
+                                                                <span className="inline-flex rounded-full border px-2 py-1 text-[11px] font-medium">
+                                                                    Natural
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="border-t p-3 text-right">
+                            <button
+                                type="button"
+                                className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
+                                onClick={() => setModeloModalOpen(false)}
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {manualDetailOpen && (
                 <div className="fixed inset-0 z-50">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setManualDetailOpen(false)} />
