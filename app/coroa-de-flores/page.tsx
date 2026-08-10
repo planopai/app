@@ -53,6 +53,8 @@ type ManualCoroaItem = {
 type ManualOrder = {
     id: number;
     solicitante: string;
+    telefone?: string | null;
+    local_entrega?: string | null;
     quantidade_coroas?: number;
     itens?: ManualCoroaItem[];
     modelo_coroa: string;
@@ -430,6 +432,54 @@ function resumoModelosManual(order: ManualOrder) {
     const nomes = itens.map((x) => x.modelo_coroa);
     if (nomes.length === 1) return nomes[0];
     return `${nomes[0]} +${nomes.length - 1}`;
+}
+
+function itensManual(order?: ManualOrder | null): ManualCoroaItem[] {
+    if (!order) return [];
+    if (Array.isArray(order.itens) && order.itens.length) return order.itens;
+
+    return [{
+        ordem: 1,
+        modelo_coroa: order.modelo_coroa || "",
+        frase: order.frase || "",
+    }];
+}
+
+function totalManual(order?: ManualOrder | null) {
+    return itensManual(order).reduce((acc, item) => acc + (Number(item.valor) || 0), 0);
+}
+
+function buildManualPedidoText(order: ManualOrder) {
+    const NL = "\r\n";
+    const linhas = [
+        `*Pedido:* #${order.id}`,
+        `*Origem:* ${origemLabel(order.origem)}`,
+        `*Cliente:* ${order.solicitante || "—"}`,
+        `*Telefone:* ${order.telefone || "—"}`,
+        `*Local de Entrega:* ${order.local_entrega || "—"}`,
+        `*Falecido(a):* ${order.falecido || "—"}`,
+        `*Quantidade:* ${quantidadeManual(order)} ${quantidadeManual(order) === 1 ? "coroa" : "coroas"}`,
+    ];
+
+    itensManual(order).forEach((item, index) => {
+        linhas.push("");
+        linhas.push(`*Coroa ${item.ordem || index + 1}:* ${item.modelo_coroa || "—"}`);
+        linhas.push(`*Frase:* ${item.frase || "—"}`);
+        if (item.valor != null && Number(item.valor) > 0) {
+            linhas.push(`*Valor:* ${dinheiroBRL(item.valor)}`);
+        }
+    });
+
+    const total = totalManual(order);
+    if (total > 0) {
+        linhas.push("");
+        linhas.push(`*Total:* ${dinheiroBRL(total)}`);
+    }
+
+    linhas.push("");
+    linhas.push(`*Pagamento:* ${pagamentoLabel(order.status_pagamento)}`);
+
+    return linhas.join(NL);
 }
 
 function comprovanteEhPdf(order?: ManualOrder | null) {
@@ -1098,6 +1148,8 @@ export default function Page() {
     const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
     const [newForm, setNewForm] = React.useState({
         solicitante: "",
+        telefone: "",
+        local_entrega: "",
         falecido: "",
         status_pagamento: "aguardando_pagamento" as ManualPagamento,
         origem: "ordem_servico" as ManualOrigem,
@@ -1106,6 +1158,8 @@ export default function Page() {
     function resetNewForm() {
         setNewForm({
             solicitante: "",
+            telefone: "",
+            local_entrega: "",
             falecido: "",
             status_pagamento: "aguardando_pagamento",
             origem: "ordem_servico",
@@ -1147,6 +1201,16 @@ export default function Page() {
 
         if (!newForm.solicitante.trim()) {
             setNewError("Preencha o campo Solicitante.");
+            return;
+        }
+
+        if (!newForm.telefone.trim()) {
+            setNewError("Preencha o campo Telefone.");
+            return;
+        }
+
+        if (!newForm.local_entrega.trim()) {
+            setNewError("Preencha o campo Local de Entrega.");
             return;
         }
 
@@ -1198,6 +1262,8 @@ export default function Page() {
             const payload = {
                 acao: "novo",
                 solicitante: newForm.solicitante.trim(),
+                telefone: newForm.telefone.trim(),
+                local_entrega: newForm.local_entrega.trim(),
                 quantidade_coroas: quantidadeCoroas,
                 itens: newItems.map((item, index) => ({
                     ordem: index + 1,
@@ -1245,32 +1311,68 @@ export default function Page() {
     }
 
     /* -------------------------
-       Manual: detalhe / ações
+       Manual: Ver / Ações
        ------------------------- */
-    const [manualDetailOpen, setManualDetailOpen] = React.useState(false);
+    const [manualPanel, setManualPanel] = React.useState<"ver" | "acoes" | null>(null);
     const [manualDetail, setManualDetail] = React.useState<ManualOrder | null>(null);
     const [manualDetailLoading, setManualDetailLoading] = React.useState(false);
     const [manualActionLoading, setManualActionLoading] = React.useState(false);
     const [manualDetailMsg, setManualDetailMsg] = React.useState<string | null>(null);
+    const [manualCopied, setManualCopied] = React.useState(false);
 
-    async function openManualDetail(id: number) {
-        setManualDetailOpen(true);
-        setManualDetail(null);
-        setManualDetailMsg(null);
+    const [finalizarOpen, setFinalizarOpen] = React.useState(false);
+    const [finalizarFile, setFinalizarFile] = React.useState<File | null>(null);
+    const [finalizarPreview, setFinalizarPreview] = React.useState<string | null>(null);
+    const [finalizarError, setFinalizarError] = React.useState<string | null>(null);
+
+    function limparPreviewFinalizacao() {
+        setFinalizarPreview((url) => {
+            if (url) URL.revokeObjectURL(url);
+            return null;
+        });
+    }
+
+    React.useEffect(() => {
+        return () => {
+            if (finalizarPreview) URL.revokeObjectURL(finalizarPreview);
+        };
+    }, [finalizarPreview]);
+
+    async function carregarManualDetail(id: number) {
         setManualDetailLoading(true);
+        setManualDetailMsg(null);
+
         try {
             const res = await fetch(`${COROAS_API}?id=${encodeURIComponent(String(id))}&_ts=${Date.now()}`, {
                 cache: "no-store",
                 credentials: "include",
             });
             const json = await res.json().catch(() => ({}));
-            if (!res.ok || !json?.sucesso) throw new Error(json?.msg || "Não foi possível carregar o pedido.");
+            if (!res.ok || !json?.sucesso) {
+                throw new Error(json?.msg || "Não foi possível carregar o pedido.");
+            }
             setManualDetail(json.dado as ManualOrder);
+            return json.dado as ManualOrder;
         } catch (e: any) {
+            setManualDetail(null);
             setManualDetailMsg(e?.message || "Erro ao carregar pedido.");
+            return null;
         } finally {
             setManualDetailLoading(false);
         }
+    }
+
+    async function openManualView(id: number) {
+        setManualPanel("ver");
+        setManualDetail(null);
+        setManualCopied(false);
+        await carregarManualDetail(id);
+    }
+
+    async function openManualActions(id: number) {
+        setManualPanel("acoes");
+        setManualDetail(null);
+        await carregarManualDetail(id);
     }
 
     async function postManual(payload: Record<string, any>) {
@@ -1281,7 +1383,9 @@ export default function Page() {
             body: JSON.stringify(payload),
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.sucesso) throw new Error(json?.msg || "Não foi possível concluir a operação.");
+        if (!res.ok || !json?.sucesso) {
+            throw new Error(json?.msg || "Não foi possível concluir a operação.");
+        }
         return json;
     }
 
@@ -1299,31 +1403,10 @@ export default function Page() {
                 comprovante_nome: file.name,
                 comprovante_mime: file.type || "",
             });
-            await openManualDetail(manualDetail.id);
+            await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
         } catch (e: any) {
             setManualDetailMsg(e?.message || "Não foi possível anexar o comprovante.");
-        } finally {
-            setManualActionLoading(false);
-        }
-    }
-
-    async function anexarFotoCoroaManual(file: File) {
-        if (!manualDetail) return;
-        setManualActionLoading(true);
-        setManualDetailMsg(null);
-
-        try {
-            const base64 = await fileToDataUrl(file);
-            await postManual({
-                acao: "anexar_foto_coroa",
-                id: manualDetail.id,
-                base64,
-            });
-            await openManualDetail(manualDetail.id);
-            await fetchManualOrders();
-        } catch (e: any) {
-            setManualDetailMsg(e?.message || "Não foi possível anexar a foto.");
         } finally {
             setManualActionLoading(false);
         }
@@ -1333,9 +1416,14 @@ export default function Page() {
         if (!manualDetail) return;
         setManualActionLoading(true);
         setManualDetailMsg(null);
+
         try {
-            await postManual({ acao: "atualizar_pagamento", id: manualDetail.id, status_pagamento });
-            await openManualDetail(manualDetail.id);
+            await postManual({
+                acao: "atualizar_pagamento",
+                id: manualDetail.id,
+                status_pagamento,
+            });
+            await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
         } catch (e: any) {
             setManualDetailMsg(e?.message || "Não foi possível atualizar o pagamento.");
@@ -1344,26 +1432,122 @@ export default function Page() {
         }
     }
 
-    async function executarProximaAcaoManual() {
+    function rankStatusManual(status: ManualStatus) {
+        const rank: Record<ManualStatus, number> = {
+            novo: 0,
+            coroa: 1,
+            faixa: 2,
+            finalizada: 3,
+            entregue: 4,
+        };
+        return rank[status];
+    }
+
+    async function executarStatusManual(target: Exclude<ManualStatus, "novo">) {
         if (!manualDetail) return;
+
         const next = proximoStatusManual(manualDetail.status);
-        if (!next) return;
-        if (next === "finalizada" && !manualDetail.foto_coroa_url) {
-            setManualDetailMsg("Para finalizar, anexe primeiro a foto da coroa pronta.");
+        if (next !== target) return;
+
+        if (!window.confirm(`Confirmar a ação “${proximaAcaoLabel(manualDetail.status)}”?`)) {
             return;
         }
-        if (!window.confirm(`Confirmar a ação “${proximaAcaoLabel(manualDetail.status)}”?`)) return;
 
         setManualActionLoading(true);
         setManualDetailMsg(null);
+
         try {
-            await postManual({ acao: "atualizar_status", id: manualDetail.id, status: next });
-            await openManualDetail(manualDetail.id);
+            await postManual({
+                acao: "atualizar_status",
+                id: manualDetail.id,
+                status: target,
+            });
+            await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
         } catch (e: any) {
             setManualDetailMsg(e?.message || "Não foi possível registrar a ação.");
         } finally {
             setManualActionLoading(false);
+        }
+    }
+
+    function clicarAcaoManual(target: Exclude<ManualStatus, "novo">) {
+        if (!manualDetail) return;
+
+        const next = proximoStatusManual(manualDetail.status);
+        if (next !== target) return;
+
+        if (target === "finalizada") {
+            setFinalizarFile(null);
+            limparPreviewFinalizacao();
+            setFinalizarError(null);
+            setFinalizarOpen(true);
+            return;
+        }
+
+        void executarStatusManual(target);
+    }
+
+    function selecionarFotoFinalizacao(file: File) {
+        if (!file.type.startsWith("image/")) {
+            setFinalizarError("Selecione uma imagem válida.");
+            return;
+        }
+
+        if (file.size > 8 * 1024 * 1024) {
+            setFinalizarError("A imagem deve ter no máximo 8 MB.");
+            return;
+        }
+
+        limparPreviewFinalizacao();
+        setFinalizarFile(file);
+        setFinalizarPreview(URL.createObjectURL(file));
+        setFinalizarError(null);
+    }
+
+    async function confirmarFinalizacaoManual() {
+        if (!manualDetail) return;
+
+        if (!finalizarFile) {
+            setFinalizarError("Anexe a foto da coroa pronta para confirmar a finalização.");
+            return;
+        }
+
+        setManualActionLoading(true);
+        setFinalizarError(null);
+
+        try {
+            const base64 = await fileToDataUrl(finalizarFile);
+
+            await postManual({
+                acao: "atualizar_status",
+                id: manualDetail.id,
+                status: "finalizada",
+                foto_coroa_base64: base64,
+            });
+
+            setFinalizarOpen(false);
+            setFinalizarFile(null);
+            limparPreviewFinalizacao();
+
+            await carregarManualDetail(manualDetail.id);
+            await fetchManualOrders();
+        } catch (e: any) {
+            setFinalizarError(e?.message || "Não foi possível finalizar o pedido.");
+        } finally {
+            setManualActionLoading(false);
+        }
+    }
+
+    async function copyManualToClipboard() {
+        if (!manualDetail) return;
+
+        try {
+            await navigator.clipboard.writeText(buildManualPedidoText(manualDetail));
+            setManualCopied(true);
+            window.setTimeout(() => setManualCopied(false), 1500);
+        } catch {
+            alert("Não foi possível copiar o pedido.");
         }
     }
 
@@ -1662,13 +1846,21 @@ export default function Page() {
                                         </span>
                                         <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemLabel(o.origem)}</span>
                                     </div>
-                                    <button
-                                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs text-white"
-                                        onClick={() => openManualDetail(o.id)}
-                                    >
-                                        <IconEye className="size-4" />
-                                        Ações
-                                    </button>
+                                    <div className="mt-3 flex gap-2">
+                                        <button
+                                            className="inline-flex flex-1 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white"
+                                            onClick={() => openManualActions(o.id)}
+                                        >
+                                            Ações
+                                        </button>
+                                        <button
+                                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
+                                            onClick={() => openManualView(o.id)}
+                                        >
+                                            <IconEye className="size-4" />
+                                            Ver
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {!manualLoading && manualOrders.length === 0 && (
@@ -1715,14 +1907,22 @@ export default function Page() {
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-2">{origemLabel(o.origem)}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <button
-                                                        className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white"
-                                                        onClick={() => openManualDetail(o.id)}
-                                                    >
-                                                        <IconEye className="size-4" />
-                                                        Ações
-                                                    </button>
+                                                <td className="px-3 py-2">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button
+                                                            className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
+                                                            onClick={() => openManualActions(o.id)}
+                                                        >
+                                                            Ações
+                                                        </button>
+                                                        <button
+                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
+                                                            onClick={() => openManualView(o.id)}
+                                                        >
+                                                            <IconEye className="size-4" />
+                                                            Ver
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -2012,6 +2212,27 @@ export default function Page() {
                                     onChange={(e) => setNewForm((p) => ({ ...p, solicitante: e.target.value }))}
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                                     placeholder="Nome do cliente"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-sm font-medium">Telefone *</label>
+                                <input
+                                    type="tel"
+                                    inputMode="tel"
+                                    value={newForm.telefone}
+                                    onChange={(e) => setNewForm((p) => ({ ...p, telefone: e.target.value }))}
+                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    placeholder="Telefone do cliente"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium">Local de Entrega *</label>
+                                <input
+                                    value={newForm.local_entrega}
+                                    onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
+                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    placeholder="Local da entrega"
                                 />
                             </div>
 
@@ -2499,72 +2720,254 @@ export default function Page() {
                 </div>
             )}
 
-            {manualDetailOpen && (
+            {/* Ações do pedido manual */}
+            {manualPanel === "acoes" && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
+                    <div className="w-full max-w-xl overflow-hidden rounded-xl border bg-background shadow-xl">
+                        <div className="flex items-center justify-between border-b px-4 py-3">
+                            <div>
+                                <div className="text-lg font-semibold">Registrar uma ação</div>
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                    Status sincronizado com o servidor.
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="rounded-md p-2 hover:bg-muted"
+                                onClick={() => setManualPanel(null)}
+                            >
+                                <IconX className="size-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-4">
+                            {manualDetailLoading ? (
+                                <div className="py-6 text-center text-sm text-muted-foreground">
+                                    Carregando...
+                                </div>
+                            ) : manualDetail ? (
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {([
+                                        ["coroa", "Coroa"],
+                                        ["faixa", "Faixa"],
+                                        ["finalizada", "Finalizada"],
+                                        ["entregue", "Entregue"],
+                                    ] as const).map(([target, label]) => {
+                                        const atual = rankStatusManual(manualDetail.status);
+                                        const alvo = rankStatusManual(target);
+                                        const concluida = atual >= alvo;
+                                        const liberada = proximoStatusManual(manualDetail.status) === target;
+
+                                        return (
+                                            <button
+                                                key={target}
+                                                type="button"
+                                                disabled={manualActionLoading || concluida || !liberada}
+                                                onClick={() => clicarAcaoManual(target)}
+                                                className={[
+                                                    "min-h-12 rounded-md border px-3 py-2 text-sm font-medium transition",
+                                                    concluida
+                                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                        : liberada
+                                                            ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                                                            : "bg-muted/20 text-muted-foreground opacity-60",
+                                                ].join(" ")}
+                                            >
+                                                <span className="inline-flex items-center gap-2">
+                                                    {concluida ? <IconCheck className="size-4" /> : null}
+                                                    {label}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="text-sm text-rose-600">
+                                    {manualDetailMsg || "Pedido não encontrado."}
+                                </div>
+                            )}
+
+                            {manualDetailMsg && manualDetail && (
+                                <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                    {manualDetailMsg}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Foto obrigatória para Finalizada */}
+            {finalizarOpen && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-3">
+                    <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
+                        <div className="flex items-center justify-between border-b px-4 py-3">
+                            <div>
+                                <div className="text-lg font-semibold">Finalizar Coroa</div>
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                    Anexe a foto da coroa pronta para confirmar.
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="rounded-md p-2 hover:bg-muted"
+                                disabled={manualActionLoading}
+                                onClick={() => {
+                                    setFinalizarOpen(false);
+                                    setFinalizarFile(null);
+                                    limparPreviewFinalizacao();
+                                    setFinalizarError(null);
+                                }}
+                            >
+                                <IconX className="size-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 p-4">
+                            <ImageUploadButtons
+                                disabled={manualActionLoading}
+                                onFile={selecionarFotoFinalizacao}
+                            />
+
+                            {finalizarPreview && (
+                                <div className="overflow-hidden rounded-lg border bg-muted/20">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={finalizarPreview}
+                                        alt="Prévia da coroa pronta"
+                                        className="max-h-[55vh] w-full object-contain"
+                                    />
+                                </div>
+                            )}
+
+                            {finalizarFile && (
+                                <div className="text-xs text-muted-foreground">
+                                    {finalizarFile.name}
+                                </div>
+                            )}
+
+                            {finalizarError && (
+                                <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                    {finalizarError}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 border-t px-4 py-3">
+                            <button
+                                type="button"
+                                className="rounded-md border px-4 py-2 text-sm"
+                                disabled={manualActionLoading}
+                                onClick={() => {
+                                    setFinalizarOpen(false);
+                                    setFinalizarFile(null);
+                                    limparPreviewFinalizacao();
+                                    setFinalizarError(null);
+                                }}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                                disabled={manualActionLoading || !finalizarFile}
+                                onClick={confirmarFinalizacaoManual}
+                            >
+                                {manualActionLoading ? "Finalizando..." : "Confirmar Finalizada"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Ver pedido manual — mesmo padrão visual do pedido online */}
+            {manualPanel === "ver" && (
                 <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setManualDetailOpen(false)} />
-                    <div className="absolute right-0 top-0 h-full w-full overflow-auto bg-background shadow-xl md:max-w-2xl">
-                        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-3">
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setManualPanel(null)} />
+                    <div className="absolute right-0 top-0 h-full w-full overflow-x-hidden overflow-y-auto bg-white shadow-xl md:max-w-xl">
+                        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
                             <div>
                                 <div className="text-sm text-muted-foreground">Pedido manual</div>
                                 <div className="text-lg font-semibold">#{manualDetail?.id || "—"}</div>
                             </div>
-                            <button className="rounded-md p-2 hover:bg-muted" onClick={() => setManualDetailOpen(false)}>
+                            <button
+                                className="rounded-md p-2 hover:bg-muted"
+                                onClick={() => setManualPanel(null)}
+                            >
                                 <IconX className="size-5" />
                             </button>
                         </div>
 
                         {manualDetailLoading ? (
-                            <div className="p-4 text-sm text-muted-foreground">Carregando…</div>
+                            <div className="p-4 text-sm text-muted-foreground">Carregando...</div>
                         ) : manualDetail ? (
                             <div className="space-y-4 p-4">
+                                {/* Fotos dos modelos */}
+                                {itensManual(manualDetail).some((item) => item.foto_produto_url) && (
+                                    <div className="space-y-3">
+                                        {itensManual(manualDetail).map((item, index) =>
+                                            item.foto_produto_url ? (
+                                                <div key={item.id || `${item.ordem}-${index}`} className="overflow-hidden rounded-lg border bg-white">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={item.foto_produto_url}
+                                                        alt={item.modelo_coroa || `Coroa ${index + 1}`}
+                                                        className="w-full object-cover"
+                                                    />
+                                                    {itensManual(manualDetail).length > 1 && (
+                                                        <div className="border-t px-3 py-2 text-xs font-medium">
+                                                            Coroa {item.ordem || index + 1} — {item.modelo_coroa}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : null,
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Informações do pedido */}
+                                <div className="rounded-lg border p-3 text-sm leading-6">
+                                    <div><b>Pedido:</b> #{manualDetail.id}</div>
+                                    <div><b>Origem:</b> {origemLabel(manualDetail.origem)}</div>
+                                    <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
+                                    <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
+                                    <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
+                                    <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
+                                    <div>
+                                        <b>Quantidade:</b> {quantidadeManual(manualDetail)}{" "}
+                                        {quantidadeManual(manualDetail) === 1 ? "coroa" : "coroas"}
+                                    </div>
+
+                                    {itensManual(manualDetail).map((item, index) => (
+                                        <div key={item.id || `${item.ordem}-${index}`} className="mt-3 border-t pt-2">
+                                            <div><b>Coroa {item.ordem || index + 1}:</b> {item.modelo_coroa || "—"}</div>
+                                            <div className="whitespace-pre-wrap"><b>Frase:</b> {item.frase || "—"}</div>
+                                            {item.valor != null && Number(item.valor) > 0 && (
+                                                <div><b>Valor:</b> {dinheiroBRL(item.valor)}</div>
+                                            )}
+                                        </div>
+                                    ))}
+
+                                    {totalManual(manualDetail) > 0 && (
+                                        <div className="mt-2 border-t pt-2">
+                                            <b>Total:</b> {dinheiroBRL(totalManual(manualDetail))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Status do pedido */}
                                 <div className="rounded-lg border p-3">
-                                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
                                         <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(manualDetail.status)}`}>
                                             {manualStatusLabel(manualDetail.status)}
                                         </span>
-                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoClass(manualDetail.status_pagamento)}`}>
-                                            {pagamentoLabel(manualDetail.status_pagamento)}
-                                        </span>
-                                    </div>
-                                    <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                                        <div><b>Solicitante:</b> {manualDetail.solicitante}</div>
-                                        <div><b>Origem:</b> {origemLabel(manualDetail.origem)}</div>
-                                        <div><b>Quantidade:</b> {quantidadeManual(manualDetail)} {quantidadeManual(manualDetail) === 1 ? "coroa" : "coroas"}</div>
-                                        <div><b>Falecido(a):</b> {manualDetail.falecido}</div>
-                                        <div className="sm:col-span-2 text-xs text-muted-foreground">
-                                            Criado em {formatDate(manualDetail.criado_em)} {manualDetail.criado_por ? `por ${manualDetail.criado_por}` : ""}
+                                        <div className="text-xs text-muted-foreground">
+                                            Criado em {formatDate(manualDetail.criado_em)}
                                         </div>
-                                    </div>
-
-                                    <div className="mt-4 space-y-2">
-                                        {(manualDetail.itens?.length
-                                            ? manualDetail.itens
-                                            : [{
-                                                ordem: 1,
-                                                modelo_coroa: manualDetail.modelo_coroa,
-                                                frase: manualDetail.frase,
-                                            } as ManualCoroaItem]
-                                        ).map((item, index) => (
-                                            <div key={item.id || `${item.ordem}-${index}`} className="rounded-lg border bg-muted/10 p-3 text-sm">
-                                                <div className="mb-2 flex items-center justify-between gap-2">
-                                                    <b>Coroa {item.ordem || index + 1}</b>
-                                                    {item.tipo_coroa ? (
-                                                        <span className="rounded-full border px-2 py-0.5 text-[10px]">
-                                                            {item.tipo_coroa === "natural" ? "Natural" : "Artificial"}
-                                                        </span>
-                                                    ) : null}
-                                                </div>
-                                                <div><b>Modelo:</b> {item.modelo_coroa || "—"}</div>
-                                                <div className="mt-1 whitespace-pre-wrap"><b>Frase:</b> {item.frase || "—"}</div>
-                                                {item.valor != null && Number(item.valor) > 0 ? (
-                                                    <div className="mt-1"><b>Valor:</b> {dinheiroBRL(item.valor)}</div>
-                                                ) : null}
-                                            </div>
-                                        ))}
                                     </div>
                                 </div>
 
-                                {/* Pagamento */}
+                                {/* Pagamento e comprovante ficam no Ver */}
                                 <div className="rounded-lg border p-3">
                                     <div className="mb-2 font-medium">Pagamento</div>
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -2576,14 +2979,23 @@ export default function Page() {
                                                 disabled={manualActionLoading}
                                                 onChange={(e) => atualizarPagamentoManual(e.target.value as ManualPagamento)}
                                             >
-                                                {PAGAMENTO_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                {PAGAMENTO_OPTIONS.map((o) => (
+                                                    <option key={o.value} value={o.value}>
+                                                        {o.label}
+                                                    </option>
+                                                ))}
                                             </select>
                                         </div>
+
                                         <div className="flex-1">
                                             <div className="mb-1 text-xs font-medium">Comprovante</div>
-                                            <ComprovanteUploadButtons disabled={manualActionLoading} onFile={anexarComprovanteManual} />
+                                            <ComprovanteUploadButtons
+                                                disabled={manualActionLoading}
+                                                onFile={anexarComprovanteManual}
+                                            />
                                         </div>
                                     </div>
+
                                     {manualDetail.comprovante_url && (
                                         comprovanteEhPdf(manualDetail) ? (
                                             <a
@@ -2601,82 +3013,89 @@ export default function Page() {
                                                 <span className="shrink-0 text-blue-600">Abrir</span>
                                             </a>
                                         ) : (
-                                            <a href={manualDetail.comprovante_url} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-lg border">
+                                            <a
+                                                href={manualDetail.comprovante_url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mt-3 block overflow-hidden rounded-lg border"
+                                            >
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img src={manualDetail.comprovante_url} alt="Comprovante" className="max-h-72 w-full object-contain bg-muted/20" />
+                                                <img
+                                                    src={manualDetail.comprovante_url}
+                                                    alt="Comprovante"
+                                                    className="max-h-72 w-full object-contain bg-muted/20"
+                                                />
                                             </a>
                                         )
                                     )}
                                 </div>
 
-                                {/* Foto da coroa */}
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-1 font-medium">Foto da Coroa Pronta</div>
-                                    <div className="mb-3 text-xs text-muted-foreground">
-                                        Esta foto é obrigatória antes do comando <b>Finalizada</b>.
-                                    </div>
-                                    <ImageUploadButtons disabled={manualActionLoading} onFile={anexarFotoCoroaManual} />
-                                    {manualDetail.foto_coroa_url && (
-                                        <a href={manualDetail.foto_coroa_url} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-lg border">
-                                            <img src={manualDetail.foto_coroa_url} alt="Coroa pronta" className="max-h-96 w-full object-contain bg-muted/20" />
-                                        </a>
-                                    )}
-                                </div>
-
-                                {/* Fluxo */}
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-3 font-medium">Ações de Confecção</div>
-                                    <div className="mb-3 grid grid-cols-4 gap-2 text-center text-[10px] sm:text-xs">
-                                        {([
-                                            ["coroa", "Coroa"],
-                                            ["faixa", "Faixa"],
-                                            ["finalizada", "Finalizada"],
-                                            ["entregue", "Entregue"],
-                                        ] as const).map(([key, label]) => {
-                                            const rank: Record<ManualStatus, number> = { novo: 0, coroa: 1, faixa: 2, finalizada: 3, entregue: 4 };
-                                            const done = rank[manualDetail.status] >= rank[key];
-                                            return (
-                                                <div key={key} className={`rounded-md border px-2 py-2 ${done ? "bg-emerald-50 border-emerald-200" : "bg-muted/20"}`}>
-                                                    {label}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {manualDetail.status !== "entregue" ? (
-                                        <button
-                                            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                            disabled={
-                                                manualActionLoading ||
-                                                (proximoStatusManual(manualDetail.status) === "finalizada" && !manualDetail.foto_coroa_url)
-                                            }
-                                            onClick={executarProximaAcaoManual}
-                                            title={
-                                                proximoStatusManual(manualDetail.status) === "finalizada" && !manualDetail.foto_coroa_url
-                                                    ? "Anexe a foto da coroa pronta antes de finalizar."
-                                                    : "Confirmar próxima etapa"
-                                            }
+                                {/* Foto final, somente visualização */}
+                                {manualDetail.foto_coroa_url && (
+                                    <div className="rounded-lg border p-3">
+                                        <div className="mb-2 font-medium">Coroa Pronta</div>
+                                        <a
+                                            href={manualDetail.foto_coroa_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block overflow-hidden rounded-lg border"
                                         >
-                                            <IconCheck className="size-4" />
-                                            {proximaAcaoLabel(manualDetail.status)}
-                                        </button>
-                                    ) : (
-                                        <div className="rounded-md bg-emerald-50 p-3 text-center text-sm font-medium text-emerald-800">
-                                            Pedido entregue — fluxo concluído.
-                                        </div>
-                                    )}
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={manualDetail.foto_coroa_url}
+                                                alt="Coroa pronta"
+                                                className="max-h-96 w-full object-contain bg-muted/20"
+                                            />
+                                        </a>
+                                    </div>
+                                )}
 
-                                    {proximoStatusManual(manualDetail.status) === "finalizada" && !manualDetail.foto_coroa_url && (
-                                        <div className="mt-2 text-xs text-amber-700">
-                                            Anexe a foto da coroa pronta para liberar o comando Finalizada.
-                                        </div>
+                                {manualDetailMsg && (
+                                    <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                        {manualDetailMsg}
+                                    </div>
+                                )}
+
+                                {/* Mesmo padrão de utilidades do pedido online */}
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                        onClick={copyManualToClipboard}
+                                    >
+                                        <IconCopy className="size-4" />
+                                        {manualCopied ? "Copiado!" : "Copiar Pedido"}
+                                    </button>
+
+                                    {itensManual(manualDetail)
+                                        .filter((item) => Boolean(item.foto_produto_url))
+                                        .map((item, index, fotos) => (
+                                            <button
+                                                key={`share-${item.id || item.ordem || index}`}
+                                                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                                onClick={() => item.foto_produto_url && shareImageUrl(item.foto_produto_url)}
+                                            >
+                                                <IconPhoto className="size-4" />
+                                                {fotos.length === 1
+                                                    ? "Compartilhar Foto"
+                                                    : `Compartilhar Foto ${index + 1}`}
+                                            </button>
+                                        ))}
+
+                                    {manualDetail.foto_coroa_url && (
+                                        <button
+                                            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                            onClick={() => manualDetail.foto_coroa_url && shareImageUrl(manualDetail.foto_coroa_url)}
+                                        >
+                                            <IconPhoto className="size-4" />
+                                            Compartilhar Foto Final
+                                        </button>
                                     )}
                                 </div>
-
-                                {manualDetailMsg && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{manualDetailMsg}</div>}
                             </div>
                         ) : (
-                            <div className="p-4 text-sm text-rose-600">{manualDetailMsg || "Pedido não encontrado."}</div>
+                            <div className="p-4 text-sm text-rose-600">
+                                {manualDetailMsg || "Pedido não encontrado."}
+                            </div>
                         )}
                     </div>
                 </div>
