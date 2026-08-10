@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 /* =========================================================
    CONFIGURAÇÃO
    ========================================================= */
-const COROAS_API = "/api/php/coroas.php";
+const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
 const ATENDIMENTOS_API = "/api/php/informativo.php?listar=1";
 
 /* =========================================================
