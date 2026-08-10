@@ -38,9 +38,23 @@ type ManualOrigem =
     | "venda_direta_escritorio"
     | "venda_direta_memorial";
 
+type ManualCoroaItem = {
+    id?: number;
+    coroa_id?: number;
+    ordem: number;
+    tipo_coroa?: "natural" | "artificial" | null;
+    produto_id?: number | null;
+    modelo_coroa: string;
+    frase: string;
+    valor?: string | number | null;
+    foto_produto_url?: string | null;
+};
+
 type ManualOrder = {
     id: number;
     solicitante: string;
+    quantidade_coroas?: number;
+    itens?: ManualCoroaItem[];
     modelo_coroa: string;
     frase: string;
     falecido: string;
@@ -49,6 +63,8 @@ type ManualOrder = {
     origem: ManualOrigem;
     status: ManualStatus;
     comprovante_url?: string | null;
+    comprovante_mime?: string | null;
+    comprovante_nome?: string | null;
     foto_coroa_url?: string | null;
     criado_por?: string | null;
     criado_em?: string | null;
@@ -107,6 +123,22 @@ type EstoqueProduto = {
     fabricante_nome?: string | null;
     classificacao_nome?: string | null;
 };
+
+type NovoCoroaItem = {
+    tipo_coroa: CoroaTipo;
+    produto: EstoqueProduto | null;
+    frase: string;
+    frase_sugestao: string;
+};
+
+function criarNovoCoroaItem(): NovoCoroaItem {
+    return {
+        tipo_coroa: "",
+        produto: null,
+        frase: "",
+        frase_sugestao: "",
+    };
+}
 
 type EstoqueSaldo = {
     id?: number;
@@ -383,6 +415,29 @@ function rotuloTipoCoroa(tipo: CoroaTipo) {
     return "";
 }
 
+function quantidadeManual(order?: ManualOrder | null) {
+    if (!order) return 0;
+    const q = Number(order.quantidade_coroas || 0);
+    if (q > 0) return q;
+    if (Array.isArray(order.itens) && order.itens.length) return order.itens.length;
+    return 1;
+}
+
+function resumoModelosManual(order: ManualOrder) {
+    const itens = Array.isArray(order.itens) ? order.itens.filter((x) => String(x?.modelo_coroa || "").trim()) : [];
+    if (!itens.length) return order.modelo_coroa || "—";
+
+    const nomes = itens.map((x) => x.modelo_coroa);
+    if (nomes.length === 1) return nomes[0];
+    return `${nomes[0]} +${nomes.length - 1}`;
+}
+
+function comprovanteEhPdf(order?: ManualOrder | null) {
+    const mime = String(order?.comprovante_mime || "").toLowerCase();
+    const url = String(order?.comprovante_url || "").toLowerCase();
+    return mime === "application/pdf" || /\.pdf(?:$|\?)/i.test(url);
+}
+
 async function fileToDataUrl(file: File): Promise<string> {
     if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
     if (file.size > 8 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 8 MB.");
@@ -390,6 +445,34 @@ async function fileToDataUrl(file: File): Promise<string> {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
         reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function comprovanteToDataUrl(file: File): Promise<string> {
+    const mime = String(file.type || "").toLowerCase();
+    const nome = String(file.name || "").toLowerCase();
+    const permitido =
+        mime === "application/pdf" ||
+        mime.startsWith("image/") ||
+        nome.endsWith(".pdf") ||
+        nome.endsWith(".jpg") ||
+        nome.endsWith(".jpeg") ||
+        nome.endsWith(".png") ||
+        nome.endsWith(".webp");
+
+    if (!permitido) {
+        throw new Error("O comprovante deve ser uma imagem ou arquivo PDF.");
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+        throw new Error("O comprovante deve ter no máximo 15 MB.");
+    }
+
+    return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Não foi possível ler o comprovante."));
         reader.readAsDataURL(file);
     });
 }
@@ -431,6 +514,65 @@ function ImageUploadButtons({
                 <IconUpload className="size-4" />
                 Galeria
             </button>
+            <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                disabled={disabled}
+                onClick={() => cameraRef.current?.click()}
+            >
+                <IconCamera className="size-4" />
+                Tirar foto
+            </button>
+        </div>
+    );
+}
+
+
+function ComprovanteUploadButtons({
+    disabled,
+    onFile,
+}: {
+    disabled?: boolean;
+    onFile: (file: File) => Promise<void> | void;
+}) {
+    const arquivoRef = React.useRef<HTMLInputElement>(null);
+    const cameraRef = React.useRef<HTMLInputElement>(null);
+
+    const handle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.currentTarget.value = "";
+        if (!file) return;
+        await onFile(file);
+    };
+
+    return (
+        <div className="flex flex-wrap gap-2">
+            <input
+                ref={arquivoRef}
+                type="file"
+                accept="image/*,application/pdf,.pdf"
+                className="hidden"
+                onChange={handle}
+            />
+            <input
+                ref={cameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handle}
+            />
+
+            <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                disabled={disabled}
+                onClick={() => arquivoRef.current?.click()}
+            >
+                <IconUpload className="size-4" />
+                Imagem / PDF
+            </button>
+
             <button
                 type="button"
                 className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
@@ -789,7 +931,7 @@ export default function Page() {
     const [modeloBusca, setModeloBusca] = React.useState("");
     const [estoqueProdutos, setEstoqueProdutos] = React.useState<EstoqueProduto[]>([]);
     const [estoqueSaldos, setEstoqueSaldos] = React.useState<EstoqueSaldo[]>([]);
-    const [modeloSelecionado, setModeloSelecionado] = React.useState<EstoqueProduto | null>(null);
+    const [modeloItemIndex, setModeloItemIndex] = React.useState<number | null>(null);
 
     const saldoTotalPorProduto = React.useMemo(() => {
         const map = new Map<number, number>();
@@ -875,7 +1017,8 @@ export default function Page() {
         }
     }, []);
 
-    function abrirSeletorModelo(tipo: CoroaTipo) {
+    function abrirSeletorModelo(itemIndex: number, tipo: CoroaTipo) {
+        setModeloItemIndex(itemIndex);
         setModeloTipo(tipo);
         setModeloBusca("");
         setModeloError(null);
@@ -884,13 +1027,23 @@ export default function Page() {
     }
 
     function selecionarModeloCoroa(produto: EstoqueProduto) {
-        setModeloSelecionado(produto);
-        setNewForm((prev) => ({
-            ...prev,
-            modelo_coroa: String(produto.nome || "").trim(),
-        }));
+        if (modeloItemIndex == null) return;
+
+        setNewItems((atuais) =>
+            atuais.map((item, index) =>
+                index === modeloItemIndex
+                    ? {
+                        ...item,
+                        tipo_coroa: modeloTipo,
+                        produto,
+                    }
+                    : item,
+            ),
+        );
+
         setModeloModalOpen(false);
         setModeloBusca("");
+        setModeloItemIndex(null);
     }
 
     /* -------------------------
@@ -939,12 +1092,12 @@ export default function Page() {
     const [newOpen, setNewOpen] = React.useState(false);
     const [newSaving, setNewSaving] = React.useState(false);
     const [newError, setNewError] = React.useState<string | null>(null);
-    const [newFraseSugestao, setNewFraseSugestao] = React.useState("");
     const [newFalecidoSugestao, setNewFalecidoSugestao] = React.useState("");
+    const [quantidadeCoroas, setQuantidadeCoroas] = React.useState(1);
+    const [newItems, setNewItems] = React.useState<NovoCoroaItem[]>([criarNovoCoroaItem()]);
+    const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
     const [newForm, setNewForm] = React.useState({
         solicitante: "",
-        modelo_coroa: "",
-        frase: "",
         falecido: "",
         status_pagamento: "aguardando_pagamento" as ManualPagamento,
         origem: "ordem_servico" as ManualOrigem,
@@ -953,41 +1106,81 @@ export default function Page() {
     function resetNewForm() {
         setNewForm({
             solicitante: "",
-            modelo_coroa: "",
-            frase: "",
             falecido: "",
             status_pagamento: "aguardando_pagamento",
             origem: "ordem_servico",
         });
-        setNewFraseSugestao("");
+        setQuantidadeCoroas(1);
+        setNewItems([criarNovoCoroaItem()]);
+        setNewComprovante(null);
         setNewFalecidoSugestao("");
         setModeloTipo("");
-        setModeloSelecionado(null);
+        setModeloItemIndex(null);
         setModeloModalOpen(false);
         setModeloBusca("");
         setModeloError(null);
         setNewError(null);
     }
 
+    function atualizarQuantidadeCoroas(valor: number) {
+        const quantidade = Math.max(1, Math.min(20, Math.floor(Number(valor) || 1)));
+        setQuantidadeCoroas(quantidade);
+
+        setNewItems((atuais) => {
+            const proximos = atuais.slice(0, quantidade);
+            while (proximos.length < quantidade) {
+                proximos.push(criarNovoCoroaItem());
+            }
+            return proximos;
+        });
+    }
+
+    function atualizarItemCoroa(index: number, patch: Partial<NovoCoroaItem>) {
+        setNewItems((atuais) =>
+            atuais.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+        );
+    }
+
     async function salvarNovoPedido(e: React.FormEvent) {
         e.preventDefault();
         setNewError(null);
 
-        const required = [
-            [newForm.solicitante, "Solicitante"],
-            [newForm.modelo_coroa, "Modelo de Coroa"],
-            [newForm.frase, "Frase"],
-            [newForm.falecido, "Falecido(a)"],
-        ] as const;
-        const missing = required.find(([v]) => !String(v).trim());
-        if (missing) {
-            setNewError(`Preencha o campo ${missing[1]}.`);
+        if (!newForm.solicitante.trim()) {
+            setNewError("Preencha o campo Solicitante.");
             return;
         }
 
+        if (!newForm.falecido.trim()) {
+            setNewError("Preencha o campo Falecido(a).");
+            return;
+        }
+
+        if (quantidadeCoroas < 1 || newItems.length !== quantidadeCoroas) {
+            setNewError("Informe corretamente a quantidade de coroas.");
+            return;
+        }
+
+        for (let i = 0; i < newItems.length; i += 1) {
+            const item = newItems[i];
+
+            if (!item.tipo_coroa) {
+                setNewError(`Selecione o tipo da Coroa ${i + 1}.`);
+                return;
+            }
+
+            if (!item.produto?.id || !String(item.produto?.nome || "").trim()) {
+                setNewError(`Selecione o modelo da Coroa ${i + 1}.`);
+                return;
+            }
+
+            if (!item.frase.trim()) {
+                setNewError(`Preencha a frase da Coroa ${i + 1}.`);
+                return;
+            }
+        }
+
         // Se o nome digitado coincidir com alguém que está no quadro,
-        // guarda também o ID do atendimento. Caso contrário, o pedido
-        // continua válido como falecido informado livremente.
+        // guarda também o ID do atendimento. Caso contrário, permanece livre.
         const match = falecidosQuadro.find(
             (r) =>
                 String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") ===
@@ -995,19 +1188,51 @@ export default function Page() {
         );
 
         setNewSaving(true);
+
         try {
+            let comprovante_base64 = "";
+            if (newComprovante) {
+                comprovante_base64 = await comprovanteToDataUrl(newComprovante);
+            }
+
+            const payload = {
+                acao: "novo",
+                solicitante: newForm.solicitante.trim(),
+                quantidade_coroas: quantidadeCoroas,
+                itens: newItems.map((item, index) => ({
+                    ordem: index + 1,
+                    tipo_coroa: item.tipo_coroa,
+                    produto_id: Number(item.produto?.id || 0),
+                    modelo_coroa: String(item.produto?.nome || "").trim(),
+                    frase: item.frase.trim(),
+                    valor: Number(item.produto?.valor || 0),
+                    foto_produto_url: fotoPrincipalProduto(item.produto),
+                })),
+                falecido: newForm.falecido.trim(),
+                falecido_atendimento_id: match?.id ? Number(match.id) || null : null,
+                status_pagamento: newForm.status_pagamento,
+                origem: newForm.origem,
+                ...(newComprovante
+                    ? {
+                        comprovante_base64,
+                        comprovante_nome: newComprovante.name,
+                        comprovante_mime: newComprovante.type || "",
+                    }
+                    : {}),
+            };
+
             const res = await fetch(COROAS_API, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({
-                    acao: "novo",
-                    ...newForm,
-                    falecido_atendimento_id: match?.id ? Number(match.id) || null : null,
-                }),
+                body: JSON.stringify(payload),
             });
+
             const json = await res.json().catch(() => ({}));
-            if (!res.ok || !json?.sucesso) throw new Error(json?.msg || "Não foi possível criar o pedido.");
+            if (!res.ok || !json?.sucesso) {
+                throw new Error(json?.msg || "Não foi possível criar o pedido.");
+            }
+
             setNewOpen(false);
             resetNewForm();
             setManualPage(1);
@@ -1060,21 +1285,45 @@ export default function Page() {
         return json;
     }
 
-    async function anexarFotoManual(tipo: "comprovante" | "coroa", file: File) {
+    async function anexarComprovanteManual(file: File) {
         if (!manualDetail) return;
         setManualActionLoading(true);
         setManualDetailMsg(null);
+
+        try {
+            const base64 = await comprovanteToDataUrl(file);
+            await postManual({
+                acao: "anexar_comprovante",
+                id: manualDetail.id,
+                base64,
+                comprovante_nome: file.name,
+                comprovante_mime: file.type || "",
+            });
+            await openManualDetail(manualDetail.id);
+            await fetchManualOrders();
+        } catch (e: any) {
+            setManualDetailMsg(e?.message || "Não foi possível anexar o comprovante.");
+        } finally {
+            setManualActionLoading(false);
+        }
+    }
+
+    async function anexarFotoCoroaManual(file: File) {
+        if (!manualDetail) return;
+        setManualActionLoading(true);
+        setManualDetailMsg(null);
+
         try {
             const base64 = await fileToDataUrl(file);
             await postManual({
-                acao: tipo === "comprovante" ? "anexar_comprovante" : "anexar_foto_coroa",
+                acao: "anexar_foto_coroa",
                 id: manualDetail.id,
                 base64,
             });
             await openManualDetail(manualDetail.id);
             await fetchManualOrders();
         } catch (e: any) {
-            setManualDetailMsg(e?.message || "Não foi possível anexar a imagem.");
+            setManualDetailMsg(e?.message || "Não foi possível anexar a foto.");
         } finally {
             setManualActionLoading(false);
         }
@@ -1404,7 +1653,9 @@ export default function Page() {
                                             {manualStatusLabel(o.status)}
                                         </span>
                                     </div>
-                                    <div className="mt-2 text-xs text-muted-foreground">{o.modelo_coroa}</div>
+                                    <div className="mt-2 text-xs text-muted-foreground">
+                                        {quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"} • {resumoModelosManual(o)}
+                                    </div>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                         <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoClass(o.status_pagamento)}`}>
                                             {pagamentoLabel(o.status_pagamento)}
@@ -1438,7 +1689,7 @@ export default function Page() {
                                             <th className="px-3 py-2 font-medium">Status</th>
                                             <th className="px-3 py-2 font-medium">Solicitante</th>
                                             <th className="px-3 py-2 font-medium">Falecido(a)</th>
-                                            <th className="px-3 py-2 font-medium">Modelo</th>
+                                            <th className="px-3 py-2 font-medium">Coroas</th>
                                             <th className="px-3 py-2 font-medium">Pagamento</th>
                                             <th className="px-3 py-2 font-medium">Origem</th>
                                             <th className="px-3 py-2 font-medium text-right">Ações</th>
@@ -1454,7 +1705,10 @@ export default function Page() {
                                                 </td>
                                                 <td className="px-3 py-2">{o.solicitante}</td>
                                                 <td className="px-3 py-2">{o.falecido}</td>
-                                                <td className="px-3 py-2">{o.modelo_coroa}</td>
+                                                <td className="px-3 py-2">
+                                                    <div>{quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"}</div>
+                                                    <div className="mt-0.5 text-xs text-muted-foreground">{resumoModelosManual(o)}</div>
+                                                </td>
                                                 <td className="px-3 py-2">
                                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoClass(o.status_pagamento)}`}>
                                                         {pagamentoLabel(o.status_pagamento)}
@@ -1760,116 +2014,154 @@ export default function Page() {
                                     placeholder="Nome do cliente"
                                 />
                             </div>
+
                             <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Modelo de Coroa *</label>
-
-                                <select
-                                    value={modeloTipo}
-                                    onChange={(e) => {
-                                        const tipo = e.target.value as CoroaTipo;
-
-                                        setModeloSelecionado(null);
-                                        setNewForm((p) => ({ ...p, modelo_coroa: "" }));
-
-                                        if (!tipo) {
-                                            setModeloTipo("");
-                                            return;
-                                        }
-
-                                        abrirSeletorModelo(tipo);
-                                    }}
+                                <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={20}
+                                    inputMode="numeric"
+                                    value={quantidadeCoroas}
+                                    onChange={(e) => atualizarQuantidadeCoroas(Number(e.target.value))}
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                >
-                                    <option value="">Selecione o tipo da coroa</option>
-                                    <option value="natural">Natural</option>
-                                    <option value="artificial">Artificial</option>
-                                </select>
-
-                                <div className="mt-2">
-                                    {modeloSelecionado ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => abrirSeletorModelo(modeloTipo)}
-                                            className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
-                                        >
-                                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                                {fotoPrincipalProduto(modeloSelecionado) ? (
-                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                    <img
-                                                        src={fotoPrincipalProduto(modeloSelecionado) || ""}
-                                                        alt={modeloSelecionado.nome}
-                                                        className="h-full w-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                                                        Sem foto
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="min-w-0 flex-1">
-                                                <div className="text-xs text-muted-foreground">
-                                                    Coroa {rotuloTipoCoroa(modeloTipo)}
-                                                </div>
-                                                <div className="line-clamp-2 font-semibold">
-                                                    {modeloSelecionado.nome}
-                                                </div>
-                                                <div className="mt-1 text-sm font-medium">
-                                                    {dinheiroBRL(modeloSelecionado.valor)}
-                                                </div>
-                                            </div>
-
-                                            <div className="shrink-0 text-xs text-blue-600">
-                                                Alterar
-                                            </div>
-                                        </button>
-                                    ) : modeloTipo ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => abrirSeletorModelo(modeloTipo)}
-                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40"
-                                        >
-                                            <IconSearch className="size-4" />
-                                            Escolher modelo {rotuloTipoCoroa(modeloTipo)}
-                                        </button>
-                                    ) : (
-                                        <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
-                                            Primeiro selecione Natural ou Artificial.
-                                        </div>
-                                    )}
-                                </div>
-
-                            </div>
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
-                                <select
-                                    value={newFraseSugestao}
-                                    onChange={(e) => {
-                                        const texto = e.target.value;
-                                        setNewFraseSugestao(texto);
-                                        if (texto) {
-                                            setNewForm((p) => ({ ...p, frase: texto }));
-                                        }
-                                    }}
-                                    className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                >
-                                    <option value="">Selecione uma sugestão ou escreva a sua própria frase abaixo</option>
-                                    {FRASES_SUGERIDAS.map((item) => (
-                                        <option key={item.numero} value={item.texto}>
-                                            {item.numero} — {item.texto}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <label className="mb-1 block text-sm font-medium">Frase *</label>
-                                <textarea
-                                    value={newForm.frase}
-                                    onChange={(e) => {
-                                        setNewForm((p) => ({ ...p, frase: e.target.value }));
-                                    }}
-                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite a frase da faixa ou selecione uma sugestão acima"
                                 />
+                            </div>
+
+                            <div className="sm:col-span-2 space-y-4">
+                                {newItems.map((item, index) => {
+                                    const produto = item.produto;
+                                    const foto = fotoPrincipalProduto(produto);
+
+                                    return (
+                                        <div key={index} className="rounded-xl border bg-muted/10 p-3">
+                                            <div className="mb-3 flex items-center justify-between gap-3">
+                                                <div className="font-semibold">
+                                                    Coroa {index + 1}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {index + 1} de {quantidadeCoroas}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="mb-1 block text-sm font-medium">Tipo *</label>
+                                                    <select
+                                                        value={item.tipo_coroa}
+                                                        onChange={(e) => {
+                                                            const tipo = e.target.value as CoroaTipo;
+                                                            atualizarItemCoroa(index, {
+                                                                tipo_coroa: tipo,
+                                                                produto: null,
+                                                            });
+
+                                                            if (tipo) {
+                                                                abrirSeletorModelo(index, tipo);
+                                                            }
+                                                        }}
+                                                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                    >
+                                                        <option value="">Selecione o tipo da coroa</option>
+                                                        <option value="natural">Natural</option>
+                                                        <option value="artificial">Artificial</option>
+                                                    </select>
+                                                </div>
+
+                                                <div>
+                                                    <label className="mb-1 block text-sm font-medium">Modelo *</label>
+
+                                                    {produto ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa)}
+                                                            className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
+                                                        >
+                                                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
+                                                                {foto ? (
+                                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                                    <img
+                                                                        src={foto}
+                                                                        alt={produto.nome}
+                                                                        className="h-full w-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                                                                        Sem foto
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    Coroa {rotuloTipoCoroa(item.tipo_coroa)}
+                                                                </div>
+                                                                <div className="line-clamp-2 font-semibold">
+                                                                    {produto.nome}
+                                                                </div>
+                                                                <div className="mt-1 text-sm font-medium">
+                                                                    {dinheiroBRL(produto.valor)}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="shrink-0 text-xs text-blue-600">
+                                                                Alterar
+                                                            </div>
+                                                        </button>
+                                                    ) : item.tipo_coroa ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa)}
+                                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40"
+                                                        >
+                                                            <IconSearch className="size-4" />
+                                                            Escolher modelo {rotuloTipoCoroa(item.tipo_coroa)}
+                                                        </button>
+                                                    ) : (
+                                                        <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
+                                                            Primeiro selecione Natural ou Artificial.
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
+                                                    <select
+                                                        value={item.frase_sugestao}
+                                                        onChange={(e) => {
+                                                            const frase = e.target.value;
+                                                            atualizarItemCoroa(index, {
+                                                                frase_sugestao: frase,
+                                                                ...(frase ? { frase } : {}),
+                                                            });
+                                                        }}
+                                                        className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                    >
+                                                        <option value="">Selecione uma sugestão ou escreva a sua própria frase abaixo</option>
+                                                        {FRASES_SUGERIDAS.map((sugestao) => (
+                                                            <option key={sugestao.numero} value={sugestao.texto}>
+                                                                {sugestao.numero} — {sugestao.texto}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+
+                                                    <label className="mb-1 block text-sm font-medium">Frase *</label>
+                                                    <textarea
+                                                        value={item.frase}
+                                                        onChange={(e) =>
+                                                            atualizarItemCoroa(index, {
+                                                                frase: e.target.value,
+                                                                frase_sugestao: "",
+                                                            })
+                                                        }
+                                                        className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                        placeholder={`Frase da Coroa ${index + 1}`}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
 
                             <div className="sm:col-span-2">
@@ -1943,6 +2235,33 @@ export default function Page() {
                                     {ORIGEM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                             </div>
+                            <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">Comprovante</label>
+                                <input
+                                    type="file"
+                                    accept="image/*,application/pdf,.pdf"
+                                    onChange={(e) => setNewComprovante(e.target.files?.[0] || null)}
+                                    className="block w-full rounded-md border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm"
+                                />
+
+                                {newComprovante && (
+                                    <div className="mt-2 flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                                        <div className="min-w-0">
+                                            <div className="truncate font-medium">{newComprovante.name}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {(newComprovante.size / 1024 / 1024).toFixed(2)} MB
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="shrink-0 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                                            onClick={() => setNewComprovante(null)}
+                                        >
+                                            Remover
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                             {newError && <div className="sm:col-span-2 text-sm text-rose-600">{newError}</div>}
                         </div>
                         <div className="flex justify-end gap-2 border-t px-4 py-3">
@@ -1976,7 +2295,7 @@ export default function Page() {
                             <button
                                 type="button"
                                 className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setModeloModalOpen(false)}
+                                onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
                                 aria-label="Fechar"
                             >
                                 <IconX className="size-5" />
@@ -2171,7 +2490,7 @@ export default function Page() {
                             <button
                                 type="button"
                                 className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
-                                onClick={() => setModeloModalOpen(false)}
+                                onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
                             >
                                 Cancelar
                             </button>
@@ -2210,12 +2529,38 @@ export default function Page() {
                                     <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                         <div><b>Solicitante:</b> {manualDetail.solicitante}</div>
                                         <div><b>Origem:</b> {origemLabel(manualDetail.origem)}</div>
-                                        <div><b>Modelo:</b> {manualDetail.modelo_coroa}</div>
+                                        <div><b>Quantidade:</b> {quantidadeManual(manualDetail)} {quantidadeManual(manualDetail) === 1 ? "coroa" : "coroas"}</div>
                                         <div><b>Falecido(a):</b> {manualDetail.falecido}</div>
-                                        <div className="sm:col-span-2"><b>Frase:</b> {manualDetail.frase}</div>
                                         <div className="sm:col-span-2 text-xs text-muted-foreground">
                                             Criado em {formatDate(manualDetail.criado_em)} {manualDetail.criado_por ? `por ${manualDetail.criado_por}` : ""}
                                         </div>
+                                    </div>
+
+                                    <div className="mt-4 space-y-2">
+                                        {(manualDetail.itens?.length
+                                            ? manualDetail.itens
+                                            : [{
+                                                ordem: 1,
+                                                modelo_coroa: manualDetail.modelo_coroa,
+                                                frase: manualDetail.frase,
+                                            } as ManualCoroaItem]
+                                        ).map((item, index) => (
+                                            <div key={item.id || `${item.ordem}-${index}`} className="rounded-lg border bg-muted/10 p-3 text-sm">
+                                                <div className="mb-2 flex items-center justify-between gap-2">
+                                                    <b>Coroa {item.ordem || index + 1}</b>
+                                                    {item.tipo_coroa ? (
+                                                        <span className="rounded-full border px-2 py-0.5 text-[10px]">
+                                                            {item.tipo_coroa === "natural" ? "Natural" : "Artificial"}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <div><b>Modelo:</b> {item.modelo_coroa || "—"}</div>
+                                                <div className="mt-1 whitespace-pre-wrap"><b>Frase:</b> {item.frase || "—"}</div>
+                                                {item.valor != null && Number(item.valor) > 0 ? (
+                                                    <div className="mt-1"><b>Valor:</b> {dinheiroBRL(item.valor)}</div>
+                                                ) : null}
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
 
@@ -2236,13 +2581,31 @@ export default function Page() {
                                         </div>
                                         <div className="flex-1">
                                             <div className="mb-1 text-xs font-medium">Comprovante</div>
-                                            <ImageUploadButtons disabled={manualActionLoading} onFile={(f) => anexarFotoManual("comprovante", f)} />
+                                            <ComprovanteUploadButtons disabled={manualActionLoading} onFile={anexarComprovanteManual} />
                                         </div>
                                     </div>
                                     {manualDetail.comprovante_url && (
-                                        <a href={manualDetail.comprovante_url} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-lg border">
-                                            <img src={manualDetail.comprovante_url} alt="Comprovante" className="max-h-72 w-full object-contain bg-muted/20" />
-                                        </a>
+                                        comprovanteEhPdf(manualDetail) ? (
+                                            <a
+                                                href={manualDetail.comprovante_url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="mt-3 flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm hover:bg-muted/40"
+                                            >
+                                                <div className="min-w-0">
+                                                    <div className="font-medium">Comprovante em PDF</div>
+                                                    <div className="truncate text-xs text-muted-foreground">
+                                                        {manualDetail.comprovante_nome || "Abrir arquivo"}
+                                                    </div>
+                                                </div>
+                                                <span className="shrink-0 text-blue-600">Abrir</span>
+                                            </a>
+                                        ) : (
+                                            <a href={manualDetail.comprovante_url} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-lg border">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={manualDetail.comprovante_url} alt="Comprovante" className="max-h-72 w-full object-contain bg-muted/20" />
+                                            </a>
+                                        )
                                     )}
                                 </div>
 
@@ -2252,7 +2615,7 @@ export default function Page() {
                                     <div className="mb-3 text-xs text-muted-foreground">
                                         Esta foto é obrigatória antes do comando <b>Finalizada</b>.
                                     </div>
-                                    <ImageUploadButtons disabled={manualActionLoading} onFile={(f) => anexarFotoManual("coroa", f)} />
+                                    <ImageUploadButtons disabled={manualActionLoading} onFile={anexarFotoCoroaManual} />
                                     {manualDetail.foto_coroa_url && (
                                         <a href={manualDetail.foto_coroa_url} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-lg border">
                                             <img src={manualDetail.foto_coroa_url} alt="Coroa pronta" className="max-h-96 w-full object-contain bg-muted/20" />
