@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
    CONFIGURAÇÃO
    ========================================================= */
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
-const ATENDIMENTOS_API = "/api/php/informativo.php?listar=1";
+const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
 
 /* =========================================================
    PEDIDOS MANUAIS
@@ -97,6 +97,63 @@ const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
 const PAGAMENTO_OPTIONS: Array<{ value: ManualPagamento; label: string }> = [
     { value: "pago", label: "Pago" },
     { value: "aguardando_pagamento", label: "Aguardando Pagamento" },
+];
+
+type FraseSugerida = { numero: number; texto: string };
+
+const FRASES_SUGERIDAS: FraseSugerida[] = [
+    { numero: 1, texto: "A saudade e o pesar dos seus colegas da (nome da empresa)." },
+    { numero: 2, texto: "A Ti, Senhor, elevo e entrego a minha alma." },
+    { numero: 3, texto: "Aquele que crê no Salvador jamais morrerá." },
+    { numero: 4, texto: "Com amor de seus pais e irmãos." },
+    { numero: 5, texto: "Com pesar da família (nome da família)." },
+    { numero: 6, texto: "Com pesar do(a) (nome da empresa, nome da família, nome dos amigos)." },
+    { numero: 7, texto: "Com pesar dos amigos (nome da empresa, nome da família)." },
+    { numero: 8, texto: "Com pesar dos colegas (nome da empresa)." },
+    { numero: 9, texto: "Condolências de toda a equipe da (nome da empresa)." },
+    { numero: 10, texto: "Condolências do(a) (nome da empresa, família ou amigos)." },
+    { numero: 11, texto: "Condolências dos amigos (nome da empresa, nome da família)." },
+    { numero: 12, texto: "Condolências dos colegas (nome da empresa)." },
+    { numero: 13, texto: "Condolências dos funcionários da (nome da empresa)." },
+    { numero: 14, texto: "Descanse à sombra do Altíssimo." },
+    { numero: 15, texto: "Estaremos lembrando de ti sempre com muito amor." },
+    { numero: 16, texto: "Eterna saudade de seus familiares e sentidos pêsames dos colegas e amigos." },
+    { numero: 17, texto: "Homenagem da direção e funcionários da (nome da empresa)." },
+    { numero: 18, texto: "Homenagem de seus amigos..." },
+    { numero: 19, texto: "Homenagem do(a) (nome da empresa, nome da família, nome dos amigos)." },
+    { numero: 20, texto: "Homenagem dos amigos e companheiros da (nome da empresa)." },
+    { numero: 21, texto: "Homenagem dos colegas (nome do colega ou empresa)." },
+    { numero: 22, texto: "Homenagem dos diretores e funcionários da (nome da empresa)." },
+    { numero: 23, texto: "Homenagem dos diretores, funcionários e amigos da (nome da empresa)." },
+    { numero: 24, texto: "Jesus, meu Rei, na Tua mão segurarei." },
+    { numero: 25, texto: "Não deixei nenhum bem material, mas deixei o bem maior: o exemplo de vida." },
+    { numero: 26, texto: "Ninguém morre enquanto permanecer vivo no coração de alguém." },
+    { numero: 27, texto: "Nossa eterna gratidão e saudade de (nome dos parentes)." },
+    { numero: 28, texto: "Nunca esqueceremos os seus exemplos..." },
+    { numero: 29, texto: "O amor não conhece a barreira da separação, te amaremos sempre." },
+    { numero: 30, texto: "O Senhor é a minha luz e a minha eterna salvação." },
+    { numero: 31, texto: "O Senhor é meu pastor e nada me faltará." },
+    { numero: 32, texto: "Pêsames do(a) (nome da empresa, nome da família, nome dos amigos)." },
+    { numero: 33, texto: "Pêsames dos colegas da (nome da empresa)." },
+    { numero: 34, texto: "Pêsames dos amigos da (nome da empresa, nome da família)." },
+    { numero: 35, texto: "Que Deus o tenha..." },
+    { numero: 36, texto: "Que Deus o(a) tenha em paz." },
+    { numero: 37, texto: "Saudade de seu(sua) esposo(a), filhos(as), genros, noras e netos." },
+    { numero: 38, texto: "Saudades de seus amigos (nome) e familiares." },
+    { numero: 39, texto: "Saudades de seus familiares e amigos." },
+
+    // As sugestões 40 a 49 não apareceram nas imagens enviadas.
+    { numero: 50, texto: "Sentimentos da família." },
+    { numero: 51, texto: "Sentimentos de..." },
+    { numero: 52, texto: "Sentimentos do(a) (nome da empresa, nome da família, nome dos amigos)." },
+    { numero: 53, texto: "Sentimentos dos amigos (nome da empresa, nome da família)." },
+    { numero: 54, texto: "Sentimentos dos colegas (nome da empresa)." },
+    { numero: 55, texto: "Sentiremos sua falta." },
+    { numero: 56, texto: "Será eterno(a) em nossos corações." },
+    { numero: 57, texto: "Sua passagem foi breve, sua obra eterna." },
+    { numero: 58, texto: "Um anjo do Senhor me tocou e eu adormeci em paz..." },
+    { numero: 59, texto: "Você é mais uma estrela a brilhar em paz..." },
+    { numero: 60, texto: "Você foi um exemplo de vida..." },
 ];
 
 function manualStatusLabel(status?: ManualStatus | string) {
@@ -532,33 +589,62 @@ export default function Page() {
        Falecidos no quadro
        ------------------------- */
     const [falecidosQuadro, setFalecidosQuadro] = React.useState<AtendimentoResumo[]>([]);
+    const [falecidosLoading, setFalecidosLoading] = React.useState(false);
+    const [falecidosError, setFalecidosError] = React.useState<string | null>(null);
+
+    const carregarFalecidosQuadro = React.useCallback(async () => {
+        setFalecidosLoading(true);
+        setFalecidosError(null);
+
+        try {
+            const res = await fetch(`${ATENDIMENTOS_API}&_ts=${Date.now()}`, {
+                cache: "no-store",
+                credentials: "include",
+                headers: { Accept: "application/json" },
+            });
+
+            if (!res.ok) {
+                throw new Error(`Não foi possível consultar o quadro de atendimentos (${res.status}).`);
+            }
+
+            const json = await res.json();
+            const rows = Array.isArray(json) ? (json as AtendimentoResumo[]) : [];
+
+            const ativos = rows
+                .filter(atendimentoEstaNoQuadro)
+                .filter((r) => String(r.falecido || "").trim() !== "");
+
+            // Evita nomes duplicados no seletor.
+            const unicos = Array.from(
+                new Map(
+                    ativos.map((r) => [
+                        String(r.falecido || "").trim().toLocaleLowerCase("pt-BR"),
+                        r,
+                    ]),
+                ).values(),
+            ).sort((a, b) =>
+                String(a.falecido || "").localeCompare(String(b.falecido || ""), "pt-BR"),
+            );
+
+            setFalecidosQuadro(unicos);
+        } catch (e: any) {
+            setFalecidosQuadro([]);
+            setFalecidosError(e?.message || "Erro ao consultar os falecidos do quadro.");
+        } finally {
+            setFalecidosLoading(false);
+        }
+    }, []);
 
     React.useEffect(() => {
-        let alive = true;
-        (async () => {
-            try {
-                const res = await fetch(`${ATENDIMENTOS_API}&_ts=${Date.now()}`, {
-                    cache: "no-store",
-                    credentials: "include",
-                });
-                if (!res.ok) return;
-                const json = await res.json();
-                if (!alive) return;
-                const rows = Array.isArray(json) ? (json as AtendimentoResumo[]) : [];
-                setFalecidosQuadro(
-                    rows
-                        .filter(atendimentoEstaNoQuadro)
-                        .filter((r) => String(r.falecido || "").trim() !== "")
-                        .sort((a, b) => String(a.falecido || "").localeCompare(String(b.falecido || ""), "pt-BR")),
-                );
-            } catch {
-                // campo continua permitindo digitação manual
-            }
-        })();
-        return () => {
-            alive = false;
-        };
-    }, []);
+        void carregarFalecidosQuadro();
+
+        // Mantém a relação sincronizada com o quadro de atendimentos.
+        const id = window.setInterval(() => {
+            void carregarFalecidosQuadro();
+        }, 8000);
+
+        return () => window.clearInterval(id);
+    }, [carregarFalecidosQuadro]);
 
     /* -------------------------
        Manual: lista/filtros
@@ -606,6 +692,7 @@ export default function Page() {
     const [newOpen, setNewOpen] = React.useState(false);
     const [newSaving, setNewSaving] = React.useState(false);
     const [newError, setNewError] = React.useState<string | null>(null);
+    const [newFraseSugestao, setNewFraseSugestao] = React.useState("");
     const [newForm, setNewForm] = React.useState({
         solicitante: "",
         modelo_coroa: "",
@@ -624,6 +711,7 @@ export default function Page() {
             status_pagamento: "aguardando_pagamento",
             origem: "ordem_servico",
         });
+        setNewFraseSugestao("");
         setNewError(null);
     }
 
@@ -644,8 +732,14 @@ export default function Page() {
         }
 
         const match = falecidosQuadro.find(
-            (r) => String(r.falecido || "").trim().toLowerCase() === newForm.falecido.trim().toLowerCase(),
+            (r) => String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") === newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
         );
+
+        if (!match) {
+            setNewError("Selecione um falecido que esteja atualmente no quadro de atendimentos.");
+            await carregarFalecidosQuadro();
+            return;
+        }
 
         setNewSaving(true);
         try {
@@ -935,6 +1029,7 @@ export default function Page() {
                                 className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
                                 onClick={() => {
                                     resetNewForm();
+                                    void carregarFalecidosQuadro();
                                     setNewOpen(true);
                                 }}
                             >
@@ -1400,31 +1495,77 @@ export default function Page() {
                                 />
                             </div>
                             <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
+                                <select
+                                    value={newFraseSugestao}
+                                    onChange={(e) => {
+                                        const texto = e.target.value;
+                                        setNewFraseSugestao(texto);
+                                        if (texto) {
+                                            setNewForm((p) => ({ ...p, frase: texto }));
+                                        }
+                                    }}
+                                    className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                >
+                                    <option value="">Selecione uma sugestão ou escreva a sua própria frase abaixo</option>
+                                    {FRASES_SUGERIDAS.map((item) => (
+                                        <option key={item.numero} value={item.texto}>
+                                            {item.numero} — {item.texto}
+                                        </option>
+                                    ))}
+                                </select>
+
                                 <label className="mb-1 block text-sm font-medium">Frase *</label>
                                 <textarea
                                     value={newForm.frase}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, frase: e.target.value }))}
+                                    onChange={(e) => {
+                                        setNewForm((p) => ({ ...p, frase: e.target.value }));
+                                    }}
                                     className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Frase da faixa"
+                                    placeholder="Digite a frase da faixa ou selecione uma sugestão acima"
                                 />
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    A sugestão apenas preenche o campo. Depois você pode personalizar o texto livremente.
+                                </div>
                             </div>
+
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
-                                <input
-                                    list="falecidos-ativos-coroas"
+                                <select
                                     value={newForm.falecido}
                                     onChange={(e) => setNewForm((p) => ({ ...p, falecido: e.target.value }))}
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Selecione do quadro ou digite outro nome"
-                                />
-                                <datalist id="falecidos-ativos-coroas">
+                                    disabled={falecidosLoading && falecidosQuadro.length === 0}
+                                >
+                                    <option value="">
+                                        {falecidosLoading
+                                            ? "Consultando o quadro de atendimentos..."
+                                            : "Selecione um falecido do quadro de atendimentos"}
+                                    </option>
                                     {falecidosQuadro.map((r) => (
-                                        <option key={String(r.id || r.falecido)} value={String(r.falecido || "")} />
+                                        <option key={String(r.id || r.falecido)} value={String(r.falecido || "")}>
+                                            {String(r.falecido || "")}
+                                        </option>
                                     ))}
-                                </datalist>
+                                </select>
+
                                 <div className="mt-1 text-xs text-muted-foreground">
-                                    A lista traz os falecidos atualmente exibidos no quadro de atendimentos; também é permitido digitar outro nome.
+                                    Somente pessoas que estão atualmente no quadro de atendimentos podem ser selecionadas.
+                                    A lista é atualizada automaticamente.
                                 </div>
+
+                                {falecidosError && (
+                                    <div className="mt-1 text-xs text-rose-600">
+                                        {falecidosError}
+                                        <button
+                                            type="button"
+                                            className="ml-2 underline underline-offset-2"
+                                            onClick={() => void carregarFalecidosQuadro()}
+                                        >
+                                            Tentar novamente
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm font-medium">Status de Pagamento *</label>
