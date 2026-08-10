@@ -234,19 +234,41 @@ function normalizeFuneralStatus(v?: string) {
 }
 
 function isNao(v?: string) {
-    const s = String(v || "").trim().toLowerCase();
-    return s === "não" || s === "nao" || s === "n" || s === "0" || s === "false";
+    const s = (v || "").toString().trim().toLowerCase();
+    return s === "não" || s === "nao" || s === "n";
+}
+
+function isSim(v?: string) {
+    return (v || "").toString().trim().toLowerCase() === "sim";
+}
+
+function isTerceiro(r: AtendimentoResumo) {
+    if (String(r.tipo_atendimento || "").trim().toLowerCase() === "terceiro") {
+        return true;
+    }
+
+    // Mesma heurística usada no quadro principal de Atendimentos.
+    return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
 function atendimentoEstaNoQuadro(r: AtendimentoResumo) {
-    const st = normalizeFuneralStatus(r.status);
-    const terceiro =
-        String(r.tipo_atendimento || "").toLowerCase() === "terceiro" ||
-        (isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao));
+    const status = normalizeFuneralStatus(r.status);
 
-    if (st === "fase11") return false;
-    if (terceiro) return st !== "fase10";
-    if (isNao(r.assistencia)) return st !== "fase10";
+    // Mesmas regras de visibilidade da TabelaAtendimentos:
+    // - fase11 nunca aparece;
+    // - terceiro sai na fase10;
+    // - funerário sem Assistência=Sim sai na fase10;
+    // - funerário com Assistência=Sim permanece na fase10 e sai só na fase11.
+    if (status === "fase11") return false;
+
+    if (isTerceiro(r)) {
+        return status !== "fase10";
+    }
+
+    if (!isSim(r.assistencia)) {
+        return status !== "fase10";
+    }
+
     return true;
 }
 
