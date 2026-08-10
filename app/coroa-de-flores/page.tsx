@@ -940,6 +940,7 @@ export default function Page() {
     const [newSaving, setNewSaving] = React.useState(false);
     const [newError, setNewError] = React.useState<string | null>(null);
     const [newFraseSugestao, setNewFraseSugestao] = React.useState("");
+    const [newFalecidoSugestao, setNewFalecidoSugestao] = React.useState("");
     const [newForm, setNewForm] = React.useState({
         solicitante: "",
         modelo_coroa: "",
@@ -959,6 +960,7 @@ export default function Page() {
             origem: "ordem_servico",
         });
         setNewFraseSugestao("");
+        setNewFalecidoSugestao("");
         setModeloTipo("");
         setModeloSelecionado(null);
         setModeloModalOpen(false);
@@ -983,15 +985,14 @@ export default function Page() {
             return;
         }
 
+        // Se o nome digitado coincidir com alguém que está no quadro,
+        // guarda também o ID do atendimento. Caso contrário, o pedido
+        // continua válido como falecido informado livremente.
         const match = falecidosQuadro.find(
-            (r) => String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") === newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
+            (r) =>
+                String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") ===
+                newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
         );
-
-        if (!match) {
-            setNewError("Selecione um falecido que esteja atualmente no quadro de atendimentos.");
-            await carregarFalecidosQuadro();
-            return;
-        }
 
         setNewSaving(true);
         try {
@@ -1268,7 +1269,30 @@ export default function Page() {
     const canNotifyDetail = detail?.status === "completed";
 
     return (
-        <div className="flex h-full flex-col">
+        <div className="flex h-full max-w-full flex-col overflow-x-hidden">
+            <style jsx global>{`
+                html,
+                body {
+                    max-width: 100%;
+                    overflow-x: hidden;
+                    overscroll-behavior-x: none;
+                }
+
+                input,
+                select,
+                textarea {
+                    font-size: 16px !important;
+                }
+
+                @media (min-width: 640px) {
+                    input,
+                    select,
+                    textarea {
+                        font-size: 14px !important;
+                    }
+                }
+            `}</style>
+
             {/* Cabeçalho */}
             <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1716,12 +1740,11 @@ export default function Page() {
                     <div className="absolute inset-0 bg-black/40" onClick={() => !newSaving && setNewOpen(false)} />
                     <form
                         onSubmit={salvarNovoPedido}
-                        className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-auto rounded-xl border bg-background shadow-xl"
+                        className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-x-hidden overflow-y-auto rounded-xl border bg-background shadow-xl"
                     >
                         <div className="flex items-center justify-between border-b px-4 py-3">
                             <div>
                                 <div className="text-lg font-semibold">Novo Pedido de Coroa</div>
-                                <div className="text-xs text-muted-foreground">Pedido manual</div>
                             </div>
                             <button type="button" className="rounded-md p-2 hover:bg-muted" onClick={() => setNewOpen(false)}>
                                 <IconX className="size-5" />
@@ -1816,10 +1839,6 @@ export default function Page() {
                                     )}
                                 </div>
 
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Naturais: todos os modelos da categoria COROAS NATURAIS são exibidos, mesmo com estoque zero.
-                                    Artificiais: somente modelos da categoria COROAS ARTIFICIAIS com saldo positivo são exibidos.
-                                </div>
                             </div>
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
@@ -1851,23 +1870,27 @@ export default function Page() {
                                     className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
                                     placeholder="Digite a frase da faixa ou selecione uma sugestão acima"
                                 />
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    A sugestão apenas preenche o campo. Depois você pode personalizar o texto livremente.
-                                </div>
                             </div>
 
                             <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
+                                <label className="mb-1 block text-sm font-medium">Atendimentos</label>
                                 <select
-                                    value={newForm.falecido}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, falecido: e.target.value }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    value={newFalecidoSugestao}
+                                    onChange={(e) => {
+                                        const nome = e.target.value;
+                                        setNewFalecidoSugestao(nome);
+
+                                        if (nome) {
+                                            setNewForm((p) => ({ ...p, falecido: nome }));
+                                        }
+                                    }}
+                                    className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
                                     disabled={falecidosLoading && falecidosQuadro.length === 0}
                                 >
                                     <option value="">
                                         {falecidosLoading
                                             ? "Consultando o quadro de atendimentos..."
-                                            : "Selecione um falecido do quadro de atendimentos"}
+                                            : "Selecione um atendimento"}
                                     </option>
                                     {falecidosQuadro.map((r) => (
                                         <option key={String(r.id || r.falecido)} value={String(r.falecido || "")}>
@@ -1876,10 +1899,16 @@ export default function Page() {
                                     ))}
                                 </select>
 
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Somente pessoas que estão atualmente no quadro de atendimentos podem ser selecionadas.
-                                    A lista é atualizada automaticamente.
-                                </div>
+                                <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
+                                <input
+                                    value={newForm.falecido}
+                                    onChange={(e) => {
+                                        setNewFalecidoSugestao("");
+                                        setNewForm((p) => ({ ...p, falecido: e.target.value }));
+                                    }}
+                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    placeholder="Digite o nome do falecido ou selecione um atendimento acima"
+                                />
 
                                 {falecidosError && (
                                     <div className="mt-1 text-xs text-rose-600">
@@ -1942,11 +1971,6 @@ export default function Page() {
                                 <h2 className="text-lg font-semibold">
                                     Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
                                 </h2>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                    {modeloTipo === "natural"
-                                        ? "Todos os modelos naturais são exibidos, mesmo com estoque zerado."
-                                        : "Somente coroas artificiais com saldo positivo no estoque são exibidas."}
-                                </p>
                             </div>
 
                             <button
