@@ -34,9 +34,7 @@ type ManualStatus = "novo" | "coroa" | "faixa" | "finalizada" | "entregue";
 type ManualPagamento = "pago" | "aguardando_pagamento";
 type ManualOrigem =
     | "ordem_servico"
-    | "venda_direta_colaborador"
-    | "venda_direta_escritorio"
-    | "venda_direta_memorial";
+    | "venda_direta";
 
 type ManualCoroaItem = {
     id?: number;
@@ -169,9 +167,7 @@ const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: strin
 
 const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
     { value: "ordem_servico", label: "Ordem de Serviço" },
-    { value: "venda_direta_colaborador", label: "Venda Direta Colaborador" },
-    { value: "venda_direta_escritorio", label: "Venda Direta Escritório" },
-    { value: "venda_direta_memorial", label: "Venda Direta Memorial" },
+    { value: "venda_direta", label: "Venda Direta" },
 ];
 
 type FraseSugerida = { numero: number; texto: string };
@@ -253,6 +249,14 @@ function manualStatusClass(status?: ManualStatus | string) {
 }
 
 function origemLabel(v?: ManualOrigem | string) {
+    if (
+        v === "venda_direta_colaborador" ||
+        v === "venda_direta_escritorio" ||
+        v === "venda_direta_memorial"
+    ) {
+        return "Venda Direta";
+    }
+
     return ORIGEM_OPTIONS.find((x) => x.value === v)?.label || v || "—";
 }
 
@@ -868,7 +872,7 @@ function buildWhatsAppText(order: WcOrderFull) {
 
     const rawLines = [
         `*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`,
-        `*Origem:* Loja On-line`,
+        `*Origem:* Loja-Online`,
         `*Cliente:* ${cliente || "—"}`,
         `*Telefone:* ${phone || "—"}`,
         `*Valor:* ${valor}`,
@@ -3527,7 +3531,7 @@ export default function Page() {
                                 )}
                                 <div className="rounded-lg border p-3 text-sm leading-6">
                                     <div><b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}</div>
-                                    <div><b>Origem:</b> Loja On-line</div>
+                                    <div><b>Origem:</b> Loja-Online</div>
                                     <div><b>Cliente:</b> {(detail.billing?.first_name || "") + " " + (detail.billing?.last_name || "")}</div>
                                     <div><b>Telefone:</b> {detail.billing?.phone || "—"}</div>
                                     <div><b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}</div>
