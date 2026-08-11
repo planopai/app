@@ -1145,109 +1145,160 @@ export default function Page() {
     /* -------------------------
        Manual: dados / Confecção / Histórico
        ------------------------- */
-    const [manualOrders, setManualOrders] = React.useState<ManualOrder[]>([]);
-    const [manualLoading, setManualLoading] = React.useState(false);
-    const [manualError, setManualError] = React.useState<string | null>(null);
 
-    // Confecção: novo, coroa e faixa.
+    // Confecção: novo, coroa e faixa — paginação/filtro no servidor.
+    const [confeccaoOrders, setConfeccaoOrders] = React.useState<ManualOrder[]>([]);
+    const [confeccaoLoading, setConfeccaoLoading] = React.useState(false);
+    const [confeccaoError, setConfeccaoError] = React.useState<string | null>(null);
     const [confeccaoQ, setConfeccaoQ] = React.useState("");
     const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
     const [confeccaoPage, setConfeccaoPage] = React.useState(1);
     const confeccaoPerPage = 30;
+    const [confeccaoTotal, setConfeccaoTotal] = React.useState(0);
+    const [confeccaoTotalPages, setConfeccaoTotalPages] = React.useState(1);
 
-    // Pedidos Manuais: histórico a partir de Finalizada.
+    // Pedidos Manuais: finalizados/entregues — paginação/filtro no servidor.
+    const [manualHistoricoOrders, setManualHistoricoOrders] = React.useState<ManualOrder[]>([]);
+    const [manualLoading, setManualLoading] = React.useState(false);
+    const [manualError, setManualError] = React.useState<string | null>(null);
     const [manualQ, setManualQ] = React.useState("");
     const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "finalizada" | "entregue">("todos");
     const [manualAfter, setManualAfter] = React.useState("");
     const [manualBefore, setManualBefore] = React.useState("");
     const [manualPage, setManualPage] = React.useState(1);
     const [manualPerPage, setManualPerPage] = React.useState(20);
+    const [manualTotal, setManualTotal] = React.useState(0);
+    const [manualTotalPages, setManualTotalPages] = React.useState(1);
 
-    const fetchManualOrders = React.useCallback(async () => {
+    const fetchConfeccaoOrders = React.useCallback(async () => {
+        setConfeccaoLoading(true);
+        setConfeccaoError(null);
+
+        try {
+            const u = new URL(COROAS_API, window.location.origin);
+            u.searchParams.set("listar", "1");
+            u.searchParams.set("grupo", "confeccao");
+            u.searchParams.set("page", String(confeccaoPage));
+            u.searchParams.set("per_page", String(confeccaoPerPage));
+            u.searchParams.set("_ts", String(Date.now()));
+
+            if (confeccaoQ.trim()) u.searchParams.set("q", confeccaoQ.trim());
+            if (confeccaoStatusFilter !== "todos") {
+                u.searchParams.set("status", confeccaoStatusFilter);
+            }
+
+            const res = await fetch(u.toString(), {
+                cache: "no-store",
+                credentials: "include",
+            });
+
+            const json: ManualListResponse = await res.json().catch(() => ({
+                sucesso: false,
+                dados: [],
+            }));
+
+            if (!res.ok || !json?.sucesso) {
+                throw new Error(json?.msg || `Falha ao carregar a confecção (${res.status}).`);
+            }
+
+            setConfeccaoOrders(Array.isArray(json.dados) ? json.dados : []);
+            setConfeccaoTotal(Math.max(0, Number(json.meta?.total || 0)));
+            setConfeccaoTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
+        } catch (e: any) {
+            setConfeccaoOrders([]);
+            setConfeccaoTotal(0);
+            setConfeccaoTotalPages(1);
+            setConfeccaoError(e?.message || "Erro ao carregar pedidos em confecção.");
+        } finally {
+            setConfeccaoLoading(false);
+        }
+    }, [confeccaoPage, confeccaoQ, confeccaoStatusFilter]);
+
+    const fetchHistoricoOrders = React.useCallback(async () => {
         setManualLoading(true);
         setManualError(null);
 
         try {
-            const todos: ManualOrder[] = [];
-            let pagina = 1;
-            let totalPages = 1;
+            const u = new URL(COROAS_API, window.location.origin);
+            u.searchParams.set("listar", "1");
+            u.searchParams.set("grupo", "historico");
+            u.searchParams.set("page", String(manualPage));
+            u.searchParams.set("per_page", String(manualPerPage));
+            u.searchParams.set("_ts", String(Date.now()));
 
-            do {
-                const u = new URL(COROAS_API, window.location.origin);
-                u.searchParams.set("listar", "1");
-                u.searchParams.set("page", String(pagina));
-                u.searchParams.set("per_page", "100");
-                u.searchParams.set("_ts", String(Date.now()));
+            if (manualQ.trim()) u.searchParams.set("q", manualQ.trim());
+            if (manualStatusFilter !== "todos") {
+                u.searchParams.set("status", manualStatusFilter);
+            }
+            if (manualAfter) u.searchParams.set("after", manualAfter);
+            if (manualBefore) u.searchParams.set("before", manualBefore);
 
-                const res = await fetch(u.toString(), {
-                    cache: "no-store",
-                    credentials: "include",
-                });
-                const json: ManualListResponse = await res.json().catch(() => ({ sucesso: false, dados: [] }));
+            const res = await fetch(u.toString(), {
+                cache: "no-store",
+                credentials: "include",
+            });
 
-                if (!res.ok || !json?.sucesso) {
-                    throw new Error(json?.msg || `Falha ao carregar pedidos (${res.status}).`);
-                }
+            const json: ManualListResponse = await res.json().catch(() => ({
+                sucesso: false,
+                dados: [],
+            }));
 
-                todos.push(...(Array.isArray(json.dados) ? json.dados : []));
-                totalPages = Math.max(1, Number(json.meta?.total_pages || 1));
-                pagina += 1;
-            } while (pagina <= totalPages && pagina <= 500);
+            if (!res.ok || !json?.sucesso) {
+                throw new Error(json?.msg || `Falha ao carregar pedidos manuais (${res.status}).`);
+            }
 
-            // Evita duplicados e mantém os mais recentes primeiro.
-            const unicos = Array.from(new Map(todos.map((pedido) => [Number(pedido.id), pedido])).values())
-                .sort((a, b) => Number(b.id) - Number(a.id));
-
-            setManualOrders(unicos);
+            setManualHistoricoOrders(Array.isArray(json.dados) ? json.dados : []);
+            setManualTotal(Math.max(0, Number(json.meta?.total || 0)));
+            setManualTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
         } catch (e: any) {
-            setManualOrders([]);
+            setManualHistoricoOrders([]);
+            setManualTotal(0);
+            setManualTotalPages(1);
             setManualError(e?.message || "Erro ao carregar pedidos manuais.");
         } finally {
             setManualLoading(false);
         }
-    }, []);
+    }, [manualPage, manualPerPage, manualQ, manualStatusFilter, manualAfter, manualBefore]);
+
+    // Mantém compatibilidade com os pontos do fluxo que precisam atualizar
+    // as duas abas depois de criar pedido ou registrar ação.
+    const fetchManualOrders = React.useCallback(async () => {
+        await Promise.all([
+            fetchConfeccaoOrders(),
+            fetchHistoricoOrders(),
+        ]);
+    }, [fetchConfeccaoOrders, fetchHistoricoOrders]);
+
+    // Busca apenas a aba que está visível. Pequeno debounce evita várias
+    // requisições enquanto o usuário digita um filtro.
+    React.useEffect(() => {
+        if (tab !== "confeccao") return;
+        const id = window.setTimeout(() => {
+            void fetchConfeccaoOrders();
+        }, 180);
+        return () => window.clearTimeout(id);
+    }, [tab, fetchConfeccaoOrders]);
 
     React.useEffect(() => {
-        if (tab === "online") return;
-        void fetchManualOrders();
-    }, [tab, fetchManualOrders]);
+        if (tab !== "manuais") return;
+        const id = window.setTimeout(() => {
+            void fetchHistoricoOrders();
+        }, 180);
+        return () => window.clearTimeout(id);
+    }, [tab, fetchHistoricoOrders]);
 
     React.useEffect(() => {
         const onFocus = () => {
-            if (tab !== "online") void fetchManualOrders();
+            if (tab === "confeccao") {
+                void fetchConfeccaoOrders();
+            } else if (tab === "manuais") {
+                void fetchHistoricoOrders();
+            }
         };
+
         window.addEventListener("focus", onFocus);
         return () => window.removeEventListener("focus", onFocus);
-    }, [tab, fetchManualOrders]);
-
-    const confeccaoFiltrada = React.useMemo(() => {
-        return manualOrders
-            .filter((pedido) => ["novo", "coroa", "faixa"].includes(pedido.status))
-            .filter((pedido) => confeccaoStatusFilter === "todos" || pedido.status === confeccaoStatusFilter)
-            .filter((pedido) => manualMatchesQuery(pedido, confeccaoQ));
-    }, [manualOrders, confeccaoStatusFilter, confeccaoQ]);
-
-    const confeccaoTotalPages = Math.max(1, Math.ceil(confeccaoFiltrada.length / confeccaoPerPage));
-    const confeccaoOrders = React.useMemo(() => {
-        const page = Math.min(confeccaoPage, confeccaoTotalPages);
-        const inicio = (page - 1) * confeccaoPerPage;
-        return confeccaoFiltrada.slice(inicio, inicio + confeccaoPerPage);
-    }, [confeccaoFiltrada, confeccaoPage, confeccaoTotalPages]);
-
-    const manualHistoricoFiltrado = React.useMemo(() => {
-        return manualOrders
-            .filter((pedido) => pedido.status === "finalizada" || pedido.status === "entregue")
-            .filter((pedido) => manualStatusFilter === "todos" || pedido.status === manualStatusFilter)
-            .filter((pedido) => manualMatchesQuery(pedido, manualQ))
-            .filter((pedido) => manualDateInRange(pedido, manualAfter, manualBefore));
-    }, [manualOrders, manualStatusFilter, manualQ, manualAfter, manualBefore]);
-
-    const manualTotalPages = Math.max(1, Math.ceil(manualHistoricoFiltrado.length / manualPerPage));
-    const manualHistoricoOrders = React.useMemo(() => {
-        const page = Math.min(manualPage, manualTotalPages);
-        const inicio = (page - 1) * manualPerPage;
-        return manualHistoricoFiltrado.slice(inicio, inicio + manualPerPage);
-    }, [manualHistoricoFiltrado, manualPage, manualPerPage, manualTotalPages]);
+    }, [tab, fetchConfeccaoOrders, fetchHistoricoOrders]);
 
     React.useEffect(() => {
         setConfeccaoPage(1);
@@ -1420,8 +1471,16 @@ export default function Page() {
 
             setNewOpen(false);
             resetNewForm();
+            setConfeccaoPage(1);
             setManualPage(1);
             await fetchManualOrders();
+
+            if (json?.notificacao_enviada === false) {
+                const erroPush =
+                    json?.notificacao?.erro ||
+                    "O pedido foi salvo, mas o OneSignal não confirmou o envio da notificação.";
+                window.alert(erroPush);
+            }
         } catch (e: any) {
             setNewError(e?.message || "Não foi possível criar o pedido.");
         } finally {
@@ -1897,6 +1956,7 @@ export default function Page() {
                         onSubmit={(e) => {
                             e.preventDefault();
                             setConfeccaoPage(1);
+                            void fetchConfeccaoOrders();
                         }}
                     >
                         <div className="sm:col-span-2">
@@ -1972,13 +2032,13 @@ export default function Page() {
                                 </div>
                             ))}
 
-                            {!manualLoading && confeccaoOrders.length === 0 && (
+                            {!confeccaoLoading && confeccaoOrders.length === 0 && (
                                 <div className="py-6 text-center text-sm text-muted-foreground">
                                     Nenhum pedido em confecção.
                                 </div>
                             )}
-                            {manualLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando…</div>}
-                            {manualError && <div className="text-sm text-rose-600">{manualError}</div>}
+                            {confeccaoLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando…</div>}
+                            {confeccaoError && <div className="text-sm text-rose-600">{confeccaoError}</div>}
                         </div>
                     </div>
 
@@ -2036,7 +2096,7 @@ export default function Page() {
                                                 </td>
                                             </tr>
                                         ))}
-                                        {!manualLoading && confeccaoOrders.length === 0 && (
+                                        {!confeccaoLoading && confeccaoOrders.length === 0 && (
                                             <tr>
                                                 <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
                                                     Nenhum pedido em confecção.
@@ -2045,24 +2105,24 @@ export default function Page() {
                                         )}
                                     </tbody>
                                 </table>
-                                {manualLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando…</div>}
-                                {manualError && <div className="px-3 pb-3 text-sm text-rose-600">{manualError}</div>}
+                                {confeccaoLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando…</div>}
+                                {confeccaoError && <div className="px-3 pb-3 text-sm text-rose-600">{confeccaoError}</div>}
                             </div>
                             <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
                                 <div>
-                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoFiltrada.length} pedidos
+                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoTotal} pedidos
                                 </div>
                                 <div className="flex gap-2">
                                     <button
                                         className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={confeccaoPage <= 1 || manualLoading}
+                                        disabled={confeccaoPage <= 1 || confeccaoLoading}
                                         onClick={() => setConfeccaoPage((p) => Math.max(1, p - 1))}
                                     >
                                         Anterior
                                     </button>
                                     <button
                                         className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={confeccaoPage >= confeccaoTotalPages || manualLoading}
+                                        disabled={confeccaoPage >= confeccaoTotalPages || confeccaoLoading}
                                         onClick={() => setConfeccaoPage((p) => Math.min(confeccaoTotalPages, p + 1))}
                                     >
                                         Próxima
@@ -2084,6 +2144,7 @@ export default function Page() {
                         onSubmit={(e) => {
                             e.preventDefault();
                             setManualPage(1);
+                            void fetchHistoricoOrders();
                         }}
                         className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
                     >
@@ -2255,7 +2316,7 @@ export default function Page() {
                             </div>
                             <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
                                 <div className="text-xs text-muted-foreground">
-                                    Página {Math.min(manualPage, manualTotalPages)} de {manualTotalPages} — {manualHistoricoFiltrado.length} pedidos
+                                    Página {Math.min(manualPage, manualTotalPages)} de {manualTotalPages} — {manualTotal} pedidos
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
