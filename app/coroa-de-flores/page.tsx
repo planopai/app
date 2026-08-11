@@ -789,7 +789,7 @@ function clsWcStatusBadge(s: WcOrder["status"]) {
     }
 }
 
-function onlyDigits(s?: string) {
+function onlyDigits(s?: string | null) {
     return (s || "").replace(/\D+/g, "");
 }
 
