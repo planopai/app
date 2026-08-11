@@ -55,6 +55,7 @@ type ManualOrder = {
     solicitante: string;
     telefone?: string | null;
     local_entrega?: string | null;
+    observacoes?: string | null;
     quantidade_coroas?: number;
     itens?: ManualCoroaItem[];
     modelo_coroa: string;
@@ -255,21 +256,51 @@ function origemLabel(v?: ManualOrigem | string) {
     return ORIGEM_OPTIONS.find((x) => x.value === v)?.label || v || "—";
 }
 
-function proximoStatusManual(status: ManualStatus): ManualStatus | null {
-    if (status === "novo") return "coroa";
-    if (status === "coroa") return "faixa";
-    if (status === "faixa") return "finalizada";
-    if (status === "finalizada") return "entregue";
-    return null;
+function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
+    if (target === "coroa") return "Confeccionando Coroa";
+    if (target === "faixa") return "Confeccionando Faixa";
+    if (target === "finalizada") return "Coroa Finalizada";
+    return "Entregue";
 }
 
-function proximaAcaoLabel(status: ManualStatus) {
-    const next = proximoStatusManual(status);
-    if (next === "coroa") return "Coroa — Início de Confecção";
-    if (next === "faixa") return "Faixa — Início de Confecção";
-    if (next === "finalizada") return "Finalizada";
-    if (next === "entregue") return "Entregue";
-    return "Fluxo concluído";
+function acaoManualConcluida(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
+    const finalizada =
+        Boolean(order.finalizada_em) ||
+        order.status === "finalizada" ||
+        order.status === "entregue";
+
+    const entregue =
+        Boolean(order.entregue_em) ||
+        order.status === "entregue";
+
+    if (target === "coroa") return Boolean(order.coroa_inicio_em) || finalizada;
+    if (target === "faixa") return Boolean(order.faixa_inicio_em) || finalizada;
+    if (target === "finalizada") return finalizada;
+    return entregue;
+}
+
+function acaoManualLiberada(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
+    const finalizada = acaoManualConcluida(order, "finalizada");
+    const entregue = acaoManualConcluida(order, "entregue");
+
+    if (target === "coroa") {
+        return !finalizada && !entregue && !acaoManualConcluida(order, "coroa");
+    }
+
+    if (target === "faixa") {
+        return !finalizada && !entregue && !acaoManualConcluida(order, "faixa");
+    }
+
+    if (target === "finalizada") {
+        return (
+            !finalizada &&
+            !entregue &&
+            acaoManualConcluida(order, "coroa") &&
+            acaoManualConcluida(order, "faixa")
+        );
+    }
+
+    return finalizada && !entregue;
 }
 
 function normalizeFuneralStatus(v?: string) {
@@ -470,6 +501,7 @@ function manualMatchesQuery(order: ManualOrder, query: string) {
         order.solicitante,
         order.telefone,
         order.local_entrega,
+        order.observacoes,
         order.falecido,
         origemLabel(order.origem),
         ...itensManual(order).flatMap((item) => [item.modelo_coroa, item.frase]),
@@ -514,6 +546,7 @@ function buildManualPedidoText(order: ManualOrder) {
         `*Telefone:* ${onlyDigits(order.telefone) || order.telefone || "—"}`,
         `*Valor:* ${total > 0 ? dinheiroBRL(total) : "—"}`,
         `*Local de Entrega:* ${order.local_entrega || "—"}`,
+        `*Observações:* ${order.observacoes || "—"}`,
         `*Falecido(a):* ${order.falecido || "—"}`,
         `*Frase da Coroa:* ${pedidoFrasesManual(order)}`,
         `*Comprovante de pagamento:*`,
@@ -1322,6 +1355,7 @@ export default function Page() {
         solicitante: "",
         telefone: "",
         local_entrega: "",
+        observacoes: "",
         falecido: "",
         origem: "ordem_servico" as ManualOrigem,
     });
@@ -1331,6 +1365,7 @@ export default function Page() {
             solicitante: "",
             telefone: "",
             local_entrega: "",
+            observacoes: "",
             falecido: "",
             origem: "ordem_servico",
         });
@@ -1434,6 +1469,7 @@ export default function Page() {
                 solicitante: newForm.solicitante.trim(),
                 telefone: newForm.telefone.trim(),
                 local_entrega: newForm.local_entrega.trim(),
+                observacoes: newForm.observacoes.trim(),
                 quantidade_coroas: quantidadeCoroas,
                 itens: newItems.map((item, index) => ({
                     ordem: index + 1,
@@ -1596,24 +1632,11 @@ export default function Page() {
     }
 
 
-    function rankStatusManual(status: ManualStatus) {
-        const rank: Record<ManualStatus, number> = {
-            novo: 0,
-            coroa: 1,
-            faixa: 2,
-            finalizada: 3,
-            entregue: 4,
-        };
-        return rank[status];
-    }
-
     async function executarStatusManual(target: Exclude<ManualStatus, "novo">) {
         if (!manualDetail) return;
+        if (!acaoManualLiberada(manualDetail, target)) return;
 
-        const next = proximoStatusManual(manualDetail.status);
-        if (next !== target) return;
-
-        if (!window.confirm(`Confirmar a ação “${proximaAcaoLabel(manualDetail.status)}”?`)) {
+        if (!window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
             return;
         }
 
@@ -1621,13 +1644,22 @@ export default function Page() {
         setManualDetailMsg(null);
 
         try {
-            await postManual({
+            const json = await postManual({
                 acao: "atualizar_status",
                 id: manualDetail.id,
                 status: target,
             });
+
             await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
+
+            if (json?.notificacao_enviada === false) {
+                setManualDetailMsg(
+                    json?.notificacao?.erro
+                        ? `A ação foi registrada, mas a notificação não foi enviada: ${json.notificacao.erro}`
+                        : "A ação foi registrada, mas o OneSignal não confirmou o envio da notificação.",
+                );
+            }
         } catch (e: any) {
             setManualDetailMsg(e?.message || "Não foi possível registrar a ação.");
         } finally {
@@ -1637,9 +1669,7 @@ export default function Page() {
 
     function clicarAcaoManual(target: Exclude<ManualStatus, "novo">) {
         if (!manualDetail) return;
-
-        const next = proximoStatusManual(manualDetail.status);
-        if (next !== target) return;
+        if (!acaoManualLiberada(manualDetail, target)) return;
 
         if (target === "finalizada") {
             setFinalizarFile(null);
@@ -1683,7 +1713,7 @@ export default function Page() {
         try {
             const base64 = await fileToDataUrl(finalizarFile);
 
-            await postManual({
+            const json = await postManual({
                 acao: "atualizar_status",
                 id: manualDetail.id,
                 status: "finalizada",
@@ -1697,6 +1727,14 @@ export default function Page() {
 
             await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
+
+            if (json?.notificacao_enviada === false) {
+                setManualDetailMsg(
+                    json?.notificacao?.erro
+                        ? `A coroa foi finalizada, mas a notificação não foi enviada: ${json.notificacao.erro}`
+                        : "A coroa foi finalizada, mas o OneSignal não confirmou o envio da notificação.",
+                );
+            }
         } catch (e: any) {
             setFinalizarError(e?.message || "Não foi possível finalizar o pedido.");
         } finally {
@@ -2627,6 +2665,16 @@ export default function Page() {
                             </div>
 
                             <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">Observações</label>
+                                <textarea
+                                    value={newForm.observacoes}
+                                    onChange={(e) => setNewForm((p) => ({ ...p, observacoes: e.target.value }))}
+                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    placeholder="Digite observações do pedido (opcional)"
+                                />
+                            </div>
+
+                            <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
                                 <input
                                     type="number"
@@ -3128,15 +3176,13 @@ export default function Page() {
                             ) : manualDetail ? (
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     {([
-                                        ["coroa", "Coroa"],
-                                        ["faixa", "Faixa"],
-                                        ["finalizada", "Finalizada"],
+                                        ["coroa", "Confeccionando Coroa"],
+                                        ["faixa", "Confeccionando Faixa"],
+                                        ["finalizada", "Coroa Finalizada"],
                                         ["entregue", "Entregue"],
                                     ] as const).map(([target, label]) => {
-                                        const atual = rankStatusManual(manualDetail.status);
-                                        const alvo = rankStatusManual(target);
-                                        const concluida = atual >= alvo;
-                                        const liberada = proximoStatusManual(manualDetail.status) === target;
+                                        const concluida = acaoManualConcluida(manualDetail, target);
+                                        const liberada = acaoManualLiberada(manualDetail, target);
 
                                         return (
                                             <button
@@ -3183,7 +3229,7 @@ export default function Page() {
                     <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
                         <div className="flex items-center justify-between border-b px-4 py-3">
                             <div>
-                                <div className="text-lg font-semibold">Finalizar Coroa</div>
+                                <div className="text-lg font-semibold">Coroa Finalizada</div>
                                 <div className="mt-0.5 text-xs text-muted-foreground">
                                     Anexe a foto da coroa pronta para confirmar.
                                 </div>
@@ -3253,7 +3299,7 @@ export default function Page() {
                                 disabled={manualActionLoading || !finalizarFile}
                                 onClick={confirmarFinalizacaoManual}
                             >
-                                {manualActionLoading ? "Finalizando..." : "Confirmar Finalizada"}
+                                {manualActionLoading ? "Finalizando..." : "Confirmar Coroa Finalizada"}
                             </button>
                         </div>
                     </div>
@@ -3313,6 +3359,7 @@ export default function Page() {
                                     <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
                                     <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
                                     <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
+                                    <div className="whitespace-pre-wrap"><b>Observações:</b> {manualDetail.observacoes || "—"}</div>
                                     <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
                                     <div className="whitespace-pre-wrap"><b>Frase da Coroa:</b> {pedidoFrasesManual(manualDetail)}</div>
                                 </div>
