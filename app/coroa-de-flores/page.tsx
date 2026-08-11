@@ -1,5 +1,18 @@
 "use client";
 
+/*
+ * OTIMIZAÇÕES DE PERFORMANCE:
+ * - sem polling de atendimentos a cada 8 segundos;
+ * - sem refresh automático ao recuperar foco da janela;
+ * - filtros só consultam o servidor ao clicar em Buscar;
+ * - AbortController cancela requisições antigas;
+ * - listas normais podem aproveitar o cache HTTP curto do backend;
+ * - estoque é reaproveitado em memória por 60s;
+ * - falecidos do quadro são reaproveitados por 30s;
+ * - após uma ação atualiza somente a aba afetada;
+ * - evita montar simultaneamente as linhas mobile e desktop.
+ */
+
 import * as React from "react";
 import {
     IconCamera,
@@ -34,7 +47,9 @@ type ManualStatus = "novo" | "coroa" | "faixa" | "finalizada" | "entregue";
 type ManualPagamento = "pago" | "aguardando_pagamento";
 type ManualOrigem =
     | "ordem_servico"
-    | "venda_direta";
+    | "venda_direta_colaborador"
+    | "venda_direta_escritorio"
+    | "venda_direta_memorial";
 
 type ManualCoroaItem = {
     id?: number;
@@ -167,7 +182,9 @@ const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: strin
 
 const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
     { value: "ordem_servico", label: "Ordem de Serviço" },
-    { value: "venda_direta", label: "Venda Direta" },
+    { value: "venda_direta_colaborador", label: "Venda Direta Colaborador" },
+    { value: "venda_direta_escritorio", label: "Venda Direta Escritório" },
+    { value: "venda_direta_memorial", label: "Venda Direta Memorial" },
 ];
 
 type FraseSugerida = { numero: number; texto: string };
@@ -249,14 +266,6 @@ function manualStatusClass(status?: ManualStatus | string) {
 }
 
 function origemLabel(v?: ManualOrigem | string) {
-    if (
-        v === "venda_direta_colaborador" ||
-        v === "venda_direta_escritorio" ||
-        v === "venda_direta_memorial"
-    ) {
-        return "Venda Direta";
-    }
-
     return ORIGEM_OPTIONS.find((x) => x.value === v)?.label || v || "—";
 }
 
@@ -872,7 +881,7 @@ function buildWhatsAppText(order: WcOrderFull) {
 
     const rawLines = [
         `*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`,
-        `*Origem:* Loja-Online`,
+        `*Origem:* Loja On-line`,
         `*Cliente:* ${cliente || "—"}`,
         `*Telefone:* ${phone || "—"}`,
         `*Valor:* ${valor}`,
@@ -992,6 +1001,17 @@ async function shareImageUrl(imageUrl: string) {
    ========================================================= */
 export default function Page() {
     const [tab, setTab] = React.useState<"confeccao" | "manuais" | "online">("confeccao");
+    const [isDesktop, setIsDesktop] = React.useState(false);
+
+    React.useEffect(() => {
+        const media = window.matchMedia("(min-width: 768px)");
+        const atualizar = () => setIsDesktop(media.matches);
+
+        atualizar();
+        media.addEventListener?.("change", atualizar);
+
+        return () => media.removeEventListener?.("change", atualizar);
+    }, []);
 
     /* -------------------------
        Falecidos no quadro
@@ -999,16 +1019,34 @@ export default function Page() {
     const [falecidosQuadro, setFalecidosQuadro] = React.useState<AtendimentoResumo[]>([]);
     const [falecidosLoading, setFalecidosLoading] = React.useState(false);
     const [falecidosError, setFalecidosError] = React.useState<string | null>(null);
+    const falecidosLoadedAtRef = React.useRef(0);
+    const falecidosAbortRef = React.useRef<AbortController | null>(null);
 
-    const carregarFalecidosQuadro = React.useCallback(async () => {
+    const carregarFalecidosQuadro = React.useCallback(async (force = false) => {
+        const agora = Date.now();
+
+        // Não mantém mais polling em segundo plano. Ao abrir NOVO,
+        // reaproveita por 30s o resultado já carregado.
+        if (
+            !force &&
+            falecidosQuadro.length > 0 &&
+            agora - falecidosLoadedAtRef.current < 30_000
+        ) {
+            return;
+        }
+
+        falecidosAbortRef.current?.abort();
+        const controller = new AbortController();
+        falecidosAbortRef.current = controller;
+
         setFalecidosLoading(true);
         setFalecidosError(null);
 
         try {
-            const res = await fetch(`${ATENDIMENTOS_API}&_ts=${Date.now()}`, {
-                cache: "no-store",
+            const res = await fetch(ATENDIMENTOS_API, {
                 credentials: "include",
                 headers: { Accept: "application/json" },
+                signal: controller.signal,
             });
 
             if (!res.ok) {
@@ -1022,7 +1060,6 @@ export default function Page() {
                 .filter(atendimentoEstaNoQuadro)
                 .filter((r) => String(r.falecido || "").trim() !== "");
 
-            // Evita nomes duplicados no seletor.
             const unicos = Array.from(
                 new Map(
                     ativos.map((r) => [
@@ -1035,24 +1072,21 @@ export default function Page() {
             );
 
             setFalecidosQuadro(unicos);
+            falecidosLoadedAtRef.current = Date.now();
         } catch (e: any) {
-            setFalecidosQuadro([]);
+            if (e?.name === "AbortError") return;
             setFalecidosError(e?.message || "Erro ao consultar os falecidos do quadro.");
         } finally {
-            setFalecidosLoading(false);
+            if (falecidosAbortRef.current === controller) {
+                falecidosAbortRef.current = null;
+                setFalecidosLoading(false);
+            }
         }
-    }, []);
+    }, [falecidosQuadro.length]);
 
     React.useEffect(() => {
-        void carregarFalecidosQuadro();
-
-        // Mantém a relação sincronizada com o quadro de atendimentos.
-        const id = window.setInterval(() => {
-            void carregarFalecidosQuadro();
-        }, 8000);
-
-        return () => window.clearInterval(id);
-    }, [carregarFalecidosQuadro]);
+        return () => falecidosAbortRef.current?.abort();
+    }, []);
 
     /* -------------------------
        Modelos de Coroa no estoque
@@ -1065,6 +1099,8 @@ export default function Page() {
     const [estoqueProdutos, setEstoqueProdutos] = React.useState<EstoqueProduto[]>([]);
     const [estoqueSaldos, setEstoqueSaldos] = React.useState<EstoqueSaldo[]>([]);
     const [modeloItemIndex, setModeloItemIndex] = React.useState<number | null>(null);
+    const estoqueLoadedAtRef = React.useRef(0);
+    const estoqueAbortRef = React.useRef<AbortController | null>(null);
 
     const saldoTotalPorProduto = React.useMemo(() => {
         const map = new Map<number, number>();
@@ -1113,20 +1149,35 @@ export default function Page() {
             .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
     }, [estoqueProdutos, saldoTotalPorProduto, modeloTipo, modeloBusca]);
 
-    const carregarModelosCoroa = React.useCallback(async () => {
+    const carregarModelosCoroa = React.useCallback(async (force = false) => {
+        const agora = Date.now();
+
+        // O mesmo estoque serve para todas as coroas do formulário.
+        // Evita baixar novamente a lista a cada Coroa 1, Coroa 2, etc.
+        if (
+            !force &&
+            estoqueProdutos.length > 0 &&
+            agora - estoqueLoadedAtRef.current < 60_000
+        ) {
+            return;
+        }
+
+        estoqueAbortRef.current?.abort();
+        const controller = new AbortController();
+        estoqueAbortRef.current = controller;
+
         setModeloLoading(true);
         setModeloError(null);
 
         try {
             const url = new URL(MATERIAIS_API, window.location.origin);
             url.searchParams.set("init", "1");
-            url.searchParams.set("_ts", String(Date.now()));
 
             const res = await fetch(url.toString(), {
                 method: "GET",
-                cache: "no-store",
                 credentials: "include",
                 headers: { Accept: "application/json" },
+                signal: controller.signal,
             });
 
             const json: MateriaisInitResponse = await res.json().catch(() => ({}));
@@ -1141,13 +1192,20 @@ export default function Page() {
 
             setEstoqueProdutos(Array.isArray(json.produtos) ? json.produtos : []);
             setEstoqueSaldos(Array.isArray(json.saldos) ? json.saldos : []);
+            estoqueLoadedAtRef.current = Date.now();
         } catch (e: any) {
+            if (e?.name === "AbortError") return;
             setModeloError(e?.message || "Erro ao carregar os modelos de coroas.");
-            setEstoqueProdutos([]);
-            setEstoqueSaldos([]);
         } finally {
-            setModeloLoading(false);
+            if (estoqueAbortRef.current === controller) {
+                estoqueAbortRef.current = null;
+                setModeloLoading(false);
+            }
         }
+    }, [estoqueProdutos.length]);
+
+    React.useEffect(() => {
+        return () => estoqueAbortRef.current?.abort();
     }, []);
 
     function abrirSeletorModelo(itemIndex: number, tipo: CoroaTipo) {
@@ -1189,6 +1247,9 @@ export default function Page() {
     const [confeccaoError, setConfeccaoError] = React.useState<string | null>(null);
     const [confeccaoQ, setConfeccaoQ] = React.useState("");
     const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
+    const [confeccaoAppliedQ, setConfeccaoAppliedQ] = React.useState("");
+    const [confeccaoAppliedStatus, setConfeccaoAppliedStatus] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
+    const [confeccaoRefreshToken, setConfeccaoRefreshToken] = React.useState(0);
     const [confeccaoPage, setConfeccaoPage] = React.useState(1);
     const confeccaoPerPage = 30;
     const [confeccaoTotal, setConfeccaoTotal] = React.useState(0);
@@ -1202,12 +1263,23 @@ export default function Page() {
     const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "finalizada" | "entregue">("todos");
     const [manualAfter, setManualAfter] = React.useState("");
     const [manualBefore, setManualBefore] = React.useState("");
+    const [manualAppliedQ, setManualAppliedQ] = React.useState("");
+    const [manualAppliedStatus, setManualAppliedStatus] = React.useState<"todos" | "finalizada" | "entregue">("todos");
+    const [manualAppliedAfter, setManualAppliedAfter] = React.useState("");
+    const [manualAppliedBefore, setManualAppliedBefore] = React.useState("");
+    const [manualRefreshToken, setManualRefreshToken] = React.useState(0);
     const [manualPage, setManualPage] = React.useState(1);
     const [manualPerPage, setManualPerPage] = React.useState(20);
     const [manualTotal, setManualTotal] = React.useState(0);
     const [manualTotalPages, setManualTotalPages] = React.useState(1);
+    const confeccaoAbortRef = React.useRef<AbortController | null>(null);
+    const historicoAbortRef = React.useRef<AbortController | null>(null);
 
-    const fetchConfeccaoOrders = React.useCallback(async () => {
+    const fetchConfeccaoOrders = React.useCallback(async (forceFresh = false) => {
+        confeccaoAbortRef.current?.abort();
+        const controller = new AbortController();
+        confeccaoAbortRef.current = controller;
+
         setConfeccaoLoading(true);
         setConfeccaoError(null);
 
@@ -1217,16 +1289,17 @@ export default function Page() {
             u.searchParams.set("grupo", "confeccao");
             u.searchParams.set("page", String(confeccaoPage));
             u.searchParams.set("per_page", String(confeccaoPerPage));
-            u.searchParams.set("_ts", String(Date.now()));
 
-            if (confeccaoQ.trim()) u.searchParams.set("q", confeccaoQ.trim());
-            if (confeccaoStatusFilter !== "todos") {
-                u.searchParams.set("status", confeccaoStatusFilter);
+            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
+            if (confeccaoAppliedQ.trim()) u.searchParams.set("q", confeccaoAppliedQ.trim());
+            if (confeccaoAppliedStatus !== "todos") {
+                u.searchParams.set("status", confeccaoAppliedStatus);
             }
 
             const res = await fetch(u.toString(), {
-                cache: "no-store",
                 credentials: "include",
+                cache: forceFresh ? "no-cache" : "default",
+                signal: controller.signal,
             });
 
             const json: ManualListResponse = await res.json().catch(() => ({
@@ -1242,16 +1315,26 @@ export default function Page() {
             setConfeccaoTotal(Math.max(0, Number(json.meta?.total || 0)));
             setConfeccaoTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
         } catch (e: any) {
-            setConfeccaoOrders([]);
-            setConfeccaoTotal(0);
-            setConfeccaoTotalPages(1);
+            if (e?.name === "AbortError") return;
             setConfeccaoError(e?.message || "Erro ao carregar pedidos em confecção.");
         } finally {
-            setConfeccaoLoading(false);
+            if (confeccaoAbortRef.current === controller) {
+                confeccaoAbortRef.current = null;
+                setConfeccaoLoading(false);
+            }
         }
-    }, [confeccaoPage, confeccaoQ, confeccaoStatusFilter]);
+    }, [
+        confeccaoPage,
+        confeccaoAppliedQ,
+        confeccaoAppliedStatus,
+        confeccaoRefreshToken,
+    ]);
 
-    const fetchHistoricoOrders = React.useCallback(async () => {
+    const fetchHistoricoOrders = React.useCallback(async (forceFresh = false) => {
+        historicoAbortRef.current?.abort();
+        const controller = new AbortController();
+        historicoAbortRef.current = controller;
+
         setManualLoading(true);
         setManualError(null);
 
@@ -1261,18 +1344,19 @@ export default function Page() {
             u.searchParams.set("grupo", "historico");
             u.searchParams.set("page", String(manualPage));
             u.searchParams.set("per_page", String(manualPerPage));
-            u.searchParams.set("_ts", String(Date.now()));
 
-            if (manualQ.trim()) u.searchParams.set("q", manualQ.trim());
-            if (manualStatusFilter !== "todos") {
-                u.searchParams.set("status", manualStatusFilter);
+            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
+            if (manualAppliedQ.trim()) u.searchParams.set("q", manualAppliedQ.trim());
+            if (manualAppliedStatus !== "todos") {
+                u.searchParams.set("status", manualAppliedStatus);
             }
-            if (manualAfter) u.searchParams.set("after", manualAfter);
-            if (manualBefore) u.searchParams.set("before", manualBefore);
+            if (manualAppliedAfter) u.searchParams.set("after", manualAppliedAfter);
+            if (manualAppliedBefore) u.searchParams.set("before", manualAppliedBefore);
 
             const res = await fetch(u.toString(), {
-                cache: "no-store",
                 credentials: "include",
+                cache: forceFresh ? "no-cache" : "default",
+                signal: controller.signal,
             });
 
             const json: ManualListResponse = await res.json().catch(() => ({
@@ -1288,62 +1372,49 @@ export default function Page() {
             setManualTotal(Math.max(0, Number(json.meta?.total || 0)));
             setManualTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
         } catch (e: any) {
-            setManualHistoricoOrders([]);
-            setManualTotal(0);
-            setManualTotalPages(1);
+            if (e?.name === "AbortError") return;
             setManualError(e?.message || "Erro ao carregar pedidos manuais.");
         } finally {
-            setManualLoading(false);
+            if (historicoAbortRef.current === controller) {
+                historicoAbortRef.current = null;
+                setManualLoading(false);
+            }
         }
-    }, [manualPage, manualPerPage, manualQ, manualStatusFilter, manualAfter, manualBefore]);
+    }, [
+        manualPage,
+        manualPerPage,
+        manualAppliedQ,
+        manualAppliedStatus,
+        manualAppliedAfter,
+        manualAppliedBefore,
+        manualRefreshToken,
+    ]);
 
-    // Mantém compatibilidade com os pontos do fluxo que precisam atualizar
-    // as duas abas depois de criar pedido ou registrar ação.
-    const fetchManualOrders = React.useCallback(async () => {
-        await Promise.all([
-            fetchConfeccaoOrders(),
-            fetchHistoricoOrders(),
-        ]);
-    }, [fetchConfeccaoOrders, fetchHistoricoOrders]);
+    // Depois de uma alteração atualiza somente a lista que o usuário está vendo.
+    const fetchManualOrders = React.useCallback(async (forceFresh = false) => {
+        if (tab === "confeccao") {
+            await fetchConfeccaoOrders(forceFresh);
+        } else if (tab === "manuais") {
+            await fetchHistoricoOrders(forceFresh);
+        }
+    }, [tab, fetchConfeccaoOrders, fetchHistoricoOrders]);
 
-    // Busca apenas a aba que está visível. Pequeno debounce evita várias
-    // requisições enquanto o usuário digita um filtro.
     React.useEffect(() => {
         if (tab !== "confeccao") return;
-        const id = window.setTimeout(() => {
-            void fetchConfeccaoOrders();
-        }, 180);
-        return () => window.clearTimeout(id);
+        void fetchConfeccaoOrders();
     }, [tab, fetchConfeccaoOrders]);
 
     React.useEffect(() => {
         if (tab !== "manuais") return;
-        const id = window.setTimeout(() => {
-            void fetchHistoricoOrders();
-        }, 180);
-        return () => window.clearTimeout(id);
+        void fetchHistoricoOrders();
     }, [tab, fetchHistoricoOrders]);
 
     React.useEffect(() => {
-        const onFocus = () => {
-            if (tab === "confeccao") {
-                void fetchConfeccaoOrders();
-            } else if (tab === "manuais") {
-                void fetchHistoricoOrders();
-            }
+        return () => {
+            confeccaoAbortRef.current?.abort();
+            historicoAbortRef.current?.abort();
         };
-
-        window.addEventListener("focus", onFocus);
-        return () => window.removeEventListener("focus", onFocus);
-    }, [tab, fetchConfeccaoOrders, fetchHistoricoOrders]);
-
-    React.useEffect(() => {
-        setConfeccaoPage(1);
-    }, [confeccaoQ, confeccaoStatusFilter]);
-
-    React.useEffect(() => {
-        setManualPage(1);
-    }, [manualQ, manualStatusFilter, manualAfter, manualBefore, manualPerPage]);
+    }, []);
 
     /* -------------------------
        Manual: novo pedido
@@ -1511,9 +1582,11 @@ export default function Page() {
 
             setNewOpen(false);
             resetNewForm();
+
+            // Novo pedido pertence à Confecção. Não baixa o Histórico sem necessidade.
+            setTab("confeccao");
             setConfeccaoPage(1);
-            setManualPage(1);
-            await fetchManualOrders();
+            setConfeccaoRefreshToken((v) => v + 1);
 
             if (json?.notificacao_enviada === false) {
                 const erroPush =
@@ -1537,6 +1610,7 @@ export default function Page() {
     const [manualActionLoading, setManualActionLoading] = React.useState(false);
     const [manualDetailMsg, setManualDetailMsg] = React.useState<string | null>(null);
     const [manualCopied, setManualCopied] = React.useState(false);
+    const manualDetailAbortRef = React.useRef<AbortController | null>(null);
 
     const [finalizarOpen, setFinalizarOpen] = React.useState(false);
     const [finalizarFile, setFinalizarFile] = React.useState<File | null>(null);
@@ -1556,27 +1630,42 @@ export default function Page() {
         };
     }, [finalizarPreview]);
 
-    async function carregarManualDetail(id: number) {
+    async function carregarManualDetail(id: number, forceFresh = false) {
+        manualDetailAbortRef.current?.abort();
+        const controller = new AbortController();
+        manualDetailAbortRef.current = controller;
+
         setManualDetailLoading(true);
         setManualDetailMsg(null);
 
         try {
-            const res = await fetch(`${COROAS_API}?id=${encodeURIComponent(String(id))}&_ts=${Date.now()}`, {
-                cache: "no-store",
+            const u = new URL(COROAS_API, window.location.origin);
+            u.searchParams.set("id", String(id));
+            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
+
+            const res = await fetch(u.toString(), {
                 credentials: "include",
+                cache: forceFresh ? "no-cache" : "default",
+                signal: controller.signal,
             });
+
             const json = await res.json().catch(() => ({}));
             if (!res.ok || !json?.sucesso) {
                 throw new Error(json?.msg || "Não foi possível carregar o pedido.");
             }
+
             setManualDetail(json.dado as ManualOrder);
             return json.dado as ManualOrder;
         } catch (e: any) {
+            if (e?.name === "AbortError") return null;
             setManualDetail(null);
             setManualDetailMsg(e?.message || "Erro ao carregar pedido.");
             return null;
         } finally {
-            setManualDetailLoading(false);
+            if (manualDetailAbortRef.current === controller) {
+                manualDetailAbortRef.current = null;
+                setManualDetailLoading(false);
+            }
         }
     }
 
@@ -1626,8 +1715,8 @@ export default function Page() {
                 id: manualDetail.id,
                 status_pagamento: "pago",
             });
-            await carregarManualDetail(manualDetail.id);
-            await fetchManualOrders();
+            await carregarManualDetail(manualDetail.id, true);
+            await fetchManualOrders(true);
         } catch (e: any) {
             setManualDetailMsg(e?.message || "Não foi possível anexar o comprovante.");
         } finally {
@@ -1654,8 +1743,8 @@ export default function Page() {
                 status: target,
             });
 
-            await carregarManualDetail(manualDetail.id);
-            await fetchManualOrders();
+            await carregarManualDetail(manualDetail.id, true);
+            await fetchManualOrders(true);
 
             if (json?.notificacao_enviada === false) {
                 setManualDetailMsg(
@@ -1729,8 +1818,8 @@ export default function Page() {
             limparPreviewFinalizacao();
             setManualPanel(null);
 
-            await carregarManualDetail(manualDetail.id);
-            await fetchManualOrders();
+            await carregarManualDetail(manualDetail.id, true);
+            await fetchManualOrders(true);
 
             if (json?.notificacao_enviada === false) {
                 setManualDetailMsg(
@@ -1765,6 +1854,11 @@ export default function Page() {
     const [wcStatus, setWcStatus] = React.useState<"all" | WcOrder["status"]>("all");
     const [after, setAfter] = React.useState("");
     const [before, setBefore] = React.useState("");
+    const [onlineAppliedQ, setOnlineAppliedQ] = React.useState("");
+    const [onlineAppliedStatus, setOnlineAppliedStatus] = React.useState<"all" | WcOrder["status"]>("all");
+    const [onlineAppliedAfter, setOnlineAppliedAfter] = React.useState("");
+    const [onlineAppliedBefore, setOnlineAppliedBefore] = React.useState("");
+    const [onlineRefreshToken, setOnlineRefreshToken] = React.useState(0);
     const [page, setPage] = React.useState(1);
     const [perPage, setPerPage] = React.useState(20);
     const [orders, setOrders] = React.useState<WcOrder[]>([]);
@@ -1782,38 +1876,70 @@ export default function Page() {
     const [detailImage, setDetailImage] = React.useState<string | null>(null);
     const [copied, setCopied] = React.useState(false);
     const [updating, setUpdating] = React.useState(false);
+    const onlineAbortRef = React.useRef<AbortController | null>(null);
 
-    const fetchOrders = React.useCallback(async () => {
+    const fetchOrders = React.useCallback(async (forceFresh = false) => {
+        onlineAbortRef.current?.abort();
+        const controller = new AbortController();
+        onlineAbortRef.current = controller;
+
         setLoading(true);
         setError(null);
+
         try {
             const u = new URL("/api/wc/orders", window.location.origin);
             u.searchParams.set("page", String(page));
             u.searchParams.set("per_page", String(perPage));
-            if (q.trim()) u.searchParams.set("search", q.trim());
-            if (wcStatus !== "all") u.searchParams.set("status", wcStatus);
-            if (after) u.searchParams.set("after", new Date(after).toISOString());
-            if (before) {
-                const d = new Date(before);
+
+            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
+            if (onlineAppliedQ.trim()) u.searchParams.set("search", onlineAppliedQ.trim());
+            if (onlineAppliedStatus !== "all") u.searchParams.set("status", onlineAppliedStatus);
+            if (onlineAppliedAfter) {
+                u.searchParams.set("after", new Date(onlineAppliedAfter).toISOString());
+            }
+            if (onlineAppliedBefore) {
+                const d = new Date(onlineAppliedBefore);
                 d.setHours(23, 59, 59, 999);
                 u.searchParams.set("before", d.toISOString());
             }
-            const res = await fetch(u.toString(), { cache: "no-store" });
+
+            const res = await fetch(u.toString(), {
+                cache: forceFresh ? "no-cache" : "default",
+                signal: controller.signal,
+            });
+
             if (!res.ok) throw new Error(`Falha ao buscar pedidos (${res.status})`);
+
             const json: OrdersResponse = await res.json();
             setOrders(json.data);
             setMeta(json.meta);
         } catch (e: any) {
+            if (e?.name === "AbortError") return;
             setError(e?.message || "Erro ao carregar pedidos");
         } finally {
-            setLoading(false);
+            if (onlineAbortRef.current === controller) {
+                onlineAbortRef.current = null;
+                setLoading(false);
+            }
         }
-    }, [page, perPage, q, wcStatus, after, before]);
+    }, [
+        page,
+        perPage,
+        onlineAppliedQ,
+        onlineAppliedStatus,
+        onlineAppliedAfter,
+        onlineAppliedBefore,
+        onlineRefreshToken,
+    ]);
 
     React.useEffect(() => {
         if (tab !== "online") return;
-        fetchOrders();
-    }, [tab, page, perPage, fetchOrders]);
+        void fetchOrders();
+    }, [tab, fetchOrders]);
+
+    React.useEffect(() => {
+        return () => onlineAbortRef.current?.abort();
+    }, []);
 
     async function openDetail(id: number) {
         setDetail(null);
@@ -1822,7 +1948,7 @@ export default function Page() {
         setOpen(true);
         setDetailLoading(true);
         try {
-            const res = await fetch(`/api/wc/orders/${id}`, { cache: "no-store" });
+            const res = await fetch(`/api/wc/orders/${id}`, { cache: "default" });
             if (!res.ok) throw new Error(`Falha ao carregar pedido #${id}`);
             const data: WcOrderFull = await res.json();
             setDetail(data);
@@ -1836,7 +1962,7 @@ export default function Page() {
                 if (pid) {
                     try {
                         const url = vid ? `/api/wc/products/${pid}/variations/${vid}` : `/api/wc/products/${pid}`;
-                        const pr = await fetch(url, { cache: "no-store" });
+                        const pr = await fetch(url, { cache: "default" });
                         if (pr.ok) {
                             const prod = await pr.json();
                             const src: string | undefined = prod?.image?.src || prod?.images?.[0]?.src;
@@ -1874,7 +2000,7 @@ export default function Page() {
                 const msg = await res.text();
                 throw new Error(msg || "Falha ao atualizar status");
             }
-            await fetchOrders();
+            await fetchOrders(true);
             if (detail?.id === id) await openDetail(id);
         } catch (e: any) {
             alert(e?.message || "Não foi possível atualizar o status.");
@@ -1885,7 +2011,7 @@ export default function Page() {
 
     async function notifyWhatsApp(orderId: number) {
         try {
-            const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "no-store" });
+            const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "default" });
             if (!res.ok) throw new Error(`Falha ao carregar o pedido #${orderId}`);
             const full: WcOrderFull = await res.json();
             await shareOrOpenWhatsApp(buildWhatsAppText(full));
@@ -1997,8 +2123,10 @@ export default function Page() {
                         className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3 lg:mx-6"
                         onSubmit={(e) => {
                             e.preventDefault();
+                            setConfeccaoAppliedQ(confeccaoQ.trim());
+                            setConfeccaoAppliedStatus(confeccaoStatusFilter);
                             setConfeccaoPage(1);
-                            void fetchConfeccaoOrders();
+                            setConfeccaoRefreshToken((v) => v + 1);
                         }}
                     >
                         <div className="sm:col-span-2">
@@ -2036,7 +2164,7 @@ export default function Page() {
                     {/* Confecção mobile */}
                     <div className="px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
-                            {confeccaoOrders.map((o) => (
+                            {(!isDesktop ? confeccaoOrders : []).map((o) => (
                                 <div key={o.id} className="rounded-lg border bg-card p-3">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0">
@@ -2101,7 +2229,7 @@ export default function Page() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {confeccaoOrders.map((o) => (
+                                        {(isDesktop ? confeccaoOrders : []).map((o) => (
                                             <tr key={o.id} className="border-t">
                                                 <td className="px-3 py-2">
                                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
@@ -2185,8 +2313,12 @@ export default function Page() {
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
+                            setManualAppliedQ(manualQ.trim());
+                            setManualAppliedStatus(manualStatusFilter);
+                            setManualAppliedAfter(manualAfter);
+                            setManualAppliedBefore(manualBefore);
                             setManualPage(1);
-                            void fetchHistoricoOrders();
+                            setManualRefreshToken((v) => v + 1);
                         }}
                         className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
                     >
@@ -2249,7 +2381,12 @@ export default function Page() {
                                     setManualStatusFilter("todos");
                                     setManualAfter("");
                                     setManualBefore("");
+                                    setManualAppliedQ("");
+                                    setManualAppliedStatus("todos");
+                                    setManualAppliedAfter("");
+                                    setManualAppliedBefore("");
                                     setManualPage(1);
+                                    setManualRefreshToken((v) => v + 1);
                                 }}
                             >
                                 Limpar
@@ -2260,7 +2397,7 @@ export default function Page() {
                     {/* Manual histórico mobile */}
                     <div className="px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
-                            {manualHistoricoOrders.map((o) => (
+                            {(!isDesktop ? manualHistoricoOrders : []).map((o) => (
                                 <div key={o.id} className="rounded-lg border bg-card p-3">
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="text-xs text-muted-foreground">
@@ -2316,7 +2453,7 @@ export default function Page() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {manualHistoricoOrders.map((o) => (
+                                        {(isDesktop ? manualHistoricoOrders : []).map((o) => (
                                             <tr key={o.id} className="border-t">
                                                 <td className="px-3 py-2">{o.id}</td>
                                                 <td className="px-3 py-2">{formatDate(o.criado_em)}</td>
@@ -2400,8 +2537,12 @@ export default function Page() {
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
+                            setOnlineAppliedQ(q.trim());
+                            setOnlineAppliedStatus(wcStatus);
+                            setOnlineAppliedAfter(after);
+                            setOnlineAppliedBefore(before);
                             setPage(1);
-                            fetchOrders();
+                            setOnlineRefreshToken((v) => v + 1);
                         }}
                         className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
                     >
@@ -2466,7 +2607,12 @@ export default function Page() {
                                     setWcStatus("all");
                                     setAfter("");
                                     setBefore("");
+                                    setOnlineAppliedQ("");
+                                    setOnlineAppliedStatus("all");
+                                    setOnlineAppliedAfter("");
+                                    setOnlineAppliedBefore("");
                                     setPage(1);
+                                    setOnlineRefreshToken((v) => v + 1);
                                 }}
                             >
                                 Limpar
@@ -2477,7 +2623,7 @@ export default function Page() {
                     {/* Online mobile */}
                     <div className="px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
-                            {orders.map((o) => {
+                            {(!isDesktop ? orders : []).map((o) => {
                                 const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                                 const disabled = !canNotifyRow(o);
                                 return (
@@ -2536,7 +2682,7 @@ export default function Page() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {orders.map((o) => {
+                                        {(isDesktop ? orders : []).map((o) => {
                                             const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
                                             const disabled = !canNotifyRow(o);
                                             return (
@@ -2871,7 +3017,7 @@ export default function Page() {
                                         <button
                                             type="button"
                                             className="ml-2 underline underline-offset-2"
-                                            onClick={() => void carregarFalecidosQuadro()}
+                                            onClick={() => void carregarFalecidosQuadro(true)}
                                         >
                                             Tentar novamente
                                         </button>
@@ -2977,7 +3123,7 @@ export default function Page() {
                                 <button
                                     type="button"
                                     className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted"
-                                    onClick={() => void carregarModelosCoroa()}
+                                    onClick={() => void carregarModelosCoroa(true)}
                                     disabled={modeloLoading}
                                 >
                                     <IconRefresh className={`size-3.5 ${modeloLoading ? "animate-spin" : ""}`} />
@@ -3531,7 +3677,7 @@ export default function Page() {
                                 )}
                                 <div className="rounded-lg border p-3 text-sm leading-6">
                                     <div><b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}</div>
-                                    <div><b>Origem:</b> Loja-Online</div>
+                                    <div><b>Origem:</b> Loja On-line</div>
                                     <div><b>Cliente:</b> {(detail.billing?.first_name || "") + " " + (detail.billing?.last_name || "")}</div>
                                     <div><b>Telefone:</b> {detail.billing?.phone || "—"}</div>
                                     <div><b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}</div>
