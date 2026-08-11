@@ -173,11 +173,6 @@ const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
     { value: "venda_direta_memorial", label: "Venda Direta Memorial" },
 ];
 
-const PAGAMENTO_OPTIONS: Array<{ value: ManualPagamento; label: string }> = [
-    { value: "pago", label: "Pago" },
-    { value: "aguardando_pagamento", label: "Aguardando Pagamento" },
-];
-
 type FraseSugerida = { numero: number; texto: string };
 
 const FRASES_SUGERIDAS: FraseSugerida[] = [
@@ -254,16 +249,6 @@ function manualStatusClass(status?: ManualStatus | string) {
         default:
             return "bg-muted text-foreground border-border";
     }
-}
-
-function pagamentoLabel(v?: ManualPagamento | string) {
-    return PAGAMENTO_OPTIONS.find((x) => x.value === v)?.label || v || "—";
-}
-
-function pagamentoClass(v?: ManualPagamento | string) {
-    return v === "pago"
-        ? "bg-emerald-100 text-emerald-900 border-emerald-200"
-        : "bg-amber-100 text-amber-900 border-amber-200";
 }
 
 function origemLabel(v?: ManualOrigem | string) {
@@ -449,37 +434,98 @@ function totalManual(order?: ManualOrder | null) {
     return itensManual(order).reduce((acc, item) => acc + (Number(item.valor) || 0), 0);
 }
 
-function buildManualPedidoText(order: ManualOrder) {
-    const NL = "\r\n";
-    const linhas = [
-        `*Pedido:* #${order.id}`,
-        `*Origem:* ${origemLabel(order.origem)}`,
-        `*Cliente:* ${order.solicitante || "—"}`,
-        `*Telefone:* ${order.telefone || "—"}`,
-        `*Local de Entrega:* ${order.local_entrega || "—"}`,
-        `*Falecido(a):* ${order.falecido || "—"}`,
-        `*Quantidade:* ${quantidadeManual(order)} ${quantidadeManual(order) === 1 ? "coroa" : "coroas"}`,
-    ];
+function pedidoModelosManual(order?: ManualOrder | null) {
+    const nomes = itensManual(order)
+        .map((item) => String(item.modelo_coroa || "").trim())
+        .filter(Boolean);
+    return nomes.length ? nomes.join(", ") : "—";
+}
 
-    itensManual(order).forEach((item, index) => {
-        linhas.push("");
-        linhas.push(`*Coroa ${item.ordem || index + 1}:* ${item.modelo_coroa || "—"}`);
-        linhas.push(`*Frase:* ${item.frase || "—"}`);
-        if (item.valor != null && Number(item.valor) > 0) {
-            linhas.push(`*Valor:* ${dinheiroBRL(item.valor)}`);
-        }
-    });
+function pedidoFrasesManual(order?: ManualOrder | null) {
+    const itens = itensManual(order);
+    if (!itens.length) return "—";
+    if (itens.length === 1) return itens[0]?.frase || "—";
 
-    const total = totalManual(order);
-    if (total > 0) {
-        linhas.push("");
-        linhas.push(`*Total:* ${dinheiroBRL(total)}`);
+    return itens
+        .map((item, index) => `${item.ordem || index + 1}) ${item.frase || "—"}`)
+        .join(" | ");
+}
+
+function pagamentoAutomaticoManual(order?: ManualOrder | null) {
+    return order?.comprovante_url ? "Pago" : "Aguardando Comprovante";
+}
+
+function pagamentoAutomaticoClass(order?: ManualOrder | null) {
+    return order?.comprovante_url
+        ? "bg-emerald-100 text-emerald-900 border-emerald-200"
+        : "bg-amber-100 text-amber-900 border-amber-200";
+}
+
+function manualMatchesQuery(order: ManualOrder, query: string) {
+    const q = normalizarTextoEstoque(query);
+    if (!q) return true;
+
+    const haystack = [
+        order.id,
+        order.solicitante,
+        order.telefone,
+        order.local_entrega,
+        order.falecido,
+        origemLabel(order.origem),
+        ...itensManual(order).flatMap((item) => [item.modelo_coroa, item.frase]),
+    ]
+        .map((v) => normalizarTextoEstoque(String(v ?? "")))
+        .join(" ");
+
+    return haystack.includes(q);
+}
+
+function manualDateInRange(order: ManualOrder, after: string, before: string) {
+    if (!after && !before) return true;
+    const raw = String(order.criado_em || "").trim();
+    if (!raw) return false;
+
+    const dt = new Date(raw.replace(" ", "T"));
+    if (Number.isNaN(dt.getTime())) return false;
+
+    if (after) {
+        const inicio = new Date(`${after}T00:00:00`);
+        if (dt < inicio) return false;
     }
 
-    linhas.push("");
-    linhas.push(`*Pagamento:* ${pagamentoLabel(order.status_pagamento)}`);
+    if (before) {
+        const fim = new Date(`${before}T23:59:59.999`);
+        if (dt > fim) return false;
+    }
 
-    return linhas.join(NL);
+    return true;
+}
+
+function buildManualPedidoText(order: ManualOrder) {
+    const NL = "\r\n";
+    const ZWSP = "\u200B";
+    const total = totalManual(order);
+
+    // Mesma ordem/estrutura usada no pedido online.
+    const rawLines = [
+        `*Pedido:* ${pedidoModelosManual(order)}`,
+        `*Origem:* ${origemLabel(order.origem)}`,
+        `*Cliente:* ${order.solicitante || "—"}`,
+        `*Telefone:* ${onlyDigits(order.telefone) || order.telefone || "—"}`,
+        `*Valor:* ${total > 0 ? dinheiroBRL(total) : "—"}`,
+        `*Local de Entrega:* ${order.local_entrega || "—"}`,
+        `*Falecido(a):* ${order.falecido || "—"}`,
+        `*Frase da Coroa:* ${pedidoFrasesManual(order)}`,
+        `*Comprovante de pagamento:*`,
+    ];
+
+    const out: string[] = [];
+    rawLines.forEach((line, index) => {
+        out.push(line.trimStart());
+        if (index < rawLines.length - 1) out.push(ZWSP);
+    });
+
+    return out.join(NL);
 }
 
 function comprovanteEhPdf(order?: ManualOrder | null) {
@@ -908,7 +954,7 @@ async function shareImageUrl(imageUrl: string) {
    PÁGINA
    ========================================================= */
 export default function Page() {
-    const [tab, setTab] = React.useState<"manuais" | "online">("manuais");
+    const [tab, setTab] = React.useState<"confeccao" | "manuais" | "online">("confeccao");
 
     /* -------------------------
        Falecidos no quadro
@@ -1097,44 +1143,119 @@ export default function Page() {
     }
 
     /* -------------------------
-       Manual: lista/filtros
+       Manual: dados / Confecção / Histórico
        ------------------------- */
     const [manualOrders, setManualOrders] = React.useState<ManualOrder[]>([]);
     const [manualLoading, setManualLoading] = React.useState(false);
     const [manualError, setManualError] = React.useState<string | null>(null);
+
+    // Confecção: novo, coroa e faixa.
+    const [confeccaoQ, setConfeccaoQ] = React.useState("");
+    const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
+    const [confeccaoPage, setConfeccaoPage] = React.useState(1);
+    const confeccaoPerPage = 30;
+
+    // Pedidos Manuais: histórico a partir de Finalizada.
     const [manualQ, setManualQ] = React.useState("");
-    const [manualStatusFilter, setManualStatusFilter] = React.useState<ManualStatus | "todos">("todos");
+    const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "finalizada" | "entregue">("todos");
+    const [manualAfter, setManualAfter] = React.useState("");
+    const [manualBefore, setManualBefore] = React.useState("");
     const [manualPage, setManualPage] = React.useState(1);
-    const [manualMeta, setManualMeta] = React.useState({ page: 1, per_page: 30, total: 0, total_pages: 1 });
+    const [manualPerPage, setManualPerPage] = React.useState(20);
 
     const fetchManualOrders = React.useCallback(async () => {
         setManualLoading(true);
         setManualError(null);
-        try {
-            const u = new URL(COROAS_API, window.location.origin);
-            u.searchParams.set("listar", "1");
-            u.searchParams.set("page", String(manualPage));
-            u.searchParams.set("per_page", "30");
-            if (manualQ.trim()) u.searchParams.set("q", manualQ.trim());
-            if (manualStatusFilter !== "todos") u.searchParams.set("status", manualStatusFilter);
-            u.searchParams.set("_ts", String(Date.now()));
 
-            const res = await fetch(u.toString(), { cache: "no-store", credentials: "include" });
-            const json: ManualListResponse = await res.json().catch(() => ({ sucesso: false, dados: [] }));
-            if (!res.ok || !json?.sucesso) throw new Error(json?.msg || `Falha ao carregar pedidos (${res.status}).`);
-            setManualOrders(Array.isArray(json.dados) ? json.dados : []);
-            if (json.meta) setManualMeta(json.meta);
+        try {
+            const todos: ManualOrder[] = [];
+            let pagina = 1;
+            let totalPages = 1;
+
+            do {
+                const u = new URL(COROAS_API, window.location.origin);
+                u.searchParams.set("listar", "1");
+                u.searchParams.set("page", String(pagina));
+                u.searchParams.set("per_page", "100");
+                u.searchParams.set("_ts", String(Date.now()));
+
+                const res = await fetch(u.toString(), {
+                    cache: "no-store",
+                    credentials: "include",
+                });
+                const json: ManualListResponse = await res.json().catch(() => ({ sucesso: false, dados: [] }));
+
+                if (!res.ok || !json?.sucesso) {
+                    throw new Error(json?.msg || `Falha ao carregar pedidos (${res.status}).`);
+                }
+
+                todos.push(...(Array.isArray(json.dados) ? json.dados : []));
+                totalPages = Math.max(1, Number(json.meta?.total_pages || 1));
+                pagina += 1;
+            } while (pagina <= totalPages && pagina <= 500);
+
+            // Evita duplicados e mantém os mais recentes primeiro.
+            const unicos = Array.from(new Map(todos.map((pedido) => [Number(pedido.id), pedido])).values())
+                .sort((a, b) => Number(b.id) - Number(a.id));
+
+            setManualOrders(unicos);
         } catch (e: any) {
+            setManualOrders([]);
             setManualError(e?.message || "Erro ao carregar pedidos manuais.");
         } finally {
             setManualLoading(false);
         }
-    }, [manualPage, manualQ, manualStatusFilter]);
+    }, []);
 
     React.useEffect(() => {
-        if (tab !== "manuais") return;
-        fetchManualOrders();
-    }, [tab, manualPage, fetchManualOrders]);
+        if (tab === "online") return;
+        void fetchManualOrders();
+    }, [tab, fetchManualOrders]);
+
+    React.useEffect(() => {
+        const onFocus = () => {
+            if (tab !== "online") void fetchManualOrders();
+        };
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
+    }, [tab, fetchManualOrders]);
+
+    const confeccaoFiltrada = React.useMemo(() => {
+        return manualOrders
+            .filter((pedido) => ["novo", "coroa", "faixa"].includes(pedido.status))
+            .filter((pedido) => confeccaoStatusFilter === "todos" || pedido.status === confeccaoStatusFilter)
+            .filter((pedido) => manualMatchesQuery(pedido, confeccaoQ));
+    }, [manualOrders, confeccaoStatusFilter, confeccaoQ]);
+
+    const confeccaoTotalPages = Math.max(1, Math.ceil(confeccaoFiltrada.length / confeccaoPerPage));
+    const confeccaoOrders = React.useMemo(() => {
+        const page = Math.min(confeccaoPage, confeccaoTotalPages);
+        const inicio = (page - 1) * confeccaoPerPage;
+        return confeccaoFiltrada.slice(inicio, inicio + confeccaoPerPage);
+    }, [confeccaoFiltrada, confeccaoPage, confeccaoTotalPages]);
+
+    const manualHistoricoFiltrado = React.useMemo(() => {
+        return manualOrders
+            .filter((pedido) => pedido.status === "finalizada" || pedido.status === "entregue")
+            .filter((pedido) => manualStatusFilter === "todos" || pedido.status === manualStatusFilter)
+            .filter((pedido) => manualMatchesQuery(pedido, manualQ))
+            .filter((pedido) => manualDateInRange(pedido, manualAfter, manualBefore));
+    }, [manualOrders, manualStatusFilter, manualQ, manualAfter, manualBefore]);
+
+    const manualTotalPages = Math.max(1, Math.ceil(manualHistoricoFiltrado.length / manualPerPage));
+    const manualHistoricoOrders = React.useMemo(() => {
+        const page = Math.min(manualPage, manualTotalPages);
+        const inicio = (page - 1) * manualPerPage;
+        return manualHistoricoFiltrado.slice(inicio, inicio + manualPerPage);
+    }, [manualHistoricoFiltrado, manualPage, manualPerPage, manualTotalPages]);
+
+    React.useEffect(() => {
+        setConfeccaoPage(1);
+    }, [confeccaoQ, confeccaoStatusFilter]);
+
+    React.useEffect(() => {
+        setManualPage(1);
+    }, [manualQ, manualStatusFilter, manualAfter, manualBefore, manualPerPage]);
 
     /* -------------------------
        Manual: novo pedido
@@ -1151,7 +1272,6 @@ export default function Page() {
         telefone: "",
         local_entrega: "",
         falecido: "",
-        status_pagamento: "aguardando_pagamento" as ManualPagamento,
         origem: "ordem_servico" as ManualOrigem,
     });
 
@@ -1161,7 +1281,6 @@ export default function Page() {
             telefone: "",
             local_entrega: "",
             falecido: "",
-            status_pagamento: "aguardando_pagamento",
             origem: "ordem_servico",
         });
         setQuantidadeCoroas(1);
@@ -1276,7 +1395,7 @@ export default function Page() {
                 })),
                 falecido: newForm.falecido.trim(),
                 falecido_atendimento_id: match?.id ? Number(match.id) || null : null,
-                status_pagamento: newForm.status_pagamento,
+                status_pagamento: newComprovante ? "pago" : "aguardando_pagamento",
                 origem: newForm.origem,
                 ...(newComprovante
                     ? {
@@ -1403,6 +1522,11 @@ export default function Page() {
                 comprovante_nome: file.name,
                 comprovante_mime: file.type || "",
             });
+            await postManual({
+                acao: "atualizar_pagamento",
+                id: manualDetail.id,
+                status_pagamento: "pago",
+            });
             await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
         } catch (e: any) {
@@ -1412,25 +1536,6 @@ export default function Page() {
         }
     }
 
-    async function atualizarPagamentoManual(status_pagamento: ManualPagamento) {
-        if (!manualDetail) return;
-        setManualActionLoading(true);
-        setManualDetailMsg(null);
-
-        try {
-            await postManual({
-                acao: "atualizar_pagamento",
-                id: manualDetail.id,
-                status_pagamento,
-            });
-            await carregarManualDetail(manualDetail.id);
-            await fetchManualOrders();
-        } catch (e: any) {
-            setManualDetailMsg(e?.message || "Não foi possível atualizar o pagamento.");
-        } finally {
-            setManualActionLoading(false);
-        }
-    }
 
     function rankStatusManual(status: ManualStatus) {
         const rank: Record<ManualStatus, number> = {
@@ -1529,6 +1634,7 @@ export default function Page() {
             setFinalizarOpen(false);
             setFinalizarFile(null);
             limparPreviewFinalizacao();
+            setManualPanel(null);
 
             await carregarManualDetail(manualDetail.id);
             await fetchManualOrders();
@@ -1728,41 +1834,41 @@ export default function Page() {
 
             {/* Cabeçalho */}
             <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h1 className="text-xl font-semibold">Pedidos — Coroas de Flores</h1>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {tab === "manuais" && (
-                            <button
-                                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
-                                onClick={() => {
-                                    resetNewForm();
-                                    void carregarFalecidosQuadro();
-                                    setNewOpen(true);
-                                }}
-                            >
-                                <IconPlus className="size-4" />
-                                NOVO
-                            </button>
-                        )}
-                        <button
-                            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-                            onClick={() => (tab === "manuais" ? fetchManualOrders() : fetchOrders())}
-                            disabled={tab === "manuais" ? manualLoading : loading}
-                            title="Recarregar"
-                        >
-                            <IconRefresh className="size-4" />
-                            Atualizar
-                        </button>
-                    </div>
-                </div>
+                <div className="flex items-center justify-between gap-3">
+                    <h1 className="min-w-0 text-xl font-semibold">Pedidos — Coroas de Flores</h1>
 
-                {/* Abas */}
-                <div className="inline-flex w-fit rounded-lg border bg-muted/30 p-1">
+                    <button
+                        className="inline-flex shrink-0 items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
+                        onClick={() => {
+                            resetNewForm();
+                            void carregarFalecidosQuadro();
+                            setNewOpen(true);
+                        }}
+                    >
+                        <IconPlus className="size-4" />
+                        NOVO
+                    </button>
+                </div>
+            </div>
+
+            {/* Abas — sempre em uma única linha, igualmente divididas */}
+            <div className="px-4 pb-3 lg:px-6">
+                <div className="grid w-full grid-cols-3 gap-1 rounded-lg border bg-muted/30 p-1">
                     <button
                         type="button"
-                        className={`rounded-md px-4 py-2 text-sm font-medium ${tab === "manuais" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "confeccao"
+                            ? "bg-background shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                            }`}
+                        onClick={() => setTab("confeccao")}
+                    >
+                        Confecção
+                    </button>
+                    <button
+                        type="button"
+                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "manuais"
+                            ? "bg-background shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
                             }`}
                         onClick={() => setTab("manuais")}
                     >
@@ -1770,7 +1876,9 @@ export default function Page() {
                     </button>
                     <button
                         type="button"
-                        className={`rounded-md px-4 py-2 text-sm font-medium ${tab === "online" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "online"
+                            ? "bg-background shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
                             }`}
                         onClick={() => setTab("online")}
                     >
@@ -1779,15 +1887,16 @@ export default function Page() {
                 </div>
             </div>
 
-            {tab === "manuais" ? (
+            {/* =====================================================
+                CONFECÇÃO — somente pedidos ainda em produção
+                ===================================================== */}
+            {tab === "confeccao" && (
                 <>
-                    {/* Filtros manual */}
                     <form
                         className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3 lg:mx-6"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            setManualPage(1);
-                            fetchManualOrders();
+                            setConfeccaoPage(1);
                         }}
                     >
                         <div className="sm:col-span-2">
@@ -1795,8 +1904,8 @@ export default function Page() {
                             <div className="relative">
                                 <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
                                 <input
-                                    value={manualQ}
-                                    onChange={(e) => setManualQ(e.target.value)}
+                                    value={confeccaoQ}
+                                    onChange={(e) => setConfeccaoQ(e.target.value)}
                                     className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
                                     placeholder="Solicitante, falecido, modelo..."
                                 />
@@ -1806,15 +1915,14 @@ export default function Page() {
                             <label className="mb-1 block text-xs font-medium">Status</label>
                             <div className="flex gap-2">
                                 <select
-                                    value={manualStatusFilter}
-                                    onChange={(e) => setManualStatusFilter(e.target.value as ManualStatus | "todos")}
+                                    value={confeccaoStatusFilter}
+                                    onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa")}
                                     className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
                                 >
-                                    {MANUAL_STATUS_OPTIONS.map((s) => (
-                                        <option key={s.value} value={s.value}>
-                                            {s.label}
-                                        </option>
-                                    ))}
+                                    <option value="todos">Todos</option>
+                                    <option value="novo">Aguardando Confecção</option>
+                                    <option value="coroa">Coroa em Confecção</option>
+                                    <option value="faixa">Faixa em Confecção</option>
                                 </select>
                                 <button type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">
                                     Buscar
@@ -1823,17 +1931,17 @@ export default function Page() {
                         </div>
                     </form>
 
-                    {/* Manual mobile */}
+                    {/* Confecção mobile */}
                     <div className="px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
-                            {manualOrders.map((o) => (
+                            {confeccaoOrders.map((o) => (
                                 <div key={o.id} className="rounded-lg border bg-card p-3">
                                     <div className="flex items-start justify-between gap-2">
-                                        <div>
+                                        <div className="min-w-0">
                                             <div className="font-medium">{o.solicitante}</div>
                                             <div className="mt-1 text-xs text-muted-foreground">{o.falecido}</div>
                                         </div>
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
+                                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
                                             {manualStatusLabel(o.status)}
                                         </span>
                                     </div>
@@ -1841,8 +1949,8 @@ export default function Page() {
                                         {quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"} • {resumoModelosManual(o)}
                                     </div>
                                     <div className="mt-2 flex flex-wrap gap-2">
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoClass(o.status_pagamento)}`}>
-                                            {pagamentoLabel(o.status_pagamento)}
+                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
+                                            {pagamentoAutomaticoManual(o)}
                                         </span>
                                         <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemLabel(o.origem)}</span>
                                     </div>
@@ -1863,15 +1971,18 @@ export default function Page() {
                                     </div>
                                 </div>
                             ))}
-                            {!manualLoading && manualOrders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido manual encontrado.</div>
+
+                            {!manualLoading && confeccaoOrders.length === 0 && (
+                                <div className="py-6 text-center text-sm text-muted-foreground">
+                                    Nenhum pedido em confecção.
+                                </div>
                             )}
                             {manualLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando…</div>}
                             {manualError && <div className="text-sm text-rose-600">{manualError}</div>}
                         </div>
                     </div>
 
-                    {/* Manual desktop */}
+                    {/* Confecção desktop */}
                     <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
                         <div className="overflow-hidden rounded-lg border bg-card">
                             <div className="overflow-x-auto">
@@ -1888,7 +1999,7 @@ export default function Page() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {manualOrders.map((o) => (
+                                        {confeccaoOrders.map((o) => (
                                             <tr key={o.id} className="border-t">
                                                 <td className="px-3 py-2">
                                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
@@ -1902,8 +2013,8 @@ export default function Page() {
                                                     <div className="mt-0.5 text-xs text-muted-foreground">{resumoModelosManual(o)}</div>
                                                 </td>
                                                 <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoClass(o.status_pagamento)}`}>
-                                                        {pagamentoLabel(o.status_pagamento)}
+                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
+                                                        {pagamentoAutomaticoManual(o)}
                                                     </span>
                                                 </td>
                                                 <td className="px-3 py-2">{origemLabel(o.origem)}</td>
@@ -1919,17 +2030,16 @@ export default function Page() {
                                                             className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
                                                             onClick={() => openManualView(o.id)}
                                                         >
-                                                            <IconEye className="size-4" />
-                                                            Ver
+                                                            <IconEye className="size-4" /> Ver
                                                         </button>
                                                     </div>
                                                 </td>
                                             </tr>
                                         ))}
-                                        {!manualLoading && manualOrders.length === 0 && (
+                                        {!manualLoading && confeccaoOrders.length === 0 && (
                                             <tr>
                                                 <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido manual encontrado.
+                                                    Nenhum pedido em confecção.
                                                 </td>
                                             </tr>
                                         )}
@@ -1940,20 +2050,20 @@ export default function Page() {
                             </div>
                             <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
                                 <div>
-                                    Página {manualMeta.page} de {Math.max(1, manualMeta.total_pages)} — {manualMeta.total} pedidos
+                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoFiltrada.length} pedidos
                                 </div>
                                 <div className="flex gap-2">
                                     <button
                                         className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={manualPage <= 1 || manualLoading}
-                                        onClick={() => setManualPage((p) => Math.max(1, p - 1))}
+                                        disabled={confeccaoPage <= 1 || manualLoading}
+                                        onClick={() => setConfeccaoPage((p) => Math.max(1, p - 1))}
                                     >
                                         Anterior
                                     </button>
                                     <button
                                         className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={manualPage >= manualMeta.total_pages || manualLoading}
-                                        onClick={() => setManualPage((p) => p + 1)}
+                                        disabled={confeccaoPage >= confeccaoTotalPages || manualLoading}
+                                        onClick={() => setConfeccaoPage((p) => Math.min(confeccaoTotalPages, p + 1))}
                                     >
                                         Próxima
                                     </button>
@@ -1962,7 +2072,226 @@ export default function Page() {
                         </div>
                     </div>
                 </>
-            ) : (
+            )}
+
+            {/* =====================================================
+                PEDIDOS MANUAIS — finalizados/entregues, sem Ações
+                ===================================================== */}
+            {tab === "manuais" && (
+                <>
+                    {/* Mesmos filtros do Online */}
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            setManualPage(1);
+                        }}
+                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
+                    >
+                        <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+                            <label className="mb-1 block text-xs font-medium">Buscar</label>
+                            <div className="relative">
+                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
+                                <input
+                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
+                                    placeholder="Solicitante, falecido, modelo, nº do pedido..."
+                                    value={manualQ}
+                                    onChange={(e) => setManualQ(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-medium">Status</label>
+                            <select
+                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                value={manualStatusFilter}
+                                onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "finalizada" | "entregue")}
+                            >
+                                <option value="todos">Todos</option>
+                                <option value="finalizada">Finalizada</option>
+                                <option value="entregue">Entregue</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-medium">De</label>
+                            <input
+                                type="date"
+                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                value={manualAfter}
+                                onChange={(e) => setManualAfter(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-medium">Até</label>
+                            <input
+                                type="date"
+                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                value={manualBefore}
+                                onChange={(e) => setManualBefore(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                type="submit"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                                disabled={manualLoading}
+                            >
+                                <IconSearch className="size-4" />
+                                Buscar
+                            </button>
+                            <button
+                                type="button"
+                                className="inline-flex w-full items-center justify-center rounded-md border px-3 py-2 text-sm"
+                                onClick={() => {
+                                    setManualQ("");
+                                    setManualStatusFilter("todos");
+                                    setManualAfter("");
+                                    setManualBefore("");
+                                    setManualPage(1);
+                                }}
+                            >
+                                Limpar
+                            </button>
+                        </div>
+                    </form>
+
+                    {/* Manual histórico mobile */}
+                    <div className="px-4 pb-6 md:hidden lg:px-6">
+                        <div className="space-y-3">
+                            {manualHistoricoOrders.map((o) => (
+                                <div key={o.id} className="rounded-lg border bg-card p-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="text-xs text-muted-foreground">
+                                            Nº <b>{o.id}</b> • {formatDate(o.criado_em)}
+                                        </div>
+                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
+                                            {manualStatusLabel(o.status)}
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 text-sm">
+                                        <div className="font-medium">{o.solicitante || "—"}</div>
+                                        <div className="mt-1 text-muted-foreground">
+                                            {totalManual(o) > 0 ? dinheiroBRL(totalManual(o)) : "—"}
+                                        </div>
+                                    </div>
+                                    <div className="mt-2">
+                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
+                                            {pagamentoAutomaticoManual(o)}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3">
+                                        <button
+                                            className="inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
+                                            onClick={() => openManualView(o.id)}
+                                        >
+                                            <IconEye className="size-4" /> Ver
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {!manualLoading && manualHistoricoOrders.length === 0 && (
+                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido manual encontrado.</div>
+                            )}
+                            {manualLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
+                            {manualError && <div className="text-sm text-rose-600">{manualError}</div>}
+                        </div>
+                    </div>
+
+                    {/* Manual histórico desktop — padrão semelhante ao Online */}
+                    <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
+                        <div className="overflow-hidden rounded-lg border bg-card">
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full text-sm">
+                                    <thead className="bg-muted/50 text-left">
+                                        <tr>
+                                            <th className="px-3 py-2 font-medium">Nº</th>
+                                            <th className="px-3 py-2 font-medium">Data</th>
+                                            <th className="px-3 py-2 font-medium">Cliente</th>
+                                            <th className="px-3 py-2 font-medium">Total</th>
+                                            <th className="px-3 py-2 font-medium">Pagamento</th>
+                                            <th className="px-3 py-2 font-medium">Status</th>
+                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {manualHistoricoOrders.map((o) => (
+                                            <tr key={o.id} className="border-t">
+                                                <td className="px-3 py-2">{o.id}</td>
+                                                <td className="px-3 py-2">{formatDate(o.criado_em)}</td>
+                                                <td className="px-3 py-2">{o.solicitante || "—"}</td>
+                                                <td className="px-3 py-2">{totalManual(o) > 0 ? dinheiroBRL(totalManual(o)) : "—"}</td>
+                                                <td className="px-3 py-2">
+                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
+                                                        {pagamentoAutomaticoManual(o)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
+                                                        {manualStatusLabel(o.status)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <div className="flex justify-end">
+                                                        <button
+                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
+                                                            onClick={() => openManualView(o.id)}
+                                                        >
+                                                            <IconEye className="size-4" /> Ver
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {!manualLoading && manualHistoricoOrders.length === 0 && (
+                                            <tr>
+                                                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                                                    Nenhum pedido manual encontrado.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                                {manualLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
+                                {manualError && <div className="px-3 pb-3 text-sm text-rose-600">{manualError}</div>}
+                            </div>
+                            <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
+                                <div className="text-xs text-muted-foreground">
+                                    Página {Math.min(manualPage, manualTotalPages)} de {manualTotalPages} — {manualHistoricoFiltrado.length} pedidos
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                                        onClick={() => setManualPage((p) => Math.max(1, p - 1))}
+                                        disabled={manualPage <= 1 || manualLoading}
+                                    >
+                                        <IconChevronLeft className="size-4" /> Anterior
+                                    </button>
+                                    <button
+                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                                        onClick={() => setManualPage((p) => Math.min(manualTotalPages, p + 1))}
+                                        disabled={manualPage >= manualTotalPages || manualLoading}
+                                    >
+                                        Próxima <IconChevronRight className="size-4" />
+                                    </button>
+                                    <select
+                                        className="rounded-md border bg-background px-2 py-1 text-xs"
+                                        value={manualPerPage}
+                                        onChange={(e) => setManualPerPage(Number(e.target.value))}
+                                    >
+                                        {[10, 20, 50, 100].map((n) => (
+                                            <option key={n} value={n}>{n} por página</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* =====================================================
+                PEDIDOS ONLINE
+                ===================================================== */}
+            {tab === "online" && (
                 <>
                     {/* ONLINE — filtros existentes */}
                     <form
@@ -2435,16 +2764,6 @@ export default function Page() {
                                         </button>
                                     </div>
                                 )}
-                            </div>
-                            <div>
-                                <label className="mb-1 block text-sm font-medium">Status de Pagamento *</label>
-                                <select
-                                    value={newForm.status_pagamento}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, status_pagamento: e.target.value as ManualPagamento }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                >
-                                    {PAGAMENTO_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm font-medium">Origem *</label>
@@ -2925,34 +3244,16 @@ export default function Page() {
                                     </div>
                                 )}
 
-                                {/* Informações do pedido */}
+                                {/* Informações do pedido — mesma ordem do Online */}
                                 <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <div><b>Pedido:</b> #{manualDetail.id}</div>
+                                    <div><b>Pedido:</b> {pedidoModelosManual(manualDetail)}</div>
                                     <div><b>Origem:</b> {origemLabel(manualDetail.origem)}</div>
                                     <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
                                     <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
+                                    <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
                                     <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
                                     <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
-                                    <div>
-                                        <b>Quantidade:</b> {quantidadeManual(manualDetail)}{" "}
-                                        {quantidadeManual(manualDetail) === 1 ? "coroa" : "coroas"}
-                                    </div>
-
-                                    {itensManual(manualDetail).map((item, index) => (
-                                        <div key={item.id || `${item.ordem}-${index}`} className="mt-3 border-t pt-2">
-                                            <div><b>Coroa {item.ordem || index + 1}:</b> {item.modelo_coroa || "—"}</div>
-                                            <div className="whitespace-pre-wrap"><b>Frase:</b> {item.frase || "—"}</div>
-                                            {item.valor != null && Number(item.valor) > 0 && (
-                                                <div><b>Valor:</b> {dinheiroBRL(item.valor)}</div>
-                                            )}
-                                        </div>
-                                    ))}
-
-                                    {totalManual(manualDetail) > 0 && (
-                                        <div className="mt-2 border-t pt-2">
-                                            <b>Total:</b> {dinheiroBRL(totalManual(manualDetail))}
-                                        </div>
-                                    )}
+                                    <div className="whitespace-pre-wrap"><b>Frase da Coroa:</b> {pedidoFrasesManual(manualDetail)}</div>
                                 </div>
 
                                 {/* Status do pedido */}
@@ -2962,7 +3263,7 @@ export default function Page() {
                                             {manualStatusLabel(manualDetail.status)}
                                         </span>
                                         <div className="text-xs text-muted-foreground">
-                                            Criado em {formatDate(manualDetail.criado_em)}
+                                            Criado em {formatDate(manualDetail.criado_em)} — Total <b>{totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</b>
                                         </div>
                                     </div>
                                 </div>
@@ -2970,24 +3271,15 @@ export default function Page() {
                                 {/* Pagamento e comprovante ficam no Ver */}
                                 <div className="rounded-lg border p-3">
                                     <div className="mb-2 font-medium">Pagamento</div>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                                        <div className="flex-1">
-                                            <label className="mb-1 block text-xs font-medium">Status</label>
-                                            <select
-                                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                value={manualDetail.status_pagamento}
-                                                disabled={manualActionLoading}
-                                                onChange={(e) => atualizarPagamentoManual(e.target.value as ManualPagamento)}
-                                            >
-                                                {PAGAMENTO_OPTIONS.map((o) => (
-                                                    <option key={o.value} value={o.value}>
-                                                        {o.label}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                                        <div>
+                                            <div className="mb-1 text-xs font-medium">Status</div>
+                                            <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${pagamentoAutomaticoClass(manualDetail)}`}>
+                                                {pagamentoAutomaticoManual(manualDetail)}
+                                            </span>
                                         </div>
 
-                                        <div className="flex-1">
+                                        <div>
                                             <div className="mb-1 text-xs font-medium">Comprovante</div>
                                             <ComprovanteUploadButtons
                                                 disabled={manualActionLoading}
