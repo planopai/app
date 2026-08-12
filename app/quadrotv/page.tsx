@@ -3,7 +3,7 @@
 /*
  * QUADRO TV — versão preservada
  * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
- * - adiciona Coroas de Flores em Confecção com ícones e detalhes;
+ * - Coroas de Flores em Confecção: somente Coroa(s), Entrega, Pagamento e Status;
  * - tamanho original permanece no modo NORMAL;
  * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
  *   não cabe na altura disponível da TV.
@@ -2945,12 +2945,9 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                 </div>
             </div>
 
-            {/* Desktop/TV */}
+            {/* Desktop/TV — somente as 4 colunas essenciais */}
             <div className="hidden sm:block">
-                <div className="qa-coroa-head grid h-8 grid-cols-[116px_190px_190px_minmax(190px,1fr)_190px_126px_176px] items-center gap-2 border-b border-slate-700/50 bg-slate-900/35 px-3 text-[10px] font-bold text-slate-400">
-                    <div>Pedido</div>
-                    <div>Falecido(a)</div>
-                    <div>Solicitante</div>
+                <div className="qa-coroa-head grid h-8 grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[10px] font-bold text-slate-400">
                     <div>Coroa(s)</div>
                     <div>Entrega</div>
                     <div>Pagamento</div>
@@ -2965,68 +2962,54 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                     <div>
                         {pedidos.map((pedido) => {
                             const qtd = coroaQuantidade(pedido);
-                            const hora = coroaCriadoHora(pedido.criado_em);
 
                             return (
                                 <div
                                     key={pedido.id}
-                                    className="qa-coroa-row grid min-h-[52px] grid-cols-[116px_190px_190px_minmax(190px,1fr)_190px_126px_176px] items-center gap-2 border-b border-slate-700/45 px-3 py-1.5 text-[11px] text-slate-100 last:border-b-0"
+                                    className="qa-coroa-row grid min-h-[52px] grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 overflow-hidden border-b border-slate-700/45 px-4 py-1.5 text-[11px] text-slate-100 last:border-b-0"
                                 >
-                                    <div className="min-w-0">
-                                        <CoroaIconField icon="clipboard" title={`Pedido #${pedido.id}`}>
-                                            <span className="font-bold text-slate-100">#{pedido.id}</span>
-                                        </CoroaIconField>
-                                        <div className="qa-coroa-sub mt-0.5 truncate pl-[22px] text-[9px] qa-text-muted">
-                                            {hora ? `${hora} • ` : ""}
-                                            {coroaOrigemLabel(pedido.origem)}
-                                        </div>
-                                    </div>
-
-                                    <CoroaIconField icon="coffin" title={shown(pedido.falecido, "a definir")}>
-                                        <span className="font-bold text-slate-100">
-                                            {shown(pedido.falecido, "a definir")}
-                                        </span>
-                                    </CoroaIconField>
-
-                                    <CoroaIconField icon="person" title={shown(pedido.solicitante, "a definir")}>
-                                        <span className="font-semibold text-slate-200">
-                                            {shown(pedido.solicitante, "a definir")}
-                                        </span>
-                                    </CoroaIconField>
-
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 overflow-hidden">
                                         <CoroaIconField icon="flower" title={coroaModelos(pedido)}>
-                                            <span className="font-semibold text-slate-100">
+                                            <span className="truncate font-semibold text-slate-100">
                                                 {qtd} {qtd === 1 ? "coroa" : "coroas"}
                                             </span>
                                         </CoroaIconField>
-                                        <div className="qa-coroa-sub mt-0.5 truncate pl-[22px] text-[9px] qa-text-muted" title={coroaModelos(pedido)}>
+
+                                        <div
+                                            className="qa-coroa-sub mt-0.5 truncate pl-[22px] text-[9px] qa-text-muted"
+                                            title={coroaModelos(pedido)}
+                                        >
                                             {coroaModelos(pedido)}
                                         </div>
                                     </div>
 
-                                    <CoroaIconField icon="pin" title={shown(pedido.local_entrega, "a definir")}>
-                                        <span className="font-medium text-slate-200">
-                                            {shown(pedido.local_entrega, "a definir")}
-                                        </span>
-                                    </CoroaIconField>
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="pin"
+                                            title={shown(pedido.local_entrega, "a definir")}
+                                        >
+                                            <span className="block truncate font-medium text-slate-200">
+                                                {shown(pedido.local_entrega, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
 
-                                    <div>
+                                    <div className="min-w-0 overflow-hidden">
                                         <span
-                                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-bold ${coroaPagamentoClass(
+                                            className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaPagamentoClass(
                                                 pedido
                                             )}`}
                                         >
-                                            <span className="h-3 w-3">
+                                            <span className="h-3 w-3 shrink-0">
                                                 <CoroaTvIcon type="wallet" />
                                             </span>
-                                            {coroaPagamentoLabel(pedido)}
+                                            <span>{coroaPagamentoLabel(pedido)}</span>
                                         </span>
                                     </div>
 
-                                    <div>
+                                    <div className="min-w-0 overflow-hidden">
                                         <span
-                                            className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-bold ${coroaStatusClass(
+                                            className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaStatusClass(
                                                 pedido.status
                                             )}`}
                                             title={coroaStatusLabel(pedido.status)}
@@ -3046,7 +3029,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                 )}
             </div>
 
-            {/* Mobile */}
+            {/* Mobile — mantém somente Coroa, Entrega, Pagamento e Status */}
             <div className="grid gap-2 p-2 sm:hidden">
                 {pedidos.length === 0 ? (
                     <div className="rounded-xl border border-slate-700/50 bg-slate-950/35 p-3 text-center text-xs qa-text-muted">
@@ -3059,43 +3042,57 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                         return (
                             <article
                                 key={pedido.id}
-                                className="qa-coroa-mobile-card rounded-xl border border-slate-700/50 bg-slate-950/35 p-2.5"
+                                className="qa-coroa-mobile-card overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/35 p-2.5"
                             >
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                        <div className="truncate text-sm font-bold text-slate-100">
-                                            {shown(pedido.falecido, "a definir")}
-                                        </div>
-                                        <div className="mt-0.5 truncate text-[10px] qa-text-muted">
-                                            #{pedido.id} • {shown(pedido.solicitante, "a definir")}
+                                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField icon="flower" title={coroaModelos(pedido)}>
+                                            <span className="truncate font-semibold text-slate-100">
+                                                {qtd} {qtd === 1 ? "coroa" : "coroas"}
+                                            </span>
+                                        </CoroaIconField>
+                                        <div className="qa-coroa-sub mt-0.5 truncate pl-[22px] text-[9px] qa-text-muted">
+                                            {coroaModelos(pedido)}
                                         </div>
                                     </div>
 
                                     <span
-                                        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-bold ${coroaStatusClass(
+                                        className={`inline-flex max-w-[155px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaStatusClass(
                                             pedido.status
                                         )}`}
+                                        title={coroaStatusLabel(pedido.status)}
                                     >
-                                        <span className="h-3 w-3">
+                                        <span className="h-3 w-3 shrink-0">
                                             <CoroaTvIcon type={coroaStatusIconType(pedido.status)} />
                                         </span>
-                                        {coroaStatusLabel(pedido.status)}
+                                        <span className="truncate">
+                                            {coroaStatusLabel(pedido.status)}
+                                        </span>
                                     </span>
                                 </div>
 
-                                <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-                                    <CoroaIconField icon="flower">
-                                        {qtd} {qtd === 1 ? "coroa" : "coroas"} • {coroaModelos(pedido)}
-                                    </CoroaIconField>
-                                    <CoroaIconField icon="pin">
-                                        {shown(pedido.local_entrega, "a definir")}
-                                    </CoroaIconField>
-                                    <CoroaIconField icon="wallet">
+                                <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-[10px]">
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="pin"
+                                            title={shown(pedido.local_entrega, "a definir")}
+                                        >
+                                            <span className="block truncate">
+                                                {shown(pedido.local_entrega, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <span
+                                        className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaPagamentoClass(
+                                            pedido
+                                        )}`}
+                                    >
+                                        <span className="h-3 w-3 shrink-0">
+                                            <CoroaTvIcon type="wallet" />
+                                        </span>
                                         {coroaPagamentoLabel(pedido)}
-                                    </CoroaIconField>
-                                    <CoroaIconField icon="clipboard">
-                                        {coroaOrigemLabel(pedido.origem)}
-                                    </CoroaIconField>
+                                    </span>
                                 </div>
                             </article>
                         );
