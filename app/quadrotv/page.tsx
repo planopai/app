@@ -3,7 +3,7 @@
 /*
  * QUADRO TV — versão preservada
  * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
- * - Coroas de Flores em Confecção: somente Coroa(s), Entrega, Pagamento e Status;
+ * - Coroas: 4 colunas essenciais, linhas/ícones compactos e alinhados;
  * - tamanho original permanece no modo NORMAL;
  * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
  *   não cabe na altura disponível da TV.
@@ -995,7 +995,7 @@ function ConvenioBadge({
 
     return (
         <span
-            className={`inline-flex items-center rounded-full font-semibold text-white ${convenioClass(
+            className={`qa-convenio-badge inline-flex items-center rounded-full font-semibold leading-none text-white ${convenioClass(
                 kind
             )} ${sizeClass}`}
             title="Convênio"
@@ -2125,18 +2125,77 @@ export default function QuadroAtendimentoPage() {
                 }
 
                 /*
+                 * COLUNA DATA — alinhamento protegido.
+                 * Evita bolinhas, data e convênio invadirem a linha seguinte.
+                 */
+                .qa-data-cell {
+                    display: flex !important;
+                    height: 100%;
+                    min-height: 0;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 3px;
+                    overflow: hidden;
+                    line-height: 1;
+                }
+                .qa-data-dots,
+                .qa-data-date,
+                .qa-data-convenio {
+                    flex: 0 0 auto;
+                    min-height: 0;
+                    margin: 0 !important;
+                }
+                .qa-etapas-dots {
+                    gap: 4px !important;
+                    line-height: 1;
+                }
+                .qa-convenio-badge {
+                    white-space: nowrap;
+                    line-height: 1 !important;
+                }
+
+                /*
+                 * COROAS — alinhamento compacto padrão.
+                 */
+                .qa-coroa-field {
+                    height: 100%;
+                    align-items: center;
+                    line-height: 1;
+                }
+                .qa-coroa-field-icon,
+                .qa-coroa-badge-icon {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex: 0 0 auto;
+                }
+                .qa-coroa-field-text {
+                    display: flex;
+                    min-height: 0;
+                    align-items: center;
+                }
+                .qa-coroa-row > div {
+                    min-width: 0;
+                    align-self: center;
+                }
+                .qa-coroa-row .qa-coroa-sub {
+                    line-height: 1 !important;
+                }
+
+                /*
                  * AUTO-FIT DA TV
                  *
-                 * NORMAL não recebe nenhum override: mantém exatamente
-                 * o tamanho/ícones/tempos originais.
-                 * Os níveis abaixo só entram quando o conteúdo não cabe.
+                 * O visual de Atendimentos permanece normal até faltar espaço.
+                 * A coluna Data recebe redução própria para nunca se sobrepor.
                  */
                 [data-qa-density="compact"] .qa-atendimento-head {
                     height: 29px !important;
                     font-size: 10px !important;
                 }
                 [data-qa-density="compact"] .qa-atendimento-row {
-                    height: 52px !important;
+                    height: 50px !important;
+                    min-height: 50px !important;
                     font-size: 11px !important;
                 }
                 [data-qa-density="compact"] .qa-atendimento-row .text-\[12px\] {
@@ -2165,10 +2224,11 @@ export default function QuadroAtendimentoPage() {
                     font-size: 10px !important;
                 }
                 [data-qa-density="compact"] .qa-coroa-row {
-                    min-height: 48px !important;
-                    padding-top: 5px !important;
-                    padding-bottom: 5px !important;
-                    font-size: 11px !important;
+                    height: 38px !important;
+                    min-height: 38px !important;
+                    padding-top: 3px !important;
+                    padding-bottom: 3px !important;
+                    font-size: 9.5px !important;
                 }
                 [data-qa-density="compact"] .qa-coroa-sub {
                     font-size: 9.5px !important;
@@ -2180,6 +2240,7 @@ export default function QuadroAtendimentoPage() {
                 }
                 [data-qa-density="dense"] .qa-atendimento-row {
                     height: 46px !important;
+                    min-height: 46px !important;
                     font-size: 10px !important;
                 }
                 [data-qa-density="dense"] .qa-atendimento-row .text-\[12px\] {
@@ -2215,10 +2276,11 @@ export default function QuadroAtendimentoPage() {
                     font-size: 9.5px !important;
                 }
                 [data-qa-density="dense"] .qa-coroa-row {
-                    min-height: 42px !important;
-                    padding-top: 4px !important;
-                    padding-bottom: 4px !important;
-                    font-size: 10px !important;
+                    height: 34px !important;
+                    min-height: 34px !important;
+                    padding-top: 2px !important;
+                    padding-bottom: 2px !important;
+                    font-size: 9px !important;
                 }
                 [data-qa-density="dense"] .qa-coroa-sub {
                     margin-top: 0 !important;
@@ -2230,7 +2292,8 @@ export default function QuadroAtendimentoPage() {
                     font-size: 8.5px !important;
                 }
                 [data-qa-density="ultra"] .qa-atendimento-row {
-                    height: 40px !important;
+                    height: 42px !important;
+                    min-height: 42px !important;
                     font-size: 9px !important;
                 }
                 [data-qa-density="ultra"] .qa-atendimento-row .text-\[12px\] {
@@ -2267,10 +2330,11 @@ export default function QuadroAtendimentoPage() {
                     font-size: 8.5px !important;
                 }
                 [data-qa-density="ultra"] .qa-coroa-row {
-                    min-height: 36px !important;
-                    padding-top: 3px !important;
-                    padding-bottom: 3px !important;
-                    font-size: 9px !important;
+                    height: 30px !important;
+                    min-height: 30px !important;
+                    padding-top: 1px !important;
+                    padding-bottom: 1px !important;
+                    font-size: 8px !important;
                 }
                 [data-qa-density="ultra"] .qa-coroa-iconbox {
                     height: 24px !important;
@@ -2286,7 +2350,8 @@ export default function QuadroAtendimentoPage() {
                     font-size: 7.5px !important;
                 }
                 [data-qa-density="micro"] .qa-atendimento-row {
-                    height: 35px !important;
+                    height: 38px !important;
+                    min-height: 38px !important;
                     font-size: 8px !important;
                 }
                 [data-qa-density="micro"] .qa-atendimento-row .text-\[12px\] {
@@ -2326,10 +2391,11 @@ export default function QuadroAtendimentoPage() {
                     font-size: 7.5px !important;
                 }
                 [data-qa-density="micro"] .qa-coroa-row {
-                    min-height: 31px !important;
-                    padding-top: 2px !important;
-                    padding-bottom: 2px !important;
-                    font-size: 8px !important;
+                    height: 27px !important;
+                    min-height: 27px !important;
+                    padding-top: 1px !important;
+                    padding-bottom: 1px !important;
+                    font-size: 7.5px !important;
                 }
                 [data-qa-density="micro"] .qa-coroa-iconbox {
                     height: 20px !important;
@@ -2338,6 +2404,104 @@ export default function QuadroAtendimentoPage() {
                 [data-qa-density="micro"] .qa-coroa-sub {
                     margin-top: 0 !important;
                     font-size: 7px !important;
+                }
+
+                /* DATA: redução interna proporcional, sem colisão. */
+                [data-qa-density="compact"] .qa-data-cell {
+                    gap: 2px !important;
+                }
+                [data-qa-density="compact"] .qa-data-date {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-convenio-badge {
+                    padding: 2px 5px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="compact"] .qa-etapa-dot {
+                    width: 5px !important;
+                    height: 5px !important;
+                }
+
+                [data-qa-density="dense"] .qa-data-cell {
+                    gap: 1.5px !important;
+                }
+                [data-qa-density="dense"] .qa-data-date {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-convenio-badge {
+                    padding: 1.5px 4px !important;
+                    font-size: 7px !important;
+                }
+                [data-qa-density="dense"] .qa-etapas-dots {
+                    gap: 3px !important;
+                }
+                [data-qa-density="dense"] .qa-etapa-dot {
+                    width: 4px !important;
+                    height: 4px !important;
+                }
+
+                [data-qa-density="ultra"] .qa-data-cell {
+                    gap: 1px !important;
+                }
+                [data-qa-density="ultra"] .qa-data-date {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-convenio-badge {
+                    padding: 1px 4px !important;
+                    font-size: 6.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-etapas-dots {
+                    gap: 2.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-etapa-dot {
+                    width: 3.5px !important;
+                    height: 3.5px !important;
+                }
+
+                [data-qa-density="micro"] .qa-data-cell {
+                    gap: 0.5px !important;
+                }
+                [data-qa-density="micro"] .qa-data-date {
+                    font-size: 7px !important;
+                }
+                [data-qa-density="micro"] .qa-convenio-badge {
+                    padding: 1px 3px !important;
+                    font-size: 6px !important;
+                }
+                [data-qa-density="micro"] .qa-etapas-dots {
+                    gap: 2px !important;
+                }
+                [data-qa-density="micro"] .qa-etapa-dot {
+                    width: 3px !important;
+                    height: 3px !important;
+                }
+
+                /* COROAS: ícones diminuem junto com a densidade. */
+                [data-qa-density="compact"] .qa-coroa-field-icon {
+                    width: 12px !important;
+                    height: 12px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-badge-icon {
+                    width: 9px !important;
+                    height: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-field-icon {
+                    width: 11px !important;
+                    height: 11px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-badge-icon {
+                    width: 8px !important;
+                    height: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-field-icon,
+                [data-qa-density="micro"] .qa-coroa-field-icon {
+                    width: 10px !important;
+                    height: 10px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-badge-icon,
+                [data-qa-density="micro"] .qa-coroa-badge-icon {
+                    width: 7px !important;
+                    height: 7px !important;
                 }
 
                 /* Mobile: só compacta os cartões quando realmente faltar altura. */
@@ -2675,12 +2839,14 @@ const DesktopTable = React.memo(function DesktopTable({
                                 key={trackingId || i}
                                 className="qa-atendimento-row grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
                             >
-                                <div className="min-w-0">
-                                    <div className="mb-1 flex justify-center">
+                                <div className="qa-data-cell min-w-0">
+                                    <div className="qa-data-dots flex justify-center">
                                         <EtapasInlineDots filled={preenchidas} />
                                     </div>
-                                    <div className="text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
-                                    <div className="mt-1 flex justify-center">
+                                    <div className="qa-data-date text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">
+                                        {dateOr(r.data)}
+                                    </div>
+                                    <div className="qa-data-convenio flex justify-center">
                                         <ConvenioBadge convenio={r.convenio} size="xs" />
                                     </div>
                                 </div>
@@ -2895,11 +3061,11 @@ function CoroaIconField({
     title?: string;
 }) {
     return (
-        <div className="flex min-w-0 items-center gap-1.5" title={title}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[#00AEEC]">
+        <div className="qa-coroa-field flex min-w-0 items-center gap-1.5" title={title}>
+            <span className="qa-coroa-field-icon flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[#00AEEC]">
                 <CoroaTvIcon type={icon} />
             </span>
-            <div className="min-w-0 truncate">{children}</div>
+            <div className="qa-coroa-field-text min-w-0 truncate leading-none">{children}</div>
         </div>
     );
 }
@@ -2913,9 +3079,9 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 }) {
     return (
         <section className="qa-coroas-board shrink-0 overflow-hidden rounded-xl border qa-panel-premium">
-            <div className="qa-coroa-titlebar flex h-9 items-center justify-between gap-3 border-b border-slate-700/50 bg-slate-800/45 px-3">
+            <div className="qa-coroa-titlebar flex h-8 items-center justify-between gap-3 border-b border-slate-700/50 bg-slate-800/45 px-3">
                 <div className="flex min-w-0 items-center gap-2">
-                    <span className="qa-coroa-iconbox flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#00AEEC]/35 bg-[#00AEEC]/10 text-[#00AEEC]">
+                    <span className="qa-coroa-iconbox flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#00AEEC]/35 bg-[#00AEEC]/10 p-0.5 text-[#00AEEC]">
                         <CoroaTvIcon type="flower" />
                     </span>
 
@@ -2947,7 +3113,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 
             {/* Desktop/TV — somente as 4 colunas essenciais */}
             <div className="hidden sm:block">
-                <div className="qa-coroa-head grid h-8 grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[10px] font-bold text-slate-400">
+                <div className="qa-coroa-head grid h-7 grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[9px] font-bold leading-none text-slate-400">
                     <div>Coroa(s)</div>
                     <div>Entrega</div>
                     <div>Pagamento</div>
@@ -2966,7 +3132,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                             return (
                                 <div
                                     key={pedido.id}
-                                    className="qa-coroa-row grid min-h-[52px] grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 overflow-hidden border-b border-slate-700/45 px-4 py-1.5 text-[11px] text-slate-100 last:border-b-0"
+                                    className="qa-coroa-row grid h-[42px] min-h-[42px] grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 overflow-hidden border-b border-slate-700/45 px-4 py-1 text-[10px] leading-none text-slate-100 last:border-b-0"
                                 >
                                     <div className="min-w-0 overflow-hidden">
                                         <CoroaIconField icon="flower" title={coroaModelos(pedido)}>
@@ -2976,7 +3142,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                         </CoroaIconField>
 
                                         <div
-                                            className="qa-coroa-sub mt-0.5 truncate pl-[22px] text-[9px] qa-text-muted"
+                                            className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted"
                                             title={coroaModelos(pedido)}
                                         >
                                             {coroaModelos(pedido)}
@@ -2996,11 +3162,11 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 
                                     <div className="min-w-0 overflow-hidden">
                                         <span
-                                            className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaPagamentoClass(
+                                            className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
                                                 pedido
                                             )}`}
                                         >
-                                            <span className="h-3 w-3 shrink-0">
+                                            <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                                 <CoroaTvIcon type="wallet" />
                                             </span>
                                             <span>{coroaPagamentoLabel(pedido)}</span>
@@ -3009,12 +3175,12 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 
                                     <div className="min-w-0 overflow-hidden">
                                         <span
-                                            className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaStatusClass(
+                                            className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaStatusClass(
                                                 pedido.status
                                             )}`}
                                             title={coroaStatusLabel(pedido.status)}
                                         >
-                                            <span className="h-3.5 w-3.5 shrink-0">
+                                            <span className="qa-coroa-badge-icon h-3 w-3 shrink-0">
                                                 <CoroaTvIcon type={coroaStatusIconType(pedido.status)} />
                                             </span>
                                             <span className="truncate">
@@ -3051,18 +3217,18 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                                 {qtd} {qtd === 1 ? "coroa" : "coroas"}
                                             </span>
                                         </CoroaIconField>
-                                        <div className="qa-coroa-sub mt-0.5 truncate pl-[22px] text-[9px] qa-text-muted">
+                                        <div className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted">
                                             {coroaModelos(pedido)}
                                         </div>
                                     </div>
 
                                     <span
-                                        className={`inline-flex max-w-[155px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaStatusClass(
+                                        className={`inline-flex max-w-[155px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaStatusClass(
                                             pedido.status
                                         )}`}
                                         title={coroaStatusLabel(pedido.status)}
                                     >
-                                        <span className="h-3 w-3 shrink-0">
+                                        <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                             <CoroaTvIcon type={coroaStatusIconType(pedido.status)} />
                                         </span>
                                         <span className="truncate">
@@ -3084,11 +3250,11 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                     </div>
 
                                     <span
-                                        className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold ${coroaPagamentoClass(
+                                        className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
                                             pedido
                                         )}`}
                                     >
-                                        <span className="h-3 w-3 shrink-0">
+                                        <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                             <CoroaTvIcon type="wallet" />
                                         </span>
                                         {coroaPagamentoLabel(pedido)}
@@ -3127,9 +3293,13 @@ function Field({ label, value, className = "" }: { label: string; value: React.R
 
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     return (
-        <div className="flex items-center gap-1" title="Etapas preenchidas">
+        <div className="qa-etapas-dots flex items-center gap-1" title="Etapas preenchidas">
             {[0, 1, 2, 3].map((k) => (
-                <span key={k} className={`h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                <span
+                    key={k}
+                    className={`qa-etapa-dot h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                        }`}
+                />
             ))}
         </div>
     );
