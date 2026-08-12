@@ -12,6 +12,7 @@
  * - após uma ação atualiza somente a aba afetada;
  * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
  * - o usuário atual é enviado como fallback para as notificações de ação;
+ * - Origem manual possui somente: Ordem de Serviço e Venda Direta;
  * - evita montar simultaneamente as linhas mobile e desktop.
  */
 
@@ -50,9 +51,7 @@ type ManualStatus = "novo" | "coroa" | "faixa" | "finalizada" | "entregue";
 type ManualPagamento = "pago" | "aguardando_pagamento";
 type ManualOrigem =
     | "ordem_servico"
-    | "venda_direta_colaborador"
-    | "venda_direta_escritorio"
-    | "venda_direta_memorial";
+    | "venda_direta";
 
 type ManualCoroaItem = {
     id?: number;
@@ -193,9 +192,7 @@ const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: strin
 
 const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
     { value: "ordem_servico", label: "Ordem de Serviço" },
-    { value: "venda_direta_colaborador", label: "Venda Direta Colaborador" },
-    { value: "venda_direta_escritorio", label: "Venda Direta Escritório" },
-    { value: "venda_direta_memorial", label: "Venda Direta Memorial" },
+    { value: "venda_direta", label: "Venda Direta" },
 ];
 
 type FraseSugerida = { numero: number; texto: string };
@@ -277,7 +274,21 @@ function manualStatusClass(status?: ManualStatus | string) {
 }
 
 function origemLabel(v?: ManualOrigem | string) {
-    return ORIGEM_OPTIONS.find((x) => x.value === v)?.label || v || "—";
+    const raw = String(v || "").trim();
+
+    if (raw === "ordem_servico") return "Ordem de Serviço";
+    if (raw === "venda_direta") return "Venda Direta";
+
+    // Compatibilidade visual com pedidos antigos.
+    if (
+        raw === "venda_direta_colaborador" ||
+        raw === "venda_direta_escritorio" ||
+        raw === "venda_direta_memorial"
+    ) {
+        return "Venda Direta";
+    }
+
+    return raw || "—";
 }
 
 function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
