@@ -1,817 +1,462 @@
+// PAGE INFO ITENS FIX V4 - QUADRO + COROAS + AUTO-FIT PARA TV
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ArrumacaoState,
+  MateriaisState,
+  Registro,
+  Aviso,
+} from "./components/types";
+import {
+  API,
+  obrigatorios as obrigatoriosPadrao,
+  steps as stepsPadrao,
+  wizardStepIndexes as wizardStepIndexesPadrao,
+  wizardStepTitles as wizardStepTitlesPadrao,
+} from "./components/constants";
+import {
+  defaultArrumacao,
+  defaultMateriais,
+  jsonWith401,
+  enviarRegistroPHP,
+  capitalizeStatus,
+  normalizarStatus,
+  normalizeMateriaisState,
+} from "./components/helpers";
 
-/* =========================
-   Cache rápido (memória + localStorage)
-   ========================= */
-type CacheEntry = { exp: number; data: any };
-const MEM_CACHE = new Map<string, CacheEntry>();
-const INFLIGHT = new Map<string, Promise<any>>();
+import TabelaAtendimentos from "./components/TabelaAtendimentos";
 
-function getMem<T>(k: string): T | null {
-    const hit = MEM_CACHE.get(k);
-    if (!hit) return null;
-    if (Date.now() > hit.exp) {
-        MEM_CACHE.delete(k);
-        return null;
+import Wizard from "./components/Wizard";
+import MateriaisModal from "./components/MateriaisModal";
+import ArrumacaoModal from "./components/ArrumacaoModal";
+import AcaoModal from "./components/AcaoModal";
+import InfoModal from "./components/InfoModal";
+import SignatureModal from "./components/SignatureModal";
+import CompartilharModal from "./components/CompartilharModal";
+import Modal from "./components/Modal";
+import TelemetriaModal, {
+  TipoTele,
+  TelemetriaHandle,
+} from "./components/TelemetriaModal";
+import FotoAcaoModal, { FotoAcaoTipo } from "./components/FotoAcaoModal";
+
+// ✅ modal de conferência antes do fase11
+import MateriaisConferenciaModal, {
+  MatCheckItem,
+  MateriaisConferenciaResult,
+} from "./components/MateriaisConferenciaModal";
+
+type TipoAtendimento = "funerario" | "terceiro";
+
+type CoroaConfeccaoItem = {
+  modelo_coroa?: string | null;
+};
+
+type CoroaConfeccao = {
+  id: number;
+  solicitante?: string | null;
+  falecido?: string | null;
+  status?: string | null;
+  origem?: string | null;
+  quantidade_coroas?: number | null;
+  modelo_coroa?: string | null;
+  criado_em?: string | null;
+  atualizado_em?: string | null;
+  itens?: CoroaConfeccaoItem[];
+};
+
+type CoroasConfeccaoResponse = {
+  sucesso?: boolean;
+  dados?: CoroaConfeccao[];
+  msg?: string;
+  erro?: boolean | string;
+};
+
+type TvDensity = "normal" | "compact" | "dense" | "ultra";
+
+// ✅ endpoint da baixa automática (novo PHP independente)
+const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
+const COROAS_CONFECCAO_API =
+  `${ENDPOINT}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
+
+function coroaStatusLabel(status?: string | null): string {
+  const s = String(status || "").trim().toLowerCase();
+
+  if (s === "novo") return "Novo Pedido";
+  if (s === "coroa") return "Confeccionando Coroa";
+  if (s === "faixa") return "Confeccionando Faixa";
+
+  return s || "Em Confecção";
+}
+
+function coroaStatusClass(status?: string | null): string {
+  const s = String(status || "").trim().toLowerCase();
+
+  if (s === "novo") {
+    return "border-blue-200 bg-blue-50 text-blue-800";
+  }
+
+  if (s === "coroa") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+
+  if (s === "faixa") {
+    return "border-purple-200 bg-purple-50 text-purple-800";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function coroaOrigemLabel(origem?: string | null): string {
+  const s = String(origem || "").trim().toLowerCase();
+
+  if (s === "ordem_servico") return "Ordem de Serviço";
+  if (s === "venda_direta") return "Venda Direta";
+  if (s === "loja-online" || s === "loja_online" || s === "loja online") {
+    return "Loja-Online";
+  }
+
+  // Compatibilidade com pedidos antigos.
+  if (
+    s === "venda_direta_colaborador" ||
+    s === "venda_direta_escritorio" ||
+    s === "venda_direta_memorial"
+  ) {
+    return "Venda Direta";
+  }
+
+  return String(origem || "—");
+}
+
+function coroaQuantidade(order: CoroaConfeccao): number {
+  const qtd = Number(order.quantidade_coroas || 0);
+  if (Number.isFinite(qtd) && qtd > 0) return Math.floor(qtd);
+
+  if (Array.isArray(order.itens) && order.itens.length > 0) {
+    return order.itens.length;
+  }
+
+  return 1;
+}
+
+function coroaModelosResumo(order: CoroaConfeccao): string {
+  const modelos = Array.isArray(order.itens)
+    ? order.itens
+        .map((item) => String(item?.modelo_coroa || "").trim())
+        .filter(Boolean)
+    : [];
+
+  if (modelos.length > 0) {
+    return modelos.join(" • ");
+  }
+
+  return String(order.modelo_coroa || "").trim() || "Modelo não informado";
+}
+
+// ✅ endpoint da baixa automática (novo PHP independente)
+const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
+
+// ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
+type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "INSUMOS";
+
+function isSim(v: any): boolean {
+  const s = String(v ?? "")
+    .trim()
+    .toLowerCase();
+  return s === "sim" || s === "s" || s === "1" || s === "true";
+}
+
+function isNao(v: any): boolean {
+  const s = String(v ?? "")
+    .trim()
+    .toLowerCase();
+  return s === "não" || s === "nao" || s === "n" || s === "0" || s === "false";
+}
+
+function normNoAccLower(v: any): string {
+  return String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isRoupaPropria(v: any): boolean {
+  return normNoAccLower(v) === "roupa propria";
+}
+
+type InsumoItem = { produto_id: number; qtd: number };
+
+function parseInsumosFromArrumacaoJson(
+  raw: any,
+): { deposito_nome: string; itens: InsumoItem[] } | null {
+  try {
+    if (!raw) return null;
+    const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!obj || typeof obj !== "object") return null;
+
+    const deposito_nome = String(
+      obj.deposito_nome ?? obj.deposito ?? "",
+    ).trim();
+    const itensRaw = obj.itens ?? obj.items ?? null;
+    if (!itensRaw) return null;
+
+    let itens: InsumoItem[] = [];
+
+    // ✅ formato array
+    if (Array.isArray(itensRaw)) {
+      itens = itensRaw
+        .map((x: any) => ({
+          produto_id: Number(x?.produto_id ?? 0) || 0,
+          qtd: Math.max(1, Math.floor(Number(x?.qtd ?? 0) || 0)),
+        }))
+        .filter((x) => x.produto_id > 0 && x.qtd > 0);
     }
-    return hit.data as T;
-}
-function setMem(k: string, data: any, ttlMs: number) {
-    MEM_CACHE.set(k, { exp: Date.now() + ttlMs, data });
+
+    // ✅ formato objeto/dict
+    if (!Array.isArray(itensRaw) && typeof itensRaw === "object") {
+      itens = Object.entries(itensRaw)
+        .map(([k, v]: any) => {
+          const pid =
+            Number(v?.produto_id ?? 0) ||
+            Number(String(k).match(/\d+/)?.[0] ?? 0) ||
+            0;
+          const qtd = Math.max(1, Math.floor(Number(v?.qtd ?? 0) || 0));
+          const checked = v?.checked;
+          if (
+            checked === false ||
+            checked === 0 ||
+            checked === "0" ||
+            checked === "false"
+          )
+            return null;
+          return pid > 0 ? { produto_id: pid, qtd } : null;
+        })
+        .filter(Boolean) as InsumoItem[];
+    }
+
+    if (!itens.length) return null;
+    return { deposito_nome, itens };
+  } catch {
+    return null;
+  }
 }
 
-function readLS<T>(k: string): T | null {
-    if (typeof window === "undefined") return null;
+
+function normalizeRestrictIds(v: any): string[] | null {
+  if (v == null || v === "") return null;
+
+  let raw = v;
+
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    if (!s) return null;
+
     try {
-        const raw = localStorage.getItem(k);
-        if (!raw) return null;
-        return JSON.parse(raw) as T;
+      const parsed = JSON.parse(s);
+      raw = parsed;
     } catch {
-        return null;
+      raw = s.split(",");
     }
+  }
+
+  if (!Array.isArray(raw)) return null;
+
+  const ids = raw
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean);
+
+  return ids.length ? Array.from(new Set(ids)) : null;
 }
-function writeLS(k: string, v: any) {
-    if (typeof window === "undefined") return;
-    try {
-        localStorage.setItem(k, JSON.stringify(v));
-    } catch {
-        // ignore
+
+function scopeHasAny(scopeIds: string[] | null, ids: string[]): boolean {
+  if (!scopeIds) return true;
+  return ids.some((id) => scopeIds.includes(id));
+}
+
+/* -------------------- utils sessão (IDs de terceiros) -------------------- */
+function addTerceiroIdToSession(id: string | number | undefined | null) {
+  try {
+    if (id == null) return;
+    const raw = sessionStorage.getItem("terceiro_ids");
+    const arr: Array<string> = raw ? JSON.parse(raw) : [];
+    const sid = String(id);
+    if (!arr.includes(sid)) {
+      arr.push(sid);
+      sessionStorage.setItem("terceiro_ids", JSON.stringify(arr));
     }
+  } catch { }
 }
 
-async function fetchJsonFast<T = any>(
-    url: string,
-    opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
-): Promise<T> {
-    const ttlMs = opts?.ttlMs ?? 8_000;
-    const timeoutMs = opts?.timeoutMs ?? 12_000;
-    const cacheKey = opts?.cacheKey ?? url;
+/* ----------- resolve tipo a partir de um registro existente ----------- */
+function resolveTipoFromRegistro(r?: Registro | null): TipoAtendimento {
+  if (!r) return "funerario";
 
-    const cached = getMem<T>(cacheKey);
-    if (cached) return cached;
+  const tipoSalvo = String((r as any)?.tipo_atendimento ?? "")
+    .trim()
+    .toLowerCase();
 
-    const inF = INFLIGHT.get(cacheKey);
-    if (inF) return (await inF) as T;
+  // Um atendimento só é "terceiro" quando isso estiver explicitamente
+  // salvo no registro. Os campos Assistência, Tanatopraxia e Ornamentação
+  // podem estar todos como "Não" em um atendimento funerário normal.
+  return tipoSalvo === "terceiro" ? "terceiro" : "funerario";
+}
 
-    const p = (async () => {
-        const ac = new AbortController();
-        const t = setTimeout(() => ac.abort(), timeoutMs);
-        try {
-            const resp = await fetch(url, {
-                cache: "no-store",
-                credentials: "include",
-                signal: ac.signal,
-            });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const data = (await resp.json()) as T;
-            setMem(cacheKey, data, ttlMs);
-            return data;
-        } finally {
-            clearTimeout(t);
-            INFLIGHT.delete(cacheKey);
-        }
-    })();
+/* -------------------- Config dinâmico por tipo -------------------- */
+function getWizardConfig(tipo: TipoAtendimento) {
+  if (tipo === "terceiro") {
+    const wizardStepIndexes = [
+      // Atendimento (nome + contato + dados do falecido/responsável)
+      [0, 1, 27, 28, 29, 30, 31],
 
-    INFLIGHT.set(cacheKey, p);
-    return (await p) as T;
+      // Velório (local velório + sala + velório online + data/hora início + data/hora fim)
+      // 18 local_velorio | 32 sala_velorio | 33 velorio_online | 19 data início | 21 hora início | 20 data fim | 22 hora fim
+      [18, 32, 33, 19, 21, 20, 22],
+
+      // Sepultamento (local sepultamento)
+      [17],
+    ];
+
+    const wizardStepTitles = ["Atendimento", "Velório", "Sepultamento"];
+    const obrigatorios: string[] = [];
+    return {
+      wizardStepIndexes,
+      wizardStepTitles,
+      obrigatorios,
+      steps: stepsPadrao,
+    };
+  }
+
+  return {
+    wizardStepIndexes: wizardStepIndexesPadrao as number[][],
+    wizardStepTitles: wizardStepTitlesPadrao as string[],
+    obrigatorios: obrigatoriosPadrao as string[],
+    steps: stepsPadrao,
+  };
+}
+
+/* -------------------- Mapas de telemetria -------------------- */
+function mapFaseToTipo(fase: string): TipoTele | null {
+  if (fase === "fase01") return "remocao";
+  if (fase === "fase07") return "para_velorio";
+  if (fase === "fase09") return "para_sepultamento";
+  return null;
+}
+
+// "fase que PARA" a telemetria iniciada por:
+const STOP_BY_START: Record<string, string> = {
+  fase01: "fase02",
+  fase07: "fase08",
+  fase09: "fase10",
+};
+
+/* =======================================================================
+   ✅ MODO OFFLINE (fila local + reenvio automático ao voltar a internet)
+   ======================================================================= */
+type OfflineQueueItem = {
+  qid: string;
+  createdAt: number;
+  tries: number;
+  lastError?: string;
+  payload: any;
+};
+
+const OFFLINE_QUEUE_KEY = "acomp_offline_queue_v1";
+
+function safeReadQueue(): OfflineQueueItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as OfflineQueueItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function safeWriteQueue(items: OfflineQueueItem[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items));
+  } catch { }
+}
+
+function genQid() {
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function isOnlineNow() {
+  if (typeof window === "undefined") return true;
+  return navigator.onLine !== false;
+}
+
+function enqueueOffline(payload: any, errMsg?: string) {
+  const items = safeReadQueue();
+  items.push({
+    qid: genQid(),
+    createdAt: Date.now(),
+    tries: 0,
+    lastError: errMsg,
+    payload,
+  });
+  safeWriteQueue(items);
+  return items.length;
+}
+
+// ✅ tenta resolver nome do falecido
+function resolveFalecidoNome(r: any): string {
+  return String(
+    r?.falecido ??
+    r?.nome_falecido ??
+    r?.falecido_nome ??
+    r?.nome_do_falecido ??
+    r?.nome ??
+    "",
+  ).trim();
 }
 
 /* =========================
-   Tipos
+   ✅ helpers DOM (Wizard inputs)
+   (mantidos para campos comuns; URNA META não depende mais deles)
    ========================= */
-type Registro = {
-    data?: string;
-    falecido?: string;
-    local_velorio?: string;
-    data_inicio_velorio?: string;
-    data_fim_velorio?: string;
-    hora_fim_velorio?: string;
-    hora_inicio_velorio?: string;
-    agente?: string;
-    status?: string;
-    religiao?: string;
-    contato?: string;
-    convenio?: string;
-    observacao?: string;
-    observacao_atendimento?: string;
-    observacao_itens?: string;
-    observacao_velorio01?: string;
-    observacao_velorio02?: string;
-
-    urna?: string;
-    roupa?: string;
-    assistencia?: string;
-    tanato?: string;
-
-    invol?: any;
-
-    ornamentacao?: string;
-    ornamentacao_tipo?: string;
-
-    local?: string;
-    local_sepultamento?: string;
-
-    materiais?: string;
-    material?: string;
-
-    materiais_json?: any;
-    material_json?: any;
-
-    tipo_atendimento?: "funerario" | "terceiro";
-
-    [key: string]: any;
-};
-
-type Aviso = { usuario?: string; mensagem?: string };
-
-type LogItem = {
-    id?: number | string;
-    datahora?: string;
-    acao?: string;
-    status_novo?: string;
-    detalhes?: any;
-    usuario?: string;
-};
-
-/* =========================
-   Helpers comuns
-   ========================= */
-function decodeHtmlEntitiesOnce(input: string): string {
-    if (!input) return input;
-
-    if (typeof window !== "undefined" && typeof document !== "undefined") {
-        const ta = document.createElement("textarea");
-        ta.innerHTML = input;
-        return ta.value;
-    }
-
-    return input
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&#039;/g, "'")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&")
-        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
-            String.fromCharCode(parseInt(hex, 16))
-        )
-        .replace(/&#(\d+);/g, (_, num) =>
-            String.fromCharCode(parseInt(num, 10))
-        );
+function readDomValue(id: string): string {
+  if (typeof document === "undefined") return "";
+  const el = document.getElementById(id) as
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | HTMLSelectElement
+    | null;
+  return (el?.value ?? "").toString();
 }
 
-function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
-    let s = String(input ?? "");
-    for (let i = 0; i < maxPasses; i++) {
-        const next = decodeHtmlEntitiesOnce(s);
-        if (next === s) break;
-        s = next;
-    }
-    return s;
-}
-
-const sanitize = (t?: any) => decodeHtmlEntitiesDeep(String(t ?? ""));
-
-const shown = (v?: any, fallback = "a definir") => {
-    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim();
-    return s ? s : fallback;
-};
-
-/* =========================
-   Materiais (normalização para exibir no modal)
-   ========================= */
-
-type MatLookupInfo = {
-    catNome: string;
-    catOrdem: number;
-    itemOrdem: number;
-};
-
-type MatLine = { text: string; itemKey?: string };
-
-function qtyPrefixFromAny(qtdRaw: any): string {
-    const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
-    if (!qtdStr) return "1x";
-
-    const normalized = qtdStr.replace(",", ".").trim();
-    const n = Number(normalized);
-
-    if (Number.isFinite(n) && n > 0) {
-        const isInt = Math.abs(n - Math.round(n)) < 1e-9;
-        const val = isInt ? String(Math.round(n)) : normalized;
-        return `${val}x`;
-    }
-
-    const m = normalized.match(/^(\d+(?:\.\d+)?)/);
-    if (m?.[1]) return `${m[1]}x`;
-
-    return `${normalized}x`;
-}
-
-function normalizeMatTextToQtyPrefix(text: string): string {
-    const s = decodeHtmlEntitiesDeep(String(text ?? ""))
-        .replace(/\s+/g, " ")
-        .trim();
-    if (!s) return s;
-
-    let m = s.match(/^(\d+(?:[.,]\d+)?)\s*[xX]\s*(.+)$/);
-    if (m) {
-        const qtd = m[1].replace(",", ".");
-        const nome = m[2].trim();
-        return `${qtd}x ${nome}`;
-    }
-
-    m = s.match(/^(.+?)\s*\(\s*(\d+(?:[.,]\d+)?)\s*\)\s*$/);
-    if (m) {
-        const nome = m[1].trim();
-        const qtd = m[2].replace(",", ".");
-        return `${qtd}x ${nome}`;
-    }
-
-    return `1x ${s}`;
-}
-
-function isRealMaterialForClipboard(item: string): boolean {
-    const s = decodeHtmlEntitiesDeep(String(item ?? "")).trim();
-    if (!s) return false;
-
-    const low = s.toLowerCase().replace(/\s+/g, " ").trim();
-
-    if (low === "sim" || low === "não" || low === "nao") return false;
-    if (low === "1x sim" || low === "1x não" || low === "1x nao") return false;
-    if (low === "item" || low === "1x item") return false;
-    if (low.includes("a definir")) return false;
-
-    return true;
-}
-
-function isJsonNoiseLine(raw: any): boolean {
-    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
-    if (!s) return false;
-
-    const low = s.toLowerCase().replace(/\s+/g, " ").trim();
-    return /^(\d+(?:[.,]\d+)?\s*[xX]\s*)?json\s*:/.test(low);
-}
-
-function normalizeMateriaisFromRegistro(registro: Registro): string[] {
-    const out: string[] = [];
-    const seen = new Set<string>();
-
-    const pushItem = (raw: any) => {
-        const s0 = String(raw ?? "");
-        const s = decodeHtmlEntitiesDeep(s0).trim();
-        if (!s) return;
-
-        const low = s.toLowerCase().trim();
-
-        if (isJsonNoiseLine(s)) return;
-
-        if (low.startsWith("{") || low.startsWith("[")) return;
-        if (looksLikeMateriaisJson(s)) return;
-
-        if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
-
-        const withQtd = normalizeMatTextToQtyPrefix(s);
-        if (!withQtd) return;
-
-        if (isJsonNoiseLine(withQtd)) return;
-
-        if (seen.has(withQtd)) return;
-        seen.add(withQtd);
-        out.push(withQtd);
-    };
-
-    const pushNomeQtd = (nomeRaw: any, qtdRaw?: any) => {
-        const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
-        if (!nome) return;
-
-        const prefix = qtyPrefixFromAny(qtdRaw);
-        pushItem(`${prefix} ${nome}`);
-    };
-
-    const extractFromStructured = (raw: unknown): boolean => {
-        const items: { nome: any; qtd?: any }[] = [];
-
-        const walk = (node: any) => {
-            if (node == null) return;
-
-            if (Array.isArray(node)) {
-                node.forEach(walk);
-                return;
-            }
-
-            if (isPlainObject(node)) {
-                const maybeNome =
-                    (node as any).nome ??
-                    (node as any).name ??
-                    (node as any).descricao ??
-                    (node as any).descrição ??
-                    (node as any).material;
-
-                const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
-                const checkedVal = (node as any).checked;
-                const qtdVal =
-                    (node as any).qtd ??
-                    (node as any).quantidade ??
-                    (node as any).qtd_item;
-
-                if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
-                    items.push({ nome: maybeNome, qtd: qtdVal });
-                }
-
-                const containerKeys = [
-                    "itens",
-                    "items",
-                    "materiais",
-                    "materiais_json",
-                    "material_json",
-                    "data",
-                ];
-                for (const k of containerKeys) {
-                    if ((node as any)[k] != null) walk((node as any)[k]);
-                }
-
-                for (const [, v] of Object.entries(node)) {
-                    if (v == null) continue;
-                    if (typeof v === "object") {
-                        walk(v);
-                    }
-                }
-            }
-        };
-
-        walk(raw);
-
-        if (items.length === 0) return false;
-
-        for (const it of items) pushNomeQtd(it.nome, it.qtd);
-        return true;
-    };
-
-    const addFromBooleanMap = (obj: Record<string, unknown>) => {
-        for (const [k, v] of Object.entries(obj)) {
-            if (asBool(v)) {
-                const nome = overrideCampoNome(k, titleCaseFromSnake(k));
-                pushItem(`1x ${nome}`);
-            }
-        }
-    };
-
-    const addFromMixedObject = (obj: Record<string, unknown>) => {
-        for (const [key, value] of Object.entries(obj)) {
-            const m = key.match(/^materiais_(.+?)_qtd$/i);
-            if (!m) continue;
-            const valStr = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
-            if (!valStr) continue;
-
-            const n = Number(valStr.replace(",", "."));
-            if (!Number.isNaN(n) && n <= 0) continue;
-
-            const base = m[1];
-            const nome = overrideCampoNome(base, titleCaseFromSnake(base));
-            pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
-        }
-
-        for (const [key, value] of Object.entries(obj)) {
-            if (/^materiais_.+?_qtd$/i.test(key)) continue;
-
-            const m = key.match(/^materiais_(.+)$/i);
-            if (!m) continue;
-
-            const base = m[1];
-            const nome = overrideCampoNome(base, titleCaseFromSnake(base));
-
-            if (asBool(value)) {
-                pushItem(`1x ${nome}`);
-                continue;
-            }
-
-            const valStr = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
-            if (!valStr) continue;
-
-            const n = Number(valStr.replace(",", "."));
-            if (!Number.isNaN(n)) {
-                if (n > 0) pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
-                continue;
-            }
-
-            pushItem(`1x ${nome}: ${valStr}`);
-        }
-
-        for (const [k, v] of Object.entries(obj)) {
-            if (k === "materiais_json" || k === "material_json") continue;
-            if (/^materiais_.+/i.test(k)) continue;
-            if (v == null) continue;
-            if (typeof v === "object") continue;
-
-            const valStr = decodeHtmlEntitiesDeep(String(v)).trim();
-            if (!valStr) continue;
-
-            const nome = overrideCampoNome(k, titleCaseFromSnake(k));
-            const maybeNum = Number(valStr.replace(",", "."));
-            if (!Number.isNaN(maybeNum)) {
-                if (maybeNum > 0) pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
-            } else if (asBool(valStr)) {
-                pushItem(`1x ${nome}`);
-            } else {
-                pushItem(`1x ${nome}: ${valStr}`);
-            }
-        }
-    };
-
-    const addFromUnknown = ((raw: unknown) => {
-        if (raw == null || raw === "") return;
-
-        if (Array.isArray(raw)) {
-            if (extractFromStructured(raw)) return;
-            for (const it of raw) pushItem(it);
-            return;
-        }
-
-        if (isPlainObject(raw)) {
-            if (extractFromStructured(raw)) return;
-
-            const obj = raw as Record<string, unknown>;
-            if (isLikelyBooleanMap(obj)) addFromBooleanMap(obj);
-            else addFromMixedObject(obj);
-            return;
-        }
-
-        if (typeof raw === "string") {
-            let s = decodeHtmlEntitiesDeep(raw).trim();
-            if (!s) return;
-
-            const original = s;
-            s = s.replace(/^\s*json\s*:\s*/i, "").trim();
-
-            const parsed = tryParseJsonFromStringMaybeEmbedded(s);
-            if (parsed != null) {
-                if (extractFromStructured(parsed)) return;
-                return;
-            }
-
-            const extracted = extractMateriaisByRegex(s);
-            if (extracted.length) {
-                extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
-                return;
-            }
-
-            if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
-
-            if (s.includes("\n")) {
-                s.split("\n")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .filter((line) => {
-                        const low = line.toLowerCase().trim();
-                        if (low.startsWith("json:")) return false;
-                        if (low.startsWith("{") || low.startsWith("[")) return false;
-                        if (looksLikeMateriaisJson(line)) return false;
-                        return true;
-                    })
-                    .forEach(pushItem);
-                return;
-            }
-            if (s.includes(";")) {
-                s.split(";")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .forEach(pushItem);
-                return;
-            }
-            if (s.includes(",")) {
-                s.split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                    .forEach(pushItem);
-                return;
-            }
-
-            pushItem(s);
-            return;
-        }
-
-        if (typeof raw === "number") return;
-        if (typeof raw === "boolean") return;
-
-        pushItem(String(raw));
-    }) as (raw: unknown) => void;
-
-    addFromUnknown((registro as any).materiais_json);
-    addFromUnknown((registro as any).material_json);
-    addFromUnknown((registro as any).materiais);
-    addFromUnknown((registro as any).material);
-
-    if (isPlainObject(registro)) {
-        const obj = registro as Record<string, unknown>;
-        const picked: Record<string, unknown> = {};
-        let hasAny = false;
-        for (const k of Object.keys(obj)) {
-            if (/^materiais_.+/i.test(k)) {
-                picked[k] = obj[k];
-                hasAny = true;
-            }
-        }
-        if (hasAny) {
-            if (isLikelyBooleanMap(picked)) addFromBooleanMap(picked);
-            else addFromMixedObject(picked);
-        }
-    }
-
-    return out;
-}
-
-function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
-    const out: MatLine[] = [];
-    const seen = new Set<string>();
-
-    const pushItem = (raw: any, itemKey?: string) => {
-        const s0 = String(raw ?? "");
-        const s = decodeHtmlEntitiesDeep(s0).trim();
-        if (!s) return;
-
-        const low = s.toLowerCase().trim();
-
-        if (isJsonNoiseLine(s)) return;
-
-        if (low.startsWith("{") || low.startsWith("[")) return;
-        if (looksLikeMateriaisJson(s)) return;
-        if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
-
-        const withQtd = normalizeMatTextToQtyPrefix(s);
-        if (!withQtd) return;
-
-        if (isJsonNoiseLine(withQtd)) return;
-
-        if (seen.has(withQtd)) return;
-        seen.add(withQtd);
-        out.push({ text: withQtd, itemKey });
-    };
-
-    const pushNomeQtd = (nomeRaw: any, qtdRaw?: any, itemKey?: string) => {
-        const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
-        if (!nome) return;
-
-        const prefix = qtyPrefixFromAny(qtdRaw);
-        pushItem(`${prefix} ${nome}`, itemKey);
-    };
-
-    const normalizeItemKeyFromAny = (v: any): string | undefined => {
-        if (v == null) return undefined;
-        const n = Number(v);
-        if (Number.isFinite(n) && n > 0) return `item${n}`;
-        const s = String(v).trim();
-        if (/^item\d+$/i.test(s)) return s;
-        return undefined;
-    };
-
-    const walk = (node: any, parentKey?: string) => {
-        if (node == null) return;
-
-        if (Array.isArray(node)) {
-            node.forEach((x) => walk(x, parentKey));
-            return;
-        }
-
-        if (isPlainObject(node)) {
-            const maybeNome =
-                (node as any).nome ??
-                (node as any).name ??
-                (node as any).descricao ??
-                (node as any).descrição ??
-                (node as any).material;
-
-            const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
-            const checkedVal = (node as any).checked;
-            const qtdVal =
-                (node as any).qtd ??
-                (node as any).quantidade ??
-                (node as any).qtd_item;
-
-            const inferredKey =
-                normalizeItemKeyFromAny((node as any).item_id) ??
-                normalizeItemKeyFromAny((node as any).itemId) ??
-                normalizeItemKeyFromAny((node as any).item_key) ??
-                normalizeItemKeyFromAny((node as any).id) ??
-                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey)
-                    ? parentKey
-                    : undefined);
-
-            if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
-                pushNomeQtd(maybeNome, qtdVal, inferredKey);
-            }
-
-            const containerKeys = [
-                "itens",
-                "items",
-                "materiais",
-                "materiais_json",
-                "material_json",
-                "data",
-            ];
-            for (const k of containerKeys) {
-                if ((node as any)[k] != null) walk((node as any)[k], k);
-            }
-
-            for (const [k, v] of Object.entries(node)) {
-                if (v == null) continue;
-                if (typeof v === "object") walk(v, k);
-            }
-        }
-    };
-
-    const add = (raw: unknown) => {
-        if (raw == null || raw === "") return;
-
-        if (typeof raw === "string") {
-            const s = decodeHtmlEntitiesDeep(raw).trim();
-            if (!s) return;
-            const parsed = tryParseJsonFromStringMaybeEmbedded(s);
-            if (parsed != null) walk(parsed, undefined);
-            return;
-        }
-
-        walk(raw, undefined);
-    };
-
-    add((registro as any).materiais_json);
-    add((registro as any).material_json);
-
-    return out;
-}
-
-function MateriaisValue({
-    registro,
-    lookup = {},
-    fallback = "a definir",
-}: {
-    registro: Registro;
-    lookup?: Record<string, MatLookupInfo>;
-    fallback?: string;
-}) {
-    const structured = extractMateriaisStructuredWithKey(registro);
-    const flat = normalizeMateriaisFromRegistro(registro);
-
-    const lines: MatLine[] = (() => {
-        if (structured.length === 0) return flat.map((t) => ({ text: t }));
-        const have = new Set(structured.map((x) => x.text));
-        const extras = flat.filter((t) => !have.has(t)).map((t) => ({ text: t }));
-        return [...structured, ...extras];
-    })();
-
-    const filteredLines = (lines ?? []).filter(
-        (l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text)
-    );
-
-    if (!filteredLines || filteredLines.length === 0) return <span>{fallback}</span>;
-
-    const groups = new Map<
-        string,
-        { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }
-    >();
-
-    for (const it of filteredLines) {
-        const info = it.itemKey ? lookup[it.itemKey] : undefined;
-
-        const catNome = (info?.catNome ?? "(Sem categoria)").trim() || "(Sem categoria)";
-        const catOrdem = info?.catOrdem ?? 9999;
-        const itemOrdem = info?.itemOrdem ?? 9999;
-
-        if (!groups.has(catNome)) groups.set(catNome, { catNome, catOrdem, items: [] });
-        groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
-    }
-
-    const sortedCats = [...groups.values()].sort(
-        (a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome)
-    );
-
-    return (
-        <div className="space-y-3">
-            {sortedCats.map((g) => {
-                const itemsSorted = [...g.items].sort(
-                    (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
-                );
-
-                return (
-                    <div key={g.catNome}>
-                        <div className="font-bold">{g.catNome}</div>
-                        <ul className="list-disc pl-4 space-y-0.5">
-                            {itemsSorted.map((x, idx) => (
-                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                                    {x.text}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
-/* =========================
-   Local do Velório: rota (Google Maps)
-   ========================= */
-function ensureHttpsUrl(raw: string): string {
-    const s = String(raw ?? "").trim();
-    if (!s) return s;
-
-    if (/^https?:\/\//i.test(s)) {
-        return s.replace(/^http:\/\//i, "https://");
-    }
-
-    if (/^(www\.)/i.test(s)) return `https://${s}`;
-    if (
-        /^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)
-    )
-        return `https://${s}`;
-
-    return s;
-}
-
-function isGoogleMapsRota(raw?: string): boolean {
-    const s = String(raw ?? "").trim().toLowerCase();
-    if (!s) return false;
-
-    const noProto = s.replace(/^https?:\/\//, "");
-    if (noProto.includes("google.com/maps/dir")) return true;
-    if (noProto.includes("maps.google.com/maps/dir")) return true;
-    if (noProto.startsWith("maps.app.goo.gl/")) return true;
-    if (noProto.startsWith("goo.gl/maps/")) return true;
-
-    return false;
-}
-
-function LocalVelorioValue({ value, fallback = "a definir" }: { value?: string; fallback?: string }) {
-    const raw = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
-    if (!raw) return <span>{fallback}</span>;
-
-    if (isGoogleMapsRota(raw)) {
-        const url = ensureHttpsUrl(raw);
-        return (
-            <a
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="font-semibold text-blue-600 hover:underline underline-offset-2"
-                title="Abrir rota no Google Maps"
-            >
-                Abrir Rota
-            </a>
-        );
-    }
-
-    return <span>{shown(raw, fallback)}</span>;
-}
-
-/* Datas/horas → “a definir” para zeros e vazios */
-const formatDateBr = (d?: string) =>
-    !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
-
-function dateOr(d?: string) {
-    const raw = (d ?? "").trim();
-    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
-    const f = formatDateBr(raw);
-    if (!f || f === "00/00/0000") return "a definir";
-    return f;
-}
-
-/** ✅ mostra só dia/mês (17/12) para a coluna "Sepultamento" */
-function dateDayMonthOr(d?: string) {
-    const raw = (d ?? "").trim();
-    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
-
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-        const [, mm, dd] = raw.split("-");
-        return `${dd}/${mm}`;
-    }
-
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
-        const [dd, mm] = raw.split("/");
-        return `${dd}/${mm}`;
-    }
-
-    const m2 = raw.match(/(\d{2})\/(\d{2})/);
-    if (m2) return `${m2[1]}/${m2[2]}`;
-
-    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return `${m[3]}/${m[2]}`;
-
-    return raw;
-}
-
-function timeOr(t?: string) {
-    const raw = (t ?? "").trim();
-    if (!raw) return "a definir";
-    const hhmm = raw.slice(0, 5);
-    if (hhmm === "00:00") return "a definir";
-    return hhmm;
-}
-
-/* ----------- Normalização de status (texto → faseNN) ----------- */
-const ROTULO_PARA_FASE: Record<string, string> = {
+/* =========================================================
+   ✅ NORMALIZAÇÃO FORTE DO STATUS (igual ao backend)
+========================================================= */
+function normalizeStatusCode(v: any): string {
+  const raw = String(v ?? "").trim();
+  if (!raw) return "";
+
+  const low = raw.toLowerCase();
+  if (low.startsWith("fase")) {
+    const num = low.replace(/\D+/g, "");
+    if (!num) return low;
+    return `fase${num.padStart(2, "0")}`;
+  }
+
+  const noAcc = low.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const key = noAcc.trim();
+
+  const map: Record<string, string> = {
     removendo: "fase01",
     "aguardando procedimento": "fase02",
     preparando: "fase03",
@@ -819,1906 +464,2958 @@ const ROTULO_PARA_FASE: Record<string, string> = {
     ornamentando: "fase05",
     "corpo pronto": "fase06",
     transportando: "fase07",
-    "transportando p/ velorio": "fase07",
-    "transportando p/ velório": "fase07",
+    "transportando obito p/velorio": "fase07",
+    "transportando obito para velorio": "fase07",
     velando: "fase08",
     sepultando: "fase09",
-    "transportando p/ sepultamento": "fase09",
     "sepultamento concluido": "fase10",
-    "sepultamento concluído": "fase10",
     "material recolhido": "fase11",
-    concluido: "fase11",
-    concluído: "fase11",
-};
-function normalizeKey(s: string) {
-    return s
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .trim();
-}
-function normalizarStatus(status?: string): string | undefined {
-    if (!status) return undefined;
-    const s = String(status).trim();
-    if (s.toLowerCase().startsWith("fase")) {
-        const digits = s.replace(/[^0-9]/g, "");
-        if (!digits) return s.toLowerCase();
-        return `fase${digits.padStart(2, "0")}`.toLowerCase();
-    }
-    const mapeado = ROTULO_PARA_FASE[normalizeKey(s)];
-    return (mapeado || s).toLowerCase();
+  };
+
+  if (map[key]) return map[key];
+
+  const helper = normalizarStatus?.(raw);
+  return helper ? String(helper) : raw;
 }
 
-/* ---------------- Status badge ---------------- */
-function capStatus(s?: string) {
-    switch (normalizarStatus(s)) {
-        case "fase01":
-            return "Removendo";
-        case "fase02":
-            return "Aguardando Procedimento";
-        case "fase03":
-            return "Preparando";
-        case "fase04":
-            return "Aguardando Ornamentação";
-        case "fase05":
-            return "Ornamentando";
-        case "fase06":
-            return "Corpo Pronto";
-        case "fase07":
-            return "Transportando P/ Velório";
-        case "fase08":
-            return "Velando";
-        case "fase09":
-            return "Transportando P/ Sepultamento";
-        case "fase10":
-            return "Sepultamento Concluído";
-        case "fase11":
-            return "Material Recolhido";
-        default:
-            return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
-    }
+function getNumeroFase(status: any): number {
+  const normalizado = normalizeStatusCode(status);
+  const m = String(normalizado || "").match(/^fase(\d+)$/i);
+  return m ? Number(m[1]) || 0 : 0;
 }
 
-function badgeClass(s?: string) {
-    const x = (normalizarStatus(s) || "").toLowerCase();
-    if (x === "fase01") return "bg-amber-600";
-    if (x === "fase02") return "bg-zinc-600";
-    if (x === "fase03") return "bg-blue-600";
-    if (x === "fase04") return "bg-fuchsia-600";
-    if (x === "fase05") return "bg-rose-600";
-    if (x === "fase06") return "bg-emerald-600";
-    if (x === "fase07") return "bg-cyan-600";
-    if (x === "fase08") return "bg-violet-600";
-    if (x === "fase09") return "bg-orange-600";
-    if (x === "fase10") return "bg-green-700";
-    if (x === "fase11") return "bg-slate-700";
-    return "bg-slate-500";
-}
-
-/* Convenio chip */
-type ConvenioKind = "Particular" | "Prefeitura" | "Associado" | "a definir";
-function normalizeConvenio(s?: string): ConvenioKind {
-    const v = (s || "").toLowerCase();
-    if (!v) return "a definir";
-    if (v.includes("prefeitura")) return "Prefeitura";
-    if (v.includes("associad")) return "Associado";
-    if (v.includes("particular")) return "Particular";
-    return "a definir";
-}
-function convenioClass(kind: ConvenioKind) {
-    switch (kind) {
-        case "Particular":
-            return "bg-amber-500";
-        case "Prefeitura":
-            return "bg-cyan-600";
-        case "Associado":
-            return "bg-emerald-600";
-        default:
-            return "bg-slate-500";
-    }
-}
-
-function ConvenioBadge({
-    convenio,
-    size = "sm",
+function obrigatoriedadeAtivaNoWizard({
+  wizardEditing,
+  wizardData,
+  wizardIdx,
+  registros,
 }: {
-    convenio?: string;
-    size?: "xs" | "sm";
-}) {
-    const kind = normalizeConvenio(convenio);
-    const sizeClass =
-        size === "xs"
-            ? "px-1.5 py-0.5 text-[9px]"
-            : "px-2.5 py-1 text-[11px]";
+  wizardEditing: boolean;
+  wizardData: Registro;
+  wizardIdx: number | null;
+  registros: Registro[];
+}): boolean {
+  if (!wizardEditing) return false;
 
-    return (
-        <span
-            className={`inline-flex items-center rounded-full font-semibold text-white ${convenioClass(
-                kind
-            )} ${sizeClass}`}
-            title="Convênio"
-        >
-            {kind}
-        </span>
-    );
+  const status =
+    (wizardData as any)?.status ??
+    (typeof wizardIdx === "number" ? (registros[wizardIdx] as any)?.status : "");
+
+  return getNumeroFase(status) >= 2;
 }
 
-/* ---------------- Etapas (bolinhas) ---------------- */
-const STAGE_DOT_FILLED = [
-    "bg-emerald-500 border-emerald-600",
-    "bg-sky-500 border-sky-600",
-    "bg-violet-500 border-violet-600",
-    "bg-amber-500 border-amber-600",
-];
-const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
-
-const LABELS: Record<string, string> = {
-    falecido: "Falecido",
-    contato: "Contato",
-    religiao: "Religião",
-    convenio: "Convênio",
-    urna: "Urna",
-    roupa: "Roupa",
-    assistencia: "Assistência",
-    tanato: "Tanatopraxia",
-    invol: "Invol",
-    local_velorio: "Local do Velório",
-    data_inicio_velorio: "Data Início Velório",
-    data_fim_velorio: "Data Fim Velório",
-    hora_inicio_velorio: "Início Velório",
-    hora_fim_velorio: "Fim Velório",
-    local: "Local (Geral)",
-    local_sepultamento: "Local Sepultamento",
+// ==============================
+// ✅ Snapshot do registro original (para comparar no EDITAR)
+// ==============================
+type RoupaSnapshot = {
+  roupa: string;
+  roupa_produto_id: number;
+  roupa_deposito_nome: string;
+  roupa_codigo_barras: string;
+  roupa_propria: number;
 };
 
-const isFilled = (registro: Registro, key?: string) => {
-    if (!key) return false;
-    const v = registro[key];
-    if (v == null) return false;
-    const s = decodeHtmlEntitiesDeep(String(v)).trim().toLowerCase();
-    if (!s) return false;
-    if (["selecionar...", "selecione...", "a definir"].includes(s)) return false;
-    if (key.startsWith("data") && (s === "0000-00-00" || s === "00/00/0000")) return false;
-    if (key.startsWith("hora") && s.startsWith("00:00")) return false;
-    return true;
-};
-
-function etapasPreenchidas(registro: Registro) {
-    const d = [false, false, false, false];
-
-    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) => isFilled(registro, k));
-    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) => isFilled(registro, k));
-    d[2] =
-        isFilled(registro, "local_velorio") &&
-        isFilled(registro, "data_inicio_velorio") &&
-        (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
-    d[3] =
-        isFilled(registro, "hora_inicio_velorio") ||
-        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
-
-    return d;
-}
-
-/* =========================
-   Texto para copiar
-   ========================= */
-function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> = {}) {
-    const v = (k: string) => decodeHtmlEntitiesDeep(String(r?.[k] ?? "")).trim();
-    const atend = (v("convenio") || "A DEFINIR").toUpperCase();
-
-    const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
-    const ornTipo = ornTipoRaw
-        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
-        : "A DEFINIR";
-
-    const involRaw = r?.invol;
-    const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
-    const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
-
-    const localVelRaw = v("local_velorio") || "A DEFINIR";
-    const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
-
-    const structured = extractMateriaisStructuredWithKey(r);
-    const flat = normalizeMateriaisFromRegistro(r);
-
-    const linesAll: MatLine[] = (() => {
-        if (structured.length === 0) return flat.map((t) => ({ text: t }));
-        const have = new Set(structured.map((x) => x.text));
-        const extras = flat.filter((t) => !have.has(t)).map((t) => ({ text: t }));
-        return [...structured, ...extras];
-    })();
-
-    const filtered = linesAll.filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
-
-    const groups = new Map<string, { ordem: number; items: { text: string; itemOrdem: number }[] }>();
-
-    for (const it of filtered) {
-        const info = it.itemKey ? lookup[it.itemKey] : undefined;
-        const catNome = (info?.catNome ?? "Materiais").trim() || "Materiais";
-        const catOrdem = info?.catOrdem ?? 9999;
-        const itemOrdem = info?.itemOrdem ?? 9999;
-
-        if (!groups.has(catNome)) groups.set(catNome, { ordem: catOrdem, items: [] });
-        groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
-    }
-
-    const sortedCats = [...groups.entries()].sort(
-        (a, b) => a[1].ordem - b[1].ordem || a[0].localeCompare(b[0])
-    );
-
-    const materiaisClipboardLines =
-        sortedCats.length === 0
-            ? []
-            : [
-                `*Materiais:*`,
-                ...sortedCats.map(([cat, g]) => {
-                    const items = [...g.items]
-                        .sort((a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text))
-                        .map((x) => x.text);
-                    return `*${cat}:* ${items.join(", ")}`;
-                }),
-            ];
-
-    const lines = [
-        `*ATENDIMENTO ${atend}*`,
-        `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
-        `*Contato:* ${v("contato") || "A DEFINIR"}`,
-        `*Religião:* ${v("religiao") || "A DEFINIR"}`,
-        `*Urna:* ${v("urna") || "A DEFINIR"}`,
-        `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
-        `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
-        `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
-        `*Invol:* ${involYN}`,
-        `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
-        ...materiaisClipboardLines,
-        `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
-        `*Agente:* ${v("agente") || "A DEFINIR"}`,
-        `*Observação:* ${v("observacao") || "A DEFINIR"}`,
-    ];
-
-    return lines.join("\n\n");
-}
-
-/* =========================
-   Regras do painel
-   ========================= */
-function isNao(v?: string) {
-    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
-    return s === "não" || s === "nao" || s === "n";
-}
-function isSim(v?: string) {
-    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
-    return s === "sim" || s === "s";
-}
-function isTerceiroRegistro(r: Registro) {
-    if ((r as any).tipo_atendimento === "terceiro") return true;
-    return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
-}
-
-function involSimNao(value: any): string {
-    const s = decodeHtmlEntitiesDeep(String(value ?? "")).trim().toLowerCase();
-    if (!s) return "Não";
-    if (["1", "true", "t", "sim", "s", "yes", "y"].includes(s)) return "Sim";
-    return "Não";
-}
-
-/* ===== Helpers Linha do Tempo ===== */
-function parseRegistroDateTime(r: Registro) {
-    const d = (r.data || "").trim();
-    const h = (r.hora_fim_velorio || r.hora_inicio_velorio || "").trim() || "00:00";
-    if (!d) return 0;
-    const [yyyy, mm, dd] = d.split("-");
-    const iso = `${yyyy}-${mm}-${dd}T${h}:00`;
-    const ts = Date.parse(iso);
-    return Number.isNaN(ts) ? 0 : ts;
-}
-
-function capitalize(str?: string): string {
-    if (!str) return "";
-    const s = str.toString().trim();
-    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
-}
-
-function formatLogDateTime(value?: string): string {
-    if (!value) return "";
-    const s = value.replace(" ", "T");
-    const d = new Date(s);
-    if (Number.isNaN(d.getTime())) return value;
-    const dd = d.getDate().toString().padStart(2, "0");
-    const mm = (d.getMonth() + 1).toString().padStart(2, "0");
-    const yyyy = d.getFullYear();
-    const hh = d.getHours().toString().padStart(2, "0");
-    const mi = d.getMinutes().toString().padStart(2, "0");
-    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
-}
-
-function parseLogTs(value?: string): number {
-    if (!value) return 0;
-    const ts = Date.parse(String(value).replace(" ", "T"));
-    return Number.isNaN(ts) ? 0 : ts;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function asBool(val: unknown): boolean {
-    if (typeof val === "boolean") return val;
-    const s = decodeHtmlEntitiesDeep(String(val ?? "")).trim().toLowerCase();
-    if (!s) return false;
-    return ["1", "true", "t", "sim", "s", "yes", "y"].includes(s);
-}
-
-function titleCaseFromSnake(key: string): string {
-    return key
-        .split("_")
-        .filter(Boolean)
-        .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-        .join(" ");
-}
-
-function overrideCampoNome(_key: string, defaultName: string): string {
-    return defaultName;
-}
-
-function substituirRotuloVisual(text: string): string {
-    return text;
-}
-
-function formataSeDataIso(value: string): string {
-    const v = value.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        const [yyyy, mm, dd] = v.split("-");
-        return `${dd}/${mm}/${yyyy}`;
-    }
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) {
-        const [datePart, timePart] = v.split(" ");
-        const [yyyy, mm, dd] = datePart.split("-");
-        const hhmm = timePart.slice(0, 5);
-        return `${dd}/${mm}/${yyyy} ${hhmm}`;
-    }
-    return v;
-}
-
-function traduzirFase(s?: string) {
-    return capStatus(s) || (s ?? "");
-}
-
-function iconForAction(acao?: string, status?: string): string {
-    const a = (acao || "").toLowerCase();
-    if (a.includes("criou") || a.includes("novo") || a.includes("inser")) return "🟢";
-    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter")) return "✏️";
-    if (a.includes("exclu") || a.includes("delet") || a.includes("remove")) return "🗑️";
-    const st = (status || "").toLowerCase();
-    if (st.startsWith("fase")) return "🔁";
-    return "•";
-}
-
-/* ===== Status visual com tempo por etapa ===== */
-type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "dot";
-type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
-type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
-
-const STATUS_STEP_DEFS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
-    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "timer" },
-    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
-    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "flower" },
-    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
-    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
-    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "car" },
-    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
-    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
-    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "timer" },
-    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
+const ROUPA_SCOPE_IDS = [
+  "roupa",
+  "roupa_produto_id",
+  "roupa_deposito_nome",
+  "roupa_codigo_barras",
+  "roupa_propria",
 ];
 
-const STATUS_STEPS: StatusStepInfo[] = [
-    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
-    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
-    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
-    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
-    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
-    // Conta do comando "Sepultamento Concluído" até "Material Recolhido".
-    { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
-    // Soma os intervalos entre as etapas principais: aguardando procedimento,
-    // aguardando ornamentação, corpo pronto e transportando para velório.
-    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
-];
+function scrubRoupaNoEditar(payload: any, original: RoupaSnapshot | null) {
+  if (!original) return;
 
-const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
-    acc[step.key] = step;
-    return acc;
-}, {});
+  const rNow = String(payload.roupa ?? "").trim();
+  const rOrig = String(original.roupa ?? "").trim();
 
-function getStatusStepInfo(status?: string): StatusStepInfo {
-    const key = normalizarStatus(status) || "";
-    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", shortLabel: "Status", icon: "dot" };
+  const pidNow = Number(payload.roupa_produto_id ?? 0) || 0;
+  const pidOrig = Number(original.roupa_produto_id ?? 0) || 0;
+
+  const depNow = String(payload.roupa_deposito_nome ?? "").trim();
+  const depOrig = String(original.roupa_deposito_nome ?? "").trim();
+
+  const cbNow = String(payload.roupa_codigo_barras ?? "").trim();
+  const cbOrig = String(original.roupa_codigo_barras ?? "").trim();
+
+  const propNow = Number(payload.roupa_propria ?? 0) ? 1 : 0;
+  const propOrig = Number(original.roupa_propria ?? 0) ? 1 : 0;
+
+  const mudou =
+    rNow !== rOrig ||
+    pidNow !== pidOrig ||
+    depNow !== depOrig ||
+    cbNow !== cbOrig ||
+    propNow !== propOrig;
+
+  // ✅ se não mudou -> NÃO MANDA roupa nenhuma no payload do editar
+  if (!mudou) {
+    delete payload.roupa;
+    delete payload.roupa_produto_id;
+    delete payload.roupa_deposito_nome;
+    delete payload.roupa_codigo_barras;
+    delete payload.roupa_propria;
+    return;
+  }
+
+  // ✅ mudou e virou ROUPA PRÓPRIA
+  if (rNow && isRoupaPropria(rNow)) {
+    payload.roupa = "ROUPA PRÓPRIA";
+    payload.roupa_propria = 1;
+    payload.roupa_produto_id = null;
+    payload.roupa_deposito_nome = null;
+    payload.roupa_codigo_barras = null;
+    return;
+  }
+
+  // ✅ mudou e não é própria: exige combo completo (front safety)
+  if (rNow) {
+    const pid = Number(payload.roupa_produto_id ?? 0) || 0;
+    const dep = String(payload.roupa_deposito_nome ?? "").trim();
+    if (pid <= 0) {
+      throw new Error(
+        'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".',
+      );
+    }
+    if (!dep) {
+      throw new Error(
+        "Roupa: selecione o local de saída (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+      );
+    }
+  }
 }
 
-function getRegistroBackendId(r: Registro): string | undefined {
-    const raw =
-        (r as any).sepultamento_id ??
-        (r as any).sepultamentoId ??
-        (r as any).id ??
-        (r as any).id_atendimento ??
-        (r as any).codigo;
+export default function AcompanhamentoPage() {
+  // Tabela
+  const [registros, setRegistros] = useState<Registro[]>([]);
 
-    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
-    return s || undefined;
-}
+  // Quadro inferior: pedidos de Coroas de Flores em confecção.
+  const [coroasConfeccao, setCoroasConfeccao] = useState<CoroaConfeccao[]>([]);
+  const [coroasConfeccaoLoading, setCoroasConfeccaoLoading] = useState(false);
+  const [coroasConfeccaoError, setCoroasConfeccaoError] = useState<string | null>(null);
+  const coroasAbortRef = useRef<AbortController | null>(null);
 
-function getRegistroTrackingId(r: Registro): string {
-    return (
-        getRegistroBackendId(r) ??
-        `${decodeHtmlEntitiesDeep(String(r.falecido ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.data ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.hora_fim_velorio ?? "")).trim()}`
+  // ============================================================
+  // MODO TV — AJUSTE AUTOMÁTICO DE DENSIDADE
+  //
+  // O tamanho atual permanece exatamente igual enquanto tudo cabe
+  // na altura disponível. Somente quando o conteúdo ultrapassaria
+  // a tela, o painel reduz progressivamente fonte e espaçamento.
+  // Isso vale para Atendimentos e Coroas ao mesmo tempo.
+  // ============================================================
+  const dashboardRef = useRef<HTMLDivElement | null>(null);
+  const [tvDensity, setTvDensity] = useState<TvDensity>("normal");
+
+  const recalcularDensidadeTv = useCallback(() => {
+    const el = dashboardRef.current;
+    if (!el || typeof window === "undefined") return;
+
+    const niveis: TvDensity[] = ["normal", "compact", "dense", "ultra"];
+    const rect = el.getBoundingClientRect();
+
+    // Mantém uma pequena margem inferior para impedir que a última
+    // linha encoste na borda da TV.
+    const alturaDisponivel = Math.max(
+      200,
+      window.innerHeight - rect.top - 24,
     );
-}
 
-function getStatusFromLog(log: LogItem): string | undefined {
-    const detalhes = isPlainObject(log.detalhes) ? (log.detalhes as Record<string, unknown>) : {};
-    const raw =
-        log.status_novo ??
-        (detalhes.status_novo as string | undefined) ??
-        (detalhes.status as string | undefined) ??
-        (detalhes.novo_status as string | undefined);
+    let escolhido: TvDensity = "ultra";
 
-    const normalized = normalizarStatus(raw);
-    return normalized?.startsWith("fase") ? normalized : undefined;
-}
+    // Testa do tamanho normal para o menor. O primeiro que couber
+    // é mantido; portanto não reduz fonte sem necessidade.
+    for (const nivel of niveis) {
+      el.dataset.tvDensity = nivel;
 
-function formatDurationMs(msRaw: number): string {
-    const ms = Math.max(0, Number.isFinite(msRaw) ? msRaw : 0);
-    const totalMinutes = Math.floor(ms / 60000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-}
+      // Força a leitura do layout já com a densidade candidata.
+      const alturaConteudo = el.scrollHeight;
 
-const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
-const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase07"]);
-
-function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
-    const logTimes = (logs ?? [])
-        .map((log) => parseLogTs(log.datahora))
-        .filter((ts) => ts > 0)
-        .sort((a, b) => a - b);
-
-    if (logTimes.length > 0) return logTimes[0];
-
-    const registroTs = parseRegistroDateTime(registro);
-    return registroTs > 0 ? registroTs : nowMs;
-}
-
-function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
-    const currentKey = normalizarStatus(registro.status);
-    const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
-
-    const statusEvents = (logs ?? [])
-        .map((log) => ({ key: getStatusFromLog(log), ts: parseLogTs(log.datahora) }))
-        .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
-        .sort((a, b) => a.ts - b.ts);
-
-    const unique: { key: string; ts: number }[] = [{ key: "fase01", ts: createdTs }];
-
-    for (const ev of statusEvents) {
-        if (ev.ts < createdTs) continue;
-
-        // Removendo começa no momento da criação do atendimento. Portanto, o comando
-        // explícito de "Indo retirar" não é necessário para iniciar a contagem/piscada.
-        if (ev.key === "fase01") continue;
-
-        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
-            unique.push(ev);
-        }
+      if (alturaConteudo <= alturaDisponivel + 2) {
+        escolhido = nivel;
+        break;
+      }
     }
 
-    const hasAdvancedByLog = unique.some((ev) => ev.key !== "fase01");
+    el.dataset.tvDensity = escolhido;
+    setTvDensity((atual) => (atual === escolhido ? atual : escolhido));
+  }, []);
 
-    // Enquanto ainda não existe nenhum log real indicando "Corpo na Clínica /
-    // Aguardando Procedimento" ou fase posterior, a etapa Removendo permanece ativa,
-    // piscando e contando desde a criação do atendimento.
-    const effectiveCurrentKey = hasAdvancedByLog ? currentKey : "fase01";
+  useLayoutEffect(() => {
+    recalcularDensidadeTv();
 
-    if (hasAdvancedByLog && currentKey && unique[unique.length - 1]?.key !== currentKey) {
-        unique.push({ key: currentKey, ts: nowMs });
-    }
+    let raf = 0;
 
-    return unique.map((ev, idx) => {
-        const info = getStatusStepInfo(ev.key);
-        const isLast = idx === unique.length - 1;
-        const end = isLast ? nowMs : unique[idx + 1].ts;
-        return {
-            key: info.key,
-            label: info.label,
-            shortLabel: info.shortLabel,
-            icon: info.icon,
-            start: ev.ts,
-            end,
-            active: isLast && ev.key === effectiveCurrentKey,
-        };
-    });
-}
-
-function getStatusDisplayData(segments: StatusSegment[]) {
-    const durations = new Map<string, number>();
-    let activeKey: string | undefined;
-
-    for (const seg of segments) {
-        const duration = Math.max(0, seg.end - seg.start);
-        const displayKey = STATUS_IDLE_KEYS.has(seg.key) ? "idle" : STATUS_MAIN_KEYS.has(seg.key) ? seg.key : undefined;
-        if (!displayKey) continue;
-
-        durations.set(displayKey, (durations.get(displayKey) ?? 0) + duration);
-        if (seg.active) activeKey = displayKey;
-    }
-
-    return { durations, activeKey };
-}
-
-/* =========================
-   Página
-   ========================= */
-const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
-
-export default function QuadroAtendimentoPage() {
-    const [clockTime, setClockTime] = useState("");
-    const [clockDate, setClockDate] = useState("");
-    const [nowMs, setNowMs] = useState(() => Date.now());
-
-    const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
-    const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
-
-    const [open, setOpen] = useState(false);
-    const [detail, setDetail] = useState<Registro | null>(null);
-    const [copied, setCopied] = useState(false);
-
-    const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
-    const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
-    const [detailLogsLoading, setDetailLogsLoading] = useState(false);
-    const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
-
-    const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
-    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
-
-    useEffect(() => {
-        const update = () => {
-            const now = new Date();
-            setNowMs(now.getTime());
-            const h = now.getHours().toString().padStart(2, "0");
-            const m = now.getMinutes().toString().padStart(2, "0");
-            const s = now.getSeconds().toString().padStart(2, "0");
-            setClockTime(`${h}:${m}:${s}`);
-
-            const dd = now.getDate().toString().padStart(2, "0");
-            const mm = (now.getMonth() + 1).toString().padStart(2, "0");
-            const yyyy = now.getFullYear();
-            setClockDate(`${DIAS[now.getDay()]}, ${dd}/${mm}/${yyyy}`);
-        };
-        update();
-        const id = setInterval(update, 1000);
-        return () => clearInterval(id);
-    }, []);
-
-    useEffect(() => {
-        let alive = true;
-        const BASE_INFO = "/api/php/informativo.php?listar=1";
-
-        async function load() {
-            try {
-                const url = `${BASE_INFO}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
-                if (!alive) return;
-                const arr = Array.isArray(j) ? (j as Registro[]) : [];
-                setRegistros(arr);
-                writeLS("qa_registros", arr);
-            } catch {
-                // mantém o que já tem
-            }
-        }
-
-        load();
-        const id = setInterval(load, 8000);
-        return () => {
-            alive = false;
-            clearInterval(id);
-        };
-    }, []);
-
-    useEffect(() => {
-        let alive = true;
-        const BASE_AVISOS = "/api/php/avisos.php?listar=1";
-
-        async function load() {
-            if (!alive) return;
-
-            try {
-                const url = `${BASE_AVISOS}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, {
-                    ttlMs: 5_000,
-                    cacheKey: "avisos_listar",
-                });
-
-                if (!alive) return;
-
-                const arr: Aviso[] = Array.isArray(j) ? j : [];
-
-                setAvisos(arr);
-                writeLS("qa_avisos", arr);
-            } catch (err) {
-                console.error("Erro ao carregar avisos:", err);
-
-                if (!alive) return;
-
-                // mantém a UI estável e limpa o cache persistido
-                setAvisos([]);
-                writeLS("qa_avisos", []);
-            }
-        }
-
-        load();
-
-        const id = window.setInterval(() => {
-            void load();
-        }, 10000);
-
-        return () => {
-            alive = false;
-            window.clearInterval(id);
-        };
-    }, []);
-
-    useEffect(() => {
-        let alive = true;
-
-        async function loadMateriaisCatalog() {
-            try {
-                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
-                const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
-
-                const tree = (res?.data ?? res) as any[];
-                const map: Record<string, MatLookupInfo> = {};
-
-                for (const cat of tree ?? []) {
-                    const catNome = String(cat?.nome ?? "").trim();
-                    const catOrdem = Number(cat?.ordem ?? 0);
-
-                    for (const it of cat?.itens ?? []) {
-                        const itemId = Number(it?.id);
-                        if (!Number.isFinite(itemId) || itemId <= 0) continue;
-
-                        const itemOrdem = Number(it?.ordem ?? 0);
-                        const itemKey = `item${itemId}`;
-
-                        map[itemKey] = { catNome, catOrdem, itemOrdem };
-                    }
-                }
-
-                if (!alive) return;
-                setMatLookup(map);
-            } catch {
-                if (!alive) return;
-                setMatLookup({});
-            }
-        }
-
-        loadMateriaisCatalog();
-        return () => {
-            alive = false;
-        };
-    }, []);
-
-    const resetDetailTimeline = useCallback(() => {
-        setDetailTimelineOpen(false);
-        setDetailLogs([]);
-        setDetailLogsLoading(false);
-        setDetailLogsError(null);
-    }, []);
-
-    const showDetail = useCallback(
-        (r: Registro) => {
-            setDetail(r);
-            setOpen(true);
-            setCopied(false);
-            resetDetailTimeline();
-        },
-        [resetDetailTimeline]
-    );
-
-    const closeDetail = useCallback(() => {
-        setOpen(false);
-        setDetail(null);
-        setCopied(false);
-        resetDetailTimeline();
-    }, [resetDetailTimeline]);
-
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") closeDetail();
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [closeDetail]);
-
-    const ativosOrdenados = useMemo(() => {
-        const base = (registros || []).filter((r) => {
-            const status = normalizarStatus(r.status);
-
-            if (status === "fase11") return false;
-            if (isTerceiroRegistro(r)) return status !== "fase10";
-            if (!isSim(r.assistencia)) return status !== "fase10";
-            return true;
-        });
-
-        const withTs = base.map((r) => ({ r, ts: parseRegistroDateTime(r) }));
-        withTs.sort((a, b) => b.ts - a.ts);
-        return withTs.map((x) => x.r);
-    }, [registros]);
-
-    useEffect(() => {
-        let alive = true;
-
-        async function loadStatusLogs() {
-            const updates: Record<string, LogItem[]> = {};
-            const ativosComId = ativosOrdenados
-                .map((r) => ({ r, id: getRegistroBackendId(r), trackingId: getRegistroTrackingId(r) }))
-                .filter((x) => !!x.id);
-
-            await Promise.all(
-                ativosComId.map(async ({ id, trackingId }) => {
-                    try {
-                        const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
-                        const url = `${BASE}&_ts=${Date.now()}`;
-                        const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${id}` });
-
-                        let logs: LogItem[] = [];
-                        if (Array.isArray(json)) logs = json as LogItem[];
-                        else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
-
-                        updates[trackingId] = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
-                    } catch {
-                        updates[trackingId] = [];
-                    }
-                })
-            );
-
-            if (!alive) return;
-            setStatusLogsById((prev) => ({ ...prev, ...updates }));
-        }
-
-        loadStatusLogs();
-        const id = window.setInterval(() => {
-            void loadStatusLogs();
-        }, 30000);
-
-        return () => {
-            alive = false;
-            window.clearInterval(id);
-        };
-    }, [ativosOrdenados]);
-
-    const TAG_SERVICO = "Atendimento:";
-
-    function normNome(s?: string) {
-        return String(s ?? "")
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .toLowerCase();
-    }
-
-    function isServicoMsg(msg?: any) {
-        const s = String(msg ?? "");
-        return s.startsWith(TAG_SERVICO);
-    }
-
-    function extractServicoNome(msg?: string) {
-        const s = String(msg ?? "");
-        if (!s.startsWith(TAG_SERVICO)) return "";
-
-        const rest = s.slice(TAG_SERVICO.length).trim();
-        const idx = rest.indexOf(":");
-
-        return (idx >= 0 ? rest.slice(0, idx) : rest).trim();
-    }
-
-    const nomesAtivos = useMemo(() => {
-        const set = new Set<string>();
-
-        for (const r of ativosOrdenados as Registro[]) {
-            const nome = String(r?.falecido ?? "").trim();
-            if (nome) set.add(normNome(nome));
-        }
-
-        return set;
-    }, [ativosOrdenados]);
-
-    const avisosParaExibir = useMemo(() => {
-        const arr = Array.isArray(avisos) ? avisos : [];
-
-        return arr.filter((a) => {
-            const msg = String(a?.mensagem ?? "");
-
-            // aviso comum: sempre exibe
-            if (!isServicoMsg(msg)) return true;
-
-            // aviso de serviço: só exibe se o nome ainda estiver entre os ativos
-            const nome = extractServicoNome(msg);
-            if (!nome) return true;
-
-            return nomesAtivos.has(normNome(nome));
-        });
-    }, [avisos, nomesAtivos]);
-
-    const handleCopy = useCallback(async () => {
-        if (!detail) return;
-        const text = buildClipboardText(detail, matLookup);
-        try {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch {
-            const ta = document.createElement("textarea");
-            ta.value = text;
-            ta.style.position = "fixed";
-            ta.style.left = "-9999px";
-            document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
-            try {
-                document.execCommand("copy");
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            } finally {
-                document.body.removeChild(ta);
-            }
-        }
-    }, [detail, matLookup]);
-
-    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
-        setDetailLogs([]);
-        setDetailLogsError(null);
-        setDetailLogsLoading(true);
-
-        try {
-            const sepId =
-                (r as any).sepultamento_id ??
-                (r as any).sepultamentoId ??
-                (r as any).id ??
-                (r as any).id_atendimento ??
-                (r as any).codigo;
-
-            if (!sepId) {
-                console.warn("Registro sem sepultamento_id para histórico:", r);
-                setDetailLogs([]);
-                return;
-            }
-
-            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
-            const url = `${BASE}&_ts=${Date.now()}`;
-
-            const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
-
-            let logs: LogItem[] = [];
-            if (Array.isArray(json)) logs = json as LogItem[];
-            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
-
-            logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
-            setDetailLogs(logs);
-        } catch (e) {
-            console.error(e);
-            setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
-        } finally {
-            setDetailLogsLoading(false);
-        }
-    }, []);
-
-    const toggleTimelineDetalhe = useCallback(async () => {
-        if (!detail) return;
-        const next = !detailTimelineOpen;
-        setDetailTimelineOpen(next);
-
-        if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
-            await carregarHistoricoDoDetalhe(detail);
-        }
-    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
-
-    const obsList = useCallback(
-        (missing: string[]) => (missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo."),
-        []
-    );
-
-    const missingEtapa0 = useCallback((r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)), []);
-    const missingEtapa1 = useCallback((r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)), []);
-    const missingEtapa2 = useCallback((r: Registro) => {
-        const miss: string[] = [];
-        if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
-        if (!isFilled(r, "data_inicio_velorio")) miss.push("data_inicio_velorio");
-        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local"))) miss.push("local_sepultamento");
-        return miss;
-    }, []);
-    const noteEtapa3 = useCallback((r: Registro) => {
-        const hasInicio = isFilled(r, "hora_inicio_velorio");
-        const hasFim = isFilled(r, "data_fim_velorio") && isFilled(r, "hora_fim_velorio");
-        if (hasInicio && hasFim) return "Horários definidos.";
-        if (hasInicio) return "Horário de início definido.";
-        if (hasFim) return "Horário de encerramento definido.";
-        return "Pendências de horário.";
-    }, []);
-
-    const desktopAtivos = ativosOrdenados;
-    const mobileAtivos = ativosOrdenados;
-    const desktopHiddenCount = 0;
-    const mobileHiddenCount = 0;
-
-    return (
-        <>
-            <style jsx global>{`
-                html,
-                body,
-                #__next,
-                body > div {
-                    max-width: 100vw !important;
-                    overflow: hidden !important;
-                }
-                * {
-                    box-sizing: border-box;
-                }
-                .qa-page-root {
-                    width: min(calc(100dvw - 132px), 1420px) !important;
-                    max-width: min(calc(100dvw - 132px), 1420px) !important;
-                    margin-left: auto !important;
-                    margin-right: auto !important;
-                    min-width: 0 !important;
-                    overflow: hidden !important;
-                }
-                @media (max-width: 900px) {
-                    .qa-page-root {
-                        width: calc(100dvw - 18px) !important;
-                        max-width: calc(100dvw - 18px) !important;
-                        margin-left: auto !important;
-                        margin-right: auto !important;
-                    }
-                }
-                .qa-panel-premium {
-                    background:
-                        radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 34%),
-                        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.9));
-                    border-color: rgba(148, 163, 184, 0.18);
-                    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
-                }
-                .qa-card-soft {
-                    background: rgba(15, 23, 42, 0.72);
-                    border-color: rgba(148, 163, 184, 0.14);
-                }
-                .qa-text-muted {
-                    color: rgba(203, 213, 225, 0.68);
-                }
-                .qa-no-scrollbar,
-                .qa-no-scrollbar * {
-                    scrollbar-width: none !important;
-                }
-                .qa-no-scrollbar::-webkit-scrollbar,
-                .qa-no-scrollbar *::-webkit-scrollbar {
-                    display: none !important;
-                }
-                .qa-truncate-2 {
-                    display: -webkit-box;
-                    -webkit-line-clamp: 2;
-                    -webkit-box-orient: vertical;
-                    overflow: hidden;
-                }
-                @media (max-width: 640px) {
-                    html,
-                    body,
-                    #__next,
-                    body > div {
-                        overflow: hidden !important;
-                    }
-                }
-            `}</style>
-
-            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
-                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                        <div className="min-w-0">
-                            <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
-                                Quadro de Atendimentos
-                            </h1>
-                            <p className="mt-0.5 text-[11px] font-medium qa-text-muted">Atualizado em tempo real</p>
-                        </div>
-
-                        <div className="shrink-0 text-right leading-tight">
-                            <div className="text-lg font-bold tabular-nums text-slate-100 sm:text-xl">{clockTime}</div>
-                            <div className="mt-0.5 text-[10px] font-medium qa-text-muted sm:text-[11px]">{clockDate}</div>
-                        </div>
-                    </div>
-
-                    <div className="mt-2 h-px bg-slate-700/50" />
-                    <div className="mt-1.5 h-6 overflow-hidden">
-                        <AvisosTicker avisos={avisosParaExibir} />
-                    </div>
-                </header>
-
-                <main className="min-h-0 flex-1 overflow-hidden">
-                    <DesktopTable
-                        ativos={desktopAtivos}
-                        hiddenCount={desktopHiddenCount}
-                        onSelect={showDetail}
-                        statusLogsById={statusLogsById}
-                        nowMs={nowMs}
-                    />
-                    <MobileCards
-                        ativos={mobileAtivos}
-                        hiddenCount={mobileHiddenCount}
-                        onSelect={showDetail}
-                        statusLogsById={statusLogsById}
-                        nowMs={nowMs}
-                    />
-                </main>
-
-                {open && detail && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-3 sm:p-6" aria-modal role="dialog">
-                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDetail} aria-hidden />
-
-                        <div className="qa-panel-premium relative z-10 flex max-h-[86dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
-                            <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 backdrop-blur sm:px-5">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0">
-                                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] qa-text-muted">Detalhes do atendimento</div>
-                                        <h3 className="mt-1 truncate text-lg font-bold leading-tight text-slate-100 sm:text-xl">
-                                            {shown(detail.falecido)}
-                                        </h3>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs qa-text-muted">
-                                            <span>Data: <b className="text-slate-200">{dateOr(detail.data)}</b></span>
-                                            <span>Hora: <b className="text-slate-200">{timeOr(detail.hora_fim_velorio)}</b></span>
-                                            <span>Agente: <b className="text-slate-200">{shown(detail.agente)}</b></span>
-                                        </div>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-white ${badgeClass(detail.status)}`}>
-                                                {capStatus(detail.status)}
-                                            </span>
-                                            <ConvenioBadge convenio={detail.convenio} size="xs" />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex shrink-0 items-center gap-2">
-                                        <button
-                                            onClick={toggleTimelineDetalhe}
-                                            className={`rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 ${detailTimelineOpen ? "bg-slate-800" : "bg-slate-900/50"}`}
-                                            aria-label="Linha do tempo"
-                                            title="Ver linha do tempo deste atendimento"
-                                        >
-                                            Linha do tempo
-                                        </button>
-
-                                        <button
-                                            onClick={handleCopy}
-                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
-                                            aria-label="Copiar"
-                                            title="Copiar informações"
-                                        >
-                                            {copied ? "Copiado!" : "Copiar"}
-                                        </button>
-
-                                        <button
-                                            onClick={closeDetail}
-                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
-                                            aria-label="Fechar"
-                                        >
-                                            Fechar
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {detailTimelineOpen && (
-                                    <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-950/55 p-3">
-                                        <div className="mb-2 flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-bold text-slate-200">Linha do Tempo</div>
-                                                <div className="truncate text-[11px] qa-text-muted">Logs deste atendimento: {shown(detail.falecido)}</div>
-                                            </div>
-                                            <button
-                                                onClick={() => setDetailTimelineOpen(false)}
-                                                className="shrink-0 rounded-full border border-slate-700/70 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
-                                                aria-label="Ocultar linha do tempo"
-                                            >
-                                                Ocultar
-                                            </button>
-                                        </div>
-
-                                        {detailLogsLoading && <p className="text-sm qa-text-muted">Carregando histórico…</p>}
-                                        {detailLogsError && <p className="text-sm text-red-400">{detailLogsError}</p>}
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="text-sm qa-text-muted">Nenhum log encontrado para este atendimento.</p>
-                                        )}
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-                                <div className="grid gap-3">
-                                    <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-                                            <Field label="Falecido" value={shown(detail.falecido)} />
-                                            <Field label="Religião" value={shown(detail.religiao)} />
-                                            <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
-                                            <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                            <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
-                                        </div>
-                                    </Topic>
-
-                                    <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-                                            <Field label="Urna" value={shown(detail.urna)} />
-                                            <Field label="Roupa" value={shown(detail.roupa)} />
-                                            <Field label="Assistência" value={shown(detail.assistencia)} />
-                                            <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                            <Field label="Invol" value={involSimNao(detail.invol)} />
-                                            <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
-                                            {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
-                                                <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
-                                            )}
-                                            <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
-                                        </div>
-                                    </Topic>
-
-                                    <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
-                                            <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
-                                            <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                            <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                            <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-3" />
-                                        </div>
-                                    </Topic>
-
-                                    <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
-                                            <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
-                                            <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
-                                            <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                            <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-3" />
-                                        </div>
-                                    </Topic>
-
-                                    <div className="rounded-xl border border-slate-700/60 bg-slate-950/45 p-3">
-                                        <div className="mb-2 text-xs font-semibold qa-text-muted">Etapas preenchidas</div>
-                                        <EtapasRow registro={detail} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </>
-    );
-}
-
-/* ===== ✅ Avisos em ticker (uma linha, rolando direita -> esquerda) ===== */
-function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
-    const items = useMemo(() => {
-        return (avisos ?? [])
-            .map((a) => ({
-                usuario: shown(a?.usuario, "").trim(),
-                mensagem: shown(a?.mensagem, "").trim(),
-            }))
-            .filter((x) => x.usuario || x.mensagem);
-    }, [avisos]);
-
-    const durationSec = useMemo(() => {
-        const totalChars = items.reduce((acc, it) => acc + it.usuario.length + it.mensagem.length + 10, 0);
-        const sec = Math.round(totalChars / 10);
-        return Math.max(18, Math.min(60, sec));
-    }, [items]);
-
-    if (items.length === 0) {
-        return <p className="text-[11px] text-muted-foreground">Nenhum aviso no momento.</p>;
-    }
-
-    const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
-        <div className="flex items-center gap-7 px-2 py-1 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
-            {items.map((x, i) => (
-                <div key={i} className="flex items-center gap-2 text-[12px] font-semibold text-slate-200">
-                    {x.usuario ? <strong className="font-bold text-slate-100">{x.usuario}</strong> : null}
-                    {x.mensagem ? <span className="text-slate-200">{x.mensagem}</span> : null}
-                    <span className="text-slate-500">•</span>
-                </div>
-            ))}
-        </div>
-    );
-
-    return (
-        <div className="relative w-full overflow-hidden">
-            <div className="qa-avisos-track flex w-max" style={{ animationDuration: `${durationSec}s` }}>
-                <RenderItems />
-                <RenderItems ariaHidden />
-            </div>
-
-            <style jsx global>{`
-                @keyframes qa-avisos-marquee {
-                    0% {
-                        transform: translateX(0);
-                    }
-                    100% {
-                        transform: translateX(-50%);
-                    }
-                }
-                .qa-avisos-track {
-                    will-change: transform;
-                    animation-name: qa-avisos-marquee;
-                    animation-timing-function: linear;
-                    animation-iteration-count: infinite;
-                }
-                .qa-avisos-track:hover {
-                    animation-play-state: paused;
-                }
-                @media (prefers-reduced-motion: reduce) {
-                    .qa-avisos-track {
-                        animation: none !important;
-                        transform: none !important;
-                    }
-                }
-            `}</style>
-        </div>
-    );
-}
-
-/* ===== Listas Memoizadas ===== */
-const DesktopTable = React.memo(function DesktopTable({
-    ativos,
-    hiddenCount = 0,
-    onSelect,
-    statusLogsById,
-    nowMs,
-}: {
-    ativos: Registro[];
-    hiddenCount?: number;
-    onSelect: (r: Registro) => void;
-    statusLogsById: Record<string, LogItem[]>;
-    nowMs: number;
-}) {
-    return (
-        <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
-            <div className="grid h-8 shrink-0 grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
-                <div>Data</div>
-                <div>Falecido(a)</div>
-                <div>Local</div>
-                <div>Sepultamento</div>
-                <div>Agente</div>
-                <div>Status</div>
-            </div>
-
-            <div className="min-h-0 overflow-hidden">
-                {ativos.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
-                ) : (
-                    ativos.map((r, i) => {
-                        const preenchidas = etapasPreenchidas(r);
-                        const trackingId = getRegistroTrackingId(r);
-                        return (
-                            <div
-                                key={trackingId || i}
-                                className="grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
-                            >
-                                <div className="min-w-0">
-                                    <div className="mb-1 flex justify-center">
-                                        <EtapasInlineDots filled={preenchidas} />
-                                    </div>
-                                    <div className="text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">{dateOr(r.data)}</div>
-                                    <div className="mt-1 flex justify-center">
-                                        <ConvenioBadge convenio={r.convenio} size="xs" />
-                                    </div>
-                                </div>
-
-                                <button
-                                    className="min-w-0 text-left text-[12px] font-bold leading-tight text-slate-100 underline-offset-2 hover:underline"
-                                    onClick={() => onSelect(r)}
-                                    title={shown(r.falecido)}
-                                >
-                                    <span className="block truncate">{shown(r.falecido)}</span>
-                                </button>
-
-                                <div className="min-w-0 text-[12px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
-                                    <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
-                                </div>
-
-                                <div className="min-w-0 leading-tight">
-                                    <div className="text-[11px] font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
-                                    <div className="mt-0.5 truncate text-[12px] font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
-                                </div>
-
-                                <div className="min-w-0 truncate text-[12px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
-
-                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
-                            </div>
-                        );
-                    })
-                )}
-            </div>
-
-        </section>
-    );
-});
-
-const MobileCards = React.memo(function MobileCards({
-    ativos,
-    hiddenCount = 0,
-    onSelect,
-    statusLogsById,
-    nowMs,
-}: {
-    ativos: Registro[];
-    hiddenCount?: number;
-    onSelect: (r: Registro) => void;
-    statusLogsById: Record<string, LogItem[]>;
-    nowMs: number;
-}) {
-    return (
-        <section className="flex h-full min-h-0 flex-col gap-2 overflow-hidden sm:hidden">
-            {ativos.length === 0 ? (
-                <div className="qa-panel-premium rounded-2xl border p-4 text-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
-            ) : (
-                ativos.map((r, i) => {
-                    const preenchidas = etapasPreenchidas(r);
-                    const trackingId = getRegistroTrackingId(r);
-                    return (
-                        <article key={trackingId || i} className="qa-panel-premium overflow-hidden rounded-2xl border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                                <button
-                                    className="min-w-0 text-left text-base font-bold leading-snug text-slate-100"
-                                    onClick={() => onSelect(r)}
-                                    title={shown(r.falecido)}
-                                >
-                                    <span className="block truncate">{shown(r.falecido)}</span>
-                                </button>
-                                <div className="shrink-0 text-right">
-                                    <EtapasInlineDots filled={preenchidas} />
-                                    <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
-                                    <div className="mt-1"><ConvenioBadge convenio={r.convenio} size="xs" /></div>
-                                </div>
-                            </div>
-
-                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
-                                    <div className="qa-text-muted">Local</div>
-                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
-                                </div>
-                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
-                                    <div className="qa-text-muted">Sepultamento</div>
-                                    <div className="mt-1 font-semibold text-slate-100">{dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}</div>
-                                </div>
-                            </div>
-
-                            <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-                                <div className="min-w-0 truncate qa-text-muted">Agente: <b className="text-slate-200">{shown(r.agente)}</b></div>
-                            </div>
-
-                            <div className="mt-2 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
-                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
-                            </div>
-                        </article>
-                    );
-                })
-            )}
-
-            {hiddenCount > 0 && (
-                <div className="qa-panel-premium rounded-xl border px-3 py-2 text-center text-xs font-semibold qa-text-muted">
-                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
-                </div>
-            )}
-        </section>
-    );
-});
-
-/* ===== Componentes auxiliares ===== */
-function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
-    return (
-        <section className="rounded-xl border border-slate-700/60 bg-slate-950/35 p-3">
-            <div className="flex items-start justify-between gap-2">
-                <h4 className="mb-3 text-xs font-bold tracking-wide text-slate-300">{title}</h4>
-                {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
-            </div>
-            {children}
-        </section>
-    );
-}
-
-function Field({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
-    return (
-        <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[120px] shrink-0 text-xs font-bold text-slate-400">{label}:</span>
-            <span className="min-w-0 text-xs font-semibold text-slate-100 break-words [overflow-wrap:anywhere]">{value}</span>
-        </div>
-    );
-}
-
-function EtapasInlineDots({ filled }: { filled: boolean[] }) {
-    return (
-        <div className="flex items-center gap-1" title="Etapas preenchidas">
-            {[0, 1, 2, 3].map((k) => (
-                <span key={k} className={`h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
-            ))}
-        </div>
-    );
-}
-
-function StatusTimelineCell({
-    registro,
-    logs,
-    nowMs,
-    variant = "desktop",
-}: {
-    registro: Registro;
-    logs?: LogItem[];
-    nowMs: number;
-    variant?: "desktop" | "mobile";
-}) {
-    const segments = buildStatusSegments(registro, logs, nowMs);
-    const firstStart = segments[0]?.start ?? nowMs;
-    const totalMs = Math.max(0, nowMs - firstStart);
-    const current = segments[segments.length - 1];
-
-    const { durations, activeKey } = getStatusDisplayData(segments);
-
-    if (variant === "mobile") {
-        const activeStep = STATUS_STEPS.find((step) => step.key === activeKey) ?? STATUS_STEPS[0];
-        const activeDuration = durations.get(activeStep.key) ?? 0;
-        return (
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-                <StatusPill icon={activeStep.icon} label={activeStep.shortLabel} time={formatDurationMs(activeDuration)} active={!!activeKey} />
-                <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total />
-                <StatusBlinkStyle />
-            </div>
-        );
-    }
-
-    return (
-        <div className="-ml-6 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1">
-            {STATUS_STEPS.map((step) => {
-                const duration = durations.get(step.key) ?? 0;
-                const skipped = isStatusStepSkipped(registro, step.key);
-                const isActive = !skipped && activeKey === step.key;
-                return (
-                    <StatusPill
-                        key={step.key}
-                        icon={step.icon}
-                        label={step.shortLabel}
-                        time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
-                        active={isActive}
-                        muted={!isActive && (duration <= 0 || skipped)}
-                        skipped={skipped}
-                        title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
-                    />
-                );
-            })}
-            <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
-            <StatusBlinkStyle />
-        </div>
-    );
-}
-
-function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
-    if (stepKey === "fase03") return isNao(registro.tanato);
-    if (stepKey === "fase05") return isNao((registro.ornamentacao_tipo ?? registro.ornamentacao) as string | undefined);
-    return false;
-}
-
-function StatusPill({
-    icon,
-    label,
-    time,
-    active = false,
-    muted = false,
-    total = false,
-    skipped = false,
-    title,
-}: {
-    icon: StatusIconKey;
-    label: string;
-    time: string;
-    active?: boolean;
-    muted?: boolean;
-    total?: boolean;
-    skipped?: boolean;
-    title?: string;
-}) {
-    return (
-        <div
-            className={`relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
-            title={title ?? `${label} • ${time}`}
-        >
-            <div className={`relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`}>
-                <div
-                    className={`relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
-                    aria-hidden="true"
-                >
-                    <StatusIcon type={icon} />
-                </div>
-            </div>
-            <div className={`mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-100"}`}>{time}</div>
-            {skipped && (
-                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
-                    ×
-                </span>
-            )}
-        </div>
-    );
-}
-
-function StatusIcon({ type }: { type: StatusIconKey }) {
-    const common = {
-        viewBox: "0 0 24 24",
-        fill: "none",
-        stroke: "currentColor",
-        strokeWidth: 2.15,
-        strokeLinecap: "round" as const,
-        strokeLinejoin: "round" as const,
-        className: "h-full w-full",
+    const onResize = () => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(recalcularDensidadeTv);
     };
 
-    switch (type) {
-        case "hospital":
-            return (
-                <svg {...common}>
-                    <path d="M4 21V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V21" />
-                    <path d="M9 21v-5a3 3 0 0 1 6 0v5" />
-                    <path d="M12 7.5v5" />
-                    <path d="M9.5 10h5" />
-                    <path d="M6.5 21h11" />
-                </svg>
-            );
-        case "testTube":
-            return (
-                <svg {...common}>
-                    <path d="M10 2h7" />
-                    <path d="M14 2v6.6l4.5 7.8A3.7 3.7 0 0 1 15.3 22H8.7a3.7 3.7 0 0 1-3.2-5.6L10 8.6V2" />
-                    <path d="M8.2 15h7.6" />
-                </svg>
-            );
-        case "flower":
-            return (
-                <svg {...common}>
-                    <circle cx="12" cy="12" r="2" />
-                    <path d="M12 4.5c1.7 1.7 1.7 3.3 0 5-1.7-1.7-1.7-3.3 0-5Z" />
-                    <path d="M12 19.5c-1.7-1.7-1.7-3.3 0-5 1.7 1.7 1.7 3.3 0 5Z" />
-                    <path d="M4.5 12c1.7-1.7 3.3-1.7 5 0-1.7 1.7-3.3 1.7-5 0Z" />
-                    <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
-                </svg>
-            );
-        case "coffin":
-            return (
-                <svg {...common}>
-                    <path d="M9 3h6l3 5-1.5 13h-9L6 8l3-5Z" />
-                    <path d="M12 7v8" />
-                    <path d="M9.8 10h4.4" />
-                </svg>
-            );
-        case "car":
-            return (
-                <svg {...common}>
-                    <path d="M5 16h14" />
-                    <path d="M6.5 16l1.4-5.2A3 3 0 0 1 10.8 8h2.4a3 3 0 0 1 2.9 2.8L17.5 16" />
-                    <circle cx="8" cy="17" r="2" />
-                    <circle cx="16" cy="17" r="2" />
-                    <path d="M9 12h6" />
-                </svg>
-            );
-        case "box":
-            return (
-                <svg {...common}>
-                    <path d="M4 8.5 12 4l8 4.5-8 4.5L4 8.5Z" />
-                    <path d="M4 8.5V16l8 4 8-4V8.5" />
-                    <path d="M12 13v7" />
-                    <path d="M8.2 6.2 16 10.6" />
-                </svg>
-            );
-        case "hourglass":
-            return (
-                <svg {...common}>
-                    <path d="M6 3h12" />
-                    <path d="M6 21h12" />
-                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
-                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
-                    <path d="M10 8h4" />
-                    <path d="M10 16h4" />
-                </svg>
-            );
-        case "timer":
-            return (
-                <svg {...common}>
-                    <circle cx="12" cy="13" r="7" />
-                    <path d="M12 13V9" />
-                    <path d="M12 13l3 2" />
-                    <path d="M9 2h6" />
-                    <path d="M12 2v3" />
-                </svg>
-            );
-        default:
-            return (
-                <svg {...common}>
-                    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
-                </svg>
-            );
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [
+    recalcularDensidadeTv,
+    registros,
+    coroasConfeccao,
+    coroasConfeccaoLoading,
+    coroasConfeccaoError,
+  ]);
+
+  const fetchCoroasConfeccao = useCallback(async () => {
+    coroasAbortRef.current?.abort();
+
+    const controller = new AbortController();
+    coroasAbortRef.current = controller;
+
+    // Só mostra "carregando" de forma destacada na primeira carga.
+    if (coroasConfeccao.length === 0) {
+      setCoroasConfeccaoLoading(true);
     }
-}
 
-function StatusBlinkStyle() {
-    return (
-        <style jsx global>{`
-            @keyframes qa-status-pulse {
-                0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.95)); }
-                50% { opacity: 0.55; transform: scale(1.1); filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.9)); }
-            }
-            @keyframes qa-status-ring-pulse {
-                0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px rgba(34, 197, 94, 0.42); border-color: rgba(34, 197, 94, 0.92); }
-                50% { opacity: 0.72; transform: scale(1.07); box-shadow: 0 0 9px rgba(34, 197, 94, 0.68); border-color: rgba(34, 197, 94, 1); }
-            }
-            .qa-status-blink {
-                display: inline-block;
-                animation: qa-status-pulse 1.05s ease-in-out infinite;
-            }
-            .qa-status-active-ring {
-                animation: qa-status-ring-pulse 1.05s ease-in-out infinite;
-            }
-            @media (prefers-reduced-motion: reduce) {
-                .qa-status-blink,
-                .qa-status-active-ring { animation: none !important; }
-            }
-        `}</style>
-    );
-}
+    try {
+      const response = await fetch(COROAS_CONFECCAO_API, {
+        method: "GET",
+        credentials: "include",
+        cache: "default",
+        headers: {
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
 
-function EtapasRow({ registro }: { registro: Registro }) {
-    const preenchidas = etapasPreenchidas(registro);
-    const labels = ["D", "I", "V", "S"];
-    return (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            {labels.map((label, k) => (
-                <div key={k} className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">{label}</span>
-                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
-                </div>
-            ))}
-        </div>
-    );
-}
+      const json: CoroasConfeccaoResponse = await response
+        .json()
+        .catch(() => ({}));
 
-/* ===== Linha do Tempo (Logs) ===== */
-function isLikelyBooleanMap(obj: Record<string, unknown>) {
-    const entries = Object.entries(obj);
-    if (entries.length === 0) return false;
-    let boolish = 0;
-    for (const [, v] of entries) {
-        const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
-        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
+      if (!response.ok || !json?.sucesso) {
+        throw new Error(
+          json?.msg ||
+            (typeof json?.erro === "string" ? json.erro : "") ||
+            `Falha ao consultar as coroas (${response.status}).`,
+        );
+      }
+
+      const lista = Array.isArray(json.dados) ? json.dados : [];
+
+      // Segurança adicional no front:
+      // mesmo que a API devolva algo inesperado, FINALIZADA e ENTREGUE
+      // nunca permanecem no quadro inferior.
+      const emConfeccao = lista.filter((pedido) => {
+        const status = String(pedido?.status || "").trim().toLowerCase();
+        return (
+          status !== "finalizada" &&
+          status !== "entregue" &&
+          ["novo", "coroa", "faixa"].includes(status)
+        );
+      });
+
+      setCoroasConfeccao(emConfeccao);
+      setCoroasConfeccaoError(null);
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+
+      // Mantém os dados que já estavam na tela em caso de oscilação de rede.
+      setCoroasConfeccaoError(
+        e?.message || "Não foi possível atualizar os pedidos de coroas.",
+      );
+    } finally {
+      if (coroasAbortRef.current === controller) {
+        coroasAbortRef.current = null;
+        setCoroasConfeccaoLoading(false);
+      }
     }
-    return boolish / entries.length >= 0.8;
-}
+  }, [coroasConfeccao.length]);
 
-function looksLikeMateriaisJson(s: string) {
-    const t = (s || "").toLowerCase();
-    return (t.includes('"nome"') && t.includes('"checked"')) || t.includes('"item');
-}
+  // Avisos
+  const [avisos, setAvisos] = useState<Aviso[]>([]);
+  const [avisoMsg, setAvisoMsg] = useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
+  const avisoInputRef = useRef<HTMLInputElement>(null);
 
-function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: string }> {
-    const s = decodeHtmlEntitiesDeep(text).replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  // Tipo do cadastro atual
+  const [tipoAtendimento, setTipoAtendimento] =
+    useState<TipoAtendimento>("funerario");
 
-    const out: Array<{ nome: string; qtd?: string }> = [];
+  // Wizard
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardTitle, setWizardTitle] = useState("Novo Registro");
+  const [wizardEditing, setWizardEditing] = useState(false);
+  const [wizardIdx, setWizardIdx] = useState<number | null>(null);
+  const [wizardRestrictGroup, setWizardRestrictGroup] = useState<number | null>(
+    null,
+  );
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardData, setWizardData] = useState<Registro>({});
+  const [wizardMsg, setWizardMsg] = useState<{
+    text: string;
+    ok: boolean;
+  } | null>(null);
+  const [wizardSubmitting, setWizardSubmitting] = useState(false);
+  // ✅ snapshot do registro original (para não revalidar / não reenviar roupa no EDITAR)
+  const wizardOriginalRoupaRef = useRef<RoupaSnapshot | null>(null);
 
-    const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
-    let m: RegExpExecArray | null;
+  // selects
+  const [assistenciaVal, setAssistenciaVal] = useState<string>("");
+  const [tanatoVal, setTanatoVal] = useState<string>("");
 
-    while ((m = reNome.exec(s))) {
-        const nome = (m[1] || "").trim();
-        const near = s.slice(m.index, m.index + 260);
-        const qtd = near.match(/"?qtd"?\s*:\s*["']?([0-9]+(?:[.,][0-9]+)?)["']?/i)?.[1];
-        if (nome) out.push({ nome, qtd });
+  // Materiais
+  const [materiaisOpen, setMateriaisOpen] = useState(false);
+  const [materiais, setMateriais] =
+    useState<MateriaisState>(defaultMateriais());
+
+  // Arrumação
+  const [arrumacaoOpen, setArrumacaoOpen] = useState(false);
+  const [arrumacao, setArrumacao] =
+    useState<ArrumacaoState>(defaultArrumacao());
+
+  // Ações (por ID)
+  const [acaoOpen, setAcaoOpen] = useState(false);
+  const [acaoId, setAcaoId] = useState<Registro["id"] | null>(null);
+  const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  );
+  const [acaoSubmitting, setAcaoSubmitting] = useState(false);
+
+  // Foto obrigatória antes de confirmar fase06/fase08
+  const [fotoAcaoOpen, setFotoAcaoOpen] = useState(false);
+  const [fotoAcaoId, setFotoAcaoId] = useState<Registro["id"] | null>(null);
+  const [fotoAcaoFase, setFotoAcaoFase] = useState<string>("fase06");
+  const [fotoAcaoTipo, setFotoAcaoTipo] = useState<FotoAcaoTipo | null>(null);
+
+  // Conferência de materiais antes do fase11
+  const [matCheckOpen, setMatCheckOpen] = useState(false);
+  const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
+  const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
+
+  // contexto da conferência
+  const [matCheckRegistroId, setMatCheckRegistroId] = useState<
+    Registro["id"] | null
+  >(null);
+  const [matCheckFalecidoNome, setMatCheckFalecidoNome] = useState<string>("");
+
+  const [matCheckSaving, setMatCheckSaving] = useState(false);
+
+  // Info
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoId, setInfoId] = useState<Registro["id"] | null>(null);
+
+  // Compartilhar
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareId, setShareId] = useState<Registro["id"] | null>(null);
+
+  // Assinatura
+  const [signOpen, setSignOpen] = useState(false);
+  const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">(
+    "recebimento",
+  );
+  const [signIdx, setSignIdx] = useState<number | null>(null);
+
+  // Modal: escolher tipo no novo registro
+  const [chooseTipoOpen, setChooseTipoOpen] = useState(false);
+
+  // Telemetria
+  const teleRef = useRef<TelemetriaHandle>(null);
+  const [teleOpen, setTeleOpen] = useState(false);
+  const [teleFase, setTeleFase] = useState<string>("fase01");
+  const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
+  const [teleRegistroId, setTeleRegistroId] = useState<Registro["id"] | null>(
+    null,
+  );
+
+  const [teleActive, setTeleActive] = useState(false);
+  const [teleStartFase, setTeleStartFase] = useState<string | null>(null);
+
+  // ✅ refs para evitar estado atrasado no momento de encerrar a telemetria
+  const teleActiveRef = useRef(false);
+  const teleStartFaseRef = useRef<string | null>(null);
+  const teleRegistroIdRef = useRef<Registro["id"] | null>(null);
+
+  const definirTeleRegistroId = useCallback(
+    (id: Registro["id"] | null | undefined) => {
+      const normalized = id != null ? String(id) : null;
+      teleRegistroIdRef.current = normalized;
+      setTeleRegistroId(normalized);
+    },
+    [],
+  );
+
+  const marcarTeleAtiva = useCallback((fase: string) => {
+    teleActiveRef.current = true;
+    teleStartFaseRef.current = fase;
+    setTeleActive(true);
+    setTeleStartFase(fase);
+  }, []);
+
+  const limparTeleAtiva = useCallback(() => {
+    teleActiveRef.current = false;
+    teleStartFaseRef.current = null;
+    setTeleActive(false);
+    setTeleStartFase(null);
+  }, []);
+
+
+  /* -------------------- Config por tipo -------------------- */
+  const {
+    wizardStepIndexes: wizardStepIndexesForTipo,
+    wizardStepTitles: wizardStepTitlesForTipo,
+    obrigatorios: obrigatoriosBaseForTipo,
+    steps: stepsForTipo,
+  } = useMemo(() => getWizardConfig(tipoAtendimento), [tipoAtendimento]);
+
+  const obrigatoriosForTipo = useMemo(() => {
+    const ativo = obrigatoriedadeAtivaNoWizard({
+      wizardEditing,
+      wizardData,
+      wizardIdx,
+      registros,
+    });
+
+    return ativo ? obrigatoriosBaseForTipo : [];
+  }, [
+    obrigatoriosBaseForTipo,
+    wizardEditing,
+    wizardData,
+    wizardIdx,
+    registros,
+  ]);
+
+  /* ===========================
+     ✅ OFFLINE: Flush da fila
+     =========================== */
+  const flushingRef = useRef(false);
+
+  const fetchRegistros = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
+        {
+          cache: "no-store",
+          credentials: "include",
+        },
+      );
+
+      if (r.status === 401) return;
+
+      const data = await r.json().catch(() => null);
+      if (data?.need_login) return;
+
+      const sane: Registro[] = Array.isArray(data)
+        ? data.map((it: any) => ({
+          ...it,
+          id: it?.id != null ? String(it.id) : it.id,
+          status: normalizarStatus(it?.status) ?? it?.status,
+
+          // ✅ NOVOS DADOS DO FALECIDO / RESPONSÁVEL
+          data_nascimento: String(it?.data_nascimento ?? ""),
+          data_falecimento: String(it?.data_falecimento ?? ""),
+          foto_falecido: String(it?.foto_falecido ?? ""),
+          nome_responsavel: String(it?.nome_responsavel ?? ""),
+          cpf_responsavel: String(it?.cpf_responsavel ?? ""),
+
+          // ✅ VELÓRIO (sala + online)
+          sala_velorio: String(it?.sala_velorio ?? ""),
+          velorio_online: String(it?.velorio_online ?? ""),
+
+          // ✅ URNA
+          urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
+          urna_produto_id: Number(it?.urna_produto_id ?? 0) || 0,
+          urna_codigo_barras: String(it?.urna_codigo_barras ?? ""),
+
+          // ✅ ROUPA
+          roupa_deposito_nome: String(it?.roupa_deposito_nome ?? ""),
+          roupa_produto_id: Number(it?.roupa_produto_id ?? 0) || 0,
+          roupa_codigo_barras: String(it?.roupa_codigo_barras ?? ""),
+          roupa_propria: Number(it?.roupa_propria ?? 0) || 0,
+
+          // ✅ INVOL
+          invol_deposito_nome: String(it?.invol_deposito_nome ?? ""),
+          invol_produto_id: Number(it?.invol_produto_id ?? 0) || 0,
+          invol_codigo_barras: String(it?.invol_codigo_barras ?? ""),
+          invol_item: String(it?.invol_item ?? ""),
+
+          // ✅ VÉU
+          veu_deposito_nome: String(it?.veu_deposito_nome ?? ""),
+          veu_produto_id: Number(it?.veu_produto_id ?? 0) || 0,
+          veu_codigo_barras: String(it?.veu_codigo_barras ?? ""),
+          veu_item: String(it?.veu_item ?? ""),
+
+          // ✅ CORDÃO
+          cordao_deposito_nome: String(it?.cordao_deposito_nome ?? ""),
+          cordao_produto_id: Number(it?.cordao_produto_id ?? 0) || 0,
+          cordao_codigo_barras: String(it?.cordao_codigo_barras ?? ""),
+          cordao_item: String(it?.cordao_item ?? ""),
+
+          // KIT LANCHE
+          kit_lanche: String(it?.kit_lanche ?? "Não"),
+
+          // ✅ INSUMOS (novo formato dentro do arrumacao_json)
+          arrumacao_json: String(it?.arrumacao_json ?? ""),
+
+          // ✅ FOTOS OBRIGATÓRIAS DAS AÇÕES
+          foto_fim_ornamentacao_url: String(
+            it?.foto_fim_ornamentacao_url ?? "",
+          ),
+          foto_fim_ornamentacao_path: String(
+            it?.foto_fim_ornamentacao_path ?? "",
+          ),
+          foto_fim_ornamentacao_em: String(
+            it?.foto_fim_ornamentacao_em ?? "",
+          ),
+          foto_fim_ornamentacao_usuario: String(
+            it?.foto_fim_ornamentacao_usuario ?? "",
+          ),
+          foto_entrega_corpo_url: String(it?.foto_entrega_corpo_url ?? ""),
+          foto_entrega_corpo_path: String(it?.foto_entrega_corpo_path ?? ""),
+          foto_entrega_corpo_em: String(it?.foto_entrega_corpo_em ?? ""),
+          foto_entrega_corpo_usuario: String(
+            it?.foto_entrega_corpo_usuario ?? "",
+          ),
+        }))
+        : [];
+
+      setRegistros(sane);
+    } catch {
+      setRegistros([]);
     }
+  }, []);
+
+  const fetchRegistrosSafe = useCallback(async () => {
+    await fetchRegistros();
+  }, [fetchRegistros]);
+
+  const flushOfflineQueue = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    if (!isOnlineNow()) return;
+    if (flushingRef.current) return;
+
+    const items = safeReadQueue();
+    if (!items.length) return;
+
+    flushingRef.current = true;
+    try {
+      let queue = [...items].sort((a, b) => a.createdAt - b.createdAt);
+
+      for (const item of queue) {
+        try {
+          const json = await enviarRegistroPHP(item.payload);
+
+          if (json?.sucesso) {
+            try {
+              const acao = String(item.payload?.acao ?? "");
+              const tipoAt = String(item.payload?.tipo_atendimento ?? "");
+              if (acao === "novo" && tipoAt === "terceiro") {
+                const novoId =
+                  json?.id ?? json?.novo_id ?? json?.last_id ?? null;
+                addTerceiroIdToSession(novoId);
+              }
+            } catch { }
+
+            // ✅ enviado com sucesso -> remove da fila
+            const after = safeReadQueue().filter((x) => x.qid !== item.qid);
+            safeWriteQueue(after);
+          } else {
+            const msg =
+              typeof json?.msg === "string" && json.msg.trim()
+                ? json.msg
+                : typeof json?.erro === "string"
+                  ? json.erro
+                  : "";
+
+            // ✅ ERROS "PERMANENTES" (validação) -> remove da fila para não ficar tentando pra sempre
+            const isValidation =
+              msg.includes("Selecione uma roupa da lista") ||
+              msg.includes("Selecione uma urna da lista") ||
+              msg.includes("Selecione um INVOL da lista") ||
+              msg.includes("Depósito inválido") ||
+              msg.includes("Dados inválidos") ||
+              msg.includes("Campo obrigatório após Corpo na Clínica") ||
+              msg.includes("Confirmação obrigatória") ||
+              msg.includes("Apenas Tanatopraxista");
+
+            if (isValidation) {
+              const after = safeReadQueue().filter((x) => x.qid !== item.qid);
+              safeWriteQueue(after);
+
+              // opcional: log pra você ver o que foi descartado
+              console.warn(
+                "Removido da fila offline (validação):",
+                item.payload,
+                msg,
+              );
+
+              // ✅ segue para o próximo item da fila (não trava tudo)
+              continue;
+            }
+
+            // ❗ Erro "temporário" -> mantém na fila e para (pra não martelar o servidor)
+            const after = safeReadQueue().map((x) =>
+              x.qid === item.qid
+                ? {
+                  ...x,
+                  tries: (x.tries ?? 0) + 1,
+                  lastError: msg || "Erro ao enviar (offline queue).",
+                }
+                : x,
+            );
+            safeWriteQueue(after);
+            break;
+          }
+        } catch (e: any) {
+          const after = safeReadQueue().map((x) =>
+            x.qid === item.qid
+              ? {
+                ...x,
+                tries: (x.tries ?? 0) + 1,
+                lastError: e?.message || "Falha ao enviar (offline queue).",
+              }
+              : x,
+          );
+          safeWriteQueue(after);
+          break;
+        }
+      }
+
+      await fetchRegistrosSafe();
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [fetchRegistrosSafe]);
+
+  /* -------------------- Avisos -------------------- */
+  const fetchAvisos = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `${ENDPOINT}/avisos.php?listar=1&_nocache=${Date.now()}`,
+        {
+          credentials: "include",
+        },
+      );
+      if (r.status === 401) return;
+      const data = await r.json().catch(() => null);
+      if (data?.need_login) return;
+      setAvisos(Array.isArray(data) ? data : []);
+    } catch {
+      setAvisos([]);
+    }
+  }, []);
+
+  const enviarAviso = useCallback(async () => {
+    const val = (avisoInputRef.current?.value ?? "").trim();
+    if (!val) {
+      setAvisoMsg({ text: "Digite um aviso para enviar!", ok: false });
+      return;
+    }
+    try {
+      const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mensagem: val }),
+      });
+      if (res?.sucesso) {
+        setAvisoMsg({ text: "Aviso adicionado!", ok: true });
+        if (avisoInputRef.current) avisoInputRef.current.value = "";
+        fetchAvisos();
+      } else {
+        setAvisoMsg({
+          text: res?.erro || res?.msg || "Erro ao adicionar!",
+          ok: false,
+        });
+      }
+    } catch (e: any) {
+      setAvisoMsg({ text: e?.message || "Erro ao adicionar!", ok: false });
+    }
+  }, [fetchAvisos]);
+
+  const editarAviso = useCallback(
+    async (id: number | string, mensagem: string) => {
+      try {
+        const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id, mensagem }),
+        });
+        if (res?.sucesso) {
+          setAvisoMsg({ text: "Aviso atualizado!", ok: true });
+          fetchAvisos();
+        } else {
+          setAvisoMsg({
+            text: res?.erro || res?.msg || "Erro ao editar!",
+            ok: false,
+          });
+        }
+      } catch (e: any) {
+        setAvisoMsg({ text: e?.message || "Erro ao editar!", ok: false });
+      }
+    },
+    [fetchAvisos],
+  );
+
+  const excluirAviso = useCallback(
+    async (id: number | string) => {
+      if (!window.confirm("Tem certeza que deseja excluir este aviso?")) return;
+      try {
+        const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id, excluir: true }),
+        });
+        if (res?.sucesso) {
+          setAvisoMsg({ text: "Aviso excluído!", ok: true });
+          fetchAvisos();
+        } else {
+          setAvisoMsg({
+            text: res?.erro || res?.msg || "Erro ao excluir!",
+            ok: false,
+          });
+        }
+      } catch (e: any) {
+        setAvisoMsg({ text: e?.message || "Erro ao excluir!", ok: false });
+      }
+    },
+    [fetchAvisos],
+  );
+
+  const finalizarAviso = useCallback(
+    async (id: number | string) => {
+      try {
+        const res = await jsonWith401(`${ENDPOINT}/avisos.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id, finalizar: true }),
+        });
+        if (res?.sucesso) {
+          setAvisoMsg({ text: "Aviso finalizado!", ok: true });
+          fetchAvisos();
+        } else {
+          setAvisoMsg({
+            text: res?.erro || res?.msg || "Erro ao finalizar!",
+            ok: false,
+          });
+        }
+      } catch (e: any) {
+        setAvisoMsg({ text: e?.message || "Erro ao finalizar!", ok: false });
+      }
+    },
+    [fetchAvisos],
+  );
+
+  /* -------------------- Ciclos -------------------- */
+  useEffect(() => {
+    fetchRegistros();
+    fetchAvisos();
+    flushOfflineQueue();
+  }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
+
+  useEffect(() => {
+    const intReg = setInterval(fetchRegistros, 10000);
+    const intAv = setInterval(fetchAvisos, 3000);
+    const intFlush = setInterval(() => flushOfflineQueue(), 20000);
+
+    const onVis = () => {
+      if (!document.hidden) {
+        fetchRegistros();
+        flushOfflineQueue();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    const onOnline = () => flushOfflineQueue();
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      clearInterval(intReg);
+      clearInterval(intAv);
+      clearInterval(intFlush);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
+
+  useEffect(() => {
+    void fetchCoroasConfeccao();
+
+    // O quadro de coroas é apenas informativo.
+    // Atualiza em intervalo moderado e somente com a aba visível.
+    const id = window.setInterval(() => {
+      if (!document.hidden) {
+        void fetchCoroasConfeccao();
+      }
+    }, 12000);
+
+    const onVisibility = () => {
+      if (!document.hidden) {
+        void fetchCoroasConfeccao();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibility);
+      coroasAbortRef.current?.abort();
+    };
+  }, [fetchCoroasConfeccao]);
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setWizardOpen(false);
+        setAcaoOpen(false);
+        setInfoOpen(false);
+        setShareOpen(false);
+        setMateriaisOpen(false);
+        setArrumacaoOpen(false);
+        setSignOpen(false);
+        setChooseTipoOpen(false);
+        setTeleOpen(false);
+        setMatCheckOpen(false);
+        setFotoAcaoOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, []);
+
+  /* -------------------- Parsers locais -------------------- */
+  const parseMateriaisFromRegistro = (r: Registro): MateriaisState => {
+    if ((r as any)?.materiais_json) {
+      try {
+        const parsed = JSON.parse(String((r as any).materiais_json));
+        return normalizeMateriaisState(parsed);
+      } catch { }
+    }
+
+    const out: MateriaisState = {};
+    try {
+      for (const [k, v] of Object.entries(r as any)) {
+        if (!k.startsWith("materiais_") || !k.endsWith("_qtd")) continue;
+        const qtd = Math.max(0, Math.floor(Number(v ?? 0)));
+        if (qtd <= 0) continue;
+
+        const nomeBase = k.replace(/^materiais_/, "").replace(/_qtd$/, "");
+        out[nomeBase] = {
+          checked: true,
+          qtd,
+          nome: nomeBase.replace(/_/g, " "),
+        } as any;
+      }
+    } catch { }
 
     return out;
-}
+  };
 
-function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
-    const decoded = decodeHtmlEntitiesDeep(raw);
-    const trimmed = decoded.trim().replace(/^\s*json\s*:\s*/i, "").trim();
+  const parseArrumacaoFromRegistro = (r: Registro): ArrumacaoState => {
+    const base = defaultArrumacao();
 
-    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-        try {
-            return JSON.parse(trimmed);
-        } catch {
-            /* ignore */
-        }
+    if ((r as any).arrumacao_json) {
+      try {
+        const parsed = JSON.parse(String((r as any).arrumacao_json));
+        Object.assign(base, parsed);
+      } catch { }
     }
 
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-        const slice = trimmed.slice(start, end + 1);
-        try {
-            return JSON.parse(slice);
-        } catch {
-            /* ignore */
-        }
-    }
-    return null;
-}
+    (Object.keys(base) as Array<keyof ArrumacaoState>).forEach((k) => {
+      const col = (r as any)[k];
+      if (col == null) return;
 
-function buildDetalhesNodes(raw: unknown): React.ReactNode {
-    if (raw == null || raw === "") return null;
+      if (typeof col === "boolean") base[k] = col;
+      else if (typeof col === "number") base[k] = col === 1;
+      else if (typeof col === "string") {
+        const s = col.trim().toLowerCase();
+        base[k] = s === "1" || s === "true" || s === "sim" || s === "s";
+      } else base[k] = !!col;
+    });
 
-    let obj: unknown = raw;
+    return base;
+  };
 
-    if (typeof raw === "string") {
-        const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
-        if (parsed != null) obj = parsed;
-        else {
-            const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
-            return text ? (
-                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
-            ) : null;
-        }
-    }
-
-    if (isPlainObject(obj)) {
-        const plainObj = obj as Record<string, unknown>;
-
-        if (isLikelyBooleanMap(plainObj)) {
-            const arrItems = Object.entries(plainObj)
-                .filter(([, v]) => asBool(v))
-                .map(([k]) => titleCaseFromSnake(k));
-
-            return arrItems.length ? (
-                <div className="mt-3 w-full min-w-0">
-                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
-                        <div className="font-semibold mb-1">Arrumação:</div>
-                        <ul className="list-disc pl-4 space-y-0.5">
-                            {arrItems.map((t, idx) => (
-                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                                    {t}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                </div>
-            ) : null;
-        }
-
-        const arrItems: string[] = [];
-        const rows: { id: string; label: string; value: string }[] = [];
-
-        for (const key of Object.keys(plainObj)) {
-            if (["materiais_json", "id", "acao"].includes(key)) continue;
-
-            const value = plainObj[key];
-
-            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
-                for (const [k, v] of Object.entries(value)) {
-                    if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
-                }
-                continue;
-            }
-
-            const m = key.match(/^materiais_(.+?)_qtd$/i);
-            if (m) {
-                const valRaw = value;
-                if (valRaw != null && String(valRaw).trim() !== "") {
-                    const nomeBase = titleCaseFromSnake(m[1]);
-                    const nome = overrideCampoNome(m[1], nomeBase);
-                    const valFmt = formataSeDataIso(String(valRaw));
-                    rows.push({ id: key, label: nome, value: valFmt });
-                }
-                continue;
-            }
-
-            if (value == null) continue;
-            if (typeof value === "object") continue;
-
-            const valStr = decodeHtmlEntitiesDeep(String(value)).trim();
-            if (!valStr) continue;
-
-            let nome = key.replace(/_/g, " ");
-            nome = overrideCampoNome(key, titleCaseFromSnake(nome));
-            let valFmt = valStr;
-
-            const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
-            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
-                const map = maybeEmbedded as Record<string, unknown>;
-                const items = Object.entries(map)
-                    .filter(([, v]) => asBool(v))
-                    .map(([k]) => titleCaseFromSnake(k));
-                if (items.length) arrItems.push(...items);
-                continue;
-            }
-
-            if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
-            valFmt = formataSeDataIso(valFmt);
-
-            nome = substituirRotuloVisual(nome);
-            valFmt = substituirRotuloVisual(valFmt);
-
-            rows.push({ id: key, label: nome, value: valFmt });
-        }
-
-        if (rows.length === 0 && arrItems.length === 0) return null;
-
-        return (
-            <div className="mt-3 space-y-2 w-full min-w-0">
-                {arrItems.length > 0 && (
-                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
-                        <div className="font-semibold mb-1">Arrumação:</div>
-                        <ul className="list-disc pl-4 space-y-0.5">
-                            {[...new Set(arrItems)].map((t, idx) => (
-                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
-                                    {t}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-
-                {rows.map((row) => (
-                    <div
-                        key={row.id}
-                        className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0"
-                    >
-                        <span className="font-semibold">{row.label}: </span>
-                        <span className="break-words [overflow-wrap:anywhere]">{row.value}</span>
-                    </div>
-                ))}
-            </div>
+  /* -------------------- salvar conferência no backend -------------------- */
+  const salvarConferenciaNoPHP = useCallback(
+    async (data: {
+      registro_id: string | number | null | undefined;
+      falecido_nome: string;
+      observacao: string;
+      itens: Array<{
+        key: string;
+        nome: string;
+        qtd: number;
+        ok: 0 | 1;
+        nao_conforme: 0 | 1;
+      }>;
+    }) => {
+      const registro_id =
+        data.registro_id != null ? String(data.registro_id) : "";
+      if (!registro_id)
+        throw new Error(
+          "Não foi possível identificar o atendimento (registro_id).",
         );
+
+      const r = await fetch(
+        `${ENDPOINT}/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            registro_id,
+            falecido_nome: String(data.falecido_nome || "").trim(),
+            observacao: String(data.observacao || "").trim(),
+            itens: Array.isArray(data.itens) ? data.itens : [],
+          }),
+        },
+      );
+
+      if (r.status === 401)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      const json = await r.json().catch(() => null);
+      if (!json) throw new Error("Resposta inválida do servidor.");
+      if (json?.need_login)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      if (!r.ok || json?.erro)
+        throw new Error(json?.msg || "Erro ao salvar conferência.");
+
+      return json;
+    },
+    [],
+  );
+
+  /* --------------------
+     ✅ baixa automática da urna (fase05)
+     -------------------- */
+  const baixarItensFase05 = useCallback(
+    async (payload: {
+      registro_id: string;
+      tipo: BaixaTipo;
+      deposito_nome?: string;
+      itens?: Array<{ produto_id: number; qtd: number }>;
+    }) => {
+      const r = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+
+      if (r.status === 401)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      const j = await r.json().catch(() => null);
+      if (!j)
+        throw new Error(
+          `Resposta inválida do servidor (baixa ${payload.tipo}).`,
+        );
+      if (j?.need_login)
+        throw new Error("Sessão expirada. Faça login novamente.");
+      if (!r.ok || j?.ok === false)
+        throw new Error(
+          j?.msg ||
+          `Falha ao dar baixa automática (${payload.tipo}) na fase05.`,
+        );
+      return j;
+    },
+    [],
+  );
+
+  /* -------------------- Aberturas -------------------- */
+  const abrirNovoRegistro = useCallback(() => setChooseTipoOpen(true), []);
+
+  const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
+    setChooseTipoOpen(false);
+    wizardOriginalRoupaRef.current = null;
+
+    setTipoAtendimento(tipo);
+
+    setWizardSubmitting(false);
+    setWizardEditing(false);
+    setWizardIdx(null);
+    setWizardRestrictGroup(null);
+    setWizardStep(0);
+    setWizardMsg(null);
+    setWizardTitle("Novo Registro");
+
+    const empty: Registro = {};
+    (stepsPadrao as any).forEach((s: any) => ((empty as any)[s.id] = ""));
+
+    if (tipo === "terceiro") {
+      (empty as any).assistencia = "Não";
+      (empty as any).tanato = "Não";
+      (empty as any).ornamentacao = "Não";
+      (empty as any).tipo_atendimento = "terceiro";
+    } else {
+      (empty as any).tipo_atendimento = "funerario";
     }
 
-    const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
-    return text.trim() ? (
-        <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
-    ) : null;
-}
+    // ✅ defaults de meta urna
+    (empty as any).urna_deposito_nome = "MEMORIAL";
+    (empty as any).urna_produto_id = 0;
+    (empty as any).urna_codigo_barras = "";
 
-function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
-    if (!logs || logs.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
+    // ✅ defaults de meta roupa
+    (empty as any).roupa_deposito_nome = "";
+    (empty as any).roupa_produto_id = 0;
+    (empty as any).roupa_codigo_barras = "";
+    (empty as any).roupa_propria = 0;
+
+    // ✅ defaults de meta invol
+    (empty as any).invol_deposito_nome = "";
+    (empty as any).invol_produto_id = 0;
+    (empty as any).invol_codigo_barras = "";
+
+    // ✅ defaults de meta VÉU
+    (empty as any).veu_deposito_nome = "";
+    (empty as any).veu_produto_id = 0;
+    (empty as any).veu_codigo_barras = "";
+    (empty as any).veu_item = "";
+
+    // ✅ defaults de meta CORDÃO
+    (empty as any).cordao_deposito_nome = "";
+    (empty as any).cordao_produto_id = 0;
+    (empty as any).cordao_codigo_barras = "";
+    (empty as any).cordao_item = "";
+
+    // ✅ Velório (sala + online)
+    (empty as any).sala_velorio = "";
+    (empty as any).velorio_online = "";
+
+    // ✅ insumos tanato (novo formato) - começa vazio
+    (empty as any).arrumacao_json = "";
+
+    // ✅ materiais de assistência (novo formato) - começa vazio
+    (empty as any).materiais_json = "";
+
+    setWizardData(empty);
+    setMateriais(defaultMateriais());
+    setArrumacao(defaultArrumacao());
+    setAssistenciaVal(String((empty as any).assistencia || ""));
+    setTanatoVal(String((empty as any).tanato || ""));
+    setWizardOpen(true);
+  }, []);
+
+  const abrirWizard = useCallback(
+    (
+      tipo: "novo" | "editar",
+      idx: number | null = null,
+      grupoStep: number | null = null,
+    ) => {
+      setWizardSubmitting(false);
+      const editing = tipo === "editar";
+      setWizardEditing(editing);
+      setWizardIdx(idx);
+      setWizardRestrictGroup(grupoStep);
+      setWizardStep(grupoStep ?? 0);
+      setWizardMsg(null);
+      setWizardTitle(editing ? "Editar Registro" : "Novo Registro");
+
+      if (editing && idx !== null && registros[idx]) {
+        const r = registros[idx];
+        setTipoAtendimento(resolveTipoFromRegistro(r));
+
+        const data: Registro = {};
+        (stepsPadrao as any).forEach((s: any) => {
+          (data as any)[s.id] = (r as any)[s.id] ?? "";
+        });
+        (data as any).id = (r as any).id;
+        (data as any).status = normalizeStatusCode((r as any).status ?? "");
+
+        // ✅ Velório (sala + online) no wizardData
+        (data as any).sala_velorio = String((r as any).sala_velorio ?? "");
+        (data as any).velorio_online = String((r as any).velorio_online ?? "");
+
+        // ✅ metas da urna no wizardData
+        (data as any).urna_deposito_nome = String(
+          (r as any).urna_deposito_nome ?? "",
+        );
+        (data as any).urna_produto_id =
+          Number((r as any).urna_produto_id ?? 0) || 0;
+        (data as any).urna_codigo_barras = String(
+          (r as any).urna_codigo_barras ?? "",
+        );
+
+        // ✅ metas da ROUPA no wizardData
+        (data as any).roupa_deposito_nome = String(
+          (r as any).roupa_deposito_nome ?? "",
+        );
+        (data as any).roupa_produto_id =
+          Number((r as any).roupa_produto_id ?? 0) || 0;
+        (data as any).roupa_codigo_barras = String(
+          (r as any).roupa_codigo_barras ?? "",
+        );
+        (data as any).roupa_propria =
+          Number((r as any).roupa_propria ?? 0) || 0;
+
+        // ✅ snapshot original de ROUPA (para comparar no salvar do EDITAR)
+        wizardOriginalRoupaRef.current = {
+          roupa: String((r as any).roupa ?? ""),
+          roupa_produto_id: Number((r as any).roupa_produto_id ?? 0) || 0,
+          roupa_deposito_nome: String((r as any).roupa_deposito_nome ?? ""),
+          roupa_codigo_barras: String((r as any).roupa_codigo_barras ?? ""),
+          roupa_propria: Number((r as any).roupa_propria ?? 0) || 0,
+        };
+
+        // ✅ metas do INVOL no wizardData
+        (data as any).invol_deposito_nome = String(
+          (r as any).invol_deposito_nome ?? "",
+        );
+        (data as any).invol_produto_id =
+          Number((r as any).invol_produto_id ?? 0) || 0;
+        (data as any).invol_codigo_barras = String(
+          (r as any).invol_codigo_barras ?? "",
+        );
+        // ✅ texto do INVOL (para aparecer no combobox ao reabrir)
+        (data as any).invol_item = String((r as any).invol_item ?? "");
+
+        // ✅ metas do VÉU no wizardData
+        (data as any).veu_deposito_nome = String(
+          (r as any).veu_deposito_nome ?? "",
+        );
+        (data as any).veu_produto_id =
+          Number((r as any).veu_produto_id ?? 0) || 0;
+        (data as any).veu_codigo_barras = String(
+          (r as any).veu_codigo_barras ?? "",
+        );
+        (data as any).veu_item = String((r as any).veu_item ?? "");
+
+        // ✅ metas do CORDÃO no wizardData
+        (data as any).cordao_deposito_nome = String(
+          (r as any).cordao_deposito_nome ?? "",
+        );
+        (data as any).cordao_produto_id =
+          Number((r as any).cordao_produto_id ?? 0) || 0;
+        (data as any).cordao_codigo_barras = String(
+          (r as any).cordao_codigo_barras ?? "",
+        );
+        (data as any).cordao_item = String((r as any).cordao_item ?? "");
+
+        // ✅ insumos tanato (novo formato dentro do arrumacao_json)
+        (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
+
+        const mats = parseMateriaisFromRegistro(r);
+        setMateriais(mats);
+        (data as any).materiais = mats;
+        (data as any).materiais_json = String((r as any).materiais_json ?? "");
+
+        const arr = parseArrumacaoFromRegistro(r);
+        setArrumacao(arr);
+        (data as any).arrumacao = arr;
+
+        setWizardData(data);
+        setAssistenciaVal(String((r as any).assistencia ?? ""));
+        setTanatoVal(String((r as any).tanato ?? ""));
+        setWizardOpen(true);
+        return;
+      }
+
+      iniciarNovoRegistro(tipoAtendimento);
+    },
+    [registros, iniciarNovoRegistro, tipoAtendimento],
+  );
+
+  const salvarGrupoWizard = useCallback((): Registro | null => {
+    const grupo = wizardStepIndexesForTipo[wizardStep];
+    const next: any = { ...wizardData };
+
+    // ✅ Se o usuário acabou de salvar um modal interno (Materiais/Arrumação),
+    // o próximo salvar do Wizard deve respeitar esse escopo menor.
+    // Isso impede que a aba Itens inteira seja validada ao salvar apenas
+    // materiais_json ou arrumacao_json.
+    const modalRestrictIdsForSave = normalizeRestrictIds(
+      (wizardData as any)?._wizard_modal_restrict_ids,
+    );
+
+    const deveValidarCampoObrigatorio = (id: string) =>
+      !modalRestrictIdsForSave || modalRestrictIdsForSave.includes(id);
+
+    for (const idx of grupo) {
+      const s = (stepsForTipo as any)[idx] as any;
+
+      // ✅ Para campos async (combobox/autocomplete), pega do state (wizardData), não do DOM
+      const isAsyncField =
+        s?.type === "async_urna" ||
+        s?.type === "async_roupa" ||
+        s?.type === "async_invol" ||
+        s?.type === "async_veu" ||
+        s?.type === "async_cordao";
+
+      let v = "";
+
+      if (isAsyncField) {
+        v = String((wizardData as any)?.[s.id] ?? "").trim();
+      } else {
+        const el = document.getElementById("wizard-" + s.id) as
+          | HTMLInputElement
+          | HTMLTextAreaElement
+          | HTMLSelectElement
+          | null;
+
+        v = (el?.value ?? "").trim();
+
+        if (deveValidarCampoObrigatorio(s.id) && obrigatoriosForTipo.includes(s.id) && !v) {
+          el?.focus?.();
+          setWizardMsg({
+            text: "Preencha todos campos obrigatórios.",
+            ok: false,
+          });
+          return null;
+        }
+      }
+
+      // valida obrigatórios também para async
+      if (deveValidarCampoObrigatorio(s.id) && obrigatoriosForTipo.includes(s.id) && !v) {
+        setWizardMsg({
+          text: "Preencha todos campos obrigatórios.",
+          ok: false,
+        });
+        return null;
+      }
+
+      next[s.id] = v;
     }
 
-    return (
-        <div className="space-y-2 w-full min-w-0 overflow-x-hidden">
-            {logs.map((ent, i) => {
-                const acao = ent.acao ? capitalize(ent.acao) : "";
-                const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
-                const detalhes = buildDetalhesNodes(ent.detalhes);
+    if ((wizardData as any).id != null) next.id = (wizardData as any).id;
+
+    next.materiais = materiais;
+    next.arrumacao = arrumacao;
+    next.tipo_atendimento = tipoAtendimento;
+
+    // ✅ garante que os materiais dinâmicos sejam enviados ao PHP.
+    // O front usa `materiais`, mas o backend salva `materiais_json`.
+    // Quando o MateriaisModal já gerou o JSON normalizado, preserva esse valor.
+    try {
+      const jsonDoModal = String(next?.materiais_json ?? "").trim();
+      if (modalRestrictIdsForSave?.includes("materiais_json") && jsonDoModal) {
+        next.materiais_json = jsonDoModal;
+      } else {
+        next.materiais_json = JSON.stringify(materiais || {});
+      }
+    } catch {
+      next.materiais_json = "{}";
+    }
+
+    // ✅ VELÓRIO: sala selecionada e velório online
+    // - Se não houver sala marcada, limpa velorio_online para não mandar informação solta.
+    // - Se houver sala, mantém somente valores válidos ("Sim" ou "Não"); o Wizard também valida visualmente.
+    const salaVelorio = String(next?.sala_velorio ?? "").trim();
+    const velorioOnline = String(next?.velorio_online ?? "").trim();
+
+    if (!salaVelorio) {
+      next.sala_velorio = "";
+      next.velorio_online = "";
+    } else {
+      next.sala_velorio = salaVelorio;
+      next.velorio_online =
+        velorioOnline === "Sim" || velorioOnline === "Não" ? velorioOnline : "";
+    }
+
+    // ✅ URNA META: não usa DOM. Mantém o que está no wizardData.
+    // Urna vazia significa que o usuário marcou "Não" no Wizard.
+    const urnaTxt = String(next?.urna ?? "").trim();
+    const pid = Number(next?.urna_produto_id ?? 0) || 0;
+
+    if (urnaTxt === "") {
+      next.urna = "";
+      next.urna_deposito_nome = "";
+      next.urna_produto_id = 0;
+      next.urna_codigo_barras = "";
+    } else if (pid > 0) {
+      const dep = String(next?.urna_deposito_nome ?? "MEMORIAL")
+        .trim()
+        .toUpperCase();
+      next.urna_deposito_nome = dep === "FUNERARIA" ? "FUNERARIA" : "MEMORIAL";
+      next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
+    } else {
+      // Se houver texto sem seleção real do estoque, mantém pid 0 para a validação bloquear.
+      next.urna_produto_id = 0;
+      next.urna_codigo_barras = String(next?.urna_codigo_barras ?? "").trim();
+      next.urna_deposito_nome =
+        String(next?.urna_deposito_nome ?? "MEMORIAL")
+          .trim()
+          .toUpperCase() === "FUNERARIA"
+          ? "FUNERARIA"
+          : "MEMORIAL";
+    }
+
+    // ✅ ROUPA META: mesma lógica da URNA (não depende do DOM)
+    const roupaTxt = String(next?.roupa ?? "").trim();
+    const roupaPropriaFlag = Number((next as any)?.roupa_propria ?? 0) ? 1 : 0;
+
+    if (roupaTxt === "") {
+      // sem roupa -> limpa metas e flag
+      next.roupa_produto_id = 0;
+      next.roupa_codigo_barras = "";
+      next.roupa_deposito_nome = "";
+      (next as any).roupa_propria = 0;
+    } else if (isRoupaPropria(roupaTxt)) {
+      // roupa própria não usa estoque
+      next.roupa = "ROUPA PRÓPRIA";
+      next.roupa_produto_id = 0;
+      next.roupa_codigo_barras = "";
+      next.roupa_deposito_nome = "";
+      (next as any).roupa_propria = 1;
+    } else {
+      // roupa do estoque: zera o flag antigo de roupa própria
+      (next as any).roupa_propria = 0;
+      // roupa do estoque -> mantém pid/cb/dep do wizardData
+      const roupaPid = Number(next?.roupa_produto_id ?? 0) || 0;
+
+      // normaliza depósito permitido
+      const depRaw = String(next?.roupa_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO SANDRO" ||
+          depRaw === "ARMARIO ILDO" ||
+          depRaw === "FUNERARIA"
+          ? depRaw
+          : "ARMARIO SANDRO";
+
+      next.roupa_deposito_nome = depOk;
+      next.roupa_codigo_barras = String(next?.roupa_codigo_barras ?? "").trim();
+
+      // se digitou mas não selecionou item do estoque, mantém 0 (wizard/PHP validam)
+      next.roupa_produto_id = roupaPid > 0 ? roupaPid : 0;
+
+      // não é própria -> garante flag zerado
+      (next as any).roupa_propria = 0;
+    }
+
+    // ✅ INVOL META: só vale quando invol === "Sim"
+    const involFlag = String(next?.invol ?? "").trim();
+    if (!isSim(involFlag)) {
+      next.invol_produto_id = 0;
+      next.invol_codigo_barras = "";
+      next.invol_deposito_nome = "";
+      // esse campo é só “UI”, mas evita sujeira:
+      next.invol_item = "";
+    } else {
+      const involPid = Number(next?.invol_produto_id ?? 0) || 0;
+
+      // normaliza depósito permitido
+      const depRaw = String(next?.invol_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO ILDO" ? "ARMARIO ILDO" : "ARMARIO SANDRO";
+
+      next.invol_deposito_nome = depOk;
+      next.invol_codigo_barras = String(next?.invol_codigo_barras ?? "").trim();
+      next.invol_produto_id = involPid > 0 ? involPid : 0;
+    }
+
+    // ✅ VÉU META: só vale quando veu === "Sim"
+    const veuFlag = String(next?.veu ?? "").trim();
+    if (!isSim(veuFlag)) {
+      next.veu_produto_id = 0;
+      next.veu_codigo_barras = "";
+      next.veu_deposito_nome = "";
+      next.veu_item = "";
+    } else {
+      const veuPid = Number(next?.veu_produto_id ?? 0) || 0;
+
+      const depRaw = String(next?.veu_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
+          ? depRaw
+          : "ARMARIO SANDRO";
+
+      next.veu_deposito_nome = depOk;
+      next.veu_codigo_barras = String(next?.veu_codigo_barras ?? "").trim();
+      next.veu_produto_id = veuPid > 0 ? veuPid : 0;
+    }
+
+    // ✅ CORDÃO META: só vale quando cordao === "Sim"
+    const cordaoFlag = String(next?.cordao ?? "").trim();
+    if (!isSim(cordaoFlag)) {
+      next.cordao_produto_id = 0;
+      next.cordao_codigo_barras = "";
+      next.cordao_deposito_nome = "";
+      next.cordao_item = "";
+    } else {
+      const cordaoPid = Number(next?.cordao_produto_id ?? 0) || 0;
+
+      const depRaw = String(next?.cordao_deposito_nome ?? "")
+        .trim()
+        .toUpperCase();
+      const depOk =
+        depRaw === "ARMARIO ILDO" || depRaw === "FUNERARIA"
+          ? depRaw
+          : "ARMARIO SANDRO";
+
+      next.cordao_deposito_nome = depOk;
+      next.cordao_codigo_barras = String(
+        next?.cordao_codigo_barras ?? "",
+      ).trim();
+      next.cordao_produto_id = cordaoPid > 0 ? cordaoPid : 0;
+    }
+
+    // ✅ preservar INSUMOS dentro do arrumacao_json (merge booleans + insumos)
+    try {
+      const prevStr = String(next.arrumacao_json ?? "");
+      let prevObj: any = {};
+      try {
+        prevObj = prevStr ? JSON.parse(prevStr) : {};
+      } catch {
+        prevObj = {};
+      }
+
+      const bools =
+        next.arrumacao && typeof next.arrumacao === "object"
+          ? next.arrumacao
+          : arrumacao;
+
+      // mantém deposito_nome/itens e atualiza booleans
+      const merged = { ...(prevObj || {}), ...(bools || {}) };
+
+      next.arrumacao_json = JSON.stringify(merged);
+    } catch {
+      next.arrumacao_json = "";
+    }
+
+    setWizardData(next);
+    return next as Registro;
+  }, [
+    wizardStepIndexesForTipo,
+    wizardStep,
+    wizardData,
+    materiais,
+    arrumacao,
+    stepsForTipo,
+    obrigatoriosForTipo,
+    tipoAtendimento,
+  ]);
+
+  const concluirWizard = useCallback(async () => {
+    if (wizardSubmitting) return;
+
+    const dataAtualizada: any = salvarGrupoWizard();
+    if (!dataAtualizada) return;
+
+    // ✅ Prioridade de escopo:
+    // 1) Escopo vindo dos modais internos: Materiais/Arrumação.
+    // 2) Escopo da aba editada no InfoModal.
+    // 3) Edição completa.
+    const modalRestrictIds = normalizeRestrictIds(
+      dataAtualizada?._wizard_modal_restrict_ids,
+    );
+
+    const groupRestrictIds =
+      typeof wizardRestrictGroup === "number"
+        ? (wizardStepIndexesForTipo[wizardRestrictGroup] || [])
+          .map((i) => (stepsForTipo as any)[i]?.id)
+          .filter(Boolean)
+        : null;
+
+    const wizardRestrictIds = modalRestrictIds || groupRestrictIds;
+
+    const escopoTemAlgum = (ids: string[]) => scopeHasAny(wizardRestrictIds, ids);
+
+    let grupoObrigatorios: string[];
+    if (wizardRestrictIds) {
+      grupoObrigatorios = wizardRestrictIds.filter((id) => obrigatoriosForTipo.includes(id));
+    } else {
+      grupoObrigatorios = obrigatoriosForTipo;
+    }
+
+    for (const id of grupoObrigatorios) {
+      if (!dataAtualizada[id] || String(dataAtualizada[id]).trim() === "") {
+        setWizardMsg({
+          text: "Preencha todos campos obrigatórios.",
+          ok: false,
+        });
+        return;
+      }
+    }
+
+    const obrigatoriedadeAtiva = obrigatoriosForTipo.length > 0;
+
+    // ✅ validação extra (front): se escolheu sala do velório, Velório Online é obrigatório.
+    const salaVelorio = String(dataAtualizada?.sala_velorio ?? "").trim();
+    const velorioOnline = String(dataAtualizada?.velorio_online ?? "").trim();
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["local_velorio", "sala_velorio", "velorio_online"]) &&
+      salaVelorio &&
+      velorioOnline !== "Sim" &&
+      velorioOnline !== "Não"
+    ) {
+      setWizardMsg({
+        text: 'Selecione "Sim" ou "Não" em Velório Online.',
+        ok: false,
+      });
+      return;
+    }
+
+    // ✅ validação extra (front): se urna tem texto, precisa ter produto_id
+    const urnaTxt = String(dataAtualizada?.urna ?? "").trim();
+    // ✅ validação extra (front): ROUPA (se não for própria)
+    const roupaTxt = String(dataAtualizada?.roupa ?? "").trim();
+    const roupaPid = Number(dataAtualizada?.roupa_produto_id ?? 0) || 0;
+    const roupaDep = String(dataAtualizada?.roupa_deposito_nome ?? "").trim();
+
+    // ✅ no EDITAR: só valida roupa se ela mudou em relação ao original
+    const origRoupa = wizardOriginalRoupaRef.current;
+
+    const roupaMudou = wizardEditing
+      ? String(roupaTxt).trim() !== String(origRoupa?.roupa ?? "").trim() ||
+      (Number(roupaPid) || 0) !==
+      (Number(origRoupa?.roupa_produto_id ?? 0) || 0) ||
+      String(roupaDep).trim() !==
+      String(origRoupa?.roupa_deposito_nome ?? "").trim() ||
+      String((dataAtualizada as any)?.roupa_codigo_barras ?? "").trim() !==
+      String(origRoupa?.roupa_codigo_barras ?? "").trim() ||
+      (Number((dataAtualizada as any)?.roupa_propria ?? 0) ? 1 : 0) !==
+      (Number(origRoupa?.roupa_propria ?? 0) ? 1 : 0)
+      : true;
+
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["roupa", "roupa_produto_id", "roupa_deposito_nome", "roupa_codigo_barras"]) &&
+      roupaMudou &&
+      roupaTxt !== "" &&
+      !isRoupaPropria(roupaTxt)
+    ) {
+      if (roupaPid <= 0) {
+        setWizardMsg({
+          text: 'Selecione uma roupa da lista (produto do estoque) ou use "ROUPA PRÓPRIA".',
+          ok: false,
+        });
+        return;
+      }
+      if (!roupaDep) {
+        setWizardMsg({
+          text: "Selecione o local de saída da roupa (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          ok: false,
+        });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front):
+    const involVal = dataAtualizada?.invol ?? "";
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["invol", "invol_item", "invol_produto_id", "invol_deposito_nome"]) &&
+      isSim(involVal)
+    ) {
+      const involPid = Number(dataAtualizada?.invol_produto_id ?? 0) || 0;
+      const involDep = String(dataAtualizada?.invol_deposito_nome ?? "").trim();
+      if (involPid <= 0) {
+        setWizardMsg({
+          text: "Selecione um INVOL da lista (produto do estoque).",
+          ok: false,
+        });
+        return;
+      }
+      if (!involDep) {
+        setWizardMsg({
+          text: "Selecione o local do INVOL (ARMARIO SANDRO ou ARMARIO ILDO).",
+          ok: false,
+        });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front): VÉU
+    const veuVal = dataAtualizada?.veu ?? "";
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["veu", "veu_item", "veu_produto_id", "veu_deposito_nome"]) &&
+      isSim(veuVal)
+    ) {
+      const veuPid = Number(dataAtualizada?.veu_produto_id ?? 0) || 0;
+      const veuDep = String(dataAtualizada?.veu_deposito_nome ?? "").trim();
+      if (veuPid <= 0) {
+        setWizardMsg({
+          text: "Selecione um VÉU da lista (produto do estoque).",
+          ok: false,
+        });
+        return;
+      }
+      if (!veuDep) {
+        setWizardMsg({
+          text: "Selecione o local do VÉU (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          ok: false,
+        });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front): CORDÃO
+    const cordaoVal = dataAtualizada?.cordao ?? "";
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["cordao", "cordao_item", "cordao_produto_id", "cordao_deposito_nome"]) &&
+      isSim(cordaoVal)
+    ) {
+      const cordaoPid = Number(dataAtualizada?.cordao_produto_id ?? 0) || 0;
+      const cordaoDep = String(
+        dataAtualizada?.cordao_deposito_nome ?? "",
+      ).trim();
+      if (cordaoPid <= 0) {
+        setWizardMsg({
+          text: "Selecione um CORDÃO da lista (produto do estoque).",
+          ok: false,
+        });
+        return;
+      }
+      if (!cordaoDep) {
+        setWizardMsg({
+          text: "Selecione o local do CORDÃO (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+          ok: false,
+        });
+        return;
+      }
+    }
+
+    // ✅ validação extra (front): INSUMOS TANATO (arrumacao_json novo)
+    const ins = parseInsumosFromArrumacaoJson(dataAtualizada?.arrumacao_json);
+    if (escopoTemAlgum(["arrumacao", "arrumacao_json"]) && ins && (!ins.deposito_nome || ins.itens.length === 0)) {
+      setWizardMsg({
+        text: "Insumos Tanatopraxia: selecione o depósito e informe itens com quantidade (>=1).",
+        ok: false,
+      });
+      return;
+    }
+
+    const urnaPid = Number(dataAtualizada?.urna_produto_id ?? 0) || 0;
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["urna", "urna_produto_id", "urna_deposito_nome"]) &&
+      urnaTxt !== "" &&
+      urnaPid <= 0
+    ) {
+      setWizardMsg({
+        text: "Selecione uma urna da lista (produto do estoque).",
+        ok: false,
+      });
+      return;
+    }
+
+    const aplicarEscopoNoPayload = (payload: any) => {
+      if (payload.acao === "editar" && wizardRestrictIds) {
+        let restrictIds = Array.from(new Set(wizardRestrictIds.map((id) => String(id))));
+
+        // ✅ Correção: ao editar a aba de Itens para trocar somente a URNA,
+        // a mesma aba também costuma conter "roupa" no escopo.
+        // Como scrubRoupaNoEditar remove roupa do payload quando ela NÃO mudou,
+        // o PHP recebia _wizard_restrict_ids com "roupa" mas sem o campo "roupa",
+        // e retornava: "Campo obrigatório após Corpo na Clínica: Roupa."
+        // Se a roupa não foi alterada, ela também precisa sair do escopo enviado ao backend.
+        if (wizardEditing && !roupaMudou) {
+          restrictIds = restrictIds.filter((id) => !ROUPA_SCOPE_IDS.includes(id));
+        }
+
+        payload._wizard_restrict_ids = restrictIds;
+      }
+
+      // Esses campos são marcadores internos do front. O PHP só precisa de _wizard_restrict_ids.
+      delete payload._wizard_modal_restrict_ids;
+      delete payload._wizard_modal_scope;
+
+      return payload;
+    };
+
+    if (!isOnlineNow()) {
+      try {
+        setWizardSubmitting(true);
+        const payload: any = {
+          ...dataAtualizada,
+          acao: wizardEditing ? "editar" : "novo",
+        };
+
+        aplicarEscopoNoPayload(payload);
+
+        if (payload.acao === "editar") {
+          // ✅ remove roupa do payload se não mudou
+          scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+        }
+
+        enqueueOffline(payload, "offline");
+
+        setWizardMsg({
+          text: "Sem internet: registro salvo offline e será enviado automaticamente quando a conexão voltar.",
+          ok: true,
+        });
+        setTimeout(() => setWizardOpen(false), 950);
+      } catch (e: any) {
+        setWizardMsg({
+          text: e?.message || "Não foi possível salvar offline.",
+          ok: false,
+        });
+      } finally {
+        setWizardSubmitting(false);
+      }
+      return;
+    }
+
+    try {
+      setWizardSubmitting(true);
+      const payload: any = {
+        ...dataAtualizada,
+        acao: wizardEditing ? "editar" : "novo",
+      };
+
+      aplicarEscopoNoPayload(payload);
+
+      if (payload.acao === "editar") {
+        // ✅ remove roupa do payload se não mudou
+        scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+      }
+
+      // ===== blindagem final da roupa antes do envio =====
+      const roupaFinalTxt = String(payload.roupa ?? "").trim();
+
+      if (isRoupaPropria(roupaFinalTxt)) {
+        payload.roupa = "ROUPA PRÓPRIA";
+        payload.roupa_propria = 1;
+        payload.roupa_produto_id = 0;
+        payload.roupa_deposito_nome = "";
+        payload.roupa_codigo_barras = "";
+      } else if (roupaFinalTxt !== "") {
+        payload.roupa_propria = 0;
+      }
+
+      const json = await enviarRegistroPHP(payload);
+
+      if (json?.sucesso) {
+        setWizardMsg({ text: "Registro salvo!", ok: true });
+
+        if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
+          const novoId =
+            json?.id ??
+            json?.novo_id ??
+            json?.last_id ??
+            (dataAtualizada as any).id ??
+            null;
+          addTerceiroIdToSession(novoId);
+        }
+
+        fetchRegistros();
+        setTimeout(() => setWizardOpen(false), 950);
+      } else {
+        setWizardMsg({
+          text: json?.erro || json?.msg || "Erro ao salvar!",
+          ok: false,
+        });
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+
+      // ✅ só enfileira offline se for falha de rede / fetch (não validação)
+      const isNetwork =
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError") ||
+        msg.includes("ERR_NETWORK") ||
+        msg.includes("Load failed") ||
+        (msg.includes("fetch") && msg.includes("failed"));
+
+      if (isNetwork) {
+        const payload: any = {
+          ...dataAtualizada,
+          acao: wizardEditing ? "editar" : "novo",
+        };
+
+        aplicarEscopoNoPayload(payload);
+        if (payload.acao === "editar") {
+          try {
+            scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+          } catch {
+            // se scrub lançar erro aqui, ignora e mantém payload original para não travar o offline
+          }
+        }
+        enqueueOffline(payload, msg);
+        setWizardMsg({
+          text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
+          ok: true,
+        });
+        setTimeout(() => setWizardOpen(false), 950);
+      } else {
+        // ❗ erro real do servidor (ex.: validação 400) -> não enfileira
+        setWizardMsg({
+          text: msg || "Erro ao salvar!",
+          ok: false,
+        });
+      }
+    } finally {
+      setWizardSubmitting(false);
+      flushOfflineQueue();
+    }
+  }, [
+    salvarGrupoWizard,
+    wizardSubmitting,
+    wizardRestrictGroup,
+    wizardStepIndexesForTipo,
+    stepsForTipo,
+    obrigatoriosForTipo,
+    wizardEditing,
+    fetchRegistros,
+    flushOfflineQueue,
+  ]);
+
+  /* -------------------- Ações (status) -------------------- */
+  const abrirPopupAcaoPorId = useCallback((id: Registro["id"]) => {
+    setAcaoMsg(null);
+    setAcaoId(id != null ? String(id) : null);
+    setAcaoSubmitting(false);
+    setAcaoOpen(true);
+  }, []);
+
+  const registrarAcao = useCallback(
+    async (
+      acao: string,
+      opts?: {
+        skipMaterialCheck?: boolean;
+        skipConfirm?: boolean;
+        extra?: Record<string, any>;
+      },
+    ): Promise<boolean> => {
+      if (acaoSubmitting) return false;
+      if (acaoId == null) return false;
+
+      const statusCode = normalizeStatusCode(acao);
+      const needsBackendConfirm =
+        statusCode === "fase03" || statusCode === "fase04";
+      const extraPayload =
+        opts?.extra && typeof opts.extra === "object" ? opts.extra : {};
+
+      // ✅ trava fase05 quando um item marcado como utilizado estiver sem metas válidas, além de exigir conexão
+      if (statusCode === "fase05") {
+        const reg = registros.find(
+          (x) => String(x.id) === String(acaoId),
+        ) as any;
+
+        // URNA: valida apenas quando o atendimento possui urna selecionada.
+        const urnaTxt = String(reg?.urna ?? "").trim();
+        if (urnaTxt !== "") {
+          const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
+          if (urnaPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Urna: selecione uma urna válida na lista do estoque.",
+            });
+            return false;
+          }
+        }
+
+        // ✅ ROUPA (se não for própria)
+        const roupaTxt = String(reg?.roupa ?? "").trim();
+        const roupaPropria = Number(reg?.roupa_propria ?? 0) ? 1 : 0;
+
+        // Só valida como "roupa de estoque" quando:
+        // - tem texto de roupa
+        // - e NÃO é roupa própria (nem pelo texto, nem pela flag)
+        const precisaValidarRoupaEstoque =
+          roupaTxt !== "" && !isRoupaPropria(roupaTxt) && roupaPropria !== 1;
+
+        if (precisaValidarRoupaEstoque) {
+          const roupaPid = Number(reg?.roupa_produto_id ?? 0) || 0;
+          const roupaDep = String(reg?.roupa_deposito_nome ?? "").trim();
+
+          if (roupaPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: 'Roupa: selecione uma roupa da lista (estoque) ou use "ROUPA PRÓPRIA".',
+            });
+            return false;
+          }
+
+          if (!roupaDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Roupa: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+            });
+            return false;
+          }
+        }
+
+        // 3) INVOL (se invol = Sim)
+        if (isSim(reg?.invol)) {
+          const involPid = Number(reg?.invol_produto_id ?? 0) || 0;
+          const involDep = String(reg?.invol_deposito_nome ?? "").trim();
+          if (involPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Invol: selecione um INVOL da lista (estoque).",
+            });
+            return false;
+          }
+          if (!involDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Invol: selecione o local (ARMARIO SANDRO ou ARMARIO ILDO).",
+            });
+            return false;
+          }
+        }
+
+        // ✅ VÉU (se veu = Sim)
+        if (isSim(reg?.veu)) {
+          const veuPid = Number(reg?.veu_produto_id ?? 0) || 0;
+          const veuDep = String(reg?.veu_deposito_nome ?? "").trim();
+          if (veuPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Véu: selecione um VÉU da lista (estoque).",
+            });
+            return false;
+          }
+          if (!veuDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Véu: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+            });
+            return false;
+          }
+        }
+
+        // ✅ CORDÃO (se cordao = Sim)
+        if (isSim(reg?.cordao)) {
+          const cordaoPid = Number(reg?.cordao_produto_id ?? 0) || 0;
+          const cordaoDep = String(reg?.cordao_deposito_nome ?? "").trim();
+          if (cordaoPid <= 0) {
+            setAcaoMsg({
+              ok: false,
+              text: "Cordão: selecione um CORDÃO da lista (estoque).",
+            });
+            return false;
+          }
+          if (!cordaoDep) {
+            setAcaoMsg({
+              ok: false,
+              text: "Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).",
+            });
+            return false;
+          }
+        }
+
+        // INSUMOS TANATO (se arrumacao_json tiver itens)
+        const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
+        if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
+          setAcaoMsg({
+            ok: false,
+            text: "Insumos Tanatopraxia: selecione depósito e itens com quantidade (>=1).",
+          });
+          return false;
+        }
+      }
+
+      // conferência antes do fase11
+      if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
+        const reg = registros.find((x) => String(x.id) === String(acaoId));
+        const mats = reg ? parseMateriaisFromRegistro(reg) : {};
+
+        const itens: MatCheckItem[] = Object.entries(mats || {})
+          .map(([k, it]: any) => ({
+            key: String(k),
+            nome: String(it?.nome || k),
+            qtd: Number(it?.qtd ?? 0),
+            checked: !!it?.checked,
+          }))
+          .filter((x) => x.checked && x.qtd > 0)
+          .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
+
+        setMatCheckItens(itens);
+        setMatCheckRegistroId(
+          reg?.id != null ? String(reg.id) : String(acaoId),
+        );
+        setMatCheckFalecidoNome(reg ? resolveFalecidoNome(reg) : "");
+
+        setMatCheckReturnToAcao(true);
+        setAcaoOpen(false);
+        setMatCheckOpen(true);
+        return false;
+      }
+
+      if (!opts?.skipConfirm) {
+        const ok = window.confirm("Deseja confirmar essa ação?");
+        if (!ok) return false;
+      }
+
+      // Offline (exceto fase05)
+      if (!isOnlineNow()) {
+        try {
+          setAcaoSubmitting(true);
+          enqueueOffline(
+            {
+              acao: "atualizar_status",
+              id: acaoId,
+              status: statusCode || acao,
+              ...extraPayload,
+              ...(needsBackendConfirm ? { confirmar: true } : {}),
+            },
+            "offline",
+          );
+          setAcaoMsg({
+            text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+            ok: true,
+          });
+          setAcaoOpen(false);
+          return true;
+        } finally {
+          setAcaoSubmitting(false);
+        }
+      }
+
+      // ✅ fase05: dá baixa apenas nos itens realmente selecionados antes de mudar o status
+      if (statusCode === "fase05") {
+        try {
+          setAcaoSubmitting(true);
+
+          const reg = registros.find(
+            (x) => String(x.id) === String(acaoId),
+          ) as any;
+          const registro_id = String(acaoId);
+
+          // 1) URNA, somente quando houver urna selecionada.
+          const urnaTxt = String(reg?.urna ?? "").trim();
+          const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
+          if (urnaTxt !== "" && urnaPid > 0) {
+            await baixarItensFase05({ registro_id, tipo: "URNA" });
+          }
+
+          // 2) ROUPA (se não for própria)
+          const roupaTxt = String(reg?.roupa ?? "").trim();
+          if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
+            await baixarItensFase05({ registro_id, tipo: "ROUPA" });
+          }
+
+          // 3) INVOL
+          if (isSim(reg?.invol)) {
+            await baixarItensFase05({ registro_id, tipo: "INVOL" });
+          }
+
+          // 4) VÉU
+          if (isSim(reg?.veu)) {
+            await baixarItensFase05({ registro_id, tipo: "VEU" });
+          }
+
+          // 5) CORDÃO
+          if (isSim(reg?.cordao)) {
+            await baixarItensFase05({ registro_id, tipo: "CORDAO" });
+          }
+
+          // 6) KIT LANCHE
+          // Produto fixo: código de barras 678560, depósito ALMOXARIFADO.
+          if (isSim(reg?.kit_lanche)) {
+            await baixarItensFase05({
+              registro_id,
+              tipo: "KIT_LANCHE",
+            });
+          }
+
+          // 7) INSUMOS
+          const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
+          if (ins && ins.itens.length > 0) {
+            await baixarItensFase05({
+              registro_id,
+              tipo: "INSUMOS",
+              deposito_nome: ins.deposito_nome,
+              itens: ins.itens,
+            });
+          }
+        } catch (e: any) {
+          setAcaoSubmitting(false);
+          setAcaoMsg({
+            ok: false,
+            text: e?.message || "Falha ao dar baixa automática (fase05).",
+          });
+          return false;
+        }
+      }
+
+      setAcaoSubmitting(true);
+      try {
+        const json = await enviarRegistroPHP({
+          acao: "atualizar_status",
+          id: acaoId,
+          status: statusCode || acao,
+          ...extraPayload,
+          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        });
+
+        if (json?.sucesso) {
+          setAcaoMsg({
+            text: `Status alterado para "${capitalizeStatus(statusCode || acao)}"`,
+            ok: true,
+          });
+
+          const faseAtual = statusCode || acao;
+          const faseInicioTele = teleStartFaseRef.current ?? teleStartFase;
+          const teleEstaAtiva = teleActiveRef.current || teleActive;
+
+          const faseEncerraTelemetria =
+            faseAtual === "fase02" ||
+            faseAtual === "fase08" ||
+            faseAtual === "fase10";
+
+          const deveEncerrarPorFluxo =
+            teleEstaAtiva &&
+            faseInicioTele &&
+            STOP_BY_START[faseInicioTele] &&
+            STOP_BY_START[faseInicioTele] === faseAtual;
+
+          if (deveEncerrarPorFluxo || faseEncerraTelemetria) {
+            console.log("[TELEMETRIA] tentando encerrar", {
+              faseAtual,
+              faseInicioTele,
+              teleEstaAtiva,
+              deveEncerrarPorFluxo,
+            });
+
+            const salvo = await teleRef.current?.stopAndSave();
+
+            console.log("[TELEMETRIA] retorno stopAndSave", salvo);
+
+            limparTeleAtiva();
+          }
+
+          await fetchRegistros();
+          setAcaoOpen(false);
+          return true;
+        }
+
+        setAcaoMsg({
+          text: String(json?.msg || json?.erro || "Erro ao atualizar status."),
+          ok: false,
+        });
+        return false;
+      } catch (e: any) {
+        const msg = String(e?.message || "");
+
+        const isNetwork =
+          msg.includes("Failed to fetch") ||
+          msg.includes("NetworkError") ||
+          msg.includes("ERR_NETWORK") ||
+          msg.includes("Load failed") ||
+          (msg.includes("fetch") && msg.includes("failed"));
+
+        if (isNetwork) {
+          enqueueOffline(
+            {
+              acao: "atualizar_status",
+              id: acaoId,
+              status: statusCode || acao,
+              ...extraPayload,
+              ...(needsBackendConfirm ? { confirmar: true } : {}),
+            },
+            msg,
+          );
+          setAcaoMsg({
+            text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+            ok: true,
+          });
+          setAcaoOpen(false);
+          return true;
+        }
+
+        setAcaoMsg({ text: msg || "Erro ao atualizar status.", ok: false });
+        return false;
+      } finally {
+        setAcaoSubmitting(false);
+        flushOfflineQueue();
+      }
+    },
+    [
+      acaoSubmitting,
+      acaoId,
+      registros,
+      teleActive,
+      teleStartFase,
+      fetchRegistros,
+      flushOfflineQueue,
+      baixarItensFase05,
+      limparTeleAtiva,
+    ],
+  );
+
+  const confirmarAcaoSilenciosa = useCallback(
+    async (fase: string) => {
+      const id = teleRegistroIdRef.current ?? teleRegistroId ?? acaoId;
+      if (id == null) return;
+
+      const statusCode = normalizeStatusCode(fase);
+      const needsBackendConfirm =
+        statusCode === "fase03" || statusCode === "fase04";
+
+      if (!isOnlineNow()) {
+        enqueueOffline(
+          {
+            acao: "atualizar_status",
+            id,
+            status: statusCode || fase,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          },
+          "offline",
+        );
+        return;
+      }
+
+      try {
+        await enviarRegistroPHP({
+          acao: "atualizar_status",
+          id,
+          status: statusCode || fase,
+          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        });
+
+        await fetchRegistros();
+      } catch (e: any) {
+        enqueueOffline(
+          {
+            acao: "atualizar_status",
+            id,
+            status: statusCode || fase,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          },
+          e?.message,
+        );
+      } finally {
+        flushOfflineQueue();
+      }
+    },
+    [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue],
+  );
+
+  /* -------------------- Info por ID -------------------- */
+  const registroInfo = useMemo(
+    () =>
+      infoId != null
+        ? (registros.find((x) => String(x.id) === String(infoId)) ?? null)
+        : null,
+    [registros, infoId],
+  );
+
+  // Os títulos do modal Info pertencem ao registro que está aberto.
+  // Isso evita herdar o tipo do último cadastro/wizard acessado.
+  const wizardStepTitlesInfo = useMemo(() => {
+    const tipoDoRegistro = resolveTipoFromRegistro(registroInfo);
+    return getWizardConfig(tipoDoRegistro).wizardStepTitles;
+  }, [registroInfo]);
+
+  const registroCompartilhar = useMemo(
+    () =>
+      shareId != null
+        ? (registros.find((x) => String(x.id) === String(shareId)) ?? null)
+        : null,
+    [registros, shareId],
+  );
+
+  const infoIdxResolved = useMemo(() => {
+    if (infoId == null) return null;
+    const idx = registros.findIndex((x) => String(x.id) === String(infoId));
+    return idx >= 0 ? idx : null;
+  }, [registros, infoId]);
+
+  const abrirInfoPorId = useCallback(
+    (id: Registro["id"]) => {
+      const normalizedId = id != null ? String(id) : null;
+
+      const registro =
+        normalizedId != null
+          ? (registros.find((item) => String(item.id) === normalizedId) ?? null)
+          : null;
+
+      setTipoAtendimento(resolveTipoFromRegistro(registro));
+      setInfoId(normalizedId);
+      setInfoOpen(true);
+    },
+    [registros],
+  );
+
+  const abrirCompartilharPorId = useCallback((id: Registro["id"]) => {
+    setShareId(id != null ? String(id) : null);
+    setShareOpen(true);
+  }, []);
+
+  const abrirWizardFromInfo = useCallback(
+    (
+      tipo: "novo" | "editar",
+      _idx: number | null = null,
+      grupoStep: number | null = null,
+    ) => {
+      const idx = infoIdxResolved;
+      if (idx != null) {
+        setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
+        abrirWizard(tipo, idx, grupoStep);
+      }
+    },
+    [infoIdxResolved, abrirWizard, registros],
+  );
+
+  const abrirAssinaturaFromInfo = useCallback(
+    (_idx: number, tipo: "recebimento" | "requisicao") => {
+      const idx = infoIdxResolved;
+      if (idx != null) {
+        setSignIdx(idx);
+        setSignTipo(tipo);
+        setSignOpen(true);
+      }
+    },
+    [infoIdxResolved],
+  );
+
+  /* -------------------- Foto obrigatória fase06/fase08 -------------------- */
+  const handleFotoAcaoRequired = useCallback(
+    (
+      id: Registro["id"] | null | undefined,
+      fase: string,
+      tipo: FotoAcaoTipo,
+    ) => {
+      const normalizedId = id != null ? String(id) : null;
+
+      setAcaoMsg(null);
+      setAcaoId(normalizedId);
+      setFotoAcaoId(normalizedId);
+      setFotoAcaoFase(fase);
+      setFotoAcaoTipo(tipo);
+
+      // fecha o modal de ações e abre o modal da câmera
+      setAcaoOpen(false);
+      setFotoAcaoOpen(true);
+    },
+    [],
+  );
+
+  /* -------------------- Telemetria -------------------- */
+  const handleVeiculoRequired = useCallback(
+    (id: Registro["id"] | null | undefined, fase: string) => {
+      const normalizedId = id != null ? String(id) : null;
+      const tipo = mapFaseToTipo(fase);
+
+      if (!tipo) {
+        setAcaoId(normalizedId);
+        registrarAcao(fase);
+        return;
+      }
+
+      setAcaoId(normalizedId);
+      definirTeleRegistroId(normalizedId);
+      setTeleFase(fase);
+      setTeleTipo(tipo);
+      setTeleOpen(true);
+      setAcaoOpen(false);
+    },
+    [registrarAcao, definirTeleRegistroId],
+  );
+
+  /* -------------------- Resumos -------------------- */
+  const materiaisSelecionadosResumo = useMemo(() => {
+    const matsPrefer = (wizardData as any)?.materiais;
+    const mats: any =
+      matsPrefer &&
+        typeof matsPrefer === "object" &&
+        Object.keys(matsPrefer).length > 0
+        ? matsPrefer
+        : materiais;
+
+    const list = Object.values(mats || {})
+      .filter((it: any) => it?.checked && Number(it?.qtd ?? 0) > 0)
+      .map(
+        (it: any) => `${String(it?.nome || "Item")} (${Number(it?.qtd ?? 1)})`,
+      );
+
+    return list.length ? list.join(" • ") : "Nenhum material selecionado";
+  }, [wizardData, materiais]);
+
+  const arrumacaoSelecionadaResumo = useMemo(() => {
+    const mapa: { key: keyof ArrumacaoState; label: string }[] = [
+      { key: "luvas", label: "Luvas" },
+      { key: "palha", label: "Palha" },
+      { key: "tamponamento", label: "Tamponamento" },
+      { key: "maquiagem", label: "Maquiagem" },
+      { key: "algodao", label: "Algodão" },
+      { key: "cordao", label: "Cordão" },
+      { key: "barba", label: "Barba" },
+      { key: "ta32", label: "TA-32" },
+      { key: "fluido_cavitario", label: "Fluído Cavitário" },
+      { key: "formol", label: "Formol" },
+      { key: "mascara", label: "Máscara" },
+    ];
+    const arr = (wizardData as any).arrumacao || arrumacao;
+    return mapa
+      .filter((o) => !!(arr as any)?.[o.key])
+      .map((o) => o.label)
+      .join(" • ");
+  }, [wizardData, arrumacao]);
+
+  const findRegistroById = useCallback(
+    (id: Registro["id"] | null): Registro | undefined =>
+      id == null
+        ? undefined
+        : registros.find((x) => String(x.id) === String(id)),
+    [registros],
+  );
+
+  /* -------------------- Render -------------------- */
+  return (
+    <div className="p-6">
+      <style jsx global>{`
+        /*
+         * MODO TV AUTO-FIT
+         *
+         * NORMAL: exatamente o visual atual.
+         * COMPACT/DENSE/ULTRA: só entram se o conteúdo ultrapassar
+         * a altura disponível da TV.
+         */
+
+        /* -------------------------
+           ATENDIMENTOS
+           ------------------------- */
+        [data-tv-density="compact"] .atendimentos-quadro table {
+          font-size: 13px !important;
+        }
+
+        [data-tv-density="compact"] .atendimentos-quadro th,
+        [data-tv-density="compact"] .atendimentos-quadro td {
+          padding-top: 6px !important;
+          padding-bottom: 6px !important;
+        }
+
+        [data-tv-density="compact"] .atendimentos-quadro button {
+          font-size: 12px !important;
+          padding-top: 5px !important;
+          padding-bottom: 5px !important;
+        }
+
+        [data-tv-density="dense"] .atendimentos-quadro table {
+          font-size: 12px !important;
+        }
+
+        [data-tv-density="dense"] .atendimentos-quadro th,
+        [data-tv-density="dense"] .atendimentos-quadro td {
+          padding-top: 4px !important;
+          padding-bottom: 4px !important;
+        }
+
+        [data-tv-density="dense"] .atendimentos-quadro button {
+          font-size: 11px !important;
+          padding-top: 4px !important;
+          padding-bottom: 4px !important;
+        }
+
+        [data-tv-density="ultra"] .atendimentos-quadro table {
+          font-size: 10px !important;
+        }
+
+        [data-tv-density="ultra"] .atendimentos-quadro th,
+        [data-tv-density="ultra"] .atendimentos-quadro td {
+          padding-top: 3px !important;
+          padding-bottom: 3px !important;
+        }
+
+        [data-tv-density="ultra"] .atendimentos-quadro button {
+          font-size: 9px !important;
+          padding-top: 3px !important;
+          padding-bottom: 3px !important;
+        }
+
+        /* -------------------------
+           COROAS
+           ------------------------- */
+        [data-tv-density="compact"] .coroas-quadro-titulo {
+          font-size: 14px !important;
+        }
+
+        [data-tv-density="compact"] .coroas-quadro-header {
+          padding-top: 8px !important;
+          padding-bottom: 8px !important;
+        }
+
+        [data-tv-density="compact"] .coroas-quadro-colunas {
+          font-size: 11px !important;
+          padding-top: 5px !important;
+          padding-bottom: 5px !important;
+        }
+
+        [data-tv-density="compact"] .coroas-quadro-row {
+          font-size: 13px !important;
+          padding-top: 8px !important;
+          padding-bottom: 8px !important;
+          gap: 8px !important;
+        }
+
+        [data-tv-density="compact"] .coroas-quadro-row .coroa-status {
+          font-size: 11px !important;
+          padding-top: 3px !important;
+          padding-bottom: 3px !important;
+        }
+
+        [data-tv-density="compact"] .coroas-quadro-row .coroa-secundario {
+          font-size: 11px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro-titulo {
+          font-size: 13px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro-header {
+          padding-top: 6px !important;
+          padding-bottom: 6px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro-colunas {
+          font-size: 10px !important;
+          padding-top: 4px !important;
+          padding-bottom: 4px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro-row {
+          font-size: 12px !important;
+          padding-top: 6px !important;
+          padding-bottom: 6px !important;
+          gap: 6px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro-row .coroa-status {
+          font-size: 10px !important;
+          padding-top: 2px !important;
+          padding-bottom: 2px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro-row .coroa-secundario {
+          font-size: 10px !important;
+          margin-top: 0 !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-titulo {
+          font-size: 12px !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-header {
+          padding-top: 4px !important;
+          padding-bottom: 4px !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-header p {
+          font-size: 9px !important;
+          margin-top: 0 !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-colunas {
+          font-size: 9px !important;
+          padding-top: 3px !important;
+          padding-bottom: 3px !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-row {
+          font-size: 10px !important;
+          padding-top: 4px !important;
+          padding-bottom: 4px !important;
+          gap: 4px !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-row .coroa-status {
+          font-size: 9px !important;
+          padding: 2px 5px !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro-row .coroa-secundario {
+          font-size: 9px !important;
+          margin-top: 0 !important;
+        }
+
+        /* Aproxima os dois quadros somente quando estiver cheio. */
+        [data-tv-density="compact"] .coroas-quadro {
+          margin-top: 18px !important;
+        }
+
+        [data-tv-density="dense"] .coroas-quadro {
+          margin-top: 12px !important;
+        }
+
+        [data-tv-density="ultra"] .coroas-quadro {
+          margin-top: 8px !important;
+        }
+      `}</style>
+
+      <div ref={dashboardRef} data-tv-density={tvDensity}>
+        <header className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Atendimentos</h1>
+        </div>
+        <button
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          onClick={abrirNovoRegistro}
+        >
+          Novo Registro
+        </button>
+      </header>
+
+        <div className="atendimentos-quadro">
+          <TabelaAtendimentos
+            registros={registros}
+            onAcao={(id) => abrirPopupAcaoPorId(id)}
+            onInfo={(id) => abrirInfoPorId(id)}
+            onCompartilhar={(id) => abrirCompartilharPorId(id)}
+          />
+        </div>
+
+      {/* =====================================================
+          COROAS DE FLORES EM CONFECÇÃO
+          - aparece abaixo do quadro funerário;
+          - mostra somente novo / coroa / faixa;
+          - finalizada e entregue saem automaticamente.
+          ===================================================== */}
+      <section className="coroas-quadro mt-6 overflow-hidden rounded-xl border bg-card">
+        <div className="coroas-quadro-header flex flex-col gap-2 border-b bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="coroas-quadro-titulo text-base font-semibold">
+                Coroas de Flores em Confecção
+              </h2>
+
+              <span className="inline-flex min-w-6 items-center justify-center rounded-full border bg-background px-2 py-0.5 text-xs font-semibold">
+                {coroasConfeccao.length}
+              </span>
+            </div>
+
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Pedidos em produção. Ao finalizar a coroa, o pedido sai
+              automaticamente deste quadro.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {coroasConfeccaoLoading ? (
+              <span className="text-xs text-muted-foreground">
+                Atualizando...
+              </span>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => void fetchCoroasConfeccao()}
+              disabled={coroasConfeccaoLoading}
+              className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Atualizar
+            </button>
+          </div>
+        </div>
+
+        {coroasConfeccaoError ? (
+          <div className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-900">
+            Não foi possível atualizar agora. Os últimos dados carregados foram
+            mantidos.
+          </div>
+        ) : null}
+
+        {coroasConfeccaoLoading && coroasConfeccao.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Carregando pedidos de coroas...
+          </div>
+        ) : coroasConfeccao.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Nenhuma coroa em confecção no momento.
+          </div>
+        ) : (
+          <div>
+            {/* Cabeçalho somente no desktop */}
+            <div className="coroas-quadro-colunas hidden grid-cols-[150px_minmax(160px,1fr)_minmax(160px,1fr)_minmax(180px,1.4fr)_160px] gap-3 border-b bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground md:grid">
+              <div>Status</div>
+              <div>Solicitante</div>
+              <div>Falecido(a)</div>
+              <div>Coroa(s)</div>
+              <div>Origem</div>
+            </div>
+
+            <div className="divide-y">
+              {coroasConfeccao.map((pedido) => {
+                const quantidade = coroaQuantidade(pedido);
 
                 return (
-                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
-                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
-
-                            <div className="flex-1 min-w-0">
-                                <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
-
-                                <div className="text-sm flex flex-wrap items-center gap-1 min-w-0">
-                                    <span className="break-words [overflow-wrap:anywhere]">{acao}</span>
-                                    {statusLabel && (
-                                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary break-words [overflow-wrap:anywhere]">
-                                            {statusLabel}
-                                        </span>
-                                    )}
-                                </div>
-
-                                {usuarioVisivel && (
-                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                        Usuário: {ent.usuario ?? ""}
-                                    </div>
-                                )}
-
-                                {detalhes}
-                            </div>
-                        </div>
+                  <div
+                    key={pedido.id}
+                    className="coroas-quadro-row grid grid-cols-1 gap-2 px-4 py-3 text-sm md:grid-cols-[150px_minmax(160px,1fr)_minmax(160px,1fr)_minmax(180px,1.4fr)_160px] md:items-center md:gap-3"
+                  >
+                    <div>
+                      <span
+                        className={`coroa-status inline-flex rounded-full border px-2 py-1 text-xs font-medium ${coroaStatusClass(
+                          pedido.status,
+                        )}`}
+                      >
+                        {coroaStatusLabel(pedido.status)}
+                      </span>
                     </div>
+
+                    <div className="min-w-0">
+                      <div className="md:hidden text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Solicitante
+                      </div>
+                      <div className="truncate font-medium">
+                        {String(pedido.solicitante || "—")}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="md:hidden text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Falecido(a)
+                      </div>
+                      <div className="truncate">
+                        {String(pedido.falecido || "—")}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="md:hidden text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Coroa(s)
+                      </div>
+                      <div className="font-medium">
+                        {quantidade} {quantidade === 1 ? "coroa" : "coroas"}
+                      </div>
+                      <div
+                        className="coroa-secundario mt-0.5 truncate text-xs text-muted-foreground"
+                        title={coroaModelosResumo(pedido)}
+                      >
+                        {coroaModelosResumo(pedido)}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="md:hidden text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Origem
+                      </div>
+                      <div className="truncate">
+                        {coroaOrigemLabel(pedido.origem)}
+                      </div>
+                    </div>
+                  </div>
                 );
-            })}
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+      </div>
+
+      <Modal
+        open={chooseTipoOpen}
+        onClose={() => setChooseTipoOpen(false)}
+        ariaLabel="Escolher tipo"
+        maxWidth={420}
+      >
+        <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
+        <div className="mt-4 grid gap-2">
+          <button
+            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+            onClick={() => iniciarNovoRegistro("funerario")}
+          >
+            Atendimento Funerário
+          </button>
+          <button
+            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+            onClick={() => iniciarNovoRegistro("terceiro")}
+          >
+            Serviço de Outra Empresa
+          </button>
         </div>
-    );
+      </Modal>
+
+      <Wizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        wizardTitle={wizardTitle}
+        wizardStep={wizardStep}
+        setWizardStep={setWizardStep}
+        wizardRestrictGroup={wizardRestrictGroup}
+        wizardData={wizardData}
+        setWizardData={setWizardData}
+        obrigatorios={obrigatoriosForTipo}
+        steps={stepsForTipo as any}
+        wizardStepIndexes={wizardStepIndexesForTipo}
+        wizardStepTitles={wizardStepTitlesForTipo}
+        assistenciaVal={assistenciaVal}
+        setAssistenciaVal={setAssistenciaVal}
+        tanatoVal={tanatoVal}
+        setTanatoVal={setTanatoVal}
+        materiaisSelecionadosResumo={materiaisSelecionadosResumo}
+        arrumacaoSelecionadaResumo={arrumacaoSelecionadaResumo}
+        setMateriaisOpen={setMateriaisOpen}
+        setArrumacaoOpen={setArrumacaoOpen}
+        salvarGrupoWizard={salvarGrupoWizard}
+        concluirWizard={concluirWizard}
+        wizardSubmitting={wizardSubmitting}
+      />
+
+      <MateriaisModal
+        open={materiaisOpen}
+        setOpen={setMateriaisOpen}
+        materiais={materiais}
+        setMateriais={setMateriais}
+        setWizardData={setWizardData}
+      />
+      <ArrumacaoModal
+        open={arrumacaoOpen}
+        setOpen={setArrumacaoOpen}
+        arrumacao={arrumacao}
+        setArrumacao={setArrumacao}
+        setWizardData={setWizardData}
+        wizardData={wizardData} // ✅ ESSENCIAL
+      />
+
+      <AcaoModal
+        open={acaoOpen}
+        setOpen={setAcaoOpen}
+        registros={registros}
+        acaoId={acaoId}
+        registrarAcao={registrarAcao}
+        acaoMsg={acaoMsg}
+        acaoSubmitting={acaoSubmitting}
+        onVeiculoRequired={handleVeiculoRequired}
+        onFotoAcaoRequired={handleFotoAcaoRequired}
+      />
+
+      <FotoAcaoModal
+        open={fotoAcaoOpen}
+        onClose={() => setFotoAcaoOpen(false)}
+        registro={findRegistroById(fotoAcaoId)}
+        registroId={fotoAcaoId}
+        fase={fotoAcaoFase}
+        tipo={fotoAcaoTipo}
+        onSaved={async ({ id, fase }) => {
+          setAcaoId(id != null ? String(id) : null);
+          setFotoAcaoOpen(false);
+
+          // A foto já foi salva; agora confirma a etapa sem perguntar de novo.
+          await registrarAcao(fase, { skipConfirm: true });
+          await fetchRegistros();
+        }}
+      />
+
+      <MateriaisConferenciaModal
+        open={matCheckOpen}
+        itens={matCheckItens}
+        onClose={() => {
+          setMatCheckOpen(false);
+          setMatCheckSaving(false);
+          if (matCheckReturnToAcao) setAcaoOpen(true);
+          setMatCheckReturnToAcao(false);
+        }}
+        onConfirm={async (result?: MateriaisConferenciaResult) => {
+          if (!result) return;
+          try {
+            setMatCheckSaving(true);
+
+            const registro_id = matCheckRegistroId ?? acaoId;
+            if (!registro_id)
+              throw new Error(
+                "Não foi possível identificar o atendimento (registro_id).",
+              );
+
+            let nomeFinal = (matCheckFalecidoNome || "").trim();
+            if (!nomeFinal) {
+              const reg = registros.find(
+                (x) => String(x.id) === String(registro_id),
+              );
+              nomeFinal = reg ? resolveFalecidoNome(reg) : "";
+            }
+
+            await salvarConferenciaNoPHP({
+              registro_id,
+              falecido_nome: nomeFinal,
+              observacao: result.observacao,
+              itens: (result.itens || []).map((it) => ({
+                key: String(it.key),
+                nome: String(it.nome),
+                qtd: Number(it.qtd ?? 0),
+                ok: it.ok ? 1 : 0,
+                nao_conforme: it.naoConforme ? 1 : 0,
+              })),
+            });
+
+            setMatCheckOpen(false);
+            setMatCheckReturnToAcao(false);
+            setMatCheckSaving(false);
+
+            await registrarAcao("fase11", {
+              skipMaterialCheck: true,
+              skipConfirm: true,
+            });
+          } catch (e: any) {
+            setMatCheckSaving(false);
+            alert(e?.message || "Erro ao salvar conferência de materiais.");
+          }
+        }}
+      />
+
+      <InfoModal
+        open={infoOpen}
+        setOpen={setInfoOpen}
+        infoIdx={infoIdxResolved}
+        abrirWizard={abrirWizardFromInfo}
+        abrirAssinatura={(idx, tipo) => abrirAssinaturaFromInfo(idx, tipo)}
+        registro={registroInfo}
+        wizardStepTitles={wizardStepTitlesInfo}
+      />
+
+      <CompartilharModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        registro={registroCompartilhar}
+      />
+
+      <SignatureModal
+        open={signOpen}
+        onClose={() => setSignOpen(false)}
+        registro={signIdx != null ? registros[signIdx] : undefined}
+        tipo={signTipo}
+        onSaved={() => fetchRegistros()}
+      />
+
+      <TelemetriaModal
+        ref={teleRef}
+        open={teleOpen}
+        onClose={() => {
+          setTeleOpen(false);
+          fetchRegistros();
+        }}
+        registro={findRegistroById(teleRegistroId)}
+        fase={teleFase}
+        tipo={teleTipo}
+        onConfirmAcao={confirmarAcaoSilenciosa}
+        onStarted={({ fase }) => {
+          marcarTeleAtiva(fase);
+        }}
+        onSaved={() => {
+          limparTeleAtiva();
+          fetchRegistros();
+        }}
+      />
+
+      {matCheckSaving ? (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4">
+          <div className="rounded-xl bg-background p-4 shadow-xl border">
+            <div className="text-sm font-medium">Salvando conferência...</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Aguarde um instante.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {wizardMsg ? (
+        <div className="mt-4">
+          <div
+            className={`rounded-lg border p-3 text-sm ${wizardMsg.ok
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
+              }`}
+          >
+            {wizardMsg.text}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
