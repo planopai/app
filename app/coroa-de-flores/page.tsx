@@ -10,6 +10,8 @@
  * - estoque é reaproveitado em memória por 60s;
  * - falecidos do quadro são reaproveitados por 30s;
  * - após uma ação atualiza somente a aba afetada;
+ * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
+ * - o usuário atual é enviado como fallback para as notificações de ação;
  * - evita montar simultaneamente as linhas mobile e desktop.
  */
 
@@ -37,6 +39,7 @@ export const dynamic = "force-dynamic";
    ========================================================= */
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
 const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
+const USUARIO_ATUAL_API = "https://api.planoassistencialintegrado.com.br/informativo.php?me=1";
 const MATERIAIS_API = "https://api.planoassistencialintegrado.com.br/materiais_gerais.php";
 const API_PUBLIC_BASE = "https://api.planoassistencialintegrado.com.br";
 
@@ -110,6 +113,14 @@ type AtendimentoResumo = {
     tanato?: string;
     ornamentacao?: string;
     tipo_atendimento?: string;
+};
+
+type UsuarioAtualResponse = {
+    id?: number | string;
+    usuario?: string;
+    nome?: string;
+    erro?: boolean | number;
+    msg?: string;
 };
 
 type CoroaTipo = "" | "natural" | "artificial";
@@ -276,6 +287,42 @@ function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
     return "Entregue";
 }
 
+function pedidoManualSomenteArtificial(order?: ManualOrder | null): boolean {
+    if (!order) return false;
+
+    const itens = Array.isArray(order.itens) ? order.itens : [];
+    if (itens.length === 0) return false;
+
+    return itens.every(
+        (item) =>
+            String(item?.tipo_coroa || "")
+                .trim()
+                .toLowerCase() === "artificial",
+    );
+}
+
+function pedidoManualExigeConfeccaoCoroa(order?: ManualOrder | null): boolean {
+    return !pedidoManualSomenteArtificial(order);
+}
+
+function acoesManualDoPedido(
+    order: ManualOrder,
+): ReadonlyArray<readonly [Exclude<ManualStatus, "novo">, string]> {
+    const acoes: Array<readonly [Exclude<ManualStatus, "novo">, string]> = [];
+
+    if (pedidoManualExigeConfeccaoCoroa(order)) {
+        acoes.push(["coroa", "Confeccionando Coroa"]);
+    }
+
+    acoes.push(
+        ["faixa", "Confeccionando Faixa"],
+        ["finalizada", "Coroa Finalizada"],
+        ["entregue", "Entregue"],
+    );
+
+    return acoes;
+}
+
 function acaoManualConcluida(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
     const finalizada =
         Boolean(order.finalizada_em) ||
@@ -286,7 +333,14 @@ function acaoManualConcluida(order: ManualOrder, target: Exclude<ManualStatus, "
         Boolean(order.entregue_em) ||
         order.status === "entregue";
 
-    if (target === "coroa") return Boolean(order.coroa_inicio_em) || finalizada;
+    if (target === "coroa") {
+        return (
+            !pedidoManualExigeConfeccaoCoroa(order) ||
+            Boolean(order.coroa_inicio_em) ||
+            finalizada
+        );
+    }
+
     if (target === "faixa") return Boolean(order.faixa_inicio_em) || finalizada;
     if (target === "finalizada") return finalizada;
     return entregue;
@@ -295,8 +349,10 @@ function acaoManualConcluida(order: ManualOrder, target: Exclude<ManualStatus, "
 function acaoManualLiberada(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
     const finalizada = acaoManualConcluida(order, "finalizada");
     const entregue = acaoManualConcluida(order, "entregue");
+    const exigeCoroa = pedidoManualExigeConfeccaoCoroa(order);
 
     if (target === "coroa") {
+        if (!exigeCoroa) return false;
         return !finalizada && !entregue && !acaoManualConcluida(order, "coroa");
     }
 
@@ -305,10 +361,12 @@ function acaoManualLiberada(order: ManualOrder, target: Exclude<ManualStatus, "n
     }
 
     if (target === "finalizada") {
+        const coroaOk = !exigeCoroa || acaoManualConcluida(order, "coroa");
+
         return (
             !finalizada &&
             !entregue &&
-            acaoManualConcluida(order, "coroa") &&
+            coroaOk &&
             acaoManualConcluida(order, "faixa")
         );
     }
@@ -1002,6 +1060,43 @@ async function shareImageUrl(imageUrl: string) {
 export default function Page() {
     const [tab, setTab] = React.useState<"confeccao" | "manuais" | "online">("confeccao");
     const [isDesktop, setIsDesktop] = React.useState(false);
+    const [usuarioAtual, setUsuarioAtual] = React.useState("");
+
+    React.useEffect(() => {
+        let ativo = true;
+        const controller = new AbortController();
+
+        async function carregarUsuarioAtual() {
+            try {
+                const res = await fetch(USUARIO_ATUAL_API, {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store",
+                    headers: { Accept: "application/json" },
+                    signal: controller.signal,
+                });
+
+                const json: UsuarioAtualResponse = await res.json().catch(() => ({}));
+
+                if (!ativo || !res.ok || json?.erro) return;
+
+                const nome = String(json?.usuario || json?.nome || "")
+                    .replace(/\s+/g, " ")
+                    .trim();
+
+                if (nome) setUsuarioAtual(nome);
+            } catch (e: any) {
+                if (e?.name === "AbortError") return;
+            }
+        }
+
+        void carregarUsuarioAtual();
+
+        return () => {
+            ativo = false;
+            controller.abort();
+        };
+    }, []);
 
     React.useEffect(() => {
         const media = window.matchMedia("(min-width: 768px)");
@@ -1683,11 +1778,16 @@ export default function Page() {
     }
 
     async function postManual(payload: Record<string, any>) {
+        const payloadComUsuario = {
+            ...payload,
+            ...(usuarioAtual ? { usuario_nome: usuarioAtual } : {}),
+        };
+
         const res = await fetch(COROAS_API, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify(payload),
+            body: JSON.stringify(payloadComUsuario),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.sucesso) {
@@ -1727,6 +1827,12 @@ export default function Page() {
 
     async function executarStatusManual(target: Exclude<ManualStatus, "novo">) {
         if (!manualDetail) return;
+
+        if (target === "coroa" && !pedidoManualExigeConfeccaoCoroa(manualDetail)) {
+            setManualDetailMsg("Coroas artificiais não possuem a etapa “Confeccionando Coroa”.");
+            return;
+        }
+
         if (!acaoManualLiberada(manualDetail, target)) return;
 
         if (!window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
@@ -3325,12 +3431,7 @@ export default function Page() {
                                 </div>
                             ) : manualDetail ? (
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    {([
-                                        ["coroa", "Confeccionando Coroa"],
-                                        ["faixa", "Confeccionando Faixa"],
-                                        ["finalizada", "Coroa Finalizada"],
-                                        ["entregue", "Entregue"],
-                                    ] as const).map(([target, label]) => {
+                                    {acoesManualDoPedido(manualDetail).map(([target, label]) => {
                                         const concluida = acaoManualConcluida(manualDetail, target);
                                         const liberada = acaoManualLiberada(manualDetail, target);
 
