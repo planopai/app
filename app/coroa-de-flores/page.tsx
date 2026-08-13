@@ -1,89 +1,174 @@
 "use client";
 
 /*
- * OTIMIZAÇÕES DE PERFORMANCE:
- * - sem polling de atendimentos a cada 8 segundos;
- * - sem refresh automático ao recuperar foco da janela;
- * - filtros só consultam o servidor ao clicar em Buscar;
- * - AbortController cancela requisições antigas;
- * - listas normais podem aproveitar o cache HTTP curto do backend;
- * - estoque é reaproveitado em memória por 60s;
- * - falecidos do quadro são reaproveitados por 30s;
- * - após uma ação atualiza somente a aba afetada;
- * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
- * - o usuário atual é enviado como fallback para as notificações de ação;
- * - Origem manual possui somente: Ordem de Serviço e Venda Direta;
- * - evita montar simultaneamente as linhas mobile e desktop.
+ * QUADRO TV — versão preservada
+ * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
+ * - Coroas: modelo + solicitante, Falecido, Entrega, Pagamento e timeline Ampulheta/Flor/Faixa/Concluída;
+ * - tamanho original permanece no modo NORMAL;
+ * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
+ *   não cabe na altura disponível da TV.
  */
 
-import * as React from "react";
-import {
-    IconCamera,
-    IconCheck,
-    IconChevronLeft,
-    IconChevronRight,
-    IconCopy,
-    IconEye,
-    IconPhoto,
-    IconPlus,
-    IconRefresh,
-    IconSearch,
-    IconSend,
-    IconUpload,
-    IconX,
-} from "@tabler/icons-react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-export const dynamic = "force-dynamic";
+/* =========================
+   Cache rápido (memória + localStorage)
+   ========================= */
+type CacheEntry = { exp: number; data: any };
+const MEM_CACHE = new Map<string, CacheEntry>();
+const INFLIGHT = new Map<string, Promise<any>>();
 
-/* =========================================================
-   CONFIGURAÇÃO
-   ========================================================= */
-const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
-const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
-const USUARIO_ATUAL_API = "https://api.planoassistencialintegrado.com.br/informativo.php?me=1";
-const MATERIAIS_API = "https://api.planoassistencialintegrado.com.br/materiais_gerais.php";
-const API_PUBLIC_BASE = "https://api.planoassistencialintegrado.com.br";
+function getMem<T>(k: string): T | null {
+    const hit = MEM_CACHE.get(k);
+    if (!hit) return null;
+    if (Date.now() > hit.exp) {
+        MEM_CACHE.delete(k);
+        return null;
+    }
+    return hit.data as T;
+}
+function setMem(k: string, data: any, ttlMs: number) {
+    MEM_CACHE.set(k, { exp: Date.now() + ttlMs, data });
+}
 
-/* =========================================================
-   PEDIDOS MANUAIS
-   ========================================================= */
-type ManualStatus = "novo" | "coroa" | "faixa" | "finalizada" | "entregue";
-type ManualPagamento = "pago" | "aguardando_pagamento";
-type ManualOrigem =
-    | "ordem_servico"
-    | "venda_direta";
+function readLS<T>(k: string): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = localStorage.getItem(k);
+        if (!raw) return null;
+        return JSON.parse(raw) as T;
+    } catch {
+        return null;
+    }
+}
+function writeLS(k: string, v: any) {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(k, JSON.stringify(v));
+    } catch {
+        // ignore
+    }
+}
 
-type ManualCoroaItem = {
-    id?: number;
-    coroa_id?: number;
-    ordem: number;
-    tipo_coroa?: "natural" | "artificial" | null;
-    produto_id?: number | null;
-    modelo_coroa: string;
-    frase: string;
-    valor?: string | number | null;
-    foto_produto_url?: string | null;
+async function fetchJsonFast<T = any>(
+    url: string,
+    opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
+): Promise<T> {
+    const ttlMs = opts?.ttlMs ?? 8_000;
+    const timeoutMs = opts?.timeoutMs ?? 12_000;
+    const cacheKey = opts?.cacheKey ?? url;
+
+    const cached = getMem<T>(cacheKey);
+    if (cached) return cached;
+
+    const inF = INFLIGHT.get(cacheKey);
+    if (inF) return (await inF) as T;
+
+    const p = (async () => {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), timeoutMs);
+        try {
+            const resp = await fetch(url, {
+                cache: "no-store",
+                credentials: "include",
+                signal: ac.signal,
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = (await resp.json()) as T;
+            setMem(cacheKey, data, ttlMs);
+            return data;
+        } finally {
+            clearTimeout(t);
+            INFLIGHT.delete(cacheKey);
+        }
+    })();
+
+    INFLIGHT.set(cacheKey, p);
+    return (await p) as T;
+}
+
+/* =========================
+   Tipos
+   ========================= */
+type Registro = {
+    data?: string;
+    falecido?: string;
+    local_velorio?: string;
+    data_inicio_velorio?: string;
+    data_fim_velorio?: string;
+    hora_fim_velorio?: string;
+    hora_inicio_velorio?: string;
+    agente?: string;
+    status?: string;
+    religiao?: string;
+    contato?: string;
+    convenio?: string;
+    observacao?: string;
+    observacao_atendimento?: string;
+    observacao_itens?: string;
+    observacao_velorio01?: string;
+    observacao_velorio02?: string;
+
+    urna?: string;
+    roupa?: string;
+    assistencia?: string;
+    tanato?: string;
+
+    invol?: any;
+
+    ornamentacao?: string;
+    ornamentacao_tipo?: string;
+
+    local?: string;
+    local_sepultamento?: string;
+
+    materiais?: string;
+    material?: string;
+
+    materiais_json?: any;
+    material_json?: any;
+
+    tipo_atendimento?: "funerario" | "terceiro";
+
+    [key: string]: any;
 };
 
-type ManualOrder = {
+type Aviso = { usuario?: string; mensagem?: string };
+
+type LogItem = {
+    id?: number | string;
+    datahora?: string;
+    acao?: string;
+    status_novo?: string;
+    detalhes?: any;
+    usuario?: string;
+};
+
+/* =========================
+   Coroas de Flores — quadro TV
+   ========================= */
+type CoroaTvItem = {
+    id?: number;
+    ordem?: number;
+    tipo_coroa?: "natural" | "artificial" | null;
+    modelo_coroa?: string | null;
+    frase?: string | null;
+};
+
+type CoroaTvPedido = {
     id: number;
-    solicitante: string;
+    solicitante?: string | null;
     telefone?: string | null;
     local_entrega?: string | null;
     observacoes?: string | null;
-    quantidade_coroas?: number;
-    itens?: ManualCoroaItem[];
-    modelo_coroa: string;
-    frase: string;
-    falecido: string;
-    falecido_atendimento_id?: number | null;
-    status_pagamento: ManualPagamento;
-    origem: ManualOrigem;
-    status: ManualStatus;
+    quantidade_coroas?: number | null;
+    modelo_coroa?: string | null;
+    frase?: string | null;
+    falecido?: string | null;
+    status_pagamento?: string | null;
+    origem?: string | null;
+    status?: string | null;
     comprovante_url?: string | null;
-    comprovante_mime?: string | null;
-    comprovante_nome?: string | null;
-    foto_coroa_url?: string | null;
     criado_por?: string | null;
     criado_em?: string | null;
     atualizado_em?: string | null;
@@ -95,210 +180,1088 @@ type ManualOrder = {
     finalizada_por?: string | null;
     entregue_em?: string | null;
     entregue_por?: string | null;
+    itens?: CoroaTvItem[] | null;
 };
 
-type ManualListResponse = {
-    sucesso: boolean;
-    dados: ManualOrder[];
-    meta?: { page: number; per_page: number; total: number; total_pages: number };
-    msg?: string;
-};
-
-type AtendimentoResumo = {
-    id?: number | string;
-    falecido?: string;
-    status?: string;
-    assistencia?: string;
-    tanato?: string;
-    ornamentacao?: string;
-    tipo_atendimento?: string;
-};
-
-type UsuarioAtualResponse = {
-    id?: number | string;
-    usuario?: string;
-    nome?: string;
-    erro?: boolean | number;
-    msg?: string;
-};
-
-type CoroaTipo = "" | "natural" | "artificial";
-
-type EstoqueProdutoFoto = {
-    id?: number;
-    produto_id?: number;
-    arquivo?: string | null;
-    foto_url?: string | null;
-    legenda?: string | null;
-    ordem?: number;
-    is_principal?: 0 | 1 | number;
-};
-
-type EstoqueProduto = {
-    id: number;
-    nome: string;
-    descricao?: string | null;
-    codigo_barras?: string | null;
-    valor?: string | number;
-    preco_custo?: string | number;
-    foto_url?: string | null;
-    fotos?: EstoqueProdutoFoto[];
-    ativo?: 0 | 1 | number;
-    categoria_id?: number | null;
-    categoria_nome?: string | null;
-    fabricante_nome?: string | null;
-    classificacao_nome?: string | null;
-};
-
-type NovoCoroaItem = {
-    tipo_coroa: CoroaTipo;
-    produto: EstoqueProduto | null;
-    frase: string;
-    frase_sugestao: string;
-};
-
-function criarNovoCoroaItem(): NovoCoroaItem {
-    return {
-        tipo_coroa: "",
-        produto: null,
-        frase: "",
-        frase_sugestao: "",
+type CoroasTvResponse = {
+    sucesso?: boolean;
+    dados?: CoroaTvPedido[];
+    meta?: {
+        page?: number;
+        per_page?: number;
+        total?: number;
+        total_pages?: number;
     };
-}
-
-type EstoqueSaldo = {
-    id?: number;
-    produto_id: number;
-    deposito_id?: number;
-    quantidade: number;
-};
-
-type MateriaisInitResponse = {
-    ok?: boolean;
-    produtos?: EstoqueProduto[];
-    saldos?: EstoqueSaldo[];
     msg?: string;
-    need_login?: 1;
+    erro?: string | boolean;
 };
 
-const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: string }> = [
-    { value: "todos", label: "Todos" },
-    { value: "novo", label: "Aguardando Confecção" },
-    { value: "coroa", label: "Coroa em Confecção" },
-    { value: "faixa", label: "Faixa em Confecção" },
-    { value: "finalizada", label: "Finalizada" },
-    { value: "entregue", label: "Entregue" },
-];
+type QaDensity = "normal" | "compact" | "dense" | "ultra" | "micro";
 
-const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
-    { value: "ordem_servico", label: "Ordem de Serviço" },
-    { value: "venda_direta", label: "Venda Direta" },
-];
+const COROAS_TV_LOCAL =
+    "/api/php/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
 
-type FraseSugerida = { numero: number; texto: string };
+const COROAS_TV_REMOTA =
+    "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
 
-const FRASES_SUGERIDAS: FraseSugerida[] = [
-    { numero: 1, texto: "A saudade e o pesar dos seus colegas da (nome da empresa)." },
-    { numero: 2, texto: "A Ti, Senhor, elevo e entrego a minha alma." },
-    { numero: 3, texto: "Aquele que crê no Salvador jamais morrerá." },
-    { numero: 4, texto: "Com amor de seus pais e irmãos." },
-    { numero: 5, texto: "Com pesar da família (nome da família)." },
-    { numero: 6, texto: "Com pesar do(a) (nome da empresa, nome da família, nome dos amigos)." },
-    { numero: 7, texto: "Com pesar dos amigos (nome da empresa, nome da família)." },
-    { numero: 8, texto: "Com pesar dos colegas (nome da empresa)." },
-    { numero: 9, texto: "Condolências de toda a equipe da (nome da empresa)." },
-    { numero: 10, texto: "Condolências do(a) (nome da empresa, família ou amigos)." },
-    { numero: 11, texto: "Condolências dos amigos (nome da empresa, nome da família)." },
-    { numero: 12, texto: "Condolências dos colegas (nome da empresa)." },
-    { numero: 13, texto: "Condolências dos funcionários da (nome da empresa)." },
-    { numero: 14, texto: "Descanse à sombra do Altíssimo." },
-    { numero: 15, texto: "Estaremos lembrando de ti sempre com muito amor." },
-    { numero: 16, texto: "Eterna saudade de seus familiares e sentidos pêsames dos colegas e amigos." },
-    { numero: 17, texto: "Homenagem da direção e funcionários da (nome da empresa)." },
-    { numero: 18, texto: "Homenagem de seus amigos..." },
-    { numero: 19, texto: "Homenagem do(a) (nome da empresa, nome da família, nome dos amigos)." },
-    { numero: 20, texto: "Homenagem dos amigos e companheiros da (nome da empresa)." },
-    { numero: 21, texto: "Homenagem dos colegas (nome do colega ou empresa)." },
-    { numero: 22, texto: "Homenagem dos diretores e funcionários da (nome da empresa)." },
-    { numero: 23, texto: "Homenagem dos diretores, funcionários e amigos da (nome da empresa)." },
-    { numero: 24, texto: "Jesus, meu Rei, na Tua mão segurarei." },
-    { numero: 25, texto: "Não deixei nenhum bem material, mas deixei o bem maior: o exemplo de vida." },
-    { numero: 26, texto: "Ninguém morre enquanto permanecer vivo no coração de alguém." },
-    { numero: 27, texto: "Nossa eterna gratidão e saudade de (nome dos parentes)." },
-    { numero: 28, texto: "Nunca esqueceremos os seus exemplos..." },
-    { numero: 29, texto: "O amor não conhece a barreira da separação, te amaremos sempre." },
-    { numero: 30, texto: "O Senhor é a minha luz e a minha eterna salvação." },
-    { numero: 31, texto: "O Senhor é meu pastor e nada me faltará." },
-    { numero: 32, texto: "Pêsames do(a) (nome da empresa, nome da família, nome dos amigos)." },
-    { numero: 33, texto: "Pêsames dos colegas da (nome da empresa)." },
-    { numero: 34, texto: "Pêsames dos amigos da (nome da empresa, nome da família)." },
-    { numero: 35, texto: "Que Deus o tenha..." },
-    { numero: 36, texto: "Que Deus o(a) tenha em paz." },
-    { numero: 37, texto: "Saudade de seu(sua) esposo(a), filhos(as), genros, noras e netos." },
-    { numero: 38, texto: "Saudades de seus amigos (nome) e familiares." },
-    { numero: 39, texto: "Saudades de seus familiares e amigos." },
+/* =========================
+   Helpers comuns
+   ========================= */
+function decodeHtmlEntitiesOnce(input: string): string {
+    if (!input) return input;
 
-    // As sugestões 40 a 49 não apareceram nas imagens enviadas.
-    { numero: 50, texto: "Sentimentos da família." },
-    { numero: 51, texto: "Sentimentos de..." },
-    { numero: 52, texto: "Sentimentos do(a) (nome da empresa, nome da família, nome dos amigos)." },
-    { numero: 53, texto: "Sentimentos dos amigos (nome da empresa, nome da família)." },
-    { numero: 54, texto: "Sentimentos dos colegas (nome da empresa)." },
-    { numero: 55, texto: "Sentiremos sua falta." },
-    { numero: 56, texto: "Será eterno(a) em nossos corações." },
-    { numero: 57, texto: "Sua passagem foi breve, sua obra eterna." },
-    { numero: 58, texto: "Um anjo do Senhor me tocou e eu adormeci em paz..." },
-    { numero: 59, texto: "Você é mais uma estrela a brilhar em paz..." },
-    { numero: 60, texto: "Você foi um exemplo de vida..." },
-];
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+        const ta = document.createElement("textarea");
+        ta.innerHTML = input;
+        return ta.value;
+    }
 
-function manualStatusLabel(status?: ManualStatus | string) {
-    return MANUAL_STATUS_OPTIONS.find((x) => x.value === status)?.label || status || "—";
+    return input
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#039;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+            String.fromCharCode(parseInt(hex, 16))
+        )
+        .replace(/&#(\d+);/g, (_, num) =>
+            String.fromCharCode(parseInt(num, 10))
+        );
 }
 
-function manualStatusClass(status?: ManualStatus | string) {
-    switch (status) {
-        case "novo":
-            return "bg-slate-100 text-slate-800 border-slate-200";
-        case "coroa":
-            return "bg-blue-100 text-blue-800 border-blue-200";
-        case "faixa":
-            return "bg-violet-100 text-violet-800 border-violet-200";
-        case "finalizada":
-            return "bg-emerald-100 text-emerald-900 border-emerald-200";
-        case "entregue":
-            return "bg-zinc-200 text-zinc-800 border-zinc-300";
+function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
+    let s = String(input ?? "");
+    for (let i = 0; i < maxPasses; i++) {
+        const next = decodeHtmlEntitiesOnce(s);
+        if (next === s) break;
+        s = next;
+    }
+    return s;
+}
+
+const sanitize = (t?: any) => decodeHtmlEntitiesDeep(String(t ?? ""));
+
+const shown = (v?: any, fallback = "a definir") => {
+    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim();
+    return s ? s : fallback;
+};
+
+/* =========================
+   Materiais (normalização para exibir no modal)
+   ========================= */
+
+type MatLookupInfo = {
+    catNome: string;
+    catOrdem: number;
+    itemOrdem: number;
+};
+
+type MatLine = { text: string; itemKey?: string };
+
+function qtyPrefixFromAny(qtdRaw: any): string {
+    const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
+    if (!qtdStr) return "1x";
+
+    const normalized = qtdStr.replace(",", ".").trim();
+    const n = Number(normalized);
+
+    if (Number.isFinite(n) && n > 0) {
+        const isInt = Math.abs(n - Math.round(n)) < 1e-9;
+        const val = isInt ? String(Math.round(n)) : normalized;
+        return `${val}x`;
+    }
+
+    const m = normalized.match(/^(\d+(?:\.\d+)?)/);
+    if (m?.[1]) return `${m[1]}x`;
+
+    return `${normalized}x`;
+}
+
+function normalizeMatTextToQtyPrefix(text: string): string {
+    const s = decodeHtmlEntitiesDeep(String(text ?? ""))
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!s) return s;
+
+    let m = s.match(/^(\d+(?:[.,]\d+)?)\s*[xX]\s*(.+)$/);
+    if (m) {
+        const qtd = m[1].replace(",", ".");
+        const nome = m[2].trim();
+        return `${qtd}x ${nome}`;
+    }
+
+    m = s.match(/^(.+?)\s*\(\s*(\d+(?:[.,]\d+)?)\s*\)\s*$/);
+    if (m) {
+        const nome = m[1].trim();
+        const qtd = m[2].replace(",", ".");
+        return `${qtd}x ${nome}`;
+    }
+
+    return `1x ${s}`;
+}
+
+function isRealMaterialForClipboard(item: string): boolean {
+    const s = decodeHtmlEntitiesDeep(String(item ?? "")).trim();
+    if (!s) return false;
+
+    const low = s.toLowerCase().replace(/\s+/g, " ").trim();
+
+    if (low === "sim" || low === "não" || low === "nao") return false;
+    if (low === "1x sim" || low === "1x não" || low === "1x nao") return false;
+    if (low === "item" || low === "1x item") return false;
+    if (low.includes("a definir")) return false;
+
+    return true;
+}
+
+function isJsonNoiseLine(raw: any): boolean {
+    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
+    if (!s) return false;
+
+    const low = s.toLowerCase().replace(/\s+/g, " ").trim();
+    return /^(\d+(?:[.,]\d+)?\s*[xX]\s*)?json\s*:/.test(low);
+}
+
+function normalizeMateriaisFromRegistro(registro: Registro): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+
+    const pushItem = (raw: any) => {
+        const s0 = String(raw ?? "");
+        const s = decodeHtmlEntitiesDeep(s0).trim();
+        if (!s) return;
+
+        const low = s.toLowerCase().trim();
+
+        if (isJsonNoiseLine(s)) return;
+
+        if (low.startsWith("{") || low.startsWith("[")) return;
+        if (looksLikeMateriaisJson(s)) return;
+
+        if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
+
+        const withQtd = normalizeMatTextToQtyPrefix(s);
+        if (!withQtd) return;
+
+        if (isJsonNoiseLine(withQtd)) return;
+
+        if (seen.has(withQtd)) return;
+        seen.add(withQtd);
+        out.push(withQtd);
+    };
+
+    const pushNomeQtd = (nomeRaw: any, qtdRaw?: any) => {
+        const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
+        if (!nome) return;
+
+        const prefix = qtyPrefixFromAny(qtdRaw);
+        pushItem(`${prefix} ${nome}`);
+    };
+
+    const extractFromStructured = (raw: unknown): boolean => {
+        const items: { nome: any; qtd?: any }[] = [];
+
+        const walk = (node: any) => {
+            if (node == null) return;
+
+            if (Array.isArray(node)) {
+                node.forEach(walk);
+                return;
+            }
+
+            if (isPlainObject(node)) {
+                const maybeNome =
+                    (node as any).nome ??
+                    (node as any).name ??
+                    (node as any).descricao ??
+                    (node as any).descrição ??
+                    (node as any).material;
+
+                const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
+                const checkedVal = (node as any).checked;
+                const qtdVal =
+                    (node as any).qtd ??
+                    (node as any).quantidade ??
+                    (node as any).qtd_item;
+
+                if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
+                    items.push({ nome: maybeNome, qtd: qtdVal });
+                }
+
+                const containerKeys = [
+                    "itens",
+                    "items",
+                    "materiais",
+                    "materiais_json",
+                    "material_json",
+                    "data",
+                ];
+                for (const k of containerKeys) {
+                    if ((node as any)[k] != null) walk((node as any)[k]);
+                }
+
+                for (const [, v] of Object.entries(node)) {
+                    if (v == null) continue;
+                    if (typeof v === "object") {
+                        walk(v);
+                    }
+                }
+            }
+        };
+
+        walk(raw);
+
+        if (items.length === 0) return false;
+
+        for (const it of items) pushNomeQtd(it.nome, it.qtd);
+        return true;
+    };
+
+    const addFromBooleanMap = (obj: Record<string, unknown>) => {
+        for (const [k, v] of Object.entries(obj)) {
+            if (asBool(v)) {
+                const nome = overrideCampoNome(k, titleCaseFromSnake(k));
+                pushItem(`1x ${nome}`);
+            }
+        }
+    };
+
+    const addFromMixedObject = (obj: Record<string, unknown>) => {
+        for (const [key, value] of Object.entries(obj)) {
+            const m = key.match(/^materiais_(.+?)_qtd$/i);
+            if (!m) continue;
+            const valStr = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
+            if (!valStr) continue;
+
+            const n = Number(valStr.replace(",", "."));
+            if (!Number.isNaN(n) && n <= 0) continue;
+
+            const base = m[1];
+            const nome = overrideCampoNome(base, titleCaseFromSnake(base));
+            pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
+        }
+
+        for (const [key, value] of Object.entries(obj)) {
+            if (/^materiais_.+?_qtd$/i.test(key)) continue;
+
+            const m = key.match(/^materiais_(.+)$/i);
+            if (!m) continue;
+
+            const base = m[1];
+            const nome = overrideCampoNome(base, titleCaseFromSnake(base));
+
+            if (asBool(value)) {
+                pushItem(`1x ${nome}`);
+                continue;
+            }
+
+            const valStr = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
+            if (!valStr) continue;
+
+            const n = Number(valStr.replace(",", "."));
+            if (!Number.isNaN(n)) {
+                if (n > 0) pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
+                continue;
+            }
+
+            pushItem(`1x ${nome}: ${valStr}`);
+        }
+
+        for (const [k, v] of Object.entries(obj)) {
+            if (k === "materiais_json" || k === "material_json") continue;
+            if (/^materiais_.+/i.test(k)) continue;
+            if (v == null) continue;
+            if (typeof v === "object") continue;
+
+            const valStr = decodeHtmlEntitiesDeep(String(v)).trim();
+            if (!valStr) continue;
+
+            const nome = overrideCampoNome(k, titleCaseFromSnake(k));
+            const maybeNum = Number(valStr.replace(",", "."));
+            if (!Number.isNaN(maybeNum)) {
+                if (maybeNum > 0) pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
+            } else if (asBool(valStr)) {
+                pushItem(`1x ${nome}`);
+            } else {
+                pushItem(`1x ${nome}: ${valStr}`);
+            }
+        }
+    };
+
+    const addFromUnknown = ((raw: unknown) => {
+        if (raw == null || raw === "") return;
+
+        if (Array.isArray(raw)) {
+            if (extractFromStructured(raw)) return;
+            for (const it of raw) pushItem(it);
+            return;
+        }
+
+        if (isPlainObject(raw)) {
+            if (extractFromStructured(raw)) return;
+
+            const obj = raw as Record<string, unknown>;
+            if (isLikelyBooleanMap(obj)) addFromBooleanMap(obj);
+            else addFromMixedObject(obj);
+            return;
+        }
+
+        if (typeof raw === "string") {
+            let s = decodeHtmlEntitiesDeep(raw).trim();
+            if (!s) return;
+
+            const original = s;
+            s = s.replace(/^\s*json\s*:\s*/i, "").trim();
+
+            const parsed = tryParseJsonFromStringMaybeEmbedded(s);
+            if (parsed != null) {
+                if (extractFromStructured(parsed)) return;
+                return;
+            }
+
+            const extracted = extractMateriaisByRegex(s);
+            if (extracted.length) {
+                extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
+                return;
+            }
+
+            if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
+
+            if (s.includes("\n")) {
+                s.split("\n")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .filter((line) => {
+                        const low = line.toLowerCase().trim();
+                        if (low.startsWith("json:")) return false;
+                        if (low.startsWith("{") || low.startsWith("[")) return false;
+                        if (looksLikeMateriaisJson(line)) return false;
+                        return true;
+                    })
+                    .forEach(pushItem);
+                return;
+            }
+            if (s.includes(";")) {
+                s.split(";")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
+                return;
+            }
+            if (s.includes(",")) {
+                s.split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
+                return;
+            }
+
+            pushItem(s);
+            return;
+        }
+
+        if (typeof raw === "number") return;
+        if (typeof raw === "boolean") return;
+
+        pushItem(String(raw));
+    }) as (raw: unknown) => void;
+
+    addFromUnknown((registro as any).materiais_json);
+    addFromUnknown((registro as any).material_json);
+    addFromUnknown((registro as any).materiais);
+    addFromUnknown((registro as any).material);
+
+    if (isPlainObject(registro)) {
+        const obj = registro as Record<string, unknown>;
+        const picked: Record<string, unknown> = {};
+        let hasAny = false;
+        for (const k of Object.keys(obj)) {
+            if (/^materiais_.+/i.test(k)) {
+                picked[k] = obj[k];
+                hasAny = true;
+            }
+        }
+        if (hasAny) {
+            if (isLikelyBooleanMap(picked)) addFromBooleanMap(picked);
+            else addFromMixedObject(picked);
+        }
+    }
+
+    return out;
+}
+
+function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
+    const out: MatLine[] = [];
+    const seen = new Set<string>();
+
+    const pushItem = (raw: any, itemKey?: string) => {
+        const s0 = String(raw ?? "");
+        const s = decodeHtmlEntitiesDeep(s0).trim();
+        if (!s) return;
+
+        const low = s.toLowerCase().trim();
+
+        if (isJsonNoiseLine(s)) return;
+
+        if (low.startsWith("{") || low.startsWith("[")) return;
+        if (looksLikeMateriaisJson(s)) return;
+        if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
+
+        const withQtd = normalizeMatTextToQtyPrefix(s);
+        if (!withQtd) return;
+
+        if (isJsonNoiseLine(withQtd)) return;
+
+        if (seen.has(withQtd)) return;
+        seen.add(withQtd);
+        out.push({ text: withQtd, itemKey });
+    };
+
+    const pushNomeQtd = (nomeRaw: any, qtdRaw?: any, itemKey?: string) => {
+        const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
+        if (!nome) return;
+
+        const prefix = qtyPrefixFromAny(qtdRaw);
+        pushItem(`${prefix} ${nome}`, itemKey);
+    };
+
+    const normalizeItemKeyFromAny = (v: any): string | undefined => {
+        if (v == null) return undefined;
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) return `item${n}`;
+        const s = String(v).trim();
+        if (/^item\d+$/i.test(s)) return s;
+        return undefined;
+    };
+
+    const walk = (node: any, parentKey?: string) => {
+        if (node == null) return;
+
+        if (Array.isArray(node)) {
+            node.forEach((x) => walk(x, parentKey));
+            return;
+        }
+
+        if (isPlainObject(node)) {
+            const maybeNome =
+                (node as any).nome ??
+                (node as any).name ??
+                (node as any).descricao ??
+                (node as any).descrição ??
+                (node as any).material;
+
+            const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
+            const checkedVal = (node as any).checked;
+            const qtdVal =
+                (node as any).qtd ??
+                (node as any).quantidade ??
+                (node as any).qtd_item;
+
+            const inferredKey =
+                normalizeItemKeyFromAny((node as any).item_id) ??
+                normalizeItemKeyFromAny((node as any).itemId) ??
+                normalizeItemKeyFromAny((node as any).item_key) ??
+                normalizeItemKeyFromAny((node as any).id) ??
+                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey)
+                    ? parentKey
+                    : undefined);
+
+            if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
+                pushNomeQtd(maybeNome, qtdVal, inferredKey);
+            }
+
+            const containerKeys = [
+                "itens",
+                "items",
+                "materiais",
+                "materiais_json",
+                "material_json",
+                "data",
+            ];
+            for (const k of containerKeys) {
+                if ((node as any)[k] != null) walk((node as any)[k], k);
+            }
+
+            for (const [k, v] of Object.entries(node)) {
+                if (v == null) continue;
+                if (typeof v === "object") walk(v, k);
+            }
+        }
+    };
+
+    const add = (raw: unknown) => {
+        if (raw == null || raw === "") return;
+
+        if (typeof raw === "string") {
+            const s = decodeHtmlEntitiesDeep(raw).trim();
+            if (!s) return;
+            const parsed = tryParseJsonFromStringMaybeEmbedded(s);
+            if (parsed != null) walk(parsed, undefined);
+            return;
+        }
+
+        walk(raw, undefined);
+    };
+
+    add((registro as any).materiais_json);
+    add((registro as any).material_json);
+
+    return out;
+}
+
+function MateriaisValue({
+    registro,
+    lookup = {},
+    fallback = "a definir",
+}: {
+    registro: Registro;
+    lookup?: Record<string, MatLookupInfo>;
+    fallback?: string;
+}) {
+    const structured = extractMateriaisStructuredWithKey(registro);
+    const flat = normalizeMateriaisFromRegistro(registro);
+
+    const lines: MatLine[] = (() => {
+        if (structured.length === 0) return flat.map((t) => ({ text: t }));
+        const have = new Set(structured.map((x) => x.text));
+        const extras = flat.filter((t) => !have.has(t)).map((t) => ({ text: t }));
+        return [...structured, ...extras];
+    })();
+
+    const filteredLines = (lines ?? []).filter(
+        (l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text)
+    );
+
+    if (!filteredLines || filteredLines.length === 0) return <span>{fallback}</span>;
+
+    const groups = new Map<
+        string,
+        { catNome: string; catOrdem: number; items: { text: string; itemOrdem: number }[] }
+    >();
+
+    for (const it of filteredLines) {
+        const info = it.itemKey ? lookup[it.itemKey] : undefined;
+
+        const catNome = (info?.catNome ?? "(Sem categoria)").trim() || "(Sem categoria)";
+        const catOrdem = info?.catOrdem ?? 9999;
+        const itemOrdem = info?.itemOrdem ?? 9999;
+
+        if (!groups.has(catNome)) groups.set(catNome, { catNome, catOrdem, items: [] });
+        groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
+    }
+
+    const sortedCats = [...groups.values()].sort(
+        (a, b) => a.catOrdem - b.catOrdem || a.catNome.localeCompare(b.catNome)
+    );
+
+    return (
+        <div className="space-y-3">
+            {sortedCats.map((g) => {
+                const itemsSorted = [...g.items].sort(
+                    (a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text)
+                );
+
+                return (
+                    <div key={g.catNome}>
+                        <div className="font-bold">{g.catNome}</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {itemsSorted.map((x, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {x.text}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+/* =========================
+   Local do Velório: rota (Google Maps)
+   ========================= */
+function ensureHttpsUrl(raw: string): string {
+    const s = String(raw ?? "").trim();
+    if (!s) return s;
+
+    if (/^https?:\/\//i.test(s)) {
+        return s.replace(/^http:\/\//i, "https://");
+    }
+
+    if (/^(www\.)/i.test(s)) return `https://${s}`;
+    if (
+        /^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)
+    )
+        return `https://${s}`;
+
+    return s;
+}
+
+function isGoogleMapsRota(raw?: string): boolean {
+    const s = String(raw ?? "").trim().toLowerCase();
+    if (!s) return false;
+
+    const noProto = s.replace(/^https?:\/\//, "");
+    if (noProto.includes("google.com/maps/dir")) return true;
+    if (noProto.includes("maps.google.com/maps/dir")) return true;
+    if (noProto.startsWith("maps.app.goo.gl/")) return true;
+    if (noProto.startsWith("goo.gl/maps/")) return true;
+
+    return false;
+}
+
+function LocalVelorioValue({ value, fallback = "a definir" }: { value?: string; fallback?: string }) {
+    const raw = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
+    if (!raw) return <span>{fallback}</span>;
+
+    if (isGoogleMapsRota(raw)) {
+        const url = ensureHttpsUrl(raw);
+        return (
+            <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-blue-600 hover:underline underline-offset-2"
+                title="Abrir rota no Google Maps"
+            >
+                Abrir Rota
+            </a>
+        );
+    }
+
+    return <span>{shown(raw, fallback)}</span>;
+}
+
+/* Datas/horas → “a definir” para zeros e vazios */
+const formatDateBr = (d?: string) =>
+    !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
+
+function dateOr(d?: string) {
+    const raw = (d ?? "").trim();
+    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
+    const f = formatDateBr(raw);
+    if (!f || f === "00/00/0000") return "a definir";
+    return f;
+}
+
+/** ✅ mostra só dia/mês (17/12) para a coluna "Sepultamento" */
+function dateDayMonthOr(d?: string) {
+    const raw = (d ?? "").trim();
+    if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const [, mm, dd] = raw.split("-");
+        return `${dd}/${mm}`;
+    }
+
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+        const [dd, mm] = raw.split("/");
+        return `${dd}/${mm}`;
+    }
+
+    const m2 = raw.match(/(\d{2})\/(\d{2})/);
+    if (m2) return `${m2[1]}/${m2[2]}`;
+
+    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}`;
+
+    return raw;
+}
+
+function timeOr(t?: string) {
+    const raw = (t ?? "").trim();
+    if (!raw) return "a definir";
+    const hhmm = raw.slice(0, 5);
+    if (hhmm === "00:00") return "a definir";
+    return hhmm;
+}
+
+/* ----------- Normalização de status (texto → faseNN) ----------- */
+const ROTULO_PARA_FASE: Record<string, string> = {
+    removendo: "fase01",
+    "aguardando procedimento": "fase02",
+    preparando: "fase03",
+    "aguardando ornamentacao": "fase04",
+    ornamentando: "fase05",
+    "corpo pronto": "fase06",
+    transportando: "fase07",
+    "transportando p/ velorio": "fase07",
+    "transportando p/ velório": "fase07",
+    velando: "fase08",
+    sepultando: "fase09",
+    "transportando p/ sepultamento": "fase09",
+    "sepultamento concluido": "fase10",
+    "sepultamento concluído": "fase10",
+    "material recolhido": "fase11",
+    concluido: "fase11",
+    concluído: "fase11",
+};
+function normalizeKey(s: string) {
+    return s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+}
+function normalizarStatus(status?: string): string | undefined {
+    if (!status) return undefined;
+    const s = String(status).trim();
+    if (s.toLowerCase().startsWith("fase")) {
+        const digits = s.replace(/[^0-9]/g, "");
+        if (!digits) return s.toLowerCase();
+        return `fase${digits.padStart(2, "0")}`.toLowerCase();
+    }
+    const mapeado = ROTULO_PARA_FASE[normalizeKey(s)];
+    return (mapeado || s).toLowerCase();
+}
+
+/* ---------------- Status badge ---------------- */
+function capStatus(s?: string) {
+    switch (normalizarStatus(s)) {
+        case "fase01":
+            return "Removendo";
+        case "fase02":
+            return "Aguardando Procedimento";
+        case "fase03":
+            return "Preparando";
+        case "fase04":
+            return "Aguardando Ornamentação";
+        case "fase05":
+            return "Ornamentando";
+        case "fase06":
+            return "Corpo Pronto";
+        case "fase07":
+            return "Transportando P/ Velório";
+        case "fase08":
+            return "Velando";
+        case "fase09":
+            return "Transportando P/ Sepultamento";
+        case "fase10":
+            return "Sepultamento Concluído";
+        case "fase11":
+            return "Material Recolhido";
         default:
-            return "bg-muted text-foreground border-border";
+            return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
     }
 }
 
-function origemLabel(v?: ManualOrigem | string) {
-    const raw = String(v || "").trim();
+function badgeClass(s?: string) {
+    const x = (normalizarStatus(s) || "").toLowerCase();
+    if (x === "fase01") return "bg-amber-600";
+    if (x === "fase02") return "bg-zinc-600";
+    if (x === "fase03") return "bg-blue-600";
+    if (x === "fase04") return "bg-fuchsia-600";
+    if (x === "fase05") return "bg-rose-600";
+    if (x === "fase06") return "bg-emerald-600";
+    if (x === "fase07") return "bg-cyan-600";
+    if (x === "fase08") return "bg-violet-600";
+    if (x === "fase09") return "bg-orange-600";
+    if (x === "fase10") return "bg-green-700";
+    if (x === "fase11") return "bg-slate-700";
+    return "bg-slate-500";
+}
 
-    if (raw === "ordem_servico") return "Ordem de Serviço";
-    if (raw === "venda_direta") return "Venda Direta";
+/* Convenio chip */
+type ConvenioKind = "Particular" | "Prefeitura" | "Associado" | "a definir";
+function normalizeConvenio(s?: string): ConvenioKind {
+    const v = (s || "").toLowerCase();
+    if (!v) return "a definir";
+    if (v.includes("prefeitura")) return "Prefeitura";
+    if (v.includes("associad")) return "Associado";
+    if (v.includes("particular")) return "Particular";
+    return "a definir";
+}
+function convenioClass(kind: ConvenioKind) {
+    switch (kind) {
+        case "Particular":
+            return "bg-amber-500";
+        case "Prefeitura":
+            return "bg-cyan-600";
+        case "Associado":
+            return "bg-emerald-600";
+        default:
+            return "bg-slate-500";
+    }
+}
 
-    // Compatibilidade visual com pedidos antigos.
+function ConvenioBadge({
+    convenio,
+    size = "sm",
+}: {
+    convenio?: string;
+    size?: "xs" | "sm";
+}) {
+    const kind = normalizeConvenio(convenio);
+    const sizeClass =
+        size === "xs"
+            ? "px-1.5 py-0.5 text-[9px]"
+            : "px-2.5 py-1 text-[11px]";
+
+    return (
+        <span
+            className={`qa-convenio-badge inline-flex items-center rounded-full font-semibold leading-none text-white ${convenioClass(
+                kind
+            )} ${sizeClass}`}
+            title="Convênio"
+        >
+            {kind}
+        </span>
+    );
+}
+
+/* ---------------- Etapas (bolinhas) ---------------- */
+const STAGE_DOT_FILLED = [
+    "bg-emerald-500 border-emerald-600",
+    "bg-sky-500 border-sky-600",
+    "bg-violet-500 border-violet-600",
+    "bg-amber-500 border-amber-600",
+];
+const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
+
+const LABELS: Record<string, string> = {
+    falecido: "Falecido",
+    contato: "Contato",
+    religiao: "Religião",
+    convenio: "Convênio",
+    urna: "Urna",
+    roupa: "Roupa",
+    assistencia: "Assistência",
+    tanato: "Tanatopraxia",
+    invol: "Invol",
+    local_velorio: "Local do Velório",
+    data_inicio_velorio: "Data Início Velório",
+    data_fim_velorio: "Data Fim Velório",
+    hora_inicio_velorio: "Início Velório",
+    hora_fim_velorio: "Fim Velório",
+    local: "Local (Geral)",
+    local_sepultamento: "Local Sepultamento",
+};
+
+const isFilled = (registro: Registro, key?: string) => {
+    if (!key) return false;
+    const v = registro[key];
+    if (v == null) return false;
+    const s = decodeHtmlEntitiesDeep(String(v)).trim().toLowerCase();
+    if (!s) return false;
+    if (["selecionar...", "selecione...", "a definir"].includes(s)) return false;
+    if (key.startsWith("data") && (s === "0000-00-00" || s === "00/00/0000")) return false;
+    if (key.startsWith("hora") && s.startsWith("00:00")) return false;
+    return true;
+};
+
+function etapasPreenchidas(registro: Registro) {
+    const d = [false, false, false, false];
+
+    d[0] = ["falecido", "contato", "religiao", "convenio"].every((k) => isFilled(registro, k));
+    d[1] = ["urna", "roupa", "assistencia", "tanato"].every((k) => isFilled(registro, k));
+    d[2] =
+        isFilled(registro, "local_velorio") &&
+        isFilled(registro, "data_inicio_velorio") &&
+        (isFilled(registro, "local_sepultamento") || isFilled(registro, "local"));
+    d[3] =
+        isFilled(registro, "hora_inicio_velorio") ||
+        (isFilled(registro, "data_fim_velorio") && isFilled(registro, "hora_fim_velorio"));
+
+    return d;
+}
+
+/* =========================
+   Texto para copiar
+   ========================= */
+function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> = {}) {
+    const v = (k: string) => decodeHtmlEntitiesDeep(String(r?.[k] ?? "")).trim();
+    const atend = (v("convenio") || "A DEFINIR").toUpperCase();
+
+    const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
+    const ornTipo = ornTipoRaw
+        ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
+        : "A DEFINIR";
+
+    const involRaw = r?.invol;
+    const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
+    const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
+
+    const localVelRaw = v("local_velorio") || "A DEFINIR";
+    const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
+
+    const structured = extractMateriaisStructuredWithKey(r);
+    const flat = normalizeMateriaisFromRegistro(r);
+
+    const linesAll: MatLine[] = (() => {
+        if (structured.length === 0) return flat.map((t) => ({ text: t }));
+        const have = new Set(structured.map((x) => x.text));
+        const extras = flat.filter((t) => !have.has(t)).map((t) => ({ text: t }));
+        return [...structured, ...extras];
+    })();
+
+    const filtered = linesAll.filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
+
+    const groups = new Map<string, { ordem: number; items: { text: string; itemOrdem: number }[] }>();
+
+    for (const it of filtered) {
+        const info = it.itemKey ? lookup[it.itemKey] : undefined;
+        const catNome = (info?.catNome ?? "Materiais").trim() || "Materiais";
+        const catOrdem = info?.catOrdem ?? 9999;
+        const itemOrdem = info?.itemOrdem ?? 9999;
+
+        if (!groups.has(catNome)) groups.set(catNome, { ordem: catOrdem, items: [] });
+        groups.get(catNome)!.items.push({ text: it.text, itemOrdem });
+    }
+
+    const sortedCats = [...groups.entries()].sort(
+        (a, b) => a[1].ordem - b[1].ordem || a[0].localeCompare(b[0])
+    );
+
+    const materiaisClipboardLines =
+        sortedCats.length === 0
+            ? []
+            : [
+                `*Materiais:*`,
+                ...sortedCats.map(([cat, g]) => {
+                    const items = [...g.items]
+                        .sort((a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text))
+                        .map((x) => x.text);
+                    return `*${cat}:* ${items.join(", ")}`;
+                }),
+            ];
+
+    const lines = [
+        `*ATENDIMENTO ${atend}*`,
+        `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
+        `*Contato:* ${v("contato") || "A DEFINIR"}`,
+        `*Religião:* ${v("religiao") || "A DEFINIR"}`,
+        `*Urna:* ${v("urna") || "A DEFINIR"}`,
+        `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
+        `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
+        `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
+        `*Invol:* ${involYN}`,
+        `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
+        ...materiaisClipboardLines,
+        `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
+        `*Agente:* ${v("agente") || "A DEFINIR"}`,
+        `*Observação:* ${v("observacao") || "A DEFINIR"}`,
+    ];
+
+    return lines.join("\n\n");
+}
+
+/* =========================
+   Coroas — helpers visuais
+   ========================= */
+function normalizarTextoCoroa(v?: any): string {
+    return decodeHtmlEntitiesDeep(String(v ?? ""))
+        .trim()
+        .toLocaleLowerCase("pt-BR")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ");
+}
+
+function coroaStatusLabel(v?: any): string {
+    const s = normalizarTextoCoroa(v);
+    if (s === "novo") return "Novo Pedido";
+    if (s === "coroa") return "Confeccionando Coroa";
+    if (s === "faixa") return "Confeccionando Faixa";
+    return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "Em Confecção";
+}
+
+function coroaStatusClass(v?: any): string {
+    const s = normalizarTextoCoroa(v);
+    if (s === "novo") return "border-slate-600/70 bg-slate-700/65 text-slate-100";
+    if (s === "coroa") return "border-sky-500/35 bg-sky-500/15 text-sky-200";
+    if (s === "faixa") return "border-violet-500/35 bg-violet-500/15 text-violet-200";
+    return "border-slate-600/70 bg-slate-800/60 text-slate-200";
+}
+
+function coroaStatusIconType(v?: any): CoroaTvIconKey {
+    const s = normalizarTextoCoroa(v);
+    if (s === "coroa") return "flower";
+    if (s === "faixa") return "ribbon";
+    return "clipboard";
+}
+
+function coroaOrigemLabel(v?: any): string {
+    const s = normalizarTextoCoroa(v).replace(/\s+/g, "_");
+
+    if (s === "ordem_de_servico" || s === "ordem_servico") return "Ordem de Serviço";
     if (
-        raw === "venda_direta_colaborador" ||
-        raw === "venda_direta_escritorio" ||
-        raw === "venda_direta_memorial"
+        s === "venda_direta" ||
+        s === "venda_direta_colaborador" ||
+        s === "venda_direta_escritorio" ||
+        s === "venda_direta_memorial"
     ) {
         return "Venda Direta";
     }
 
-    return raw || "—";
+    if (s === "loja-online" || s === "loja_online" || s === "lojaonline") {
+        return "Loja-Online";
+    }
+
+    return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "a definir";
 }
 
-function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
-    if (target === "coroa") return "Confeccionando Coroa";
-    if (target === "faixa") return "Confeccionando Faixa";
-    if (target === "finalizada") return "Coroa Finalizada";
-    return "Entregue";
+function coroaQuantidade(order?: CoroaTvPedido | null): number {
+    if (!order) return 0;
+
+    const q = Number(order.quantidade_coroas ?? 0);
+    if (Number.isFinite(q) && q > 0) return Math.floor(q);
+
+    if (Array.isArray(order.itens) && order.itens.length > 0) {
+        return order.itens.length;
+    }
+
+    return 1;
 }
 
-function pedidoManualSomenteArtificial(order?: ManualOrder | null): boolean {
+function coroaModelos(order?: CoroaTvPedido | null): string {
+    if (!order) return "a definir";
+
+    const itens = Array.isArray(order.itens) ? order.itens : [];
+    const modelos = itens
+        .map((it) => decodeHtmlEntitiesDeep(String(it?.modelo_coroa ?? "")).trim())
+        .filter(Boolean);
+
+    if (modelos.length === 1) return modelos[0];
+    if (modelos.length > 1) return `${modelos[0]} +${modelos.length - 1}`;
+
+    const principal = decodeHtmlEntitiesDeep(String(order.modelo_coroa ?? "")).trim();
+    return principal || "a definir";
+}
+
+function coroaPagamentoLabel(order?: CoroaTvPedido | null): string {
+    if (!order) return "Aguardando";
+
+    if (String(order.comprovante_url ?? "").trim()) return "Pago";
+
+    const status = normalizarTextoCoroa(order.status_pagamento);
+    if (status === "pago") return "Pago";
+
+    return "Aguardando";
+}
+
+function coroaPagamentoClass(order?: CoroaTvPedido | null): string {
+    return coroaPagamentoLabel(order) === "Pago"
+        ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-200"
+        : "border-amber-500/35 bg-amber-500/15 text-amber-200";
+}
+
+function coroaCriadoHora(v?: string | null): string {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+
+    const d = new Date(raw.replace(" ", "T"));
+    if (Number.isNaN(d.getTime())) return "";
+
+    return d.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function coroaSomenteArtificial(order?: CoroaTvPedido | null): boolean {
     if (!order) return false;
 
     const itens = Array.isArray(order.itens) ? order.itens : [];
@@ -312,3547 +1275,2904 @@ function pedidoManualSomenteArtificial(order?: ManualOrder | null): boolean {
     );
 }
 
-function pedidoManualExigeConfeccaoCoroa(order?: ManualOrder | null): boolean {
-    return !pedidoManualSomenteArtificial(order);
-}
+type CoroaTimelineData = {
+    aguardandoMs: number;
+    coroaMs: number;
+    faixaMs: number;
+    concluidaMs: number;
 
-function acoesManualDoPedido(
-    order: ManualOrder,
-): ReadonlyArray<readonly [Exclude<ManualStatus, "novo">, string]> {
-    const acoes: Array<readonly [Exclude<ManualStatus, "novo">, string]> = [];
+    aguardandoActive: boolean;
+    coroaActive: boolean;
+    faixaActive: boolean;
+    concluidaActive: boolean;
 
-    if (pedidoManualExigeConfeccaoCoroa(order)) {
-        acoes.push(["coroa", "Confeccionando Coroa"]);
-    }
+    coroaSkipped: boolean;
+};
 
-    acoes.push(
-        ["faixa", "Confeccionando Faixa"],
-        ["finalizada", "Coroa Finalizada"],
-        ["entregue", "Entregue"],
-    );
+function buildCoroaTimeline(
+    order: CoroaTvPedido,
+    nowMs: number,
+): CoroaTimelineData {
+    const coroaTs = parseLogTs(order.coroa_inicio_em || undefined);
+    const faixaTs = parseLogTs(order.faixa_inicio_em || undefined);
+    const finalizadaTs = parseLogTs(order.finalizada_em || undefined);
+    const entregueTs = parseLogTs(order.entregue_em || undefined);
 
-    return acoes;
-}
+    const inicios = [coroaTs, faixaTs].filter((ts) => ts > 0);
+    const primeiroInicio = inicios.length > 0 ? Math.min(...inicios) : 0;
 
-function acaoManualConcluida(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
-    const finalizada =
-        Boolean(order.finalizada_em) ||
-        order.status === "finalizada" ||
-        order.status === "entregue";
+    // Se criado_em não estiver disponível em algum registro legado,
+    // usa o primeiro início conhecido para não inventar tempo anterior.
+    const criadoOriginal = parseLogTs(order.criado_em || undefined);
+    const criadoTs =
+        criadoOriginal > 0
+            ? criadoOriginal
+            : primeiroInicio > 0
+                ? primeiroInicio
+                : finalizadaTs > 0
+                    ? finalizadaTs
+                    : nowMs;
 
-    const entregue =
-        Boolean(order.entregue_em) ||
-        order.status === "entregue";
+    // Ampulheta: conta desde a chegada do pedido até a PRIMEIRA ação,
+    // seja Coroa ou Faixa. Portanto a ordem pode mudar livremente.
+    const fimAguardando =
+        primeiroInicio > 0
+            ? primeiroInicio
+            : finalizadaTs > 0
+                ? finalizadaTs
+                : nowMs;
 
-    if (target === "coroa") {
-        return (
-            !pedidoManualExigeConfeccaoCoroa(order) ||
-            Boolean(order.coroa_inicio_em) ||
-            finalizada
-        );
-    }
+    const aguardandoMs = Math.max(0, fimAguardando - criadoTs);
 
-    if (target === "faixa") return Boolean(order.faixa_inicio_em) || finalizada;
-    if (target === "finalizada") return finalizada;
-    return entregue;
-}
+    // Coroa e Faixa são cronômetros independentes.
+    // Se Faixa começar antes, Faixa conta primeiro.
+    // Se depois a Coroa começar, os dois passam a contar simultaneamente
+    // até a finalização do pedido.
+    const fimProducao = finalizadaTs > 0 ? finalizadaTs : nowMs;
 
-function acaoManualLiberada(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
-    const finalizada = acaoManualConcluida(order, "finalizada");
-    const entregue = acaoManualConcluida(order, "entregue");
-    const exigeCoroa = pedidoManualExigeConfeccaoCoroa(order);
+    const coroaMs =
+        coroaTs > 0
+            ? Math.max(0, fimProducao - coroaTs)
+            : 0;
 
-    if (target === "coroa") {
-        if (!exigeCoroa) return false;
-        return !finalizada && !entregue && !acaoManualConcluida(order, "coroa");
-    }
+    const faixaMs =
+        faixaTs > 0
+            ? Math.max(0, fimProducao - faixaTs)
+            : 0;
 
-    if (target === "faixa") {
-        return !finalizada && !entregue && !acaoManualConcluida(order, "faixa");
-    }
+    // Normalmente o pedido sai deste quadro ao finalizar.
+    // Este contador fica pronto para o pequeno intervalo antes do refresh
+    // e para qualquer uso futuro onde finalizada permaneça visível.
+    const concluidaMs =
+        finalizadaTs > 0
+            ? Math.max(0, (entregueTs > 0 ? entregueTs : nowMs) - finalizadaTs)
+            : 0;
 
-    if (target === "finalizada") {
-        const coroaOk = !exigeCoroa || acaoManualConcluida(order, "coroa");
+    const coroaSkipped = coroaSomenteArtificial(order);
 
-        return (
-            !finalizada &&
-            !entregue &&
-            coroaOk &&
-            acaoManualConcluida(order, "faixa")
-        );
-    }
+    return {
+        aguardandoMs,
+        coroaMs,
+        faixaMs,
+        concluidaMs,
 
-    return finalizada && !entregue;
-}
+        aguardandoActive:
+            primeiroInicio <= 0 &&
+            finalizadaTs <= 0,
 
-function normalizeFuneralStatus(v?: string) {
-    const raw = String(v || "").trim().toLowerCase();
-    if (!raw) return "";
-    if (raw.startsWith("fase")) {
-        const n = raw.replace(/\D+/g, "");
-        return n ? `fase${n.padStart(2, "0")}` : raw;
-    }
-    const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const map: Record<string, string> = {
-        removendo: "fase01",
-        "aguardando procedimento": "fase02",
-        preparando: "fase03",
-        "aguardando ornamentacao": "fase04",
-        ornamentando: "fase05",
-        "corpo pronto": "fase06",
-        transportando: "fase07",
-        velando: "fase08",
-        sepultando: "fase09",
-        "sepultamento concluido": "fase10",
-        "material recolhido": "fase11",
-        concluido: "fase11",
+        coroaActive:
+            !coroaSkipped &&
+            coroaTs > 0 &&
+            finalizadaTs <= 0,
+
+        faixaActive:
+            faixaTs > 0 &&
+            finalizadaTs <= 0,
+
+        concluidaActive:
+            finalizadaTs > 0 &&
+            entregueTs <= 0,
+
+        coroaSkipped,
     };
-    return map[key] || raw;
 }
 
+function coroaEmConfeccao(order: CoroaTvPedido): boolean {
+    const status = normalizarTextoCoroa(order.status);
+    return status === "novo" || status === "coroa" || status === "faixa";
+}
+
+/* =========================
+   Regras do painel
+   ========================= */
 function isNao(v?: string) {
-    const s = (v || "").toString().trim().toLowerCase();
+    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
-
 function isSim(v?: string) {
-    return (v || "").toString().trim().toLowerCase() === "sim";
+    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
+    return s === "sim" || s === "s";
 }
-
-function isTerceiro(r: AtendimentoResumo) {
-    if (String(r.tipo_atendimento || "").trim().toLowerCase() === "terceiro") {
-        return true;
-    }
-
-    // Mesma heurística usada no quadro principal de Atendimentos.
+function isTerceiroRegistro(r: Registro) {
+    if ((r as any).tipo_atendimento === "terceiro") return true;
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
-function atendimentoEstaNoQuadro(r: AtendimentoResumo) {
-    const status = normalizeFuneralStatus(r.status);
-
-    // Mesmas regras de visibilidade da TabelaAtendimentos:
-    // - fase11 nunca aparece;
-    // - terceiro sai na fase10;
-    // - funerário sem Assistência=Sim sai na fase10;
-    // - funerário com Assistência=Sim permanece na fase10 e sai só na fase11.
-    if (status === "fase11") return false;
-
-    if (isTerceiro(r)) {
-        return status !== "fase10";
-    }
-
-    if (!isSim(r.assistencia)) {
-        return status !== "fase10";
-    }
-
-    return true;
+function involSimNao(value: any): string {
+    const s = decodeHtmlEntitiesDeep(String(value ?? "")).trim().toLowerCase();
+    if (!s) return "Não";
+    if (["1", "true", "t", "sim", "s", "yes", "y"].includes(s)) return "Sim";
+    return "Não";
 }
 
-function normalizarTextoEstoque(v?: string | null) {
-    return String(v || "")
-        .trim()
-        .toLocaleLowerCase("pt-BR")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, " ");
+/* ===== Helpers Linha do Tempo ===== */
+function parseRegistroDateTime(r: Registro) {
+    const d = (r.data || "").trim();
+    const h = (r.hora_fim_velorio || r.hora_inicio_velorio || "").trim() || "00:00";
+    if (!d) return 0;
+    const [yyyy, mm, dd] = d.split("-");
+    const iso = `${yyyy}-${mm}-${dd}T${h}:00`;
+    const ts = Date.parse(iso);
+    return Number.isNaN(ts) ? 0 : ts;
 }
 
-function categoriaEhCoroaNatural(nome?: string | null) {
-    return normalizarTextoEstoque(nome) === "coroas naturais";
+function capitalize(str?: string): string {
+    if (!str) return "";
+    const s = str.toString().trim();
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
 }
 
-function categoriaEhCoroaArtificial(nome?: string | null) {
-    return normalizarTextoEstoque(nome) === "coroas artificiais";
+function formatLogDateTime(value?: string): string {
+    if (!value) return "";
+    const s = value.replace(" ", "T");
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return value;
+    const dd = d.getDate().toString().padStart(2, "0");
+    const mm = (d.getMonth() + 1).toString().padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = d.getHours().toString().padStart(2, "0");
+    const mi = d.getMinutes().toString().padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
 }
 
-function dinheiroBRL(v?: string | number | null) {
-    const n = Number(v ?? 0);
-    const safe = Number.isFinite(n) ? n : 0;
-    return new Intl.NumberFormat("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-    }).format(safe);
+function parseLogTs(value?: string): number {
+    if (!value) return 0;
+    const ts = Date.parse(String(value).replace(" ", "T"));
+    return Number.isNaN(ts) ? 0 : ts;
 }
 
-function normalizarFotoProduto(url?: string | null) {
-    const raw = String(url || "").trim();
-    if (!raw || raw === "null" || raw === "undefined") return null;
-    if (/^data:image\//i.test(raw) || /^blob:/i.test(raw) || /^https?:\/\//i.test(raw)) {
-        return raw;
-    }
-
-    const clean = raw.startsWith("/") ? raw : `/${raw}`;
-    if (clean.startsWith("/uploads/")) {
-        return `${API_PUBLIC_BASE}${clean}`;
-    }
-
-    return `${API_PUBLIC_BASE}/uploads/produtos/${raw.replace(/^\/+/, "")}`;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function fotoPrincipalProduto(produto?: EstoqueProduto | null) {
-    if (!produto) return null;
-
-    const fotos = Array.isArray(produto.fotos) ? [...produto.fotos] : [];
-    if (fotos.length) {
-        fotos.sort((a, b) => {
-            const principalA = Number(a.is_principal || 0) === 1 ? 0 : 1;
-            const principalB = Number(b.is_principal || 0) === 1 ? 0 : 1;
-            if (principalA !== principalB) return principalA - principalB;
-            return Number(a.ordem || 0) - Number(b.ordem || 0);
-        });
-
-        const primeira = fotos[0];
-        return normalizarFotoProduto(primeira?.foto_url || primeira?.arquivo || null);
-    }
-
-    return normalizarFotoProduto(produto.foto_url || null);
+function asBool(val: unknown): boolean {
+    if (typeof val === "boolean") return val;
+    const s = decodeHtmlEntitiesDeep(String(val ?? "")).trim().toLowerCase();
+    if (!s) return false;
+    return ["1", "true", "t", "sim", "s", "yes", "y"].includes(s);
 }
 
-function rotuloTipoCoroa(tipo: CoroaTipo) {
-    if (tipo === "natural") return "Natural";
-    if (tipo === "artificial") return "Artificial";
-    return "";
-}
-
-function quantidadeManual(order?: ManualOrder | null) {
-    if (!order) return 0;
-    const q = Number(order.quantidade_coroas || 0);
-    if (q > 0) return q;
-    if (Array.isArray(order.itens) && order.itens.length) return order.itens.length;
-    return 1;
-}
-
-function resumoModelosManual(order: ManualOrder) {
-    const itens = Array.isArray(order.itens) ? order.itens.filter((x) => String(x?.modelo_coroa || "").trim()) : [];
-    if (!itens.length) return order.modelo_coroa || "—";
-
-    const nomes = itens.map((x) => x.modelo_coroa);
-    if (nomes.length === 1) return nomes[0];
-    return `${nomes[0]} +${nomes.length - 1}`;
-}
-
-function itensManual(order?: ManualOrder | null): ManualCoroaItem[] {
-    if (!order) return [];
-    if (Array.isArray(order.itens) && order.itens.length) return order.itens;
-
-    return [{
-        ordem: 1,
-        modelo_coroa: order.modelo_coroa || "",
-        frase: order.frase || "",
-    }];
-}
-
-function totalManual(order?: ManualOrder | null) {
-    return itensManual(order).reduce((acc, item) => acc + (Number(item.valor) || 0), 0);
-}
-
-function pedidoModelosManual(order?: ManualOrder | null) {
-    const nomes = itensManual(order)
-        .map((item) => String(item.modelo_coroa || "").trim())
-        .filter(Boolean);
-    return nomes.length ? nomes.join(", ") : "—";
-}
-
-function pedidoFrasesManual(order?: ManualOrder | null) {
-    const itens = itensManual(order);
-    if (!itens.length) return "—";
-    if (itens.length === 1) return itens[0]?.frase || "—";
-
-    return itens
-        .map((item, index) => `${item.ordem || index + 1}) ${item.frase || "—"}`)
-        .join(" | ");
-}
-
-function pagamentoAutomaticoManual(order?: ManualOrder | null) {
-    return order?.comprovante_url ? "Pago" : "Aguardando Comprovante";
-}
-
-function pagamentoAutomaticoClass(order?: ManualOrder | null) {
-    return order?.comprovante_url
-        ? "bg-emerald-100 text-emerald-900 border-emerald-200"
-        : "bg-amber-100 text-amber-900 border-amber-200";
-}
-
-function manualMatchesQuery(order: ManualOrder, query: string) {
-    const q = normalizarTextoEstoque(query);
-    if (!q) return true;
-
-    const haystack = [
-        order.id,
-        order.solicitante,
-        order.telefone,
-        order.local_entrega,
-        order.observacoes,
-        order.falecido,
-        origemLabel(order.origem),
-        ...itensManual(order).flatMap((item) => [item.modelo_coroa, item.frase]),
-    ]
-        .map((v) => normalizarTextoEstoque(String(v ?? "")))
+function titleCaseFromSnake(key: string): string {
+    return key
+        .split("_")
+        .filter(Boolean)
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
         .join(" ");
-
-    return haystack.includes(q);
 }
 
-function manualDateInRange(order: ManualOrder, after: string, before: string) {
-    if (!after && !before) return true;
-    const raw = String(order.criado_em || "").trim();
-    if (!raw) return false;
+function overrideCampoNome(_key: string, defaultName: string): string {
+    return defaultName;
+}
 
-    const dt = new Date(raw.replace(" ", "T"));
-    if (Number.isNaN(dt.getTime())) return false;
+function substituirRotuloVisual(text: string): string {
+    return text;
+}
 
-    if (after) {
-        const inicio = new Date(`${after}T00:00:00`);
-        if (dt < inicio) return false;
+function formataSeDataIso(value: string): string {
+    const v = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        const [yyyy, mm, dd] = v.split("-");
+        return `${dd}/${mm}/${yyyy}`;
     }
-
-    if (before) {
-        const fim = new Date(`${before}T23:59:59.999`);
-        if (dt > fim) return false;
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) {
+        const [datePart, timePart] = v.split(" ");
+        const [yyyy, mm, dd] = datePart.split("-");
+        const hhmm = timePart.slice(0, 5);
+        return `${dd}/${mm}/${yyyy} ${hhmm}`;
     }
-
-    return true;
+    return v;
 }
 
-function buildManualPedidoText(order: ManualOrder) {
-    const NL = "\r\n";
-    const ZWSP = "\u200B";
-    const total = totalManual(order);
-
-    // Mesma ordem/estrutura usada no pedido online.
-    const rawLines = [
-        `*Pedido:* ${pedidoModelosManual(order)}`,
-        `*Origem:* ${origemLabel(order.origem)}`,
-        `*Cliente:* ${order.solicitante || "—"}`,
-        `*Telefone:* ${onlyDigits(order.telefone) || order.telefone || "—"}`,
-        `*Valor:* ${total > 0 ? dinheiroBRL(total) : "—"}`,
-        `*Local de Entrega:* ${order.local_entrega || "—"}`,
-        `*Observações:* ${order.observacoes || "—"}`,
-        `*Falecido(a):* ${order.falecido || "—"}`,
-        `*Frase da Coroa:* ${pedidoFrasesManual(order)}`,
-        `*Comprovante de pagamento:*`,
-    ];
-
-    const out: string[] = [];
-    rawLines.forEach((line, index) => {
-        out.push(line.trimStart());
-        if (index < rawLines.length - 1) out.push(ZWSP);
-    });
-
-    return out.join(NL);
+function traduzirFase(s?: string) {
+    return capStatus(s) || (s ?? "");
 }
 
-function comprovanteEhPdf(order?: ManualOrder | null) {
-    const mime = String(order?.comprovante_mime || "").toLowerCase();
-    const url = String(order?.comprovante_url || "").toLowerCase();
-    return mime === "application/pdf" || /\.pdf(?:$|\?)/i.test(url);
+function iconForAction(acao?: string, status?: string): string {
+    const a = (acao || "").toLowerCase();
+    if (a.includes("criou") || a.includes("novo") || a.includes("inser")) return "🟢";
+    if (a.includes("edit") || a.includes("atualiz") || a.includes("alter")) return "✏️";
+    if (a.includes("exclu") || a.includes("delet") || a.includes("remove")) return "🗑️";
+    const st = (status || "").toLowerCase();
+    if (st.startsWith("fase")) return "🔁";
+    return "•";
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
-    if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
-    if (file.size > 8 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 8 MB.");
-    return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-        reader.readAsDataURL(file);
-    });
-}
+/* ===== Status visual com tempo por etapa ===== */
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "dot";
+type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
+type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
-async function comprovanteToDataUrl(file: File): Promise<string> {
-    const mime = String(file.type || "").toLowerCase();
-    const nome = String(file.name || "").toLowerCase();
-    const permitido =
-        mime === "application/pdf" ||
-        mime.startsWith("image/") ||
-        nome.endsWith(".pdf") ||
-        nome.endsWith(".jpg") ||
-        nome.endsWith(".jpeg") ||
-        nome.endsWith(".png") ||
-        nome.endsWith(".webp");
-
-    if (!permitido) {
-        throw new Error("O comprovante deve ser uma imagem ou arquivo PDF.");
-    }
-
-    if (file.size > 15 * 1024 * 1024) {
-        throw new Error("O comprovante deve ter no máximo 15 MB.");
-    }
-
-    return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Não foi possível ler o comprovante."));
-        reader.readAsDataURL(file);
-    });
-}
-
-function ImageUploadButtons({
-    disabled,
-    onFile,
-}: {
-    disabled?: boolean;
-    onFile: (file: File) => Promise<void> | void;
-}) {
-    const galleryRef = React.useRef<HTMLInputElement>(null);
-    const cameraRef = React.useRef<HTMLInputElement>(null);
-
-    const handle = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.currentTarget.value = "";
-        if (!file) return;
-        await onFile(file);
-    };
-
-    return (
-        <div className="flex flex-wrap gap-2">
-            <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handle} />
-            <input
-                ref={cameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handle}
-            />
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => galleryRef.current?.click()}
-            >
-                <IconUpload className="size-4" />
-                Galeria
-            </button>
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => cameraRef.current?.click()}
-            >
-                <IconCamera className="size-4" />
-                Tirar foto
-            </button>
-        </div>
-    );
-}
-
-
-function ComprovanteUploadButtons({
-    disabled,
-    onFile,
-}: {
-    disabled?: boolean;
-    onFile: (file: File) => Promise<void> | void;
-}) {
-    const arquivoRef = React.useRef<HTMLInputElement>(null);
-    const cameraRef = React.useRef<HTMLInputElement>(null);
-
-    const handle = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.currentTarget.value = "";
-        if (!file) return;
-        await onFile(file);
-    };
-
-    return (
-        <div className="flex flex-wrap gap-2">
-            <input
-                ref={arquivoRef}
-                type="file"
-                accept="image/*,application/pdf,.pdf"
-                className="hidden"
-                onChange={handle}
-            />
-            <input
-                ref={cameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handle}
-            />
-
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => arquivoRef.current?.click()}
-            >
-                <IconUpload className="size-4" />
-                Imagem / PDF
-            </button>
-
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => cameraRef.current?.click()}
-            >
-                <IconCamera className="size-4" />
-                Tirar foto
-            </button>
-        </div>
-    );
-}
-
-/* =========================================================
-   PEDIDOS ONLINE / WOOCOMMERCE — comportamento existente
-   ========================================================= */
-type WcOrder = {
-    id: number;
-    status:
-    | "pending"
-    | "processing"
-    | "on-hold"
-    | "completed"
-    | "cancelled"
-    | "refunded"
-    | "failed";
-    date_created: string;
-    number: string;
-    currency: string;
-    total: string;
-    customer_note?: string;
-    billing?: {
-        first_name?: string;
-        last_name?: string;
-        email?: string;
-        phone?: string;
-    };
-    shipping?: {
-        first_name?: string;
-        last_name?: string;
-        address_1?: string;
-        address_2?: string;
-        city?: string;
-        state?: string;
-        postcode?: string;
-    };
-};
-
-type Meta = { key: string; value: any };
-
-type WcOrderFull = WcOrder & {
-    meta_data?: Meta[];
-    line_items?: Array<{
-        id: number;
-        name: string;
-        quantity: number;
-        total: string;
-        product_id?: number;
-        variation_id?: number;
-        sku?: string;
-        meta_data?: Meta[];
-        image?: { id: number | string; src: string };
-    }>;
-    shipping_lines?: Array<{ id: number; method_title: string; total: string }>;
-};
-
-type OrdersResponse = {
-    data: WcOrder[];
-    meta: { page: number; per_page: number; total: number; totalPages: number };
-};
-
-const WC_STATUS_OPTIONS: Array<{ value: WcOrder["status"] | "all"; label: string }> = [
-    { value: "all", label: "Todos" },
-    { value: "pending", label: "Pendente" },
-    { value: "processing", label: "Processando" },
-    { value: "on-hold", label: "Em espera" },
-    { value: "completed", label: "Concluído" },
-    { value: "cancelled", label: "Cancelado" },
-    { value: "refunded", label: "Reembolsado" },
-    { value: "failed", label: "Falhou" },
+const STATUS_STEP_DEFS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
+    { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "timer" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
+    { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "flower" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
+    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
+    { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "car" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    { key: "fase10", label: "Sepultamento Concluído", shortLabel: "Concl.", icon: "timer" },
+    { key: "fase11", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
 ];
 
-function formatCurrency(v: string | number, currency = "BRL") {
-    const num = typeof v === "string" ? Number(v) : v;
-    if (Number.isNaN(num)) return String(v);
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(num);
+const STATUS_STEPS: StatusStepInfo[] = [
+    { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
+    { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
+    { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
+    { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
+    { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    // Conta do comando "Sepultamento Concluído" até "Material Recolhido".
+    { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
+    // Soma os intervalos entre as etapas principais: aguardando procedimento,
+    // aguardando ornamentação, corpo pronto e transportando para velório.
+    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
+];
+
+const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
+    acc[step.key] = step;
+    return acc;
+}, {});
+
+function getStatusStepInfo(status?: string): StatusStepInfo {
+    const key = normalizarStatus(status) || "";
+    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", shortLabel: "Status", icon: "dot" };
 }
 
-function formatDate(iso?: string | null) {
-    if (!iso) return "—";
-    try {
-        const dt = new Date(iso.replace(" ", "T"));
-        if (Number.isNaN(dt.getTime())) return iso;
-        return dt.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-    } catch {
-        return iso;
-    }
+function getRegistroBackendId(r: Registro): string | undefined {
+    const raw =
+        (r as any).sepultamento_id ??
+        (r as any).sepultamentoId ??
+        (r as any).id ??
+        (r as any).id_atendimento ??
+        (r as any).codigo;
+
+    const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
+    return s || undefined;
 }
 
-function clsWcStatusBadge(s: WcOrder["status"]) {
-    switch (s) {
-        case "pending":
-            return "bg-amber-100 text-amber-800 border-amber-200";
-        case "processing":
-            return "bg-blue-100 text-blue-800 border-blue-200";
-        case "on-hold":
-            return "bg-slate-100 text-slate-800 border-slate-200";
-        case "completed":
-            return "bg-emerald-100 text-emerald-900 border-emerald-200";
-        case "cancelled":
-            return "bg-rose-100 text-rose-800 border-rose-200";
-        case "refunded":
-            return "bg-purple-100 text-purple-900 border-purple-200";
-        case "failed":
-            return "bg-gray-200 text-gray-700 border-gray-300";
-        default:
-            return "bg-muted text-foreground border-border";
-    }
-}
-
-function onlyDigits(s?: string | null) {
-    return (s || "").replace(/\D+/g, "");
-}
-
-function findMetaValue(metas: Meta[] | undefined, keys: string[]): string | undefined {
-    if (!metas?.length) return undefined;
-    const lower = keys.map((k) => k.toLowerCase());
-    for (const m of metas) {
-        const k = String(m.key || "").toLowerCase();
-        if (lower.some((kk) => k.includes(kk))) {
-            const v = typeof m.value === "string" ? m.value : JSON.stringify(m.value);
-            if (v?.trim()) return v;
-        }
-    }
-    return undefined;
-}
-
-function buildWhatsAppText(order: WcOrderFull) {
-    const NL = "\r\n";
-    const ZWSP = "\u200B";
-    const itens = (order.line_items || []).map((i) => i.name).filter(Boolean);
-    const pedidoNome = itens.join(", ");
-    const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim();
-    const phone = onlyDigits(order.billing?.phone);
-    const valor = formatCurrency(order.total, order.currency || "BRL");
-    const localEntrega = [order.shipping?.address_1, order.shipping?.address_2].filter(Boolean).join(" - ");
-    const falecido =
-        findMetaValue(order.meta_data, [
-            "shipping_falecido_nome",
-            "falecido_nome",
-            "nome_falecido",
-            "nome_do_falecido",
-        ]) || order.shipping?.first_name || "";
-    const frase =
-        findMetaValue(order.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
-        findMetaValue(order.line_items?.flatMap((li) => li.meta_data || []), [
-            "frase_para_a_faixa",
-            "frase da coroa",
-            "frase da faixa",
-            "faixa",
-            "mensagem",
-        ]) ||
-        "";
-
-    const rawLines = [
-        `*Pedido:* ${pedidoNome || `#${order.number || order.id}`}`,
-        `*Origem:* Loja On-line`,
-        `*Cliente:* ${cliente || "—"}`,
-        `*Telefone:* ${phone || "—"}`,
-        `*Valor:* ${valor}`,
-        `*Local de Entrega:* ${localEntrega || "—"}`,
-        `*Falecido(a):* ${falecido || "—"}`,
-        `*Frase da Coroa:* ${frase || "—"}`,
-        `*Comprovante de pagamento:*`,
-    ];
-
-    const out: string[] = [];
-    rawLines.forEach((l, i) => {
-        out.push(l.trimStart());
-        if (i < rawLines.length - 1) out.push(ZWSP);
-    });
-    return out.join(NL);
-}
-
-async function shareOrOpenWhatsApp(text: string, toPhone?: string) {
-    const phone = onlyDigits(toPhone);
-    if (typeof navigator !== "undefined" && (navigator as any).share) {
-        try {
-            await (navigator as any).share({ text });
-            return;
-        } catch {
-            // segue para fallback
-        }
-    }
-
-    const encoded = encodeURIComponent(text);
-    const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(
-        (typeof navigator !== "undefined" && navigator.userAgent) || "",
+function getRegistroTrackingId(r: Registro): string {
+    return (
+        getRegistroBackendId(r) ??
+        `${decodeHtmlEntitiesDeep(String(r.falecido ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.data ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.hora_fim_velorio ?? "")).trim()}`
     );
-    const deep = phone && isMobile
-        ? `whatsapp://send?phone=${phone}&text=${encoded}`
-        : `whatsapp://send?text=${encoded}`;
-    const opened = window.open(deep, "_blank");
-    if (opened) return;
-
-    const webUrl = phone
-        ? `https://wa.me/${phone}?text=${encoded}`
-        : `https://web.whatsapp.com/send?text=${encoded}`;
-    const openedWeb = window.open(webUrl, "_blank", "noopener,noreferrer");
-    if (openedWeb) return;
-
-    try {
-        await navigator.clipboard.writeText(text);
-    } catch {
-        // ignore
-    }
-    window.open(phone ? `https://wa.me/${phone}` : "https://web.whatsapp.com/", "_blank");
 }
 
-async function convertToJpegWithWhiteBg(blob: Blob): Promise<Blob> {
-    const imgUrl = URL.createObjectURL(blob);
-    try {
-        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const im = new Image();
-            im.onload = () => resolve(im);
-            im.onerror = reject;
-            im.src = imgUrl;
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width || 1024;
-        canvas.height = img.height || 1024;
-        const ctx = canvas.getContext("2d")!;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        return await new Promise<Blob>((resolve) =>
-            canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.92),
-        );
-    } finally {
-        URL.revokeObjectURL(imgUrl);
-    }
+function getStatusFromLog(log: LogItem): string | undefined {
+    const detalhes = isPlainObject(log.detalhes) ? (log.detalhes as Record<string, unknown>) : {};
+    const raw =
+        log.status_novo ??
+        (detalhes.status_novo as string | undefined) ??
+        (detalhes.status as string | undefined) ??
+        (detalhes.novo_status as string | undefined);
+
+    const normalized = normalizarStatus(raw);
+    return normalized?.startsWith("fase") ? normalized : undefined;
 }
 
-async function shareImageUrl(imageUrl: string) {
-    if (!imageUrl) return;
-    try {
-        const resp = await fetch(imageUrl, { mode: "cors", cache: "no-store" });
-        if (resp.ok) {
-            let blob = await resp.blob();
-            if (blob.type === "image/png") {
+function formatDurationMs(msRaw: number): string {
+    const ms = Math.max(0, Number.isFinite(msRaw) ? msRaw : 0);
+    const totalMinutes = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
+const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase07"]);
+
+function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
+    const logTimes = (logs ?? [])
+        .map((log) => parseLogTs(log.datahora))
+        .filter((ts) => ts > 0)
+        .sort((a, b) => a - b);
+
+    if (logTimes.length > 0) return logTimes[0];
+
+    const registroTs = parseRegistroDateTime(registro);
+    return registroTs > 0 ? registroTs : nowMs;
+}
+
+function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
+    const currentKey = normalizarStatus(registro.status);
+    const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
+
+    const statusEvents = (logs ?? [])
+        .map((log) => ({ key: getStatusFromLog(log), ts: parseLogTs(log.datahora) }))
+        .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
+        .sort((a, b) => a.ts - b.ts);
+
+    const unique: { key: string; ts: number }[] = [{ key: "fase01", ts: createdTs }];
+
+    for (const ev of statusEvents) {
+        if (ev.ts < createdTs) continue;
+
+        // Removendo começa no momento da criação do atendimento. Portanto, o comando
+        // explícito de "Indo retirar" não é necessário para iniciar a contagem/piscada.
+        if (ev.key === "fase01") continue;
+
+        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
+            unique.push(ev);
+        }
+    }
+
+    const hasAdvancedByLog = unique.some((ev) => ev.key !== "fase01");
+
+    // Enquanto ainda não existe nenhum log real indicando "Corpo na Clínica /
+    // Aguardando Procedimento" ou fase posterior, a etapa Removendo permanece ativa,
+    // piscando e contando desde a criação do atendimento.
+    const effectiveCurrentKey = hasAdvancedByLog ? currentKey : "fase01";
+
+    if (hasAdvancedByLog && currentKey && unique[unique.length - 1]?.key !== currentKey) {
+        unique.push({ key: currentKey, ts: nowMs });
+    }
+
+    return unique.map((ev, idx) => {
+        const info = getStatusStepInfo(ev.key);
+        const isLast = idx === unique.length - 1;
+        const end = isLast ? nowMs : unique[idx + 1].ts;
+        return {
+            key: info.key,
+            label: info.label,
+            shortLabel: info.shortLabel,
+            icon: info.icon,
+            start: ev.ts,
+            end,
+            active: isLast && ev.key === effectiveCurrentKey,
+        };
+    });
+}
+
+function getStatusDisplayData(segments: StatusSegment[]) {
+    const durations = new Map<string, number>();
+    let activeKey: string | undefined;
+
+    for (const seg of segments) {
+        const duration = Math.max(0, seg.end - seg.start);
+        const displayKey = STATUS_IDLE_KEYS.has(seg.key) ? "idle" : STATUS_MAIN_KEYS.has(seg.key) ? seg.key : undefined;
+        if (!displayKey) continue;
+
+        durations.set(displayKey, (durations.get(displayKey) ?? 0) + duration);
+        if (seg.active) activeKey = displayKey;
+    }
+
+    return { durations, activeKey };
+}
+
+/* =========================
+   Página
+   ========================= */
+const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+
+export default function QuadroAtendimentoPage() {
+    const [clockTime, setClockTime] = useState("");
+    const [clockDate, setClockDate] = useState("");
+    const [nowMs, setNowMs] = useState(() => Date.now());
+
+    const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
+    const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
+
+    const [open, setOpen] = useState(false);
+    const [detail, setDetail] = useState<Registro | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
+    const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
+    const [detailLogsLoading, setDetailLogsLoading] = useState(false);
+    const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
+
+    const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
+    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
+
+    /* Coroas de Flores — painel inferior */
+    const [coroasTv, setCoroasTv] = useState<CoroaTvPedido[]>(
+        () => readLS<CoroaTvPedido[]>("qa_coroas_tv") ?? []
+    );
+    const [coroasTvError, setCoroasTvError] = useState<string | null>(null);
+
+    /* Ajuste automático de densidade da TV */
+    const [qaDensity, setQaDensity] = useState<QaDensity>("normal");
+    const dashboardContentRef = useRef<HTMLElement | null>(null);
+
+    useEffect(() => {
+        const update = () => {
+            const now = new Date();
+            setNowMs(now.getTime());
+            const h = now.getHours().toString().padStart(2, "0");
+            const m = now.getMinutes().toString().padStart(2, "0");
+            const s = now.getSeconds().toString().padStart(2, "0");
+            setClockTime(`${h}:${m}:${s}`);
+
+            const dd = now.getDate().toString().padStart(2, "0");
+            const mm = (now.getMonth() + 1).toString().padStart(2, "0");
+            const yyyy = now.getFullYear();
+            setClockDate(`${DIAS[now.getDay()]}, ${dd}/${mm}/${yyyy}`);
+        };
+        update();
+        const id = setInterval(update, 1000);
+        return () => clearInterval(id);
+    }, []);
+
+    useEffect(() => {
+        let alive = true;
+        const BASE_INFO = "/api/php/informativo.php?listar=1";
+
+        async function load() {
+            try {
+                const url = `${BASE_INFO}&_ts=${Date.now()}`;
+                const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
+                if (!alive) return;
+                const arr = Array.isArray(j) ? (j as Registro[]) : [];
+                setRegistros(arr);
+                writeLS("qa_registros", arr);
+            } catch {
+                // mantém o que já tem
+            }
+        }
+
+        load();
+        const id = setInterval(load, 8000);
+        return () => {
+            alive = false;
+            clearInterval(id);
+        };
+    }, []);
+
+    useEffect(() => {
+        let alive = true;
+
+        async function loadCoroas() {
+            const urls = [COROAS_TV_LOCAL, COROAS_TV_REMOTA];
+            let lastError: unknown = null;
+
+            for (const url of urls) {
                 try {
-                    blob = await convertToJpegWithWhiteBg(blob);
-                } catch {
-                    // mantém original
+                    const j = await fetchJsonFast<CoroasTvResponse>(url, {
+                        ttlMs: 6_000,
+                        timeoutMs: 10_000,
+                        cacheKey: url === COROAS_TV_LOCAL ? "qa_coroas_tv_local" : "qa_coroas_tv_remota",
+                    });
+
+                    if (!alive) return;
+
+                    if (!j?.sucesso || !Array.isArray(j.dados)) {
+                        throw new Error(j?.msg || "Resposta inválida ao consultar coroas.");
+                    }
+
+                    const arr = j.dados
+                        .filter(coroaEmConfeccao)
+                        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+
+                    setCoroasTv(arr);
+                    writeLS("qa_coroas_tv", arr);
+                    setCoroasTvError(null);
+                    return;
+                } catch (err) {
+                    lastError = err;
                 }
             }
-            const file = new File([blob], `produto.${blob.type.includes("jpeg") ? "jpg" : "png"}`, {
-                type: blob.type || "image/jpeg",
-            });
-            const navAny = navigator as any;
-            if (navAny.canShare?.({ files: [file] }) && navAny.share) {
-                await navAny.share({ files: [file] });
-                return;
+
+            if (!alive) return;
+
+            // Não apaga o quadro em caso de oscilação.
+            setCoroasTvError(
+                lastError instanceof Error
+                    ? lastError.message
+                    : "Não foi possível atualizar as coroas."
+            );
+        }
+
+        void loadCoroas();
+
+        const id = window.setInterval(() => {
+            if (!document.hidden) {
+                void loadCoroas();
             }
-        }
-    } catch {
-        // fallback abaixo
-    }
+        }, 8_000);
 
-    try {
-        const navAny = navigator as any;
-        if (navAny.share) {
-            await navAny.share({ url: imageUrl });
-            return;
-        }
-    } catch {
-        // fallback abaixo
-    }
-    window.open(imageUrl, "_blank", "noopener,noreferrer");
-}
+        const onVisibility = () => {
+            if (!document.hidden) {
+                void loadCoroas();
+            }
+        };
 
-/* =========================================================
-   PÁGINA
-   ========================================================= */
-export default function Page() {
-    const [tab, setTab] = React.useState<"confeccao" | "manuais" | "online">("confeccao");
-    const [isDesktop, setIsDesktop] = React.useState(false);
-    const [usuarioAtual, setUsuarioAtual] = React.useState("");
+        document.addEventListener("visibilitychange", onVisibility);
 
-    React.useEffect(() => {
-        let ativo = true;
-        const controller = new AbortController();
+        return () => {
+            alive = false;
+            window.clearInterval(id);
+            document.removeEventListener("visibilitychange", onVisibility);
+        };
+    }, []);
 
-        async function carregarUsuarioAtual() {
+    useEffect(() => {
+        let alive = true;
+        const BASE_AVISOS = "/api/php/avisos.php?listar=1";
+
+        async function load() {
+            if (!alive) return;
+
             try {
-                const res = await fetch(USUARIO_ATUAL_API, {
-                    method: "GET",
-                    credentials: "include",
-                    cache: "no-store",
-                    headers: { Accept: "application/json" },
-                    signal: controller.signal,
+                const url = `${BASE_AVISOS}&_ts=${Date.now()}`;
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 5_000,
+                    cacheKey: "avisos_listar",
                 });
 
-                const json: UsuarioAtualResponse = await res.json().catch(() => ({}));
+                if (!alive) return;
 
-                if (!ativo || !res.ok || json?.erro) return;
+                const arr: Aviso[] = Array.isArray(j) ? j : [];
 
-                const nome = String(json?.usuario || json?.nome || "")
-                    .replace(/\s+/g, " ")
-                    .trim();
+                setAvisos(arr);
+                writeLS("qa_avisos", arr);
+            } catch (err) {
+                console.error("Erro ao carregar avisos:", err);
 
-                if (nome) setUsuarioAtual(nome);
-            } catch (e: any) {
-                if (e?.name === "AbortError") return;
+                if (!alive) return;
+
+                // mantém a UI estável e limpa o cache persistido
+                setAvisos([]);
+                writeLS("qa_avisos", []);
             }
         }
 
-        void carregarUsuarioAtual();
+        load();
+
+        const id = window.setInterval(() => {
+            void load();
+        }, 10000);
 
         return () => {
-            ativo = false;
-            controller.abort();
+            alive = false;
+            window.clearInterval(id);
         };
     }, []);
 
-    React.useEffect(() => {
-        const media = window.matchMedia("(min-width: 768px)");
-        const atualizar = () => setIsDesktop(media.matches);
+    useEffect(() => {
+        let alive = true;
 
-        atualizar();
-        media.addEventListener?.("change", atualizar);
+        async function loadMateriaisCatalog() {
+            try {
+                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
 
-        return () => media.removeEventListener?.("change", atualizar);
-    }, []);
+                const tree = (res?.data ?? res) as any[];
+                const map: Record<string, MatLookupInfo> = {};
 
-    /* -------------------------
-       Falecidos no quadro
-       ------------------------- */
-    const [falecidosQuadro, setFalecidosQuadro] = React.useState<AtendimentoResumo[]>([]);
-    const [falecidosLoading, setFalecidosLoading] = React.useState(false);
-    const [falecidosError, setFalecidosError] = React.useState<string | null>(null);
-    const falecidosLoadedAtRef = React.useRef(0);
-    const falecidosAbortRef = React.useRef<AbortController | null>(null);
+                for (const cat of tree ?? []) {
+                    const catNome = String(cat?.nome ?? "").trim();
+                    const catOrdem = Number(cat?.ordem ?? 0);
 
-    const carregarFalecidosQuadro = React.useCallback(async (force = false) => {
-        const agora = Date.now();
+                    for (const it of cat?.itens ?? []) {
+                        const itemId = Number(it?.id);
+                        if (!Number.isFinite(itemId) || itemId <= 0) continue;
 
-        // Não mantém mais polling em segundo plano. Ao abrir NOVO,
-        // reaproveita por 30s o resultado já carregado.
-        if (
-            !force &&
-            falecidosQuadro.length > 0 &&
-            agora - falecidosLoadedAtRef.current < 30_000
-        ) {
-            return;
+                        const itemOrdem = Number(it?.ordem ?? 0);
+                        const itemKey = `item${itemId}`;
+
+                        map[itemKey] = { catNome, catOrdem, itemOrdem };
+                    }
+                }
+
+                if (!alive) return;
+                setMatLookup(map);
+            } catch {
+                if (!alive) return;
+                setMatLookup({});
+            }
         }
 
-        falecidosAbortRef.current?.abort();
-        const controller = new AbortController();
-        falecidosAbortRef.current = controller;
+        loadMateriaisCatalog();
+        return () => {
+            alive = false;
+        };
+    }, []);
 
-        setFalecidosLoading(true);
-        setFalecidosError(null);
+    const resetDetailTimeline = useCallback(() => {
+        setDetailTimelineOpen(false);
+        setDetailLogs([]);
+        setDetailLogsLoading(false);
+        setDetailLogsError(null);
+    }, []);
 
-        try {
-            const res = await fetch(ATENDIMENTOS_API, {
-                credentials: "include",
-                headers: { Accept: "application/json" },
-                signal: controller.signal,
-            });
+    const showDetail = useCallback(
+        (r: Registro) => {
+            setDetail(r);
+            setOpen(true);
+            setCopied(false);
+            resetDetailTimeline();
+        },
+        [resetDetailTimeline]
+    );
 
-            if (!res.ok) {
-                throw new Error(`Não foi possível consultar o quadro de atendimentos (${res.status}).`);
-            }
+    const closeDetail = useCallback(() => {
+        setOpen(false);
+        setDetail(null);
+        setCopied(false);
+        resetDetailTimeline();
+    }, [resetDetailTimeline]);
 
-            const json = await res.json();
-            const rows = Array.isArray(json) ? (json as AtendimentoResumo[]) : [];
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") closeDetail();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [closeDetail]);
 
-            const ativos = rows
-                .filter(atendimentoEstaNoQuadro)
-                .filter((r) => String(r.falecido || "").trim() !== "");
+    const ativosOrdenados = useMemo(() => {
+        const base = (registros || []).filter((r) => {
+            const status = normalizarStatus(r.status);
 
-            const unicos = Array.from(
-                new Map(
-                    ativos.map((r) => [
-                        String(r.falecido || "").trim().toLocaleLowerCase("pt-BR"),
-                        r,
-                    ]),
-                ).values(),
-            ).sort((a, b) =>
-                String(a.falecido || "").localeCompare(String(b.falecido || ""), "pt-BR"),
+            if (status === "fase11") return false;
+            if (isTerceiroRegistro(r)) return status !== "fase10";
+            if (!isSim(r.assistencia)) return status !== "fase10";
+            return true;
+        });
+
+        const withTs = base.map((r) => ({ r, ts: parseRegistroDateTime(r) }));
+        withTs.sort((a, b) => b.ts - a.ts);
+        return withTs.map((x) => x.r);
+    }, [registros]);
+
+    useEffect(() => {
+        let alive = true;
+
+        async function loadStatusLogs() {
+            const updates: Record<string, LogItem[]> = {};
+            const ativosComId = ativosOrdenados
+                .map((r) => ({ r, id: getRegistroBackendId(r), trackingId: getRegistroTrackingId(r) }))
+                .filter((x) => !!x.id);
+
+            await Promise.all(
+                ativosComId.map(async ({ id, trackingId }) => {
+                    try {
+                        const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
+                        const url = `${BASE}&_ts=${Date.now()}`;
+                        const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${id}` });
+
+                        let logs: LogItem[] = [];
+                        if (Array.isArray(json)) logs = json as LogItem[];
+                        else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
+
+                        updates[trackingId] = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+                    } catch {
+                        updates[trackingId] = [];
+                    }
+                })
             );
 
-            setFalecidosQuadro(unicos);
-            falecidosLoadedAtRef.current = Date.now();
-        } catch (e: any) {
-            if (e?.name === "AbortError") return;
-            setFalecidosError(e?.message || "Erro ao consultar os falecidos do quadro.");
-        } finally {
-            if (falecidosAbortRef.current === controller) {
-                falecidosAbortRef.current = null;
-                setFalecidosLoading(false);
-            }
-        }
-    }, [falecidosQuadro.length]);
-
-    React.useEffect(() => {
-        return () => falecidosAbortRef.current?.abort();
-    }, []);
-
-    /* -------------------------
-       Modelos de Coroa no estoque
-       ------------------------- */
-    const [modeloTipo, setModeloTipo] = React.useState<CoroaTipo>("");
-    const [modeloModalOpen, setModeloModalOpen] = React.useState(false);
-    const [modeloLoading, setModeloLoading] = React.useState(false);
-    const [modeloError, setModeloError] = React.useState<string | null>(null);
-    const [modeloBusca, setModeloBusca] = React.useState("");
-    const [estoqueProdutos, setEstoqueProdutos] = React.useState<EstoqueProduto[]>([]);
-    const [estoqueSaldos, setEstoqueSaldos] = React.useState<EstoqueSaldo[]>([]);
-    const [modeloItemIndex, setModeloItemIndex] = React.useState<number | null>(null);
-    const estoqueLoadedAtRef = React.useRef(0);
-    const estoqueAbortRef = React.useRef<AbortController | null>(null);
-
-    const saldoTotalPorProduto = React.useMemo(() => {
-        const map = new Map<number, number>();
-
-        for (const saldo of estoqueSaldos) {
-            const produtoId = Number(saldo?.produto_id || 0);
-            if (produtoId <= 0) continue;
-
-            const quantidade = Math.max(0, Number(saldo?.quantidade || 0));
-            map.set(produtoId, (map.get(produtoId) || 0) + quantidade);
+            if (!alive) return;
+            setStatusLogsById((prev) => ({ ...prev, ...updates }));
         }
 
-        return map;
-    }, [estoqueSaldos]);
+        loadStatusLogs();
+        const id = window.setInterval(() => {
+            void loadStatusLogs();
+        }, 30000);
 
-    const modelosDisponiveis = React.useMemo(() => {
-        const busca = normalizarTextoEstoque(modeloBusca);
-
-        return estoqueProdutos
-            .filter((produto) => Number(produto?.ativo ?? 1) === 1)
-            .filter((produto) => {
-                if (modeloTipo === "natural") {
-                    // Coroas naturais aparecem mesmo com estoque zerado.
-                    return categoriaEhCoroaNatural(produto.categoria_nome);
-                }
-
-                if (modeloTipo === "artificial") {
-                    // Coroas artificiais somente aparecem quando existe saldo positivo
-                    // somando todos os depósitos do estoque.
-                    return (
-                        categoriaEhCoroaArtificial(produto.categoria_nome) &&
-                        (saldoTotalPorProduto.get(Number(produto.id)) || 0) > 0
-                    );
-                }
-
-                return false;
-            })
-            .filter((produto) => {
-                if (!busca) return true;
-
-                return (
-                    normalizarTextoEstoque(produto.nome).includes(busca) ||
-                    normalizarTextoEstoque(produto.codigo_barras).includes(busca)
-                );
-            })
-            .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
-    }, [estoqueProdutos, saldoTotalPorProduto, modeloTipo, modeloBusca]);
-
-    const carregarModelosCoroa = React.useCallback(async (force = false) => {
-        const agora = Date.now();
-
-        // O mesmo estoque serve para todas as coroas do formulário.
-        // Evita baixar novamente a lista a cada Coroa 1, Coroa 2, etc.
-        if (
-            !force &&
-            estoqueProdutos.length > 0 &&
-            agora - estoqueLoadedAtRef.current < 60_000
-        ) {
-            return;
-        }
-
-        estoqueAbortRef.current?.abort();
-        const controller = new AbortController();
-        estoqueAbortRef.current = controller;
-
-        setModeloLoading(true);
-        setModeloError(null);
-
-        try {
-            const url = new URL(MATERIAIS_API, window.location.origin);
-            url.searchParams.set("init", "1");
-
-            const res = await fetch(url.toString(), {
-                method: "GET",
-                credentials: "include",
-                headers: { Accept: "application/json" },
-                signal: controller.signal,
-            });
-
-            const json: MateriaisInitResponse = await res.json().catch(() => ({}));
-
-            if (res.status === 401 || json?.need_login) {
-                throw new Error("Login necessário para consultar o estoque.");
-            }
-
-            if (!res.ok || !json?.ok) {
-                throw new Error(json?.msg || `Não foi possível consultar o estoque (${res.status}).`);
-            }
-
-            setEstoqueProdutos(Array.isArray(json.produtos) ? json.produtos : []);
-            setEstoqueSaldos(Array.isArray(json.saldos) ? json.saldos : []);
-            estoqueLoadedAtRef.current = Date.now();
-        } catch (e: any) {
-            if (e?.name === "AbortError") return;
-            setModeloError(e?.message || "Erro ao carregar os modelos de coroas.");
-        } finally {
-            if (estoqueAbortRef.current === controller) {
-                estoqueAbortRef.current = null;
-                setModeloLoading(false);
-            }
-        }
-    }, [estoqueProdutos.length]);
-
-    React.useEffect(() => {
-        return () => estoqueAbortRef.current?.abort();
-    }, []);
-
-    function abrirSeletorModelo(itemIndex: number, tipo: CoroaTipo) {
-        setModeloItemIndex(itemIndex);
-        setModeloTipo(tipo);
-        setModeloBusca("");
-        setModeloError(null);
-        setModeloModalOpen(true);
-        void carregarModelosCoroa();
-    }
-
-    function selecionarModeloCoroa(produto: EstoqueProduto) {
-        if (modeloItemIndex == null) return;
-
-        setNewItems((atuais) =>
-            atuais.map((item, index) =>
-                index === modeloItemIndex
-                    ? {
-                        ...item,
-                        tipo_coroa: modeloTipo,
-                        produto,
-                    }
-                    : item,
-            ),
-        );
-
-        setModeloModalOpen(false);
-        setModeloBusca("");
-        setModeloItemIndex(null);
-    }
-
-    /* -------------------------
-       Manual: dados / Confecção / Histórico
-       ------------------------- */
-
-    // Confecção: novo, coroa e faixa — paginação/filtro no servidor.
-    const [confeccaoOrders, setConfeccaoOrders] = React.useState<ManualOrder[]>([]);
-    const [confeccaoLoading, setConfeccaoLoading] = React.useState(false);
-    const [confeccaoError, setConfeccaoError] = React.useState<string | null>(null);
-    const [confeccaoQ, setConfeccaoQ] = React.useState("");
-    const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
-    const [confeccaoAppliedQ, setConfeccaoAppliedQ] = React.useState("");
-    const [confeccaoAppliedStatus, setConfeccaoAppliedStatus] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
-    const [confeccaoRefreshToken, setConfeccaoRefreshToken] = React.useState(0);
-    const [confeccaoPage, setConfeccaoPage] = React.useState(1);
-    const confeccaoPerPage = 30;
-    const [confeccaoTotal, setConfeccaoTotal] = React.useState(0);
-    const [confeccaoTotalPages, setConfeccaoTotalPages] = React.useState(1);
-
-    // Pedidos Manuais: finalizados/entregues — paginação/filtro no servidor.
-    const [manualHistoricoOrders, setManualHistoricoOrders] = React.useState<ManualOrder[]>([]);
-    const [manualLoading, setManualLoading] = React.useState(false);
-    const [manualError, setManualError] = React.useState<string | null>(null);
-    const [manualQ, setManualQ] = React.useState("");
-    const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "finalizada" | "entregue">("todos");
-    const [manualAfter, setManualAfter] = React.useState("");
-    const [manualBefore, setManualBefore] = React.useState("");
-    const [manualAppliedQ, setManualAppliedQ] = React.useState("");
-    const [manualAppliedStatus, setManualAppliedStatus] = React.useState<"todos" | "finalizada" | "entregue">("todos");
-    const [manualAppliedAfter, setManualAppliedAfter] = React.useState("");
-    const [manualAppliedBefore, setManualAppliedBefore] = React.useState("");
-    const [manualRefreshToken, setManualRefreshToken] = React.useState(0);
-    const [manualPage, setManualPage] = React.useState(1);
-    const [manualPerPage, setManualPerPage] = React.useState(20);
-    const [manualTotal, setManualTotal] = React.useState(0);
-    const [manualTotalPages, setManualTotalPages] = React.useState(1);
-    const confeccaoAbortRef = React.useRef<AbortController | null>(null);
-    const historicoAbortRef = React.useRef<AbortController | null>(null);
-
-    const fetchConfeccaoOrders = React.useCallback(async (forceFresh = false) => {
-        confeccaoAbortRef.current?.abort();
-        const controller = new AbortController();
-        confeccaoAbortRef.current = controller;
-
-        setConfeccaoLoading(true);
-        setConfeccaoError(null);
-
-        try {
-            const u = new URL(COROAS_API, window.location.origin);
-            u.searchParams.set("listar", "1");
-            u.searchParams.set("grupo", "confeccao");
-            u.searchParams.set("page", String(confeccaoPage));
-            u.searchParams.set("per_page", String(confeccaoPerPage));
-
-            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
-            if (confeccaoAppliedQ.trim()) u.searchParams.set("q", confeccaoAppliedQ.trim());
-            if (confeccaoAppliedStatus !== "todos") {
-                u.searchParams.set("status", confeccaoAppliedStatus);
-            }
-
-            const res = await fetch(u.toString(), {
-                credentials: "include",
-                cache: forceFresh ? "no-cache" : "default",
-                signal: controller.signal,
-            });
-
-            const json: ManualListResponse = await res.json().catch(() => ({
-                sucesso: false,
-                dados: [],
-            }));
-
-            if (!res.ok || !json?.sucesso) {
-                throw new Error(json?.msg || `Falha ao carregar a confecção (${res.status}).`);
-            }
-
-            setConfeccaoOrders(Array.isArray(json.dados) ? json.dados : []);
-            setConfeccaoTotal(Math.max(0, Number(json.meta?.total || 0)));
-            setConfeccaoTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
-        } catch (e: any) {
-            if (e?.name === "AbortError") return;
-            setConfeccaoError(e?.message || "Erro ao carregar pedidos em confecção.");
-        } finally {
-            if (confeccaoAbortRef.current === controller) {
-                confeccaoAbortRef.current = null;
-                setConfeccaoLoading(false);
-            }
-        }
-    }, [
-        confeccaoPage,
-        confeccaoAppliedQ,
-        confeccaoAppliedStatus,
-        confeccaoRefreshToken,
-    ]);
-
-    const fetchHistoricoOrders = React.useCallback(async (forceFresh = false) => {
-        historicoAbortRef.current?.abort();
-        const controller = new AbortController();
-        historicoAbortRef.current = controller;
-
-        setManualLoading(true);
-        setManualError(null);
-
-        try {
-            const u = new URL(COROAS_API, window.location.origin);
-            u.searchParams.set("listar", "1");
-            u.searchParams.set("grupo", "historico");
-            u.searchParams.set("page", String(manualPage));
-            u.searchParams.set("per_page", String(manualPerPage));
-
-            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
-            if (manualAppliedQ.trim()) u.searchParams.set("q", manualAppliedQ.trim());
-            if (manualAppliedStatus !== "todos") {
-                u.searchParams.set("status", manualAppliedStatus);
-            }
-            if (manualAppliedAfter) u.searchParams.set("after", manualAppliedAfter);
-            if (manualAppliedBefore) u.searchParams.set("before", manualAppliedBefore);
-
-            const res = await fetch(u.toString(), {
-                credentials: "include",
-                cache: forceFresh ? "no-cache" : "default",
-                signal: controller.signal,
-            });
-
-            const json: ManualListResponse = await res.json().catch(() => ({
-                sucesso: false,
-                dados: [],
-            }));
-
-            if (!res.ok || !json?.sucesso) {
-                throw new Error(json?.msg || `Falha ao carregar pedidos manuais (${res.status}).`);
-            }
-
-            setManualHistoricoOrders(Array.isArray(json.dados) ? json.dados : []);
-            setManualTotal(Math.max(0, Number(json.meta?.total || 0)));
-            setManualTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
-        } catch (e: any) {
-            if (e?.name === "AbortError") return;
-            setManualError(e?.message || "Erro ao carregar pedidos manuais.");
-        } finally {
-            if (historicoAbortRef.current === controller) {
-                historicoAbortRef.current = null;
-                setManualLoading(false);
-            }
-        }
-    }, [
-        manualPage,
-        manualPerPage,
-        manualAppliedQ,
-        manualAppliedStatus,
-        manualAppliedAfter,
-        manualAppliedBefore,
-        manualRefreshToken,
-    ]);
-
-    // Depois de uma alteração atualiza somente a lista que o usuário está vendo.
-    const fetchManualOrders = React.useCallback(async (forceFresh = false) => {
-        if (tab === "confeccao") {
-            await fetchConfeccaoOrders(forceFresh);
-        } else if (tab === "manuais") {
-            await fetchHistoricoOrders(forceFresh);
-        }
-    }, [tab, fetchConfeccaoOrders, fetchHistoricoOrders]);
-
-    React.useEffect(() => {
-        if (tab !== "confeccao") return;
-        void fetchConfeccaoOrders();
-    }, [tab, fetchConfeccaoOrders]);
-
-    React.useEffect(() => {
-        if (tab !== "manuais") return;
-        void fetchHistoricoOrders();
-    }, [tab, fetchHistoricoOrders]);
-
-    React.useEffect(() => {
         return () => {
-            confeccaoAbortRef.current?.abort();
-            historicoAbortRef.current?.abort();
+            alive = false;
+            window.clearInterval(id);
         };
-    }, []);
+    }, [ativosOrdenados]);
 
-    /* -------------------------
-       Manual: novo pedido
-       ------------------------- */
-    const [newOpen, setNewOpen] = React.useState(false);
-    const [newSaving, setNewSaving] = React.useState(false);
-    const [newError, setNewError] = React.useState<string | null>(null);
-    const [newFalecidoSugestao, setNewFalecidoSugestao] = React.useState("");
-    const [quantidadeCoroas, setQuantidadeCoroas] = React.useState(1);
-    const [newItems, setNewItems] = React.useState<NovoCoroaItem[]>([criarNovoCoroaItem()]);
-    const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
-    const [newForm, setNewForm] = React.useState({
-        solicitante: "",
-        telefone: "",
-        local_entrega: "",
-        observacoes: "",
-        falecido: "",
-        origem: "ordem_servico" as ManualOrigem,
-    });
+    const TAG_SERVICO = "Atendimento:";
 
-    function resetNewForm() {
-        setNewForm({
-            solicitante: "",
-            telefone: "",
-            local_entrega: "",
-            observacoes: "",
-            falecido: "",
-            origem: "ordem_servico",
+    function normNome(s?: string) {
+        return String(s ?? "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
+
+    function isServicoMsg(msg?: any) {
+        const s = String(msg ?? "");
+        return s.startsWith(TAG_SERVICO);
+    }
+
+    function extractServicoNome(msg?: string) {
+        const s = String(msg ?? "");
+        if (!s.startsWith(TAG_SERVICO)) return "";
+
+        const rest = s.slice(TAG_SERVICO.length).trim();
+        const idx = rest.indexOf(":");
+
+        return (idx >= 0 ? rest.slice(0, idx) : rest).trim();
+    }
+
+    const nomesAtivos = useMemo(() => {
+        const set = new Set<string>();
+
+        for (const r of ativosOrdenados as Registro[]) {
+            const nome = String(r?.falecido ?? "").trim();
+            if (nome) set.add(normNome(nome));
+        }
+
+        return set;
+    }, [ativosOrdenados]);
+
+    const avisosParaExibir = useMemo(() => {
+        const arr = Array.isArray(avisos) ? avisos : [];
+
+        return arr.filter((a) => {
+            const msg = String(a?.mensagem ?? "");
+
+            // aviso comum: sempre exibe
+            if (!isServicoMsg(msg)) return true;
+
+            // aviso de serviço: só exibe se o nome ainda estiver entre os ativos
+            const nome = extractServicoNome(msg);
+            if (!nome) return true;
+
+            return nomesAtivos.has(normNome(nome));
         });
-        setQuantidadeCoroas(1);
-        setNewItems([criarNovoCoroaItem()]);
-        setNewComprovante(null);
-        setNewFalecidoSugestao("");
-        setModeloTipo("");
-        setModeloItemIndex(null);
-        setModeloModalOpen(false);
-        setModeloBusca("");
-        setModeloError(null);
-        setNewError(null);
-    }
+    }, [avisos, nomesAtivos]);
 
-    function atualizarQuantidadeCoroas(valor: number) {
-        const quantidade = Math.max(1, Math.min(20, Math.floor(Number(valor) || 1)));
-        setQuantidadeCoroas(quantidade);
-
-        setNewItems((atuais) => {
-            const proximos = atuais.slice(0, quantidade);
-            while (proximos.length < quantidade) {
-                proximos.push(criarNovoCoroaItem());
-            }
-            return proximos;
-        });
-    }
-
-    function atualizarItemCoroa(index: number, patch: Partial<NovoCoroaItem>) {
-        setNewItems((atuais) =>
-            atuais.map((item, i) => (i === index ? { ...item, ...patch } : item)),
-        );
-    }
-
-    async function salvarNovoPedido(e: React.FormEvent) {
-        e.preventDefault();
-        setNewError(null);
-
-        if (!newForm.solicitante.trim()) {
-            setNewError("Preencha o campo Solicitante.");
-            return;
-        }
-
-        if (!newForm.telefone.trim()) {
-            setNewError("Preencha o campo Telefone.");
-            return;
-        }
-
-        if (!newForm.local_entrega.trim()) {
-            setNewError("Preencha o campo Local de Entrega.");
-            return;
-        }
-
-        if (!newForm.falecido.trim()) {
-            setNewError("Preencha o campo Falecido(a).");
-            return;
-        }
-
-        if (quantidadeCoroas < 1 || newItems.length !== quantidadeCoroas) {
-            setNewError("Informe corretamente a quantidade de coroas.");
-            return;
-        }
-
-        for (let i = 0; i < newItems.length; i += 1) {
-            const item = newItems[i];
-
-            if (!item.tipo_coroa) {
-                setNewError(`Selecione o tipo da Coroa ${i + 1}.`);
-                return;
-            }
-
-            if (!item.produto?.id || !String(item.produto?.nome || "").trim()) {
-                setNewError(`Selecione o modelo da Coroa ${i + 1}.`);
-                return;
-            }
-
-            if (!item.frase.trim()) {
-                setNewError(`Preencha a frase da Coroa ${i + 1}.`);
-                return;
-            }
-        }
-
-        // Se o nome digitado coincidir com alguém que está no quadro,
-        // guarda também o ID do atendimento. Caso contrário, permanece livre.
-        const match = falecidosQuadro.find(
-            (r) =>
-                String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") ===
-                newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
-        );
-
-        setNewSaving(true);
-
+    const handleCopy = useCallback(async () => {
+        if (!detail) return;
+        const text = buildClipboardText(detail, matLookup);
         try {
-            let comprovante_base64 = "";
-            if (newComprovante) {
-                comprovante_base64 = await comprovanteToDataUrl(newComprovante);
-            }
-
-            const payload = {
-                acao: "novo",
-                solicitante: newForm.solicitante.trim(),
-                telefone: newForm.telefone.trim(),
-                local_entrega: newForm.local_entrega.trim(),
-                observacoes: newForm.observacoes.trim(),
-                quantidade_coroas: quantidadeCoroas,
-                itens: newItems.map((item, index) => ({
-                    ordem: index + 1,
-                    tipo_coroa: item.tipo_coroa,
-                    produto_id: Number(item.produto?.id || 0),
-                    modelo_coroa: String(item.produto?.nome || "").trim(),
-                    frase: item.frase.trim(),
-                    valor: Number(item.produto?.valor || 0),
-                    foto_produto_url: fotoPrincipalProduto(item.produto),
-                })),
-                falecido: newForm.falecido.trim(),
-                falecido_atendimento_id: match?.id ? Number(match.id) || null : null,
-                status_pagamento: newComprovante ? "pago" : "aguardando_pagamento",
-                origem: newForm.origem,
-                ...(newComprovante
-                    ? {
-                        comprovante_base64,
-                        comprovante_nome: newComprovante.name,
-                        comprovante_mime: newComprovante.type || "",
-                    }
-                    : {}),
-            };
-
-            const res = await fetch(COROAS_API, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify(payload),
-            });
-
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok || !json?.sucesso) {
-                throw new Error(json?.msg || "Não foi possível criar o pedido.");
-            }
-
-            setNewOpen(false);
-            resetNewForm();
-
-            // Novo pedido pertence à Confecção. Não baixa o Histórico sem necessidade.
-            setTab("confeccao");
-            setConfeccaoPage(1);
-            setConfeccaoRefreshToken((v) => v + 1);
-
-            if (json?.notificacao_enviada === false) {
-                const erroPush =
-                    json?.notificacao?.erro ||
-                    "O pedido foi salvo, mas o OneSignal não confirmou o envio da notificação.";
-                window.alert(erroPush);
-            }
-        } catch (e: any) {
-            setNewError(e?.message || "Não foi possível criar o pedido.");
-        } finally {
-            setNewSaving(false);
-        }
-    }
-
-    /* -------------------------
-       Manual: Ver / Ações
-       ------------------------- */
-    const [manualPanel, setManualPanel] = React.useState<"ver" | "acoes" | null>(null);
-    const [manualDetail, setManualDetail] = React.useState<ManualOrder | null>(null);
-    const [manualDetailLoading, setManualDetailLoading] = React.useState(false);
-    const [manualActionLoading, setManualActionLoading] = React.useState(false);
-    const [manualDetailMsg, setManualDetailMsg] = React.useState<string | null>(null);
-    const [manualCopied, setManualCopied] = React.useState(false);
-    const manualDetailAbortRef = React.useRef<AbortController | null>(null);
-
-    const [finalizarOpen, setFinalizarOpen] = React.useState(false);
-    const [finalizarFile, setFinalizarFile] = React.useState<File | null>(null);
-    const [finalizarPreview, setFinalizarPreview] = React.useState<string | null>(null);
-    const [finalizarError, setFinalizarError] = React.useState<string | null>(null);
-
-    function limparPreviewFinalizacao() {
-        setFinalizarPreview((url) => {
-            if (url) URL.revokeObjectURL(url);
-            return null;
-        });
-    }
-
-    React.useEffect(() => {
-        return () => {
-            if (finalizarPreview) URL.revokeObjectURL(finalizarPreview);
-        };
-    }, [finalizarPreview]);
-
-    async function carregarManualDetail(id: number, forceFresh = false) {
-        manualDetailAbortRef.current?.abort();
-        const controller = new AbortController();
-        manualDetailAbortRef.current = controller;
-
-        setManualDetailLoading(true);
-        setManualDetailMsg(null);
-
-        try {
-            const u = new URL(COROAS_API, window.location.origin);
-            u.searchParams.set("id", String(id));
-            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
-
-            const res = await fetch(u.toString(), {
-                credentials: "include",
-                cache: forceFresh ? "no-cache" : "default",
-                signal: controller.signal,
-            });
-
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok || !json?.sucesso) {
-                throw new Error(json?.msg || "Não foi possível carregar o pedido.");
-            }
-
-            setManualDetail(json.dado as ManualOrder);
-            return json.dado as ManualOrder;
-        } catch (e: any) {
-            if (e?.name === "AbortError") return null;
-            setManualDetail(null);
-            setManualDetailMsg(e?.message || "Erro ao carregar pedido.");
-            return null;
-        } finally {
-            if (manualDetailAbortRef.current === controller) {
-                manualDetailAbortRef.current = null;
-                setManualDetailLoading(false);
-            }
-        }
-    }
-
-    async function openManualView(id: number) {
-        setManualPanel("ver");
-        setManualDetail(null);
-        setManualCopied(false);
-        await carregarManualDetail(id);
-    }
-
-    async function openManualActions(id: number) {
-        setManualPanel("acoes");
-        setManualDetail(null);
-        await carregarManualDetail(id);
-    }
-
-    async function postManual(payload: Record<string, any>) {
-        const payloadComUsuario = {
-            ...payload,
-            ...(usuarioAtual ? { usuario_nome: usuarioAtual } : {}),
-        };
-
-        const res = await fetch(COROAS_API, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify(payloadComUsuario),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.sucesso) {
-            throw new Error(json?.msg || "Não foi possível concluir a operação.");
-        }
-        return json;
-    }
-
-    async function anexarComprovanteManual(file: File) {
-        if (!manualDetail) return;
-        setManualActionLoading(true);
-        setManualDetailMsg(null);
-
-        try {
-            const base64 = await comprovanteToDataUrl(file);
-            await postManual({
-                acao: "anexar_comprovante",
-                id: manualDetail.id,
-                base64,
-                comprovante_nome: file.name,
-                comprovante_mime: file.type || "",
-            });
-            await postManual({
-                acao: "atualizar_pagamento",
-                id: manualDetail.id,
-                status_pagamento: "pago",
-            });
-            await carregarManualDetail(manualDetail.id, true);
-            await fetchManualOrders(true);
-        } catch (e: any) {
-            setManualDetailMsg(e?.message || "Não foi possível anexar o comprovante.");
-        } finally {
-            setManualActionLoading(false);
-        }
-    }
-
-
-    async function executarStatusManual(target: Exclude<ManualStatus, "novo">) {
-        if (!manualDetail) return;
-
-        if (target === "coroa" && !pedidoManualExigeConfeccaoCoroa(manualDetail)) {
-            setManualDetailMsg("Coroas artificiais não possuem a etapa “Confeccionando Coroa”.");
-            return;
-        }
-
-        if (!acaoManualLiberada(manualDetail, target)) return;
-
-        if (!window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
-            return;
-        }
-
-        setManualActionLoading(true);
-        setManualDetailMsg(null);
-
-        try {
-            const json = await postManual({
-                acao: "atualizar_status",
-                id: manualDetail.id,
-                status: target,
-            });
-
-            await carregarManualDetail(manualDetail.id, true);
-            await fetchManualOrders(true);
-
-            if (json?.notificacao_enviada === false) {
-                setManualDetailMsg(
-                    json?.notificacao?.erro
-                        ? `A ação foi registrada, mas a notificação não foi enviada: ${json.notificacao.erro}`
-                        : "A ação foi registrada, mas o OneSignal não confirmou o envio da notificação.",
-                );
-            }
-        } catch (e: any) {
-            setManualDetailMsg(e?.message || "Não foi possível registrar a ação.");
-        } finally {
-            setManualActionLoading(false);
-        }
-    }
-
-    function clicarAcaoManual(target: Exclude<ManualStatus, "novo">) {
-        if (!manualDetail) return;
-        if (!acaoManualLiberada(manualDetail, target)) return;
-
-        if (target === "finalizada") {
-            setFinalizarFile(null);
-            limparPreviewFinalizacao();
-            setFinalizarError(null);
-            setFinalizarOpen(true);
-            return;
-        }
-
-        void executarStatusManual(target);
-    }
-
-    function selecionarFotoFinalizacao(file: File) {
-        if (!file.type.startsWith("image/")) {
-            setFinalizarError("Selecione uma imagem válida.");
-            return;
-        }
-
-        if (file.size > 8 * 1024 * 1024) {
-            setFinalizarError("A imagem deve ter no máximo 8 MB.");
-            return;
-        }
-
-        limparPreviewFinalizacao();
-        setFinalizarFile(file);
-        setFinalizarPreview(URL.createObjectURL(file));
-        setFinalizarError(null);
-    }
-
-    async function confirmarFinalizacaoManual() {
-        if (!manualDetail) return;
-
-        if (!finalizarFile) {
-            setFinalizarError("Anexe a foto da coroa pronta para confirmar a finalização.");
-            return;
-        }
-
-        setManualActionLoading(true);
-        setFinalizarError(null);
-
-        try {
-            const base64 = await fileToDataUrl(finalizarFile);
-
-            const json = await postManual({
-                acao: "atualizar_status",
-                id: manualDetail.id,
-                status: "finalizada",
-                foto_coroa_base64: base64,
-            });
-
-            setFinalizarOpen(false);
-            setFinalizarFile(null);
-            limparPreviewFinalizacao();
-            setManualPanel(null);
-
-            await carregarManualDetail(manualDetail.id, true);
-            await fetchManualOrders(true);
-
-            if (json?.notificacao_enviada === false) {
-                setManualDetailMsg(
-                    json?.notificacao?.erro
-                        ? `A coroa foi finalizada, mas a notificação não foi enviada: ${json.notificacao.erro}`
-                        : "A coroa foi finalizada, mas o OneSignal não confirmou o envio da notificação.",
-                );
-            }
-        } catch (e: any) {
-            setFinalizarError(e?.message || "Não foi possível finalizar o pedido.");
-        } finally {
-            setManualActionLoading(false);
-        }
-    }
-
-    async function copyManualToClipboard() {
-        if (!manualDetail) return;
-
-        try {
-            await navigator.clipboard.writeText(buildManualPedidoText(manualDetail));
-            setManualCopied(true);
-            window.setTimeout(() => setManualCopied(false), 1500);
-        } catch {
-            alert("Não foi possível copiar o pedido.");
-        }
-    }
-
-    /* -------------------------
-       Online / WooCommerce
-       ------------------------- */
-    const [q, setQ] = React.useState("");
-    const [wcStatus, setWcStatus] = React.useState<"all" | WcOrder["status"]>("all");
-    const [after, setAfter] = React.useState("");
-    const [before, setBefore] = React.useState("");
-    const [onlineAppliedQ, setOnlineAppliedQ] = React.useState("");
-    const [onlineAppliedStatus, setOnlineAppliedStatus] = React.useState<"all" | WcOrder["status"]>("all");
-    const [onlineAppliedAfter, setOnlineAppliedAfter] = React.useState("");
-    const [onlineAppliedBefore, setOnlineAppliedBefore] = React.useState("");
-    const [onlineRefreshToken, setOnlineRefreshToken] = React.useState(0);
-    const [page, setPage] = React.useState(1);
-    const [perPage, setPerPage] = React.useState(20);
-    const [orders, setOrders] = React.useState<WcOrder[]>([]);
-    const [meta, setMeta] = React.useState<OrdersResponse["meta"]>({
-        page: 1,
-        per_page: 20,
-        total: 0,
-        totalPages: 0,
-    });
-    const [loading, setLoading] = React.useState(false);
-    const [error, setError] = React.useState<string | null>(null);
-    const [open, setOpen] = React.useState(false);
-    const [detail, setDetail] = React.useState<WcOrderFull | null>(null);
-    const [detailLoading, setDetailLoading] = React.useState(false);
-    const [detailImage, setDetailImage] = React.useState<string | null>(null);
-    const [copied, setCopied] = React.useState(false);
-    const [updating, setUpdating] = React.useState(false);
-    const onlineAbortRef = React.useRef<AbortController | null>(null);
-
-    const fetchOrders = React.useCallback(async (forceFresh = false) => {
-        onlineAbortRef.current?.abort();
-        const controller = new AbortController();
-        onlineAbortRef.current = controller;
-
-        setLoading(true);
-        setError(null);
-
-        try {
-            const u = new URL("/api/wc/orders", window.location.origin);
-            u.searchParams.set("page", String(page));
-            u.searchParams.set("per_page", String(perPage));
-
-            if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
-            if (onlineAppliedQ.trim()) u.searchParams.set("search", onlineAppliedQ.trim());
-            if (onlineAppliedStatus !== "all") u.searchParams.set("status", onlineAppliedStatus);
-            if (onlineAppliedAfter) {
-                u.searchParams.set("after", new Date(onlineAppliedAfter).toISOString());
-            }
-            if (onlineAppliedBefore) {
-                const d = new Date(onlineAppliedBefore);
-                d.setHours(23, 59, 59, 999);
-                u.searchParams.set("before", d.toISOString());
-            }
-
-            const res = await fetch(u.toString(), {
-                cache: forceFresh ? "no-cache" : "default",
-                signal: controller.signal,
-            });
-
-            if (!res.ok) throw new Error(`Falha ao buscar pedidos (${res.status})`);
-
-            const json: OrdersResponse = await res.json();
-            setOrders(json.data);
-            setMeta(json.meta);
-        } catch (e: any) {
-            if (e?.name === "AbortError") return;
-            setError(e?.message || "Erro ao carregar pedidos");
-        } finally {
-            if (onlineAbortRef.current === controller) {
-                onlineAbortRef.current = null;
-                setLoading(false);
-            }
-        }
-    }, [
-        page,
-        perPage,
-        onlineAppliedQ,
-        onlineAppliedStatus,
-        onlineAppliedAfter,
-        onlineAppliedBefore,
-        onlineRefreshToken,
-    ]);
-
-    React.useEffect(() => {
-        if (tab !== "online") return;
-        void fetchOrders();
-    }, [tab, fetchOrders]);
-
-    React.useEffect(() => {
-        return () => onlineAbortRef.current?.abort();
-    }, []);
-
-    async function openDetail(id: number) {
-        setDetail(null);
-        setDetailImage(null);
-        setCopied(false);
-        setOpen(true);
-        setDetailLoading(true);
-        try {
-            const res = await fetch(`/api/wc/orders/${id}`, { cache: "default" });
-            if (!res.ok) throw new Error(`Falha ao carregar pedido #${id}`);
-            const data: WcOrderFull = await res.json();
-            setDetail(data);
-
-            const fromOrder = data.line_items?.find((li) => li.image?.src)?.image?.src || null;
-            if (fromOrder) {
-                setDetailImage(fromOrder);
-            } else {
-                const pid = data.line_items?.[0]?.product_id;
-                const vid = data.line_items?.[0]?.variation_id;
-                if (pid) {
-                    try {
-                        const url = vid ? `/api/wc/products/${pid}/variations/${vid}` : `/api/wc/products/${pid}`;
-                        const pr = await fetch(url, { cache: "default" });
-                        if (pr.ok) {
-                            const prod = await pr.json();
-                            const src: string | undefined = prod?.image?.src || prod?.images?.[0]?.src;
-                            if (src) setDetailImage(src);
-                        }
-                    } catch {
-                        // mantém sem imagem
-                    }
-                }
-            }
-        } catch (e: any) {
-            setDetail({
-                id,
-                number: String(id),
-                status: "failed",
-                date_created: new Date().toISOString(),
-                currency: "BRL",
-                total: "0",
-                customer_note: e?.message || "Erro ao carregar",
-            } as WcOrderFull);
-        } finally {
-            setDetailLoading(false);
-        }
-    }
-
-    async function updateStatus(id: number, newStatus: WcOrder["status"]) {
-        setUpdating(true);
-        try {
-            const res = await fetch(`/api/wc/orders/${id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (!res.ok) {
-                const msg = await res.text();
-                throw new Error(msg || "Falha ao atualizar status");
-            }
-            await fetchOrders(true);
-            if (detail?.id === id) await openDetail(id);
-        } catch (e: any) {
-            alert(e?.message || "Não foi possível atualizar o status.");
-        } finally {
-            setUpdating(false);
-        }
-    }
-
-    async function notifyWhatsApp(orderId: number) {
-        try {
-            const res = await fetch(`/api/wc/orders/${orderId}`, { cache: "default" });
-            if (!res.ok) throw new Error(`Falha ao carregar o pedido #${orderId}`);
-            const full: WcOrderFull = await res.json();
-            await shareOrOpenWhatsApp(buildWhatsAppText(full));
-        } catch (e: any) {
-            alert(e?.message || "Não foi possível abrir o WhatsApp.");
-        }
-    }
-
-    async function copyDetailToClipboard() {
-        try {
-            if (!detail) return;
-            await navigator.clipboard.writeText(buildWhatsAppText(detail));
+            await navigator.clipboard.writeText(text);
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            setTimeout(() => setCopied(false), 2000);
         } catch {
-            alert("Não foi possível copiar o texto.");
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand("copy");
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            } finally {
+                document.body.removeChild(ta);
+            }
         }
-    }
+    }, [detail, matLookup]);
 
-    const canNotifyRow = (o: WcOrder) => o.status === "completed";
-    const canNotifyDetail = detail?.status === "completed";
+    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
+        setDetailLogs([]);
+        setDetailLogsError(null);
+        setDetailLogsLoading(true);
+
+        try {
+            const sepId =
+                (r as any).sepultamento_id ??
+                (r as any).sepultamentoId ??
+                (r as any).id ??
+                (r as any).id_atendimento ??
+                (r as any).codigo;
+
+            if (!sepId) {
+                console.warn("Registro sem sepultamento_id para histórico:", r);
+                setDetailLogs([]);
+                return;
+            }
+
+            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
+            const url = `${BASE}&_ts=${Date.now()}`;
+
+            const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
+
+            let logs: LogItem[] = [];
+            if (Array.isArray(json)) logs = json as LogItem[];
+            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
+
+            logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+            setDetailLogs(logs);
+        } catch (e) {
+            console.error(e);
+            setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
+        } finally {
+            setDetailLogsLoading(false);
+        }
+    }, []);
+
+    const toggleTimelineDetalhe = useCallback(async () => {
+        if (!detail) return;
+        const next = !detailTimelineOpen;
+        setDetailTimelineOpen(next);
+
+        if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
+            await carregarHistoricoDoDetalhe(detail);
+        }
+    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
+
+    const obsList = useCallback(
+        (missing: string[]) => (missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo."),
+        []
+    );
+
+    const missingEtapa0 = useCallback((r: Registro) => ["falecido", "contato", "religiao", "convenio"].filter((k) => !isFilled(r, k)), []);
+    const missingEtapa1 = useCallback((r: Registro) => ["urna", "roupa", "assistencia", "tanato"].filter((k) => !isFilled(r, k)), []);
+    const missingEtapa2 = useCallback((r: Registro) => {
+        const miss: string[] = [];
+        if (!isFilled(r, "local_velorio")) miss.push("local_velorio");
+        if (!isFilled(r, "data_inicio_velorio")) miss.push("data_inicio_velorio");
+        if (!(isFilled(r, "local_sepultamento") || isFilled(r, "local"))) miss.push("local_sepultamento");
+        return miss;
+    }, []);
+    const noteEtapa3 = useCallback((r: Registro) => {
+        const hasInicio = isFilled(r, "hora_inicio_velorio");
+        const hasFim = isFilled(r, "data_fim_velorio") && isFilled(r, "hora_fim_velorio");
+        if (hasInicio && hasFim) return "Horários definidos.";
+        if (hasInicio) return "Horário de início definido.";
+        if (hasFim) return "Horário de encerramento definido.";
+        return "Pendências de horário.";
+    }, []);
+
+    const desktopAtivos = ativosOrdenados;
+    const mobileAtivos = ativosOrdenados;
+    const desktopHiddenCount = 0;
+    const mobileHiddenCount = 0;
+
+    const recalcularDensidadeTv = useCallback(() => {
+        const el = dashboardContentRef.current;
+        if (!el || typeof window === "undefined") return;
+
+        const niveis: QaDensity[] = ["normal", "compact", "dense", "ultra", "micro"];
+
+        let escolhido: QaDensity = "micro";
+
+        for (const nivel of niveis) {
+            el.dataset.qaDensity = nivel;
+
+            // Pequena tolerância evita ficar alternando níveis por 1px.
+            const cabe = el.scrollHeight <= el.clientHeight + 3;
+
+            if (cabe) {
+                escolhido = nivel;
+                break;
+            }
+        }
+
+        el.dataset.qaDensity = escolhido;
+        setQaDensity((atual) => (atual === escolhido ? atual : escolhido));
+    }, []);
+
+    useLayoutEffect(() => {
+        let raf = 0;
+
+        const schedule = () => {
+            window.cancelAnimationFrame(raf);
+            raf = window.requestAnimationFrame(recalcularDensidadeTv);
+        };
+
+        schedule();
+
+        const observer =
+            typeof ResizeObserver !== "undefined"
+                ? new ResizeObserver(schedule)
+                : null;
+
+        if (dashboardContentRef.current) {
+            observer?.observe(dashboardContentRef.current);
+        }
+
+        window.addEventListener("resize", schedule);
+
+        return () => {
+            window.cancelAnimationFrame(raf);
+            observer?.disconnect();
+            window.removeEventListener("resize", schedule);
+        };
+    }, [
+        recalcularDensidadeTv,
+        ativosOrdenados.length,
+        coroasTv.length,
+        clockDate,
+    ]);
 
     return (
-        <div className="flex h-full max-w-full flex-col overflow-x-hidden">
+        <>
             <style jsx global>{`
                 html,
-                body {
-                    max-width: 100%;
-                    overflow-x: hidden;
-                    overscroll-behavior-x: none;
+                body,
+                #__next,
+                body > div {
+                    max-width: 100vw !important;
+                    overflow: hidden !important;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                .qa-page-root {
+                    width: min(calc(100dvw - 132px), 1420px) !important;
+                    max-width: min(calc(100dvw - 132px), 1420px) !important;
+                    margin-left: auto !important;
+                    margin-right: auto !important;
+                    min-width: 0 !important;
+                    overflow: hidden !important;
+                }
+                @media (max-width: 900px) {
+                    .qa-page-root {
+                        width: calc(100dvw - 18px) !important;
+                        max-width: calc(100dvw - 18px) !important;
+                        margin-left: auto !important;
+                        margin-right: auto !important;
+                    }
+                }
+                .qa-panel-premium {
+                    background:
+                        radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 34%),
+                        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.9));
+                    border-color: rgba(148, 163, 184, 0.18);
+                    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+                }
+                .qa-card-soft {
+                    background: rgba(15, 23, 42, 0.72);
+                    border-color: rgba(148, 163, 184, 0.14);
+                }
+                .qa-text-muted {
+                    color: rgba(203, 213, 225, 0.68);
+                }
+                .qa-no-scrollbar,
+                .qa-no-scrollbar * {
+                    scrollbar-width: none !important;
+                }
+                .qa-no-scrollbar::-webkit-scrollbar,
+                .qa-no-scrollbar *::-webkit-scrollbar {
+                    display: none !important;
+                }
+                .qa-truncate-2 {
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
                 }
 
-                input,
-                select,
-                textarea {
-                    font-size: 16px !important;
+                /*
+                 * COLUNA DATA — alinhamento protegido.
+                 * Evita bolinhas, data e convênio invadirem a linha seguinte.
+                 */
+                .qa-data-cell {
+                    display: flex !important;
+                    height: 100%;
+                    min-height: 0;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 3px;
+                    overflow: hidden;
+                    line-height: 1;
+                }
+                .qa-data-dots,
+                .qa-data-date,
+                .qa-data-convenio {
+                    flex: 0 0 auto;
+                    min-height: 0;
+                    margin: 0 !important;
+                }
+                .qa-etapas-dots {
+                    gap: 4px !important;
+                    line-height: 1;
+                }
+                .qa-convenio-badge {
+                    white-space: nowrap;
+                    line-height: 1 !important;
                 }
 
-                @media (min-width: 640px) {
-                    input,
-                    select,
-                    textarea {
-                        font-size: 14px !important;
+                /*
+                 * COROAS — alinhamento compacto padrão.
+                 */
+                .qa-coroa-field {
+                    height: 100%;
+                    align-items: center;
+                    line-height: 1;
+                }
+                .qa-coroa-field-icon,
+                .qa-coroa-badge-icon {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex: 0 0 auto;
+                }
+                .qa-coroa-field-text {
+                    display: flex;
+                    min-height: 0;
+                    align-items: center;
+                }
+                .qa-coroa-row > div {
+                    min-width: 0;
+                    align-self: center;
+                }
+                .qa-coroa-row .qa-coroa-sub {
+                    line-height: 1 !important;
+                }
+
+                .qa-coroa-timeline {
+                    min-width: 0;
+                    white-space: nowrap;
+                }
+
+                .qa-coroa-stage-pill {
+                    flex: 0 0 auto;
+                }
+
+                .qa-coroa-stage-ring,
+                .qa-coroa-stage-icon {
+                    flex: 0 0 auto;
+                }
+
+                /*
+                 * AUTO-FIT DA TV
+                 *
+                 * O visual de Atendimentos permanece normal até faltar espaço.
+                 * A coluna Data recebe redução própria para nunca se sobrepor.
+                 */
+                [data-qa-density="compact"] .qa-atendimento-head {
+                    height: 29px !important;
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-atendimento-row {
+                    height: 50px !important;
+                    min-height: 50px !important;
+                    font-size: 11px !important;
+                }
+                [data-qa-density="compact"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 11px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill {
+                    height: 31px !important;
+                    width: 29px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill-ring {
+                    height: 20px !important;
+                    width: 20px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill-icon {
+                    height: 15px !important;
+                    width: 15px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill-time {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="compact"] .qa-dashboard-content {
+                    gap: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-head {
+                    height: 29px !important;
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-row {
+                    height: 38px !important;
+                    min-height: 38px !important;
+                    padding-top: 3px !important;
+                    padding-bottom: 3px !important;
+                    font-size: 9.5px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-sub {
+                    font-size: 9.5px !important;
+                }
+
+                [data-qa-density="dense"] .qa-atendimento-head {
+                    height: 26px !important;
+                    font-size: 9.5px !important;
+                }
+                [data-qa-density="dense"] .qa-atendimento-row {
+                    height: 46px !important;
+                    min-height: 46px !important;
+                    font-size: 10px !important;
+                }
+                [data-qa-density="dense"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="dense"] .qa-atendimento-row .text-\[11px\] {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill {
+                    height: 27px !important;
+                    width: 26px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill-ring {
+                    height: 18px !important;
+                    width: 18px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill-icon {
+                    height: 13px !important;
+                    width: 13px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill-time {
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="dense"] .qa-dashboard-content {
+                    gap: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-titlebar {
+                    padding-top: 5px !important;
+                    padding-bottom: 5px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-head {
+                    height: 26px !important;
+                    font-size: 9.5px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-row {
+                    height: 34px !important;
+                    min-height: 34px !important;
+                    padding-top: 2px !important;
+                    padding-bottom: 2px !important;
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-sub {
+                    margin-top: 0 !important;
+                    font-size: 9px !important;
+                }
+
+                [data-qa-density="ultra"] .qa-atendimento-head {
+                    height: 23px !important;
+                    font-size: 8.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-atendimento-row {
+                    height: 42px !important;
+                    min-height: 42px !important;
+                    font-size: 9px !important;
+                }
+                [data-qa-density="ultra"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="ultra"] .qa-atendimento-row .text-\[11px\] {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill {
+                    height: 24px !important;
+                    width: 23px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill-ring {
+                    height: 16px !important;
+                    width: 16px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill-icon {
+                    height: 12px !important;
+                    width: 12px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill-time {
+                    margin-top: 1px !important;
+                    font-size: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-dashboard-content {
+                    gap: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-titlebar {
+                    padding-top: 4px !important;
+                    padding-bottom: 4px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-head {
+                    height: 23px !important;
+                    font-size: 8.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-row {
+                    height: 30px !important;
+                    min-height: 30px !important;
+                    padding-top: 1px !important;
+                    padding-bottom: 1px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-iconbox {
+                    height: 24px !important;
+                    width: 24px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-sub {
+                    margin-top: 0 !important;
+                    font-size: 8px !important;
+                }
+
+                [data-qa-density="micro"] .qa-atendimento-head {
+                    height: 21px !important;
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-atendimento-row {
+                    height: 38px !important;
+                    min-height: 38px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="micro"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="micro"] .qa-atendimento-row .text-\[11px\] {
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill {
+                    height: 21px !important;
+                    width: 20px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill-ring {
+                    height: 14px !important;
+                    width: 14px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill-icon {
+                    height: 10px !important;
+                    width: 10px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill-time {
+                    margin-top: 0 !important;
+                    font-size: 6.5px !important;
+                }
+                [data-qa-density="micro"] .qa-dashboard-content {
+                    gap: 4px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-titlebar {
+                    padding-top: 3px !important;
+                    padding-bottom: 3px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-title {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-head {
+                    height: 20px !important;
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-row {
+                    height: 27px !important;
+                    min-height: 27px !important;
+                    padding-top: 1px !important;
+                    padding-bottom: 1px !important;
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-iconbox {
+                    height: 20px !important;
+                    width: 20px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-sub {
+                    margin-top: 0 !important;
+                    font-size: 7px !important;
+                }
+
+                /* DATA: redução interna proporcional, sem colisão. */
+                [data-qa-density="compact"] .qa-data-cell {
+                    gap: 2px !important;
+                }
+                [data-qa-density="compact"] .qa-data-date {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-convenio-badge {
+                    padding: 2px 5px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="compact"] .qa-etapa-dot {
+                    width: 5px !important;
+                    height: 5px !important;
+                }
+
+                [data-qa-density="dense"] .qa-data-cell {
+                    gap: 1.5px !important;
+                }
+                [data-qa-density="dense"] .qa-data-date {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-convenio-badge {
+                    padding: 1.5px 4px !important;
+                    font-size: 7px !important;
+                }
+                [data-qa-density="dense"] .qa-etapas-dots {
+                    gap: 3px !important;
+                }
+                [data-qa-density="dense"] .qa-etapa-dot {
+                    width: 4px !important;
+                    height: 4px !important;
+                }
+
+                [data-qa-density="ultra"] .qa-data-cell {
+                    gap: 1px !important;
+                }
+                [data-qa-density="ultra"] .qa-data-date {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-convenio-badge {
+                    padding: 1px 4px !important;
+                    font-size: 6.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-etapas-dots {
+                    gap: 2.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-etapa-dot {
+                    width: 3.5px !important;
+                    height: 3.5px !important;
+                }
+
+                [data-qa-density="micro"] .qa-data-cell {
+                    gap: 0.5px !important;
+                }
+                [data-qa-density="micro"] .qa-data-date {
+                    font-size: 7px !important;
+                }
+                [data-qa-density="micro"] .qa-convenio-badge {
+                    padding: 1px 3px !important;
+                    font-size: 6px !important;
+                }
+                [data-qa-density="micro"] .qa-etapas-dots {
+                    gap: 2px !important;
+                }
+                [data-qa-density="micro"] .qa-etapa-dot {
+                    width: 3px !important;
+                    height: 3px !important;
+                }
+
+                /* COROAS: ícones diminuem junto com a densidade. */
+                [data-qa-density="compact"] .qa-coroa-field-icon {
+                    width: 12px !important;
+                    height: 12px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-badge-icon {
+                    width: 9px !important;
+                    height: 9px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-pill {
+                    width: 31px !important;
+                    height: 31px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-ring {
+                    width: 19px !important;
+                    height: 19px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-icon {
+                    width: 14px !important;
+                    height: 14px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-time {
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-field-icon {
+                    width: 11px !important;
+                    height: 11px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-badge-icon {
+                    width: 8px !important;
+                    height: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-pill {
+                    width: 28px !important;
+                    height: 28px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-ring {
+                    width: 17px !important;
+                    height: 17px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-icon {
+                    width: 12px !important;
+                    height: 12px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-time {
+                    font-size: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-field-icon,
+                [data-qa-density="micro"] .qa-coroa-field-icon {
+                    width: 10px !important;
+                    height: 10px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-badge-icon,
+                [data-qa-density="micro"] .qa-coroa-badge-icon {
+                    width: 7px !important;
+                    height: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-pill {
+                    width: 25px !important;
+                    height: 25px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-ring {
+                    width: 15px !important;
+                    height: 15px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-icon {
+                    width: 11px !important;
+                    height: 11px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-time {
+                    font-size: 6.5px !important;
+                }
+
+                [data-qa-density="micro"] .qa-coroa-stage-pill {
+                    width: 22px !important;
+                    height: 22px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-ring {
+                    width: 13px !important;
+                    height: 13px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-icon {
+                    width: 9px !important;
+                    height: 9px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-time {
+                    margin-top: 1px !important;
+                    font-size: 6px !important;
+                }
+
+                /* Mobile: só compacta os cartões quando realmente faltar altura. */
+                [data-qa-density="compact"] .qa-mobile-card {
+                    padding: 10px !important;
+                }
+                [data-qa-density="dense"] .qa-mobile-card {
+                    padding: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-mobile-cards {
+                    gap: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-mobile-card,
+                [data-qa-density="micro"] .qa-mobile-card {
+                    padding: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-mobile-cards,
+                [data-qa-density="micro"] .qa-mobile-cards {
+                    gap: 4px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-mobile-card {
+                    padding: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-mobile-card {
+                    padding: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-mobile-card,
+                [data-qa-density="micro"] .qa-coroa-mobile-card {
+                    padding: 5px !important;
+                    font-size: 9px !important;
+                }
+
+                @media (max-width: 640px) {
+                    html,
+                    body,
+                    #__next,
+                    body > div {
+                        overflow: hidden !important;
                     }
                 }
             `}</style>
 
-            {/* Cabeçalho */}
-            <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
-                <div className="flex items-center justify-between gap-3">
-                    <h1 className="min-w-0 text-xl font-semibold">Pedidos — Coroas de Flores</h1>
-
-                    <button
-                        className="inline-flex shrink-0 items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
-                        onClick={() => {
-                            resetNewForm();
-                            void carregarFalecidosQuadro();
-                            setNewOpen(true);
-                        }}
-                    >
-                        <IconPlus className="size-4" />
-                        NOVO
-                    </button>
-                </div>
-            </div>
-
-            {/* Abas — sempre em uma única linha, igualmente divididas */}
-            <div className="px-4 pb-3 lg:px-6">
-                <div className="grid w-full grid-cols-3 gap-1 rounded-lg border bg-muted/30 p-1">
-                    <button
-                        type="button"
-                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "confeccao"
-                            ? "bg-background shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        onClick={() => setTab("confeccao")}
-                    >
-                        Confecção
-                    </button>
-                    <button
-                        type="button"
-                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "manuais"
-                            ? "bg-background shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        onClick={() => setTab("manuais")}
-                    >
-                        Pedidos Manuais
-                    </button>
-                    <button
-                        type="button"
-                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "online"
-                            ? "bg-background shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        onClick={() => setTab("online")}
-                    >
-                        Pedidos Online
-                    </button>
-                </div>
-            </div>
-
-            {/* =====================================================
-                CONFECÇÃO — somente pedidos ainda em produção
-                ===================================================== */}
-            {tab === "confeccao" && (
-                <>
-                    <form
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3 lg:mx-6"
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            setConfeccaoAppliedQ(confeccaoQ.trim());
-                            setConfeccaoAppliedStatus(confeccaoStatusFilter);
-                            setConfeccaoPage(1);
-                            setConfeccaoRefreshToken((v) => v + 1);
-                        }}
-                    >
-                        <div className="sm:col-span-2">
-                            <label className="mb-1 block text-xs font-medium">Buscar</label>
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                                <input
-                                    value={confeccaoQ}
-                                    onChange={(e) => setConfeccaoQ(e.target.value)}
-                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                                    placeholder="Solicitante, falecido, modelo..."
-                                />
-                            </div>
+            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
+                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
+                                Quadro de Atendimentos
+                            </h1>
+                            <p className="mt-0.5 text-[11px] font-medium qa-text-muted">Atualizado em tempo real</p>
                         </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Status</label>
-                            <div className="flex gap-2">
-                                <select
-                                    value={confeccaoStatusFilter}
-                                    onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa")}
-                                    className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                >
-                                    <option value="todos">Todos</option>
-                                    <option value="novo">Aguardando Confecção</option>
-                                    <option value="coroa">Coroa em Confecção</option>
-                                    <option value="faixa">Faixa em Confecção</option>
-                                </select>
-                                <button type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">
-                                    Buscar
-                                </button>
-                            </div>
-                        </div>
-                    </form>
 
-                    {/* Confecção mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
-                        <div className="space-y-3">
-                            {(!isDesktop ? confeccaoOrders : []).map((o) => (
-                                <div key={o.id} className="rounded-lg border bg-card p-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <div className="font-medium">{o.solicitante}</div>
-                                            <div className="mt-1 text-xs text-muted-foreground">{o.falecido}</div>
-                                        </div>
-                                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
-                                            {manualStatusLabel(o.status)}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 text-xs text-muted-foreground">
-                                        {quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"} • {resumoModelosManual(o)}
-                                    </div>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
-                                            {pagamentoAutomaticoManual(o)}
-                                        </span>
-                                        <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemLabel(o.origem)}</span>
-                                    </div>
-                                    <div className="mt-3 flex gap-2">
-                                        <button
-                                            className="inline-flex flex-1 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white"
-                                            onClick={() => openManualActions(o.id)}
-                                        >
-                                            Ações
-                                        </button>
-                                        <button
-                                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                            onClick={() => openManualView(o.id)}
-                                        >
-                                            <IconEye className="size-4" />
-                                            Ver
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-
-                            {!confeccaoLoading && confeccaoOrders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">
-                                    Nenhum pedido em confecção.
-                                </div>
-                            )}
-                            {confeccaoLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando…</div>}
-                            {confeccaoError && <div className="text-sm text-rose-600">{confeccaoError}</div>}
+                        <div className="shrink-0 text-right leading-tight">
+                            <div className="text-lg font-bold tabular-nums text-slate-100 sm:text-xl">{clockTime}</div>
+                            <div className="mt-0.5 text-[10px] font-medium qa-text-muted sm:text-[11px]">{clockDate}</div>
                         </div>
                     </div>
 
-                    {/* Confecção desktop */}
-                    <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
-                        <div className="overflow-hidden rounded-lg border bg-card">
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-3 py-2 font-medium">Status</th>
-                                            <th className="px-3 py-2 font-medium">Solicitante</th>
-                                            <th className="px-3 py-2 font-medium">Falecido(a)</th>
-                                            <th className="px-3 py-2 font-medium">Coroas</th>
-                                            <th className="px-3 py-2 font-medium">Pagamento</th>
-                                            <th className="px-3 py-2 font-medium">Origem</th>
-                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(isDesktop ? confeccaoOrders : []).map((o) => (
-                                            <tr key={o.id} className="border-t">
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
-                                                        {manualStatusLabel(o.status)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">{o.solicitante}</td>
-                                                <td className="px-3 py-2">{o.falecido}</td>
-                                                <td className="px-3 py-2">
-                                                    <div>{quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"}</div>
-                                                    <div className="mt-0.5 text-xs text-muted-foreground">{resumoModelosManual(o)}</div>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
-                                                        {pagamentoAutomaticoManual(o)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">{origemLabel(o.origem)}</td>
-                                                <td className="px-3 py-2">
-                                                    <div className="flex justify-end gap-2">
-                                                        <button
-                                                            className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
-                                                            onClick={() => openManualActions(o.id)}
-                                                        >
-                                                            Ações
-                                                        </button>
-                                                        <button
-                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
-                                                            onClick={() => openManualView(o.id)}
-                                                        >
-                                                            <IconEye className="size-4" /> Ver
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {!confeccaoLoading && confeccaoOrders.length === 0 && (
-                                            <tr>
-                                                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido em confecção.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                                {confeccaoLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando…</div>}
-                                {confeccaoError && <div className="px-3 pb-3 text-sm text-rose-600">{confeccaoError}</div>}
-                            </div>
-                            <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
-                                <div>
-                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoTotal} pedidos
-                                </div>
-                                <div className="flex gap-2">
-                                    <button
-                                        className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={confeccaoPage <= 1 || confeccaoLoading}
-                                        onClick={() => setConfeccaoPage((p) => Math.max(1, p - 1))}
-                                    >
-                                        Anterior
-                                    </button>
-                                    <button
-                                        className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={confeccaoPage >= confeccaoTotalPages || confeccaoLoading}
-                                        onClick={() => setConfeccaoPage((p) => Math.min(confeccaoTotalPages, p + 1))}
-                                    >
-                                        Próxima
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                    <div className="mt-2 h-px bg-slate-700/50" />
+                    <div className="mt-1.5 h-6 overflow-hidden">
+                        <AvisosTicker avisos={avisosParaExibir} />
                     </div>
-                </>
-            )}
+                </header>
 
-            {/* =====================================================
-                PEDIDOS MANUAIS — finalizados/entregues, sem Ações
-                ===================================================== */}
-            {tab === "manuais" && (
-                <>
-                    {/* Mesmos filtros do Online */}
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            setManualAppliedQ(manualQ.trim());
-                            setManualAppliedStatus(manualStatusFilter);
-                            setManualAppliedAfter(manualAfter);
-                            setManualAppliedBefore(manualBefore);
-                            setManualPage(1);
-                            setManualRefreshToken((v) => v + 1);
-                        }}
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
-                    >
-                        <div className="col-span-1 sm:col-span-2 lg:col-span-2">
-                            <label className="mb-1 block text-xs font-medium">Buscar</label>
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                                <input
-                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                                    placeholder="Solicitante, falecido, modelo, nº do pedido..."
-                                    value={manualQ}
-                                    onChange={(e) => setManualQ(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Status</label>
-                            <select
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualStatusFilter}
-                                onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "finalizada" | "entregue")}
-                            >
-                                <option value="todos">Todos</option>
-                                <option value="finalizada">Finalizada</option>
-                                <option value="entregue">Entregue</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">De</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualAfter}
-                                onChange={(e) => setManualAfter(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Até</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualBefore}
-                                onChange={(e) => setManualBefore(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                type="submit"
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                                disabled={manualLoading}
-                            >
-                                <IconSearch className="size-4" />
-                                Buscar
-                            </button>
-                            <button
-                                type="button"
-                                className="inline-flex w-full items-center justify-center rounded-md border px-3 py-2 text-sm"
-                                onClick={() => {
-                                    setManualQ("");
-                                    setManualStatusFilter("todos");
-                                    setManualAfter("");
-                                    setManualBefore("");
-                                    setManualAppliedQ("");
-                                    setManualAppliedStatus("todos");
-                                    setManualAppliedAfter("");
-                                    setManualAppliedBefore("");
-                                    setManualPage(1);
-                                    setManualRefreshToken((v) => v + 1);
-                                }}
-                            >
-                                Limpar
-                            </button>
-                        </div>
-                    </form>
-
-                    {/* Manual histórico mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
-                        <div className="space-y-3">
-                            {(!isDesktop ? manualHistoricoOrders : []).map((o) => (
-                                <div key={o.id} className="rounded-lg border bg-card p-3">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="text-xs text-muted-foreground">
-                                            Nº <b>{o.id}</b> • {formatDate(o.criado_em)}
-                                        </div>
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
-                                            {manualStatusLabel(o.status)}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 text-sm">
-                                        <div className="font-medium">{o.solicitante || "—"}</div>
-                                        <div className="mt-1 text-muted-foreground">
-                                            {totalManual(o) > 0 ? dinheiroBRL(totalManual(o)) : "—"}
-                                        </div>
-                                    </div>
-                                    <div className="mt-2">
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
-                                            {pagamentoAutomaticoManual(o)}
-                                        </span>
-                                    </div>
-                                    <div className="mt-3">
-                                        <button
-                                            className="inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                            onClick={() => openManualView(o.id)}
-                                        >
-                                            <IconEye className="size-4" /> Ver
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                            {!manualLoading && manualHistoricoOrders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido manual encontrado.</div>
-                            )}
-                            {manualLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
-                            {manualError && <div className="text-sm text-rose-600">{manualError}</div>}
-                        </div>
-                    </div>
-
-                    {/* Manual histórico desktop — padrão semelhante ao Online */}
-                    <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
-                        <div className="overflow-hidden rounded-lg border bg-card">
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-3 py-2 font-medium">Nº</th>
-                                            <th className="px-3 py-2 font-medium">Data</th>
-                                            <th className="px-3 py-2 font-medium">Cliente</th>
-                                            <th className="px-3 py-2 font-medium">Total</th>
-                                            <th className="px-3 py-2 font-medium">Pagamento</th>
-                                            <th className="px-3 py-2 font-medium">Status</th>
-                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(isDesktop ? manualHistoricoOrders : []).map((o) => (
-                                            <tr key={o.id} className="border-t">
-                                                <td className="px-3 py-2">{o.id}</td>
-                                                <td className="px-3 py-2">{formatDate(o.criado_em)}</td>
-                                                <td className="px-3 py-2">{o.solicitante || "—"}</td>
-                                                <td className="px-3 py-2">{totalManual(o) > 0 ? dinheiroBRL(totalManual(o)) : "—"}</td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
-                                                        {pagamentoAutomaticoManual(o)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
-                                                        {manualStatusLabel(o.status)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <div className="flex justify-end">
-                                                        <button
-                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
-                                                            onClick={() => openManualView(o.id)}
-                                                        >
-                                                            <IconEye className="size-4" /> Ver
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {!manualLoading && manualHistoricoOrders.length === 0 && (
-                                            <tr>
-                                                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido manual encontrado.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                                {manualLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
-                                {manualError && <div className="px-3 pb-3 text-sm text-rose-600">{manualError}</div>}
-                            </div>
-                            <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
-                                <div className="text-xs text-muted-foreground">
-                                    Página {Math.min(manualPage, manualTotalPages)} de {manualTotalPages} — {manualTotal} pedidos
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => setManualPage((p) => Math.max(1, p - 1))}
-                                        disabled={manualPage <= 1 || manualLoading}
-                                    >
-                                        <IconChevronLeft className="size-4" /> Anterior
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => setManualPage((p) => Math.min(manualTotalPages, p + 1))}
-                                        disabled={manualPage >= manualTotalPages || manualLoading}
-                                    >
-                                        Próxima <IconChevronRight className="size-4" />
-                                    </button>
-                                    <select
-                                        className="rounded-md border bg-background px-2 py-1 text-xs"
-                                        value={manualPerPage}
-                                        onChange={(e) => setManualPerPage(Number(e.target.value))}
-                                    >
-                                        {[10, 20, 50, 100].map((n) => (
-                                            <option key={n} value={n}>{n} por página</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {/* =====================================================
-                PEDIDOS ONLINE
-                ===================================================== */}
-            {tab === "online" && (
-                <>
-                    {/* ONLINE — filtros existentes */}
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            setOnlineAppliedQ(q.trim());
-                            setOnlineAppliedStatus(wcStatus);
-                            setOnlineAppliedAfter(after);
-                            setOnlineAppliedBefore(before);
-                            setPage(1);
-                            setOnlineRefreshToken((v) => v + 1);
-                        }}
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
-                    >
-                        <div className="col-span-1 sm:col-span-2 lg:col-span-2">
-                            <label className="mb-1 block text-xs font-medium">Buscar</label>
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                                <input
-                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                                    placeholder="Nome, e-mail, nº do pedido..."
-                                    value={q}
-                                    onChange={(e) => setQ(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Status</label>
-                            <select
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={wcStatus}
-                                onChange={(e) => setWcStatus(e.target.value as any)}
-                            >
-                                {WC_STATUS_OPTIONS.map((o) => (
-                                    <option key={o.value} value={o.value}>
-                                        {o.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">De</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={after}
-                                onChange={(e) => setAfter(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Até</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={before}
-                                onChange={(e) => setBefore(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                type="submit"
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                                disabled={loading}
-                            >
-                                <IconSearch className="size-4" />
-                                Buscar
-                            </button>
-                            <button
-                                type="button"
-                                className="inline-flex w-full items-center justify-center rounded-md border px-3 py-2 text-sm"
-                                onClick={() => {
-                                    setQ("");
-                                    setWcStatus("all");
-                                    setAfter("");
-                                    setBefore("");
-                                    setOnlineAppliedQ("");
-                                    setOnlineAppliedStatus("all");
-                                    setOnlineAppliedAfter("");
-                                    setOnlineAppliedBefore("");
-                                    setPage(1);
-                                    setOnlineRefreshToken((v) => v + 1);
-                                }}
-                            >
-                                Limpar
-                            </button>
-                        </div>
-                    </form>
-
-                    {/* Online mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
-                        <div className="space-y-3">
-                            {(!isDesktop ? orders : []).map((o) => {
-                                const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
-                                const disabled = !canNotifyRow(o);
-                                return (
-                                    <div key={o.id} className="rounded-lg border bg-card p-3">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="text-xs text-muted-foreground">
-                                                Nº <b>{o.number || o.id}</b> • {formatDate(o.date_created)}
-                                            </div>
-                                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${clsWcStatusBadge(o.status)}`}>
-                                                {WC_STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 text-sm">
-                                            <div className="font-medium">{cliente}</div>
-                                            <div className="mt-1 text-muted-foreground">{formatCurrency(o.total, o.currency || "BRL")}</div>
-                                        </div>
-                                        <div className="mt-3 flex gap-2">
-                                            <button
-                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                                onClick={() => openDetail(o.id)}
-                                            >
-                                                <IconEye className="size-4" /> Ver
-                                            </button>
-                                            <button
-                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs disabled:opacity-50"
-                                                onClick={() => notifyWhatsApp(o.id)}
-                                                disabled={disabled}
-                                            >
-                                                <IconSend className="size-4" /> Notificar
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {!loading && orders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido encontrado.</div>
-                            )}
-                            {loading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
-                            {error && <div className="text-sm text-rose-600">{error}</div>}
-                        </div>
-                    </div>
-
-                    {/* Online desktop */}
-                    <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
-                        <div className="overflow-hidden rounded-lg border bg-card">
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-3 py-2 font-medium">Nº</th>
-                                            <th className="px-3 py-2 font-medium">Data</th>
-                                            <th className="px-3 py-2 font-medium">Cliente</th>
-                                            <th className="px-3 py-2 font-medium">Total</th>
-                                            <th className="px-3 py-2 font-medium">Status</th>
-                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(isDesktop ? orders : []).map((o) => {
-                                            const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
-                                            const disabled = !canNotifyRow(o);
-                                            return (
-                                                <tr key={o.id} className="border-t">
-                                                    <td className="px-3 py-2">{o.number || o.id}</td>
-                                                    <td className="px-3 py-2">{formatDate(o.date_created)}</td>
-                                                    <td className="px-3 py-2">{cliente}</td>
-                                                    <td className="px-3 py-2">{formatCurrency(o.total, o.currency || "BRL")}</td>
-                                                    <td className="px-3 py-2">
-                                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${clsWcStatusBadge(o.status)}`}>
-                                                            {WC_STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-3 py-2">
-                                                        <div className="flex justify-end gap-2">
-                                                            <button
-                                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
-                                                                onClick={() => openDetail(o.id)}
-                                                            >
-                                                                <IconEye className="size-4" /> Ver
-                                                            </button>
-                                                            <button
-                                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                                                onClick={() => notifyWhatsApp(o.id)}
-                                                                disabled={disabled}
-                                                            >
-                                                                <IconSend className="size-4" /> Notificar
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                        {!loading && orders.length === 0 && (
-                                            <tr>
-                                                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido encontrado.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                                {loading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
-                                {error && <div className="px-3 pb-3 text-sm text-rose-600">{error}</div>}
-                            </div>
-                            <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
-                                <div className="text-xs text-muted-foreground">
-                                    Página {meta.page} de {meta.totalPages} — {meta.total} pedidos
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                        disabled={page <= 1 || loading}
-                                    >
-                                        <IconChevronLeft className="size-4" /> Anterior
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
-                                        disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
-                                    >
-                                        Próxima <IconChevronRight className="size-4" />
-                                    </button>
-                                    <select
-                                        className="rounded-md border bg-background px-2 py-1 text-xs"
-                                        value={perPage}
-                                        onChange={(e) => {
-                                            setPerPage(Number(e.target.value));
-                                            setPage(1);
-                                        }}
-                                    >
-                                        {[10, 20, 50, 100].map((n) => (
-                                            <option key={n} value={n}>{n} por página</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {/* Modal NOVO */}
-            {newOpen && (
-                <div className="fixed inset-0 z-50 grid place-items-center p-4">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => !newSaving && setNewOpen(false)} />
-                    <form
-                        onSubmit={salvarNovoPedido}
-                        className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-x-hidden overflow-y-auto rounded-xl border bg-background shadow-xl"
-                    >
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-lg font-semibold">Novo Pedido de Coroa</div>
-                            </div>
-                            <button type="button" className="rounded-md p-2 hover:bg-muted" onClick={() => setNewOpen(false)}>
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Solicitante *</label>
-                                <input
-                                    value={newForm.solicitante}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, solicitante: e.target.value }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Nome do cliente"
-                                />
-                            </div>
-                            <div>
-                                <label className="mb-1 block text-sm font-medium">Telefone *</label>
-                                <input
-                                    type="tel"
-                                    inputMode="tel"
-                                    value={newForm.telefone}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, telefone: e.target.value }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Telefone do cliente"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="mb-1 block text-sm font-medium">Local de Entrega *</label>
-                                <input
-                                    value={newForm.local_entrega}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Local da entrega"
-                                />
-                            </div>
-
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Observações</label>
-                                <textarea
-                                    value={newForm.observacoes}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, observacoes: e.target.value }))}
-                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite observações do pedido (opcional)"
-                                />
-                            </div>
-
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={20}
-                                    inputMode="numeric"
-                                    value={quantidadeCoroas}
-                                    onChange={(e) => atualizarQuantidadeCoroas(Number(e.target.value))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                />
-                            </div>
-
-                            <div className="sm:col-span-2 space-y-4">
-                                {newItems.map((item, index) => {
-                                    const produto = item.produto;
-                                    const foto = fotoPrincipalProduto(produto);
-
-                                    return (
-                                        <div key={index} className="rounded-xl border bg-muted/10 p-3">
-                                            <div className="mb-3 flex items-center justify-between gap-3">
-                                                <div className="font-semibold">
-                                                    Coroa {index + 1}
-                                                </div>
-                                                <div className="text-xs text-muted-foreground">
-                                                    {index + 1} de {quantidadeCoroas}
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="mb-1 block text-sm font-medium">Tipo *</label>
-                                                    <select
-                                                        value={item.tipo_coroa}
-                                                        onChange={(e) => {
-                                                            const tipo = e.target.value as CoroaTipo;
-                                                            atualizarItemCoroa(index, {
-                                                                tipo_coroa: tipo,
-                                                                produto: null,
-                                                            });
-
-                                                            if (tipo) {
-                                                                abrirSeletorModelo(index, tipo);
-                                                            }
-                                                        }}
-                                                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                    >
-                                                        <option value="">Selecione o tipo da coroa</option>
-                                                        <option value="natural">Natural</option>
-                                                        <option value="artificial">Artificial</option>
-                                                    </select>
-                                                </div>
-
-                                                <div>
-                                                    <label className="mb-1 block text-sm font-medium">Modelo *</label>
-
-                                                    {produto ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa)}
-                                                            className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
-                                                        >
-                                                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                                                {foto ? (
-                                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                                    <img
-                                                                        src={foto}
-                                                                        alt={produto.nome}
-                                                                        className="h-full w-full object-cover"
-                                                                    />
-                                                                ) : (
-                                                                    <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                                                                        Sem foto
-                                                                    </div>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="text-xs text-muted-foreground">
-                                                                    Coroa {rotuloTipoCoroa(item.tipo_coroa)}
-                                                                </div>
-                                                                <div className="line-clamp-2 font-semibold">
-                                                                    {produto.nome}
-                                                                </div>
-                                                                <div className="mt-1 text-sm font-medium">
-                                                                    {dinheiroBRL(produto.valor)}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="shrink-0 text-xs text-blue-600">
-                                                                Alterar
-                                                            </div>
-                                                        </button>
-                                                    ) : item.tipo_coroa ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa)}
-                                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40"
-                                                        >
-                                                            <IconSearch className="size-4" />
-                                                            Escolher modelo {rotuloTipoCoroa(item.tipo_coroa)}
-                                                        </button>
-                                                    ) : (
-                                                        <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
-                                                            Primeiro selecione Natural ou Artificial.
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div>
-                                                    <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
-                                                    <select
-                                                        value={item.frase_sugestao}
-                                                        onChange={(e) => {
-                                                            const frase = e.target.value;
-                                                            atualizarItemCoroa(index, {
-                                                                frase_sugestao: frase,
-                                                                ...(frase ? { frase } : {}),
-                                                            });
-                                                        }}
-                                                        className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                    >
-                                                        <option value="">Selecione uma sugestão ou escreva a sua própria frase abaixo</option>
-                                                        {FRASES_SUGERIDAS.map((sugestao) => (
-                                                            <option key={sugestao.numero} value={sugestao.texto}>
-                                                                {sugestao.numero} — {sugestao.texto}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-
-                                                    <label className="mb-1 block text-sm font-medium">Frase *</label>
-                                                    <textarea
-                                                        value={item.frase}
-                                                        onChange={(e) =>
-                                                            atualizarItemCoroa(index, {
-                                                                frase: e.target.value,
-                                                                frase_sugestao: "",
-                                                            })
-                                                        }
-                                                        className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                        placeholder={`Frase da Coroa ${index + 1}`}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Atendimentos</label>
-                                <select
-                                    value={newFalecidoSugestao}
-                                    onChange={(e) => {
-                                        const nome = e.target.value;
-                                        setNewFalecidoSugestao(nome);
-
-                                        if (nome) {
-                                            setNewForm((p) => ({ ...p, falecido: nome }));
-                                        }
-                                    }}
-                                    className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    disabled={falecidosLoading && falecidosQuadro.length === 0}
-                                >
-                                    <option value="">
-                                        {falecidosLoading
-                                            ? "Consultando o quadro de atendimentos..."
-                                            : "Selecione um atendimento"}
-                                    </option>
-                                    {falecidosQuadro.map((r) => (
-                                        <option key={String(r.id || r.falecido)} value={String(r.falecido || "")}>
-                                            {String(r.falecido || "")}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
-                                <input
-                                    value={newForm.falecido}
-                                    onChange={(e) => {
-                                        setNewFalecidoSugestao("");
-                                        setNewForm((p) => ({ ...p, falecido: e.target.value }));
-                                    }}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite o nome do falecido ou selecione um atendimento acima"
-                                />
-
-                                {falecidosError && (
-                                    <div className="mt-1 text-xs text-rose-600">
-                                        {falecidosError}
-                                        <button
-                                            type="button"
-                                            className="ml-2 underline underline-offset-2"
-                                            onClick={() => void carregarFalecidosQuadro(true)}
-                                        >
-                                            Tentar novamente
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            <div>
-                                <label className="mb-1 block text-sm font-medium">Origem *</label>
-                                <select
-                                    value={newForm.origem}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, origem: e.target.value as ManualOrigem }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                >
-                                    {ORIGEM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                            </div>
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Comprovante</label>
-                                <input
-                                    type="file"
-                                    accept="image/*,application/pdf,.pdf"
-                                    onChange={(e) => setNewComprovante(e.target.files?.[0] || null)}
-                                    className="block w-full rounded-md border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm"
-                                />
-
-                                {newComprovante && (
-                                    <div className="mt-2 flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm">
-                                        <div className="min-w-0">
-                                            <div className="truncate font-medium">{newComprovante.name}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {(newComprovante.size / 1024 / 1024).toFixed(2)} MB
-                                            </div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            className="shrink-0 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                                            onClick={() => setNewComprovante(null)}
-                                        >
-                                            Remover
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            {newError && <div className="sm:col-span-2 text-sm text-rose-600">{newError}</div>}
-                        </div>
-                        <div className="flex justify-end gap-2 border-t px-4 py-3">
-                            <button type="button" className="rounded-md border px-4 py-2 text-sm" onClick={() => setNewOpen(false)} disabled={newSaving}>
-                                Cancelar
-                            </button>
-                            <button type="submit" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" disabled={newSaving}>
-                                {newSaving ? "Salvando..." : "Criar Pedido"}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            {/* Drawer manual */}
-            {modeloModalOpen && (
-                <div
-                    className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-2 sm:p-4"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={`Selecionar Coroa ${rotuloTipoCoroa(modeloTipo)}`}
+                <main
+                    ref={dashboardContentRef}
+                    data-qa-density={qaDensity}
+                    className="qa-dashboard-content min-h-0 flex-1 overflow-hidden flex flex-col gap-3"
                 >
-                    <div className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
-                        <div className="flex items-start justify-between gap-3 border-b p-4">
-                            <div className="min-w-0">
-                                <h2 className="text-lg font-semibold">
-                                    Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
-                                </h2>
+                    <div className="qa-atendimentos-shell shrink-0">
+                        <DesktopTable
+                            ativos={desktopAtivos}
+                            hiddenCount={desktopHiddenCount}
+                            onSelect={showDetail}
+                            statusLogsById={statusLogsById}
+                            nowMs={nowMs}
+                        />
+                        <MobileCards
+                            ativos={mobileAtivos}
+                            hiddenCount={mobileHiddenCount}
+                            onSelect={showDetail}
+                            statusLogsById={statusLogsById}
+                            nowMs={nowMs}
+                        />
+                    </div>
+
+                    <CoroasTvBoard
+                        pedidos={coroasTv}
+                        error={coroasTvError}
+                        nowMs={nowMs}
+                    />
+                </main>
+
+                {open && detail && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-3 sm:p-6" aria-modal role="dialog">
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDetail} aria-hidden />
+
+                        <div className="qa-panel-premium relative z-10 flex max-h-[86dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
+                            <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 backdrop-blur sm:px-5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] qa-text-muted">Detalhes do atendimento</div>
+                                        <h3 className="mt-1 truncate text-lg font-bold leading-tight text-slate-100 sm:text-xl">
+                                            {shown(detail.falecido)}
+                                        </h3>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs qa-text-muted">
+                                            <span>Data: <b className="text-slate-200">{dateOr(detail.data)}</b></span>
+                                            <span>Hora: <b className="text-slate-200">{timeOr(detail.hora_fim_velorio)}</b></span>
+                                            <span>Agente: <b className="text-slate-200">{shown(detail.agente)}</b></span>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-white ${badgeClass(detail.status)}`}>
+                                                {capStatus(detail.status)}
+                                            </span>
+                                            <ConvenioBadge convenio={detail.convenio} size="xs" />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <button
+                                            onClick={toggleTimelineDetalhe}
+                                            className={`rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 ${detailTimelineOpen ? "bg-slate-800" : "bg-slate-900/50"}`}
+                                            aria-label="Linha do tempo"
+                                            title="Ver linha do tempo deste atendimento"
+                                        >
+                                            Linha do tempo
+                                        </button>
+
+                                        <button
+                                            onClick={handleCopy}
+                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                            aria-label="Copiar"
+                                            title="Copiar informações"
+                                        >
+                                            {copied ? "Copiado!" : "Copiar"}
+                                        </button>
+
+                                        <button
+                                            onClick={closeDetail}
+                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                            aria-label="Fechar"
+                                        >
+                                            Fechar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {detailTimelineOpen && (
+                                    <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-950/55 p-3">
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-bold text-slate-200">Linha do Tempo</div>
+                                                <div className="truncate text-[11px] qa-text-muted">Logs deste atendimento: {shown(detail.falecido)}</div>
+                                            </div>
+                                            <button
+                                                onClick={() => setDetailTimelineOpen(false)}
+                                                className="shrink-0 rounded-full border border-slate-700/70 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                                                aria-label="Ocultar linha do tempo"
+                                            >
+                                                Ocultar
+                                            </button>
+                                        </div>
+
+                                        {detailLogsLoading && <p className="text-sm qa-text-muted">Carregando histórico…</p>}
+                                        {detailLogsError && <p className="text-sm text-red-400">{detailLogsError}</p>}
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
+                                            <p className="text-sm qa-text-muted">Nenhum log encontrado para este atendimento.</p>
+                                        )}
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />}
+                                    </div>
+                                )}
                             </div>
 
-                            <button
-                                type="button"
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
-                                aria-label="Fechar"
-                            >
-                                <IconX className="size-5" />
-                            </button>
+                            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                                <div className="grid gap-3">
+                                    <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                            <Field label="Falecido" value={shown(detail.falecido)} />
+                                            <Field label="Religião" value={shown(detail.religiao)} />
+                                            <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
+                                            <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
+                                            <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                            <Field label="Urna" value={shown(detail.urna)} />
+                                            <Field label="Roupa" value={shown(detail.roupa)} />
+                                            <Field label="Assistência" value={shown(detail.assistencia)} />
+                                            <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+                                            <Field label="Invol" value={involSimNao(detail.invol)} />
+                                            <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
+                                            {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
+                                                <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                            )}
+                                            <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+                                            <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
+                                            <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
+                                            <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
+                                            <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-3" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+                                            <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
+                                            <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
+                                            <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
+                                            <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-3" />
+                                        </div>
+                                    </Topic>
+
+                                    <div className="rounded-xl border border-slate-700/60 bg-slate-950/45 p-3">
+                                        <div className="mb-2 text-xs font-semibold qa-text-muted">Etapas preenchidas</div>
+                                        <EtapasRow registro={detail} />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+                    </div>
+                )}
+            </div>
+        </>
+    );
+}
 
-                        <div className="border-b p-4">
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                                <input
-                                    value={modeloBusca}
-                                    onChange={(e) => setModeloBusca(e.target.value)}
-                                    className="w-full rounded-xl border bg-background py-2 pl-9 pr-3 text-[16px] sm:text-sm"
-                                    placeholder="Pesquisar modelo pelo nome ou código..."
-                                    autoFocus
-                                />
-                            </div>
+/* ===== ✅ Avisos em ticker (uma linha, rolando direita -> esquerda) ===== */
+function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
+    const items = useMemo(() => {
+        return (avisos ?? [])
+            .map((a) => ({
+                usuario: shown(a?.usuario, "").trim(),
+                mensagem: shown(a?.mensagem, "").trim(),
+            }))
+            .filter((x) => x.usuario || x.mensagem);
+    }, [avisos]);
 
-                            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                                <span>
-                                    {modeloLoading
-                                        ? "Consultando estoque..."
-                                        : `${modelosDisponiveis.length} modelo(s) disponível(is).`}
-                                </span>
+    const durationSec = useMemo(() => {
+        const totalChars = items.reduce((acc, it) => acc + it.usuario.length + it.mensagem.length + 10, 0);
+        const sec = Math.round(totalChars / 10);
+        return Math.max(18, Math.min(60, sec));
+    }, [items]);
+
+    if (items.length === 0) {
+        return <p className="text-[11px] text-muted-foreground">Nenhum aviso no momento.</p>;
+    }
+
+    const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
+        <div className="flex items-center gap-7 px-2 py-1 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
+            {items.map((x, i) => (
+                <div key={i} className="flex items-center gap-2 text-[12px] font-semibold text-slate-200">
+                    {x.usuario ? <strong className="font-bold text-slate-100">{x.usuario}</strong> : null}
+                    {x.mensagem ? <span className="text-slate-200">{x.mensagem}</span> : null}
+                    <span className="text-slate-500">•</span>
+                </div>
+            ))}
+        </div>
+    );
+
+    return (
+        <div className="relative w-full overflow-hidden">
+            <div className="qa-avisos-track flex w-max" style={{ animationDuration: `${durationSec}s` }}>
+                <RenderItems />
+                <RenderItems ariaHidden />
+            </div>
+
+            <style jsx global>{`
+                @keyframes qa-avisos-marquee {
+                    0% {
+                        transform: translateX(0);
+                    }
+                    100% {
+                        transform: translateX(-50%);
+                    }
+                }
+                .qa-avisos-track {
+                    will-change: transform;
+                    animation-name: qa-avisos-marquee;
+                    animation-timing-function: linear;
+                    animation-iteration-count: infinite;
+                }
+                .qa-avisos-track:hover {
+                    animation-play-state: paused;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .qa-avisos-track {
+                        animation: none !important;
+                        transform: none !important;
+                    }
+                }
+            `}</style>
+        </div>
+    );
+}
+
+/* ===== Listas Memoizadas ===== */
+const DesktopTable = React.memo(function DesktopTable({
+    ativos,
+    hiddenCount = 0,
+    onSelect,
+    statusLogsById,
+    nowMs,
+}: {
+    ativos: Registro[];
+    hiddenCount?: number;
+    onSelect: (r: Registro) => void;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+}) {
+    return (
+        <section className="qa-atendimentos-table hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
+            <div className="qa-atendimento-head grid h-8 shrink-0 grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
+                <div>Data</div>
+                <div>Falecido(a)</div>
+                <div>Local</div>
+                <div>Sepultamento</div>
+                <div>Agente</div>
+                <div>Status</div>
+            </div>
+
+            <div className="min-h-0 overflow-hidden">
+                {ativos.length === 0 ? (
+                    <div className="flex h-40 items-center justify-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
+                ) : (
+                    ativos.map((r, i) => {
+                        const preenchidas = etapasPreenchidas(r);
+                        const trackingId = getRegistroTrackingId(r);
+                        return (
+                            <div
+                                key={trackingId || i}
+                                className="qa-atendimento-row grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
+                            >
+                                <div className="qa-data-cell min-w-0">
+                                    <div className="qa-data-dots flex justify-center">
+                                        <EtapasInlineDots filled={preenchidas} />
+                                    </div>
+                                    <div className="qa-data-date text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">
+                                        {dateOr(r.data)}
+                                    </div>
+                                    <div className="qa-data-convenio flex justify-center">
+                                        <ConvenioBadge convenio={r.convenio} size="xs" />
+                                    </div>
+                                </div>
 
                                 <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted"
-                                    onClick={() => void carregarModelosCoroa(true)}
-                                    disabled={modeloLoading}
+                                    className="min-w-0 text-left text-[12px] font-bold leading-tight text-slate-100 underline-offset-2 hover:underline"
+                                    onClick={() => onSelect(r)}
+                                    title={shown(r.falecido)}
                                 >
-                                    <IconRefresh className={`size-3.5 ${modeloLoading ? "animate-spin" : ""}`} />
-                                    Atualizar
+                                    <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
+
+                                <div className="min-w-0 text-[12px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
+                                    <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
+                                </div>
+
+                                <div className="min-w-0 leading-tight">
+                                    <div className="text-[11px] font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                    <div className="mt-0.5 truncate text-[12px] font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                </div>
+
+                                <div className="min-w-0 truncate text-[12px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+
+        </section>
+    );
+});
+
+const MobileCards = React.memo(function MobileCards({
+    ativos,
+    hiddenCount = 0,
+    onSelect,
+    statusLogsById,
+    nowMs,
+}: {
+    ativos: Registro[];
+    hiddenCount?: number;
+    onSelect: (r: Registro) => void;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+}) {
+    return (
+        <section className="qa-mobile-cards flex h-full min-h-0 flex-col gap-2 overflow-hidden sm:hidden">
+            {ativos.length === 0 ? (
+                <div className="qa-panel-premium rounded-2xl border p-4 text-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
+            ) : (
+                ativos.map((r, i) => {
+                    const preenchidas = etapasPreenchidas(r);
+                    const trackingId = getRegistroTrackingId(r);
+                    return (
+                        <article key={trackingId || i} className="qa-mobile-card qa-panel-premium overflow-hidden rounded-2xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <button
+                                    className="min-w-0 text-left text-base font-bold leading-snug text-slate-100"
+                                    onClick={() => onSelect(r)}
+                                    title={shown(r.falecido)}
+                                >
+                                    <span className="block truncate">{shown(r.falecido)}</span>
+                                </button>
+                                <div className="shrink-0 text-right">
+                                    <EtapasInlineDots filled={preenchidas} />
+                                    <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
+                                    <div className="mt-1"><ConvenioBadge convenio={r.convenio} size="xs" /></div>
+                                </div>
                             </div>
 
-                            {modeloError && (
-                                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                    {modeloError}
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="qa-text-muted">Local</div>
+                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
-                            )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto">
-                            {modeloLoading && modelosDisponiveis.length === 0 ? (
-                                <div className="p-8 text-center text-sm text-muted-foreground">
-                                    Carregando modelos...
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="qa-text-muted">Sepultamento</div>
+                                    <div className="mt-1 font-semibold text-slate-100">{dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}</div>
                                 </div>
-                            ) : !modeloError && modelosDisponiveis.length === 0 ? (
-                                <div className="p-8 text-center text-sm text-muted-foreground">
-                                    {modeloTipo === "artificial"
-                                        ? "Nenhuma coroa artificial com estoque disponível."
-                                        : "Nenhum modelo cadastrado em COROAS NATURAIS."}
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Desktop: tabela simples */}
-                                    <div className="hidden overflow-x-auto lg:block">
-                                        <table className="min-w-full text-left text-sm">
-                                            <thead className="sticky top-0 bg-muted/80 text-xs">
-                                                <tr>
-                                                    <th className="w-24 px-4 py-3">Foto</th>
-                                                    <th className="px-4 py-3">Modelo</th>
-                                                    <th className="px-4 py-3">Categoria</th>
-                                                    {modeloTipo === "artificial" && (
-                                                        <th className="px-4 py-3 text-right">Qtd.</th>
-                                                    )}
-                                                    <th className="px-4 py-3 text-right">Preço</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y">
-                                                {modelosDisponiveis.map((produto) => {
-                                                    const foto = fotoPrincipalProduto(produto);
-                                                    const saldo = saldoTotalPorProduto.get(Number(produto.id)) || 0;
+                            </div>
 
-                                                    return (
-                                                        <tr
-                                                            key={produto.id}
-                                                            onClick={() => selecionarModeloCoroa(produto)}
-                                                            className="cursor-pointer transition hover:bg-muted/50"
-                                                        >
-                                                            <td className="px-4 py-3">
-                                                                <div className="h-16 w-16 overflow-hidden rounded-xl border bg-muted/30">
-                                                                    {foto ? (
-                                                                        // eslint-disable-next-line @next/next/no-img-element
-                                                                        <img
-                                                                            src={foto}
-                                                                            alt={produto.nome}
-                                                                            className="h-full w-full object-cover"
-                                                                        />
-                                                                    ) : (
-                                                                        <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
-                                                                            Sem foto
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-3">
-                                                                <div className="font-semibold">{produto.nome}</div>
-                                                                {produto.codigo_barras ? (
-                                                                    <div className="mt-1 text-xs text-muted-foreground">
-                                                                        CB: {produto.codigo_barras}
-                                                                    </div>
-                                                                ) : null}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-muted-foreground">
-                                                                {produto.categoria_nome || "—"}
-                                                            </td>
-                                                            {modeloTipo === "artificial" && (
-                                                                <td className="px-4 py-3 text-right font-semibold">
-                                                                    {saldo}
-                                                                </td>
-                                                            )}
-                                                            <td className="px-4 py-3 text-right font-semibold">
-                                                                {dinheiroBRL(produto.valor)}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                            <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                                <div className="min-w-0 truncate qa-text-muted">Agente: <b className="text-slate-200">{shown(r.agente)}</b></div>
+                            </div>
 
-                                    {/* Mobile/tablet: mesmo padrão de cartões da consulta de produtos */}
-                                    <div className="grid grid-cols-1 gap-3 p-3 lg:hidden">
-                                        {modelosDisponiveis.map((produto) => {
-                                            const foto = fotoPrincipalProduto(produto);
-                                            const saldo = saldoTotalPorProduto.get(Number(produto.id)) || 0;
-
-                                            return (
-                                                <button
-                                                    key={produto.id}
-                                                    type="button"
-                                                    onClick={() => selecionarModeloCoroa(produto)}
-                                                    className="w-full rounded-2xl border bg-background p-3 text-left outline-none transition hover:border-slate-300 hover:shadow-sm focus:ring-2 focus:ring-slate-200"
-                                                >
-                                                    <div className="flex gap-4">
-                                                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                                            {foto ? (
-                                                                // eslint-disable-next-line @next/next/no-img-element
-                                                                <img
-                                                                    src={foto}
-                                                                    alt={produto.nome}
-                                                                    className="h-full w-full object-cover"
-                                                                />
-                                                            ) : (
-                                                                <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
-                                                                    Sem foto
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="line-clamp-2 font-semibold">
-                                                                {produto.nome}
-                                                            </p>
-                                                            <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
-                                                                {produto.categoria_nome || "—"}
-                                                            </p>
-                                                            {produto.codigo_barras ? (
-                                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                                                    CB: {produto.codigo_barras}
-                                                                </p>
-                                                            ) : null}
-                                                            <p className="mt-1 text-sm font-semibold">
-                                                                {dinheiroBRL(produto.valor)}
-                                                            </p>
-                                                        </div>
-
-                                                        <div className="shrink-0 text-right">
-                                                            {modeloTipo === "artificial" ? (
-                                                                <>
-                                                                    <p className="text-xs text-muted-foreground">Qtd</p>
-                                                                    <p className="text-xl font-bold">{saldo}</p>
-                                                                </>
-                                                            ) : (
-                                                                <span className="inline-flex rounded-full border px-2 py-1 text-[11px] font-medium">
-                                                                    Natural
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="border-t p-3 text-right">
-                            <button
-                                type="button"
-                                className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
-                                onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
-                            >
-                                Cancelar
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                            <div className="mt-2 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
+                            </div>
+                        </article>
+                    );
+                })
             )}
 
-            {/* Ações do pedido manual */}
-            {manualPanel === "acoes" && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
-                    <div className="w-full max-w-xl overflow-hidden rounded-xl border bg-background shadow-xl">
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-lg font-semibold">Registrar uma ação</div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                    Status sincronizado com o servidor.
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setManualPanel(null)}
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-4">
-                            {manualDetailLoading ? (
-                                <div className="py-6 text-center text-sm text-muted-foreground">
-                                    Carregando...
-                                </div>
-                            ) : manualDetail ? (
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    {acoesManualDoPedido(manualDetail).map(([target, label]) => {
-                                        const concluida = acaoManualConcluida(manualDetail, target);
-                                        const liberada = acaoManualLiberada(manualDetail, target);
-
-                                        return (
-                                            <button
-                                                key={target}
-                                                type="button"
-                                                disabled={manualActionLoading || concluida || !liberada}
-                                                onClick={() => clicarAcaoManual(target)}
-                                                className={[
-                                                    "min-h-12 rounded-md border px-3 py-2 text-sm font-medium transition",
-                                                    concluida
-                                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                                        : liberada
-                                                            ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
-                                                            : "bg-muted/20 text-muted-foreground opacity-60",
-                                                ].join(" ")}
-                                            >
-                                                <span className="inline-flex items-center gap-2">
-                                                    {concluida ? <IconCheck className="size-4" /> : null}
-                                                    {label}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-sm text-rose-600">
-                                    {manualDetailMsg || "Pedido não encontrado."}
-                                </div>
-                            )}
-
-                            {manualDetailMsg && manualDetail && (
-                                <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                    {manualDetailMsg}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+            {hiddenCount > 0 && (
+                <div className="qa-panel-premium rounded-xl border px-3 py-2 text-center text-xs font-semibold qa-text-muted">
+                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
                 </div>
             )}
+        </section>
+    );
+});
 
-            {/* Foto obrigatória para Finalizada */}
-            {finalizarOpen && (
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-3">
-                    <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-lg font-semibold">Coroa Finalizada</div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                    Anexe a foto da coroa pronta para confirmar.
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                className="rounded-md p-2 hover:bg-muted"
-                                disabled={manualActionLoading}
-                                onClick={() => {
-                                    setFinalizarOpen(false);
-                                    setFinalizarFile(null);
-                                    limparPreviewFinalizacao();
-                                    setFinalizarError(null);
-                                }}
-                            >
-                                <IconX className="size-5" />
-                            </button>
+
+/* ===== Coroas de Flores — painel inferior da TV ===== */
+type CoroaTvIconKey =
+    | "flower"
+    | "ribbon"
+    | "hourglass"
+    | "check"
+    | "clipboard"
+    | "coffin"
+    | "person"
+    | "pin"
+    | "wallet"
+    | "package";
+
+function CoroaTvIcon({ type }: { type: CoroaTvIconKey }) {
+    const common = {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+        className: "h-full w-full",
+    };
+
+    switch (type) {
+        case "flower":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M12 4.5c1.7 1.7 1.7 3.3 0 5-1.7-1.7-1.7-3.3 0-5Z" />
+                    <path d="M12 19.5c-1.7-1.7-1.7-3.3 0-5 1.7 1.7 1.7 3.3 0 5Z" />
+                    <path d="M4.5 12c1.7-1.7 3.3-1.7 5 0-1.7 1.7-3.3 1.7-5 0Z" />
+                    <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
+                </svg>
+            );
+
+        case "ribbon":
+            return (
+                <svg {...common}>
+                    <path d="M8 3h8v8l-4 3-4-3V3Z" />
+                    <path d="m8 10-3 11 7-4 7 4-3-11" />
+                </svg>
+            );
+
+        case "hourglass":
+            return (
+                <svg {...common}>
+                    <path d="M6 3h12" />
+                    <path d="M6 21h12" />
+                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
+                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
+                    <path d="M10 8h4" />
+                    <path d="M10 16h4" />
+                </svg>
+            );
+
+        case "check":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="m8 12 2.5 2.5L16.5 9" />
+                </svg>
+            );
+
+        case "clipboard":
+            return (
+                <svg {...common}>
+                    <rect x="5" y="4" width="14" height="17" rx="2" />
+                    <path d="M9 4.5V3h6v1.5" />
+                    <path d="M8.5 9h7" />
+                    <path d="M8.5 13h7" />
+                    <path d="M8.5 17h4" />
+                </svg>
+            );
+
+        case "coffin":
+            return (
+                <svg {...common}>
+                    <path d="M9 3h6l3 5-1.5 13h-9L6 8l3-5Z" />
+                    <path d="M12 7v8" />
+                    <path d="M9.8 10h4.4" />
+                </svg>
+            );
+
+        case "person":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="8" r="3" />
+                    <path d="M5.5 21a6.5 6.5 0 0 1 13 0" />
+                </svg>
+            );
+
+        case "pin":
+            return (
+                <svg {...common}>
+                    <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+                    <circle cx="12" cy="10" r="2.5" />
+                </svg>
+            );
+
+        case "wallet":
+            return (
+                <svg {...common}>
+                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 17.5v-10Z" />
+                    <path d="M4 9h16" />
+                    <path d="M15 14h3" />
+                </svg>
+            );
+
+        case "package":
+        default:
+            return (
+                <svg {...common}>
+                    <path d="M4 8.5 12 4l8 4.5-8 4.5L4 8.5Z" />
+                    <path d="M4 8.5V16l8 4 8-4V8.5" />
+                    <path d="M12 13v7" />
+                </svg>
+            );
+    }
+}
+
+function CoroaIconField({
+    icon,
+    children,
+    title,
+}: {
+    icon: CoroaTvIconKey;
+    children: React.ReactNode;
+    title?: string;
+}) {
+    return (
+        <div className="qa-coroa-field flex min-w-0 items-center gap-1.5" title={title}>
+            <span className="qa-coroa-field-icon flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[#00AEEC]">
+                <CoroaTvIcon type={icon} />
+            </span>
+            <div className="qa-coroa-field-text min-w-0 truncate leading-none">{children}</div>
+        </div>
+    );
+}
+
+function CoroaTimelinePill({
+    icon,
+    label,
+    time,
+    active = false,
+    muted = false,
+    skipped = false,
+}: {
+    icon: CoroaTvIconKey;
+    label: string;
+    time: string;
+    active?: boolean;
+    muted?: boolean;
+    skipped?: boolean;
+}) {
+    return (
+        <div
+            className="qa-coroa-stage-pill relative flex h-[34px] w-[34px] shrink-0 flex-col items-center justify-center text-center leading-none"
+            title={`${label} • ${skipped ? "Não se aplica" : time}`}
+        >
+            <div
+                className={`qa-coroa-stage-ring relative flex h-[21px] w-[21px] items-center justify-center rounded-full ${active
+                        ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]"
+                        : "border border-transparent"
+                    }`}
+            >
+                <div
+                    className={`qa-coroa-stage-icon relative flex h-[16px] w-[16px] items-center justify-center ${active
+                            ? "qa-status-blink text-[#22C55E]"
+                            : "text-[#00AEEC]"
+                        } ${muted ? "opacity-[0.14]" : ""}`}
+                    aria-hidden="true"
+                >
+                    <CoroaTvIcon type={icon} />
+                </div>
+            </div>
+
+            <div
+                className={`qa-coroa-stage-time mt-[2px] w-full truncate text-[8px] font-black leading-none tabular-nums ${muted
+                        ? "text-slate-500/35"
+                        : active
+                            ? "text-[#22C55E]"
+                            : "text-slate-100"
+                    }`}
+            >
+                {time}
+            </div>
+
+            {skipped && (
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[36px] font-semibold leading-none text-[#00AEEC]">
+                    ×
+                </span>
+            )}
+        </div>
+    );
+}
+
+function CoroaTimelineCell({
+    pedido,
+    nowMs,
+    variant = "desktop",
+}: {
+    pedido: CoroaTvPedido;
+    nowMs: number;
+    variant?: "desktop" | "mobile";
+}) {
+    const data = buildCoroaTimeline(pedido, nowMs);
+
+    const etapas = [
+        {
+            key: "aguardando",
+            icon: "hourglass" as CoroaTvIconKey,
+            label: "Aguardando",
+            ms: data.aguardandoMs,
+            active: data.aguardandoActive,
+            skipped: false,
+        },
+        {
+            key: "coroa",
+            icon: "flower" as CoroaTvIconKey,
+            label: "Confecção da Coroa",
+            ms: data.coroaMs,
+            active: data.coroaActive,
+            skipped: data.coroaSkipped,
+        },
+        {
+            key: "faixa",
+            icon: "ribbon" as CoroaTvIconKey,
+            label: "Confecção da Faixa",
+            ms: data.faixaMs,
+            active: data.faixaActive,
+            skipped: false,
+        },
+        {
+            key: "concluida",
+            icon: "check" as CoroaTvIconKey,
+            label: "Concluída",
+            ms: data.concluidaMs,
+            active: data.concluidaActive,
+            skipped: false,
+        },
+    ];
+
+    if (variant === "mobile") {
+        return (
+            <div className="qa-coroa-timeline flex min-w-0 items-center justify-end gap-1 overflow-hidden">
+                {etapas.map((etapa) => {
+                    const temTempo = etapa.ms > 0;
+                    return (
+                        <CoroaTimelinePill
+                            key={etapa.key}
+                            icon={etapa.icon}
+                            label={etapa.label}
+                            time={
+                                etapa.skipped
+                                    ? "00:00"
+                                    : temTempo
+                                        ? formatDurationMs(etapa.ms)
+                                        : "00:00"
+                            }
+                            active={etapa.active}
+                            muted={!etapa.active && !temTempo}
+                            skipped={etapa.skipped}
+                        />
+                    );
+                })}
+                <StatusBlinkStyle />
+            </div>
+        );
+    }
+
+    return (
+        <div className="qa-coroa-timeline flex min-w-0 items-center justify-start gap-1 overflow-visible">
+            {etapas.map((etapa) => {
+                const temTempo = etapa.ms > 0;
+
+                return (
+                    <CoroaTimelinePill
+                        key={etapa.key}
+                        icon={etapa.icon}
+                        label={etapa.label}
+                        time={
+                            etapa.skipped
+                                ? "00:00"
+                                : temTempo
+                                    ? formatDurationMs(etapa.ms)
+                                    : "00:00"
+                        }
+                        active={etapa.active}
+                        muted={!etapa.active && !temTempo}
+                        skipped={etapa.skipped}
+                    />
+                );
+            })}
+
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+const CoroasTvBoard = React.memo(function CoroasTvBoard({
+    pedidos,
+    error,
+    nowMs,
+}: {
+    pedidos: CoroaTvPedido[];
+    error?: string | null;
+    nowMs: number;
+}) {
+    return (
+        <section className="qa-coroas-board shrink-0 overflow-hidden rounded-xl border qa-panel-premium">
+            <div className="qa-coroa-titlebar flex h-8 items-center justify-between gap-3 border-b border-slate-700/50 bg-slate-800/45 px-3">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="qa-coroa-iconbox flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#00AEEC]/35 bg-[#00AEEC]/10 p-0.5 text-[#00AEEC]">
+                        <CoroaTvIcon type="flower" />
+                    </span>
+
+                    <div className="min-w-0">
+                        <div className="qa-coroa-title truncate text-[12px] font-bold text-slate-100">
+                            Coroas de Flores em Confecção
                         </div>
+                    </div>
 
-                        <div className="space-y-4 p-4">
-                            <ImageUploadButtons
-                                disabled={manualActionLoading}
-                                onFile={selecionarFotoFinalizacao}
-                            />
+                    <span className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 px-1.5 py-0.5 text-[9px] font-black text-slate-200">
+                        {pedidos.length}
+                    </span>
+                </div>
 
-                            {finalizarPreview && (
-                                <div className="overflow-hidden rounded-lg border bg-muted/20">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                        src={finalizarPreview}
-                                        alt="Prévia da coroa pronta"
-                                        className="max-h-[55vh] w-full object-contain"
+                <div className="flex shrink-0 items-center gap-2 text-[9px] qa-text-muted">
+                    {error ? (
+                        <>
+                            <span className="h-2 w-2 rounded-full bg-amber-400" />
+                            <span className="hidden sm:inline">Últimos dados mantidos</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                            <span className="hidden sm:inline">Atualizado</span>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Desktop/TV — modelo, falecido, entrega, pagamento e timeline */}
+            <div className="hidden sm:block">
+                <div className="qa-coroa-head grid h-7 grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[9px] font-bold leading-none text-slate-400">
+                    <div>Coroa(s)</div>
+                    <div>Falecido(a)</div>
+                    <div>Entrega</div>
+                    <div>Pagamento</div>
+                    <div>Status</div>
+                </div>
+
+                {pedidos.length === 0 ? (
+                    <div className="flex h-14 items-center justify-center text-[11px] qa-text-muted">
+                        Nenhuma coroa em confecção no momento.
+                    </div>
+                ) : (
+                    <div>
+                        {pedidos.map((pedido) => {
+                            const modelo = coroaModelos(pedido);
+                            const solicitante = shown(pedido.solicitante, "a definir");
+
+                            return (
+                                <div
+                                    key={pedido.id}
+                                    className="qa-coroa-row grid h-[42px] min-h-[42px] grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 overflow-hidden border-b border-slate-700/45 px-4 py-1 text-[10px] leading-none text-slate-100 last:border-b-0"
+                                >
+                                    {/* Coroa: nome do modelo + solicitante abaixo */}
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField icon="flower" title={modelo}>
+                                            <span className="block truncate font-semibold text-slate-100">
+                                                {modelo}
+                                            </span>
+                                        </CoroaIconField>
+
+                                        <div
+                                            className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted"
+                                            title={`Solicitante: ${solicitante}`}
+                                        >
+                                            {solicitante}
+                                        </div>
+                                    </div>
+
+                                    {/* Falecido antes de Entrega */}
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="coffin"
+                                            title={shown(pedido.falecido, "a definir")}
+                                        >
+                                            <span className="block truncate font-medium text-slate-200">
+                                                {shown(pedido.falecido, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="pin"
+                                            title={shown(pedido.local_entrega, "a definir")}
+                                        >
+                                            <span className="block truncate font-medium text-slate-200">
+                                                {shown(pedido.local_entrega, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-hidden">
+                                        <span
+                                            className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
+                                                pedido
+                                            )}`}
+                                        >
+                                            <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
+                                                <CoroaTvIcon type="wallet" />
+                                            </span>
+                                            <span>{coroaPagamentoLabel(pedido)}</span>
+                                        </span>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-visible">
+                                        <CoroaTimelineCell
+                                            pedido={pedido}
+                                            nowMs={nowMs}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Mobile — mesmas informações essenciais e timeline */}
+            <div className="grid gap-2 p-2 sm:hidden">
+                {pedidos.length === 0 ? (
+                    <div className="rounded-xl border border-slate-700/50 bg-slate-950/35 p-3 text-center text-xs qa-text-muted">
+                        Nenhuma coroa em confecção.
+                    </div>
+                ) : (
+                    pedidos.map((pedido) => {
+                        const modelo = coroaModelos(pedido);
+                        const solicitante = shown(pedido.solicitante, "a definir");
+
+                        return (
+                            <article
+                                key={pedido.id}
+                                className="qa-coroa-mobile-card overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/35 p-2.5"
+                            >
+                                <div className="min-w-0">
+                                    <CoroaIconField icon="flower" title={modelo}>
+                                        <span className="block truncate font-semibold text-slate-100">
+                                            {modelo}
+                                        </span>
+                                    </CoroaIconField>
+                                    <div className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted">
+                                        {solicitante}
+                                    </div>
+                                </div>
+
+                                <div className="mt-2 grid min-w-0 grid-cols-2 gap-2 text-[10px]">
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="coffin"
+                                            title={shown(pedido.falecido, "a definir")}
+                                        >
+                                            <span className="block truncate">
+                                                {shown(pedido.falecido, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="pin"
+                                            title={shown(pedido.local_entrega, "a definir")}
+                                        >
+                                            <span className="block truncate">
+                                                {shown(pedido.local_entrega, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+                                </div>
+
+                                <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
+                                    <span
+                                        className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
+                                            pedido
+                                        )}`}
+                                    >
+                                        <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
+                                            <CoroaTvIcon type="wallet" />
+                                        </span>
+                                        {coroaPagamentoLabel(pedido)}
+                                    </span>
+
+                                    <CoroaTimelineCell
+                                        pedido={pedido}
+                                        nowMs={nowMs}
+                                        variant="mobile"
                                     />
                                 </div>
-                            )}
+                            </article>
+                        );
+                    })
+                )}
+            </div>
+        </section>
+    );
+});
 
-                            {finalizarFile && (
-                                <div className="text-xs text-muted-foreground">
-                                    {finalizarFile.name}
-                                </div>
-                            )}
+/* ===== Componentes auxiliares ===== */
+function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
+    return (
+        <section className="rounded-xl border border-slate-700/60 bg-slate-950/35 p-3">
+            <div className="flex items-start justify-between gap-2">
+                <h4 className="mb-3 text-xs font-bold tracking-wide text-slate-300">{title}</h4>
+                {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
+            </div>
+            {children}
+        </section>
+    );
+}
 
-                            {finalizarError && (
-                                <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                    {finalizarError}
-                                </div>
-                            )}
-                        </div>
+function Field({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
+    return (
+        <div className={`flex items-baseline gap-2 ${className}`}>
+            <span className="min-w-[120px] shrink-0 text-xs font-bold text-slate-400">{label}:</span>
+            <span className="min-w-0 text-xs font-semibold text-slate-100 break-words [overflow-wrap:anywhere]">{value}</span>
+        </div>
+    );
+}
 
-                        <div className="flex justify-end gap-2 border-t px-4 py-3">
-                            <button
-                                type="button"
-                                className="rounded-md border px-4 py-2 text-sm"
-                                disabled={manualActionLoading}
-                                onClick={() => {
-                                    setFinalizarOpen(false);
-                                    setFinalizarFile(null);
-                                    limparPreviewFinalizacao();
-                                    setFinalizarError(null);
-                                }}
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                type="button"
-                                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                                disabled={manualActionLoading || !finalizarFile}
-                                onClick={confirmarFinalizacaoManual}
-                            >
-                                {manualActionLoading ? "Finalizando..." : "Confirmar Coroa Finalizada"}
-                            </button>
-                        </div>
+function EtapasInlineDots({ filled }: { filled: boolean[] }) {
+    return (
+        <div className="qa-etapas-dots flex items-center gap-1" title="Etapas preenchidas">
+            {[0, 1, 2, 3].map((k) => (
+                <span
+                    key={k}
+                    className={`qa-etapa-dot h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                        }`}
+                />
+            ))}
+        </div>
+    );
+}
+
+function StatusTimelineCell({
+    registro,
+    logs,
+    nowMs,
+    variant = "desktop",
+}: {
+    registro: Registro;
+    logs?: LogItem[];
+    nowMs: number;
+    variant?: "desktop" | "mobile";
+}) {
+    const segments = buildStatusSegments(registro, logs, nowMs);
+    const firstStart = segments[0]?.start ?? nowMs;
+    const totalMs = Math.max(0, nowMs - firstStart);
+    const current = segments[segments.length - 1];
+
+    const { durations, activeKey } = getStatusDisplayData(segments);
+
+    if (variant === "mobile") {
+        const activeStep = STATUS_STEPS.find((step) => step.key === activeKey) ?? STATUS_STEPS[0];
+        const activeDuration = durations.get(activeStep.key) ?? 0;
+        return (
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                <StatusPill icon={activeStep.icon} label={activeStep.shortLabel} time={formatDurationMs(activeDuration)} active={!!activeKey} />
+                <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total />
+                <StatusBlinkStyle />
+            </div>
+        );
+    }
+
+    return (
+        <div className="-ml-6 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1">
+            {STATUS_STEPS.map((step) => {
+                const duration = durations.get(step.key) ?? 0;
+                const skipped = isStatusStepSkipped(registro, step.key);
+                const isActive = !skipped && activeKey === step.key;
+                return (
+                    <StatusPill
+                        key={step.key}
+                        icon={step.icon}
+                        label={step.shortLabel}
+                        time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
+                        active={isActive}
+                        muted={!isActive && (duration <= 0 || skipped)}
+                        skipped={skipped}
+                        title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                    />
+                );
+            })}
+            <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
+    if (stepKey === "fase03") return isNao(registro.tanato);
+    if (stepKey === "fase05") return isNao((registro.ornamentacao_tipo ?? registro.ornamentacao) as string | undefined);
+    return false;
+}
+
+function StatusPill({
+    icon,
+    label,
+    time,
+    active = false,
+    muted = false,
+    total = false,
+    skipped = false,
+    title,
+}: {
+    icon: StatusIconKey;
+    label: string;
+    time: string;
+    active?: boolean;
+    muted?: boolean;
+    total?: boolean;
+    skipped?: boolean;
+    title?: string;
+}) {
+    return (
+        <div
+            className={`qa-status-pill relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
+            title={title ?? `${label} • ${time}`}
+        >
+            <div className={`qa-status-pill-ring relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`}>
+                <div
+                    className={`qa-status-pill-icon relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
+                    aria-hidden="true"
+                >
+                    <StatusIcon type={icon} />
+                </div>
+            </div>
+            <div className={`qa-status-pill-time mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-100"}`}>{time}</div>
+            {skipped && (
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
+                    ×
+                </span>
+            )}
+        </div>
+    );
+}
+
+function StatusIcon({ type }: { type: StatusIconKey }) {
+    const common = {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2.15,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+        className: "h-full w-full",
+    };
+
+    switch (type) {
+        case "hospital":
+            return (
+                <svg {...common}>
+                    <path d="M4 21V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V21" />
+                    <path d="M9 21v-5a3 3 0 0 1 6 0v5" />
+                    <path d="M12 7.5v5" />
+                    <path d="M9.5 10h5" />
+                    <path d="M6.5 21h11" />
+                </svg>
+            );
+        case "testTube":
+            return (
+                <svg {...common}>
+                    <path d="M10 2h7" />
+                    <path d="M14 2v6.6l4.5 7.8A3.7 3.7 0 0 1 15.3 22H8.7a3.7 3.7 0 0 1-3.2-5.6L10 8.6V2" />
+                    <path d="M8.2 15h7.6" />
+                </svg>
+            );
+        case "flower":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M12 4.5c1.7 1.7 1.7 3.3 0 5-1.7-1.7-1.7-3.3 0-5Z" />
+                    <path d="M12 19.5c-1.7-1.7-1.7-3.3 0-5 1.7 1.7 1.7 3.3 0 5Z" />
+                    <path d="M4.5 12c1.7-1.7 3.3-1.7 5 0-1.7 1.7-3.3 1.7-5 0Z" />
+                    <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
+                </svg>
+            );
+        case "coffin":
+            return (
+                <svg {...common}>
+                    <path d="M9 3h6l3 5-1.5 13h-9L6 8l3-5Z" />
+                    <path d="M12 7v8" />
+                    <path d="M9.8 10h4.4" />
+                </svg>
+            );
+        case "car":
+            return (
+                <svg {...common}>
+                    <path d="M5 16h14" />
+                    <path d="M6.5 16l1.4-5.2A3 3 0 0 1 10.8 8h2.4a3 3 0 0 1 2.9 2.8L17.5 16" />
+                    <circle cx="8" cy="17" r="2" />
+                    <circle cx="16" cy="17" r="2" />
+                    <path d="M9 12h6" />
+                </svg>
+            );
+        case "box":
+            return (
+                <svg {...common}>
+                    <path d="M4 8.5 12 4l8 4.5-8 4.5L4 8.5Z" />
+                    <path d="M4 8.5V16l8 4 8-4V8.5" />
+                    <path d="M12 13v7" />
+                    <path d="M8.2 6.2 16 10.6" />
+                </svg>
+            );
+        case "hourglass":
+            return (
+                <svg {...common}>
+                    <path d="M6 3h12" />
+                    <path d="M6 21h12" />
+                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
+                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
+                    <path d="M10 8h4" />
+                    <path d="M10 16h4" />
+                </svg>
+            );
+        case "timer":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="13" r="7" />
+                    <path d="M12 13V9" />
+                    <path d="M12 13l3 2" />
+                    <path d="M9 2h6" />
+                    <path d="M12 2v3" />
+                </svg>
+            );
+        default:
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+                </svg>
+            );
+    }
+}
+
+function StatusBlinkStyle() {
+    return (
+        <style jsx global>{`
+            @keyframes qa-status-pulse {
+                0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.95)); }
+                50% { opacity: 0.55; transform: scale(1.1); filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.9)); }
+            }
+            @keyframes qa-status-ring-pulse {
+                0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px rgba(34, 197, 94, 0.42); border-color: rgba(34, 197, 94, 0.92); }
+                50% { opacity: 0.72; transform: scale(1.07); box-shadow: 0 0 9px rgba(34, 197, 94, 0.68); border-color: rgba(34, 197, 94, 1); }
+            }
+            .qa-status-blink {
+                display: inline-block;
+                animation: qa-status-pulse 1.05s ease-in-out infinite;
+            }
+            .qa-status-active-ring {
+                animation: qa-status-ring-pulse 1.05s ease-in-out infinite;
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .qa-status-blink,
+                .qa-status-active-ring { animation: none !important; }
+            }
+        `}</style>
+    );
+}
+
+function EtapasRow({ registro }: { registro: Registro }) {
+    const preenchidas = etapasPreenchidas(registro);
+    const labels = ["D", "I", "V", "S"];
+    return (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            {labels.map((label, k) => (
+                <div key={k} className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className={`h-4 w-4 rounded-full border ${preenchidas[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/* ===== Linha do Tempo (Logs) ===== */
+function isLikelyBooleanMap(obj: Record<string, unknown>) {
+    const entries = Object.entries(obj);
+    if (entries.length === 0) return false;
+    let boolish = 0;
+    for (const [, v] of entries) {
+        const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
+        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
+    }
+    return boolish / entries.length >= 0.8;
+}
+
+function looksLikeMateriaisJson(s: string) {
+    const t = (s || "").toLowerCase();
+    return (t.includes('"nome"') && t.includes('"checked"')) || t.includes('"item');
+}
+
+function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: string }> {
+    const s = decodeHtmlEntitiesDeep(text).replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+
+    const out: Array<{ nome: string; qtd?: string }> = [];
+
+    const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
+    let m: RegExpExecArray | null;
+
+    while ((m = reNome.exec(s))) {
+        const nome = (m[1] || "").trim();
+        const near = s.slice(m.index, m.index + 260);
+        const qtd = near.match(/"?qtd"?\s*:\s*["']?([0-9]+(?:[.,][0-9]+)?)["']?/i)?.[1];
+        if (nome) out.push({ nome, qtd });
+    }
+
+    return out;
+}
+
+function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
+    const decoded = decodeHtmlEntitiesDeep(raw);
+    const trimmed = decoded.trim().replace(/^\s*json\s*:\s*/i, "").trim();
+
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        try {
+            return JSON.parse(trimmed);
+        } catch {
+            /* ignore */
+        }
+    }
+
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+        const slice = trimmed.slice(start, end + 1);
+        try {
+            return JSON.parse(slice);
+        } catch {
+            /* ignore */
+        }
+    }
+    return null;
+}
+
+function buildDetalhesNodes(raw: unknown): React.ReactNode {
+    if (raw == null || raw === "") return null;
+
+    let obj: unknown = raw;
+
+    if (typeof raw === "string") {
+        const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
+        if (parsed != null) obj = parsed;
+        else {
+            const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
+            return text ? (
+                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
+            ) : null;
+        }
+    }
+
+    if (isPlainObject(obj)) {
+        const plainObj = obj as Record<string, unknown>;
+
+        if (isLikelyBooleanMap(plainObj)) {
+            const arrItems = Object.entries(plainObj)
+                .filter(([, v]) => asBool(v))
+                .map(([k]) => titleCaseFromSnake(k));
+
+            return arrItems.length ? (
+                <div className="mt-3 w-full min-w-0">
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
+                        <div className="font-semibold mb-1">Arrumação:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {arrItems.map((t, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {t}
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 </div>
-            )}
+            ) : null;
+        }
 
-            {/* Ver pedido manual — mesmo padrão visual do pedido online */}
-            {manualPanel === "ver" && (
-                <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setManualPanel(null)} />
-                    <div className="absolute right-0 top-0 h-full w-full overflow-x-hidden overflow-y-auto bg-white shadow-xl md:max-w-xl">
-                        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
-                            <div>
-                                <div className="text-sm text-muted-foreground">Pedido manual</div>
-                                <div className="text-lg font-semibold">#{manualDetail?.id || "—"}</div>
-                            </div>
-                            <button
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setManualPanel(null)}
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
+        const arrItems: string[] = [];
+        const rows: { id: string; label: string; value: string }[] = [];
 
-                        {manualDetailLoading ? (
-                            <div className="p-4 text-sm text-muted-foreground">Carregando...</div>
-                        ) : manualDetail ? (
-                            <div className="space-y-4 p-4">
-                                {/* Fotos dos modelos */}
-                                {itensManual(manualDetail).some((item) => item.foto_produto_url) && (
-                                    <div className="space-y-3">
-                                        {itensManual(manualDetail).map((item, index) =>
-                                            item.foto_produto_url ? (
-                                                <div key={item.id || `${item.ordem}-${index}`} className="overflow-hidden rounded-lg border bg-white">
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img
-                                                        src={item.foto_produto_url}
-                                                        alt={item.modelo_coroa || `Coroa ${index + 1}`}
-                                                        className="w-full object-cover"
-                                                    />
-                                                    {itensManual(manualDetail).length > 1 && (
-                                                        <div className="border-t px-3 py-2 text-xs font-medium">
-                                                            Coroa {item.ordem || index + 1} — {item.modelo_coroa}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : null,
-                                        )}
-                                    </div>
-                                )}
+        for (const key of Object.keys(plainObj)) {
+            if (["materiais_json", "id", "acao"].includes(key)) continue;
 
-                                {/* Informações do pedido — mesma ordem do Online */}
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <div><b>Pedido:</b> {pedidoModelosManual(manualDetail)}</div>
-                                    <div><b>Origem:</b> {origemLabel(manualDetail.origem)}</div>
-                                    <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
-                                    <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
-                                    <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
-                                    <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
-                                    <div className="whitespace-pre-wrap"><b>Observações:</b> {manualDetail.observacoes || "—"}</div>
-                                    <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
-                                    <div className="whitespace-pre-wrap"><b>Frase da Coroa:</b> {pedidoFrasesManual(manualDetail)}</div>
-                                </div>
+            const value = plainObj[key];
 
-                                {/* Status do pedido */}
-                                <div className="rounded-lg border p-3">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(manualDetail.status)}`}>
-                                            {manualStatusLabel(manualDetail.status)}
+            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
+                for (const [k, v] of Object.entries(value)) {
+                    if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
+                }
+                continue;
+            }
+
+            const m = key.match(/^materiais_(.+?)_qtd$/i);
+            if (m) {
+                const valRaw = value;
+                if (valRaw != null && String(valRaw).trim() !== "") {
+                    const nomeBase = titleCaseFromSnake(m[1]);
+                    const nome = overrideCampoNome(m[1], nomeBase);
+                    const valFmt = formataSeDataIso(String(valRaw));
+                    rows.push({ id: key, label: nome, value: valFmt });
+                }
+                continue;
+            }
+
+            if (value == null) continue;
+            if (typeof value === "object") continue;
+
+            const valStr = decodeHtmlEntitiesDeep(String(value)).trim();
+            if (!valStr) continue;
+
+            let nome = key.replace(/_/g, " ");
+            nome = overrideCampoNome(key, titleCaseFromSnake(nome));
+            let valFmt = valStr;
+
+            const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
+            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
+                const map = maybeEmbedded as Record<string, unknown>;
+                const items = Object.entries(map)
+                    .filter(([, v]) => asBool(v))
+                    .map(([k]) => titleCaseFromSnake(k));
+                if (items.length) arrItems.push(...items);
+                continue;
+            }
+
+            if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
+            valFmt = formataSeDataIso(valFmt);
+
+            nome = substituirRotuloVisual(nome);
+            valFmt = substituirRotuloVisual(valFmt);
+
+            rows.push({ id: key, label: nome, value: valFmt });
+        }
+
+        if (rows.length === 0 && arrItems.length === 0) return null;
+
+        return (
+            <div className="mt-3 space-y-2 w-full min-w-0">
+                {arrItems.length > 0 && (
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
+                        <div className="font-semibold mb-1">Arrumação:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {[...new Set(arrItems)].map((t, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {t}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+                {rows.map((row) => (
+                    <div
+                        key={row.id}
+                        className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0"
+                    >
+                        <span className="font-semibold">{row.label}: </span>
+                        <span className="break-words [overflow-wrap:anywhere]">{row.value}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+
+    const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
+    return text.trim() ? (
+        <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
+    ) : null;
+}
+
+function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
+    if (!logs || logs.length === 0) {
+        return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
+    }
+
+    return (
+        <div className="space-y-2 w-full min-w-0 overflow-x-hidden">
+            {logs.map((ent, i) => {
+                const acao = ent.acao ? capitalize(ent.acao) : "";
+                const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
+                const detalhes = buildDetalhesNodes(ent.detalhes);
+
+                return (
+                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
+
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
+
+                                <div className="text-sm flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="break-words [overflow-wrap:anywhere]">{acao}</span>
+                                    {statusLabel && (
+                                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary break-words [overflow-wrap:anywhere]">
+                                            {statusLabel}
                                         </span>
-                                        <div className="text-xs text-muted-foreground">
-                                            Criado em {formatDate(manualDetail.criado_em)} — Total <b>{totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</b>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Pagamento e comprovante ficam no Ver */}
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-2 font-medium">Pagamento</div>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                                        <div>
-                                            <div className="mb-1 text-xs font-medium">Status</div>
-                                            <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${pagamentoAutomaticoClass(manualDetail)}`}>
-                                                {pagamentoAutomaticoManual(manualDetail)}
-                                            </span>
-                                        </div>
-
-                                        <div>
-                                            <div className="mb-1 text-xs font-medium">Comprovante</div>
-                                            <ComprovanteUploadButtons
-                                                disabled={manualActionLoading}
-                                                onFile={anexarComprovanteManual}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {manualDetail.comprovante_url && (
-                                        comprovanteEhPdf(manualDetail) ? (
-                                            <a
-                                                href={manualDetail.comprovante_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="mt-3 flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm hover:bg-muted/40"
-                                            >
-                                                <div className="min-w-0">
-                                                    <div className="font-medium">Comprovante em PDF</div>
-                                                    <div className="truncate text-xs text-muted-foreground">
-                                                        {manualDetail.comprovante_nome || "Abrir arquivo"}
-                                                    </div>
-                                                </div>
-                                                <span className="shrink-0 text-blue-600">Abrir</span>
-                                            </a>
-                                        ) : (
-                                            <a
-                                                href={manualDetail.comprovante_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="mt-3 block overflow-hidden rounded-lg border"
-                                            >
-                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
-                                                    src={manualDetail.comprovante_url}
-                                                    alt="Comprovante"
-                                                    className="max-h-72 w-full object-contain bg-muted/20"
-                                                />
-                                            </a>
-                                        )
                                     )}
                                 </div>
 
-                                {/* Foto final, somente visualização */}
-                                {manualDetail.foto_coroa_url && (
-                                    <div className="rounded-lg border p-3">
-                                        <div className="mb-2 font-medium">Coroa Pronta</div>
-                                        <a
-                                            href={manualDetail.foto_coroa_url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="block overflow-hidden rounded-lg border"
-                                        >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={manualDetail.foto_coroa_url}
-                                                alt="Coroa pronta"
-                                                className="max-h-96 w-full object-contain bg-muted/20"
-                                            />
-                                        </a>
+                                {usuarioVisivel && (
+                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                        Usuário: {ent.usuario ?? ""}
                                     </div>
                                 )}
 
-                                {manualDetailMsg && (
-                                    <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                        {manualDetailMsg}
-                                    </div>
-                                )}
-
-                                {/* Mesmo padrão de utilidades do pedido online */}
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                                        onClick={copyManualToClipboard}
-                                    >
-                                        <IconCopy className="size-4" />
-                                        {manualCopied ? "Copiado!" : "Copiar Pedido"}
-                                    </button>
-
-                                    {itensManual(manualDetail)
-                                        .filter((item) => Boolean(item.foto_produto_url))
-                                        .map((item, index, fotos) => (
-                                            <button
-                                                key={`share-${item.id || item.ordem || index}`}
-                                                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                                                onClick={() => item.foto_produto_url && shareImageUrl(item.foto_produto_url)}
-                                            >
-                                                <IconPhoto className="size-4" />
-                                                {fotos.length === 1
-                                                    ? "Compartilhar Foto"
-                                                    : `Compartilhar Foto ${index + 1}`}
-                                            </button>
-                                        ))}
-
-                                    {manualDetail.foto_coroa_url && (
-                                        <button
-                                            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                                            onClick={() => manualDetail.foto_coroa_url && shareImageUrl(manualDetail.foto_coroa_url)}
-                                        >
-                                            <IconPhoto className="size-4" />
-                                            Compartilhar Foto Final
-                                        </button>
-                                    )}
-                                </div>
+                                {detalhes}
                             </div>
-                        ) : (
-                            <div className="p-4 text-sm text-rose-600">
-                                {manualDetailMsg || "Pedido não encontrado."}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Drawer online — mantém a experiência existente */}
-            {open && (
-                <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-0 h-full w-full overflow-auto bg-white shadow-xl md:max-w-xl">
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-sm text-muted-foreground">Pedido</div>
-                                <div className="text-lg font-semibold">#{detail?.number || detail?.id || "—"}</div>
-                            </div>
-                            <button className="rounded-md p-2 hover:bg-muted" onClick={() => setOpen(false)}>
-                                <IconX className="size-5" />
-                            </button>
                         </div>
-
-                        {!detail || detailLoading ? (
-                            <div className="p-4 text-sm text-muted-foreground">Carregando…</div>
-                        ) : (
-                            <div className="space-y-4 p-4">
-                                {detailImage && (
-                                    <div className="overflow-hidden rounded-lg border bg-white">
-                                        <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
-                                    </div>
-                                )}
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <div><b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}</div>
-                                    <div><b>Origem:</b> Loja On-line</div>
-                                    <div><b>Cliente:</b> {(detail.billing?.first_name || "") + " " + (detail.billing?.last_name || "")}</div>
-                                    <div><b>Telefone:</b> {detail.billing?.phone || "—"}</div>
-                                    <div><b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}</div>
-                                    <div><b>Local de Entrega:</b> {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}</div>
-                                    <div>
-                                        <b>Falecido(a):</b>{" "}
-                                        {findMetaValue(detail.meta_data, ["shipping_falecido_nome", "falecido_nome", "nome_falecido", "nome_do_falecido"]) || detail.shipping?.first_name || "—"}
-                                    </div>
-                                    <div>
-                                        <b>Frase da Coroa:</b>{" "}
-                                        {findMetaValue(detail.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
-                                            findMetaValue(detail.line_items?.flatMap((li) => li.meta_data || []), ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
-                                            "—"}
-                                    </div>
-                                </div>
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                        <span className={`w-fit rounded-full border px-2 py-0.5 text-xs ${clsWcStatusBadge(detail.status)}`}>
-                                            {WC_STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
-                                        </span>
-                                        <div className="flex flex-wrap gap-2">
-                                            {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
-                                                <button
-                                                    key={s}
-                                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                                    onClick={() => updateStatus(detail.id, s)}
-                                                    disabled={updating || detail.status === s}
-                                                >
-                                                    <IconCheck className="size-4" />
-                                                    {WC_STATUS_OPTIONS.find((o) => o.value === s)?.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                        Criado em {formatDate(detail.date_created)} — Total <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <button className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm" onClick={copyDetailToClipboard}>
-                                        <IconCopy className="size-4" /> {copied ? "Copiado!" : "Copiar Pedido"}
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-                                        onClick={() => detailImage && shareImageUrl(detailImage)}
-                                        disabled={!detailImage}
-                                    >
-                                        <IconPhoto className="size-4" /> Compartilhar Foto
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-                                        onClick={() => detail && notifyWhatsApp(detail.id)}
-                                        disabled={!canNotifyDetail}
-                                        title={canNotifyDetail ? "Compartilhar mensagem" : "Só é possível notificar pedidos Concluídos."}
-                                    >
-                                        <IconSend className="size-4" /> Notificar (WhatsApp)
-                                    </button>
-                                </div>
-                            </div>
-                        )}
                     </div>
-                </div>
-            )}
+                );
+            })}
         </div>
     );
 }
