@@ -174,17 +174,6 @@ type DetailResp = {
 };
 
 /**
- * Resposta padrão para operações que alteram dados, como cancelar requisição
- * ou confirmar recebimento.
- */
-type MutResp = {
-    ok: boolean;
-    msg?: string;
-    row?: ReqDetalhe;
-    need_login?: 1;
-};
-
-/**
  * URL base do servidor da API.
  *
  * Mantida separada para facilitar manutenção caso o domínio mude no futuro.
@@ -355,24 +344,6 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
 }
 
 /**
- * Helper para chamadas POST ao endpoint de requisições.
- *
- * Envia o corpo como JSON e mantém `credentials: "include"` para que a API
- * identifique o usuário logado pela sessão.
- */
-async function apiPost<T>(body: Record<string, unknown>) {
-    const r = await fetch(API_BASE, {
-        method: "POST",
-        cache: "no-store",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-    });
-
-    return await safeJson<T>(r);
-}
-
-/**
  * Componente base para cartões visuais da página.
  *
  * Centraliza o estilo comum de borda, fundo, sombra e arredondamento. Isso evita
@@ -406,25 +377,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     return (
         <input
-            {...props}
-            className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
-                "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
-                props.className || "",
-            ].join(" ")}
-        />
-    );
-}
-
-/**
- * Textarea padronizado.
- *
- * Usado no modal de cancelamento para o usuário informar o motivo. Assim como o
- * TextInput, aceita props nativas e permite sobrescrever ou adicionar classes.
- */
-function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-    return (
-        <textarea
             {...props}
             className={[
                 "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
@@ -596,31 +548,21 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 }
 
 /**
- * Card individual da listagem de solicitações.
+ * Card individual do histórico de solicitações.
  *
- * Este componente recebe uma linha resumida da API e decide quais informações
- * mostrar e quais ações estão disponíveis para o status atual.
- *
- * Regras de ação:
- * `PENDENTE` e `EM_SEPARACAO` podem ser canceladas pelo solicitante.
- * `EM_TRANSITO` pode ter recebimento confirmado.
+ * Esta tela é somente consulta. Alterações de estado, cancelamento e confirmação
+ * de recebimento ficam na página /requisicao.
  */
 function RequestCard({
     row,
     statusOptions,
     onOpen,
-    onCancel,
-    onReceive,
 }: {
     row: ReqListRow;
     statusOptions: StatusOption[];
     onOpen: (id: ID) => void;
-    onCancel: (row: ReqListRow) => void;
-    onReceive: (row: ReqListRow) => void;
 }) {
     const status = String(row.status);
-    const canCancel = status === "PENDENTE" || status === "EM_SEPARACAO";
-    const canReceive = status === "EM_TRANSITO";
     const atrasada = Number(row.atrasada_24h || 0) === 1;
 
     return (
@@ -636,7 +578,11 @@ function RequestCard({
                         <p className="mt-1 text-xs text-slate-500">Aberta em {fmtDateTime(row.criado_em)}</p>
                     </div>
 
-                    <button type="button" onClick={() => onOpen(row.id)} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+                    <button
+                        type="button"
+                        onClick={() => onOpen(row.id)}
+                        className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
                         Ver
                     </button>
                 </div>
@@ -664,22 +610,13 @@ function RequestCard({
 
                 {row.justificativa ? <p className="line-clamp-2 text-sm leading-5 text-slate-600">{row.justificativa}</p> : null}
 
-                {status === "RECUSADA" && row.motivo_recusa ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{row.motivo_recusa}</div> : null}
-                {status === "CANCELADA" && row.motivo_cancelamento ? <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{row.motivo_cancelamento}</div> : null}
+                {status === "RECUSADA" && row.motivo_recusa ? (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{row.motivo_recusa}</div>
+                ) : null}
 
-                <div className="flex flex-col gap-2 sm:flex-row">
-                    {canReceive ? (
-                        <Button type="button" onClick={() => onReceive(row)} className="w-full">
-                            Confirmar recebimento
-                        </Button>
-                    ) : null}
-
-                    {canCancel ? (
-                        <Button type="button" variant="ghost" onClick={() => onCancel(row)} className="w-full">
-                            Cancelar minha requisição
-                        </Button>
-                    ) : null}
-                </div>
+                {status === "CANCELADA" && row.motivo_cancelamento ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{row.motivo_cancelamento}</div>
+                ) : null}
             </div>
         </Card>
     );
@@ -824,133 +761,27 @@ function DetailModal({
 }
 
 /**
- * Modal de cancelamento da solicitação.
+ * Página de histórico das solicitações do usuário logado.
  *
- * O usuário precisa informar um motivo antes de confirmar. Esse motivo é enviado
- * para a API e deve ficar registrado no histórico da requisição.
- *
- * Este componente não executa a operação diretamente. Ele apenas coleta o motivo
- * e chama `onConfirm`, deixando a página principal responsável pela chamada POST.
- */
-function CancelModal({
-    open,
-    row,
-    motivo,
-    setMotivo,
-    saving,
-    onClose,
-    onConfirm,
-}: {
-    open: boolean;
-    row: ReqListRow | null;
-    motivo: string;
-    setMotivo: (v: string) => void;
-    saving: boolean;
-    onClose: () => void;
-    onConfirm: () => void;
-}) {
-    return (
-        <Modal open={open} title="Cancelar solicitação" subtitle={row ? reqCode(row) : undefined} onClose={onClose}>
-            <div className="space-y-4">
-                <p className="text-sm leading-5 text-slate-600">Informe o motivo do cancelamento para registrar no histórico da requisição.</p>
-
-                <Field label="Motivo do cancelamento">
-                    <TextArea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={4} placeholder="Digite o motivo" autoFocus />
-                </Field>
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                    <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
-                        Voltar
-                    </Button>
-                    <Button type="button" variant="danger" onClick={onConfirm} disabled={saving || !motivo.trim()}>
-                        {saving ? "Cancelando..." : "Confirmar cancelamento"}
-                    </Button>
-                </div>
-            </div>
-        </Modal>
-    );
-}
-
-/**
- * Página principal de "Minhas Solicitações".
- *
- * Responsabilidades:
- * 1. Carregar usuário logado e opções de status.
- * 2. Listar as requisições do usuário.
- * 3. Aplicar filtro por status e busca textual.
- * 4. Abrir detalhes de uma requisição.
- * 5. Permitir cancelamento quando o status permitir.
- * 6. Permitir confirmação de recebimento quando a requisição estiver em trânsito.
+ * Esta página não altera o fluxo da requisição. Ela apenas lista, filtra e abre
+ * os detalhes. Cancelamento e confirmação de recebimento ficam em /requisicao.
  */
 export default function MinhasSolicitacoesPage() {
-    /**
-     * Dados do usuário logado.
-     *
-     * Usado apenas para exibir o usuário no cabeçalho.
-     */
     const [me, setMe] = useState<Me | null>(null);
-
-    /**
-     * Lista de status disponível para filtro e badges.
-     *
-     * Começa com o fallback local e pode ser substituída pela lista retornada
-     * pela API no carregamento inicial.
-     */
     const [statusOptions, setStatusOptions] = useState<StatusOption[]>(STATUS_FALLBACK);
 
-    /**
-     * Estados de carregamento e feedback.
-     *
-     * `loadingInit` controla o carregamento dos dados iniciais.
-     * `loadingRows` controla o carregamento da listagem.
-     * `saving` bloqueia ações enquanto uma mutação está em andamento.
-     * `err` exibe mensagens de erro.
-     * `okMsg` exibe mensagens de sucesso.
-     */
     const [loadingInit, setLoadingInit] = useState(true);
     const [loadingRows, setLoadingRows] = useState(false);
-    const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
-    const [okMsg, setOkMsg] = useState("");
 
-    /**
-     * Dados da listagem e filtros.
-     *
-     * `rows` armazena as solicitações retornadas pela API.
-     * `filtroStatus` guarda o status selecionado no filtro.
-     * `filtroQ` guarda o texto livre da busca.
-     */
     const [rows, setRows] = useState<ReqListRow[]>([]);
     const [filtroStatus, setFiltroStatus] = useState<string>("");
     const [filtroQ, setFiltroQ] = useState("");
 
-    /**
-     * Estados do modal de detalhes.
-     *
-     * `detailOpen` controla se o modal está aberto.
-     * `detailLoading` indica se a requisição detalhada ainda está carregando.
-     * `detail` armazena os dados completos da requisição selecionada.
-     */
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detail, setDetail] = useState<ReqDetalhe | null>(null);
 
-    /**
-     * Estados do modal de cancelamento.
-     *
-     * `cancelRow` guarda qual requisição será cancelada.
-     * `cancelMotivo` guarda o texto digitado pelo usuário.
-     */
-    const [cancelOpen, setCancelOpen] = useState(false);
-    const [cancelRow, setCancelRow] = useState<ReqListRow | null>(null);
-    const [cancelMotivo, setCancelMotivo] = useState("");
-
-    /**
-     * Carrega informações iniciais da página.
-     *
-     * Chama a API com `action: "init"` para buscar usuário logado e status.
-     * Em caso de falha, mostra mensagem de erro na tela.
-     */
     const loadInit = useCallback(async () => {
         setLoadingInit(true);
         setErr("");
@@ -969,13 +800,6 @@ export default function MinhasSolicitacoesPage() {
         }
     }, []);
 
-    /**
-     * Carrega as solicitações do usuário logado.
-     *
-     * Envia para a API os filtros atuais de status e busca. Valores vazios são
-     * convertidos para `undefined`, permitindo que o helper `apiGet` ignore esses
-     * parâmetros na URL.
-     */
     const loadMinhas = useCallback(async () => {
         setLoadingRows(true);
         setErr("");
@@ -988,40 +812,24 @@ export default function MinhasSolicitacoesPage() {
                 limit: 120,
             });
 
-            if (!data.ok) throw new Error(data.msg || "Falha ao carregar suas solicitações.");
+            if (!data.ok) throw new Error(data.msg || "Falha ao carregar seu histórico.");
 
             setRows(data.rows || []);
         } catch (e: any) {
-            setErr(e?.message || "Não foi possível carregar suas solicitações.");
+            setErr(e?.message || "Não foi possível carregar seu histórico.");
         } finally {
             setLoadingRows(false);
         }
     }, [filtroQ, filtroStatus]);
 
-    /**
-     * Efeito executado uma única vez ao abrir a página.
-     *
-     * Carrega dados iniciais e a primeira listagem. A dependência é mantida vazia
-     * intencionalmente para não recarregar automaticamente a cada alteração nos
-     * filtros. Os filtros são aplicados manualmente pelo botão Atualizar ou pela
-     * tecla Enter no campo de busca.
-     */
     useEffect(() => {
         void loadInit();
         void loadMinhas();
 
-        // Carrega uma vez ao abrir a página.
-        // Os filtros são aplicados pelo botão Atualizar ou pela tecla Enter na busca.
+        // Os filtros são aplicados manualmente.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    /**
-     * Abre o modal de detalhes de uma requisição.
-     *
-     * Primeiro abre o modal em estado de carregamento, depois busca os detalhes
-     * na API usando `action: "detalhar"`. Se a API falhar, fecha o modal e mostra
-     * a mensagem de erro na página.
-     */
     async function openDetail(id: ID) {
         setDetailOpen(true);
         setDetailLoading(true);
@@ -1029,9 +837,11 @@ export default function MinhasSolicitacoesPage() {
         setErr("");
 
         try {
-            const data = await apiGet<DetailResp>({ action: "detalhar", id });
+            const data = await apiGet<DetailResp>({ action: "detalhar_minha", id });
 
-            if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível abrir a requisição.");
+            if (!data.ok || !data.row) {
+                throw new Error(data.msg || "Não foi possível abrir a requisição.");
+            }
 
             setDetail(data.row);
         } catch (e: any) {
@@ -1042,98 +852,6 @@ export default function MinhasSolicitacoesPage() {
         }
     }
 
-    /**
-     * Prepara a abertura do modal de cancelamento.
-     *
-     * Limpa mensagens anteriores, define a requisição selecionada e zera o campo
-     * de motivo para evitar reaproveitar texto de outro cancelamento.
-     */
-    function askCancel(row: ReqListRow) {
-        setErr("");
-        setOkMsg("");
-        setCancelRow(row);
-        setCancelMotivo("");
-        setCancelOpen(true);
-    }
-
-    /**
-     * Confirma o cancelamento da requisição selecionada.
-     *
-     * Valida se existe uma requisição selecionada e se o motivo foi preenchido.
-     * Depois envia a operação para a API com `action: "cancelar_minha"`.
-     *
-     * Ao concluir com sucesso, fecha o modal, limpa o formulário, exibe mensagem
-     * positiva e recarrega a listagem para refletir o novo status.
-     */
-    async function confirmCancel() {
-        if (!cancelRow || saving) return;
-
-        const motivo = cancelMotivo.trim();
-
-        if (!motivo) {
-            setErr("Informe o motivo do cancelamento.");
-            return;
-        }
-
-        setSaving(true);
-        setErr("");
-        setOkMsg("");
-
-        try {
-            const data = await apiPost<MutResp>({ action: "cancelar_minha", id: cancelRow.id, motivo });
-
-            if (!data.ok) throw new Error(data.msg || "Não foi possível cancelar.");
-
-            setCancelOpen(false);
-            setCancelRow(null);
-            setCancelMotivo("");
-            setOkMsg(data.msg || "Requisição cancelada.");
-
-            await loadMinhas();
-        } catch (e: any) {
-            setErr(e?.message || "Não foi possível cancelar a requisição.");
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    /**
-     * Confirma o recebimento de uma requisição em trânsito.
-     *
-     * Antes de enviar, usa `window.confirm` como proteção contra clique acidental.
-     * Se o usuário confirmar, chama a API com `action: "confirmar_recebimento"`
-     * e atualiza a listagem após sucesso.
-     */
-    async function receiveReq(row: ReqListRow) {
-        const ok = window.confirm(`Confirmar recebimento de ${reqCode(row)}?`);
-
-        if (!ok) return;
-
-        setSaving(true);
-        setErr("");
-        setOkMsg("");
-
-        try {
-            const data = await apiPost<MutResp>({ action: "confirmar_recebimento", id: row.id });
-
-            if (!data.ok) throw new Error(data.msg || "Não foi possível confirmar o recebimento.");
-
-            setOkMsg(data.msg || "Recebimento confirmado.");
-
-            await loadMinhas();
-        } catch (e: any) {
-            setErr(e?.message || "Não foi possível confirmar o recebimento.");
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    /**
-     * Limpa os filtros visuais.
-     *
-     * Esta função apenas limpa os estados locais. A listagem só será recarregada
-     * quando o usuário clicar em Atualizar ou pressionar Enter na busca.
-     */
     function clearFilters() {
         setFiltroStatus("");
         setFiltroQ("");
@@ -1153,7 +871,7 @@ export default function MinhasSolicitacoesPage() {
 
                         <div className="min-w-0">
                             <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">Minhas Solicitações</h1>
-                            <p className="mt-1 text-sm text-slate-500">Acompanhe suas requisições e confirme recebimentos.</p>
+                            <p className="mt-1 text-sm text-slate-500">Histórico das suas requisições.</p>
                         </div>
                     </div>
 
@@ -1167,8 +885,11 @@ export default function MinhasSolicitacoesPage() {
 
                 {loadingInit ? <Card className="mb-4 p-6 text-center text-sm text-slate-500">Carregando dados...</Card> : null}
 
-                {err ? <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">{err}</div> : null}
-                {okMsg ? <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{okMsg}</div> : null}
+                {err ? (
+                    <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">
+                        {err}
+                    </div>
+                ) : null}
 
                 <div className="space-y-4">
                     <Card className="p-4">
@@ -1195,45 +916,40 @@ export default function MinhasSolicitacoesPage() {
                                 />
                             </Field>
 
-                            <Button type="button" variant="soft" onClick={loadMinhas} disabled={loadingRows || saving} className="w-full sm:w-auto">
+                            <Button type="button" variant="soft" onClick={loadMinhas} disabled={loadingRows} className="w-full sm:w-auto">
                                 {loadingRows ? "Atualizando..." : "Atualizar"}
                             </Button>
 
-                            <Button type="button" variant="ghost" onClick={clearFilters} disabled={loadingRows || saving} className="w-full sm:w-auto">
+                            <Button type="button" variant="ghost" onClick={clearFilters} disabled={loadingRows} className="w-full sm:w-auto">
                                 Limpar
                             </Button>
                         </div>
                     </Card>
 
                     {loadingRows ? (
-                        <Card className="p-6 text-center text-sm text-slate-500">Carregando suas solicitações...</Card>
+                        <Card className="p-6 text-center text-sm text-slate-500">Carregando seu histórico...</Card>
                     ) : rows.length === 0 ? (
                         <EmptyState title="Nenhuma requisição" text="Não há registros para mostrar." />
                     ) : (
                         <div className="space-y-3">
                             {rows.map((row) => (
-                                <RequestCard key={row.id} row={row} statusOptions={statusOptions} onOpen={openDetail} onCancel={askCancel} onReceive={receiveReq} />
+                                <RequestCard
+                                    key={row.id}
+                                    row={row}
+                                    statusOptions={statusOptions}
+                                    onOpen={openDetail}
+                                />
                             ))}
                         </div>
                     )}
                 </div>
             </div>
 
-            <DetailModal open={detailOpen} row={detailLoading ? null : detail} statusOptions={statusOptions} onClose={() => setDetailOpen(false)} />
-
-            <CancelModal
-                open={cancelOpen}
-                row={cancelRow}
-                motivo={cancelMotivo}
-                setMotivo={setCancelMotivo}
-                saving={saving}
-                onClose={() => {
-                    if (saving) return;
-                    setCancelOpen(false);
-                    setCancelRow(null);
-                    setCancelMotivo("");
-                }}
-                onConfirm={confirmCancel}
+            <DetailModal
+                open={detailOpen}
+                row={detailLoading ? null : detail}
+                statusOptions={statusOptions}
+                onClose={() => setDetailOpen(false)}
             />
         </main>
     );

@@ -164,7 +164,7 @@ type DetailResp = {
 /**
  * Resposta padrão para ações que alteram o estado da requisição.
  *
- * Usada em iniciar separação, enviar material, confirmar recebimento e recusar.
+ * Usada em iniciar separação, enviar material e recusar.
  */
 type ActionResp = {
     ok: boolean;
@@ -608,8 +608,8 @@ function EmptyState() {
  * Página principal de operação de requisições.
  *
  * Esta tela é voltada ao operador responsável pelo fluxo operacional:
- * iniciar separação, enviar materiais, concluir recebimento e recusar
- * requisições quando necessário.
+ * iniciar separação, enviar materiais e recusar requisições quando necessário.
+ * O recebimento é confirmado exclusivamente pelo solicitante.
  */
 export default function OperarRequisicoesPage() {
     /**
@@ -742,7 +742,7 @@ export default function OperarRequisicoesPage() {
     /**
      * Recarrega dados após uma ação bem sucedida.
      *
-     * É usado depois de iniciar separação, enviar, concluir ou recusar. Recarregar
+     * É usado depois de iniciar separação, enviar ou recusar. Recarregar
      * os dados garante que a fila, os saldos e os status fiquem sincronizados com
      * o backend.
      */
@@ -871,7 +871,7 @@ export default function OperarRequisicoesPage() {
             setSendReq(null);
             setSendObs("");
 
-            await refreshAfterAction(data.msg || "Material enviado. Próximo passo: concluir.");
+            await refreshAfterAction(data.msg || "Material enviado. Aguardando confirmação do solicitante.");
         } catch (e: any) {
             setError(e?.message || "Erro ao enviar material.");
         } finally {
@@ -879,42 +879,6 @@ export default function OperarRequisicoesPage() {
         }
     }
 
-    /**
-     * Conclui uma requisição em trânsito.
-     *
-     * Antes de confirmar o recebimento, busca os detalhes para obter os itens.
-     * A quantidade recebida enviada à API usa a quantidade enviada, quando
-     * existir, ou a quantidade solicitada como fallback.
-     */
-    async function finishRequest(row: ReqListRow) {
-        if (busy) return;
-
-        setBusy(true);
-        setError("");
-        setOkMsg("");
-
-        try {
-            const detailResp = await apiGet<DetailResp>({ action: "detalhar", id: row.id });
-            const detail = detailResp.ok ? detailResp.row : null;
-
-            const data = await apiPost<ActionResp>({
-                action: "confirmar_recebimento",
-                id: row.id,
-                itens: (detail?.items || []).map((it) => ({
-                    id: it.id,
-                    quantidade_recebida: decimalToApi(it.quantidade_enviada || it.quantidade_solicitada),
-                })),
-            });
-
-            if (!data.ok) throw new Error(data.msg || "Não foi possível concluir a requisição.");
-
-            await refreshAfterAction(data.msg || "Requisição concluída.");
-        } catch (e: any) {
-            setError(e?.message || "Erro ao concluir requisição.");
-        } finally {
-            setBusy(false);
-        }
-    }
 
     /**
      * Abre o modal de recusa.
@@ -970,11 +934,11 @@ export default function OperarRequisicoesPage() {
     }
 
     /**
-     * Decide qual ação principal executar conforme o status atual.
+     * Decide qual ação operacional executar conforme o status atual.
      *
      * PENDENTE inicia separação.
      * EM_SEPARACAO abre o fluxo de envio.
-     * EM_TRANSITO conclui a requisição.
+     * EM_TRANSITO fica aguardando a confirmação do solicitante.
      */
     async function handleMainAction(row: ReqListRow) {
         const status = toStatus(row.status);
@@ -986,11 +950,6 @@ export default function OperarRequisicoesPage() {
 
         if (status === "EM_SEPARACAO") {
             await prepareSend(row);
-            return;
-        }
-
-        if (status === "EM_TRANSITO") {
-            await finishRequest(row);
         }
     }
 
@@ -1000,7 +959,7 @@ export default function OperarRequisicoesPage() {
                 <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-2xl font-black tracking-tight text-slate-950">Requisições</h1>
-                        <p className="mt-1 text-sm text-slate-600">Somente requisições em andamento aparecem nesta tela.</p>
+                        <p className="mt-1 text-sm text-slate-600">Separe e envie os materiais. Requisições em trânsito aguardam confirmação do solicitante.</p>
                         {me ? <p className="mt-1 text-xs text-slate-500">Operador: {me.nome || me.usuario}</p> : null}
                     </div>
 
@@ -1105,8 +1064,8 @@ export default function OperarRequisicoesPage() {
  *
  * Mostra os principais dados da requisição e oferece duas ações:
  * ação principal do fluxo e recusa. A ação principal muda conforme o status:
- * PENDENTE vira "Iniciar", EM_SEPARACAO vira "Enviar" e EM_TRANSITO vira
- * "Concluir".
+ * PENDENTE vira "Iniciar", EM_SEPARACAO vira "Enviar" e EM_TRANSITO fica
+ * aguardando a confirmação do solicitante.
  */
 function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: boolean; onMain: () => void; onReject: () => void }) {
     const status = toStatus(row.status);
@@ -1119,12 +1078,12 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
     /**
      * Texto do botão principal, calculado a partir do status atual.
      */
-    const mainLabel = status === "PENDENTE" ? "Iniciar" : status === "EM_SEPARACAO" ? "Enviar" : status === "EM_TRANSITO" ? "Concluir" : "Finalizada";
+    const mainLabel = status === "PENDENTE" ? "Iniciar" : status === "EM_SEPARACAO" ? "Enviar" : status === "EM_TRANSITO" ? "Aguardando recebimento" : "Finalizada";
 
     /**
      * Texto auxiliar que orienta o operador sobre o próximo passo do fluxo.
      */
-    const nextText = status === "PENDENTE" ? "Próximo passo: enviar" : status === "EM_SEPARACAO" ? "Próximo passo: concluir" : status === "EM_TRANSITO" ? "Ao concluir, sai da tela" : "";
+    const nextText = status === "PENDENTE" ? "Próximo passo: enviar" : status === "EM_SEPARACAO" ? "Após o envio, o solicitante confirma o recebimento" : status === "EM_TRANSITO" ? "Aguardando confirmação do solicitante" : "";
 
     return (
         <Card className={isTruthy(row.atrasada_24h) ? "border-rose-200" : ""}>
@@ -1168,7 +1127,7 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
                     </div>
 
                     <div className="grid shrink-0 grid-cols-2 gap-2 sm:w-64">
-                        <Button type="button" onClick={onMain} disabled={busy || status === "ENTREGUE" || status === "RECUSADA" || status === "CANCELADA"}>
+                        <Button type="button" onClick={onMain} disabled={busy || status === "EM_TRANSITO" || status === "ENTREGUE" || status === "RECUSADA" || status === "CANCELADA"} title={status === "EM_TRANSITO" ? "Somente o solicitante pode confirmar o recebimento." : undefined}>
                             {mainLabel}
                         </Button>
                         <Button type="button" variant="danger" onClick={onReject} disabled={busy || !canReject} title={!canReject ? "Só é possível recusar pendente ou em separação." : undefined}>
