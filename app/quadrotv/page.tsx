@@ -3,7 +3,7 @@
 /*
  * QUADRO TV — versão preservada
  * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
- * - Coroas: 4 colunas essenciais, linhas/ícones compactos e alinhados;
+ * - Coroas: modelo + solicitante, Falecido, Entrega, Pagamento e timeline Ampulheta/Flor/Faixa/Concluída;
  * - tamanho original permanece no modo NORMAL;
  * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
  *   não cabe na altura disponível da TV.
@@ -150,6 +150,7 @@ type LogItem = {
 type CoroaTvItem = {
     id?: number;
     ordem?: number;
+    tipo_coroa?: "natural" | "artificial" | null;
     modelo_coroa?: string | null;
     frase?: string | null;
 };
@@ -172,7 +173,13 @@ type CoroaTvPedido = {
     criado_em?: string | null;
     atualizado_em?: string | null;
     coroa_inicio_em?: string | null;
+    coroa_inicio_por?: string | null;
     faixa_inicio_em?: string | null;
+    faixa_inicio_por?: string | null;
+    finalizada_em?: string | null;
+    finalizada_por?: string | null;
+    entregue_em?: string | null;
+    entregue_por?: string | null;
     itens?: CoroaTvItem[] | null;
 };
 
@@ -1254,6 +1261,122 @@ function coroaCriadoHora(v?: string | null): string {
     });
 }
 
+function coroaSomenteArtificial(order?: CoroaTvPedido | null): boolean {
+    if (!order) return false;
+
+    const itens = Array.isArray(order.itens) ? order.itens : [];
+    if (itens.length === 0) return false;
+
+    return itens.every(
+        (item) =>
+            String(item?.tipo_coroa || "")
+                .trim()
+                .toLowerCase() === "artificial",
+    );
+}
+
+type CoroaTimelineData = {
+    aguardandoMs: number;
+    coroaMs: number;
+    faixaMs: number;
+    concluidaMs: number;
+
+    aguardandoActive: boolean;
+    coroaActive: boolean;
+    faixaActive: boolean;
+    concluidaActive: boolean;
+
+    coroaSkipped: boolean;
+};
+
+function buildCoroaTimeline(
+    order: CoroaTvPedido,
+    nowMs: number,
+): CoroaTimelineData {
+    const coroaTs = parseLogTs(order.coroa_inicio_em || undefined);
+    const faixaTs = parseLogTs(order.faixa_inicio_em || undefined);
+    const finalizadaTs = parseLogTs(order.finalizada_em || undefined);
+    const entregueTs = parseLogTs(order.entregue_em || undefined);
+
+    const inicios = [coroaTs, faixaTs].filter((ts) => ts > 0);
+    const primeiroInicio = inicios.length > 0 ? Math.min(...inicios) : 0;
+
+    // Se criado_em não estiver disponível em algum registro legado,
+    // usa o primeiro início conhecido para não inventar tempo anterior.
+    const criadoOriginal = parseLogTs(order.criado_em || undefined);
+    const criadoTs =
+        criadoOriginal > 0
+            ? criadoOriginal
+            : primeiroInicio > 0
+                ? primeiroInicio
+                : finalizadaTs > 0
+                    ? finalizadaTs
+                    : nowMs;
+
+    // Ampulheta: conta desde a chegada do pedido até a PRIMEIRA ação,
+    // seja Coroa ou Faixa. Portanto a ordem pode mudar livremente.
+    const fimAguardando =
+        primeiroInicio > 0
+            ? primeiroInicio
+            : finalizadaTs > 0
+                ? finalizadaTs
+                : nowMs;
+
+    const aguardandoMs = Math.max(0, fimAguardando - criadoTs);
+
+    // Coroa e Faixa são cronômetros independentes.
+    // Se Faixa começar antes, Faixa conta primeiro.
+    // Se depois a Coroa começar, os dois passam a contar simultaneamente
+    // até a finalização do pedido.
+    const fimProducao = finalizadaTs > 0 ? finalizadaTs : nowMs;
+
+    const coroaMs =
+        coroaTs > 0
+            ? Math.max(0, fimProducao - coroaTs)
+            : 0;
+
+    const faixaMs =
+        faixaTs > 0
+            ? Math.max(0, fimProducao - faixaTs)
+            : 0;
+
+    // Normalmente o pedido sai deste quadro ao finalizar.
+    // Este contador fica pronto para o pequeno intervalo antes do refresh
+    // e para qualquer uso futuro onde finalizada permaneça visível.
+    const concluidaMs =
+        finalizadaTs > 0
+            ? Math.max(0, (entregueTs > 0 ? entregueTs : nowMs) - finalizadaTs)
+            : 0;
+
+    const coroaSkipped = coroaSomenteArtificial(order);
+
+    return {
+        aguardandoMs,
+        coroaMs,
+        faixaMs,
+        concluidaMs,
+
+        aguardandoActive:
+            primeiroInicio <= 0 &&
+            finalizadaTs <= 0,
+
+        coroaActive:
+            !coroaSkipped &&
+            coroaTs > 0 &&
+            finalizadaTs <= 0,
+
+        faixaActive:
+            faixaTs > 0 &&
+            finalizadaTs <= 0,
+
+        concluidaActive:
+            finalizadaTs > 0 &&
+            entregueTs <= 0,
+
+        coroaSkipped,
+    };
+}
+
 function coroaEmConfeccao(order: CoroaTvPedido): boolean {
     const status = normalizarTextoCoroa(order.status);
     return status === "novo" || status === "coroa" || status === "faixa";
@@ -2183,6 +2306,20 @@ export default function QuadroAtendimentoPage() {
                     line-height: 1 !important;
                 }
 
+                .qa-coroa-timeline {
+                    min-width: 0;
+                    white-space: nowrap;
+                }
+
+                .qa-coroa-stage-pill {
+                    flex: 0 0 auto;
+                }
+
+                .qa-coroa-stage-ring,
+                .qa-coroa-stage-icon {
+                    flex: 0 0 auto;
+                }
+
                 /*
                  * AUTO-FIT DA TV
                  *
@@ -2485,6 +2622,21 @@ export default function QuadroAtendimentoPage() {
                     width: 9px !important;
                     height: 9px !important;
                 }
+                [data-qa-density="compact"] .qa-coroa-stage-pill {
+                    width: 31px !important;
+                    height: 31px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-ring {
+                    width: 19px !important;
+                    height: 19px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-icon {
+                    width: 14px !important;
+                    height: 14px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-time {
+                    font-size: 7.5px !important;
+                }
                 [data-qa-density="dense"] .qa-coroa-field-icon {
                     width: 11px !important;
                     height: 11px !important;
@@ -2492,6 +2644,21 @@ export default function QuadroAtendimentoPage() {
                 [data-qa-density="dense"] .qa-coroa-badge-icon {
                     width: 8px !important;
                     height: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-pill {
+                    width: 28px !important;
+                    height: 28px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-ring {
+                    width: 17px !important;
+                    height: 17px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-icon {
+                    width: 12px !important;
+                    height: 12px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-time {
+                    font-size: 7px !important;
                 }
                 [data-qa-density="ultra"] .qa-coroa-field-icon,
                 [data-qa-density="micro"] .qa-coroa-field-icon {
@@ -2502,6 +2669,38 @@ export default function QuadroAtendimentoPage() {
                 [data-qa-density="micro"] .qa-coroa-badge-icon {
                     width: 7px !important;
                     height: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-pill {
+                    width: 25px !important;
+                    height: 25px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-ring {
+                    width: 15px !important;
+                    height: 15px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-icon {
+                    width: 11px !important;
+                    height: 11px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-time {
+                    font-size: 6.5px !important;
+                }
+
+                [data-qa-density="micro"] .qa-coroa-stage-pill {
+                    width: 22px !important;
+                    height: 22px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-ring {
+                    width: 13px !important;
+                    height: 13px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-icon {
+                    width: 9px !important;
+                    height: 9px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-time {
+                    margin-top: 1px !important;
+                    font-size: 6px !important;
                 }
 
                 /* Mobile: só compacta os cartões quando realmente faltar altura. */
@@ -2591,6 +2790,7 @@ export default function QuadroAtendimentoPage() {
                     <CoroasTvBoard
                         pedidos={coroasTv}
                         error={coroasTvError}
+                        nowMs={nowMs}
                     />
                 </main>
 
@@ -2956,6 +3156,8 @@ const MobileCards = React.memo(function MobileCards({
 type CoroaTvIconKey =
     | "flower"
     | "ribbon"
+    | "hourglass"
+    | "check"
     | "clipboard"
     | "coffin"
     | "person"
@@ -2991,6 +3193,26 @@ function CoroaTvIcon({ type }: { type: CoroaTvIconKey }) {
                 <svg {...common}>
                     <path d="M8 3h8v8l-4 3-4-3V3Z" />
                     <path d="m8 10-3 11 7-4 7 4-3-11" />
+                </svg>
+            );
+
+        case "hourglass":
+            return (
+                <svg {...common}>
+                    <path d="M6 3h12" />
+                    <path d="M6 21h12" />
+                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
+                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
+                    <path d="M10 8h4" />
+                    <path d="M10 16h4" />
+                </svg>
+            );
+
+        case "check":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="m8 12 2.5 2.5L16.5 9" />
                 </svg>
             );
 
@@ -3070,12 +3292,174 @@ function CoroaIconField({
     );
 }
 
+function CoroaTimelinePill({
+    icon,
+    label,
+    time,
+    active = false,
+    muted = false,
+    skipped = false,
+}: {
+    icon: CoroaTvIconKey;
+    label: string;
+    time: string;
+    active?: boolean;
+    muted?: boolean;
+    skipped?: boolean;
+}) {
+    return (
+        <div
+            className="qa-coroa-stage-pill relative flex h-[34px] w-[34px] shrink-0 flex-col items-center justify-center text-center leading-none"
+            title={`${label} • ${skipped ? "Não se aplica" : time}`}
+        >
+            <div
+                className={`qa-coroa-stage-ring relative flex h-[21px] w-[21px] items-center justify-center rounded-full ${active
+                        ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]"
+                        : "border border-transparent"
+                    }`}
+            >
+                <div
+                    className={`qa-coroa-stage-icon relative flex h-[16px] w-[16px] items-center justify-center ${active
+                            ? "qa-status-blink text-[#22C55E]"
+                            : "text-[#00AEEC]"
+                        } ${muted ? "opacity-[0.14]" : ""}`}
+                    aria-hidden="true"
+                >
+                    <CoroaTvIcon type={icon} />
+                </div>
+            </div>
+
+            <div
+                className={`qa-coroa-stage-time mt-[2px] w-full truncate text-[8px] font-black leading-none tabular-nums ${muted
+                        ? "text-slate-500/35"
+                        : active
+                            ? "text-[#22C55E]"
+                            : "text-slate-100"
+                    }`}
+            >
+                {time}
+            </div>
+
+            {skipped && (
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[36px] font-semibold leading-none text-[#00AEEC]">
+                    ×
+                </span>
+            )}
+        </div>
+    );
+}
+
+function CoroaTimelineCell({
+    pedido,
+    nowMs,
+    variant = "desktop",
+}: {
+    pedido: CoroaTvPedido;
+    nowMs: number;
+    variant?: "desktop" | "mobile";
+}) {
+    const data = buildCoroaTimeline(pedido, nowMs);
+
+    const etapas = [
+        {
+            key: "aguardando",
+            icon: "hourglass" as CoroaTvIconKey,
+            label: "Aguardando",
+            ms: data.aguardandoMs,
+            active: data.aguardandoActive,
+            skipped: false,
+        },
+        {
+            key: "coroa",
+            icon: "flower" as CoroaTvIconKey,
+            label: "Confecção da Coroa",
+            ms: data.coroaMs,
+            active: data.coroaActive,
+            skipped: data.coroaSkipped,
+        },
+        {
+            key: "faixa",
+            icon: "ribbon" as CoroaTvIconKey,
+            label: "Confecção da Faixa",
+            ms: data.faixaMs,
+            active: data.faixaActive,
+            skipped: false,
+        },
+        {
+            key: "concluida",
+            icon: "check" as CoroaTvIconKey,
+            label: "Concluída",
+            ms: data.concluidaMs,
+            active: data.concluidaActive,
+            skipped: false,
+        },
+    ];
+
+    if (variant === "mobile") {
+        return (
+            <div className="qa-coroa-timeline flex min-w-0 items-center justify-end gap-1 overflow-hidden">
+                {etapas.map((etapa) => {
+                    const temTempo = etapa.ms > 0;
+                    return (
+                        <CoroaTimelinePill
+                            key={etapa.key}
+                            icon={etapa.icon}
+                            label={etapa.label}
+                            time={
+                                etapa.skipped
+                                    ? "00:00"
+                                    : temTempo
+                                        ? formatDurationMs(etapa.ms)
+                                        : "00:00"
+                            }
+                            active={etapa.active}
+                            muted={!etapa.active && !temTempo}
+                            skipped={etapa.skipped}
+                        />
+                    );
+                })}
+                <StatusBlinkStyle />
+            </div>
+        );
+    }
+
+    return (
+        <div className="qa-coroa-timeline flex min-w-0 items-center justify-start gap-1 overflow-visible">
+            {etapas.map((etapa) => {
+                const temTempo = etapa.ms > 0;
+
+                return (
+                    <CoroaTimelinePill
+                        key={etapa.key}
+                        icon={etapa.icon}
+                        label={etapa.label}
+                        time={
+                            etapa.skipped
+                                ? "00:00"
+                                : temTempo
+                                    ? formatDurationMs(etapa.ms)
+                                    : "00:00"
+                        }
+                        active={etapa.active}
+                        muted={!etapa.active && !temTempo}
+                        skipped={etapa.skipped}
+                    />
+                );
+            })}
+
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
 const CoroasTvBoard = React.memo(function CoroasTvBoard({
     pedidos,
     error,
+    nowMs,
 }: {
     pedidos: CoroaTvPedido[];
     error?: string | null;
+    nowMs: number;
 }) {
     return (
         <section className="qa-coroas-board shrink-0 overflow-hidden rounded-xl border qa-panel-premium">
@@ -3111,10 +3495,11 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                 </div>
             </div>
 
-            {/* Desktop/TV — somente as 4 colunas essenciais */}
+            {/* Desktop/TV — modelo, falecido, entrega, pagamento e timeline */}
             <div className="hidden sm:block">
-                <div className="qa-coroa-head grid h-7 grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[9px] font-bold leading-none text-slate-400">
+                <div className="qa-coroa-head grid h-7 grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[9px] font-bold leading-none text-slate-400">
                     <div>Coroa(s)</div>
+                    <div>Falecido(a)</div>
                     <div>Entrega</div>
                     <div>Pagamento</div>
                     <div>Status</div>
@@ -3127,26 +3512,40 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                 ) : (
                     <div>
                         {pedidos.map((pedido) => {
-                            const qtd = coroaQuantidade(pedido);
+                            const modelo = coroaModelos(pedido);
+                            const solicitante = shown(pedido.solicitante, "a definir");
 
                             return (
                                 <div
                                     key={pedido.id}
-                                    className="qa-coroa-row grid h-[42px] min-h-[42px] grid-cols-[minmax(0,1.7fr)_minmax(0,1.25fr)_150px_220px] items-center gap-4 overflow-hidden border-b border-slate-700/45 px-4 py-1 text-[10px] leading-none text-slate-100 last:border-b-0"
+                                    className="qa-coroa-row grid h-[42px] min-h-[42px] grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 overflow-hidden border-b border-slate-700/45 px-4 py-1 text-[10px] leading-none text-slate-100 last:border-b-0"
                                 >
+                                    {/* Coroa: nome do modelo + solicitante abaixo */}
                                     <div className="min-w-0 overflow-hidden">
-                                        <CoroaIconField icon="flower" title={coroaModelos(pedido)}>
-                                            <span className="truncate font-semibold text-slate-100">
-                                                {qtd} {qtd === 1 ? "coroa" : "coroas"}
+                                        <CoroaIconField icon="flower" title={modelo}>
+                                            <span className="block truncate font-semibold text-slate-100">
+                                                {modelo}
                                             </span>
                                         </CoroaIconField>
 
                                         <div
                                             className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted"
-                                            title={coroaModelos(pedido)}
+                                            title={`Solicitante: ${solicitante}`}
                                         >
-                                            {coroaModelos(pedido)}
+                                            {solicitante}
                                         </div>
+                                    </div>
+
+                                    {/* Falecido antes de Entrega */}
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="coffin"
+                                            title={shown(pedido.falecido, "a definir")}
+                                        >
+                                            <span className="block truncate font-medium text-slate-200">
+                                                {shown(pedido.falecido, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
                                     </div>
 
                                     <div className="min-w-0 overflow-hidden">
@@ -3173,20 +3572,11 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                         </span>
                                     </div>
 
-                                    <div className="min-w-0 overflow-hidden">
-                                        <span
-                                            className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaStatusClass(
-                                                pedido.status
-                                            )}`}
-                                            title={coroaStatusLabel(pedido.status)}
-                                        >
-                                            <span className="qa-coroa-badge-icon h-3 w-3 shrink-0">
-                                                <CoroaTvIcon type={coroaStatusIconType(pedido.status)} />
-                                            </span>
-                                            <span className="truncate">
-                                                {coroaStatusLabel(pedido.status)}
-                                            </span>
-                                        </span>
+                                    <div className="min-w-0 overflow-visible">
+                                        <CoroaTimelineCell
+                                            pedido={pedido}
+                                            nowMs={nowMs}
+                                        />
                                     </div>
                                 </div>
                             );
@@ -3195,7 +3585,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                 )}
             </div>
 
-            {/* Mobile — mantém somente Coroa, Entrega, Pagamento e Status */}
+            {/* Mobile — mesmas informações essenciais e timeline */}
             <div className="grid gap-2 p-2 sm:hidden">
                 {pedidos.length === 0 ? (
                     <div className="rounded-xl border border-slate-700/50 bg-slate-950/35 p-3 text-center text-xs qa-text-muted">
@@ -3203,41 +3593,37 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                     </div>
                 ) : (
                     pedidos.map((pedido) => {
-                        const qtd = coroaQuantidade(pedido);
+                        const modelo = coroaModelos(pedido);
+                        const solicitante = shown(pedido.solicitante, "a definir");
 
                         return (
                             <article
                                 key={pedido.id}
                                 className="qa-coroa-mobile-card overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/35 p-2.5"
                             >
-                                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                                    <div className="min-w-0 overflow-hidden">
-                                        <CoroaIconField icon="flower" title={coroaModelos(pedido)}>
-                                            <span className="truncate font-semibold text-slate-100">
-                                                {qtd} {qtd === 1 ? "coroa" : "coroas"}
-                                            </span>
-                                        </CoroaIconField>
-                                        <div className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted">
-                                            {coroaModelos(pedido)}
-                                        </div>
+                                <div className="min-w-0">
+                                    <CoroaIconField icon="flower" title={modelo}>
+                                        <span className="block truncate font-semibold text-slate-100">
+                                            {modelo}
+                                        </span>
+                                    </CoroaIconField>
+                                    <div className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted">
+                                        {solicitante}
                                     </div>
-
-                                    <span
-                                        className={`inline-flex max-w-[155px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaStatusClass(
-                                            pedido.status
-                                        )}`}
-                                        title={coroaStatusLabel(pedido.status)}
-                                    >
-                                        <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
-                                            <CoroaTvIcon type={coroaStatusIconType(pedido.status)} />
-                                        </span>
-                                        <span className="truncate">
-                                            {coroaStatusLabel(pedido.status)}
-                                        </span>
-                                    </span>
                                 </div>
 
-                                <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-[10px]">
+                                <div className="mt-2 grid min-w-0 grid-cols-2 gap-2 text-[10px]">
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="coffin"
+                                            title={shown(pedido.falecido, "a definir")}
+                                        >
+                                            <span className="block truncate">
+                                                {shown(pedido.falecido, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
                                     <div className="min-w-0 overflow-hidden">
                                         <CoroaIconField
                                             icon="pin"
@@ -3248,7 +3634,9 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                             </span>
                                         </CoroaIconField>
                                     </div>
+                                </div>
 
+                                <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                                     <span
                                         className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
                                             pedido
@@ -3259,6 +3647,12 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                         </span>
                                         {coroaPagamentoLabel(pedido)}
                                     </span>
+
+                                    <CoroaTimelineCell
+                                        pedido={pedido}
+                                        nowMs={nowMs}
+                                        variant="mobile"
+                                    />
                                 </div>
                             </article>
                         );
