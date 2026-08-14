@@ -4013,7 +4013,7 @@ export default function Page() {
     const [entradaBarcode, setEntradaBarcode] = useState("");
     const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
     const [entradaQtd, setEntradaQtd] = useState<string>("1");
-    const [entradaCustoUnitario, setEntradaCustoUnitario] = useState<string>("R$ 0,00");
+    const [entradaCustoUnitario, setEntradaCustoUnitario] = useState<string>("");
     const [entradaFreteTotal, setEntradaFreteTotal] = useState<string>("R$ 0,00");
 
     // ✅ agora a observação fica visualmente abaixo da fila (mas continua sendo usada)
@@ -4303,7 +4303,7 @@ export default function Page() {
         setEntradaFabFiltroId("Todos");
         setEntradaCatFiltroId("Todas");
         setEntradaQtd("1");
-        setEntradaCustoUnitario("R$ 0,00");
+        setEntradaCustoUnitario("");
         setEntradaFreteTotal("R$ 0,00");
         setEntradaObs("");
     }
@@ -4315,7 +4315,7 @@ export default function Page() {
         setEntradaProdutoId(0);
         setEntradaProdQuery("");
         setEntradaQtd("1");
-        setEntradaCustoUnitario("R$ 0,00");
+        setEntradaCustoUnitario("");
         // O frete é único para toda a entrada e permanece ao adicionar novos itens.
     }
 
@@ -8784,11 +8784,13 @@ export default function Page() {
                             />
                         </Field>
 
-                        <Field label="Preço de custo por unidade" hint="Valor unitário antes do frete.">
+                        <Field label="Preço de custo por unidade *" hint="Obrigatório. Valor unitário antes do frete.">
                             <TextInput
                                 value={entradaCustoUnitario}
                                 onChange={(e) => setEntradaCustoUnitario(maskBRLInput(e.target.value))}
                                 placeholder="R$ 0,00"
+                                required
+                                aria-required="true"
                             />
                         </Field>
 
@@ -8798,7 +8800,7 @@ export default function Page() {
                                 onClick={addEntradaItemToList}
                                 type="button"
                                 className="w-full"
-                                disabled={!entradaProdutoExistente}
+                                disabled={!entradaProdutoExistente || parseBRLToNumber(entradaCustoUnitario) <= 0}
                             >
                                 + Adicionar
                             </Button>
