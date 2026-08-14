@@ -2,19 +2,21 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { IconHome } from "@tabler/icons-react";
+import { IconFlower, IconHome } from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
 
 /* ========= Ícone circular ========= */
 function QuickIcon({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="grid h-11 w-11 place-items-center rounded-full
-      bg-sky-100 text-sky-700
-      transition-colors
-      group-hover:bg-sky-600 group-hover:text-white
-      dark:bg-sky-900/30 dark:text-sky-200
-      dark:group-hover:bg-sky-600"
+      className="
+        grid h-11 w-11 place-items-center rounded-full
+        bg-sky-100 text-sky-700
+        transition-colors
+        group-hover:bg-sky-600 group-hover:text-white
+        dark:bg-sky-900/30 dark:text-sky-200
+        dark:group-hover:bg-sky-600
+      "
     >
       {children}
     </span>
@@ -56,6 +58,14 @@ const quickActions: QuickAction[] = [
       </svg>
     ),
   },
+
+  {
+    label: "Coroa de Flores",
+    href: "/coroa-de-flores",
+    slug: "coroa-de-flores",
+    icon: <IconFlower size={22} />,
+  },
+
   {
     label: "Plano",
     href: "/plano",
@@ -76,6 +86,7 @@ const quickActions: QuickAction[] = [
       </svg>
     ),
   },
+
   {
     label: "Administrativo",
     href: "/administrativo",
@@ -102,6 +113,7 @@ const quickActions: QuickAction[] = [
       </svg>
     ),
   },
+
   {
     label: "Estoque",
     href: "/estoque",
@@ -127,6 +139,7 @@ const quickActions: QuickAction[] = [
       </svg>
     ),
   },
+
   {
     label: "Consulta",
     href: "/produtos",
@@ -152,6 +165,7 @@ const quickActions: QuickAction[] = [
       </svg>
     ),
   },
+
   {
     label: "Requisição de Material",
     href: "/requisicao",
@@ -235,18 +249,27 @@ export default function HomePage() {
   return (
     <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-6xl px-5 py-5">
+
         {/* HEADER */}
         <header className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <IconHome className="size-6 text-primary" />
-              <h1 className="text-2xl font-bold tracking-tight">Início</h1>
+
+              <h1 className="text-2xl font-bold tracking-tight">
+                Início
+              </h1>
             </div>
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-right shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="text-sm font-bold">{now}</div>
-            <div className="text-[11px] text-muted-foreground">{dateStr}</div>
+            <div className="text-sm font-bold">
+              {now}
+            </div>
+
+            <div className="text-[11px] text-muted-foreground">
+              {dateStr}
+            </div>
           </div>
         </header>
 
@@ -257,7 +280,8 @@ export default function HomePage() {
               <Link
                 key={a.label}
                 href={a.href}
-                className="group flex flex-col items-center justify-center
+                className="
+                  group flex flex-col items-center justify-center
                   gap-2.5 rounded-2xl
                   border border-gray-200
                   bg-white px-3 py-4
@@ -265,9 +289,12 @@ export default function HomePage() {
                   transition-all
                   hover:-translate-y-[1px]
                   hover:shadow-md
-                  dark:border-gray-800 dark:bg-gray-900"
+                  dark:border-gray-800 dark:bg-gray-900
+                "
               >
-                <QuickIcon>{a.icon}</QuickIcon>
+                <QuickIcon>
+                  {a.icon}
+                </QuickIcon>
 
                 <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
                   {a.label}
@@ -276,6 +303,7 @@ export default function HomePage() {
             ))}
           </div>
         </section>
+
       </div>
     </div>
   );

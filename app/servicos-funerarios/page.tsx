@@ -7,7 +7,6 @@ import {
     IconClipboardList,
     IconFileText,
     IconBuildingSkyscraper,
-    IconFlower,
     IconBell,
     IconBook,
 } from "@tabler/icons-react";
@@ -58,11 +57,6 @@ const items = [
         icon: IconBuildingSkyscraper,
     },
     {
-        title: "Coroa de Flores",
-        href: "/coroa-de-flores",
-        icon: IconFlower,
-    },
-    {
         title: "Avisos",
         href: "/avisos",
         icon: IconBell,
@@ -84,8 +78,6 @@ export default function ServicosFunerariosPage() {
                         <h1 className="text-2xl font-bold tracking-tight">
                             Serviços Funerários
                         </h1>
-
-                        
                     </div>
                 </header>
 
@@ -102,7 +94,7 @@ export default function ServicosFunerariosPage() {
                   rounded-2xl
                   border border-gray-200
                   bg-white
-                  py-4 px-3
+                  px-3 py-4
                   shadow-sm
                   transition-all
                   hover:-translate-y-[1px]
@@ -116,11 +108,11 @@ export default function ServicosFunerariosPage() {
 
                                 <span
                                     className="
+                    text-center
                     text-[13px]
                     font-extrabold
-                    tracking-tight
-                    text-center
                     leading-tight
+                    tracking-tight
                     text-gray-900
                     dark:text-white
                   "
