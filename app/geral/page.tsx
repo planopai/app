@@ -7415,6 +7415,14 @@ export default function Page() {
                                 />
 
                                 <AdvActionButton
+                                    label="Materiais de Assistência"
+                                    onClick={() => {
+                                        window.location.href = "/assistencia";
+                                    }}
+                                    icon={<span className="text-lg leading-none">🧰</span>}
+                                />
+
+                                <AdvActionButton
                                     label="Exportação (CSV)"
                                     onClick={() => setAdvExportOpen(true)}
                                     icon={<span className="text-lg leading-none">↓</span>}
