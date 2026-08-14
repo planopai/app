@@ -37,16 +37,6 @@ type Produto = {
     classificacao_nome?: string | null;
 };
 
-type SaldoMinimoAlerta = {
-    produto_id: ID;
-    deposito_id: ID;
-    quantidade: number | string;
-    minimo: number | string;
-    maximo?: number | string | null;
-    produto_nome: string;
-    codigo_barras?: string | null;
-    deposito_nome: string;
-};
 
 type StatusOption = {
     id: StatusId;
@@ -69,7 +59,6 @@ type InitResp = {
     contadores?: DashboardData;
     alertas?: {
         transito_24h?: ReqListRow[];
-        estoque_minimo?: SaldoMinimoAlerta[];
     };
     msg?: string;
     need_login?: 1;
@@ -158,7 +147,6 @@ type SummaryResp = {
 type AlertasResp = {
     ok: boolean;
     transito_24h?: ReqListRow[];
-    estoque_minimo?: SaldoMinimoAlerta[];
     msg?: string;
     need_login?: 1;
 };
@@ -603,50 +591,108 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
     const transitHours = late ? hoursSince(row.enviado_em) : null;
 
     return (
-        <Card className="overflow-hidden">
-            <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-bold tracking-tight text-slate-950">{codigoReq(row)}</h3>
-                            <Badge className={statusClass(row.status)}>{statusLabel(row.status)}</Badge>
-                            {late ? <Badge className="border-rose-200 bg-rose-50 text-rose-800">+24h em trânsito</Badge> : null}
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,0.9fr)_minmax(260px,1.8fr)_minmax(125px,0.8fr)_minmax(145px,0.9fr)_120px_90px_auto] lg:items-center">
+                {/* REQUISIÇÃO / STATUS */}
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-bold tracking-tight text-slate-950">
+                            {codigoReq(row)}
                         </div>
-                        <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-800">{row.itens_resumo || "Itens não carregados"}</p>
+
+                        <Badge className={statusClass(row.status)}>
+                            {statusLabel(row.status)}
+                        </Badge>
+
+                        {late ? (
+                            <Badge className="border-rose-200 bg-rose-50 text-rose-800">
+                                +24h
+                            </Badge>
+                        ) : null}
                     </div>
-                    <Button variant="ghost" type="button" onClick={() => onOpen(row.id)} className="shrink-0 px-3 py-2 text-sm">
+
+                    {row.deposito_origem_nome ? (
+                        <div className="mt-1 truncate text-[11px] font-semibold text-slate-500">
+                            Origem {row.deposito_origem_nome}
+                        </div>
+                    ) : null}
+                </div>
+
+                {/* ITENS */}
+                <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 lg:hidden">
+                        Itens
+                    </div>
+                    <div className="line-clamp-2 text-sm font-semibold leading-5 text-slate-800 lg:line-clamp-1">
+                        {row.itens_resumo || "Itens não carregados"}
+                    </div>
+
+                    {row.id_atendimento ? (
+                        <div className="mt-1 truncate text-[11px] text-slate-500">
+                            Atendimento {row.id_atendimento}
+                        </div>
+                    ) : null}
+                </div>
+
+                {/* SOLICITANTE */}
+                <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Solicitante
+                    </div>
+                    <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                        {row.solicitante_nome || "Não informado"}
+                    </div>
+                </div>
+
+                {/* DESTINO */}
+                <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Destino
+                    </div>
+                    <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                        {destinoLabel(row)}
+                    </div>
+                </div>
+
+                {/* ABERTURA */}
+                <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Abertura
+                    </div>
+                    <div className="mt-0.5 text-xs font-semibold leading-4 text-slate-900">
+                        {fmtDateTime(row.criado_em)}
+                    </div>
+
+                    {late && transitHours !== null ? (
+                        <div className="mt-1 text-[11px] font-semibold text-rose-700">
+                            {transitHours}h em trânsito
+                        </div>
+                    ) : null}
+                </div>
+
+                {/* QUANTIDADE */}
+                <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Quantidade
+                    </div>
+                    <div className="mt-0.5 text-sm font-bold text-slate-950">
+                        {numberBR(row.total_quantidade, 3)}
+                    </div>
+                </div>
+
+                {/* AÇÃO */}
+                <div className="flex justify-end lg:justify-self-end">
+                    <Button
+                        variant="ghost"
+                        type="button"
+                        onClick={() => onOpen(row.id)}
+                        className="shrink-0 whitespace-nowrap px-4 py-2 text-sm"
+                    >
                         Detalhes
                     </Button>
                 </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                    <div className="rounded-xl bg-slate-50 p-3">
-                        <div className="font-bold uppercase tracking-wide text-slate-500">Solicitante</div>
-                        <div className="mt-1 truncate font-semibold text-slate-900">{row.solicitante_nome || "Não informado"}</div>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                        <div className="font-bold uppercase tracking-wide text-slate-500">Destino</div>
-                        <div className="mt-1 truncate font-semibold text-slate-900">{destinoLabel(row)}</div>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                        <div className="font-bold uppercase tracking-wide text-slate-500">Abertura</div>
-                        <div className="mt-1 font-semibold text-slate-900">{fmtDateTime(row.criado_em)}</div>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-3">
-                        <div className="font-bold uppercase tracking-wide text-slate-500">Quantidade</div>
-                        <div className="mt-1 font-semibold text-slate-900">{numberBR(row.total_quantidade, 3)}</div>
-                    </div>
-                </div>
-
-                {row.id_atendimento || row.deposito_origem_nome || late ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                        {row.id_atendimento ? <FilterChip>Atendimento {row.id_atendimento}</FilterChip> : null}
-                        {row.deposito_origem_nome ? <FilterChip>Origem {row.deposito_origem_nome}</FilterChip> : null}
-                        {late && transitHours !== null ? <FilterChip>{transitHours}h desde envio</FilterChip> : null}
-                    </div>
-                ) : null}
             </div>
-        </Card>
+        </div>
     );
 }
 
@@ -757,7 +803,6 @@ export default function DashboardRequisicoesPage() {
     const [rows, setRows] = useState<ReqListRow[]>([]);
     const [summary, setSummary] = useState<DashboardData>({});
     const [alertasTransito, setAlertasTransito] = useState<ReqListRow[]>([]);
-    const [alertasMinimo, setAlertasMinimo] = useState<SaldoMinimoAlerta[]>([]);
     const [limit, setLimit] = useState(100);
     const [offset, setOffset] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -839,7 +884,6 @@ export default function DashboardRequisicoesPage() {
                 setSummary(summaryResp.data || {});
                 setRows(listResp.rows || []);
                 setAlertasTransito(alertasResp.transito_24h || []);
-                setAlertasMinimo(alertasResp.estoque_minimo || []);
             } catch (e: any) {
                 setMsg(e?.message || "Erro ao carregar dashboard.");
             } finally {
@@ -1041,53 +1085,40 @@ export default function DashboardRequisicoesPage() {
                                 <div className="mt-1 text-xs text-rose-700">Toque para filtrar somente as atrasadas.</div>
                             </button>
 
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                                <div className="text-sm font-bold text-amber-900">Produtos no mínimo</div>
-                                <div className="mt-1 text-2xl font-bold text-amber-800">{numberBR(alertasMinimo.length)}</div>
-                                <div className="mt-1 text-xs text-amber-700">Quantidade igual ou abaixo do mínimo configurado.</div>
-                            </div>
                         </div>
                     </Card>
                 </div>
 
-                {alertasTransito.length > 0 || alertasMinimo.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                        {alertasTransito.length > 0 ? (
-                            <Card className="p-4 sm:p-5">
-                                <h2 className="text-base font-bold tracking-tight text-slate-950">Trânsito acima de 24h</h2>
-                                <div className="mt-4 space-y-2">
-                                    {alertasTransito.slice(0, 6).map((r) => (
-                                        <button key={r.id} type="button" onClick={() => void openDetail(r.id)} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="font-bold text-slate-950">{codigoReq(r)}</div>
-                                                <Badge className="border-rose-200 bg-rose-50 text-rose-800">{hoursSince(r.enviado_em) || "+24"}h</Badge>
-                                            </div>
-                                            <div className="mt-1 line-clamp-1 text-sm font-semibold text-slate-700">{r.itens_resumo}</div>
-                                            <div className="mt-1 text-xs text-slate-500">{destinoLabel(r)} | Enviado em {fmtDateTime(r.enviado_em)}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </Card>
-                        ) : null}
+                {alertasTransito.length > 0 ? (
+                    <Card className="p-4 sm:p-5">
+                        <h2 className="text-base font-bold tracking-tight text-slate-950">Trânsito acima de 24h</h2>
 
-                        {alertasMinimo.length > 0 ? (
-                            <Card className="p-4 sm:p-5">
-                                <h2 className="text-base font-bold tracking-tight text-slate-950">Estoque mínimo</h2>
-                                <div className="mt-4 space-y-2">
-                                    {alertasMinimo.slice(0, 6).map((a, idx) => (
-                                        <div key={`${a.produto_id}-${a.deposito_id}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-3">
-                                            <div className="font-bold text-slate-950">{a.produto_nome}</div>
-                                            <div className="mt-1 text-xs text-slate-500">{a.deposito_nome}{a.codigo_barras ? ` | CB ${a.codigo_barras}` : ""}</div>
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                                <FilterChip>Saldo {numberBR(a.quantidade, 3)}</FilterChip>
-                                                <FilterChip>Mínimo {numberBR(a.minimo, 3)}</FilterChip>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </Card>
-                        ) : null}
-                    </div>
+                        <div className="mt-4 space-y-2">
+                            {alertasTransito.slice(0, 6).map((r) => (
+                                <button
+                                    key={r.id}
+                                    type="button"
+                                    onClick={() => void openDetail(r.id)}
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="font-bold text-slate-950">{codigoReq(r)}</div>
+                                        <Badge className="border-rose-200 bg-rose-50 text-rose-800">
+                                            {hoursSince(r.enviado_em) || "+24"}h
+                                        </Badge>
+                                    </div>
+
+                                    <div className="mt-1 line-clamp-1 text-sm font-semibold text-slate-700">
+                                        {r.itens_resumo}
+                                    </div>
+
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        {destinoLabel(r)} | Enviado em {fmtDateTime(r.enviado_em)}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </Card>
                 ) : null}
 
                 <Card className="overflow-hidden">
@@ -1121,7 +1152,7 @@ export default function DashboardRequisicoesPage() {
                         ) : rows.length === 0 ? (
                             <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Nenhuma requisição encontrada para os filtros aplicados.</div>
                         ) : (
-                            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                            <div className="space-y-2">
                                 {rows.map((row) => (
                                     <RequisitionCard key={row.id} row={row} onOpen={openDetail} />
                                 ))}
