@@ -2927,13 +2927,14 @@ export default function Page() {
     }
 
     // ✅ PDF REAL (download direto) - Estoque (logo + horizontal)
-    async function exportarEstoquePDF() {
+    // V2: PDF de Produtos com Quantidade + Preço de custo unitário + Total.
+    // CSV permanece inalterado.
+    async function exportarEstoquePDFCustos() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
             return;
         }
 
-        // libs (lazy import)
         const { default: jsPDF } = await import("jspdf");
         const autoTable = (await import("jspdf-autotable")).default;
 
@@ -2953,9 +2954,7 @@ export default function Page() {
                 .trim()
                 .toUpperCase();
 
-        // =========================================================
-        // 1) ORGANIZAÇÃO TOTAL (Depósito -> Categoria -> Fabricante -> Valor desc)
-        // =========================================================
+        // Organização do relatório.
         const sortedRows = [...estoqueRows].sort((a, b) => {
             const depA = norm(a.d?.nome || "");
             const depB = norm(b.d?.nome || "");
@@ -2969,42 +2968,33 @@ export default function Page() {
             const fabB = norm(b.p?.fabricante_nome || "");
             if (fabA !== fabB) return fabA.localeCompare(fabB, "pt-BR");
 
-            const vA = Number(a.p?.valor) || 0;
-            const vB = Number(b.p?.valor) || 0;
-            if (vA !== vB) return vB - vA;
-
-            const nA = (a.p?.nome || "").toString();
-            const nB = (b.p?.nome || "").toString();
-            return nA.localeCompare(nB, "pt-BR");
+            return (a.p?.nome || "").localeCompare(b.p?.nome || "", "pt-BR");
         });
 
-        // =========================================================
-        // 2) REGRAS DE COLUNAS DINÂMICAS
-        // =========================================================
+        // Colunas opcionais só aparecem quando existe conteúdo.
         const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
-
         const hasCodigo = sortedRows.some((r) => !isEmpty(r.p?.codigo_barras));
         const hasDeposito = sortedRows.some((r) => !isEmpty(r.d?.nome));
         const hasCategoria = sortedRows.some((r) => !isEmpty(r.p?.categoria_nome));
         const hasFabricante = sortedRows.some((r) => !isEmpty(r.p?.fabricante_nome));
 
-        // =========================================================
-        // 3) TOTAIS DO PDF
-        // =========================================================
+        // Totais do PDF calculados pela mesma regra usada em cada linha:
+        // Total = quantidade x preço de custo unitário.
         const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
-
         let totalQuantidade = 0;
         let totalCustoEstoque = 0;
 
         for (const { p, qtd } of sortedRows) {
             const quantidade = clampInt(qtd);
+            const precoCustoUnitario = custoMedioMovelProduto(p.id);
+            const totalItem = roundCost(quantidade * precoCustoUnitario);
+
             totalQuantidade += quantidade;
-            totalCustoEstoque += roundCost(quantidade * custoMedioMovelProduto(p.id));
+            totalCustoEstoque += totalItem;
         }
 
         totalCustoEstoque = roundCost(totalCustoEstoque);
 
-        // helper: busca imagem e converte para dataURL
         async function toDataUrl(url: string): Promise<string | null> {
             try {
                 const r = await fetch(url, { mode: "cors", cache: "no-store" });
@@ -3024,14 +3014,11 @@ export default function Page() {
         const logoDataUrl = await toDataUrl(LOGO_URL);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
-        // A4 horizontal
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
         const pageW = doc.internal.pageSize.getWidth();
         const marginX = 12;
         let y = 12;
 
-        // ===== HEADER (logo + título + meta)
         if (logoDataUrl) {
             doc.addImage(logoDataUrl, logoFormat as any, marginX, y, 55, 14);
         }
@@ -3046,30 +3033,24 @@ export default function Page() {
 
         y += 22;
 
-        // ===== FILTROS
+        // Filtros.
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
         doc.roundedRect(marginX, y, pageW - marginX * 2, 22, 2, 2, "FD");
 
         doc.setFontSize(9);
         doc.setTextColor(51, 65, 85);
-
         doc.text(`Depósito: ${f.deposito}`, marginX + 3, y + 6);
         doc.text(`Categoria: ${f.categoria}`, marginX + 3, y + 11);
         doc.text(`Fabricante: ${f.fabricante}`, marginX + 3, y + 16);
         doc.text(`Classificação: ${(f as any).classificacao}`, marginX + 3, y + 21);
-
-        // Mantém a informação dos filtros, mas sem exibir coluna de mínimo no relatório.
         doc.text(`Somente em alerta: ${f.somenteAlerta}`, pageW / 2, y + 6);
         doc.text(`Somente saldo > 0: ${(f as any).somenteSaldoPositivo}`, pageW / 2, y + 11);
 
         y += 28;
 
-        // =========================================================
-        // 4) TABELA DO PDF
-        // Remove: Mín, Reposição e Valor.
-        // Adiciona: Preço de custo unitário e Total.
-        // =========================================================
+        // IMPORTANTE:
+        // Mín, Reposição e Valor NÃO fazem parte do PDF.
         const head: string[] = [
             "Produto",
             ...(hasCodigo ? ["Código"] : []),
@@ -3087,11 +3068,9 @@ export default function Page() {
 
             const quantidade = clampInt(qtd);
             const precoCustoUnitario = custoMedioMovelProduto(p.id);
-            const custoTotalItem = roundCost(quantidade * precoCustoUnitario);
+            const totalItem = roundCost(quantidade * precoCustoUnitario);
 
-            const row: any[] = [];
-            row.push(p.nome);
-
+            const row: any[] = [p.nome];
             if (hasCodigo) row.push(p.codigo_barras || "");
             if (hasDeposito) row.push(d.nome || "");
             if (hasCategoria) row.push(cat);
@@ -3099,12 +3078,10 @@ export default function Page() {
 
             row.push(String(quantidade));
             row.push(moneyBRL(precoCustoUnitario));
-            row.push(moneyBRL(custoTotalItem));
-
+            row.push(moneyBRL(totalItem));
             return row;
         });
 
-        // ===== RODAPÉ
         const footRow = new Array(head.length).fill("");
         footRow[0] = `Modelos: ${totalLinhas}`;
 
@@ -3121,7 +3098,6 @@ export default function Page() {
             foot: [footRow],
             showFoot: "lastPage",
             margin: { left: marginX, right: marginX },
-
             styles: {
                 font: "helvetica",
                 fontSize: 9.2,
@@ -3130,14 +3106,12 @@ export default function Page() {
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
-
             headStyles: {
                 fillColor: [241, 245, 249],
                 textColor: [15, 23, 42],
                 fontStyle: "bold",
                 valign: "middle",
             },
-
             footStyles: {
                 fillColor: [248, 250, 252],
                 textColor: [15, 23, 42],
@@ -3145,7 +3119,6 @@ export default function Page() {
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
-
             didParseCell: (data) => {
                 const colName = head[data.column.index];
 
@@ -3159,21 +3132,19 @@ export default function Page() {
 
                 if (data.section !== "body") return;
 
-                // Mantém o alerta visual na quantidade sem criar coluna de mínimo.
                 if (colName === "Quantidade") {
                     const r = sortedRows[data.row.index];
                     const low = !!r.hasMinMax && clampInt(r.qtd) <= clampInt(r.min);
                     if (low) data.cell.styles.textColor = [185, 28, 28];
                 }
             },
-
             columnStyles: {
                 0: { cellWidth: 82, overflow: "linebreak" },
             },
         });
 
-        // ===== DOWNLOAD DIRETO
-        const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        // Nome diferente ajuda a confirmar que o novo exportador está sendo executado.
+        const safeName = `estoque_custos_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }
 
@@ -6340,7 +6311,7 @@ export default function Page() {
                                     <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                    <Button variant="soft" onClick={exportarEstoquePDFCustos} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         🧾 PDF
                                     </Button>
                                 </div>
