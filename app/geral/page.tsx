@@ -2926,10 +2926,9 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
-    // ✅ PDF REAL (download direto) - Estoque (logo + horizontal)
-    // V2: PDF de Produtos com Quantidade + Preço de custo unitário + Total.
-    // CSV permanece inalterado.
-    async function exportarEstoquePDFCustos() {
+    // ✅ PDF DE CUSTOS - Estoque filtrado (logo + horizontal)
+    // V3: esta função NÃO possui as colunas Mín, Reposição ou Valor.
+    async function exportarEstoquePDFCustosV3() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
             return;
@@ -2954,7 +2953,7 @@ export default function Page() {
                 .trim()
                 .toUpperCase();
 
-        // Organização do relatório.
+        // Mesma lista filtrada exibida na aba Produtos.
         const sortedRows = [...estoqueRows].sort((a, b) => {
             const depA = norm(a.d?.nome || "");
             const depB = norm(b.d?.nome || "");
@@ -2971,27 +2970,47 @@ export default function Page() {
             return (a.p?.nome || "").localeCompare(b.p?.nome || "", "pt-BR");
         });
 
-        // Colunas opcionais só aparecem quando existe conteúdo.
-        const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
+        const isEmpty = (v: any) =>
+            v === null || v === undefined || String(v).trim() === "";
+
         const hasCodigo = sortedRows.some((r) => !isEmpty(r.p?.codigo_barras));
         const hasDeposito = sortedRows.some((r) => !isEmpty(r.d?.nome));
         const hasCategoria = sortedRows.some((r) => !isEmpty(r.p?.categoria_nome));
         const hasFabricante = sortedRows.some((r) => !isEmpty(r.p?.fabricante_nome));
 
-        // Totais do PDF calculados pela mesma regra usada em cada linha:
-        // Total = quantidade x preço de custo unitário.
-        const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
         let totalQuantidade = 0;
         let totalCustoEstoque = 0;
+        const totalModelos = new Set(sortedRows.map((r) => Number(r.p.id))).size;
 
-        for (const { p, qtd } of sortedRows) {
+        const body = sortedRows.map(({ p, d, qtd }) => {
+            const categoria =
+                p.categoria_nome ||
+                (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
+                "";
+
+            const fabricante =
+                p.fabricante_nome ||
+                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                "";
+
             const quantidade = clampInt(qtd);
             const precoCustoUnitario = custoMedioMovelProduto(p.id);
+            // Regra solicitada: Total = quantidade total x preço de custo unitário.
             const totalItem = roundCost(quantidade * precoCustoUnitario);
 
             totalQuantidade += quantidade;
             totalCustoEstoque += totalItem;
-        }
+
+            const row: any[] = [p.nome];
+            if (hasCodigo) row.push(p.codigo_barras || "");
+            if (hasDeposito) row.push(d?.nome || "");
+            if (hasCategoria) row.push(categoria);
+            if (hasFabricante) row.push(fabricante);
+            row.push(String(quantidade));
+            row.push(moneyBRL(precoCustoUnitario));
+            row.push(moneyBRL(totalItem));
+            return row;
+        });
 
         totalCustoEstoque = roundCost(totalCustoEstoque);
 
@@ -2999,13 +3018,12 @@ export default function Page() {
             try {
                 const r = await fetch(url, { mode: "cors", cache: "no-store" });
                 const b = await r.blob();
-                const reader = await new Promise<string>((resolve, reject) => {
+                return await new Promise<string>((resolve, reject) => {
                     const fr = new FileReader();
                     fr.onerror = () => reject(new Error("Falha ao ler logo"));
                     fr.onload = () => resolve(String(fr.result || ""));
                     fr.readAsDataURL(b);
                 });
-                return reader;
             } catch {
                 return null;
             }
@@ -3016,8 +3034,8 @@ export default function Page() {
 
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
         const pageW = doc.internal.pageSize.getWidth();
-        const marginX = 12;
-        let y = 12;
+        const marginX = 10;
+        let y = 10;
 
         if (logoDataUrl) {
             doc.addImage(logoDataUrl, logoFormat as any, marginX, y, 55, 14);
@@ -3025,21 +3043,20 @@ export default function Page() {
 
         doc.setFont("helvetica", "bold");
         doc.setFontSize(14);
-        doc.text("Relatório de Estoque", marginX + 62, y + 8);
+        doc.text("Relatório de Estoque - Custos", marginX + 62, y + 8);
 
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.text(`Gerado em: ${geradoEm}`, marginX + 62, y + 14);
 
         y += 22;
 
-        // Filtros.
         doc.setDrawColor(226, 232, 240);
         doc.setFillColor(248, 250, 252);
         doc.roundedRect(marginX, y, pageW - marginX * 2, 22, 2, 2, "FD");
-
-        doc.setFontSize(9);
         doc.setTextColor(51, 65, 85);
+        doc.setFontSize(8.5);
+
         doc.text(`Depósito: ${f.deposito}`, marginX + 3, y + 6);
         doc.text(`Categoria: ${f.categoria}`, marginX + 3, y + 11);
         doc.text(`Fabricante: ${f.fabricante}`, marginX + 3, y + 16);
@@ -3049,8 +3066,7 @@ export default function Page() {
 
         y += 28;
 
-        // IMPORTANTE:
-        // Mín, Reposição e Valor NÃO fazem parte do PDF.
+        // IMPORTANTE: estas são as ÚNICAS colunas do PDF.
         const head: string[] = [
             "Produto",
             ...(hasCodigo ? ["Código"] : []),
@@ -3058,32 +3074,12 @@ export default function Page() {
             ...(hasCategoria ? ["Categoria"] : []),
             ...(hasFabricante ? ["Fabricante"] : []),
             "Quantidade",
-            "Preço de custo unitário",
+            "Preço de Custo (un)",
             "Total",
         ];
 
-        const body = sortedRows.map(({ p, d, qtd }) => {
-            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-
-            const quantidade = clampInt(qtd);
-            const precoCustoUnitario = custoMedioMovelProduto(p.id);
-            const totalItem = roundCost(quantidade * precoCustoUnitario);
-
-            const row: any[] = [p.nome];
-            if (hasCodigo) row.push(p.codigo_barras || "");
-            if (hasDeposito) row.push(d.nome || "");
-            if (hasCategoria) row.push(cat);
-            if (hasFabricante) row.push(fab);
-
-            row.push(String(quantidade));
-            row.push(moneyBRL(precoCustoUnitario));
-            row.push(moneyBRL(totalItem));
-            return row;
-        });
-
         const footRow = new Array(head.length).fill("");
-        footRow[0] = `Modelos: ${totalLinhas}`;
+        footRow[0] = `Modelos: ${totalModelos}`;
 
         const idxQtd = head.indexOf("Quantidade");
         if (idxQtd >= 0) footRow[idxQtd] = String(totalQuantidade);
@@ -3100,9 +3096,9 @@ export default function Page() {
             margin: { left: marginX, right: marginX },
             styles: {
                 font: "helvetica",
-                fontSize: 9.2,
-                cellPadding: 2.2,
-                valign: "top",
+                fontSize: 8.2,
+                cellPadding: 1.8,
+                valign: "middle",
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
@@ -3121,30 +3117,21 @@ export default function Page() {
             },
             didParseCell: (data) => {
                 const colName = head[data.column.index];
-
-                if (["Quantidade", "Preço de custo unitário", "Total"].includes(colName)) {
+                if (["Quantidade", "Preço de Custo (un)", "Total"].includes(colName)) {
                     data.cell.styles.halign = "right";
-                }
-
-                if (data.section === "foot" && data.column.index === 0) {
-                    data.cell.styles.halign = "left";
-                }
-
-                if (data.section !== "body") return;
-
-                if (colName === "Quantidade") {
-                    const r = sortedRows[data.row.index];
-                    const low = !!r.hasMinMax && clampInt(r.qtd) <= clampInt(r.min);
-                    if (low) data.cell.styles.textColor = [185, 28, 28];
                 }
             },
             columnStyles: {
-                0: { cellWidth: 82, overflow: "linebreak" },
+                0: { cellWidth: 76, overflow: "linebreak" },
             },
         });
 
-        // Nome diferente ajuda a confirmar que o novo exportador está sendo executado.
-        const safeName = `estoque_custos_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        // Prefixo exclusivo para provar que esta função foi executada.
+        const safeName = `estoque_custos_v3_${new Date()
+            .toISOString()
+            .slice(0, 19)
+            .replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+
         doc.save(`${safeName}.pdf`);
     }
 
@@ -6311,8 +6298,8 @@ export default function Page() {
                                     <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDFCustos} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
-                                        🧾 PDF
+                                    <Button variant="soft" onClick={exportarEstoquePDFCustosV3} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                        🧾 PDF CUSTOS
                                     </Button>
                                 </div>
                             </div>
