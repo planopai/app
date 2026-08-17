@@ -2926,9 +2926,8 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
-    // ✅ PDF DE CUSTOS - Estoque filtrado (logo + horizontal)
-    // V3: esta função NÃO possui as colunas Mín, Reposição ou Valor.
-    async function exportarEstoquePDFCustosV3() {
+    // ✅ PDF REAL (download direto) - Estoque filtrado com custo unitário e total
+    async function exportarEstoquePDF() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
             return;
@@ -3043,7 +3042,7 @@ export default function Page() {
 
         doc.setFont("helvetica", "bold");
         doc.setFontSize(14);
-        doc.text("Relatório de Estoque - Custos", marginX + 62, y + 8);
+        doc.text("Relatório de Estoque", marginX + 62, y + 8);
 
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
@@ -3126,8 +3125,7 @@ export default function Page() {
             },
         });
 
-        // Prefixo exclusivo para provar que esta função foi executada.
-        const safeName = `estoque_custos_v3_${new Date()
+        const safeName = `estoque_${new Date()
             .toISOString()
             .slice(0, 19)
             .replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
@@ -6298,8 +6296,8 @@ export default function Page() {
                                     <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDFCustosV3} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
-                                        🧾 PDF CUSTOS
+                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                        🧾 PDF
                                     </Button>
                                 </div>
                             </div>
