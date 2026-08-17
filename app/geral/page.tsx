@@ -2954,7 +2954,7 @@ export default function Page() {
                 .toUpperCase();
 
         // =========================================================
-        // 1) ORGANIZAÇÃO TOTAL (Depósito -> Categoria -> Fabricante -> Valor desc)
+        // 1) ORGANIZAÇÃO TOTAL (Depósito -> Categoria -> Fabricante -> Produto)
         // =========================================================
         const sortedRows = [...estoqueRows].sort((a, b) => {
             const depA = norm(a.d?.nome || "");
@@ -2968,10 +2968,6 @@ export default function Page() {
             const fabA = norm(a.p?.fabricante_nome || "");
             const fabB = norm(b.p?.fabricante_nome || "");
             if (fabA !== fabB) return fabA.localeCompare(fabB, "pt-BR");
-
-            const vA = Number(a.p?.valor) || 0;
-            const vB = Number(b.p?.valor) || 0;
-            if (vA !== vB) return vB - vA;
 
             const nA = (a.p?.nome || "").toString();
             const nB = (b.p?.nome || "").toString();
@@ -2988,25 +2984,21 @@ export default function Page() {
         const hasCategoria = sortedRows.some((r) => !isEmpty(r.p?.categoria_nome));
         const hasFabricante = sortedRows.some((r) => !isEmpty(r.p?.fabricante_nome));
 
-        const showValorCol = sortedRows.some((r) => (Number(r.p?.valor) || 0) !== 0);
-
-        // ✅ segue a regra do sistema: se no(s) depósito(s) exportado(s) ninguém tem min/max, não mostra
-        const showMinCol = showMinRepColumns;
-        const showRepCol = showMinRepColumns;
-
-
         // =========================================================
         // 3) TOTAIS
         // =========================================================
         const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
 
         let totalQuantidade = 0;
-        let totalValor = 0;
+        let totalCustoEstoque = 0;
+
         for (const { p, qtd } of sortedRows) {
             const q = clampInt(qtd);
             totalQuantidade += q;
-            totalValor += q * (Number(p.valor) || 0);
+            totalCustoEstoque += custoTotalMovelProduto(p.id, q);
         }
+
+        totalCustoEstoque = roundCost(totalCustoEstoque);
 
         // helper: busca imagem e converte para dataURL
         async function toDataUrl(url: string): Promise<string | null> {
@@ -3071,7 +3063,9 @@ export default function Page() {
         y += 28;
 
         // =========================================================
-        // 4) TABELA (autoTable) com colunas dinâmicas + RODAPÉ
+        // 4) TABELA (autoTable) + RODAPÉ
+        // PDF de Produtos: sem Mín, Reposição e Valor de venda.
+        // Inclui custo médio móvel unitário e custo total do estoque filtrado.
         // =========================================================
         const head: string[] = [
             "Produto",
@@ -3080,16 +3074,16 @@ export default function Page() {
             ...(hasCategoria ? ["Categoria"] : []),
             ...(hasFabricante ? ["Fabricante"] : []),
             "Quantidade",
-            ...(showMinCol ? ["Mín"] : []),
-            ...(showRepCol ? ["Reposição"] : []),
-            ...(showValorCol ? ["Valor"] : []),
+            "Preço de Custo (un)",
+            "Custo Total",
         ];
 
-
-        const body = sortedRows.map(({ p, d, qtd, rep, min, hasMinMax }) => {
+        const body = sortedRows.map(({ p, d, qtd }) => {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-            const valorNum = Number(p.valor) || 0;
+            const quantidade = clampInt(qtd);
+            const precoCustoUnitario = custoMedioMovelProduto(p.id);
+            const custoTotalItem = custoTotalMovelProduto(p.id, quantidade);
 
             const row: any[] = [];
             row.push(p.nome);
@@ -3099,18 +3093,14 @@ export default function Page() {
             if (hasCategoria) row.push(cat);
             if (hasFabricante) row.push(fab);
 
-            row.push(String(clampInt(qtd)));
-
-            if (showMinCol) row.push(hasMinMax ? String(clampInt(min)) : "");
-            if (showRepCol) row.push(hasMinMax ? String(clampInt(rep)) : "");
-
-            if (showValorCol) row.push(moneyBRL(valorNum));
+            row.push(String(quantidade));
+            row.push(moneyBRL(precoCustoUnitario));
+            row.push(moneyBRL(custoTotalItem));
 
             return row;
         });
 
-
-        // ✅ RODAPÉ (totais alinhados por coluna) — precisa vir ANTES do autoTable
+        // ✅ RODAPÉ com quantidade e valor total do custo do estoque
         const footRow = new Array(head.length).fill("");
 
         // "Modelos:" na 1ª coluna (Produto)
@@ -3120,9 +3110,9 @@ export default function Page() {
         const idxQtd = head.indexOf("Quantidade");
         if (idxQtd >= 0) footRow[idxQtd] = String(totalQuantidade);
 
-        // Valor total embaixo de Valor (se existir)
-        const idxValor = head.indexOf("Valor");
-        if (idxValor >= 0) footRow[idxValor] = moneyBRL(totalValor);
+        // Custo total geral embaixo de Custo Total
+        const idxCustoTotal = head.indexOf("Custo Total");
+        if (idxCustoTotal >= 0) footRow[idxCustoTotal] = moneyBRL(totalCustoEstoque);
 
         autoTable(doc, {
             startY: y,
@@ -3163,8 +3153,8 @@ export default function Page() {
             didParseCell: (data) => {
                 const colName = head[data.column.index];
 
-                // ✅ alinha numéricos à direita (inclusive no rodapé)
-                if (["Quantidade", "Reposição", "Valor"].includes(colName)) {
+                // ✅ alinha números e valores monetários à direita
+                if (["Quantidade", "Preço de Custo (un)", "Custo Total"].includes(colName)) {
                     data.cell.styles.halign = "right";
                 }
 
@@ -3176,24 +3166,17 @@ export default function Page() {
                 // daqui pra baixo: só body
                 if (data.section !== "body") return;
 
-                // ✅ alerta (≤ mínimo): pinta Quantidade em vermelho
+                // ✅ mantém o alerta visual de estoque baixo na Quantidade
                 if (colName === "Quantidade") {
                     const r = sortedRows[data.row.index];
                     const low = !!r.hasMinMax && clampInt(r.qtd) <= clampInt(r.min);
                     if (low) data.cell.styles.textColor = [185, 28, 28];
                 }
-
-
-                // ✅ reposição verde
-                if (colName === "Reposição") {
-                    const txt = String(data.cell.raw || "");
-                    if (txt && txt !== "0") data.cell.styles.textColor = [22, 163, 74];
-                }
             },
 
             // ✅ deixa Produto quebrar linha quando precisar
             columnStyles: {
-                0: { cellWidth: 85, overflow: "linebreak" }, // Produto
+                0: { cellWidth: 75, overflow: "linebreak" }, // Produto
             },
         });
 
@@ -3201,7 +3184,6 @@ export default function Page() {
         const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
         doc.save(`${safeName}.pdf`);
     }
-
 
 
     // =========================
