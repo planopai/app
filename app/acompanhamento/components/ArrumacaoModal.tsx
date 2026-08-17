@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { ArrumacaoState, Registro } from "./types";
+import { jsonWith401 } from "./helpers";
 
 type EstoqueRow = {
     id?: number;
@@ -34,6 +35,7 @@ type MeInfo = {
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
 const ME_API = `${ENDPOINT}/informativo.php?me=1`;
+const INFORM_API = `${ENDPOINT}/informativo.php`;
 
 function normUpper(value: unknown): string {
     return String(value ?? "")
@@ -217,6 +219,7 @@ export default function ArrumacaoModal({
     setArrumacao,
     setWizardData,
     wizardData,
+    onPersisted,
 }: {
     open: boolean;
     setOpen: (open: boolean) => void;
@@ -224,6 +227,7 @@ export default function ArrumacaoModal({
     setArrumacao: React.Dispatch<React.SetStateAction<ArrumacaoState>>;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     wizardData?: Registro;
+    onPersisted?: () => void | Promise<void>;
 }) {
     const campos: { key: keyof ArrumacaoState; label: string }[] = [
         { key: "luvas", label: "Luvas" },
@@ -239,6 +243,8 @@ export default function ArrumacaoModal({
     const [loadingMe, setLoadingMe] = useState(false);
     const [loadingItens, setLoadingItens] = useState(false);
     const [err, setErr] = useState("");
+    const [saveErr, setSaveErr] = useState("");
+    const [saving, setSaving] = useState(false);
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const [sel, setSel] = useState<Record<number, InsumoSel>>({});
 
@@ -264,6 +270,8 @@ export default function ArrumacaoModal({
         setDepInsumos(null);
         setRows([]);
         setErr("");
+        setSaveErr("");
+        setSaving(false);
         setLoadingMe(true);
 
         consultarMe(controller.signal)
@@ -319,7 +327,10 @@ export default function ArrumacaoModal({
 
         const url = new URL(ESTOQUE_API);
         url.searchParams.set("action", "insumos_tanato_listar");
-        url.searchParams.set("somente_com_saldo", "1");
+        // Busca também itens sem saldo para que uma seleção já salva continue
+        // visível depois da baixa automática da fase05. Itens zerados e ainda
+        // não selecionados ficam bloqueados na interface.
+        url.searchParams.set("somente_com_saldo", "0");
         url.searchParams.set("limit", "300");
         url.searchParams.set("_nocache", String(Date.now()));
 
@@ -381,6 +392,32 @@ export default function ArrumacaoModal({
         [sel],
     );
 
+    // Mesmo que o endpoint de estoque deixe de devolver um produto após a
+    // baixa da fase05, mantemos a seleção persistida visível no modal.
+    const rowsParaExibir = useMemo(() => {
+        const byPid = new Map<number, EstoqueRow>();
+
+        for (const row of rows) {
+            const pid = getPidFromRow(row);
+            if (pid > 0) byPid.set(pid, row);
+        }
+
+        for (const [pidRaw, item] of Object.entries(sel)) {
+            const pid = Number(pidRaw) || 0;
+            if (pid <= 0 || !item?.checked || byPid.has(pid)) continue;
+
+            byPid.set(pid, {
+                id: pid,
+                produto_id: pid,
+                nome: item.nome || `Produto ${pid}`,
+                codigo_barras: item.codigo_barras,
+                saldo_total: 0,
+            });
+        }
+
+        return Array.from(byPid.values());
+    }, [rows, sel]);
+
     const buildArrumacaoJson = (): string => {
         const oldRaw = (wizardData as any)?.arrumacao_json ?? null;
         const oldObj = safeParseJson(oldRaw);
@@ -427,7 +464,98 @@ export default function ArrumacaoModal({
         return JSON.stringify(payload);
     };
 
-    const podeSalvar = !!me && !!depInsumos && !loadingMe && !err;
+    const podeSalvar =
+        !!me &&
+        !!depInsumos &&
+        !loadingMe &&
+        !loadingItens &&
+        !saving &&
+        !err;
+
+    const aplicarNoEstadoLocal = (json: string) => {
+        setWizardData((previous: Registro) => {
+            const next: Registro = {
+                ...previous,
+                arrumacao,
+                arrumacao_json: json,
+            };
+
+            // Estes campos são apenas marcadores de transporte. Como a
+            // Arrumação passa a ser persistida imediatamente em registros
+            // existentes, não devemos deixar um escopo antigo restringindo
+            // um próximo salvamento do Wizard.
+            delete (next as any)._wizard_restrict_ids;
+            delete (next as any)._wizard_modal_restrict_ids;
+            delete (next as any)._wizard_modal_scope;
+            delete (next as any)._wizard_modal_dirty_at;
+
+            return next;
+        });
+    };
+
+    const salvarArrumacao = async () => {
+        if (!podeSalvar) return;
+
+        const json = buildArrumacaoJson();
+        const registroId = Number((wizardData as any)?.id ?? 0) || 0;
+
+        setSaving(true);
+        setSaveErr("");
+
+        try {
+            // Em edição, o botão do próprio modal passa a salvar no banco.
+            // O escopo restrito garante que somente arrumacao_json seja
+            // alterado no atendimento.
+            if (registroId > 0) {
+                const result = await jsonWith401(INFORM_API, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        acao: "editar",
+                        id: registroId,
+                        arrumacao_json: json,
+                        _wizard_restrict_ids: ["arrumacao_json"],
+                    }),
+                });
+
+                if (!result?.sucesso) {
+                    throw new Error(
+                        result?.msg ||
+                        result?.erro ||
+                        "Não foi possível salvar a arrumação.",
+                    );
+                }
+            }
+
+            // Atualiza a lista principal depois da persistência, mas uma
+            // eventual falha de atualização da listagem não transforma um
+            // salvamento já confirmado pelo backend em erro.
+            if (registroId > 0 && onPersisted) {
+                try {
+                    await Promise.resolve(onPersisted());
+                } catch (refreshError) {
+                    console.warn(
+                        "Arrumação salva, mas a lista não pôde ser atualizada:",
+                        refreshError,
+                    );
+                }
+            }
+
+            // Registro novo ainda não possui ID. Nesse caso os dados ficam
+            // no wizardData e serão gravados quando o novo atendimento for
+            // concluído pela primeira vez. Em edição, isto também mantém a
+            // tela atual sincronizada com o JSON já persistido.
+            aplicarNoEstadoLocal(json);
+            setOpen(false);
+        } catch (error: any) {
+            setSaveErr(
+                error?.message ||
+                "Não foi possível salvar os insumos de tanatopraxia.",
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
 
     return (
         <Modal
@@ -493,9 +621,9 @@ export default function ArrumacaoModal({
                         <div className="rounded-md border p-3 text-sm text-red-600">
                             {err}
                         </div>
-                    ) : rows.length === 0 ? (
+                    ) : rowsParaExibir.length === 0 ? (
                         <div className="rounded-md border p-3 text-sm text-slate-600">
-                            Nenhum insumo com saldo disponível.
+                            Nenhum insumo cadastrado para este armário.
                         </div>
                     ) : (
                         <div className="max-h-72 overflow-auto rounded-md border">
@@ -506,12 +634,18 @@ export default function ArrumacaoModal({
                             </div>
 
                             <ul className="divide-y">
-                                {rows.map((item) => {
+                                {rowsParaExibir.map((item) => {
                                     const pid = getPidFromRow(item);
                                     if (!pid) return null;
 
                                     const current = sel[pid];
                                     const checked = !!current?.checked;
+                                    const saldo = Math.max(
+                                        0,
+                                        Number(item.saldo_total) || 0,
+                                    );
+                                    const semSaldoParaNovaSelecao =
+                                        saldo <= 0 && !checked;
                                     const qtd = Math.max(
                                         1,
                                         Math.floor(
@@ -528,6 +662,15 @@ export default function ArrumacaoModal({
                                                 <input
                                                     type="checkbox"
                                                     checked={checked}
+                                                    disabled={
+                                                        semSaldoParaNovaSelecao ||
+                                                        saving
+                                                    }
+                                                    title={
+                                                        semSaldoParaNovaSelecao
+                                                            ? "Item sem saldo disponível"
+                                                            : undefined
+                                                    }
                                                     onChange={(event) => {
                                                         const enabled =
                                                             event.target
@@ -592,9 +735,7 @@ export default function ArrumacaoModal({
 
                                             <div className="text-right text-sm text-slate-700">
                                                 <b>
-                                                    {Number(
-                                                        item.saldo_total,
-                                                    ) || 0}
+                                                    {saldo}
                                                 </b>
                                             </div>
 
@@ -605,7 +746,7 @@ export default function ArrumacaoModal({
                                                     step={1}
                                                     className="w-full rounded-md border px-2 py-1 text-sm"
                                                     value={qtd}
-                                                    disabled={!checked}
+                                                    disabled={!checked || saving}
                                                     onChange={(event) => {
                                                         const nextQtd =
                                                             Math.max(
@@ -661,13 +802,20 @@ export default function ArrumacaoModal({
                         </div>
                     )}
                 </div>
+
+                {saveErr && (
+                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {saveErr}
+                    </div>
+                )}
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-2 text-sm"
+                    className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
                     onClick={() => setOpen(false)}
+                    disabled={saving}
                 >
                     Cancelar
                 </button>
@@ -676,26 +824,10 @@ export default function ArrumacaoModal({
                     type="button"
                     disabled={!podeSalvar}
                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => {
-                        const json = buildArrumacaoJson();
-
-                        setWizardData((previous: Registro) => ({
-                            ...previous,
-                            arrumacao,
-                            arrumacao_json: json,
-                            _wizard_restrict_ids: [
-                                "arrumacao_json",
-                            ] as any,
-                            _wizard_modal_restrict_ids: [
-                                "arrumacao_json",
-                            ] as any,
-                            _wizard_modal_scope: "arrumacao" as any,
-                        }));
-
-                        setOpen(false);
-                    }}
+                    onClick={salvarArrumacao}
+                    aria-busy={saving}
                 >
-                    Salvar Arrumação
+                    {saving ? "Salvando…" : "Salvar Arrumação"}
                 </button>
             </div>
         </Modal>

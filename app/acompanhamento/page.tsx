@@ -2572,11 +2572,59 @@ export default function AcompanhamentoPage() {
       { key: "formol", label: "Formol" },
       { key: "mascara", label: "Máscara" },
     ];
+
     const arr = (wizardData as any).arrumacao || arrumacao;
-    return mapa
+    const partes = mapa
       .filter((o) => !!(arr as any)?.[o.key])
-      .map((o) => o.label)
-      .join(" • ");
+      .map((o) => o.label);
+
+    // Também mostra os insumos dinâmicos gravados em arrumacao_json.
+    // Antes eles eram persistidos no JSON, mas o resumo exibia somente os
+    // checkboxes antigos, dando a impressão de que a seleção havia sumido.
+    try {
+      const raw = (wizardData as any)?.arrumacao_json;
+      const parsed =
+        typeof raw === "string" && raw.trim()
+          ? JSON.parse(raw)
+          : raw && typeof raw === "object"
+            ? raw
+            : null;
+
+      const itensRaw = parsed?.itens ?? parsed?.items ?? null;
+      const itensArray: any[] = Array.isArray(itensRaw)
+        ? itensRaw
+        : itensRaw && typeof itensRaw === "object"
+          ? Object.values(itensRaw)
+          : [];
+
+      const insumos = itensArray
+        .filter((item: any) => {
+          const checked = item?.checked;
+          const marcado =
+            checked !== false &&
+            checked !== 0 &&
+            checked !== "0" &&
+            checked !== "false";
+          return
+          marcado &&
+            (Number(item?.produto_id ?? item?.id ?? 0) || 0) > 0 &&
+            (Number(item?.qtd ?? item?.quantidade ?? 0) || 0) > 0;
+        })
+        .map((item: any) => {
+          const nome = String(item?.nome ?? "Insumo").trim() || "Insumo";
+          const qtd = Math.max(
+            1,
+            Math.floor(Number(item?.qtd ?? item?.quantidade ?? 1) || 1),
+          );
+          return `${nome} (${qtd})`;
+        });
+
+      if (insumos.length > 0) {
+        partes.push(`Insumos: ${insumos.join(", ")}`);
+      }
+    } catch { }
+
+    return partes.join(" • ");
   }, [wizardData, arrumacao]);
 
   const findRegistroById = useCallback(
@@ -2672,6 +2720,7 @@ export default function AcompanhamentoPage() {
         setArrumacao={setArrumacao}
         setWizardData={setWizardData}
         wizardData={wizardData} // ✅ ESSENCIAL
+        onPersisted={fetchRegistrosSafe}
       />
 
       <AcaoModal
