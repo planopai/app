@@ -2999,7 +2999,7 @@ export default function Page() {
         for (const { p, qtd } of sortedRows) {
             const quantidade = clampInt(qtd);
             totalQuantidade += quantidade;
-            totalCustoEstoque += custoTotalMovelProduto(p.id, quantidade);
+            totalCustoEstoque += roundCost(quantidade * custoMedioMovelProduto(p.id));
         }
 
         totalCustoEstoque = roundCost(totalCustoEstoque);
@@ -3068,7 +3068,7 @@ export default function Page() {
         // =========================================================
         // 4) TABELA DO PDF
         // Remove: Mín, Reposição e Valor.
-        // Adiciona: Preço de Custo (un) e Total.
+        // Adiciona: Preço de custo unitário e Total.
         // =========================================================
         const head: string[] = [
             "Produto",
@@ -3077,7 +3077,7 @@ export default function Page() {
             ...(hasCategoria ? ["Categoria"] : []),
             ...(hasFabricante ? ["Fabricante"] : []),
             "Quantidade",
-            "Preço de Custo (un)",
+            "Preço de custo unitário",
             "Total",
         ];
 
@@ -3087,7 +3087,7 @@ export default function Page() {
 
             const quantidade = clampInt(qtd);
             const precoCustoUnitario = custoMedioMovelProduto(p.id);
-            const custoTotalItem = custoTotalMovelProduto(p.id, quantidade);
+            const custoTotalItem = roundCost(quantidade * precoCustoUnitario);
 
             const row: any[] = [];
             row.push(p.nome);
@@ -3149,7 +3149,7 @@ export default function Page() {
             didParseCell: (data) => {
                 const colName = head[data.column.index];
 
-                if (["Quantidade", "Preço de Custo (un)", "Total"].includes(colName)) {
+                if (["Quantidade", "Preço de custo unitário", "Total"].includes(colName)) {
                     data.cell.styles.halign = "right";
                 }
 
