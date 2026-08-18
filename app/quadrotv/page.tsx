@@ -886,7 +886,9 @@ const ROTULO_PARA_FASE: Record<string, string> = {
     preparando: "fase03",
     "aguardando ornamentacao": "fase04",
     ornamentando: "fase05",
-    "corpo pronto": "fase06",
+    "fim da ornamentacao": "fase06",
+    "aguardando corpo pronto": "fase06",
+    "corpo pronto": "fase12",
     transportando: "fase07",
     "transportando p/ velorio": "fase07",
     "transportando p/ velório": "fase07",
@@ -932,6 +934,8 @@ function capStatus(s?: string) {
         case "fase05":
             return "Ornamentando";
         case "fase06":
+            return "Aguardando Corpo Pronto";
+        case "fase12":
             return "Corpo Pronto";
         case "fase07":
             return "Transportando P/ Velório";
@@ -955,7 +959,8 @@ function badgeClass(s?: string) {
     if (x === "fase03") return "bg-blue-600";
     if (x === "fase04") return "bg-fuchsia-600";
     if (x === "fase05") return "bg-rose-600";
-    if (x === "fase06") return "bg-emerald-600";
+    if (x === "fase06") return "bg-fuchsia-700";
+    if (x === "fase12") return "bg-emerald-600";
     if (x === "fase07") return "bg-cyan-600";
     if (x === "fase08") return "bg-violet-600";
     if (x === "fase09") return "bg-orange-600";
@@ -1394,7 +1399,11 @@ function isSim(v?: string) {
     return s === "sim" || s === "s";
 }
 function isTerceiroRegistro(r: Registro) {
-    if ((r as any).tipo_atendimento === "terceiro") return true;
+    const tipo = String((r as any).tipo_atendimento ?? "").trim().toLowerCase();
+    if (tipo === "terceiro") return true;
+    if (tipo === "funerario") return false;
+
+    // Fallback somente para registros legados sem tipo_atendimento salvo.
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
@@ -1508,7 +1517,8 @@ const STATUS_STEP_DEFS: StatusStepInfo[] = [
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
     { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "flower" },
     { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
-    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
+    { key: "fase06", label: "Aguardando Corpo Pronto", shortLabel: "A. Pronto", icon: "timer" },
+    { key: "fase12", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
     { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "car" },
     { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
     { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
@@ -1525,7 +1535,7 @@ const STATUS_STEPS: StatusStepInfo[] = [
     // Conta do comando "Sepultamento Concluído" até "Material Recolhido".
     { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
     // Soma os intervalos entre as etapas principais: aguardando procedimento,
-    // aguardando ornamentação, corpo pronto e transportando para velório.
+    // aguardando ornamentação, aguardando Corpo Pronto, Corpo Pronto e transportando para velório.
     { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
 ];
 
@@ -1579,7 +1589,7 @@ function formatDurationMs(msRaw: number): string {
 }
 
 const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
-const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase07"]);
+const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase12", "fase07"]);
 
 function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
     const logTimes = (logs ?? [])
@@ -3314,14 +3324,14 @@ function CoroaTimelinePill({
         >
             <div
                 className={`qa-coroa-stage-ring relative flex h-[21px] w-[21px] items-center justify-center rounded-full ${active
-                        ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]"
-                        : "border border-transparent"
+                    ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]"
+                    : "border border-transparent"
                     }`}
             >
                 <div
                     className={`qa-coroa-stage-icon relative flex h-[16px] w-[16px] items-center justify-center ${active
-                            ? "qa-status-blink text-[#22C55E]"
-                            : "text-[#00AEEC]"
+                        ? "qa-status-blink text-[#22C55E]"
+                        : "text-[#00AEEC]"
                         } ${muted ? "opacity-[0.14]" : ""}`}
                     aria-hidden="true"
                 >
@@ -3331,10 +3341,10 @@ function CoroaTimelinePill({
 
             <div
                 className={`qa-coroa-stage-time mt-[2px] w-full truncate text-[8px] font-black leading-none tabular-nums ${muted
-                        ? "text-slate-500/35"
-                        : active
-                            ? "text-[#22C55E]"
-                            : "text-slate-100"
+                    ? "text-slate-500/35"
+                    : active
+                        ? "text-[#22C55E]"
+                        : "text-slate-100"
                     }`}
             >
                 {time}
@@ -3756,7 +3766,7 @@ function StatusTimelineCell({
 
 function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
     if (stepKey === "fase03") return isNao(registro.tanato);
-    if (stepKey === "fase05") return isNao((registro.ornamentacao_tipo ?? registro.ornamentacao) as string | undefined);
+    if (stepKey === "fase05") return isNao(registro.ornamentacao);
     return false;
 }
 

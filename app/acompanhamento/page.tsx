@@ -1,4 +1,4 @@
-// PAGE INFO ITENS FIX V2 - KIT LANCHE COM BAIXA AUTOMATICA
+// FASE12 CORPO PRONTO - CHECKPOINT ÚNICO DE BAIXA DE ESTOQUE
 "use client";
 
 import React, {
@@ -61,7 +61,7 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 // ✅ endpoint da baixa automática (novo PHP independente)
 const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 
-// ===== Helpers novos (fase05: URNA / ROUPA / INVOL / INSUMOS) =====
+// ===== Helpers de baixa (fase12: URNA / ROUPA / INVOL / INSUMOS) =====
 type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "INSUMOS";
 
 function isSim(v: any): boolean {
@@ -358,7 +358,9 @@ function normalizeStatusCode(v: any): string {
     preparando: "fase03",
     "aguardando ornamentacao": "fase04",
     ornamentando: "fase05",
-    "corpo pronto": "fase06",
+    "fim da ornamentacao": "fase06",
+    "aguardando corpo pronto": "fase06",
+    "corpo pronto": "fase12",
     transportando: "fase07",
     "transportando obito p/velorio": "fase07",
     "transportando obito para velorio": "fase07",
@@ -1120,9 +1122,9 @@ export default function AcompanhamentoPage() {
   );
 
   /* --------------------
-     ✅ baixa automática da urna (fase05)
+     ✅ baixa automática dos itens (Corpo Pronto / fase12)
      -------------------- */
-  const baixarItensFase05 = useCallback(
+  const baixarItensCorpoPronto = useCallback(
     async (payload: {
       registro_id: string;
       tipo: BaixaTipo;
@@ -1149,7 +1151,7 @@ export default function AcompanhamentoPage() {
       if (!r.ok || j?.ok === false)
         throw new Error(
           j?.msg ||
-          `Falha ao dar baixa automática (${payload.tipo}) na fase05.`,
+          `Falha ao dar baixa automática (${payload.tipo}) no Corpo Pronto.`,
         );
       return j;
     },
@@ -2019,11 +2021,20 @@ export default function AcompanhamentoPage() {
       const extraPayload =
         opts?.extra && typeof opts.extra === "object" ? opts.extra : {};
 
-      // ✅ trava fase05 quando um item marcado como utilizado estiver sem metas válidas, além de exigir conexão
-      if (statusCode === "fase05") {
+      // ✅ Corpo Pronto (fase12) é o checkpoint único de estoque.
+      // Antes da baixa, valida os metadados de todos os itens marcados como utilizados.
+      if (statusCode === "fase12") {
         const reg = registros.find(
           (x) => String(x.id) === String(acaoId),
         ) as any;
+
+        if (resolveTipoFromRegistro(reg) === "terceiro") {
+          setAcaoMsg({
+            ok: false,
+            text: "Corpo Pronto não faz parte do fluxo de atendimento terceiro.",
+          });
+          return false;
+        }
 
         // URNA: valida apenas quando o atendimento possui urna selecionada.
         const urnaTxt = String(reg?.urna ?? "").trim();
@@ -2172,7 +2183,16 @@ export default function AcompanhamentoPage() {
         if (!ok) return false;
       }
 
-      // Offline (exceto fase05)
+      // Corpo Pronto executa baixa de estoque e não pode ser concluído offline.
+      // As demais fases continuam usando a fila local já existente.
+      if (!isOnlineNow() && statusCode === "fase12") {
+        setAcaoMsg({
+          ok: false,
+          text: "Corpo Pronto exige conexão com a internet para processar as baixas de estoque.",
+        });
+        return false;
+      }
+
       if (!isOnlineNow()) {
         try {
           setAcaoSubmitting(true);
@@ -2197,8 +2217,10 @@ export default function AcompanhamentoPage() {
         }
       }
 
-      // ✅ fase05: dá baixa apenas nos itens realmente selecionados antes de mudar o status
-      if (statusCode === "fase05") {
+      // ✅ fase12 (Corpo Pronto): baixa apenas os itens realmente selecionados
+      // antes de gravar o novo status. O endpoint é idempotente, então repetir
+      // a tentativa não duplica uma baixa que já tenha sido concluída.
+      if (statusCode === "fase12") {
         try {
           setAcaoSubmitting(true);
 
@@ -2211,34 +2233,34 @@ export default function AcompanhamentoPage() {
           const urnaTxt = String(reg?.urna ?? "").trim();
           const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
           if (urnaTxt !== "" && urnaPid > 0) {
-            await baixarItensFase05({ registro_id, tipo: "URNA" });
+            await baixarItensCorpoPronto({ registro_id, tipo: "URNA" });
           }
 
           // 2) ROUPA (se não for própria)
           const roupaTxt = String(reg?.roupa ?? "").trim();
           if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
-            await baixarItensFase05({ registro_id, tipo: "ROUPA" });
+            await baixarItensCorpoPronto({ registro_id, tipo: "ROUPA" });
           }
 
           // 3) INVOL
           if (isSim(reg?.invol)) {
-            await baixarItensFase05({ registro_id, tipo: "INVOL" });
+            await baixarItensCorpoPronto({ registro_id, tipo: "INVOL" });
           }
 
           // 4) VÉU
           if (isSim(reg?.veu)) {
-            await baixarItensFase05({ registro_id, tipo: "VEU" });
+            await baixarItensCorpoPronto({ registro_id, tipo: "VEU" });
           }
 
           // 5) CORDÃO
           if (isSim(reg?.cordao)) {
-            await baixarItensFase05({ registro_id, tipo: "CORDAO" });
+            await baixarItensCorpoPronto({ registro_id, tipo: "CORDAO" });
           }
 
           // 6) KIT LANCHE
           // Produto fixo: código de barras 678560, depósito ALMOXARIFADO.
           if (isSim(reg?.kit_lanche)) {
-            await baixarItensFase05({
+            await baixarItensCorpoPronto({
               registro_id,
               tipo: "KIT_LANCHE",
             });
@@ -2247,7 +2269,7 @@ export default function AcompanhamentoPage() {
           // 7) INSUMOS
           const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
           if (ins && ins.itens.length > 0) {
-            await baixarItensFase05({
+            await baixarItensCorpoPronto({
               registro_id,
               tipo: "INSUMOS",
               deposito_nome: ins.deposito_nome,
@@ -2258,7 +2280,7 @@ export default function AcompanhamentoPage() {
           setAcaoSubmitting(false);
           setAcaoMsg({
             ok: false,
-            text: e?.message || "Falha ao dar baixa automática (fase05).",
+            text: e?.message || "Falha ao processar as baixas do Corpo Pronto.",
           });
           return false;
         }
@@ -2364,7 +2386,7 @@ export default function AcompanhamentoPage() {
       teleStartFase,
       fetchRegistros,
       flushOfflineQueue,
-      baixarItensFase05,
+      baixarItensCorpoPronto,
       limparTeleAtiva,
     ],
   );

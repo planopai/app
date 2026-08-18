@@ -95,7 +95,9 @@ const ROTULO_PARA_FASE: Record<string, string> = {
     preparando: "fase03",
     "aguardando ornamentacao": "fase04",
     ornamentando: "fase05",
-    "corpo pronto": "fase06",
+    "fim da ornamentacao": "fase06",
+    "aguardando corpo pronto": "fase06",
+    "corpo pronto": "fase12",
     transportando: "fase07",
     velando: "fase08",
     sepultando: "fase09",
@@ -140,6 +142,8 @@ export function capitalizeStatus(s?: string) {
         case "fase05":
             return "Ornamentando";
         case "fase06":
+            return "Aguardando Corpo Pronto";
+        case "fase12":
             return "Corpo Pronto";
         case "fase07":
             return "Transportando";
@@ -164,6 +168,7 @@ export function acaoToStatus(acao: string) {
         fase04: "Fim da Conservação",
         fase05: "Ínicio da Ornamentação",
         fase06: "Fim da Ornamentação",
+        fase12: "Corpo Pronto",
         fase07: "Transportando Óbito P/Velório",
         fase08: "Entrega de Corpo",
         fase09: "Transportando P/ Sepultamento",
@@ -475,6 +480,9 @@ export type StatusConsulta = {
     status: string; // sempre normalizado "faseNN"
     local_velorio: string;
     tanato: string;
+    ornamentacao: string;
+    assistencia: string;
+    tipo_atendimento: "funerario" | "terceiro" | "";
 };
 
 export async function consultarStatusAtual(
@@ -489,11 +497,16 @@ export async function consultarStatusAtual(
     if (!data?.sucesso) throw new Error(data?.msg || "Falha ao consultar status.");
 
     const status = normalizarStatus(data.status) ?? "fase00";
+    const tipo = String(data.tipo_atendimento ?? "").trim().toLowerCase();
+
     return {
         id: String(data.id ?? id),
         status,
         local_velorio: String(data.local_velorio ?? ""),
         tanato: String(data.tanato ?? ""),
+        ornamentacao: String(data.ornamentacao ?? ""),
+        assistencia: String(data.assistencia ?? ""),
+        tipo_atendimento: tipo === "terceiro" ? "terceiro" : tipo === "funerario" ? "funerario" : "",
     };
 }
 
@@ -550,7 +563,13 @@ export async function proximaFaseOnline(
 ): Promise<string | null> {
     const s = await consultarStatusAtual(id);
     return proximaFaseDoRegistro(
-        { status: s.status, local_velorio: s.local_velorio, tanato: s.tanato },
+        {
+            status: s.status,
+            local_velorio: s.local_velorio,
+            tanato: s.tanato,
+            ornamentacao: s.ornamentacao,
+            assistencia: s.assistencia,
+        },
         fases
     );
 }

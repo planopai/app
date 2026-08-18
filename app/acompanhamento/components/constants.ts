@@ -165,6 +165,13 @@ export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memor
 export const salasVelorio = ["Sala 01", "Sala 02", "Sala 03"] as const;
 export const opcoesVelorioOnline = ["", "Sim", "Não"] as const;
 
+/**
+ * Ordem lógica do fluxo.
+ *
+ * A fase12 é um checkpoint novo e intencionalmente fica entre fase06 e fase07.
+ * Os códigos 07..11 não foram renumerados para preservar registros históricos,
+ * integrações, quadros e telemetria que já usam esses identificadores.
+ */
 export const fases = [
     "fase01",
     "fase02",
@@ -172,6 +179,7 @@ export const fases = [
     "fase04",
     "fase05",
     "fase06",
+    "fase12", // Corpo Pronto + baixa dos itens
     "fase07",
     "fase08",
     "fase09",

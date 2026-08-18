@@ -195,6 +195,9 @@ export default function AcaoModal({
         status: Fase;
         local_velorio: string;
         tanato: string;
+        ornamentacao: string;
+        assistencia: string;
+        tipo_atendimento: "funerario" | "terceiro" | "";
     } | null>(null);
 
     useEffect(() => {
@@ -217,6 +220,9 @@ export default function AcaoModal({
                     status: statusFix,
                     local_velorio: s.local_velorio || "",
                     tanato: s.tanato || "",
+                    ornamentacao: s.ornamentacao || "",
+                    assistencia: s.assistencia || "",
+                    tipo_atendimento: s.tipo_atendimento || "",
                 });
             } catch (e: any) {
                 if (!cancel) setOnlineError(e?.message || "Falha ao consultar status.");
@@ -237,7 +243,9 @@ export default function AcaoModal({
                 status: online.status as Fase,
                 local_velorio: online.local_velorio,
                 tanato: online.tanato,
-                assistencia: registroLocal?.assistencia,
+                ornamentacao: online.ornamentacao || registroLocal?.ornamentacao,
+                assistencia: online.assistencia || registroLocal?.assistencia,
+                tipo_atendimento: online.tipo_atendimento || (registroLocal as any)?.tipo_atendimento || "",
             };
         }
         if (registroLocal) {
@@ -245,19 +253,24 @@ export default function AcaoModal({
                 status: (registroLocal.status as Fase) ?? ("fase00" as Fase),
                 local_velorio: registroLocal.local_velorio,
                 tanato: registroLocal.tanato,
+                ornamentacao: registroLocal.ornamentacao,
                 assistencia: registroLocal.assistencia,
+                tipo_atendimento: String((registroLocal as any)?.tipo_atendimento ?? ""),
             };
         }
         return null;
     }, [online, registroLocal]);
 
+    const tipoEfetivo = String((efetivo as any)?.tipo_atendimento ?? "")
+        .trim()
+        .toLowerCase();
+
     const isTerceiro =
-        isTerceiroBySession(acaoId) ||
-        String((registroLocal as any)?.tipo_atendimento ?? "")
-            .trim()
-            .toLowerCase() === "terceiro";
+        tipoEfetivo === "terceiro" ||
+        (tipoEfetivo !== "funerario" && isTerceiroBySession(acaoId));
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
+    const skipOrnamentacao = !!efetivo && isNao(efetivo.ornamentacao);
     const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
 
@@ -267,10 +280,11 @@ export default function AcaoModal({
             if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
             if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
+            if (skipOrnamentacao && (f === "fase05" || f === "fase06")) return false;
             if (skipMaterialRecolhido && f === "fase11") return false;
             return true;
         }) as Fase[];
-    }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipMaterialRecolhido]);
+    }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipOrnamentacao, skipMaterialRecolhido]);
 
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
@@ -286,6 +300,7 @@ export default function AcaoModal({
                 status: (efetivo.status as string) ?? "fase00",
                 local_velorio: efetivo.local_velorio,
                 tanato: efetivo.tanato,
+                ornamentacao: efetivo.ornamentacao,
                 assistencia: efetivo.assistencia,
             },
             visiveis as readonly string[]

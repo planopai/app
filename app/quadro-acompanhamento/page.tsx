@@ -864,7 +864,9 @@ const ROTULO_PARA_FASE: Record<string, string> = {
     preparando: "fase03",
     "aguardando ornamentacao": "fase04",
     ornamentando: "fase05",
-    "corpo pronto": "fase06",
+    "fim da ornamentacao": "fase06",
+    "aguardando corpo pronto": "fase06",
+    "corpo pronto": "fase12",
     transportando: "fase07",
     "transportando p/ velorio": "fase07",
     "transportando p/ velório": "fase07",
@@ -910,6 +912,8 @@ function capStatus(s?: string) {
         case "fase05":
             return "Ornamentando";
         case "fase06":
+            return "Aguardando Corpo Pronto";
+        case "fase12":
             return "Corpo Pronto";
         case "fase07":
             return "Transportando P/ Velório";
@@ -933,7 +937,8 @@ function badgeClass(s?: string) {
     if (x === "fase03") return "bg-blue-600";
     if (x === "fase04") return "bg-fuchsia-600";
     if (x === "fase05") return "bg-rose-600";
-    if (x === "fase06") return "bg-emerald-600";
+    if (x === "fase06") return "bg-fuchsia-700";
+    if (x === "fase12") return "bg-emerald-600";
     if (x === "fase07") return "bg-cyan-600";
     if (x === "fase08") return "bg-violet-600";
     if (x === "fase09") return "bg-orange-600";
@@ -1156,7 +1161,11 @@ function isSim(v?: string) {
     return s === "sim" || s === "s";
 }
 function isTerceiroRegistro(r: Registro) {
-    if ((r as any).tipo_atendimento === "terceiro") return true;
+    const tipo = String((r as any).tipo_atendimento ?? "").trim().toLowerCase();
+    if (tipo === "terceiro") return true;
+    if (tipo === "funerario") return false;
+
+    // Fallback somente para registros legados sem tipo_atendimento salvo.
     return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
 }
 
@@ -1459,7 +1468,8 @@ const STATUS_STEP_DEFS: StatusStepInfo[] = [
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
     { key: "fase04", label: "Aguardando Ornamentação", shortLabel: "A. Orn.", icon: "flower" },
     { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
-    { key: "fase06", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
+    { key: "fase06", label: "Aguardando Corpo Pronto", shortLabel: "A. Pronto", icon: "timer" },
+    { key: "fase12", label: "Corpo Pronto", shortLabel: "Pronto", icon: "timer" },
     { key: "fase07", label: "Transportando P/ Velório", shortLabel: "T. Vel.", icon: "car" },
     { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
     { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
@@ -1483,7 +1493,7 @@ const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>(
 }, {});
 
 const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
-const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase07"]);
+const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase12", "fase07"]);
 
 function getStatusStepInfo(status?: string): StatusStepInfo {
     const key = normalizarStatus(status) || "";
@@ -2593,7 +2603,7 @@ function StatusTimelineCell({
 
 function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
     if (stepKey === "fase03") return isNao(registro.tanato);
-    if (stepKey === "fase05") return isNao((registro.ornamentacao_tipo ?? registro.ornamentacao) as string | undefined);
+    if (stepKey === "fase05") return isNao(registro.ornamentacao);
     return false;
 }
 
@@ -2919,6 +2929,7 @@ const FASES_NOMES_QA: Record<string, string> = {
     fase04: "Fim da Conservação",
     fase05: "Início da Ornamentação",
     fase06: "Fim da Ornamentação",
+    fase12: "Corpo Pronto",
     fase07: "Transportando Óbito P/ Velório",
     fase08: "Entrega de Corpo",
     fase09: "Transportando P/ Sepultamento",
@@ -2933,6 +2944,7 @@ const FASES_ICONES_QA: Record<string, string> = {
     fase04: "✅",
     fase05: "🌸",
     fase06: "🌸",
+    fase12: "✅",
     fase07: "🚐",
     fase08: "⚰️",
     fase09: "🚐",
@@ -2974,7 +2986,8 @@ function normalizarFaseTimeline(fase?: string) {
         "inicio da ornamentacao": "fase05",
 
         "fim da ornamentacao": "fase06",
-        "corpo pronto": "fase06",
+        "aguardando corpo pronto": "fase06",
+        "corpo pronto": "fase12",
 
         transportando: "fase07",
         "transportando obito p/velorio": "fase07",
