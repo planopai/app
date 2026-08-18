@@ -83,6 +83,11 @@ async function fetchJsonFast<T = any>(
    ========================= */
 type Registro = {
     data?: string;
+    criado_em?: string;
+    created_at?: string;
+    data_criacao?: string;
+    datahora_criacao?: string;
+    data_hora_criacao?: string;
     foto_falecido?: string;
     foto_url?: string;
     foto?: string;
@@ -1277,6 +1282,56 @@ function parseLogTs(value?: string): number {
     return Number.isNaN(ts) ? 0 : ts;
 }
 
+/**
+ * Data/hora real de criação do atendimento.
+ * Prioridade:
+ * 1) campo explícito de criação vindo do banco, quando existir;
+ * 2) primeiro registro cronológico do histórico.
+ *
+ * Não usa data/hora de velório ou sepultamento como fallback, porque esses
+ * campos não representam a criação do atendimento.
+ */
+function getRegistroCreationTs(registro: Registro, logs?: LogItem[]): number {
+    const candidatosDiretos = [
+        registro.criado_em,
+        registro.created_at,
+        registro.data_criacao,
+        registro.datahora_criacao,
+        registro.data_hora_criacao,
+    ];
+
+    for (const raw of candidatosDiretos) {
+        const ts = parseLogTs(raw);
+        if (ts > 0) return ts;
+    }
+
+    const logTimes = (logs ?? [])
+        .map((log) => parseLogTs(log.datahora))
+        .filter((ts) => ts > 0)
+        .sort((a, b) => a - b);
+
+    return logTimes[0] ?? 0;
+}
+
+function formatCreationDate(ts: number): string {
+    if (!ts) return "a definir";
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return "a definir";
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+}
+
+function formatCreationTime(ts: number): string {
+    if (!ts) return "a definir";
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return "a definir";
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mi}`;
+}
+
 function getSepultamentoIdFromRegistro(r: Registro): string {
     const sepId =
         (r as any).sepultamento_id ??
@@ -1642,6 +1697,7 @@ export default function QuadroAtendimentoPage() {
     const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
+    const [detailLogsLoaded, setDetailLogsLoaded] = useState(false);
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
     const [detailFotoAberta, setDetailFotoAberta] = useState<TimelineFoto | null>(null);
@@ -1766,6 +1822,7 @@ export default function QuadroAtendimentoPage() {
         setDetailTimelineOpen(false);
         setDetailLogs([]);
         setDetailLogsLoading(false);
+        setDetailLogsLoaded(false);
         setDetailLogsError(null);
         setDetailFotoAberta(null);
         setDetailGaleriaAberta(false);
@@ -1935,10 +1992,17 @@ export default function QuadroAtendimentoPage() {
         setDetailLogs([]);
         setDetailLogsError(null);
         setDetailLogsLoading(true);
+        setDetailLogsLoaded(false);
 
         try {
             const logs = await buscarLogsDoRegistro(r);
             setDetailLogs(logs);
+
+            const trackingId = getRegistroTrackingId(r);
+            if (trackingId) {
+                setStatusLogsById((prev) => ({ ...prev, [trackingId]: logs }));
+            }
+
             return logs;
         } catch (e) {
             console.error(e);
@@ -1946,18 +2010,36 @@ export default function QuadroAtendimentoPage() {
             return [];
         } finally {
             setDetailLogsLoading(false);
+            setDetailLogsLoaded(true);
         }
     }, []);
+
+    // Carrega o histórico ao abrir os detalhes para que Data/Hora do topo
+    // representem a criação real do atendimento, sem depender de abrir a timeline.
+    useEffect(() => {
+        if (!open || !detail || detailLogsLoading || detailLogsLoaded) return;
+
+        const trackingId = getRegistroTrackingId(detail);
+        const logsEmCache = trackingId ? statusLogsById[trackingId] : undefined;
+
+        if (logsEmCache) {
+            setDetailLogs(logsEmCache);
+            setDetailLogsLoaded(true);
+            return;
+        }
+
+        void carregarHistoricoDoDetalhe(detail);
+    }, [open, detail, detailLogsLoading, detailLogsLoaded, statusLogsById, carregarHistoricoDoDetalhe]);
 
     const toggleTimelineDetalhe = useCallback(async () => {
         if (!detail) return;
         const next = !detailTimelineOpen;
         setDetailTimelineOpen(next);
 
-        if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
+        if (next && !detailLogsLoading && !detailLogsLoaded && !detailLogsError) {
             await carregarHistoricoDoDetalhe(detail);
         }
-    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
+    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogsLoaded, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const fotoFalecidoDetalhe = useMemo(() => getFotoFalecidoTimeline(detail), [detail]);
 
@@ -1965,11 +2047,21 @@ export default function QuadroAtendimentoPage() {
         return montarFotosAnexadasDetalhe(detail, detailLogs);
     }, [detail, detailLogs]);
 
+    const detailCriacaoTs = useMemo(() => {
+        if (!detail) return 0;
+
+        const trackingId = getRegistroTrackingId(detail);
+        const logsDaLista = trackingId ? statusLogsById[trackingId] : undefined;
+        const logsDisponiveis = detailLogs.length > 0 ? detailLogs : logsDaLista;
+
+        return getRegistroCreationTs(detail, logsDisponiveis);
+    }, [detail, detailLogs, statusLogsById]);
+
     const abrirGaleriaFotosDetalhe = useCallback(async (initialIndex = 0) => {
         if (!detail) return;
 
         let logs = detailLogs;
-        if (logs.length === 0 && !detailLogsLoading && !detailLogsError) {
+        if (!detailLogsLoaded && !detailLogsLoading && !detailLogsError) {
             logs = await carregarHistoricoDoDetalhe(detail);
         }
 
@@ -1979,7 +2071,7 @@ export default function QuadroAtendimentoPage() {
         setDetailGaleriaFotos(fotos);
         setDetailGaleriaIndex(Math.max(0, Math.min(initialIndex, fotos.length - 1)));
         setDetailGaleriaAberta(true);
-    }, [detail, detailLogs, detailLogsLoading, detailLogsError, carregarHistoricoDoDetalhe]);
+    }, [detail, detailLogs, detailLogsLoading, detailLogsLoaded, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const obsList = useCallback(
         (missing: string[]) =>
@@ -2124,10 +2216,10 @@ export default function QuadroAtendimentoPage() {
 
                                 <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
                                     <span className="text-muted-foreground">
-                                        Data: <b>{dateOr(detail.data)}</b>
+                                        Data: <b>{formatCreationDate(detailCriacaoTs)}</b>
                                     </span>
                                     <span className="text-muted-foreground">
-                                        • Hora: <b>{timeOr(detail.hora_fim_velorio)}</b>
+                                        • Hora: <b>{formatCreationTime(detailCriacaoTs)}</b>
                                     </span>
                                     <span className="text-muted-foreground">
                                         • Agente: <b>{shown(detail.agente)}</b>
