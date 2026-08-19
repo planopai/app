@@ -109,6 +109,7 @@ type ManualListResponse = {
 type AtendimentoResumo = {
     id?: number | string;
     falecido?: string;
+    local_velorio?: string;
     status?: string;
     assistencia?: string;
     tanato?: string;
@@ -1603,7 +1604,7 @@ export default function Page() {
     const [newOpen, setNewOpen] = React.useState(false);
     const [newSaving, setNewSaving] = React.useState(false);
     const [newError, setNewError] = React.useState<string | null>(null);
-    const [newFalecidoSugestao, setNewFalecidoSugestao] = React.useState("");
+    const [newAtendimentoSelecionado, setNewAtendimentoSelecionado] = React.useState("");
     const [quantidadeCoroas, setQuantidadeCoroas] = React.useState(1);
     const [newItems, setNewItems] = React.useState<NovoCoroaItem[]>([criarNovoCoroaItem()]);
     const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
@@ -1628,7 +1629,7 @@ export default function Page() {
         setQuantidadeCoroas(1);
         setNewItems([criarNovoCoroaItem()]);
         setNewComprovante(null);
-        setNewFalecidoSugestao("");
+        setNewAtendimentoSelecionado("");
         setModeloTipo("");
         setModeloItemIndex(null);
         setModeloModalOpen(false);
@@ -1704,13 +1705,20 @@ export default function Page() {
             }
         }
 
-        // Se o nome digitado coincidir com alguém que está no quadro,
-        // guarda também o ID do atendimento. Caso contrário, permanece livre.
-        const match = falecidosQuadro.find(
-            (r) =>
-                String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") ===
-                newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
+        // Prioriza o atendimento explicitamente selecionado. Se o usuário
+        // digitou o falecido manualmente, mantém o fallback por nome para
+        // preservar a compatibilidade do fluxo anterior.
+        const atendimentoSelecionado = falecidosQuadro.find(
+            (r) => String(r.id || r.falecido || "") === newAtendimentoSelecionado,
         );
+
+        const match =
+            atendimentoSelecionado ||
+            falecidosQuadro.find(
+                (r) =>
+                    String(r.falecido || "").trim().toLocaleLowerCase("pt-BR") ===
+                    newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
+            );
 
         setNewSaving(true);
 
@@ -2975,28 +2983,83 @@ export default function Page() {
                             </button>
                         </div>
                         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
+                            {/* 1. Atendimento existente */}
                             <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Solicitante *</label>
-                                <input
-                                    value={newForm.solicitante}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, solicitante: e.target.value }))}
+                                <label className="mb-1 block text-sm font-medium">Atendimento</label>
+                                <select
+                                    value={newAtendimentoSelecionado}
+                                    onChange={(e) => {
+                                        const chave = e.target.value;
+                                        setNewAtendimentoSelecionado(chave);
+
+                                        if (!chave) return;
+
+                                        const atendimento = falecidosQuadro.find(
+                                            (r) => String(r.id || r.falecido || "") === chave,
+                                        );
+
+                                        if (!atendimento) return;
+
+                                        const nomeFalecido = String(atendimento.falecido || "").trim();
+                                        const localVelorio = String(atendimento.local_velorio || "").trim();
+
+                                        setNewForm((p) => ({
+                                            ...p,
+                                            falecido: nomeFalecido,
+                                            // O Local do Velório é o Local de Entrega.
+                                            // Se o atendimento ainda não tiver local, permanece vazio
+                                            // para preenchimento manual.
+                                            local_entrega: localVelorio,
+                                        }));
+                                    }}
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Nome do cliente"
-                                />
+                                    disabled={falecidosLoading && falecidosQuadro.length === 0}
+                                >
+                                    <option value="">
+                                        {falecidosLoading
+                                            ? "Consultando o quadro de atendimentos..."
+                                            : "Selecione um atendimento"}
+                                    </option>
+                                    {falecidosQuadro.map((r) => (
+                                        <option
+                                            key={String(r.id || r.falecido)}
+                                            value={String(r.id || r.falecido || "")}
+                                        >
+                                            {String(r.falecido || "")}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {falecidosError && (
+                                    <div className="mt-1 text-xs text-rose-600">
+                                        {falecidosError}
+                                        <button
+                                            type="button"
+                                            className="ml-2 underline underline-offset-2"
+                                            onClick={() => void carregarFalecidosQuadro(true)}
+                                        >
+                                            Tentar novamente
+                                        </button>
+                                    </div>
+                                )}
                             </div>
-                            <div>
-                                <label className="mb-1 block text-sm font-medium">Telefone *</label>
+
+                            {/* 2. Falecido, também permite preenchimento livre */}
+                            <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
                                 <input
-                                    type="tel"
-                                    inputMode="tel"
-                                    value={newForm.telefone}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, telefone: e.target.value }))}
+                                    value={newForm.falecido}
+                                    onChange={(e) => {
+                                        setNewAtendimentoSelecionado("");
+                                        setNewForm((p) => ({ ...p, falecido: e.target.value }));
+                                    }}
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Telefone do cliente"
+                                    placeholder="Digite o nome do falecido ou selecione um atendimento acima"
                                 />
                             </div>
 
-                            <div>
+                            {/* 3. Local do velório = local de entrega */}
+                            <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Local de Entrega *</label>
                                 <input
                                     value={newForm.local_entrega}
@@ -3004,18 +3067,12 @@ export default function Page() {
                                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                                     placeholder="Local da entrega"
                                 />
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente.
+                                </div>
                             </div>
 
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Observações</label>
-                                <textarea
-                                    value={newForm.observacoes}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, observacoes: e.target.value }))}
-                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite observações do pedido (opcional)"
-                                />
-                            </div>
-
+                            {/* 4. Quantidade e dados de cada coroa */}
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
                                 <input
@@ -3094,13 +3151,12 @@ export default function Page() {
                                                             </div>
 
                                                             <div className="min-w-0 flex-1">
-                                                                <div className="text-xs text-muted-foreground">
-                                                                    Coroa {rotuloTipoCoroa(item.tipo_coroa)}
+                                                                <div className="truncate font-medium">{produto.nome}</div>
+                                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                                    {rotuloTipoCoroa(item.tipo_coroa)}
+                                                                    {produto.codigo_barras ? ` • ${produto.codigo_barras}` : ""}
                                                                 </div>
-                                                                <div className="line-clamp-2 font-semibold">
-                                                                    {produto.nome}
-                                                                </div>
-                                                                <div className="mt-1 text-sm font-medium">
+                                                                <div className="mt-1 font-semibold text-emerald-700">
                                                                     {dinheiroBRL(produto.valor)}
                                                                 </div>
                                                             </div>
@@ -3165,57 +3221,17 @@ export default function Page() {
                                 })}
                             </div>
 
+                            {/* Informações complementares do pedido */}
                             <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Atendimentos</label>
-                                <select
-                                    value={newFalecidoSugestao}
-                                    onChange={(e) => {
-                                        const nome = e.target.value;
-                                        setNewFalecidoSugestao(nome);
-
-                                        if (nome) {
-                                            setNewForm((p) => ({ ...p, falecido: nome }));
-                                        }
-                                    }}
-                                    className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    disabled={falecidosLoading && falecidosQuadro.length === 0}
-                                >
-                                    <option value="">
-                                        {falecidosLoading
-                                            ? "Consultando o quadro de atendimentos..."
-                                            : "Selecione um atendimento"}
-                                    </option>
-                                    {falecidosQuadro.map((r) => (
-                                        <option key={String(r.id || r.falecido)} value={String(r.falecido || "")}>
-                                            {String(r.falecido || "")}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
-                                <input
-                                    value={newForm.falecido}
-                                    onChange={(e) => {
-                                        setNewFalecidoSugestao("");
-                                        setNewForm((p) => ({ ...p, falecido: e.target.value }));
-                                    }}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite o nome do falecido ou selecione um atendimento acima"
+                                <label className="mb-1 block text-sm font-medium">Observações</label>
+                                <textarea
+                                    value={newForm.observacoes}
+                                    onChange={(e) => setNewForm((p) => ({ ...p, observacoes: e.target.value }))}
+                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    placeholder="Digite observações do pedido (opcional)"
                                 />
-
-                                {falecidosError && (
-                                    <div className="mt-1 text-xs text-rose-600">
-                                        {falecidosError}
-                                        <button
-                                            type="button"
-                                            className="ml-2 underline underline-offset-2"
-                                            onClick={() => void carregarFalecidosQuadro(true)}
-                                        >
-                                            Tentar novamente
-                                        </button>
-                                    </div>
-                                )}
                             </div>
+
                             <div>
                                 <label className="mb-1 block text-sm font-medium">Origem *</label>
                                 <select
@@ -3226,6 +3242,7 @@ export default function Page() {
                                     {ORIGEM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                             </div>
+
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Comprovante</label>
                                 <input
@@ -3253,6 +3270,35 @@ export default function Page() {
                                     </div>
                                 )}
                             </div>
+
+                            {/* 5. Solicitante por último, conforme o fluxo operacional */}
+                            <div className="sm:col-span-2 border-t pt-4">
+                                <div className="mb-3 text-sm font-semibold">Dados do solicitante</div>
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium">Solicitante *</label>
+                                        <input
+                                            value={newForm.solicitante}
+                                            onChange={(e) => setNewForm((p) => ({ ...p, solicitante: e.target.value }))}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            placeholder="Nome do solicitante"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium">Telefone *</label>
+                                        <input
+                                            type="tel"
+                                            inputMode="tel"
+                                            value={newForm.telefone}
+                                            onChange={(e) => setNewForm((p) => ({ ...p, telefone: e.target.value }))}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            placeholder="Telefone do solicitante"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
                             {newError && <div className="sm:col-span-2 text-sm text-rose-600">{newError}</div>}
                         </div>
                         <div className="flex justify-end gap-2 border-t px-4 py-3">
