@@ -79,6 +79,8 @@ type ManualOrder = {
     falecido_atendimento_id?: number | null;
     status_pagamento: ManualPagamento;
     origem: ManualOrigem;
+    /** ID do pedido no WooCommerce quando o registro veio da loja online. */
+    origem_externa_id?: string | null;
     status: ManualStatus;
     comprovante_url?: string | null;
     comprovante_mime?: string | null;
@@ -289,6 +291,18 @@ function origemLabel(v?: ManualOrigem | string) {
     }
 
     return raw || "—";
+}
+
+/**
+ * Pedidos online são persistidos na mesma tabela `coroas` dos manuais.
+ * `origem_externa_id` identifica o pedido correspondente no WooCommerce.
+ */
+function pedidoEhOnline(order?: ManualOrder | null): boolean {
+    return Boolean(String(order?.origem_externa_id || "").trim());
+}
+
+function origemPedidoLabel(order?: ManualOrder | null): string {
+    return pedidoEhOnline(order) ? "Pedido Online" : origemLabel(order?.origem);
 }
 
 function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
@@ -565,11 +579,15 @@ function pedidoFrasesManual(order?: ManualOrder | null) {
 }
 
 function pagamentoAutomaticoManual(order?: ManualOrder | null) {
+    if (pedidoEhOnline(order) && order?.status_pagamento === "pago") return "Pago";
     return order?.comprovante_url ? "Pago" : "Aguardando Comprovante";
 }
 
 function pagamentoAutomaticoClass(order?: ManualOrder | null) {
-    return order?.comprovante_url
+    const pago = Boolean(order?.comprovante_url) ||
+        (pedidoEhOnline(order) && order?.status_pagamento === "pago");
+
+    return pago
         ? "bg-emerald-100 text-emerald-900 border-emerald-200"
         : "bg-amber-100 text-amber-900 border-amber-200";
 }
@@ -585,7 +603,8 @@ function manualMatchesQuery(order: ManualOrder, query: string) {
         order.local_entrega,
         order.observacoes,
         order.falecido,
-        origemLabel(order.origem),
+        order.origem_externa_id,
+        origemPedidoLabel(order),
         ...itensManual(order).flatMap((item) => [item.modelo_coroa, item.frase]),
     ]
         .map((v) => normalizarTextoEstoque(String(v ?? "")))
@@ -623,7 +642,7 @@ function buildManualPedidoText(order: ManualOrder) {
     // Mesma ordem/estrutura usada no pedido online.
     const rawLines = [
         `*Pedido:* ${pedidoModelosManual(order)}`,
-        `*Origem:* ${origemLabel(order.origem)}`,
+        `*Origem:* ${origemPedidoLabel(order)}`,
         `*Cliente:* ${order.solicitante || "—"}`,
         `*Telefone:* ${onlyDigits(order.telefone) || order.telefone || "—"}`,
         `*Valor:* ${total > 0 ? dinheiroBRL(total) : "—"}`,
@@ -2299,7 +2318,7 @@ export default function Page() {
                                         <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
                                             {pagamentoAutomaticoManual(o)}
                                         </span>
-                                        <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemLabel(o.origem)}</span>
+                                        <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemPedidoLabel(o)}</span>
                                     </div>
                                     <div className="mt-3 flex gap-2">
                                         <button
@@ -2364,7 +2383,7 @@ export default function Page() {
                                                         {pagamentoAutomaticoManual(o)}
                                                     </span>
                                                 </td>
-                                                <td className="px-3 py-2">{origemLabel(o.origem)}</td>
+                                                <td className="px-3 py-2">{origemPedidoLabel(o)}</td>
                                                 <td className="px-3 py-2">
                                                     <div className="flex justify-end gap-2">
                                                         <button
@@ -3575,8 +3594,15 @@ export default function Page() {
                     <div className="absolute right-0 top-0 h-full w-full overflow-x-hidden overflow-y-auto bg-white shadow-xl md:max-w-xl">
                         <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
                             <div>
-                                <div className="text-sm text-muted-foreground">Pedido manual</div>
-                                <div className="text-lg font-semibold">#{manualDetail?.id || "—"}</div>
+                                <div className="text-sm text-muted-foreground">
+                                    {pedidoEhOnline(manualDetail) ? "Pedido online em produção" : "Pedido manual"}
+                                </div>
+                                <div className="text-lg font-semibold">
+                                    #{manualDetail?.id || "—"}
+                                    {pedidoEhOnline(manualDetail) && manualDetail?.origem_externa_id
+                                        ? ` • Woo #${manualDetail.origem_externa_id}`
+                                        : ""}
+                                </div>
                             </div>
                             <button
                                 className="rounded-md p-2 hover:bg-muted"
@@ -3616,7 +3642,10 @@ export default function Page() {
                                 {/* Informações do pedido — mesma ordem do Online */}
                                 <div className="rounded-lg border p-3 text-sm leading-6">
                                     <div><b>Pedido:</b> {pedidoModelosManual(manualDetail)}</div>
-                                    <div><b>Origem:</b> {origemLabel(manualDetail.origem)}</div>
+                                    <div><b>Origem:</b> {origemPedidoLabel(manualDetail)}</div>
+                                    {pedidoEhOnline(manualDetail) && manualDetail.origem_externa_id && (
+                                        <div><b>Pedido WooCommerce:</b> #{manualDetail.origem_externa_id}</div>
+                                    )}
                                     <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
                                     <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
                                     <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
@@ -3651,10 +3680,16 @@ export default function Page() {
 
                                         <div>
                                             <div className="mb-1 text-xs font-medium">Comprovante</div>
-                                            <ComprovanteUploadButtons
-                                                disabled={manualActionLoading}
-                                                onFile={anexarComprovanteManual}
-                                            />
+                                            {pedidoEhOnline(manualDetail) ? (
+                                                <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                                                    Pagamento confirmado pelo WooCommerce. Não é necessário anexar comprovante manual.
+                                                </div>
+                                            ) : (
+                                                <ComprovanteUploadButtons
+                                                    disabled={manualActionLoading}
+                                                    onFile={anexarComprovanteManual}
+                                                />
+                                            )}
                                         </div>
                                     </div>
 
