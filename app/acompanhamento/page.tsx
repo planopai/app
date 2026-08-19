@@ -40,7 +40,6 @@ import AcaoModal from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import CompartilharModal from "./components/CompartilharModal";
-import Modal from "./components/Modal";
 import TelemetriaModal, {
   TipoTele,
   TelemetriaHandle,
@@ -573,9 +572,6 @@ export default function AcompanhamentoPage() {
   );
   const [signIdx, setSignIdx] = useState<number | null>(null);
 
-  // Modal: escolher tipo no novo registro
-  const [chooseTipoOpen, setChooseTipoOpen] = useState(false);
-
   // Telemetria
   const teleRef = useRef<TelemetriaHandle>(null);
   const [teleOpen, setTeleOpen] = useState(false);
@@ -1008,7 +1004,6 @@ export default function AcompanhamentoPage() {
         setMateriaisOpen(false);
         setArrumacaoOpen(false);
         setSignOpen(false);
-        setChooseTipoOpen(false);
         setTeleOpen(false);
         setMatCheckOpen(false);
         setFotoAcaoOpen(false);
@@ -1159,10 +1154,7 @@ export default function AcompanhamentoPage() {
   );
 
   /* -------------------- Aberturas -------------------- */
-  const abrirNovoRegistro = useCallback(() => setChooseTipoOpen(true), []);
-
   const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
-    setChooseTipoOpen(false);
     wizardOriginalRoupaRef.current = null;
 
     setTipoAtendimento(tipo);
@@ -2618,7 +2610,7 @@ export default function AcompanhamentoPage() {
         </div>
         <button
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          onClick={abrirNovoRegistro}
+          onClick={() => iniciarNovoRegistro("funerario")}
         >
           Novo Registro
         </button>
@@ -2630,29 +2622,6 @@ export default function AcompanhamentoPage() {
         onInfo={(id) => abrirInfoPorId(id)}
         onCompartilhar={(id) => abrirCompartilharPorId(id)}
       />
-
-      <Modal
-        open={chooseTipoOpen}
-        onClose={() => setChooseTipoOpen(false)}
-        ariaLabel="Escolher tipo"
-        maxWidth={420}
-      >
-        <h3 className="text-lg font-semibold">Qual tipo de atendimento?</h3>
-        <div className="mt-4 grid gap-2">
-          <button
-            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-            onClick={() => iniciarNovoRegistro("funerario")}
-          >
-            Atendimento Funerário
-          </button>
-          <button
-            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-            onClick={() => iniciarNovoRegistro("terceiro")}
-          >
-            Serviço de Outra Empresa
-          </button>
-        </div>
-      </Modal>
 
       <Wizard
         open={wizardOpen}
