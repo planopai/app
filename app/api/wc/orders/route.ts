@@ -235,6 +235,29 @@ async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOri
     return { sincronizado: true, resultado: json };
 }
 
+async function obterInicioIntegracaoOnlineISO(): Promise<string> {
+    const url = new URL(COROAS_API);
+    url.searchParams.set("integracao_online_inicio", "1");
+    url.searchParams.set("_ts", String(Date.now()));
+
+    const res = await fetch(url.toString(), {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+    });
+
+    const json = await res.json().catch(() => null);
+    const inicioUnix = Number(json?.inicio_unix || 0);
+
+    if (!res.ok || !json?.sucesso || !Number.isFinite(inicioUnix) || inicioUnix <= 0) {
+        throw new Error(
+            json?.msg || "Não foi possível obter o marco inicial da integração online.",
+        );
+    }
+
+    return new Date(inicioUnix * 1000).toISOString();
+}
+
 async function listarStatusCompleto(
     wc: ReturnType<typeof getWC>,
     status: "processing" | "completed",
@@ -275,14 +298,13 @@ export async function GET(req: Request) {
         const { searchParams } = url;
 
         if (searchParams.get("sync_confeccao") === "1") {
-            // Pedidos em processing continuam ativos até serem produzidos.
-            // Completed entra na reconciliação somente se for recente, para evitar
-            // importar pedidos históricos antigos na primeira implantação.
-            const completedAfter = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+            // Reconciliação de segurança, mas SOMENTE a partir do marco gravado
+            // no coroas.php. Assim não trazemos pedidos históricos antigos.
+            const integrationAfter = await obterInicioIntegracaoOnlineISO();
 
             const [processing, completed] = await Promise.all([
-                listarStatusCompleto(wc, "processing"),
-                listarStatusCompleto(wc, "completed", completedAfter),
+                listarStatusCompleto(wc, "processing", integrationAfter),
+                listarStatusCompleto(wc, "completed", integrationAfter),
             ]);
 
             const pedidos = Array.from(

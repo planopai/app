@@ -1433,7 +1433,7 @@ export default function Page() {
                 }
 
                 if (Array.isArray(json?.erros) && json.erros.length > 0) {
-                    console.error("Pedidos online não sincronizados com a Confecção:", json.erros);
+                    console.warn("Alguns pedidos online novos não foram sincronizados com a Confecção:", json.erros);
                 }
 
                 onlineSyncLoadedAtRef.current = Date.now();
@@ -1459,9 +1459,9 @@ export default function Page() {
         setConfeccaoError(null);
 
         try {
-            // Primeiro reconcilia os pedidos pagos/liberados do WooCommerce.
-            // Assim, ao abrir a própria aba Confecção, os pedidos online já entram
-            // na mesma fila dos pedidos manuais, mesmo se algum webhook tiver falhado.
+            // Reconciliação de segurança. O backend aplica um marco de corte,
+            // portanto somente pedidos online criados a partir da ativação desta
+            // versão podem entrar na fila de Confecção.
             await sincronizarPedidosOnlineConfeccao(forceFresh);
 
             const u = new URL(COROAS_API, window.location.origin);

@@ -50,7 +50,7 @@ type WcOrderForProduction = {
 };
 
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
-const STATUS_CONFECCAO = new Set(["processing", "completed"]);
+const STATUS_CONFECCAO = new Set(["processing", "completed"]); // somente alterações feitas daqui para frente
 
 const FRASE_KEYS = [
     "frase_para_a_faixa",
