@@ -4,6 +4,8 @@
  * QUADRO TV — versão preservada
  * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
  * - Coroas: modelo + solicitante, Falecido, Entrega, Pagamento e timeline Ampulheta/Flor/Faixa/Concluída;
+ * - Coroas finalizadas permanecem no quadro até a confirmação do status Entregue;
+ * - atualização da fila de Coroas a cada 3 segundos, sem cache atrasando novos pedidos online;
  * - tamanho original permanece no modo NORMAL;
  * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
  *   não cabe na altura disponível da TV.
@@ -1170,6 +1172,8 @@ function coroaStatusLabel(v?: any): string {
     if (s === "novo") return "Novo Pedido";
     if (s === "coroa") return "Confeccionando Coroa";
     if (s === "faixa") return "Confeccionando Faixa";
+    if (s === "finalizada") return "Coroa Finalizada";
+    if (s === "entregue") return "Entregue";
     return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "Em Confecção";
 }
 
@@ -1178,6 +1182,8 @@ function coroaStatusClass(v?: any): string {
     if (s === "novo") return "border-slate-600/70 bg-slate-700/65 text-slate-100";
     if (s === "coroa") return "border-sky-500/35 bg-sky-500/15 text-sky-200";
     if (s === "faixa") return "border-violet-500/35 bg-violet-500/15 text-violet-200";
+    if (s === "finalizada") return "border-emerald-500/35 bg-emerald-500/15 text-emerald-200";
+    if (s === "entregue") return "border-green-500/35 bg-green-500/15 text-green-200";
     return "border-slate-600/70 bg-slate-800/60 text-slate-200";
 }
 
@@ -1185,6 +1191,7 @@ function coroaStatusIconType(v?: any): CoroaTvIconKey {
     const s = normalizarTextoCoroa(v);
     if (s === "coroa") return "flower";
     if (s === "faixa") return "ribbon";
+    if (s === "finalizada" || s === "entregue") return "check";
     return "clipboard";
 }
 
@@ -1201,8 +1208,8 @@ function coroaOrigemLabel(v?: any): string {
         return "Venda Direta";
     }
 
-    if (s === "loja-online" || s === "loja_online" || s === "lojaonline") {
-        return "Loja-Online";
+    if (s === "online" || s === "loja-online" || s === "loja_online" || s === "lojaonline") {
+        return "Pedido Online";
     }
 
     return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "a definir";
@@ -1345,9 +1352,9 @@ function buildCoroaTimeline(
             ? Math.max(0, fimProducao - faixaTs)
             : 0;
 
-    // Normalmente o pedido sai deste quadro ao finalizar.
-    // Este contador fica pronto para o pequeno intervalo antes do refresh
-    // e para qualquer uso futuro onde finalizada permaneça visível.
+    // Depois de finalizada, a coroa continua visível no quadro aguardando
+    // a confirmação de entrega. O tempo abaixo mede exatamente esse período.
+    // O pedido só deixa o quadro quando o status passa para "entregue".
     const concluidaMs =
         finalizadaTs > 0
             ? Math.max(0, (entregueTs > 0 ? entregueTs : nowMs) - finalizadaTs)
@@ -1384,7 +1391,16 @@ function buildCoroaTimeline(
 
 function coroaEmConfeccao(order: CoroaTvPedido): boolean {
     const status = normalizarTextoCoroa(order.status);
-    return status === "novo" || status === "coroa" || status === "faixa";
+
+    // Regra operacional do quadro:
+    // novo, coroa, faixa e finalizada permanecem visíveis.
+    // Somente depois da confirmação de entrega o pedido sai do quadro.
+    return (
+        status === "novo" ||
+        status === "coroa" ||
+        status === "faixa" ||
+        status === "finalizada"
+    );
 }
 
 /* =========================
@@ -1757,8 +1773,12 @@ export default function QuadroAtendimentoPage() {
 
             for (const url of urls) {
                 try {
-                    const j = await fetchJsonFast<CoroasTvResponse>(url, {
-                        ttlMs: 6_000,
+                    // Força uma leitura nova da fila de Confecção.
+                    // O _ts evita reaproveitamento por navegador/proxy e ttlMs 0
+                    // impede que o cache em memória atrase a entrada de pedidos online.
+                    const freshUrl = `${url}${url.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
+                    const j = await fetchJsonFast<CoroasTvResponse>(freshUrl, {
+                        ttlMs: 0,
                         timeoutMs: 10_000,
                         cacheKey: url === COROAS_TV_LOCAL ? "qa_coroas_tv_local" : "qa_coroas_tv_remota",
                     });
@@ -1798,7 +1818,7 @@ export default function QuadroAtendimentoPage() {
             if (!document.hidden) {
                 void loadCoroas();
             }
-        }, 8_000);
+        }, 3_000);
 
         const onVisibility = () => {
             if (!document.hidden) {
@@ -1806,12 +1826,20 @@ export default function QuadroAtendimentoPage() {
             }
         };
 
+        const onFocus = () => {
+            if (!document.hidden) {
+                void loadCoroas();
+            }
+        };
+
         document.addEventListener("visibilitychange", onVisibility);
+        window.addEventListener("focus", onFocus);
 
         return () => {
             alive = false;
             window.clearInterval(id);
             document.removeEventListener("visibilitychange", onVisibility);
+            window.removeEventListener("focus", onFocus);
         };
     }, []);
 
