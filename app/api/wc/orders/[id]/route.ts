@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getWC } from "@/lib/woocommerce";
 
@@ -48,17 +49,18 @@ type WcOrderForProduction = {
     line_items?: WcLineItem[];
 };
 
-const COROAS_API =
-    process.env.PAI_COROAS_API_URL ||
-    "https://api.planoassistencialintegrado.com.br/coroas.php";
+const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
+const STATUS_CONFECCAO = new Set(["processing", "completed"]);
 
 const FRASE_KEYS = [
     "frase_para_a_faixa",
     "frase da coroa",
     "frase da faixa",
     "frase_faixa",
-    "faixa",
+    "texto da faixa",
+    "texto_faixa",
     "mensagem",
+    "faixa",
 ];
 
 const FALECIDO_KEYS = [
@@ -66,6 +68,7 @@ const FALECIDO_KEYS = [
     "falecido_nome",
     "nome_falecido",
     "nome_do_falecido",
+    "falecido",
 ];
 
 function metaToString(value: unknown): string {
@@ -98,8 +101,7 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string {
 }
 
 function pedidoLiberadoParaConfeccao(order: WcOrderForProduction): boolean {
-    const status = String(order?.status || "").trim().toLowerCase();
-    return status === "processing" || status === "completed";
+    return STATUS_CONFECCAO.has(String(order?.status || "").trim().toLowerCase());
 }
 
 function nomeCliente(order: WcOrderForProduction): string {
@@ -145,10 +147,8 @@ function itensParaConfeccao(order: WcOrderForProduction) {
     }));
 }
 
-async function enviarPedidoParaConfeccao(order: WcOrderForProduction) {
-    if (!order?.id) {
-        throw new Error("Pedido WooCommerce sem ID.");
-    }
+async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOrigin: string) {
+    if (!order?.id) throw new Error("Pedido WooCommerce sem ID.");
 
     if (!pedidoLiberadoParaConfeccao(order)) {
         return {
@@ -158,37 +158,44 @@ async function enviarPedidoParaConfeccao(order: WcOrderForProduction) {
         };
     }
 
-    const integrationKey = String(process.env.PAI_COROAS_INTEGRATION_KEY || "").trim();
-
-    if (!integrationKey) {
-        throw new Error("PAI_COROAS_INTEGRATION_KEY não configurada no Next.js.");
+    const secret = String(process.env.WC_WEBHOOK_SECRET || "").trim();
+    if (!secret) {
+        throw new Error("WC_WEBHOOK_SECRET não configurado no Next.js.");
     }
 
     const itens = itensParaConfeccao(order);
-
     if (!itens.length) {
         throw new Error(`Pedido WooCommerce #${order.id} não possui itens.`);
     }
+
+    const body = JSON.stringify({
+        acao: "importar_online",
+        woocommerce_order_id: String(order.id),
+        solicitante: nomeCliente(order) || "Cliente Online",
+        telefone: String(order.billing?.phone || "").trim(),
+        local_entrega: localEntrega(order),
+        observacoes: String(order.customer_note || "").trim(),
+        falecido: falecido(order),
+        status_pagamento: "pago",
+        itens,
+    });
+
+    const signature = createHmac("sha256", secret)
+        .update(body, "utf8")
+        .digest("base64");
+
+    const verifyUrl = new URL("/api/wc/orders?verify_internal=1", requestOrigin).toString();
 
     const res = await fetch(COROAS_API, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
-            "X-PAI-Integration-Key": integrationKey,
+            "X-PAI-Internal-Signature": signature,
+            "X-PAI-Verify-Url": verifyUrl,
         },
         cache: "no-store",
-        body: JSON.stringify({
-            acao: "importar_online",
-            woocommerce_order_id: String(order.id),
-            solicitante: nomeCliente(order) || "Cliente Online",
-            telefone: String(order.billing?.phone || "").trim(),
-            local_entrega: localEntrega(order),
-            observacoes: String(order.customer_note || "").trim(),
-            falecido: falecido(order),
-            status_pagamento: "pago",
-            itens,
-        }),
+        body,
     });
 
     const json = await res.json().catch(() => null);
@@ -200,10 +207,7 @@ async function enviarPedidoParaConfeccao(order: WcOrderForProduction) {
         );
     }
 
-    return {
-        sincronizado: true,
-        resultado: json,
-    };
+    return { sincronizado: true, resultado: json };
 }
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -229,10 +233,6 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     }
 }
 
-/**
- * Atualiza o status no WooCommerce. Se o novo status liberar a produção,
- * o mesmo pedido também é sincronizado com coroas.php.
- */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
     try {
         const wc = getWC();
@@ -243,10 +243,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
         if (pedidoLiberadoParaConfeccao(data)) {
             try {
-                confeccao = await enviarPedidoParaConfeccao(data);
+                confeccao = await enviarPedidoParaConfeccao(data, new URL(req.url).origin);
             } catch (syncError: any) {
-                // O status do WooCommerce já foi atualizado. Mantemos essa alteração
-                // e informamos separadamente a eventual falha da sincronização.
                 console.error(
                     `Pedido WC #${params.id} atualizado, mas falhou ao sincronizar com Confecção:`,
                     syncError?.message || syncError,

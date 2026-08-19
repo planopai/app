@@ -1399,6 +1399,56 @@ export default function Page() {
     const [manualTotalPages, setManualTotalPages] = React.useState(1);
     const confeccaoAbortRef = React.useRef<AbortController | null>(null);
     const historicoAbortRef = React.useRef<AbortController | null>(null);
+    const onlineSyncLoadedAtRef = React.useRef(0);
+    const onlineSyncPromiseRef = React.useRef<Promise<void> | null>(null);
+
+    const sincronizarPedidosOnlineConfeccao = React.useCallback(async (force = false) => {
+        const agora = Date.now();
+
+        // Evita consultar o WooCommerce várias vezes por causa de filtros/paginação.
+        // O botão Atualizar força uma nova reconciliação imediatamente.
+        if (!force && agora - onlineSyncLoadedAtRef.current < 15_000) return;
+
+        if (onlineSyncPromiseRef.current) {
+            await onlineSyncPromiseRef.current;
+            return;
+        }
+
+        const tarefa = (async () => {
+            try {
+                const res = await fetch(`/api/wc/orders?sync_confeccao=1&_ts=${Date.now()}`, {
+                    method: "GET",
+                    cache: "no-store",
+                    headers: { Accept: "application/json" },
+                });
+
+                const json = await res.json().catch(() => null);
+
+                if (!res.ok) {
+                    throw new Error(
+                        json?.message ||
+                        json?.error ||
+                        `Falha ao sincronizar pedidos online com a Confecção (${res.status}).`,
+                    );
+                }
+
+                if (Array.isArray(json?.erros) && json.erros.length > 0) {
+                    console.error("Pedidos online não sincronizados com a Confecção:", json.erros);
+                }
+
+                onlineSyncLoadedAtRef.current = Date.now();
+            } catch (error) {
+                // A lista de Confecção continua sendo carregada mesmo se a reconciliação
+                // com o WooCommerce falhar. O próximo refresh tenta novamente.
+                console.error("Falha na reconciliação WooCommerce → Confecção:", error);
+            } finally {
+                onlineSyncPromiseRef.current = null;
+            }
+        })();
+
+        onlineSyncPromiseRef.current = tarefa;
+        await tarefa;
+    }, []);
 
     const fetchConfeccaoOrders = React.useCallback(async (forceFresh = false) => {
         confeccaoAbortRef.current?.abort();
@@ -1409,6 +1459,11 @@ export default function Page() {
         setConfeccaoError(null);
 
         try {
+            // Primeiro reconcilia os pedidos pagos/liberados do WooCommerce.
+            // Assim, ao abrir a própria aba Confecção, os pedidos online já entram
+            // na mesma fila dos pedidos manuais, mesmo se algum webhook tiver falhado.
+            await sincronizarPedidosOnlineConfeccao(forceFresh);
+
             const u = new URL(COROAS_API, window.location.origin);
             u.searchParams.set("listar", "1");
             u.searchParams.set("grupo", "confeccao");
@@ -1453,6 +1508,7 @@ export default function Page() {
         confeccaoAppliedQ,
         confeccaoAppliedStatus,
         confeccaoRefreshToken,
+        sincronizarPedidosOnlineConfeccao,
     ]);
 
     const fetchHistoricoOrders = React.useCallback(async (forceFresh = false) => {

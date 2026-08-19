@@ -49,17 +49,18 @@ type WcOrderForProduction = {
     line_items?: WcLineItem[];
 };
 
-const COROAS_API =
-    process.env.PAI_COROAS_API_URL ||
-    "https://api.planoassistencialintegrado.com.br/coroas.php";
+const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
+const STATUS_CONFECCAO = new Set(["processing", "completed"]);
 
 const FRASE_KEYS = [
     "frase_para_a_faixa",
     "frase da coroa",
     "frase da faixa",
     "frase_faixa",
-    "faixa",
+    "texto da faixa",
+    "texto_faixa",
     "mensagem",
+    "faixa",
 ];
 
 const FALECIDO_KEYS = [
@@ -67,7 +68,12 @@ const FALECIDO_KEYS = [
     "falecido_nome",
     "nome_falecido",
     "nome_do_falecido",
+    "falecido",
 ];
+
+function webhookSecret(): string {
+    return String(process.env.WC_WEBHOOK_SECRET || "").trim();
+}
 
 function metaToString(value: unknown): string {
     if (typeof value === "string") return value.trim();
@@ -99,8 +105,7 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string {
 }
 
 function pedidoLiberadoParaConfeccao(order: WcOrderForProduction): boolean {
-    const status = String(order?.status || "").trim().toLowerCase();
-    return status === "processing" || status === "completed";
+    return STATUS_CONFECCAO.has(String(order?.status || "").trim().toLowerCase());
 }
 
 function nomeCliente(order: WcOrderForProduction): string {
@@ -146,74 +151,14 @@ function itensParaConfeccao(order: WcOrderForProduction) {
     }));
 }
 
-async function enviarPedidoParaConfeccao(order: WcOrderForProduction) {
-    if (!order?.id) {
-        throw new Error("Pedido WooCommerce sem ID.");
-    }
-
-    if (!pedidoLiberadoParaConfeccao(order)) {
-        return {
-            sincronizado: false,
-            ignorado: true,
-            motivo: `status_${String(order.status || "desconhecido")}_nao_liberado`,
-        };
-    }
-
-    const integrationKey = String(process.env.PAI_COROAS_INTEGRATION_KEY || "").trim();
-
-    if (!integrationKey) {
-        throw new Error("PAI_COROAS_INTEGRATION_KEY não configurada no Next.js.");
-    }
-
-    const itens = itensParaConfeccao(order);
-
-    if (!itens.length) {
-        throw new Error(`Pedido WooCommerce #${order.id} não possui itens.`);
-    }
-
-    const res = await fetch(COROAS_API, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "X-PAI-Integration-Key": integrationKey,
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-            acao: "importar_online",
-            woocommerce_order_id: String(order.id),
-            solicitante: nomeCliente(order) || "Cliente Online",
-            telefone: String(order.billing?.phone || "").trim(),
-            local_entrega: localEntrega(order),
-            observacoes: String(order.customer_note || "").trim(),
-            falecido: falecido(order),
-            status_pagamento: "pago",
-            itens,
-        }),
-    });
-
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok || !json?.sucesso) {
-        const detalhe = json?.msg || json?.message || `HTTP ${res.status}`;
-        throw new Error(
-            `Falha ao enviar pedido WooCommerce #${order.id} para Confecção: ${detalhe}`,
-        );
-    }
-
-    return {
-        sincronizado: true,
-        resultado: json,
-    };
+function assinaturaBase64(payload: string, secret: string): string {
+    return createHmac("sha256", secret).update(payload, "utf8").digest("base64");
 }
 
-function assinaturaWebhookValida(rawBody: string, recebida: string, secret: string): boolean {
-    if (!recebida || !secret) return false;
+function assinaturaValida(payload: string, recebida: string, secret: string): boolean {
+    if (!payload || !recebida || !secret) return false;
 
-    const esperada = createHmac("sha256", secret)
-        .update(rawBody, "utf8")
-        .digest("base64");
-
+    const esperada = assinaturaBase64(payload, secret);
     const a = Buffer.from(esperada, "utf8");
     const b = Buffer.from(recebida.trim(), "utf8");
 
@@ -226,13 +171,158 @@ function positiveInt(value: string | null, fallback: number): number {
     return Math.floor(parsed);
 }
 
+function payloadImportacao(order: WcOrderForProduction): Record<string, unknown> {
+    const itens = itensParaConfeccao(order);
+
+    if (!itens.length) {
+        throw new Error(`Pedido WooCommerce #${order.id} não possui itens.`);
+    }
+
+    return {
+        acao: "importar_online",
+        woocommerce_order_id: String(order.id),
+        solicitante: nomeCliente(order) || "Cliente Online",
+        telefone: String(order.billing?.phone || "").trim(),
+        local_entrega: localEntrega(order),
+        observacoes: String(order.customer_note || "").trim(),
+        falecido: falecido(order),
+        status_pagamento: "pago",
+        itens,
+    };
+}
+
+async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOrigin: string) {
+    if (!order?.id) throw new Error("Pedido WooCommerce sem ID.");
+
+    if (!pedidoLiberadoParaConfeccao(order)) {
+        return {
+            sincronizado: false,
+            ignorado: true,
+            motivo: `status_${String(order.status || "desconhecido")}_nao_liberado`,
+        };
+    }
+
+    const secret = webhookSecret();
+    if (!secret) {
+        throw new Error("WC_WEBHOOK_SECRET não configurado no Next.js.");
+    }
+
+    const body = JSON.stringify(payloadImportacao(order));
+    const signature = assinaturaBase64(body, secret);
+    const verifyUrl = new URL("/api/wc/orders?verify_internal=1", requestOrigin).toString();
+
+    const res = await fetch(COROAS_API, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "X-PAI-Internal-Signature": signature,
+            "X-PAI-Verify-Url": verifyUrl,
+        },
+        cache: "no-store",
+        body,
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.sucesso) {
+        const detalhe = json?.msg || json?.message || `HTTP ${res.status}`;
+        throw new Error(
+            `Falha ao enviar pedido WooCommerce #${order.id} para Confecção: ${detalhe}`,
+        );
+    }
+
+    return { sincronizado: true, resultado: json };
+}
+
+async function listarStatusCompleto(
+    wc: ReturnType<typeof getWC>,
+    status: "processing" | "completed",
+    after?: string,
+): Promise<WcOrderForProduction[]> {
+    const out: WcOrderForProduction[] = [];
+    let page = 1;
+    const maxPages = 5;
+
+    while (page <= maxPages) {
+        const params: Record<string, unknown> = {
+            status,
+            page,
+            per_page: 100,
+        };
+        if (after) params.after = after;
+
+        const { data, headers } = await wc.get("orders", params);
+
+        if (Array.isArray(data)) out.push(...(data as WcOrderForProduction[]));
+
+        const totalPages = Math.max(1, Number(headers["x-wp-totalpages"] || 1));
+        if (page >= totalPages) break;
+        page += 1;
+    }
+
+    return out;
+}
+
 /**
- * Lista os pedidos WooCommerce para a aba Pedidos Online.
+ * GET normal: lista para a aba Pedidos Online.
+ * GET ?sync_confeccao=1: reconcilia pedidos processing/completed com coroas.php.
  */
 export async function GET(req: Request) {
     try {
         const wc = getWC();
-        const { searchParams } = new URL(req.url);
+        const url = new URL(req.url);
+        const { searchParams } = url;
+
+        if (searchParams.get("sync_confeccao") === "1") {
+            // Pedidos em processing continuam ativos até serem produzidos.
+            // Completed entra na reconciliação somente se for recente, para evitar
+            // importar pedidos históricos antigos na primeira implantação.
+            const completedAfter = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+            const [processing, completed] = await Promise.all([
+                listarStatusCompleto(wc, "processing"),
+                listarStatusCompleto(wc, "completed", completedAfter),
+            ]);
+
+            const pedidos = Array.from(
+                new Map([...processing, ...completed].map((order) => [Number(order.id), order])).values(),
+            );
+
+            const resultados = await Promise.allSettled(
+                pedidos.map((order) => enviarPedidoParaConfeccao(order, url.origin)),
+            );
+
+            const erros: Array<{ order_id: number; message: string }> = [];
+            let sincronizados = 0;
+            let duplicadosOuExistentes = 0;
+
+            resultados.forEach((resultado, index) => {
+                const orderId = Number(pedidos[index]?.id || 0);
+
+                if (resultado.status === "fulfilled") {
+                    sincronizados += 1;
+                    if ((resultado.value as any)?.resultado?.duplicado) {
+                        duplicadosOuExistentes += 1;
+                    }
+                    return;
+                }
+
+                erros.push({
+                    order_id: orderId,
+                    message: resultado.reason?.message || "Falha ao sincronizar pedido.",
+                });
+            });
+
+            return NextResponse.json({
+                ok: erros.length === 0,
+                encontrados: pedidos.length,
+                sincronizados,
+                duplicados_ou_existentes: duplicadosOuExistentes,
+                erros,
+            });
+        }
+
         const page = positiveInt(searchParams.get("page"), 1);
         const per_page = Math.min(positiveInt(searchParams.get("per_page"), 20), 100);
         const status = searchParams.get("status") || undefined;
@@ -273,26 +363,38 @@ export async function GET(req: Request) {
 }
 
 /**
- * Este POST é o webhook do WooCommerce.
- * Configure no WooCommerce a URL deste endpoint e o mesmo secret definido
- * em WC_WEBHOOK_SECRET. Quando o pedido chegar a processing/completed,
- * ele é inserido em coroas.php com status novo e aparece em Confecção.
+ * POST ?verify_internal=1 é usado pelo coroas.php apenas para validar
+ * a assinatura interna do JSON. O segredo nunca sai do Next.js.
+ * POST normal continua sendo o webhook do WooCommerce.
  */
 export async function POST(req: Request) {
-    const rawBody = await req.text();
-    const webhookSecret = String(process.env.WC_WEBHOOK_SECRET || "").trim();
+    const url = new URL(req.url);
+    const secret = webhookSecret();
 
-    if (!webhookSecret) {
-        console.error("WC webhook: WC_WEBHOOK_SECRET não configurado.");
+    if (!secret) {
+        console.error("WC integration: WC_WEBHOOK_SECRET não configurado.");
         return NextResponse.json(
-            { error: true, message: "Webhook WooCommerce não configurado no servidor." },
+            { error: true, message: "WC_WEBHOOK_SECRET não configurado no servidor." },
             { status: 500 },
         );
     }
 
-    const assinatura = req.headers.get("x-wc-webhook-signature") || "";
+    if (url.searchParams.get("verify_internal") === "1") {
+        const body = await req.json().catch(() => null) as
+            | { payload?: unknown; signature?: unknown }
+            | null;
 
-    if (!assinaturaWebhookValida(rawBody, assinatura, webhookSecret)) {
+        const payload = typeof body?.payload === "string" ? body.payload : "";
+        const signature = typeof body?.signature === "string" ? body.signature : "";
+        const valid = assinaturaValida(payload, signature, secret);
+
+        return NextResponse.json({ valid }, { status: valid ? 200 : 401 });
+    }
+
+    const rawBody = await req.text();
+    const assinaturaWoo = req.headers.get("x-wc-webhook-signature") || "";
+
+    if (!assinaturaValida(rawBody, assinaturaWoo, secret)) {
         return NextResponse.json(
             { error: true, message: "Assinatura do webhook WooCommerce inválida." },
             { status: 401 },
@@ -327,21 +429,14 @@ export async function POST(req: Request) {
     }
 
     try {
-        const resultado = await enviarPedidoParaConfeccao(order);
-
-        return NextResponse.json({
-            ok: true,
-            order_id: order.id,
-            ...resultado,
-        });
+        const resultado = await enviarPedidoParaConfeccao(order, url.origin);
+        return NextResponse.json({ ok: true, order_id: order.id, ...resultado });
     } catch (err: any) {
         console.error(
             `Falha ao sincronizar pedido WooCommerce #${order.id} com Confecção:`,
             err?.message || err,
         );
 
-        // Retornamos 500 para que o WooCommerce considere a entrega malsucedida
-        // e possa tentar o webhook novamente.
         return NextResponse.json(
             {
                 error: true,
