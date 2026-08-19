@@ -1366,30 +1366,30 @@ export default function Page() {
        Manual: dados / Confecção / Histórico
        ------------------------- */
 
-    // Confecção: novo, coroa e faixa — paginação/filtro no servidor.
+    // Confecção: novo, coroa, faixa e finalizada. O pedido só sai após 'entregue'.
     const [confeccaoOrders, setConfeccaoOrders] = React.useState<ManualOrder[]>([]);
     const [confeccaoLoading, setConfeccaoLoading] = React.useState(false);
     const [confeccaoError, setConfeccaoError] = React.useState<string | null>(null);
     const [confeccaoQ, setConfeccaoQ] = React.useState("");
-    const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
+    const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa" | "finalizada">("todos");
     const [confeccaoAppliedQ, setConfeccaoAppliedQ] = React.useState("");
-    const [confeccaoAppliedStatus, setConfeccaoAppliedStatus] = React.useState<"todos" | "novo" | "coroa" | "faixa">("todos");
+    const [confeccaoAppliedStatus, setConfeccaoAppliedStatus] = React.useState<"todos" | "novo" | "coroa" | "faixa" | "finalizada">("todos");
     const [confeccaoRefreshToken, setConfeccaoRefreshToken] = React.useState(0);
     const [confeccaoPage, setConfeccaoPage] = React.useState(1);
     const confeccaoPerPage = 30;
     const [confeccaoTotal, setConfeccaoTotal] = React.useState(0);
     const [confeccaoTotalPages, setConfeccaoTotalPages] = React.useState(1);
 
-    // Pedidos Manuais: finalizados/entregues — paginação/filtro no servidor.
+    // Pedidos Manuais: histórico somente após confirmação de entrega.
     const [manualHistoricoOrders, setManualHistoricoOrders] = React.useState<ManualOrder[]>([]);
     const [manualLoading, setManualLoading] = React.useState(false);
     const [manualError, setManualError] = React.useState<string | null>(null);
     const [manualQ, setManualQ] = React.useState("");
-    const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "finalizada" | "entregue">("todos");
+    const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "entregue">("todos");
     const [manualAfter, setManualAfter] = React.useState("");
     const [manualBefore, setManualBefore] = React.useState("");
     const [manualAppliedQ, setManualAppliedQ] = React.useState("");
-    const [manualAppliedStatus, setManualAppliedStatus] = React.useState<"todos" | "finalizada" | "entregue">("todos");
+    const [manualAppliedStatus, setManualAppliedStatus] = React.useState<"todos" | "entregue">("todos");
     const [manualAppliedAfter, setManualAppliedAfter] = React.useState("");
     const [manualAppliedBefore, setManualAppliedBefore] = React.useState("");
     const [manualRefreshToken, setManualRefreshToken] = React.useState(0);
@@ -2338,13 +2338,14 @@ export default function Page() {
                             <div className="flex gap-2">
                                 <select
                                     value={confeccaoStatusFilter}
-                                    onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa")}
+                                    onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa" | "finalizada")}
                                     className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
                                 >
                                     <option value="todos">Todos</option>
                                     <option value="novo">Aguardando Confecção</option>
                                     <option value="coroa">Coroa em Confecção</option>
                                     <option value="faixa">Faixa em Confecção</option>
+                                    <option value="finalizada">Coroa Finalizada</option>
                                 </select>
                                 <button type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">
                                     Buscar
@@ -2497,7 +2498,7 @@ export default function Page() {
             )}
 
             {/* =====================================================
-                PEDIDOS MANUAIS — finalizados/entregues, sem Ações
+                PEDIDOS MANUAIS — entregues, sem Ações
                 ===================================================== */}
             {tab === "manuais" && (
                 <>
@@ -2531,10 +2532,9 @@ export default function Page() {
                             <select
                                 className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
                                 value={manualStatusFilter}
-                                onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "finalizada" | "entregue")}
+                                onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "entregue")}
                             >
                                 <option value="todos">Todos</option>
-                                <option value="finalizada">Finalizada</option>
                                 <option value="entregue">Entregue</option>
                             </select>
                         </div>
