@@ -23,7 +23,8 @@ type Step = {
     | "async_roupa"
     | "async_invol"
     | "async_veu"
-    | "async_cordao";
+    | "async_cordao"
+    | "async_coroa";
     options?: string[];
     placeholder?: string;
     datalist?: string[];
@@ -582,6 +583,225 @@ function EstoqueCombobox({
     );
 }
 
+/* =========================================================================
+   Seletor de Coroa de Flores
+   - Natural: lista catálogo e apenas registra no atendimento.
+   - Artificial: lista somente produto/depósito com saldo > 0 e guarda o
+     depósito escolhido para a baixa automática na fase Corpo Pronto.
+   ========================================================================= */
+type CoroaRow = EstoqueRow & {
+    deposito_nome?: string;
+    categoria_nome?: string;
+    foto_url?: string;
+};
+
+function CoroaCombobox({
+    inputId,
+    tipo,
+    required,
+    initialValue,
+    disabled,
+    errorText,
+    onSelectRow,
+    onClear,
+}: {
+    inputId: string;
+    tipo: "Natural" | "Artificial";
+    required: boolean;
+    initialValue: string;
+    disabled?: boolean;
+    errorText?: string;
+    onSelectRow: (row: CoroaRow) => void;
+    onClear: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [value, setValue] = useState(initialValue || "");
+    const [q, setQ] = useState("");
+    const [rows, setRows] = useState<CoroaRow[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [err, setErr] = useState("");
+
+    useEffect(() => {
+        setValue(initialValue || "");
+    }, [initialValue, tipo]);
+
+    useEffect(() => {
+        if (!open) return;
+
+        const ac = new AbortController();
+        const t = window.setTimeout(async () => {
+            setLoading(true);
+            setErr("");
+
+            try {
+                const url = new URL(ESTOQUE_API);
+                url.searchParams.set("action", "coroas_buscar");
+                url.searchParams.set("tipo", tipo.toLowerCase());
+                url.searchParams.set("q", q.trim());
+                url.searchParams.set("limit", "80");
+
+                const r = await fetch(url.toString(), {
+                    method: "GET",
+                    cache: "no-store",
+                    credentials: "include",
+                    signal: ac.signal,
+                });
+
+                const j = await r.json().catch(() => null);
+                if (!r.ok || !j?.ok) {
+                    throw new Error(j?.msg || `Falha ao buscar coroas (${r.status}).`);
+                }
+
+                setRows(Array.isArray(j.rows) ? j.rows : []);
+            } catch (e: any) {
+                if (e?.name === "AbortError") return;
+                setRows([]);
+                setErr(e?.message || "Erro ao buscar modelos de coroa.");
+            } finally {
+                setLoading(false);
+            }
+        }, 150);
+
+        return () => {
+            window.clearTimeout(t);
+            ac.abort();
+        };
+    }, [open, q, tipo]);
+
+    const aplicar = (row: CoroaRow) => {
+        const pid = getPidFromRow(row);
+        if (pid <= 0) {
+            setErr("Modelo de coroa inválido: produto sem ID.");
+            return;
+        }
+
+        if (tipo === "Artificial" && !String(row.deposito_nome || "").trim()) {
+            setErr("A coroa artificial selecionada veio sem depósito de estoque.");
+            return;
+        }
+
+        setValue(String(row.nome || "").trim());
+        setErr("");
+        setOpen(false);
+        onSelectRow(row);
+    };
+
+    return (
+        <div>
+            <label className="mb-1 block text-xs font-medium text-slate-700">
+                Modelo da Coroa {required && <span className="text-red-600">*</span>}
+            </label>
+
+            <div className="flex gap-2">
+                <input
+                    id={inputId}
+                    type="text"
+                    value={value}
+                    readOnly
+                    placeholder={`Selecione uma Coroa ${tipo}...`}
+                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
+                    disabled={disabled}
+                    onClick={() => !disabled && setOpen(true)}
+                />
+                <button
+                    type="button"
+                    className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-muted disabled:opacity-60"
+                    disabled={disabled}
+                    onClick={() => setOpen(true)}
+                >
+                    Selecionar
+                </button>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                    disabled={disabled}
+                    onClick={() => {
+                        setValue("");
+                        onClear();
+                    }}
+                >
+                    Limpar
+                </button>
+                {tipo === "Natural" ? (
+                    <span className="text-[11px] text-slate-500">Natural: registrada sem baixa de estoque.</span>
+                ) : (
+                    <span className="text-[11px] text-slate-500">Artificial: baixa de 1 unidade no Corpo Pronto.</span>
+                )}
+            </div>
+
+            {errorText && <div className="mt-1 text-xs text-red-600">{errorText}</div>}
+
+            <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Selecionar Coroa de Flores" maxWidth={760}>
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <h3 className="text-lg font-semibold">Selecionar Coroa {tipo}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {tipo === "Natural"
+                                ? "A seleção será registrada no atendimento e não movimentará estoque."
+                                : "São exibidos somente modelos com saldo disponível, identificados pelo depósito."}
+                        </p>
+                    </div>
+                    <button type="button" className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => setOpen(false)}>
+                        Fechar
+                    </button>
+                </div>
+
+                <input
+                    type="text"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Filtrar por nome ou código..."
+                    className="mt-4 w-full rounded-md border px-3 py-2 text-base"
+                    autoComplete="off"
+                />
+
+                <div className="mt-3 rounded-xl border bg-white">
+                    {loading ? (
+                        <div className="p-3 text-base text-slate-600">Carregando modelos...</div>
+                    ) : err ? (
+                        <div className="p-3 text-sm text-red-600">{err}</div>
+                    ) : rows.length === 0 ? (
+                        <div className="p-3 text-base text-slate-600">Nenhum modelo disponível.</div>
+                    ) : (
+                        <ul className="max-h-[65vh] overflow-auto py-1" style={{ WebkitOverflowScrolling: "touch" }}>
+                            {rows.map((row) => {
+                                const pid = getPidFromRow(row);
+                                const dep = String(row.deposito_nome || "").trim();
+                                const key = `${pid}|${dep}|${row.codigo_barras || ""}|${row.nome}`;
+                                return (
+                                    <li key={key}>
+                                        <button
+                                            type="button"
+                                            className="w-full px-3 py-3 text-left text-base hover:bg-slate-50"
+                                            onClick={() => aplicar(row)}
+                                        >
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="font-medium text-slate-900">{row.nome}</span>
+                                                {tipo === "Artificial" && (
+                                                    <span className="shrink-0 text-xs text-slate-600">
+                                                        estoque: <b>{Number(row.saldo_total) || 0}</b>
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="mt-1 text-xs text-slate-600">
+                                                CB: <b>{row.codigo_barras || ""}</b>
+                                                {tipo === "Artificial" && dep ? <> · Depósito: <b>{dep}</b></> : null}
+                                            </div>
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </div>
+            </Modal>
+        </div>
+    );
+}
+
 /* -------------------- depósitos -------------------- */
 type DepUrna = "MEMORIAL" | "FUNERARIA";
 type DepRoupa = "ARMARIO SANDRO" | "ARMARIO ILDO" | "FUNERARIA";
@@ -687,6 +907,10 @@ export default function Wizard({
     const [veuVal, setVeuVal] = useState<string>("");
     const [cordaoVal, setCordaoVal] = useState<string>("");
     const [kitLancheVal, setKitLancheVal] = useState<string>("");
+    const [coroaFloresVal, setCoroaFloresVal] = useState<string>("");
+    const [coroaTipoVal, setCoroaTipoVal] = useState<string>("");
+    const [realizaVelorioVal, setRealizaVelorioVal] = useState<string>("");
+    const [realizaSepultamentoVal, setRealizaSepultamentoVal] = useState<string>("");
 
     // Controle exclusivamente visual para mostrar ou esconder os seletores.
     // Os dados continuam sendo gravados nos campos atuais de urna e roupa.
@@ -713,6 +937,11 @@ export default function Wizard({
     const [veuSelectErro, setVeuSelectErro] = useState<string>("");
     const [cordaoSelectErro, setCordaoSelectErro] = useState<string>("");
     const [kitLancheSelectErro, setKitLancheSelectErro] = useState<string>("");
+    const [coroaFloresSelectErro, setCoroaFloresSelectErro] = useState<string>("");
+    const [coroaTipoErro, setCoroaTipoErro] = useState<string>("");
+    const [coroaModeloErro, setCoroaModeloErro] = useState<string>("");
+    const [realizaVelorioErro, setRealizaVelorioErro] = useState<string>("");
+    const [realizaSepultamentoErro, setRealizaSepultamentoErro] = useState<string>("");
     const [velorioOnlineErro, setVelorioOnlineErro] = useState<string>("");
 
     // ✅ erro do tipo (Natural/Artificial) quando ornamentacao = Sim
@@ -748,6 +977,10 @@ export default function Wizard({
         setVeuVal(String((wizardData as any).veu ?? ""));
         setCordaoVal(String((wizardData as any).cordao ?? ""));
         setKitLancheVal(String((wizardData as any).kit_lanche ?? ""));
+        setCoroaFloresVal(String((wizardData as any).coroa_flores ?? ""));
+        setCoroaTipoVal(String((wizardData as any).coroa_tipo ?? ""));
+        setRealizaVelorioVal(String((wizardData as any).realiza_velorio ?? ""));
+        setRealizaSepultamentoVal(String((wizardData as any).realiza_sepultamento ?? ""));
         setSalaVelorioVal(String((wizardData as any).sala_velorio ?? ""));
         setVelorioOnlineVal(String((wizardData as any).velorio_online ?? ""));
     }, [
@@ -757,6 +990,10 @@ export default function Wizard({
         (wizardData as any).veu,
         (wizardData as any).cordao,
         (wizardData as any).kit_lanche,
+        (wizardData as any).coroa_flores,
+        (wizardData as any).coroa_tipo,
+        (wizardData as any).realiza_velorio,
+        (wizardData as any).realiza_sepultamento,
         (wizardData as any).sala_velorio,
         (wizardData as any).velorio_online,
     ]);
@@ -780,6 +1017,11 @@ export default function Wizard({
         setVeuSelectErro("");
         setCordaoSelectErro("");
         setKitLancheSelectErro("");
+        setCoroaFloresSelectErro("");
+        setCoroaTipoErro("");
+        setCoroaModeloErro("");
+        setRealizaVelorioErro("");
+        setRealizaSepultamentoErro("");
         setVelorioOnlineErro("");
 
         // ✅ limpa erro do Natural/Artificial
@@ -904,6 +1146,10 @@ export default function Wizard({
     const veuSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "veu"), [grupoSteps]);
     const cordaoSelectNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "cordao"), [grupoSteps]);
     const kitLancheNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "kit_lanche"), [grupoSteps]);
+    const coroaFloresNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "coroa_flores"), [grupoSteps]);
+    const coroaModeloNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "coroa_modelo"), [grupoSteps]);
+    const realizaVelorioNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "realiza_velorio"), [grupoSteps]);
+    const realizaSepultamentoNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "realiza_sepultamento"), [grupoSteps]);
     const velorioOnlineNoGrupoAtual = useMemo(
         () => grupoSteps.some((s) => s.id === "local_velorio" || s.id === "sala_velorio" || s.id === "velorio_online"),
         [grupoSteps]
@@ -992,6 +1238,71 @@ export default function Wizard({
         }
 
         setKitLancheSelectErro('Selecione "Sim" ou "Não".');
+        return false;
+    };
+
+    const validarCoroaSeNecessario = () => {
+        if (!coroaFloresNoGrupoAtual && !coroaModeloNoGrupoAtual) return true;
+        if (!isRequired("coroa_flores")) {
+            setCoroaFloresSelectErro("");
+            setCoroaTipoErro("");
+            setCoroaModeloErro("");
+            return true;
+        }
+
+        if (!isSimNao(coroaFloresVal)) {
+            setCoroaFloresSelectErro('Selecione "Sim" ou "Não".');
+            return false;
+        }
+        setCoroaFloresSelectErro("");
+
+        if (coroaFloresVal !== "Sim") {
+            setCoroaTipoErro("");
+            setCoroaModeloErro("");
+            return true;
+        }
+
+        if (coroaTipoVal !== "Natural" && coroaTipoVal !== "Artificial") {
+            setCoroaTipoErro('Selecione "Natural" ou "Artificial".');
+            return false;
+        }
+        setCoroaTipoErro("");
+
+        const pid = Number((wizardData as any).coroa_produto_id ?? 0) || 0;
+        const modelo = String((wizardData as any).coroa_modelo ?? "").trim();
+        const dep = String((wizardData as any).coroa_deposito_nome ?? "").trim();
+
+        if (pid <= 0 || !modelo) {
+            setCoroaModeloErro("Selecione um modelo de Coroa de Flores.");
+            return false;
+        }
+
+        if (coroaTipoVal === "Artificial" && !dep) {
+            setCoroaModeloErro("Selecione uma Coroa Artificial com depósito e saldo disponível.");
+            return false;
+        }
+
+        setCoroaModeloErro("");
+        return true;
+    };
+
+    const validarRealizaVelorio = () => {
+        if (!realizaVelorioNoGrupoAtual || !isRequired("realiza_velorio")) return true;
+        if (isSimNao(realizaVelorioVal)) {
+            setRealizaVelorioErro("");
+            return true;
+        }
+        setRealizaVelorioErro('Selecione "Sim" ou "Não" em Velório.');
+        return false;
+    };
+
+    const validarRealizaSepultamento = () => {
+        if (!realizaSepultamentoNoGrupoAtual || !isRequired("realiza_sepultamento")) return true;
+        if (isSimNao(realizaSepultamentoVal)) {
+            setRealizaSepultamentoErro("");
+            return true;
+        }
+        setRealizaSepultamentoErro('Selecione "Sim" ou "Não" em Sepultamento.');
         return false;
     };
 
@@ -1272,11 +1583,27 @@ export default function Wizard({
         );
     }
 
-    const isLastStep = wizardStep === wizardStepIndexes.length - 1;
+    const visibleWizardStepIndexes = useMemo(() => {
+        const fluxoFunerarioPadrao = wizardStepTitles[1] === "Itens" && wizardStepIndexes.length >= 4;
+
+        return wizardStepIndexes
+            .map((_, index) => index)
+            .filter((index) => {
+                // Somente no fluxo funerário padrão: grupo 2 = Velório, grupo 3 = Sepultamento.
+                // Campo vazio mantém as abas visíveis por compatibilidade com registros antigos.
+                if (fluxoFunerarioPadrao && index === 2 && realizaVelorioVal === "Não") return false;
+                if (fluxoFunerarioPadrao && index === 3 && realizaSepultamentoVal === "Não") return false;
+                return true;
+            });
+    }, [wizardStepIndexes, wizardStepTitles, realizaVelorioVal, realizaSepultamentoVal]);
+
+    const isLastStep = wizardStep === visibleWizardStepIndexes[visibleWizardStepIndexes.length - 1];
 
     const goPrev = () => {
         if (wizardSubmitting) return;
-        setWizardStep(Math.max(0, wizardStep - 1));
+        const pos = visibleWizardStepIndexes.indexOf(wizardStep);
+        const prev = pos > 0 ? visibleWizardStepIndexes[pos - 1] : visibleWizardStepIndexes[0] ?? 0;
+        setWizardStep(prev);
     };
 
     const scrollToFirstError = () => {
@@ -1334,6 +1661,18 @@ export default function Wizard({
             scrollToFirstError();
             return;
         }
+        if (!validarCoroaSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarRealizaVelorio()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarRealizaSepultamento()) {
+            scrollToFirstError();
+            return;
+        }
         if (!validarVelorioOnlineSeNecessario()) {
             scrollToFirstError();
             return;
@@ -1362,7 +1701,11 @@ export default function Wizard({
 
         const ok = salvarGrupoWizard();
         if (!ok) return;
-        if (!isLastStep) setWizardStep(wizardStep + 1);
+        if (!isLastStep) {
+            const pos = visibleWizardStepIndexes.indexOf(wizardStep);
+            const next = pos >= 0 ? visibleWizardStepIndexes[pos + 1] : undefined;
+            if (typeof next === "number") setWizardStep(next);
+        }
     };
 
     const tentarConcluir = async () => {
@@ -1399,6 +1742,18 @@ export default function Wizard({
             return;
         }
         if (!validarKitLancheSelect()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarCoroaSeNecessario()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarRealizaVelorio()) {
+            scrollToFirstError();
+            return;
+        }
+        if (!validarRealizaSepultamento()) {
             scrollToFirstError();
             return;
         }
@@ -1457,21 +1812,27 @@ export default function Wizard({
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
-                {wizardStepTitles.map((t, i) => (
-                    <span
-                        key={t}
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
-                            }`}
-                    >
-                        {t}
-                    </span>
-                ))}
+                {visibleWizardStepIndexes.map((i) => {
+                    const t = wizardStepTitles[i];
+                    if (!t) return null;
+                    return (
+                        <span
+                            key={`${t}-${i}`}
+                            className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
+                                }`}
+                        >
+                            {t}
+                        </span>
+                    );
+                })}
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {grupoSteps.map((step) => {
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
                     if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
+                    if (step.id === "coroa_tipo" && coroaFloresVal !== "Sim") return null;
+                    if (step.id === "coroa_modelo" && (coroaFloresVal !== "Sim" || (coroaTipoVal !== "Natural" && coroaTipoVal !== "Artificial"))) return null;
 
                     /* ===========================
                        URNA (checkbox Sim/Não + seletor async)
@@ -1940,6 +2301,208 @@ export default function Wizard({
                                 {kitLancheSelectErro && (
                                     <div className="mt-1 text-xs text-red-600">{kitLancheSelectErro}</div>
                                 )}
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+                       COROA DE FLORES
+                       =========================== */
+                    if (step.id === "coroa_flores" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            {step.label}
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
+                                    inputId="wizard-coroa_flores"
+                                    ariaLabel="Coroa de Flores"
+                                    value={coroaFloresVal}
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!coroaFloresSelectErro}
+                                    onChange={(v) => {
+                                        setCoroaFloresVal(v);
+                                        setCoroaFloresSelectErro("");
+
+                                        if (v === "Não") {
+                                            setCoroaTipoVal("");
+                                            setCoroaTipoErro("");
+                                            setCoroaModeloErro("");
+                                            setWizardData((prev: any) => ({
+                                                ...prev,
+                                                coroa_flores: "Não",
+                                                coroa_tipo: "",
+                                                coroa_produto_id: 0,
+                                                coroa_modelo: "",
+                                                coroa_codigo_barras: "",
+                                                coroa_deposito_nome: "",
+                                            }));
+                                            return;
+                                        }
+
+                                        setWizardData((prev: any) => ({ ...prev, coroa_flores: v }));
+                                    }}
+                                />
+                                {coroaFloresSelectErro && <div className="mt-1 text-xs text-red-600">{coroaFloresSelectErro}</div>}
+                            </div>
+                        );
+                    }
+
+                    if (step.id === "coroa_tipo" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            Tipo da Coroa
+                                            {isRequired("coroa_flores") && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
+                                    inputId="wizard-coroa_tipo"
+                                    ariaLabel="Tipo da Coroa"
+                                    value={coroaTipoVal}
+                                    options={ORNAMENTACAO_TIPO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!coroaTipoErro}
+                                    onChange={(v) => {
+                                        setCoroaTipoVal(v);
+                                        setCoroaTipoErro("");
+                                        setCoroaModeloErro("");
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            coroa_tipo: v,
+                                            coroa_produto_id: 0,
+                                            coroa_modelo: "",
+                                            coroa_codigo_barras: "",
+                                            coroa_deposito_nome: "",
+                                        }));
+                                    }}
+                                />
+                                {coroaTipoErro && <div className="mt-1 text-xs text-red-600">{coroaTipoErro}</div>}
+                            </div>
+                        );
+                    }
+
+                    if (step.id === "coroa_modelo" && step.type === "async_coroa") {
+                        const tipo = coroaTipoVal === "Artificial" ? "Artificial" : "Natural";
+                        return (
+                            <div key={`${step.id}-${tipo}`} className="sm:col-span-2">
+                                <CoroaCombobox
+                                    inputId="wizard-coroa_modelo"
+                                    tipo={tipo}
+                                    required={isRequired("coroa_flores")}
+                                    initialValue={String((wizardData as any).coroa_modelo ?? "")}
+                                    disabled={wizardSubmitting}
+                                    errorText={coroaModeloErro}
+                                    onSelectRow={(row) => {
+                                        const pid = getPidFromRow(row);
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            coroa_modelo: String(row.nome || "").trim(),
+                                            coroa_produto_id: pid,
+                                            coroa_codigo_barras: String(row.codigo_barras || "").trim(),
+                                            coroa_deposito_nome: tipo === "Artificial" ? String(row.deposito_nome || "").trim() : "",
+                                        }));
+                                        setCoroaModeloErro("");
+                                    }}
+                                    onClear={() => {
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            coroa_modelo: "",
+                                            coroa_produto_id: 0,
+                                            coroa_codigo_barras: "",
+                                            coroa_deposito_nome: "",
+                                        }));
+                                        setCoroaModeloErro("");
+                                    }}
+                                />
+                            </div>
+                        );
+                    }
+
+                    /* ===========================
+                       VELÓRIO / SEPULTAMENTO (roteamento)
+                       =========================== */
+                    if (step.id === "realiza_velorio" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            Velório
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
+                                    inputId="wizard-realiza_velorio"
+                                    ariaLabel="Velório"
+                                    value={realizaVelorioVal}
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!realizaVelorioErro}
+                                    onChange={(v) => {
+                                        setRealizaVelorioVal(v);
+                                        setRealizaVelorioErro("");
+
+                                        if (v === "Não") {
+                                            setSalaVelorioVal("");
+                                            setVelorioOnlineVal("");
+                                            setVelorioOnlineErro("");
+                                        }
+
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            realiza_velorio: v,
+                                            ...(v === "Não"
+                                                ? {
+                                                    local_velorio: "",
+                                                    sala_velorio: "",
+                                                    velorio_online: "",
+                                                    data_inicio_velorio: "",
+                                                    data_fim_velorio: "",
+                                                    hora_inicio_velorio: "",
+                                                    hora_fim_velorio: "",
+                                                    observacao_velorio01: "",
+                                                }
+                                                : {}),
+                                        }));
+                                    }}
+                                />
+                                {realizaVelorioErro && <div className="mt-1 text-xs text-red-600">{realizaVelorioErro}</div>}
+                            </div>
+                        );
+                    }
+
+                    if (step.id === "realiza_sepultamento" && step.type === "select") {
+                        return (
+                            <div key={step.id}>
+                                <CheckboxChoiceGroup
+                                    label={
+                                        <>
+                                            Sepultamento
+                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                        </>
+                                    }
+                                    inputId="wizard-realiza_sepultamento"
+                                    ariaLabel="Sepultamento"
+                                    value={realizaSepultamentoVal}
+                                    options={SIM_NAO_OPTIONS}
+                                    disabled={wizardSubmitting}
+                                    hasError={!!realizaSepultamentoErro}
+                                    onChange={(v) => {
+                                        setRealizaSepultamentoVal(v);
+                                        setRealizaSepultamentoErro("");
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            realiza_sepultamento: v,
+                                            ...(v === "Não" ? { local: "", observacao_velorio02: "" } : {}),
+                                        }));
+                                    }}
+                                />
+                                {realizaSepultamentoErro && <div className="mt-1 text-xs text-red-600">{realizaSepultamentoErro}</div>}
                             </div>
                         );
                     }

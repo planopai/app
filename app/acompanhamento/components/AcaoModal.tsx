@@ -15,7 +15,6 @@ import {
 } from "./helpers";
 
 type Fase = (typeof fases)[number];
-const FASE_FINAL = "fase11" as Fase;
 
 type FotoAcaoTipo = "fim_ornamentacao" | "entrega_corpo";
 
@@ -197,6 +196,8 @@ export default function AcaoModal({
         tanato: string;
         ornamentacao: string;
         assistencia: string;
+        realiza_velorio: string;
+        realiza_sepultamento: string;
         tipo_atendimento: "funerario" | "terceiro" | "";
     } | null>(null);
 
@@ -222,6 +223,8 @@ export default function AcaoModal({
                     tanato: s.tanato || "",
                     ornamentacao: s.ornamentacao || "",
                     assistencia: s.assistencia || "",
+                    realiza_velorio: s.realiza_velorio || "",
+                    realiza_sepultamento: s.realiza_sepultamento || "",
                     tipo_atendimento: s.tipo_atendimento || "",
                 });
             } catch (e: any) {
@@ -245,6 +248,8 @@ export default function AcaoModal({
                 tanato: online.tanato,
                 ornamentacao: online.ornamentacao || registroLocal?.ornamentacao,
                 assistencia: online.assistencia || registroLocal?.assistencia,
+                realiza_velorio: online.realiza_velorio || (registroLocal as any)?.realiza_velorio || "",
+                realiza_sepultamento: online.realiza_sepultamento || (registroLocal as any)?.realiza_sepultamento || "",
                 tipo_atendimento: online.tipo_atendimento || (registroLocal as any)?.tipo_atendimento || "",
             };
         }
@@ -255,6 +260,8 @@ export default function AcaoModal({
                 tanato: registroLocal.tanato,
                 ornamentacao: registroLocal.ornamentacao,
                 assistencia: registroLocal.assistencia,
+                realiza_velorio: String((registroLocal as any)?.realiza_velorio ?? ""),
+                realiza_sepultamento: String((registroLocal as any)?.realiza_sepultamento ?? ""),
                 tipo_atendimento: String((registroLocal as any)?.tipo_atendimento ?? ""),
             };
         }
@@ -273,6 +280,8 @@ export default function AcaoModal({
     const skipOrnamentacao = !!efetivo && isNao(efetivo.ornamentacao);
     const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
+    const skipVelorio = !!efetivo && isNao((efetivo as any).realiza_velorio);
+    const skipSepultamento = !!efetivo && isNao((efetivo as any).realiza_sepultamento);
 
     const fasesVisiveis = useMemo<Fase[]>(() => {
         if (isTerceiro) return ["fase08", "fase09", "fase10"];
@@ -281,10 +290,12 @@ export default function AcaoModal({
             if (skipTransportando && f === "fase07") return false;
             if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
             if (skipOrnamentacao && (f === "fase05" || f === "fase06")) return false;
+            if (skipVelorio && (f === "fase07" || f === "fase08")) return false;
+            if (skipSepultamento && (f === "fase09" || f === "fase10")) return false;
             if (skipMaterialRecolhido && f === "fase11") return false;
             return true;
         }) as Fase[];
-    }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipOrnamentacao, skipMaterialRecolhido]);
+    }, [isTerceiro, efetivo, skipTransportando, skipConservacao, skipOrnamentacao, skipVelorio, skipSepultamento, skipMaterialRecolhido]);
 
     const prox = useMemo<Fase | null>(() => {
         if (!efetivo) return null;
@@ -292,8 +303,8 @@ export default function AcaoModal({
         const fluxoCompleto = fases as readonly Fase[];
         const visiveis = fasesVisiveis as readonly Fase[];
 
-        const isFinal = isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL;
-        if (isFinal) return null;
+        const faseFinal = isTerceiro ? ("fase10" as Fase) : (visiveis[visiveis.length - 1] ?? null);
+        if (faseFinal && efetivo.status === faseFinal) return null;
 
         const p = proximaFaseDoRegistro(
             {
@@ -302,6 +313,8 @@ export default function AcaoModal({
                 tanato: efetivo.tanato,
                 ornamentacao: efetivo.ornamentacao,
                 assistencia: efetivo.assistencia,
+                realiza_velorio: (efetivo as any).realiza_velorio,
+                realiza_sepultamento: (efetivo as any).realiza_sepultamento,
             },
             visiveis as readonly string[]
         ) as Fase | null;
@@ -318,7 +331,8 @@ export default function AcaoModal({
         return null;
     }, [efetivo, fasesVisiveis, isTerceiro]);
 
-    const concluido = !!efetivo && (isTerceiro ? efetivo.status === "fase10" : efetivo.status === FASE_FINAL);
+    const faseFinalEfetiva = isTerceiro ? ("fase10" as Fase) : (fasesVisiveis[fasesVisiveis.length - 1] ?? null);
+    const concluido = !!efetivo && !!faseFinalEfetiva && efetivo.status === faseFinalEfetiva;
 
     function podeConservacao(): boolean {
         return (

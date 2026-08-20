@@ -61,7 +61,7 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 
 // ===== Helpers de baixa (fase12: URNA / ROUPA / INVOL / INSUMOS) =====
-type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "INSUMOS";
+type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "COROA_ARTIFICIAL" | "INSUMOS";
 
 function isSim(v: any): boolean {
   const s = String(v ?? "")
@@ -707,6 +707,18 @@ export default function AcompanhamentoPage() {
           // KIT LANCHE
           kit_lanche: String(it?.kit_lanche ?? "Não"),
 
+          // ✅ COROA DE FLORES
+          coroa_flores: String(it?.coroa_flores ?? ""),
+          coroa_tipo: String(it?.coroa_tipo ?? ""),
+          coroa_produto_id: Number(it?.coroa_produto_id ?? 0) || 0,
+          coroa_modelo: String(it?.coroa_modelo ?? ""),
+          coroa_codigo_barras: String(it?.coroa_codigo_barras ?? ""),
+          coroa_deposito_nome: String(it?.coroa_deposito_nome ?? ""),
+
+          // ✅ ROTEAMENTO VELÓRIO / SEPULTAMENTO
+          realiza_velorio: String(it?.realiza_velorio ?? ""),
+          realiza_sepultamento: String(it?.realiza_sepultamento ?? ""),
+
           // ✅ INSUMOS (novo formato dentro do arrumacao_json)
           arrumacao_json: String(it?.arrumacao_json ?? ""),
 
@@ -1207,6 +1219,18 @@ export default function AcompanhamentoPage() {
     (empty as any).cordao_codigo_barras = "";
     (empty as any).cordao_item = "";
 
+    // ✅ defaults da Coroa de Flores
+    (empty as any).coroa_flores = "";
+    (empty as any).coroa_tipo = "";
+    (empty as any).coroa_produto_id = 0;
+    (empty as any).coroa_modelo = "";
+    (empty as any).coroa_codigo_barras = "";
+    (empty as any).coroa_deposito_nome = "";
+
+    // ✅ escolha do fluxo. Campo vazio exige decisão quando a obrigatoriedade estiver ativa.
+    (empty as any).realiza_velorio = "";
+    (empty as any).realiza_sepultamento = "";
+
     // ✅ Velório (sala + online)
     (empty as any).sala_velorio = "";
     (empty as any).velorio_online = "";
@@ -1320,6 +1344,18 @@ export default function AcompanhamentoPage() {
         );
         (data as any).cordao_item = String((r as any).cordao_item ?? "");
 
+        // ✅ Coroa de Flores
+        (data as any).coroa_flores = String((r as any).coroa_flores ?? "");
+        (data as any).coroa_tipo = String((r as any).coroa_tipo ?? "");
+        (data as any).coroa_produto_id = Number((r as any).coroa_produto_id ?? 0) || 0;
+        (data as any).coroa_modelo = String((r as any).coroa_modelo ?? "");
+        (data as any).coroa_codigo_barras = String((r as any).coroa_codigo_barras ?? "");
+        (data as any).coroa_deposito_nome = String((r as any).coroa_deposito_nome ?? "");
+
+        // ✅ Roteamento Velório / Sepultamento
+        (data as any).realiza_velorio = String((r as any).realiza_velorio ?? "");
+        (data as any).realiza_sepultamento = String((r as any).realiza_sepultamento ?? "");
+
         // ✅ insumos tanato (novo formato dentro do arrumacao_json)
         (data as any).arrumacao_json = String((r as any).arrumacao_json ?? "");
 
@@ -1368,7 +1404,8 @@ export default function AcompanhamentoPage() {
         s?.type === "async_roupa" ||
         s?.type === "async_invol" ||
         s?.type === "async_veu" ||
-        s?.type === "async_cordao";
+        s?.type === "async_cordao" ||
+        s?.type === "async_coroa";
 
       let v = "";
 
@@ -1581,6 +1618,43 @@ export default function AcompanhamentoPage() {
         next?.cordao_codigo_barras ?? "",
       ).trim();
       next.cordao_produto_id = cordaoPid > 0 ? cordaoPid : 0;
+    }
+
+    // ✅ COROA DE FLORES
+    const coroaFlag = String(next?.coroa_flores ?? "").trim();
+    const coroaTipo = String(next?.coroa_tipo ?? "").trim();
+    if (!isSim(coroaFlag)) {
+      next.coroa_tipo = "";
+      next.coroa_produto_id = 0;
+      next.coroa_modelo = "";
+      next.coroa_codigo_barras = "";
+      next.coroa_deposito_nome = "";
+    } else {
+      next.coroa_produto_id = Number(next?.coroa_produto_id ?? 0) || 0;
+      next.coroa_modelo = String(next?.coroa_modelo ?? "").trim();
+      next.coroa_codigo_barras = String(next?.coroa_codigo_barras ?? "").trim();
+      if (coroaTipo === "Artificial") {
+        next.coroa_deposito_nome = String(next?.coroa_deposito_nome ?? "").trim();
+      } else {
+        next.coroa_deposito_nome = "";
+      }
+    }
+
+    // ✅ ROTEAMENTO: quando Não, limpa os dados da aba para não manter informação escondida.
+    if (isNao(next?.realiza_velorio)) {
+      next.local_velorio = "";
+      next.sala_velorio = "";
+      next.velorio_online = "";
+      next.data_inicio_velorio = "";
+      next.data_fim_velorio = "";
+      next.hora_inicio_velorio = "";
+      next.hora_fim_velorio = "";
+      next.observacao_velorio01 = "";
+    }
+
+    if (isNao(next?.realiza_sepultamento)) {
+      next.local = "";
+      next.observacao_velorio02 = "";
     }
 
     // ✅ preservar INSUMOS dentro do arrumacao_json (merge booleans + insumos)
@@ -1802,6 +1876,31 @@ export default function AcompanhamentoPage() {
       }
     }
 
+    // ✅ validação extra (front): COROA DE FLORES
+    if (
+      obrigatoriedadeAtiva &&
+      escopoTemAlgum(["coroa_flores", "coroa_tipo", "coroa_modelo", "coroa_produto_id", "coroa_deposito_nome"]) &&
+      isSim(dataAtualizada?.coroa_flores)
+    ) {
+      const tipoCoroa = String(dataAtualizada?.coroa_tipo ?? "").trim();
+      const coroaPid = Number(dataAtualizada?.coroa_produto_id ?? 0) || 0;
+      const coroaModelo = String(dataAtualizada?.coroa_modelo ?? "").trim();
+      const coroaDep = String(dataAtualizada?.coroa_deposito_nome ?? "").trim();
+
+      if (tipoCoroa !== "Natural" && tipoCoroa !== "Artificial") {
+        setWizardMsg({ text: 'Coroa de Flores: selecione "Natural" ou "Artificial".', ok: false });
+        return;
+      }
+      if (coroaPid <= 0 || !coroaModelo) {
+        setWizardMsg({ text: "Coroa de Flores: selecione um modelo válido.", ok: false });
+        return;
+      }
+      if (tipoCoroa === "Artificial" && !coroaDep) {
+        setWizardMsg({ text: "Coroa Artificial: selecione um modelo com depósito e saldo disponível.", ok: false });
+        return;
+      }
+    }
+
     // ✅ validação extra (front): INSUMOS TANATO (arrumacao_json novo)
     const ins = parseInsumosFromArrumacaoJson(dataAtualizada?.arrumacao_json);
     if (escopoTemAlgum(["arrumacao", "arrumacao_json"]) && ins && (!ins.deposito_nome || ins.itens.length === 0)) {
@@ -1828,7 +1927,7 @@ export default function AcompanhamentoPage() {
 
     const aplicarEscopoNoPayload = (payload: any) => {
       if (payload.acao === "editar" && wizardRestrictIds) {
-        let restrictIds = Array.from(new Set(wizardRestrictIds.map((id) => String(id))));
+        let restrictIds: string[] = Array.from(new Set<string>(wizardRestrictIds.map((id) => String(id))));
 
         // ✅ Correção: ao editar a aba de Itens para trocar somente a URNA,
         // a mesma aba também costuma conter "roupa" no escopo.
@@ -2132,6 +2231,20 @@ export default function AcompanhamentoPage() {
           }
         }
 
+        // ✅ COROA ARTIFICIAL
+        if (isSim(reg?.coroa_flores) && String(reg?.coroa_tipo ?? "").trim() === "Artificial") {
+          const coroaPid = Number(reg?.coroa_produto_id ?? 0) || 0;
+          const coroaDep = String(reg?.coroa_deposito_nome ?? "").trim();
+          if (coroaPid <= 0) {
+            setAcaoMsg({ ok: false, text: "Coroa Artificial: selecione um modelo válido." });
+            return false;
+          }
+          if (!coroaDep) {
+            setAcaoMsg({ ok: false, text: "Coroa Artificial: depósito de estoque não definido." });
+            return false;
+          }
+        }
+
         // INSUMOS TANATO (se arrumacao_json tiver itens)
         const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
         if (ins && (!ins.deposito_nome || ins.itens.length === 0)) {
@@ -2258,7 +2371,16 @@ export default function AcompanhamentoPage() {
             });
           }
 
-          // 7) INSUMOS
+          // 7) COROA ARTIFICIAL
+          // Coroa Natural é registrada no atendimento e não movimenta estoque.
+          if (isSim(reg?.coroa_flores) && String(reg?.coroa_tipo ?? "").trim() === "Artificial") {
+            await baixarItensCorpoPronto({
+              registro_id,
+              tipo: "COROA_ARTIFICIAL",
+            });
+          }
+
+          // 8) INSUMOS
           const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
           if (ins && ins.itens.length > 0) {
             await baixarItensCorpoPronto({
@@ -2442,9 +2564,17 @@ export default function AcompanhamentoPage() {
 
   // Os títulos do modal Info pertencem ao registro que está aberto.
   // Isso evita herdar o tipo do último cadastro/wizard acessado.
-  const wizardStepTitlesInfo = useMemo(() => {
+  const wizardStepTitlesInfo = useMemo<Array<string | null>>(() => {
     const tipoDoRegistro = resolveTipoFromRegistro(registroInfo);
-    return getWizardConfig(tipoDoRegistro).wizardStepTitles;
+    const titulos = [...getWizardConfig(tipoDoRegistro).wizardStepTitles] as Array<string | null>;
+
+    if (tipoDoRegistro === "funerario" && registroInfo) {
+      // Grupos 2 e 3 são Velório e Sepultamento. Campo vazio mantém compatibilidade com registros antigos.
+      if (isNao((registroInfo as any).realiza_velorio)) titulos[2] = null;
+      if (isNao((registroInfo as any).realiza_sepultamento)) titulos[3] = null;
+    }
+
+    return titulos;
   }, [registroInfo]);
 
   const registroCompartilhar = useMemo(

@@ -44,10 +44,9 @@ function isSim(v?: string) {
 }
 
 function isTerceiro(r: Registro) {
-    if ((r as any).tipo_atendimento === "terceiro") return true;
-
-    // heurística p/ registros antigos
-    return isNao(r.assistencia) && isNao(r.tanato) && isNao(r.ornamentacao);
+    // Não inferir pelo conteúdo dos campos: um atendimento funerário normal
+    // também pode ter Assistência, Tanato e Ornamentação marcados como Não.
+    return String((r as any).tipo_atendimento ?? "").trim().toLowerCase() === "terceiro";
 }
 
 export default function TabelaAtendimentos({
@@ -58,10 +57,11 @@ export default function TabelaAtendimentos({
 }: Props) {
     /**
      * Regras de visibilidade:
-     * - SEMPRE esconder fase11 (Material Recolhido).
-     * - TERCEIRO: esconder na fase10 (Sepultamento Concluído).
-     * - FUNERÁRIO + Assistência=Não: esconder na fase10.
-     * - FUNERÁRIO + Assistência=Sim: manter na fase10 e esconder só na fase11.
+     * - fase11 continua sendo o encerramento quando há material para recolher;
+     * - registros antigos, sem os novos campos, mantêm o fluxo anterior;
+     * - sem Assistência, o registro some na última fase operacional aplicável;
+     * - sem Sepultamento, a última fase pode ser Entrega de Corpo (fase08);
+     * - sem Velório e sem Sepultamento, a última fase pode ser Corpo Pronto (fase12).
      */
     const visiveis = registros.filter((r) => {
         if (r.status === "fase11") return false;
@@ -70,11 +70,21 @@ export default function TabelaAtendimentos({
             return r.status !== "fase10";
         }
 
-        if (!isSim(r.assistencia)) {
+        // Com assistência, ainda existe a etapa final de Material Recolhido.
+        if (isSim(r.assistencia)) return true;
+
+        const semVelorio = isNao((r as any).realiza_velorio);
+        const semSepultamento = isNao((r as any).realiza_sepultamento);
+
+        if (!semSepultamento) {
             return r.status !== "fase10";
         }
 
-        return true;
+        if (!semVelorio) {
+            return r.status !== "fase08";
+        }
+
+        return r.status !== "fase12";
     });
 
     return (

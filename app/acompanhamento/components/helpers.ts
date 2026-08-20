@@ -207,6 +207,17 @@ function isSim(v: any): boolean {
     return s === "sim" || s === "s" || s === "1" || s === "true";
 }
 
+function isNao(v: any): boolean {
+    const s = String(v ?? "").trim().toLowerCase();
+    return s === "não" || s === "nao" || s === "n" || s === "0" || s === "false";
+}
+
+function normalizeSimNaoKeepBlank(v: any): string {
+    if (isSim(v)) return "Sim";
+    if (isNao(v)) return "Não";
+    return String(v ?? "").trim();
+}
+
 function isRoupapropria(v: any): boolean {
     const raw = String(v ?? "").trim().toLowerCase();
     if (!raw) return false;
@@ -398,8 +409,41 @@ export async function enviarRegistroPHP(data: any) {
         throw new Error("Cordão: selecione o local (ARMARIO SANDRO, ARMARIO ILDO ou FUNERARIA).");
     }
 
+    // ---------- COROA DE FLORES ----------
+    const coroaFlores = normalizeSimNaoKeepBlank(data?.coroa_flores);
+    const coroaSim = isSim(coroaFlores);
+    const coroaTipoRaw = String(data?.coroa_tipo ?? "").trim();
+    const coroaTipo =
+        coroaTipoRaw.toLowerCase() === "natural"
+            ? "Natural"
+            : coroaTipoRaw.toLowerCase() === "artificial"
+                ? "Artificial"
+                : "";
+    const coroaPid = coroaSim ? asPositiveIntOrNull(data?.coroa_produto_id) : null;
+    const coroaModelo = coroaSim ? String(data?.coroa_modelo ?? "").trim() : "";
+    const coroaCb = coroaSim ? (String(data?.coroa_codigo_barras ?? "").trim() || null) : null;
+    const coroaDep = coroaSim && coroaTipo === "Artificial"
+        ? (String(data?.coroa_deposito_nome ?? "").trim() || null)
+        : null;
+
+    // Quando o usuário marcou Sim, uma seleção completa de modelo é necessária.
+    // Registros novos ainda podem nascer incompletos, mas se já houver tipo/modelo parcial,
+    // impedimos uma combinação inconsistente de dados.
+    if (coroaSim && coroaTipo && !coroaPid) {
+        throw new Error("Coroa de Flores: selecione um modelo válido.");
+    }
+    if (coroaSim && coroaTipo === "Artificial" && coroaPid && !coroaDep) {
+        throw new Error("Coroa Artificial: selecione um modelo com depósito e saldo disponível.");
+    }
+
+    // ---------- ROTEAMENTO VELÓRIO / SEPULTAMENTO ----------
+    const realizaVelorio = normalizeSimNaoKeepBlank(data?.realiza_velorio);
+    const realizaSepultamento = normalizeSimNaoKeepBlank(data?.realiza_sepultamento);
+    const semVelorio = isNao(realizaVelorio);
+    const semSepultamento = isNao(realizaSepultamento);
+
     // ---------- VELÓRIO / SALA ----------
-    const salaVelorioRaw = String(data?.sala_velorio ?? "").trim();
+    const salaVelorioRaw = semVelorio ? "" : String(data?.sala_velorio ?? "").trim();
     const salaVelorio =
         salaVelorioRaw === "Sala 01" ||
             salaVelorioRaw === "Sala 02" ||
@@ -423,15 +467,26 @@ export async function enviarRegistroPHP(data: any) {
         ...data,
 
         // segurança: esses sempre existem
-        local: data?.local || "",
+        local: semSepultamento ? "" : (data?.local || ""),
 
         // jsons sempre string
         materiais_json,
         arrumacao_json,
 
-        // velório / sala
+        // roteamento do atendimento
+        realiza_velorio: realizaVelorio,
+        realiza_sepultamento: realizaSepultamento,
+
+        // velório / sala. Quando Velório = Não, todos os dados da aba são limpos.
+        local_velorio: semVelorio ? "" : String(data?.local_velorio ?? ""),
         sala_velorio: salaVelorio,
         velorio_online: velorioOnline,
+        data_inicio_velorio: semVelorio ? "" : String(data?.data_inicio_velorio ?? ""),
+        data_fim_velorio: semVelorio ? "" : String(data?.data_fim_velorio ?? ""),
+        hora_inicio_velorio: semVelorio ? "" : String(data?.hora_inicio_velorio ?? ""),
+        hora_fim_velorio: semVelorio ? "" : String(data?.hora_fim_velorio ?? ""),
+        observacao_velorio01: semVelorio ? "" : String(data?.observacao_velorio01 ?? ""),
+        observacao_velorio02: semSepultamento ? "" : String(data?.observacao_velorio02 ?? ""),
 
         // urna
         urna_deposito_nome: urnaDep,
@@ -464,6 +519,14 @@ export async function enviarRegistroPHP(data: any) {
         cordao_produto_id: cordaoPid,
         cordao_codigo_barras: cordaoCb,
 
+        // coroa de flores
+        coroa_flores: coroaFlores,
+        coroa_tipo: coroaSim ? coroaTipo : "",
+        coroa_produto_id: coroaSim ? coroaPid : null,
+        coroa_modelo: coroaSim ? coroaModelo : "",
+        coroa_codigo_barras: coroaSim ? coroaCb : null,
+        coroa_deposito_nome: coroaSim && coroaTipo === "Artificial" ? coroaDep : null,
+
     };
 
     // ✅ agora aponta DIRETO pro PHP no domínio da API
@@ -482,6 +545,8 @@ export type StatusConsulta = {
     tanato: string;
     ornamentacao: string;
     assistencia: string;
+    realiza_velorio: string;
+    realiza_sepultamento: string;
     tipo_atendimento: "funerario" | "terceiro" | "";
 };
 
@@ -506,52 +571,70 @@ export async function consultarStatusAtual(
         tanato: String(data.tanato ?? ""),
         ornamentacao: String(data.ornamentacao ?? ""),
         assistencia: String(data.assistencia ?? ""),
+        realiza_velorio: String(data.realiza_velorio ?? ""),
+        realiza_sepultamento: String(data.realiza_sepultamento ?? ""),
         tipo_atendimento: tipo === "terceiro" ? "terceiro" : tipo === "funerario" ? "funerario" : "",
     };
 }
 
 /* -------------------- Próxima fase (com regras) -------------------- */
+export type RegistroFluxo = {
+    status?: string;
+    local_velorio?: string;
+    tanato?: string;
+    ornamentacao?: string;
+    assistencia?: string;
+    realiza_velorio?: string;
+    realiza_sepultamento?: string;
+};
+
+export function fasesVisiveisDoRegistro(
+    r: RegistroFluxo,
+    fases: readonly string[]
+): string[] {
+    const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
+    const skipConservacao = isTanatoNo(r.tanato);
+    const skipOrnamentacao = isNao(r.ornamentacao);
+    const skipMaterialRecolhido = isNao(r.assistencia);
+
+    // Compatibilidade: campo vazio/NULL em registros antigos significa manter o fluxo antigo.
+    const skipVelorio = isNao(r.realiza_velorio);
+    const skipSepultamento = isNao(r.realiza_sepultamento);
+
+    return fases.filter((fase) => {
+        if (skipTransportando && fase === "fase07") return false;
+        if (skipConservacao && (fase === "fase03" || fase === "fase04")) return false;
+        if (skipOrnamentacao && (fase === "fase05" || fase === "fase06")) return false;
+        if (skipVelorio && (fase === "fase07" || fase === "fase08")) return false;
+        if (skipSepultamento && (fase === "fase09" || fase === "fase10")) return false;
+        if (skipMaterialRecolhido && fase === "fase11") return false;
+        return true;
+    });
+}
+
+export function faseFinalDoRegistro(
+    r: RegistroFluxo,
+    fases: readonly string[]
+): string | null {
+    const visiveis = fasesVisiveisDoRegistro(r, fases);
+    return visiveis.length ? visiveis[visiveis.length - 1] : null;
+}
+
 export function proximaFaseDoRegistro(
-    r: {
-        status?: string;
-        local_velorio?: string;
-        tanato?: string;
-        ornamentacao?: string;
-        assistencia?: string;
-    },
+    r: RegistroFluxo,
     fases: readonly string[]
 ) {
     const atualCode = normalizarStatus(r.status) ?? "fase00";
-    let nextIdx = fases.indexOf(atualCode as any) + 1;
+    const visiveis = fasesVisiveisDoRegistro(r, fases);
 
-    const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
-    const skipConservacao = isTanatoNo(r.tanato);
-    const skipOrnamentacao =
-        String(r.ornamentacao || "").toLowerCase() === "não" || String(r.ornamentacao || "").toLowerCase() === "nao";
-    const skipMaterialRecolhido =
-        String(r.assistencia || "").toLowerCase() === "não" || String(r.assistencia || "").toLowerCase() === "nao";
+    if (atualCode === "fase00") return visiveis[0] ?? null;
 
-    while (nextIdx < fases.length) {
-        const next = fases[nextIdx];
+    const idxAtualCompleto = fases.indexOf(atualCode);
+    if (idxAtualCompleto < 0) return visiveis[0] ?? null;
 
-        if (skipTransportando && next === "fase07") {
-            nextIdx++;
-            continue;
-        }
-        if (skipConservacao && (next === "fase03" || next === "fase04")) {
-            nextIdx++;
-            continue;
-        }
-        if (skipOrnamentacao && (next === "fase05" || next === "fase06")) {
-            nextIdx++;
-            continue;
-        }
-        if (skipMaterialRecolhido && next === "fase11") {
-            nextIdx++;
-            continue;
-        }
-
-        return next;
+    for (let i = idxAtualCompleto + 1; i < fases.length; i++) {
+        const candidato = fases[i];
+        if (visiveis.includes(candidato)) return candidato;
     }
 
     return null;
@@ -569,6 +652,8 @@ export async function proximaFaseOnline(
             tanato: s.tanato,
             ornamentacao: s.ornamentacao,
             assistencia: s.assistencia,
+            realiza_velorio: s.realiza_velorio,
+            realiza_sepultamento: s.realiza_sepultamento,
         },
         fases
     );

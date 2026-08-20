@@ -25,7 +25,7 @@ export default function InfoModal({
     registro?: Registro | null;
 
     // ✅ IMPORTANTE: vem do AcompanhamentoPage (wizardStepTitlesForTipo)
-    wizardStepTitles: string[];
+    wizardStepTitles: Array<string | null>;
 }) {
     return (
         <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Info" maxWidth={410}>
@@ -33,18 +33,21 @@ export default function InfoModal({
 
             {/* Atalhos de edição por grupo (dinâmico por tipo) */}
             <div className="mt-4 grid gap-2">
-                {(wizardStepTitles || []).map((t, i) => (
-                    <button
-                        key={`${t}-${i}`}
-                        className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
-                        onClick={() => {
-                            setOpen(false);
-                            if (infoIdx != null) abrirWizard("editar", infoIdx, i);
-                        }}
-                    >
-                        {t}
-                    </button>
-                ))}
+                {(wizardStepTitles || []).map((t, i) => {
+                    if (!t) return null;
+                    return (
+                        <button
+                            key={`${t}-${i}`}
+                            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                            onClick={() => {
+                                setOpen(false);
+                                if (infoIdx != null) abrirWizard("editar", infoIdx, i);
+                            }}
+                        >
+                            {t}
+                        </button>
+                    );
+                })}
             </div>
 
             <div className="my-4 h-px bg-slate-200" />

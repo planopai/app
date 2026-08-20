@@ -110,6 +110,19 @@ export type Registro = {
     // Produto 678560 e depósito ALMOXARIFADO são resolvidos no backend.
     kit_lanche?: string;
 
+    // COROA DE FLORES
+    // Natural é apenas registrada no atendimento. Artificial também gera baixa no estoque.
+    coroa_flores?: string;
+    coroa_tipo?: "Natural" | "Artificial" | string;
+    coroa_produto_id?: number;
+    coroa_modelo?: string;
+    coroa_codigo_barras?: string;
+    coroa_deposito_nome?: string;
+
+    // Roteamento do atendimento. Campo vazio é tratado como fluxo legado (Sim).
+    realiza_velorio?: string;
+    realiza_sepultamento?: string;
+
     tipo_atendimento?: "funerario" | "terceiro";
 
     local?: string;

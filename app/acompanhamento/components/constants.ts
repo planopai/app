@@ -19,9 +19,10 @@ export const wizardStepIndexes = [
 
     // Itens
     // urna, roupa, veu, veu_item, cordao, cordao_item, kit_lanche,
-    // assistencia, tanato, ornamentacao, tipo, invol, invol_item,
-    // arrumacao, observações
-    [4, 5, 6, 7, 8, 9, 34, 10, 11, 12, 13, 14, 15, 16, 24],
+    // coroa de flores, tipo/modelo da coroa, assistência, tanato,
+    // ornamentação, tipo, invol, invol_item, realiza velório,
+    // realiza sepultamento, arrumacao, observações
+    [4, 5, 6, 7, 8, 9, 34, 35, 36, 37, 10, 11, 12, 13, 14, 15, 38, 39, 16, 24],
 
     // Velório
     [18, 32, 33, 19, 21, 20, 22, 25],
@@ -133,6 +134,13 @@ export const steps = [
 
     // Mantido no final para não deslocar os índices antigos usados pelo fluxo "terceiro".
     { label: "Kit Lanche", id: "kit_lanche", type: "select", options: ["", "Sim", "Não"] },
+
+    // Novos campos sempre adicionados no final para preservar todos os índices históricos.
+    { label: "Coroa de Flores", id: "coroa_flores", type: "select", options: ["", "Sim", "Não"] },
+    { label: "Tipo da Coroa", id: "coroa_tipo", type: "select", options: ["", "Natural", "Artificial"] },
+    { label: "Modelo da Coroa", id: "coroa_modelo", type: "async_coroa", placeholder: "Selecione o modelo da coroa..." },
+    { label: "Velório", id: "realiza_velorio", type: "select", options: ["", "Sim", "Não"] },
+    { label: "Sepultamento", id: "realiza_sepultamento", type: "select", options: ["", "Sim", "Não"] },
 ] as const;
 
 /**
@@ -159,6 +167,9 @@ export const obrigatorios = [
     "veu",
     "cordao",
     "kit_lanche",
+    "coroa_flores",
+    "realiza_velorio",
+    "realiza_sepultamento",
 ];
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
