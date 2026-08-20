@@ -151,6 +151,11 @@ export default function CoroasAtendimentoEditor({
     const [rows, setRows] = useState<ProdutoRow[]>([]);
     const [loading, setLoading] = useState(false);
     const [erro, setErro] = useState("");
+    const [quantidadeInput, setQuantidadeInput] = useState(() => String(items.length));
+
+    useEffect(() => {
+        setQuantidadeInput(String(items.length));
+    }, [items.length]);
 
     const itemModal = modalItem == null ? null : items[modalItem] || null;
 
@@ -158,11 +163,41 @@ export default function CoroasAtendimentoEditor({
         onChange(items.map((item, i) => (i === index ? { ...item, ...patch, ordem: i + 1 } : { ...item, ordem: i + 1 })));
     };
 
-    const setQuantidade = (raw: number) => {
-        const qtd = Math.max(1, Math.min(20, Math.floor(Number(raw) || 1)));
-        const next = items.slice(0, qtd).map((item, index) => ({ ...item, ordem: index + 1 }));
-        while (next.length < qtd) next.push(novoItem(next.length + 1));
+    const setQuantidade = (qtd: number) => {
+        const quantidade = Math.max(1, Math.min(20, Math.floor(qtd)));
+        const next = items.slice(0, quantidade).map((item, index) => ({ ...item, ordem: index + 1 }));
+        while (next.length < quantidade) next.push(novoItem(next.length + 1));
         onChange(next);
+    };
+
+    const alterarQuantidadeDigitada = (raw: string) => {
+        // Permite apagar o conteúdo primeiro e digitar o novo número depois.
+        // O array de coroas só é alterado quando houver um valor válido entre 1 e 20.
+        if (!/^\d*$/.test(raw)) return;
+
+        setQuantidadeInput(raw);
+
+        if (raw === "") return;
+
+        const qtd = Number(raw);
+        if (Number.isInteger(qtd) && qtd >= 1 && qtd <= 20) {
+            setQuantidade(qtd);
+        }
+    };
+
+    const normalizarQuantidadeAoSair = () => {
+        const qtd = Number(quantidadeInput);
+
+        if (!Number.isInteger(qtd) || qtd < 1 || qtd > 20) {
+            setQuantidadeInput(String(items.length));
+            return;
+        }
+
+        setQuantidadeInput(String(qtd));
+
+        if (qtd !== items.length) {
+            setQuantidade(qtd);
+        }
     };
 
     const abrirModelos = (index: number) => {
@@ -234,18 +269,19 @@ export default function CoroasAtendimentoEditor({
             <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <div className="text-sm font-semibold">Coroas deste atendimento</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Cada coroa possui modelo e frase próprios. Artificial exige depósito MEMORIAL ou FUNERÁRIA.</div>
                 </div>
                 <label className="text-xs font-medium">
                     Quantidade
                     <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={items.length}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={quantidadeInput}
                         disabled={disabled}
-                        onChange={(e) => setQuantidade(Number(e.target.value))}
-                        className="ml-2 w-20 rounded-md border bg-background px-2 py-1.5 text-sm"
+                        onChange={(e) => alterarQuantidadeDigitada(e.target.value)}
+                        onBlur={normalizarQuantidadeAoSair}
+                        aria-label="Quantidade de coroas"
+                        className="ml-2 w-20 rounded-md border bg-background px-2 py-1.5 text-base"
                     />
                 </label>
             </div>
@@ -278,7 +314,7 @@ export default function CoroasAtendimentoEditor({
                                                 foto_produto_url: "",
                                             });
                                         }}
-                                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                        className="w-full rounded-md border bg-background px-3 py-2 text-base"
                                     >
                                         <option value="">Selecione</option>
                                         <option value="natural">Natural</option>
@@ -300,7 +336,7 @@ export default function CoroasAtendimentoEditor({
                                                 valor: null,
                                                 foto_produto_url: "",
                                             })}
-                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-base"
                                         >
                                             <option value="">Selecione</option>
                                             {DEPOSITOS_ARTIFICIAIS.map((dep) => <option key={dep.value} value={dep.value}>{dep.label}</option>)}
@@ -350,7 +386,7 @@ export default function CoroasAtendimentoEditor({
                                     disabled={disabled}
                                     value=""
                                     onChange={(e) => e.target.value && patchItem(index, { frase: e.target.value })}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    className="w-full rounded-md border bg-background px-3 py-2 text-base"
                                 >
                                     <option value="">Selecione uma sugestão ou escreva abaixo</option>
                                     {FRASES_SUGERIDAS.map((frase, i) => <option key={i} value={frase}>{i + 1} — {frase}</option>)}
@@ -361,7 +397,7 @@ export default function CoroasAtendimentoEditor({
                                     disabled={disabled}
                                     onChange={(e) => patchItem(index, { frase: e.target.value })}
                                     placeholder={`Frase da Coroa ${index + 1}`}
-                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-base"
                                 />
                             </div>
                         </div>
@@ -376,8 +412,7 @@ export default function CoroasAtendimentoEditor({
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
                     placeholder="Pesquisar modelo pelo nome ou código..."
-                    className="mt-4 w-full rounded-xl border bg-background px-3 py-2 text-sm"
-                    autoFocus
+                    className="mt-4 w-full rounded-xl border bg-background px-3 py-2 text-base"
                 />
 
                 <div className="mt-3 max-h-[65vh] overflow-auto rounded-xl border">
