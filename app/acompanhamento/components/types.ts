@@ -73,6 +73,22 @@ export type DepositoNomeInvol = DepositoNomeArmario;
 export type DepositoNomeVeu = DepositoNomeArmario | "FUNERARIA";
 export type DepositoNomeCordao = DepositoNomeArmario | "FUNERARIA";
 
+
+export type CoroaTipoItem = "" | "natural" | "artificial";
+export type CoroaDepositoNome = "" | "MEMORIAL" | "FUNERARIA";
+
+export type CoroaAtendimentoItem = {
+    ordem: number;
+    tipo_coroa: CoroaTipoItem;
+    produto_id: number;
+    modelo_coroa: string;
+    codigo_barras?: string;
+    deposito_nome?: CoroaDepositoNome | string;
+    frase: string;
+    valor?: number | null;
+    foto_produto_url?: string | null;
+};
+
 export type SalaVelorio = "Sala 01" | "Sala 02" | "Sala 03";
 export type VelorioOnline = "Sim" | "Não";
 
@@ -107,7 +123,7 @@ export type Registro = {
     ornamentacao_tipo?: string;
 
     // KIT LANCHE: resposta visual Sim ou Não.
-    // Produto 678560 e depósito ALMOXARIFADO são resolvidos no backend.
+    // Produto 678560 e depósito MEMORIAL são resolvidos no backend.
     kit_lanche?: string;
 
     // COROA DE FLORES
@@ -118,6 +134,9 @@ export type Registro = {
     coroa_modelo?: string;
     coroa_codigo_barras?: string;
     coroa_deposito_nome?: string;
+    // Itens completos do pedido. Campo de front/API de coroas; não exige coluna em sepultamentos.
+    coroas_itens?: CoroaAtendimentoItem[];
+    coroas_pedido_id?: number | null;
 
     // Roteamento do atendimento. Campo vazio é tratado como fluxo legado (Sim).
     realiza_velorio?: string;

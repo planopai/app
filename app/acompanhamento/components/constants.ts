@@ -22,7 +22,7 @@ export const wizardStepIndexes = [
     // coroa de flores, tipo/modelo da coroa, assistência, tanato,
     // ornamentação, tipo, invol, invol_item, realiza velório,
     // realiza sepultamento, arrumacao, observações
-    [4, 5, 6, 7, 8, 9, 34, 35, 36, 37, 10, 11, 12, 13, 14, 15, 38, 39, 16, 24],
+    [4, 5, 6, 7, 8, 9, 34, 35, 40, 10, 11, 12, 13, 14, 15, 38, 39, 16, 24],
 
     // Velório
     [18, 32, 33, 19, 21, 20, 22, 25],
@@ -141,6 +141,8 @@ export const steps = [
     { label: "Modelo da Coroa", id: "coroa_modelo", type: "async_coroa", placeholder: "Selecione o modelo da coroa..." },
     { label: "Velório", id: "realiza_velorio", type: "select", options: ["", "Sim", "Não"] },
     { label: "Sepultamento", id: "realiza_sepultamento", type: "select", options: ["", "Sim", "Não"] },
+    // Marcador de escopo; a interface completa é renderizada junto de Coroa de Flores no Wizard.
+    { label: "Coroas do Atendimento", id: "coroas_itens", type: "custom" },
 ] as const;
 
 /**

@@ -13,6 +13,7 @@ import {
   MateriaisState,
   Registro,
   Aviso,
+  CoroaAtendimentoItem,
 } from "./components/types";
 import {
   API,
@@ -59,6 +60,7 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
 // ✅ endpoint da baixa automática (novo PHP independente)
 const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
+const COROAS_API = `${ENDPOINT}/coroas.php`;
 
 // ===== Helpers de baixa (fase12: URNA / ROUPA / INVOL / INSUMOS) =====
 type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "COROA_ARTIFICIAL" | "INSUMOS";
@@ -412,6 +414,51 @@ type RoupaSnapshot = {
   roupa_propria: number;
 };
 
+type CoroaSnapshot = {
+  coroa_flores: string;
+  itens: CoroaAtendimentoItem[];
+};
+
+type LegacyRoutingSnapshot = {
+  coroa_flores: string;
+  realiza_velorio: string;
+  realiza_sepultamento: string;
+};
+
+const COROA_SCOPE_IDS = [
+  "coroa_flores",
+  "coroas_itens",
+  "coroa_tipo",
+  "coroa_produto_id",
+  "coroa_modelo",
+  "coroa_codigo_barras",
+  "coroa_deposito_nome",
+];
+
+function normalizarCoroasParaComparacao(items: any): CoroaAtendimentoItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((item: any, index: number) => ({
+    ordem: index + 1,
+    tipo_coroa: item?.tipo_coroa === "artificial" ? "artificial" : item?.tipo_coroa === "natural" ? "natural" : "",
+    produto_id: Number(item?.produto_id || 0) || 0,
+    modelo_coroa: String(item?.modelo_coroa || "").trim(),
+    codigo_barras: String(item?.codigo_barras || item?.codigo_barras_produto || "").trim(),
+    deposito_nome: String(item?.deposito_nome || "").trim().toUpperCase(),
+    frase: String(item?.frase || "").trim(),
+    valor: Number(item?.valor ?? 0),
+    foto_produto_url: String(item?.foto_produto_url || "").trim(),
+  }));
+}
+
+function coroasSnapshotIgual(a: CoroaSnapshot | null, flagAtual: any, itensAtuais: any): boolean {
+  if (!a) return false;
+  const atual = {
+    coroa_flores: String(flagAtual ?? "").trim(),
+    itens: normalizarCoroasParaComparacao(itensAtuais),
+  };
+  return JSON.stringify(a) === JSON.stringify(atual);
+}
+
 const ROUPA_SCOPE_IDS = [
   "roupa",
   "roupa_produto_id",
@@ -515,6 +562,8 @@ export default function AcompanhamentoPage() {
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
   // ✅ snapshot do registro original (para não revalidar / não reenviar roupa no EDITAR)
   const wizardOriginalRoupaRef = useRef<RoupaSnapshot | null>(null);
+  const wizardOriginalCoroasRef = useRef<CoroaSnapshot | null>(null);
+  const wizardOriginalLegacyRef = useRef<LegacyRoutingSnapshot | null>(null);
 
   // selects
   const [assistenciaVal, setAssistenciaVal] = useState<string>("");
@@ -629,7 +678,22 @@ export default function AcompanhamentoPage() {
       registros,
     });
 
-    return ativo ? obrigatoriosBaseForTipo : [];
+    if (!ativo) return [];
+
+    // Registros antigos permanecem com NULL/vazio nos campos novos até que o
+    // usuário faça uma escolha explícita. Isso evita bloquear a edição de uma
+    // aba antiga apenas porque Coroa/Velório/Sepultamento não existiam na época.
+    if (wizardEditing && wizardOriginalLegacyRef.current) {
+      const original = wizardOriginalLegacyRef.current;
+      return obrigatoriosBaseForTipo.filter((id) => {
+        if (id !== "coroa_flores" && id !== "realiza_velorio" && id !== "realiza_sepultamento") return true;
+        const antes = String((original as any)[id] ?? "").trim();
+        const agora = String((wizardData as any)?.[id] ?? "").trim();
+        return !(antes === "" && agora === "");
+      });
+    }
+
+    return obrigatoriosBaseForTipo;
   }, [
     obrigatoriosBaseForTipo,
     wizardEditing,
@@ -1168,6 +1232,8 @@ export default function AcompanhamentoPage() {
   /* -------------------- Aberturas -------------------- */
   const iniciarNovoRegistro = useCallback((tipo: TipoAtendimento) => {
     wizardOriginalRoupaRef.current = null;
+    wizardOriginalCoroasRef.current = null;
+    wizardOriginalLegacyRef.current = null;
 
     setTipoAtendimento(tipo);
 
@@ -1226,6 +1292,7 @@ export default function AcompanhamentoPage() {
     (empty as any).coroa_modelo = "";
     (empty as any).coroa_codigo_barras = "";
     (empty as any).coroa_deposito_nome = "";
+    (empty as any).coroas_itens = [];
 
     // ✅ escolha do fluxo. Campo vazio exige decisão quando a obrigatoriedade estiver ativa.
     (empty as any).realiza_velorio = "";
@@ -1249,8 +1316,50 @@ export default function AcompanhamentoPage() {
     setWizardOpen(true);
   }, []);
 
+  const carregarCoroasAtendimento = useCallback(async (atendimentoId: string | number) => {
+    const url = new URL(COROAS_API);
+    url.searchParams.set("por_atendimento", "1");
+    url.searchParams.set("atendimento_id", String(atendimentoId));
+    url.searchParams.set("_nocache", String(Date.now()));
+
+    const res = await fetch(url.toString(), { credentials: "include", cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.sucesso) throw new Error(json?.msg || "Não foi possível carregar as coroas do atendimento.");
+    const dado = json?.dado || null;
+    return {
+      pedido_id: dado?.id ? Number(dado.id) : null,
+      itens: normalizarCoroasParaComparacao(dado?.itens || []),
+    };
+  }, []);
+
+  const sincronizarCoroasAtendimento = useCallback(async (
+    atendimentoId: string | number,
+    data: any,
+  ) => {
+    const flag = String(data?.coroa_flores ?? "").trim();
+    if (flag !== "Sim" && flag !== "Não") return null;
+
+    const itens = flag === "Sim" ? normalizarCoroasParaComparacao(data?.coroas_itens) : [];
+    const res = await fetch(COROAS_API, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        acao: "sincronizar_atendimento",
+        atendimento_id: Number(atendimentoId),
+        coroa_flores: flag,
+        quantidade_coroas: itens.length,
+        itens,
+      }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.sucesso) throw new Error(json?.msg || "Não foi possível sincronizar a Ordem de Serviço das coroas.");
+    return json;
+  }, []);
+
   const abrirWizard = useCallback(
-    (
+    async (
       tipo: "novo" | "editar",
       idx: number | null = null,
       grupoStep: number | null = null,
@@ -1351,6 +1460,46 @@ export default function AcompanhamentoPage() {
         (data as any).coroa_modelo = String((r as any).coroa_modelo ?? "");
         (data as any).coroa_codigo_barras = String((r as any).coroa_codigo_barras ?? "");
         (data as any).coroa_deposito_nome = String((r as any).coroa_deposito_nome ?? "");
+        (data as any).coroas_itens = [];
+        (data as any).coroas_pedido_id = null;
+
+        wizardOriginalLegacyRef.current = {
+          coroa_flores: String((r as any).coroa_flores ?? ""),
+          realiza_velorio: String((r as any).realiza_velorio ?? ""),
+          realiza_sepultamento: String((r as any).realiza_sepultamento ?? ""),
+        };
+
+        if (String((r as any).coroa_flores ?? "").trim() === "Sim" && (r as any).id != null) {
+          try {
+            const pedido = await carregarCoroasAtendimento((r as any).id);
+            (data as any).coroas_itens = pedido.itens;
+            (data as any).coroas_pedido_id = pedido.pedido_id;
+          } catch (e: any) {
+            // Compatibilidade com registros criados antes da integração com coroas.php.
+            // Mantém os metadados legados visíveis sem inventar frase ou depósito.
+            const tipoLegado = String((r as any).coroa_tipo ?? "").trim();
+            const pidLegado = Number((r as any).coroa_produto_id ?? 0) || 0;
+            if (pidLegado > 0 && (tipoLegado === "Natural" || tipoLegado === "Artificial")) {
+              (data as any).coroas_itens = [{
+                ordem: 1,
+                tipo_coroa: tipoLegado === "Artificial" ? "artificial" : "natural",
+                produto_id: pidLegado,
+                modelo_coroa: String((r as any).coroa_modelo ?? ""),
+                codigo_barras: String((r as any).coroa_codigo_barras ?? ""),
+                deposito_nome: String((r as any).coroa_deposito_nome ?? ""),
+                frase: "",
+                valor: null,
+                foto_produto_url: "",
+              }];
+            }
+            setWizardMsg({ text: e?.message || "Não foi possível carregar o pedido de coroas.", ok: false });
+          }
+        }
+
+        wizardOriginalCoroasRef.current = {
+          coroa_flores: String((r as any).coroa_flores ?? "").trim(),
+          itens: normalizarCoroasParaComparacao((data as any).coroas_itens),
+        };
 
         // ✅ Roteamento Velório / Sepultamento
         (data as any).realiza_velorio = String((r as any).realiza_velorio ?? "");
@@ -1377,7 +1526,7 @@ export default function AcompanhamentoPage() {
 
       iniciarNovoRegistro(tipoAtendimento);
     },
-    [registros, iniciarNovoRegistro, tipoAtendimento],
+    [registros, iniciarNovoRegistro, tipoAtendimento, carregarCoroasAtendimento],
   );
 
   const salvarGrupoWizard = useCallback((): Registro | null => {
@@ -1397,6 +1546,11 @@ export default function AcompanhamentoPage() {
 
     for (const idx of grupo) {
       const s = (stepsForTipo as any)[idx] as any;
+
+      if (s?.id === "coroas_itens") {
+        next.coroas_itens = normalizarCoroasParaComparacao((wizardData as any).coroas_itens);
+        continue;
+      }
 
       // ✅ Para campos async (combobox/autocomplete), pega do state (wizardData), não do DOM
       const isAsyncField =
@@ -1620,24 +1774,26 @@ export default function AcompanhamentoPage() {
       next.cordao_produto_id = cordaoPid > 0 ? cordaoPid : 0;
     }
 
-    // ✅ COROA DE FLORES
+    // ✅ COROA DE FLORES - os detalhes completos ficam em coroas_itens.
     const coroaFlag = String(next?.coroa_flores ?? "").trim();
-    const coroaTipo = String(next?.coroa_tipo ?? "").trim();
     if (!isSim(coroaFlag)) {
       next.coroa_tipo = "";
       next.coroa_produto_id = 0;
       next.coroa_modelo = "";
       next.coroa_codigo_barras = "";
       next.coroa_deposito_nome = "";
+      next.coroas_itens = [];
     } else {
-      next.coroa_produto_id = Number(next?.coroa_produto_id ?? 0) || 0;
-      next.coroa_modelo = String(next?.coroa_modelo ?? "").trim();
-      next.coroa_codigo_barras = String(next?.coroa_codigo_barras ?? "").trim();
-      if (coroaTipo === "Artificial") {
-        next.coroa_deposito_nome = String(next?.coroa_deposito_nome ?? "").trim();
-      } else {
-        next.coroa_deposito_nome = "";
-      }
+      const itens = normalizarCoroasParaComparacao((wizardData as any).coroas_itens);
+      next.coroas_itens = itens;
+      const primeiro = itens[0];
+      next.coroa_tipo = primeiro?.tipo_coroa === "natural" ? "Natural" : primeiro?.tipo_coroa === "artificial" ? "Artificial" : "";
+      next.coroa_produto_id = Number(primeiro?.produto_id || 0);
+      next.coroa_modelo = primeiro?.modelo_coroa
+        ? `${primeiro.modelo_coroa}${itens.length > 1 ? ` +${itens.length - 1}` : ""}`
+        : "";
+      next.coroa_codigo_barras = String(primeiro?.codigo_barras || "").trim();
+      next.coroa_deposito_nome = primeiro?.tipo_coroa === "artificial" ? String(primeiro?.deposito_nome || "").trim() : "";
     }
 
     // ✅ ROTEAMENTO: quando Não, limpa os dados da aba para não manter informação escondida.
@@ -1723,6 +1879,14 @@ export default function AcompanhamentoPage() {
       grupoObrigatorios = wizardRestrictIds.filter((id) => obrigatoriosForTipo.includes(id));
     } else {
       grupoObrigatorios = obrigatoriosForTipo;
+    }
+
+    if (wizardEditing && wizardOriginalLegacyRef.current) {
+      const original = wizardOriginalLegacyRef.current;
+      grupoObrigatorios = grupoObrigatorios.filter((id) => {
+        if (id !== "coroa_flores" && id !== "realiza_velorio" && id !== "realiza_sepultamento") return true;
+        return !(String((original as any)[id] ?? "").trim() === "" && String(dataAtualizada?.[id] ?? "").trim() === "");
+      });
     }
 
     for (const id of grupoObrigatorios) {
@@ -1876,28 +2040,40 @@ export default function AcompanhamentoPage() {
       }
     }
 
-    // ✅ validação extra (front): COROA DE FLORES
+    // ✅ validação extra (front): COROAS DO ATENDIMENTO
     if (
-      obrigatoriedadeAtiva &&
-      escopoTemAlgum(["coroa_flores", "coroa_tipo", "coroa_modelo", "coroa_produto_id", "coroa_deposito_nome"]) &&
+      escopoTemAlgum(COROA_SCOPE_IDS) &&
       isSim(dataAtualizada?.coroa_flores)
     ) {
-      const tipoCoroa = String(dataAtualizada?.coroa_tipo ?? "").trim();
-      const coroaPid = Number(dataAtualizada?.coroa_produto_id ?? 0) || 0;
-      const coroaModelo = String(dataAtualizada?.coroa_modelo ?? "").trim();
-      const coroaDep = String(dataAtualizada?.coroa_deposito_nome ?? "").trim();
-
-      if (tipoCoroa !== "Natural" && tipoCoroa !== "Artificial") {
-        setWizardMsg({ text: 'Coroa de Flores: selecione "Natural" ou "Artificial".', ok: false });
+      const itens = normalizarCoroasParaComparacao(dataAtualizada?.coroas_itens);
+      if (itens.length < 1 || itens.length > 20) {
+        setWizardMsg({ text: "Coroa de Flores: informe de 1 a 20 coroas.", ok: false });
         return;
       }
-      if (coroaPid <= 0 || !coroaModelo) {
-        setWizardMsg({ text: "Coroa de Flores: selecione um modelo válido.", ok: false });
-        return;
-      }
-      if (tipoCoroa === "Artificial" && !coroaDep) {
-        setWizardMsg({ text: "Coroa Artificial: selecione um modelo com depósito e saldo disponível.", ok: false });
-        return;
+      const agrupado = new Map<string, number>();
+      for (let i = 0; i < itens.length; i += 1) {
+        const item = itens[i];
+        if (item.tipo_coroa !== "natural" && item.tipo_coroa !== "artificial") {
+          setWizardMsg({ text: `Coroa ${i + 1}: selecione Natural ou Artificial.`, ok: false });
+          return;
+        }
+        if (item.produto_id <= 0 || !item.modelo_coroa) {
+          setWizardMsg({ text: `Coroa ${i + 1}: selecione o modelo.`, ok: false });
+          return;
+        }
+        if (!item.frase) {
+          setWizardMsg({ text: `Coroa ${i + 1}: preencha a frase.`, ok: false });
+          return;
+        }
+        if (item.tipo_coroa === "artificial") {
+          const dep = String(item.deposito_nome || "").toUpperCase();
+          if (dep !== "MEMORIAL" && dep !== "FUNERARIA") {
+            setWizardMsg({ text: `Coroa ${i + 1}: selecione MEMORIAL ou FUNERÁRIA.`, ok: false });
+            return;
+          }
+          const key = `${item.produto_id}|${dep}`;
+          agrupado.set(key, (agrupado.get(key) || 0) + 1);
+        }
       }
     }
 
@@ -1939,6 +2115,22 @@ export default function AcompanhamentoPage() {
           restrictIds = restrictIds.filter((id) => !ROUPA_SCOPE_IDS.includes(id));
         }
 
+        if (wizardEditing && wizardOriginalLegacyRef.current) {
+          const original = wizardOriginalLegacyRef.current;
+          if (!String(original.coroa_flores || "").trim() && !String(payload.coroa_flores || "").trim()) {
+            restrictIds = restrictIds.filter((id) => !COROA_SCOPE_IDS.includes(id));
+            for (const id of COROA_SCOPE_IDS) delete payload[id];
+          }
+          if (!String(original.realiza_velorio || "").trim() && !String(payload.realiza_velorio || "").trim()) {
+            restrictIds = restrictIds.filter((id) => id !== "realiza_velorio");
+            delete payload.realiza_velorio;
+          }
+          if (!String(original.realiza_sepultamento || "").trim() && !String(payload.realiza_sepultamento || "").trim()) {
+            restrictIds = restrictIds.filter((id) => id !== "realiza_sepultamento");
+            delete payload.realiza_sepultamento;
+          }
+        }
+
         payload._wizard_restrict_ids = restrictIds;
       }
 
@@ -1948,6 +2140,18 @@ export default function AcompanhamentoPage() {
 
       return payload;
     };
+
+    const coroaMudou = wizardEditing
+      ? !coroasSnapshotIgual(wizardOriginalCoroasRef.current, dataAtualizada?.coroa_flores, dataAtualizada?.coroas_itens)
+      : isSim(dataAtualizada?.coroa_flores);
+
+    if (!isOnlineNow() && coroaMudou) {
+      setWizardMsg({
+        text: "Alterações de Coroa de Flores exigem internet para sincronizar a Ordem de Serviço e validar o estoque.",
+        ok: false,
+      });
+      return;
+    }
 
     if (!isOnlineNow()) {
       try {
@@ -2009,9 +2213,57 @@ export default function AcompanhamentoPage() {
         payload.roupa_propria = 0;
       }
 
+      // Em edição, sincroniza a Ordem de Serviço ANTES de gravar o atendimento.
+      // Assim, se o pedido já entrou em produção ou o estoque artificial não
+      // comportar a alteração, o próprio atendimento não fica divergente.
+      let coroaSincronizadaAntes = false;
+      if (wizardEditing && coroaMudou) {
+        const atendimentoIdEdicao = payload?.id ?? (dataAtualizada as any)?.id ?? null;
+        if (atendimentoIdEdicao == null) {
+          setWizardMsg({ text: "Não foi possível identificar o atendimento para sincronizar as coroas.", ok: false });
+          return;
+        }
+
+        try {
+          await sincronizarCoroasAtendimento(atendimentoIdEdicao, dataAtualizada);
+          coroaSincronizadaAntes = true;
+        } catch (syncError: any) {
+          setWizardMsg({
+            text: syncError?.message || "Não foi possível sincronizar a Ordem de Serviço das coroas.",
+            ok: false,
+          });
+          return;
+        }
+      }
+
       const json = await enviarRegistroPHP(payload);
 
       if (json?.sucesso) {
+        const atendimentoId =
+          json?.id ?? json?.novo_id ?? json?.last_id ?? payload?.id ?? (dataAtualizada as any)?.id ?? null;
+
+        if (coroaMudou && atendimentoId != null && !coroaSincronizadaAntes) {
+          try {
+            // Novo atendimento: primeiro precisamos do ID gerado em sepultamentos,
+            // por isso a Ordem de Serviço é criada logo após o INSERT.
+            await sincronizarCoroasAtendimento(atendimentoId, dataAtualizada);
+          } catch (syncError: any) {
+            setWizardMsg({
+              text: `O atendimento foi salvo, mas a Ordem de Serviço das coroas não foi sincronizada: ${syncError?.message || "erro desconhecido"}. Corrija e salve novamente.`,
+              ok: false,
+            });
+            await fetchRegistros();
+            return;
+          }
+        }
+
+        if (coroaMudou && atendimentoId != null) {
+          wizardOriginalCoroasRef.current = {
+            coroa_flores: String(dataAtualizada?.coroa_flores ?? "").trim(),
+            itens: normalizarCoroasParaComparacao(dataAtualizada?.coroas_itens),
+          };
+        }
+
         setWizardMsg({ text: "Registro salvo!", ok: true });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
@@ -2084,6 +2336,7 @@ export default function AcompanhamentoPage() {
     wizardEditing,
     fetchRegistros,
     flushOfflineQueue,
+    sincronizarCoroasAtendimento,
   ]);
 
   /* -------------------- Ações (status) -------------------- */
@@ -2231,19 +2484,8 @@ export default function AcompanhamentoPage() {
           }
         }
 
-        // ✅ COROA ARTIFICIAL
-        if (isSim(reg?.coroa_flores) && String(reg?.coroa_tipo ?? "").trim() === "Artificial") {
-          const coroaPid = Number(reg?.coroa_produto_id ?? 0) || 0;
-          const coroaDep = String(reg?.coroa_deposito_nome ?? "").trim();
-          if (coroaPid <= 0) {
-            setAcaoMsg({ ok: false, text: "Coroa Artificial: selecione um modelo válido." });
-            return false;
-          }
-          if (!coroaDep) {
-            setAcaoMsg({ ok: false, text: "Coroa Artificial: depósito de estoque não definido." });
-            return false;
-          }
-        }
+        // Coroas artificiais são validadas no urna_saida.php a partir da Ordem de Serviço
+        // vinculada ao atendimento. O navegador não decide produto, depósito ou quantidade.
 
         // INSUMOS TANATO (se arrumacao_json tiver itens)
         const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
@@ -2363,7 +2605,7 @@ export default function AcompanhamentoPage() {
           }
 
           // 6) KIT LANCHE
-          // Produto fixo: código de barras 678560, depósito ALMOXARIFADO.
+          // Produto fixo: código de barras 678560, depósito MEMORIAL.
           if (isSim(reg?.kit_lanche)) {
             await baixarItensCorpoPronto({
               registro_id,
@@ -2371,9 +2613,10 @@ export default function AcompanhamentoPage() {
             });
           }
 
-          // 7) COROA ARTIFICIAL
-          // Coroa Natural é registrada no atendimento e não movimenta estoque.
-          if (isSim(reg?.coroa_flores) && String(reg?.coroa_tipo ?? "").trim() === "Artificial") {
+          // 7) COROAS ARTIFICIAIS
+          // O backend lê todas as coroas da Ordem de Serviço vinculada ao atendimento,
+          // agrupa por produto+depósito e ignora as naturais.
+          if (isSim(reg?.coroa_flores)) {
             await baixarItensCorpoPronto({
               registro_id,
               tipo: "COROA_ARTIFICIAL",

@@ -3,7 +3,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
-import { Registro } from "./types";
+import CoroasAtendimentoEditor from "./CoroasAtendimentoEditor";
+import { Registro, CoroaAtendimentoItem } from "./types";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -1243,7 +1244,10 @@ export default function Wizard({
 
     const validarCoroaSeNecessario = () => {
         if (!coroaFloresNoGrupoAtual && !coroaModeloNoGrupoAtual) return true;
-        if (!isRequired("coroa_flores")) {
+        // Registros legados podem ter o campo vazio e não devem ser bloqueados.
+        // Porém, se o usuário marcou explicitamente "Sim", os itens da coroa
+        // precisam ser validados mesmo quando a obrigatoriedade global está inativa.
+        if (!isRequired("coroa_flores") && coroaFloresVal !== "Sim") {
             setCoroaFloresSelectErro("");
             setCoroaTipoErro("");
             setCoroaModeloErro("");
@@ -1262,26 +1266,39 @@ export default function Wizard({
             return true;
         }
 
-        if (coroaTipoVal !== "Natural" && coroaTipoVal !== "Artificial") {
-            setCoroaTipoErro('Selecione "Natural" ou "Artificial".');
+        const itens = Array.isArray((wizardData as any).coroas_itens)
+            ? ((wizardData as any).coroas_itens as CoroaAtendimentoItem[])
+            : [];
+
+        if (itens.length < 1 || itens.length > 20) {
+            setCoroaModeloErro("Informe de 1 a 20 coroas para este atendimento.");
             return false;
         }
+
+        for (let i = 0; i < itens.length; i += 1) {
+            const item = itens[i];
+            if (item.tipo_coroa !== "natural" && item.tipo_coroa !== "artificial") {
+                setCoroaModeloErro(`Coroa ${i + 1}: selecione Natural ou Artificial.`);
+                return false;
+            }
+            if (Number(item.produto_id || 0) <= 0 || !String(item.modelo_coroa || "").trim()) {
+                setCoroaModeloErro(`Coroa ${i + 1}: selecione o modelo.`);
+                return false;
+            }
+            if (item.tipo_coroa === "artificial") {
+                const dep = String(item.deposito_nome || "").trim().toUpperCase();
+                if (dep !== "MEMORIAL" && dep !== "FUNERARIA") {
+                    setCoroaModeloErro(`Coroa ${i + 1}: selecione MEMORIAL ou FUNERÁRIA.`);
+                    return false;
+                }
+            }
+            if (!String(item.frase || "").trim()) {
+                setCoroaModeloErro(`Coroa ${i + 1}: preencha a frase.`);
+                return false;
+            }
+        }
+
         setCoroaTipoErro("");
-
-        const pid = Number((wizardData as any).coroa_produto_id ?? 0) || 0;
-        const modelo = String((wizardData as any).coroa_modelo ?? "").trim();
-        const dep = String((wizardData as any).coroa_deposito_nome ?? "").trim();
-
-        if (pid <= 0 || !modelo) {
-            setCoroaModeloErro("Selecione um modelo de Coroa de Flores.");
-            return false;
-        }
-
-        if (coroaTipoVal === "Artificial" && !dep) {
-            setCoroaModeloErro("Selecione uma Coroa Artificial com depósito e saldo disponível.");
-            return false;
-        }
-
         setCoroaModeloErro("");
         return true;
     };
@@ -1831,8 +1848,9 @@ export default function Wizard({
                 {grupoSteps.map((step) => {
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
                     if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
-                    if (step.id === "coroa_tipo" && coroaFloresVal !== "Sim") return null;
-                    if (step.id === "coroa_modelo" && (coroaFloresVal !== "Sim" || (coroaTipoVal !== "Natural" && coroaTipoVal !== "Artificial"))) return null;
+                    // Os campos legados coroa_tipo/coroa_modelo não são mais renderizados: a configuração
+                    // completa de 1..20 coroas fica no editor abaixo de Coroa de Flores.
+                    if (step.id === "coroa_tipo" || step.id === "coroa_modelo" || step.id === "coroas_itens") return null;
 
                     /* ===========================
                        URNA (checkbox Sim/Não + seletor async)
@@ -2270,7 +2288,7 @@ export default function Wizard({
                     /* ===========================
                        KIT LANCHE (checkbox Sim/Não)
                        Produto fixo no backend:
-                       código de barras 678560, depósito ALMOXARIFADO.
+                       código de barras 678560, depósito MEMORIAL.
                        =========================== */
                     if (step.id === "kit_lanche" && step.type === "select") {
                         return (
@@ -2306,11 +2324,15 @@ export default function Wizard({
                     }
 
                     /* ===========================
-                       COROA DE FLORES
+                       COROA DE FLORES - múltiplas coroas
                        =========================== */
                     if (step.id === "coroa_flores" && step.type === "select") {
+                        const itensCoroa = Array.isArray((wizardData as any).coroas_itens)
+                            ? ((wizardData as any).coroas_itens as CoroaAtendimentoItem[])
+                            : [];
+
                         return (
-                            <div key={step.id}>
+                            <div key={step.id} className="sm:col-span-2">
                                 <CheckboxChoiceGroup
                                     label={
                                         <>
@@ -2327,11 +2349,10 @@ export default function Wizard({
                                     onChange={(v) => {
                                         setCoroaFloresVal(v);
                                         setCoroaFloresSelectErro("");
+                                        setCoroaModeloErro("");
 
                                         if (v === "Não") {
                                             setCoroaTipoVal("");
-                                            setCoroaTipoErro("");
-                                            setCoroaModeloErro("");
                                             setWizardData((prev: any) => ({
                                                 ...prev,
                                                 coroa_flores: "Não",
@@ -2340,86 +2361,65 @@ export default function Wizard({
                                                 coroa_modelo: "",
                                                 coroa_codigo_barras: "",
                                                 coroa_deposito_nome: "",
+                                                coroas_itens: [],
                                             }));
                                             return;
                                         }
 
-                                        setWizardData((prev: any) => ({ ...prev, coroa_flores: v }));
+                                        setWizardData((prev: any) => ({
+                                            ...prev,
+                                            coroa_flores: v,
+                                            coroas_itens: Array.isArray(prev?.coroas_itens) && prev.coroas_itens.length
+                                                ? prev.coroas_itens
+                                                : [{
+                                                    ordem: 1,
+                                                    tipo_coroa: "",
+                                                    produto_id: 0,
+                                                    modelo_coroa: "",
+                                                    codigo_barras: "",
+                                                    deposito_nome: "",
+                                                    frase: "",
+                                                    valor: null,
+                                                    foto_produto_url: "",
+                                                }],
+                                        }));
                                     }}
                                 />
                                 {coroaFloresSelectErro && <div className="mt-1 text-xs text-red-600">{coroaFloresSelectErro}</div>}
-                            </div>
-                        );
-                    }
 
-                    if (step.id === "coroa_tipo" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            Tipo da Coroa
-                                            {isRequired("coroa_flores") && <span className="text-red-600"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-coroa_tipo"
-                                    ariaLabel="Tipo da Coroa"
-                                    value={coroaTipoVal}
-                                    options={ORNAMENTACAO_TIPO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!coroaTipoErro}
-                                    onChange={(v) => {
-                                        setCoroaTipoVal(v);
-                                        setCoroaTipoErro("");
-                                        setCoroaModeloErro("");
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            coroa_tipo: v,
-                                            coroa_produto_id: 0,
-                                            coroa_modelo: "",
-                                            coroa_codigo_barras: "",
-                                            coroa_deposito_nome: "",
-                                        }));
-                                    }}
-                                />
-                                {coroaTipoErro && <div className="mt-1 text-xs text-red-600">{coroaTipoErro}</div>}
-                            </div>
-                        );
-                    }
-
-                    if (step.id === "coroa_modelo" && step.type === "async_coroa") {
-                        const tipo = coroaTipoVal === "Artificial" ? "Artificial" : "Natural";
-                        return (
-                            <div key={`${step.id}-${tipo}`} className="sm:col-span-2">
-                                <CoroaCombobox
-                                    inputId="wizard-coroa_modelo"
-                                    tipo={tipo}
-                                    required={isRequired("coroa_flores")}
-                                    initialValue={String((wizardData as any).coroa_modelo ?? "")}
-                                    disabled={wizardSubmitting}
-                                    errorText={coroaModeloErro}
-                                    onSelectRow={(row) => {
-                                        const pid = getPidFromRow(row);
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            coroa_modelo: String(row.nome || "").trim(),
-                                            coroa_produto_id: pid,
-                                            coroa_codigo_barras: String(row.codigo_barras || "").trim(),
-                                            coroa_deposito_nome: tipo === "Artificial" ? String(row.deposito_nome || "").trim() : "",
-                                        }));
-                                        setCoroaModeloErro("");
-                                    }}
-                                    onClear={() => {
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            coroa_modelo: "",
-                                            coroa_produto_id: 0,
-                                            coroa_codigo_barras: "",
-                                            coroa_deposito_nome: "",
-                                        }));
-                                        setCoroaModeloErro("");
-                                    }}
-                                />
+                                {coroaFloresVal === "Sim" && (
+                                    <>
+                                        <CoroasAtendimentoEditor
+                                            value={itensCoroa}
+                                            disabled={wizardSubmitting}
+                                            hasError={!!coroaModeloErro}
+                                            onChange={(itens) => {
+                                                const primeiro = itens[0];
+                                                const tipoLegado = primeiro?.tipo_coroa === "natural"
+                                                    ? "Natural"
+                                                    : primeiro?.tipo_coroa === "artificial"
+                                                        ? "Artificial"
+                                                        : "";
+                                                const modeloResumo = primeiro?.modelo_coroa
+                                                    ? `${primeiro.modelo_coroa}${itens.length > 1 ? ` +${itens.length - 1}` : ""}`
+                                                    : "";
+                                                setWizardData((prev: any) => ({
+                                                    ...prev,
+                                                    coroas_itens: itens,
+                                                    coroa_tipo: tipoLegado,
+                                                    coroa_produto_id: Number(primeiro?.produto_id || 0),
+                                                    coroa_modelo: modeloResumo,
+                                                    coroa_codigo_barras: String(primeiro?.codigo_barras || ""),
+                                                    coroa_deposito_nome: primeiro?.tipo_coroa === "artificial"
+                                                        ? String(primeiro?.deposito_nome || "")
+                                                        : "",
+                                                }));
+                                                setCoroaModeloErro("");
+                                            }}
+                                        />
+                                        {coroaModeloErro && <div className="mt-1 text-xs text-red-600">{coroaModeloErro}</div>}
+                                    </>
+                                )}
                             </div>
                         );
                     }

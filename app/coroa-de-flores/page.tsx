@@ -59,6 +59,7 @@ type ManualCoroaItem = {
     ordem: number;
     tipo_coroa?: "natural" | "artificial" | null;
     produto_id?: number | null;
+    deposito_nome?: string | null;
     modelo_coroa: string;
     frase: string;
     valor?: string | number | null;
@@ -77,6 +78,7 @@ type ManualOrder = {
     frase: string;
     falecido: string;
     falecido_atendimento_id?: number | null;
+    atendimento_origem_id?: number | null;
     status_pagamento: ManualPagamento;
     origem: ManualOrigem;
     /** ID do pedido no WooCommerce quando o registro veio da loja online. */
@@ -126,6 +128,7 @@ type UsuarioAtualResponse = {
 };
 
 type CoroaTipo = "" | "natural" | "artificial";
+type CoroaDeposito = "" | "MEMORIAL" | "FUNERARIA";
 
 type EstoqueProdutoFoto = {
     id?: number;
@@ -155,6 +158,7 @@ type EstoqueProduto = {
 
 type NovoCoroaItem = {
     tipo_coroa: CoroaTipo;
+    deposito_nome: CoroaDeposito;
     produto: EstoqueProduto | null;
     frase: string;
     frase_sugestao: string;
@@ -163,11 +167,17 @@ type NovoCoroaItem = {
 function criarNovoCoroaItem(): NovoCoroaItem {
     return {
         tipo_coroa: "",
+        deposito_nome: "",
         produto: null,
         frase: "",
         frase_sugestao: "",
     };
 }
+
+type EstoqueDeposito = {
+    id: number;
+    nome: string;
+};
 
 type EstoqueSaldo = {
     id?: number;
@@ -178,6 +188,7 @@ type EstoqueSaldo = {
 
 type MateriaisInitResponse = {
     ok?: boolean;
+    depositos?: EstoqueDeposito[];
     produtos?: EstoqueProduto[];
     saldos?: EstoqueSaldo[];
     msg?: string;
@@ -1224,56 +1235,58 @@ export default function Page() {
     const [modeloBusca, setModeloBusca] = React.useState("");
     const [estoqueProdutos, setEstoqueProdutos] = React.useState<EstoqueProduto[]>([]);
     const [estoqueSaldos, setEstoqueSaldos] = React.useState<EstoqueSaldo[]>([]);
+    const [estoqueDepositos, setEstoqueDepositos] = React.useState<EstoqueDeposito[]>([]);
     const [modeloItemIndex, setModeloItemIndex] = React.useState<number | null>(null);
+    const [modeloDeposito, setModeloDeposito] = React.useState<CoroaDeposito>("");
     const estoqueLoadedAtRef = React.useRef(0);
     const estoqueAbortRef = React.useRef<AbortController | null>(null);
 
-    const saldoTotalPorProduto = React.useMemo(() => {
-        const map = new Map<number, number>();
-
-        for (const saldo of estoqueSaldos) {
-            const produtoId = Number(saldo?.produto_id || 0);
-            if (produtoId <= 0) continue;
-
-            const quantidade = Math.max(0, Number(saldo?.quantidade || 0));
-            map.set(produtoId, (map.get(produtoId) || 0) + quantidade);
+    const depositoIdPorNome = React.useMemo(() => {
+        const map = new Map<string, number>();
+        for (const dep of estoqueDepositos) {
+            const nome = normalizarTextoEstoque(dep?.nome).toUpperCase();
+            if (nome) map.set(nome, Number(dep?.id || 0));
         }
+        return map;
+    }, [estoqueDepositos]);
 
+    const saldoPorProdutoDeposito = React.useMemo(() => {
+        const map = new Map<string, number>();
+        for (const saldo of estoqueSaldos) {
+            const pid = Number(saldo?.produto_id || 0);
+            const did = Number(saldo?.deposito_id || 0);
+            if (pid <= 0 || did <= 0) continue;
+            map.set(`${pid}|${did}`, Math.max(0, Number(saldo?.quantidade || 0)));
+        }
         return map;
     }, [estoqueSaldos]);
 
+    const saldoModeloSelecionado = React.useCallback((produtoId: number) => {
+        if (modeloTipo !== "artificial" || !modeloDeposito) return 0;
+        const did = depositoIdPorNome.get(modeloDeposito) || 0;
+        return did > 0 ? (saldoPorProdutoDeposito.get(`${produtoId}|${did}`) || 0) : 0;
+    }, [modeloTipo, modeloDeposito, depositoIdPorNome, saldoPorProdutoDeposito]);
+
     const modelosDisponiveis = React.useMemo(() => {
         const busca = normalizarTextoEstoque(modeloBusca);
-
         return estoqueProdutos
             .filter((produto) => Number(produto?.ativo ?? 1) === 1)
             .filter((produto) => {
-                if (modeloTipo === "natural") {
-                    // Coroas naturais aparecem mesmo com estoque zerado.
-                    return categoriaEhCoroaNatural(produto.categoria_nome);
-                }
-
+                if (modeloTipo === "natural") return categoriaEhCoroaNatural(produto.categoria_nome);
                 if (modeloTipo === "artificial") {
-                    // Coroas artificiais somente aparecem quando existe saldo positivo
-                    // somando todos os depósitos do estoque.
-                    return (
-                        categoriaEhCoroaArtificial(produto.categoria_nome) &&
-                        (saldoTotalPorProduto.get(Number(produto.id)) || 0) > 0
-                    );
+                    if (modeloDeposito !== "MEMORIAL" && modeloDeposito !== "FUNERARIA") return false;
+                    const did = depositoIdPorNome.get(modeloDeposito) || 0;
+                    const saldo = did > 0 ? (saldoPorProdutoDeposito.get(`${Number(produto.id)}|${did}`) || 0) : 0;
+                    return categoriaEhCoroaArtificial(produto.categoria_nome) && saldo > 0;
                 }
-
                 return false;
             })
             .filter((produto) => {
                 if (!busca) return true;
-
-                return (
-                    normalizarTextoEstoque(produto.nome).includes(busca) ||
-                    normalizarTextoEstoque(produto.codigo_barras).includes(busca)
-                );
+                return normalizarTextoEstoque(produto.nome).includes(busca) || normalizarTextoEstoque(produto.codigo_barras).includes(busca);
             })
             .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
-    }, [estoqueProdutos, saldoTotalPorProduto, modeloTipo, modeloBusca]);
+    }, [estoqueProdutos, modeloTipo, modeloDeposito, depositoIdPorNome, saldoPorProdutoDeposito, modeloBusca]);
 
     const carregarModelosCoroa = React.useCallback(async (force = false) => {
         const agora = Date.now();
@@ -1318,6 +1331,7 @@ export default function Page() {
 
             setEstoqueProdutos(Array.isArray(json.produtos) ? json.produtos : []);
             setEstoqueSaldos(Array.isArray(json.saldos) ? json.saldos : []);
+            setEstoqueDepositos(Array.isArray(json.depositos) ? json.depositos : []);
             estoqueLoadedAtRef.current = Date.now();
         } catch (e: any) {
             if (e?.name === "AbortError") return;
@@ -1334,9 +1348,15 @@ export default function Page() {
         return () => estoqueAbortRef.current?.abort();
     }, []);
 
-    function abrirSeletorModelo(itemIndex: number, tipo: CoroaTipo) {
+    function abrirSeletorModelo(itemIndex: number, tipo: CoroaTipo, deposito: CoroaDeposito = "") {
+        if (!tipo) return;
+        if (tipo === "artificial" && deposito !== "MEMORIAL" && deposito !== "FUNERARIA") {
+            setModeloError("Selecione primeiro o depósito MEMORIAL ou FUNERÁRIA.");
+            return;
+        }
         setModeloItemIndex(itemIndex);
         setModeloTipo(tipo);
+        setModeloDeposito(tipo === "artificial" ? deposito : "");
         setModeloBusca("");
         setModeloError(null);
         setModeloModalOpen(true);
@@ -1632,6 +1652,7 @@ export default function Page() {
         setNewAtendimentoSelecionado("");
         setModeloTipo("");
         setModeloItemIndex(null);
+        setModeloDeposito("");
         setModeloModalOpen(false);
         setModeloBusca("");
         setModeloError(null);
@@ -1694,6 +1715,11 @@ export default function Page() {
                 return;
             }
 
+            if (item.tipo_coroa === "artificial" && item.deposito_nome !== "MEMORIAL" && item.deposito_nome !== "FUNERARIA") {
+                setNewError(`Selecione o depósito da Coroa ${i + 1} (MEMORIAL ou FUNERÁRIA).`);
+                return;
+            }
+
             if (!item.produto?.id || !String(item.produto?.nome || "").trim()) {
                 setNewError(`Selecione o modelo da Coroa ${i + 1}.`);
                 return;
@@ -1739,6 +1765,7 @@ export default function Page() {
                     ordem: index + 1,
                     tipo_coroa: item.tipo_coroa,
                     produto_id: Number(item.produto?.id || 0),
+                    deposito_nome: item.tipo_coroa === "artificial" ? item.deposito_nome : null,
                     modelo_coroa: String(item.produto?.nome || "").trim(),
                     frase: item.frase.trim(),
                     valor: Number(item.produto?.valor || 0),
@@ -3111,11 +3138,12 @@ export default function Page() {
                                                             const tipo = e.target.value as CoroaTipo;
                                                             atualizarItemCoroa(index, {
                                                                 tipo_coroa: tipo,
+                                                                deposito_nome: "",
                                                                 produto: null,
                                                             });
 
-                                                            if (tipo) {
-                                                                abrirSeletorModelo(index, tipo);
+                                                            if (tipo === "natural") {
+                                                                abrirSeletorModelo(index, tipo, "");
                                                             }
                                                         }}
                                                         className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -3126,13 +3154,32 @@ export default function Page() {
                                                     </select>
                                                 </div>
 
+                                                {item.tipo_coroa === "artificial" && (
+                                                    <div>
+                                                        <label className="mb-1 block text-sm font-medium">Depósito *</label>
+                                                        <select
+                                                            value={item.deposito_nome}
+                                                            onChange={(e) => {
+                                                                const deposito = e.target.value as CoroaDeposito;
+                                                                atualizarItemCoroa(index, { deposito_nome: deposito, produto: null });
+                                                                if (deposito) abrirSeletorModelo(index, "artificial", deposito);
+                                                            }}
+                                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                        >
+                                                            <option value="">Selecione o depósito</option>
+                                                            <option value="MEMORIAL">MEMORIAL</option>
+                                                            <option value="FUNERARIA">FUNERÁRIA</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+
                                                 <div>
                                                     <label className="mb-1 block text-sm font-medium">Modelo *</label>
 
                                                     {produto ? (
                                                         <button
                                                             type="button"
-                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa)}
+                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa, item.deposito_nome)}
                                                             className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
                                                         >
                                                             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
@@ -3154,6 +3201,7 @@ export default function Page() {
                                                                 <div className="truncate font-medium">{produto.nome}</div>
                                                                 <div className="mt-1 text-xs text-muted-foreground">
                                                                     {rotuloTipoCoroa(item.tipo_coroa)}
+                                                                    {item.tipo_coroa === "artificial" && item.deposito_nome ? ` • ${item.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : item.deposito_nome}` : ""}
                                                                     {produto.codigo_barras ? ` • ${produto.codigo_barras}` : ""}
                                                                 </div>
                                                                 <div className="mt-1 font-semibold text-emerald-700">
@@ -3168,11 +3216,14 @@ export default function Page() {
                                                     ) : item.tipo_coroa ? (
                                                         <button
                                                             type="button"
-                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa)}
-                                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40"
+                                                            disabled={item.tipo_coroa === "artificial" && !item.deposito_nome}
+                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa, item.deposito_nome)}
+                                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40 disabled:opacity-50"
                                                         >
                                                             <IconSearch className="size-4" />
-                                                            Escolher modelo {rotuloTipoCoroa(item.tipo_coroa)}
+                                                            {item.tipo_coroa === "artificial" && !item.deposito_nome
+                                                                ? "Selecione primeiro o depósito"
+                                                                : `Escolher modelo ${rotuloTipoCoroa(item.tipo_coroa)}`}
                                                         </button>
                                                     ) : (
                                                         <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
@@ -3327,6 +3378,9 @@ export default function Page() {
                                 <h2 className="text-lg font-semibold">
                                     Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
                                 </h2>
+                                {modeloTipo === "artificial" && modeloDeposito && (
+                                    <div className="mt-1 text-xs text-muted-foreground">Depósito: {modeloDeposito === "FUNERARIA" ? "FUNERÁRIA" : modeloDeposito}</div>
+                                )}
                             </div>
 
                             <button
@@ -3406,7 +3460,7 @@ export default function Page() {
                                             <tbody className="divide-y">
                                                 {modelosDisponiveis.map((produto) => {
                                                     const foto = fotoPrincipalProduto(produto);
-                                                    const saldo = saldoTotalPorProduto.get(Number(produto.id)) || 0;
+                                                    const saldo = saldoModeloSelecionado(Number(produto.id));
 
                                                     return (
                                                         <tr
@@ -3460,7 +3514,7 @@ export default function Page() {
                                     <div className="grid grid-cols-1 gap-3 p-3 lg:hidden">
                                         {modelosDisponiveis.map((produto) => {
                                             const foto = fotoPrincipalProduto(produto);
-                                            const saldo = saldoTotalPorProduto.get(Number(produto.id)) || 0;
+                                            const saldo = saldoModeloSelecionado(Number(produto.id));
 
                                             return (
                                                 <button
