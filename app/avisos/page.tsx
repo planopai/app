@@ -55,6 +55,62 @@ function isTerceiroRegistro(r: any) {
     if (r?.tipo_atendimento === "terceiro") return true;
     return isNao(r?.assistencia) && isNao(r?.tanato) && isNao(r?.ornamentacao);
 }
+
+/**
+ * Compatibilidade para os campos novos:
+ * - "Não" desativa a rota;
+ * - "Sim" ativa;
+ * - vazio/NULL/undefined = atendimento legado, portanto mantém o fluxo antigo como "Sim".
+ */
+function rotaAtivaLegado(v: any) {
+    const s = String(v ?? "").trim().toLowerCase();
+
+    if (!s) return true;
+
+    return s !== "não" && s !== "nao" && s !== "n";
+}
+
+/**
+ * Mesma regra usada nos quadros de Atendimento e TV.
+ *
+ * - fase11: encerrou definitivamente e sai da lista.
+ * - Assistência = Sim em atendimento funerário: permanece até Material Recolhido.
+ * - Com Sepultamento: permanece até fase10.
+ * - Sem Sepultamento, mas com Velório: encerra ao chegar em fase08.
+ * - Sem Velório e sem Sepultamento: Corpo Pronto (fase12) é a última etapa.
+ */
+function atendimentoDeveFicarNoQuadro(r: any) {
+    const status = normalizarStatus(r?.status);
+
+    // Se o status ainda não estiver definido/reconhecido, não escondemos o atendimento.
+    if (!status) return true;
+
+    // Material Recolhido encerra sempre.
+    if (status === "fase11") return false;
+
+    const terceiro = isTerceiroRegistro(r);
+    const precisaMaterialRecolhido = !terceiro && isSim(r?.assistencia);
+
+    // Quando há Assistência, o atendimento continua até Material Recolhido,
+    // independentemente de Velório/Sepultamento.
+    if (precisaMaterialRecolhido) return true;
+
+    const realizaVelorio = rotaAtivaLegado(r?.realiza_velorio);
+    const realizaSepultamento = rotaAtivaLegado(r?.realiza_sepultamento);
+
+    // Sepultamento é a última rota aplicável.
+    if (realizaSepultamento) {
+        return status !== "fase10";
+    }
+
+    // Sem sepultamento, mas com velório: encerra em Velando/Entrega de Corpo.
+    if (realizaVelorio) {
+        return !["fase08", "fase09", "fase10"].includes(status);
+    }
+
+    // Sem velório e sem sepultamento: Corpo Pronto encerra o fluxo.
+    return !["fase12", "fase07", "fase08", "fase09", "fase10"].includes(status);
+}
 function parseRegistroDateTime(r: any) {
     const d = String(r?.data ?? "").trim();
     const h =
@@ -236,6 +292,11 @@ export default function AvisosPage() {
                     id: it?.id != null ? String(it.id) : it.id,
                     status: normalizarStatus(it?.status) ?? it?.status,
 
+                    // Mantém os campos novos de rota no objeto local.
+                    // Não converte NULL para "Não": NULL representa atendimento legado.
+                    realiza_velorio: it?.realiza_velorio ?? null,
+                    realiza_sepultamento: it?.realiza_sepultamento ?? null,
+
                     urna_deposito_nome: String(it?.urna_deposito_nome ?? ""),
                     urna_produto_id: Number(it?.urna_produto_id ?? 0) || 0,
                     urna_codigo_barras: String(it?.urna_codigo_barras ?? ""),
@@ -272,14 +333,7 @@ export default function AvisosPage() {
 
     // ✅ mesma lista do quadro (filtro + ordenação)
     const registrosParaLista = useMemo(() => {
-        const base = (registros || []).filter((r: any) => {
-            const statusNorm = normalizarStatus(r?.status);
-
-            if (statusNorm === "fase11") return false;
-            if (isTerceiroRegistro(r)) return statusNorm !== "fase10";
-            if (!isSim(r?.assistencia)) return statusNorm !== "fase10";
-            return true;
-        });
+        const base = (registros || []).filter(atendimentoDeveFicarNoQuadro);
 
         const withTs = base.map((r: any) => ({ r, ts: parseRegistroDateTime(r) }));
         withTs.sort((a, b) => b.ts - a.ts);
