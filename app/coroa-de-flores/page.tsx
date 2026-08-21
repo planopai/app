@@ -12,7 +12,7 @@
  * - após uma ação atualiza somente a aba afetada;
  * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
  * - o usuário atual é enviado como fallback para as notificações de ação;
- * - Origem manual possui somente: Ordem de Serviço e Venda Direta;
+ * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
  * - evita montar simultaneamente as linhas mobile e desktop.
  */
 
@@ -204,10 +204,6 @@ const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: strin
     { value: "entregue", label: "Entregue" },
 ];
 
-const ORIGEM_OPTIONS: Array<{ value: ManualOrigem; label: string }> = [
-    { value: "ordem_servico", label: "Ordem de Serviço" },
-    { value: "venda_direta", label: "Venda Direta" },
-];
 
 type FraseSugerida = { numero: number; texto: string };
 
@@ -1634,7 +1630,6 @@ export default function Page() {
         local_entrega: "",
         observacoes: "",
         falecido: "",
-        origem: "ordem_servico" as ManualOrigem,
     });
 
     function resetNewForm() {
@@ -1644,7 +1639,6 @@ export default function Page() {
             local_entrega: "",
             observacoes: "",
             falecido: "",
-            origem: "ordem_servico",
         });
         setQuantidadeCoroas(1);
         setNewItems([criarNovoCoroaItem()]);
@@ -1774,7 +1768,9 @@ export default function Page() {
                 falecido: newForm.falecido.trim(),
                 falecido_atendimento_id: match?.id ? Number(match.id) || null : null,
                 status_pagamento: newComprovante ? "pago" : "aguardando_pagamento",
-                origem: newForm.origem,
+                // Pedido criado manualmente nesta página é sempre Venda Direta.
+                // Ordem de Serviço é reservada aos pedidos gerados pelo Atendimento Funerário.
+                origem: "venda_direta" as ManualOrigem,
                 ...(newComprovante
                     ? {
                         comprovante_base64,
@@ -3283,16 +3279,6 @@ export default function Page() {
                                 />
                             </div>
 
-                            <div>
-                                <label className="mb-1 block text-sm font-medium">Origem *</label>
-                                <select
-                                    value={newForm.origem}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, origem: e.target.value as ManualOrigem }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                >
-                                    {ORIGEM_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                            </div>
 
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Comprovante</label>
