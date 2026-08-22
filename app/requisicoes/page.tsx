@@ -354,6 +354,23 @@ function destinationText(row?: ReqListRow | ReqDetail | null) {
 }
 
 /**
+ * Retorna o ID do depósito de destino quando a requisição realmente tem
+ * destino do tipo DEPOSITO.
+ *
+ * Essa função centraliza a regra que impede uma transferência de sair e chegar
+ * ao mesmo depósito. Destinos do tipo CONSUMO não participam dessa comparação.
+ */
+function destinationDepositId(row?: ReqListRow | ReqDetail | null) {
+    if (!row) return 0;
+
+    const tipo = String(row.destino_tipo || "").trim().toUpperCase();
+    if (tipo !== "DEPOSITO") return 0;
+
+    const id = Number(row.unidade_destino_id || 0);
+    return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+/**
  * Retorna o código exibido da requisição.
  *
  * Se a API enviar `codigo`, ele é usado. Caso contrário, cria um código visual
@@ -678,6 +695,26 @@ export default function OperarRequisicoesPage() {
     }, [saldos]);
 
     /**
+     * Depósito de destino da requisição aberta no modal de envio.
+     *
+     * Quando o destino é um depósito, ele é removido da lista de possíveis
+     * origens e também é bloqueado pela validação antes do POST.
+     */
+    const sendDestinationDepositoId = useMemo(() => destinationDepositId(sendReq), [sendReq]);
+
+    /**
+     * Lista de depósitos que podem ser usados como origem.
+     *
+     * Para transferências entre depósitos, o próprio depósito de destino nunca
+     * aparece como opção de origem.
+     */
+    const sendDepositosPermitidos = useMemo(() => {
+        if (!sendDestinationDepositoId) return depositos;
+
+        return depositos.filter((d) => Number(d.id) !== sendDestinationDepositoId);
+    }, [depositos, sendDestinationDepositoId]);
+
+    /**
      * Carrega dados iniciais da tela.
      *
      * Busca operador logado, lista de depósitos e saldos atuais. Esses dados são
@@ -798,8 +835,25 @@ export default function OperarRequisicoesPage() {
 
             if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível carregar os itens da requisição.");
 
+            const destinoId = destinationDepositId(data.row);
+            const depositosPermitidos = destinoId
+                ? depositos.filter((d) => Number(d.id) !== destinoId)
+                : depositos;
+
+            const origemAtual = Number(data.row.deposito_origem_id || 0);
+            const origemAtualPermitida =
+                origemAtual > 0 &&
+                origemAtual !== destinoId &&
+                depositosPermitidos.some((d) => Number(d.id) === origemAtual);
+
+            const origemInicial = origemAtualPermitida
+                ? origemAtual
+                : depositosPermitidos.length === 1
+                    ? Number(depositosPermitidos[0].id)
+                    : 0;
+
             setSendReq(data.row);
-            setSendDepositoId(Number(data.row.deposito_origem_id || (depositos.length === 1 ? depositos[0].id : 0)));
+            setSendDepositoId(origemInicial);
             setSendObs("");
             setSendOpen(true);
         } catch (e: any) {
@@ -815,9 +869,11 @@ export default function OperarRequisicoesPage() {
      * Verifica se:
      * 1. A requisição detalhada foi carregada.
      * 2. Existem itens na requisição.
-     * 3. Um depósito de origem foi selecionado.
-     * 4. Todas as quantidades solicitadas são válidas.
-     * 5. O depósito selecionado possui saldo suficiente para cada item.
+     * 3. Existe pelo menos um depósito permitido como origem.
+     * 4. Um depósito de origem foi selecionado.
+     * 5. A origem não é o mesmo depósito do destino.
+     * 6. Todas as quantidades solicitadas são válidas.
+     * 7. O depósito selecionado possui saldo suficiente para cada item.
      *
      * O uso de `useMemo` evita recalcular a validação inteira em todo render,
      * recalculando somente quando mudam a requisição, o depósito ou os saldos.
@@ -825,7 +881,21 @@ export default function OperarRequisicoesPage() {
     const sendValidation = useMemo(() => {
         if (!sendReq) return { ok: false, msg: "Requisição não carregada." };
         if (!sendReq.items?.length) return { ok: false, msg: "Requisição sem itens." };
+        if (!sendDepositosPermitidos.length) {
+            return { ok: false, msg: "Não há outro depósito disponível para usar como origem." };
+        }
         if (!sendDepositoId) return { ok: false, msg: "Selecione o depósito de origem." };
+
+        const destinoId = destinationDepositId(sendReq);
+
+        if (destinoId > 0 && Number(sendDepositoId) === destinoId) {
+            return { ok: false, msg: "O depósito de origem não pode ser o mesmo depósito de destino." };
+        }
+
+        const origemPermitida = sendDepositosPermitidos.some((d) => Number(d.id) === Number(sendDepositoId));
+        if (!origemPermitida) {
+            return { ok: false, msg: "Depósito de origem inválido para esta requisição." };
+        }
 
         for (const item of sendReq.items) {
             const qtd = asNumber(item.quantidade_solicitada);
@@ -837,7 +907,7 @@ export default function OperarRequisicoesPage() {
         }
 
         return { ok: true, msg: "Pronto para enviar." };
-    }, [saldoMap, sendDepositoId, sendReq]);
+    }, [saldoMap, sendDepositoId, sendDepositosPermitidos, sendReq]);
 
     /**
      * Confirma o envio do material.
@@ -848,6 +918,12 @@ export default function OperarRequisicoesPage() {
      */
     async function confirmSend() {
         if (!sendReq || !sendValidation.ok || busy) return;
+
+        const destinoId = destinationDepositId(sendReq);
+        if (destinoId > 0 && Number(sendDepositoId) === destinoId) {
+            setError("O depósito de origem não pode ser o mesmo depósito de destino.");
+            return;
+        }
 
         setBusy(true);
         setError("");
@@ -993,14 +1069,24 @@ export default function OperarRequisicoesPage() {
             <Modal open={sendOpen} title={sendReq ? `Enviar ${reqCode(sendReq)}` : "Enviar requisição"} onClose={() => setSendOpen(false)} maxWidth="max-w-2xl">
                 <div className="space-y-4">
                     <Field label="Depósito de origem">
-                        <Select value={sendDepositoId || ""} onChange={(e) => setSendDepositoId(Number(e.target.value || 0))}>
+                        <Select
+                            value={sendDepositoId || ""}
+                            onChange={(e) => setSendDepositoId(Number(e.target.value || 0))}
+                            disabled={busy || sendDepositosPermitidos.length === 0}
+                        >
                             <option value="">Selecione...</option>
-                            {depositos.map((d) => (
+                            {sendDepositosPermitidos.map((d) => (
                                 <option key={d.id} value={d.id}>
                                     {d.nome}
                                 </option>
                             ))}
                         </Select>
+
+                        {sendDestinationDepositoId > 0 ? (
+                            <span className="mt-1 block text-xs font-semibold text-slate-500">
+                                Destino: <b>{destinationText(sendReq)}</b>. O depósito de destino não pode ser selecionado como origem.
+                            </span>
+                        ) : null}
                     </Field>
 
                     <div className="space-y-2">
