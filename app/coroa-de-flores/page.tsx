@@ -13,7 +13,10 @@
  * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
  * - o usuário atual é enviado como fallback para as notificações de ação;
  * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
- * - evita montar simultaneamente as linhas mobile e desktop.
+ * - evita montar simultaneamente as linhas mobile e desktop;
+ * - foto final e comprovantes usam multipart/form-data, sem Base64;
+ * - câmera direta captura em até 960x720 e JPEG leve, com fallback para câmera nativa;
+ * - fotos originais grandes não são renderizadas como preview antes do envio.
  */
 
 import * as React from "react";
@@ -676,18 +679,22 @@ function comprovanteEhPdf(order?: ManualOrder | null) {
     return mime === "application/pdf" || /\.pdf(?:$|\?)/i.test(url);
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
-    if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
-    if (file.size > 8 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 8 MB.");
-    return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-        reader.readAsDataURL(file);
-    });
+const FOTO_COROA_MAX_BYTES = 12 * 1024 * 1024;
+const COMPROVANTE_MAX_BYTES = 15 * 1024 * 1024;
+const CAMERA_MAX_WIDTH = 960;
+const CAMERA_MAX_HEIGHT = 720;
+const CAMERA_TARGET_BYTES = 300 * 1024;
+
+function validarFotoCoroaFile(file: File) {
+    if (!String(file.type || "").toLowerCase().startsWith("image/")) {
+        throw new Error("Selecione uma imagem válida.");
+    }
+    if (file.size > FOTO_COROA_MAX_BYTES) {
+        throw new Error("A imagem deve ter no máximo 12 MB.");
+    }
 }
 
-async function comprovanteToDataUrl(file: File): Promise<string> {
+function validarComprovanteFile(file: File) {
     const mime = String(file.type || "").toLowerCase();
     const nome = String(file.name || "").toLowerCase();
     const permitido =
@@ -702,17 +709,231 @@ async function comprovanteToDataUrl(file: File): Promise<string> {
     if (!permitido) {
         throw new Error("O comprovante deve ser uma imagem ou arquivo PDF.");
     }
-
-    if (file.size > 15 * 1024 * 1024) {
+    if (file.size > COMPROVANTE_MAX_BYTES) {
         throw new Error("O comprovante deve ter no máximo 15 MB.");
     }
+}
 
-    return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Não foi possível ler o comprovante."));
-        reader.readAsDataURL(file);
+function formatFileSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Não foi possível gerar a foto."));
+        }, "image/jpeg", quality);
     });
+}
+
+async function criarFotoLeveDoVideo(video: HTMLVideoElement): Promise<File> {
+    const sourceW = Math.max(1, Number(video.videoWidth || 0));
+    const sourceH = Math.max(1, Number(video.videoHeight || 0));
+    if (!sourceW || !sourceH) throw new Error("A câmera ainda não está pronta.");
+
+    const scale = Math.min(1, CAMERA_MAX_WIDTH / sourceW, CAMERA_MAX_HEIGHT / sourceH);
+    const width = Math.max(1, Math.round(sourceW * scale));
+    const height = Math.max(1, Math.round(sourceH * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("Não foi possível preparar a captura.");
+
+    ctx.drawImage(video, 0, 0, width, height);
+
+    let quality = 0.62;
+    let blob = await canvasToBlob(canvas, quality);
+    for (let i = 0; i < 4 && blob.size > CAMERA_TARGET_BYTES; i++) {
+        quality = Math.max(0.38, quality - 0.07);
+        blob = await canvasToBlob(canvas, quality);
+    }
+
+    canvas.width = 1;
+    canvas.height = 1;
+
+    return new File([blob], `foto_${Date.now()}.jpg`, {
+        type: "image/jpeg",
+        lastModified: Date.now(),
+    });
+}
+
+function CameraCaptureDialog({
+    open,
+    onClose,
+    onFile,
+}: {
+    open: boolean;
+    onClose: () => void;
+    onFile: (file: File) => Promise<void> | void;
+}) {
+    const videoRef = React.useRef<HTMLVideoElement>(null);
+    const streamRef = React.useRef<MediaStream | null>(null);
+    const fallbackRef = React.useRef<HTMLInputElement>(null);
+    const [starting, setStarting] = React.useState(false);
+    const [capturing, setCapturing] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+
+    const stopCamera = React.useCallback(() => {
+        const stream = streamRef.current;
+        if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) videoRef.current.srcObject = null;
+    }, []);
+
+    React.useEffect(() => {
+        if (!open) {
+            stopCamera();
+            return;
+        }
+
+        let cancelled = false;
+        setError(null);
+        setStarting(true);
+
+        (async () => {
+            try {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    throw new Error("Câmera direta indisponível neste navegador.");
+                }
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: CAMERA_MAX_WIDTH, max: 1280 },
+                        height: { ideal: CAMERA_MAX_HEIGHT, max: 960 },
+                    },
+                });
+
+                if (cancelled) {
+                    stream.getTracks().forEach((track) => track.stop());
+                    return;
+                }
+
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play().catch(() => undefined);
+                }
+            } catch (e: any) {
+                setError(e?.message || "Não foi possível abrir a câmera.");
+            } finally {
+                if (!cancelled) setStarting(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+            stopCamera();
+        };
+    }, [open, stopCamera]);
+
+    if (!open) return null;
+
+    async function capture() {
+        if (capturing || !videoRef.current) return;
+        try {
+            setCapturing(true);
+            setError(null);
+            const file = await criarFotoLeveDoVideo(videoRef.current);
+            await onFile(file);
+            stopCamera();
+            onClose();
+        } catch (e: any) {
+            setError(e?.message || "Não foi possível capturar a foto.");
+        } finally {
+            setCapturing(false);
+        }
+    }
+
+    async function handleFallback(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.currentTarget.value = "";
+        if (!file) return;
+        try {
+            await onFile(file);
+            stopCamera();
+            onClose();
+        } catch (err: any) {
+            setError(err?.message || "Não foi possível usar a foto.");
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3">
+            <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-950">
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                    <div className="font-semibold">Tirar foto</div>
+                    <button
+                        type="button"
+                        className="rounded-md border px-3 py-1.5 text-sm"
+                        disabled={capturing}
+                        onClick={() => {
+                            stopCamera();
+                            onClose();
+                        }}
+                    >
+                        Fechar
+                    </button>
+                </div>
+
+                <div className="p-3">
+                    <div className="overflow-hidden rounded-lg bg-black">
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            muted
+                            playsInline
+                            className="aspect-[4/3] w-full object-cover"
+                        />
+                    </div>
+
+                    {starting && <div className="mt-3 text-sm text-muted-foreground">Abrindo câmera...</div>}
+                    {error && (
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                            {error}
+                        </div>
+                    )}
+
+                    <input
+                        ref={fallbackRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleFallback}
+                    />
+
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <button
+                            type="button"
+                            className="rounded-md border px-4 py-2 text-sm"
+                            disabled={capturing}
+                            onClick={() => fallbackRef.current?.click()}
+                        >
+                            Câmera do aparelho
+                        </button>
+                        <button
+                            type="button"
+                            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                            disabled={capturing || starting || Boolean(error)}
+                            onClick={capture}
+                        >
+                            {capturing ? "Capturando..." : "Capturar foto"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function ImageUploadButtons({
@@ -723,7 +944,7 @@ function ImageUploadButtons({
     onFile: (file: File) => Promise<void> | void;
 }) {
     const galleryRef = React.useRef<HTMLInputElement>(null);
-    const cameraRef = React.useRef<HTMLInputElement>(null);
+    const [cameraOpen, setCameraOpen] = React.useState(false);
 
     const handle = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -733,35 +954,30 @@ function ImageUploadButtons({
     };
 
     return (
-        <div className="flex flex-wrap gap-2">
-            <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handle} />
-            <input
-                ref={cameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handle}
-            />
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => galleryRef.current?.click()}
-            >
-                <IconUpload className="size-4" />
-                Galeria
-            </button>
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => cameraRef.current?.click()}
-            >
-                <IconCamera className="size-4" />
-                Tirar foto
-            </button>
-        </div>
+        <>
+            <div className="flex flex-wrap gap-2">
+                <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handle} />
+                <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                    disabled={disabled}
+                    onClick={() => galleryRef.current?.click()}
+                >
+                    <IconUpload className="size-4" />
+                    Galeria
+                </button>
+                <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                    disabled={disabled}
+                    onClick={() => setCameraOpen(true)}
+                >
+                    <IconCamera className="size-4" />
+                    Tirar foto
+                </button>
+            </div>
+            <CameraCaptureDialog open={cameraOpen} onClose={() => setCameraOpen(false)} onFile={onFile} />
+        </>
     );
 }
 
@@ -774,7 +990,7 @@ function ComprovanteUploadButtons({
     onFile: (file: File) => Promise<void> | void;
 }) {
     const arquivoRef = React.useRef<HTMLInputElement>(null);
-    const cameraRef = React.useRef<HTMLInputElement>(null);
+    const [cameraOpen, setCameraOpen] = React.useState(false);
 
     const handle = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -784,43 +1000,38 @@ function ComprovanteUploadButtons({
     };
 
     return (
-        <div className="flex flex-wrap gap-2">
-            <input
-                ref={arquivoRef}
-                type="file"
-                accept="image/*,application/pdf,.pdf"
-                className="hidden"
-                onChange={handle}
-            />
-            <input
-                ref={cameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handle}
-            />
+        <>
+            <div className="flex flex-wrap gap-2">
+                <input
+                    ref={arquivoRef}
+                    type="file"
+                    accept="image/*,application/pdf,.pdf"
+                    className="hidden"
+                    onChange={handle}
+                />
 
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => arquivoRef.current?.click()}
-            >
-                <IconUpload className="size-4" />
-                Imagem / PDF
-            </button>
+                <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                    disabled={disabled}
+                    onClick={() => arquivoRef.current?.click()}
+                >
+                    <IconUpload className="size-4" />
+                    Imagem / PDF
+                </button>
 
-            <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
-                disabled={disabled}
-                onClick={() => cameraRef.current?.click()}
-            >
-                <IconCamera className="size-4" />
-                Tirar foto
-            </button>
-        </div>
+                <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
+                    disabled={disabled}
+                    onClick={() => setCameraOpen(true)}
+                >
+                    <IconCamera className="size-4" />
+                    Tirar foto
+                </button>
+            </div>
+            <CameraCaptureDialog open={cameraOpen} onClose={() => setCameraOpen(false)} onFile={onFile} />
+        </>
     );
 }
 
@@ -1743,10 +1954,7 @@ export default function Page() {
         setNewSaving(true);
 
         try {
-            let comprovante_base64 = "";
-            if (newComprovante) {
-                comprovante_base64 = await comprovanteToDataUrl(newComprovante);
-            }
+            if (newComprovante) validarComprovanteFile(newComprovante);
 
             const payload = {
                 acao: "novo",
@@ -1771,26 +1979,11 @@ export default function Page() {
                 // Pedido criado manualmente nesta página é sempre Venda Direta.
                 // Ordem de Serviço é reservada aos pedidos gerados pelo Atendimento Funerário.
                 origem: "venda_direta" as ManualOrigem,
-                ...(newComprovante
-                    ? {
-                        comprovante_base64,
-                        comprovante_nome: newComprovante.name,
-                        comprovante_mime: newComprovante.type || "",
-                    }
-                    : {}),
             };
 
-            const res = await fetch(COROAS_API, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify(payload),
-            });
-
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok || !json?.sucesso) {
-                throw new Error(json?.msg || "Não foi possível criar o pedido.");
-            }
+            const json = newComprovante
+                ? await postManualComArquivo(payload, "comprovante", newComprovante)
+                : await postManual(payload);
 
             setNewOpen(false);
             resetNewForm();
@@ -1913,20 +2106,54 @@ export default function Page() {
         return json;
     }
 
+    async function postManualComArquivo(
+        payload: Record<string, any>,
+        campoArquivo: "foto_coroa" | "comprovante",
+        file: File,
+    ) {
+        const payloadComUsuario = {
+            ...payload,
+            ...(usuarioAtual ? { usuario_nome: usuarioAtual } : {}),
+        };
+
+        const form = new FormData();
+        Object.entries(payloadComUsuario).forEach(([key, value]) => {
+            if (value === undefined || value === null) return;
+            if (typeof value === "object") {
+                form.append(key, JSON.stringify(value));
+            } else {
+                form.append(key, String(value));
+            }
+        });
+        form.append(campoArquivo, file, file.name || `${campoArquivo}.jpg`);
+
+        const res = await fetch(COROAS_API, {
+            method: "POST",
+            credentials: "include",
+            body: form,
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.sucesso) {
+            throw new Error(json?.msg || "Não foi possível concluir a operação.");
+        }
+        return json;
+    }
+
     async function anexarComprovanteManual(file: File) {
         if (!manualDetail) return;
         setManualActionLoading(true);
         setManualDetailMsg(null);
 
         try {
-            const base64 = await comprovanteToDataUrl(file);
-            await postManual({
-                acao: "anexar_comprovante",
-                id: manualDetail.id,
-                base64,
-                comprovante_nome: file.name,
-                comprovante_mime: file.type || "",
-            });
+            validarComprovanteFile(file);
+            await postManualComArquivo(
+                {
+                    acao: "anexar_comprovante",
+                    id: manualDetail.id,
+                },
+                "comprovante",
+                file,
+            );
             await postManual({
                 acao: "atualizar_pagamento",
                 id: manualDetail.id,
@@ -1999,20 +2226,19 @@ export default function Page() {
     }
 
     function selecionarFotoFinalizacao(file: File) {
-        if (!file.type.startsWith("image/")) {
-            setFinalizarError("Selecione uma imagem válida.");
-            return;
+        try {
+            validarFotoCoroaFile(file);
+            limparPreviewFinalizacao();
+            setFinalizarFile(file);
+            // Não cria preview da foto original. Isso evita que Androids com pouca RAM
+            // decodifiquem imagens de 12/48 MP apenas para exibição no modal.
+            setFinalizarPreview(null);
+            setFinalizarError(null);
+        } catch (e: any) {
+            setFinalizarFile(null);
+            setFinalizarPreview(null);
+            setFinalizarError(e?.message || "Selecione uma imagem válida.");
         }
-
-        if (file.size > 8 * 1024 * 1024) {
-            setFinalizarError("A imagem deve ter no máximo 8 MB.");
-            return;
-        }
-
-        limparPreviewFinalizacao();
-        setFinalizarFile(file);
-        setFinalizarPreview(URL.createObjectURL(file));
-        setFinalizarError(null);
     }
 
     async function confirmarFinalizacaoManual() {
@@ -2027,14 +2253,17 @@ export default function Page() {
         setFinalizarError(null);
 
         try {
-            const base64 = await fileToDataUrl(finalizarFile);
+            validarFotoCoroaFile(finalizarFile);
 
-            const json = await postManual({
-                acao: "atualizar_status",
-                id: manualDetail.id,
-                status: "finalizada",
-                foto_coroa_base64: base64,
-            });
+            const json = await postManualComArquivo(
+                {
+                    acao: "atualizar_status",
+                    id: manualDetail.id,
+                    status: "finalizada",
+                },
+                "foto_coroa",
+                finalizarFile,
+            );
 
             setFinalizarOpen(false);
             setFinalizarFile(null);
@@ -3282,11 +3511,18 @@ export default function Page() {
 
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Comprovante</label>
-                                <input
-                                    type="file"
-                                    accept="image/*,application/pdf,.pdf"
-                                    onChange={(e) => setNewComprovante(e.target.files?.[0] || null)}
-                                    className="block w-full rounded-md border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm"
+                                <ComprovanteUploadButtons
+                                    disabled={newSaving}
+                                    onFile={(file) => {
+                                        try {
+                                            validarComprovanteFile(file);
+                                            setNewComprovante(file);
+                                            setNewError(null);
+                                        } catch (e: any) {
+                                            setNewComprovante(null);
+                                            setNewError(e?.message || "Comprovante inválido.");
+                                        }
+                                    }}
                                 />
 
                                 {newComprovante && (
@@ -3294,7 +3530,7 @@ export default function Page() {
                                         <div className="min-w-0">
                                             <div className="truncate font-medium">{newComprovante.name}</div>
                                             <div className="text-xs text-muted-foreground">
-                                                {(newComprovante.size / 1024 / 1024).toFixed(2)} MB
+                                                {formatFileSize(newComprovante.size)}
                                             </div>
                                         </div>
                                         <button
@@ -3678,20 +3914,12 @@ export default function Page() {
                                 onFile={selecionarFotoFinalizacao}
                             />
 
-                            {finalizarPreview && (
-                                <div className="overflow-hidden rounded-lg border bg-muted/20">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                        src={finalizarPreview}
-                                        alt="Prévia da coroa pronta"
-                                        className="max-h-[55vh] w-full object-contain"
-                                    />
-                                </div>
-                            )}
-
                             {finalizarFile && (
-                                <div className="text-xs text-muted-foreground">
-                                    {finalizarFile.name}
+                                <div className="rounded-lg border bg-emerald-50 p-3 text-sm text-emerald-800">
+                                    <div className="font-medium">Foto pronta para envio</div>
+                                    <div className="mt-1 text-xs">
+                                        {finalizarFile.name} · {formatFileSize(finalizarFile.size)}
+                                    </div>
                                 </div>
                             )}
 
