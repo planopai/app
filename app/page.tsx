@@ -17,6 +17,9 @@ import { usePerms } from "./_perms/PermsProvider";
 
 const COUNTS_REFRESH_MS = 15_000;
 
+const SERVICOS_API =
+  "https://api.planoassistencialintegrado.com.br/informativo.php";
+
 const COROAS_API =
   "https://api.planoassistencialintegrado.com.br/coroas.php";
 
@@ -43,8 +46,8 @@ type DashboardCounts = Record<
 type RegistroFunerario = {
   status?: string;
   assistencia?: string;
-  tanato?: string;
-  ornamentacao?: string;
+  realiza_velorio?: string;
+  realiza_sepultamento?: string;
   tipo_atendimento?: string;
 
   [key: string]: any;
@@ -78,8 +81,12 @@ const ROTULO_PARA_FASE: Record<string, string> = {
   preparando: "fase03",
   "aguardando ornamentacao": "fase04",
   ornamentando: "fase05",
-  "corpo pronto": "fase06",
+  "fim da ornamentacao": "fase06",
+  "aguardando corpo pronto": "fase06",
+  "corpo pronto": "fase12",
   transportando: "fase07",
+  "transportando obito p/velorio": "fase07",
+  "transportando obito para velorio": "fase07",
   "transportando p/ velorio": "fase07",
   "transportando p/ velório": "fase07",
   velando: "fase08",
@@ -144,30 +151,22 @@ function isNao(value?: string) {
 }
 
 function isSim(value?: string) {
-  const s = String(value ?? "")
+  return String(value ?? "")
     .trim()
-    .toLowerCase();
-
-  return s === "sim" || s === "s";
+    .toLowerCase() === "sim";
 }
 
 function isTerceiroRegistro(
   registro: RegistroFunerario
 ) {
-  if (
+  // Não inferir pelo conteúdo dos campos. Um atendimento funerário normal
+  // também pode ter Assistência, Tanato e Ornamentação marcados como Não.
+  return (
     String(
       registro.tipo_atendimento ?? ""
     )
       .trim()
       .toLowerCase() === "terceiro"
-  ) {
-    return true;
-  }
-
-  return (
-    isNao(registro.assistencia) &&
-    isNao(registro.tanato) &&
-    isNao(registro.ornamentacao)
   );
 }
 
@@ -178,6 +177,7 @@ function registroEstaNoQuadro(
     registro.status
   );
 
+  // Mesma regra usada pela TabelaAtendimentos da tela de Serviços Funerários.
   if (status === "fase11") {
     return false;
   }
@@ -186,11 +186,30 @@ function registroEstaNoQuadro(
     return status !== "fase10";
   }
 
-  if (!isSim(registro.assistencia)) {
+  // Com assistência, o atendimento continua visível até Material Recolhido.
+  if (isSim(registro.assistencia)) {
+    return true;
+  }
+
+  const semVelorio = isNao(
+    registro.realiza_velorio
+  );
+  const semSepultamento = isNao(
+    registro.realiza_sepultamento
+  );
+
+  // Com sepultamento, encerra em fase10.
+  if (!semSepultamento) {
     return status !== "fase10";
   }
 
-  return true;
+  // Sem sepultamento, mas com velório, encerra na entrega do corpo (fase08).
+  if (!semVelorio) {
+    return status !== "fase08";
+  }
+
+  // Sem velório e sem sepultamento, encerra em Corpo Pronto (fase12).
+  return status !== "fase12";
 }
 
 /* =========================================================
@@ -198,8 +217,16 @@ function registroEstaNoQuadro(
    ========================================================= */
 
 async function buscarQuantidadeServicos() {
+  const url = new URL(SERVICOS_API);
+
+  url.searchParams.set("listar", "1");
+  url.searchParams.set(
+    "_nocache",
+    String(Date.now())
+  );
+
   const response = await fetch(
-    `/api/php/informativo.php?listar=1&_ts=${Date.now()}`,
+    url.toString(),
     {
       cache: "no-store",
       credentials: "include",
