@@ -719,6 +719,12 @@ export default function HomePage() {
         return;
       }
 
+      // Neste primeiro teste offline, os contadores não devem tentar APIs sem rede.
+      // A ausência desses dados não pode impedir a Home/layout de abrir.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        return;
+      }
+
       loading = true;
 
       try {
@@ -806,10 +812,17 @@ export default function HomePage() {
         }
       };
 
+    const handleOnline = () => {
+      if (!document.hidden) {
+        void carregarContadores();
+      }
+    };
+
     document.addEventListener(
       "visibilitychange",
       handleVisibilityChange
     );
+    window.addEventListener("online", handleOnline);
 
     return () => {
       alive = false;
@@ -820,17 +833,17 @@ export default function HomePage() {
         "visibilitychange",
         handleVisibilityChange
       );
+      window.removeEventListener("online", handleOnline);
     };
   }, []);
 
-  if (perms == null) {
-    return null;
-  }
+  const permissionsReady = perms !== null;
 
-  const actions =
-    quickActions.filter((action) =>
+  const actions = permissionsReady
+    ? quickActions.filter((action) =>
       has(action.slug)
-    );
+    )
+    : [];
 
   return (
     <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
@@ -862,6 +875,12 @@ export default function HomePage() {
         {/* BOTÕES */}
         <section className="mb-6">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+
+            {!permissionsReady && (
+              <div className="col-span-2 rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-muted-foreground shadow-sm sm:col-span-4 dark:border-gray-800 dark:bg-gray-900">
+                Carregando acessos disponíveis neste dispositivo...
+              </div>
+            )}
 
             {actions.map((action) => {
               const count =

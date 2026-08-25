@@ -1,56 +1,114 @@
-// next.config.js
 const withPWA = require("next-pwa")({
   dest: "public",
+
+  // O registro continua sendo feito pelo components/RegisterSW.tsx.
   register: false,
+
+  // Faz a nova versão assumir o controle assim que estiver pronta.
   skipWaiting: true,
+  clientsClaim: true,
+
+  // O PWA deve atuar em toda a aplicação.
+  scope: "/",
+  sw: "sw.js",
+
+  // O start_url é dinâmico porque o HTML varia conforme sessão/permissões.
+  cacheStartUrl: true,
+  dynamicStartUrl: true,
+
+  // Ajuda o next/link a alimentar o cache das páginas visitadas online.
+  cacheOnFrontEndNav: true,
+
+  // Evita reload automático ao recuperar a conexão durante este primeiro teste.
+  reloadOnOnline: false,
+
+  // Em desenvolvimento não queremos SW/cache interferindo no diagnóstico.
   disable: process.env.NODE_ENV === "development",
+
+  cleanupOutdatedCaches: true,
   buildExcludes: [/app-build-manifest\.json$/],
+
   runtimeCaching: [
-    // Não cachear a API (leva cookies sempre)
+    // APIs autenticadas: nunca servir resposta antiga de cache.
     {
       urlPattern: ({ url }) => url.pathname.startsWith("/api/php/"),
       handler: "NetworkOnly",
-      options: { cacheName: "api-php-network-only" },
+      options: {
+        cacheName: "api-php-network-only",
+      },
     },
     {
       urlPattern: ({ url }) => url.pathname.startsWith("/push/"),
       handler: "NetworkOnly",
-      options: { cacheName: "push-network-only" },
+      options: {
+        cacheName: "push-network-only",
+      },
     },
+
+    // Navegação/documento: tenta a rede por até 3 s; depois usa a cópia local.
+    // É esta regra que permite reabrir a Home instalada quando o aparelho está offline,
+    // desde que a página tenha sido aberta online ao menos uma vez.
+    {
+      urlPattern: ({ request }) => request.mode === "navigate",
+      handler: "NetworkFirst",
+      options: {
+        cacheName: "pai-pages-v1",
+        networkTimeoutSeconds: 3,
+        expiration: {
+          maxEntries: 50,
+          maxAgeSeconds: 60 * 60 * 24 * 7,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+
+    // Fontes externas que ainda existirem no projeto.
     {
       urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
       handler: "CacheFirst",
       options: {
         cacheName: "google-fonts",
-        expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-        cacheableResponse: { statuses: [0, 200] },
+        expiration: {
+          maxEntries: 20,
+          maxAgeSeconds: 60 * 60 * 24 * 365,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
       },
     },
+
+    // SDK do OneSignal: pode abrir usando a última cópia conhecida.
     {
       urlPattern: /^https:\/\/cdn\.onesignal\.com\/.*/i,
       handler: "StaleWhileRevalidate",
       options: {
         cacheName: "onesignal-cdn",
-        expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 30 },
-        cacheableResponse: { statuses: [0, 200] },
+        expiration: {
+          maxEntries: 20,
+          maxAgeSeconds: 60 * 60 * 24 * 30,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
       },
     },
+
+    // Imagens já visualizadas ficam disponíveis offline.
     {
       urlPattern: ({ request }) => request.destination === "image",
       handler: "CacheFirst",
       options: {
-        cacheName: "images",
-        expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 30 },
-        cacheableResponse: { statuses: [0, 200] },
-      },
-    },
-    {
-      urlPattern: ({ request }) => request.destination === "document",
-      handler: "NetworkFirst",
-      options: {
-        cacheName: "pages",
-        expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 7 },
-        cacheableResponse: { statuses: [0, 200] },
+        cacheName: "pai-images-v1",
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 60 * 60 * 24 * 30,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
       },
     },
   ],
@@ -62,26 +120,20 @@ module.exports = withPWA({
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
 
-  // ✅ Liberação dos domínios para <Image />
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 414, 640, 768, 1024, 1280, 1536, 1920],
     imageSizes: [64, 96, 128, 160, 180, 196, 256],
     domains: [
-      // Domínio principal (onde ficam as imagens enviadas via PHP)
       "planoassistencialintegrado.com.br",
-      // S3 usado no projeto
       "rp-master3-prod.s3.us-east-1.amazonaws.com",
-      // Unsplash (usado em prévias)
       "images.unsplash.com",
-      // (opcional) se houver outros domínios de imagem, adicione aqui
     ],
     dangerouslyAllowSVG: true,
     contentSecurityPolicy:
       "default-src 'self'; img-src * blob: data:; media-src 'none'; script-src 'none'; sandbox;",
   },
 
-  // ✅ Rewrite: encaminha /api/php/:path* para a raiz do site principal
   async rewrites() {
     return [
       {
