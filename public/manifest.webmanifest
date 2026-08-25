@@ -1,13 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+  "id": "/",
   "name": "PAI 2.0",
   "short_name": "PAI",
-  "display": "standalone",
   "start_url": "/",
   "scope": "/",
+  "display": "standalone",
   "theme_color": "#059de0",
   "background_color": "#ffffff",
-  "id": "?homescreen=1",
   "icons": [
     {
       "src": "/icon-192.png",
