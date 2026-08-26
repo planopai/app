@@ -5,7 +5,15 @@ import React, { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
 import { API } from "./constants";
-import { jsonWith401 } from "./helpers";
+import { browserSaysOnline } from "@/lib/offline/session";
+import {
+    blobToDataUrl,
+    dataUrlToBlob,
+    getLatestOfflineSignature,
+    getOfflineSignature,
+    saveOfflineSignature,
+} from "@/lib/offline/signatures";
+import { syncOperationalQueue } from "@/lib/offline/sync-engine";
 
 type Step = 0 | 1 | 2; // 0: nome, 1: cpf, 2: assinatura
 type MatItem = { rotulo: string; qtd: number };
@@ -91,6 +99,8 @@ export default function SignatureModal({
     useEffect(() => {
         if (!open) return;
 
+        let cancelled = false;
+
         setStep(0);
         setMsg(null);
         setSaving(false);
@@ -98,7 +108,6 @@ export default function SignatureModal({
         setAssinaturaB64("");
         setUrlPublica("");
 
-        // pega campos do registro
         const nomeKeys =
             tipo === "recebimento"
                 ? ["nome_assinatura_responsavel", "nome_responsavel", "assinatura_responsavel_nome", "nome_responsavel_assinatura"]
@@ -109,7 +118,6 @@ export default function SignatureModal({
                 ? ["cpf_assinatura_responsavel", "cpf_responsavel", "assinatura_responsavel_cpf", "cpf_responsavel_assinatura"]
                 : ["cpf_assinatura_requerente", "cpf_requerente", "assinatura_requerente_cpf", "cpf_requerente_assinatura"];
 
-        // inclui os campos simples/legados do BD (assinatura_responsavel / assinatura_requerente)
         const urlKeys =
             tipo === "recebimento"
                 ? ["assinatura_responsavel", "assinatura_recebimento_url", "assinatura_responsavel_url"]
@@ -130,11 +138,51 @@ export default function SignatureModal({
         if (nomeExist) setNome(String(nomeExist));
         if (cpfExist) setCpf(formatCpf(String(cpfExist)));
 
-        if (urlExistAbs) {
-            setUrlPublica(urlExistAbs);
-            // 👉 SEMPRE baixa via proxy -> dataURL
-            fetchViaProxyToDataURL(urlExistAbs).then((b64) => b64 && setAssinaturaB64(b64));
-        }
+        void (async () => {
+            try {
+                if (registro?.id != null) {
+                    const local = await getLatestOfflineSignature(
+                        String(registro.id),
+                        tipo,
+                    );
+
+                    if (local && !cancelled) {
+                        if (local.name) setNome(local.name);
+                        if (local.cpf) setCpf(formatCpf(local.cpf));
+
+                        const localDataUrl = await blobToDataUrl(local.blob);
+
+                        if (!cancelled && localDataUrl) {
+                            setAssinaturaB64(localDataUrl);
+                        }
+
+                        if (local.serverUrl && !cancelled) {
+                            setUrlPublica(normAssUrl(local.serverUrl));
+                        }
+
+                        if (local.status !== "synced") {
+                            return;
+                        }
+                    }
+                }
+            } catch {
+                // Leitura local não bloqueia o fluxo legado.
+            }
+
+            if (urlExistAbs && !cancelled) {
+                setUrlPublica(urlExistAbs);
+
+                const b64 = await fetchViaProxyToDataURL(urlExistAbs);
+
+                if (!cancelled && b64) {
+                    setAssinaturaB64(b64);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, tipo, registro?.id]);
 
@@ -277,19 +325,22 @@ export default function SignatureModal({
             setMsg({ text: "Registro inválido.", ok: false });
             return;
         }
+
         if (!nome.trim()) {
             setMsg({ text: "Informe o nome.", ok: false });
             setStep(0);
             return;
         }
+
         if (cpfDigits.length !== 11) {
             setMsg({ text: "Informe um CPF com 11 dígitos.", ok: false });
             setStep(1);
             return;
         }
 
-        const temTraçosNovos = paths.length > 0;
-        if (!temTraçosNovos && !assinaturaB64) {
+        const temTracosNovos = paths.length > 0;
+
+        if (!temTracosNovos && !assinaturaB64) {
             setMsg({ text: "Faça a assinatura antes de salvar.", ok: false });
             setStep(2);
             return;
@@ -297,41 +348,102 @@ export default function SignatureModal({
 
         try {
             setSaving(true);
-            let dataUrlToSend = assinaturaB64;
-            if (temTraçosNovos) {
-                dataUrlToSend = canvasRef.current!.toDataURL("image/png");
-                setAssinaturaB64(dataUrlToSend);
+
+            let dataUrlToStore = assinaturaB64;
+
+            if (temTracosNovos) {
+                dataUrlToStore = canvasRef.current!.toDataURL("image/png");
+                setAssinaturaB64(dataUrlToStore);
             }
 
-            const res = await jsonWith401(`${API}/api/php/informativo.php`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    acao: "salvar_assinatura",
-                    id: String(registro.id),
-                    tipo: tipo === "recebimento" ? "responsavel" : "requerente",
-                    base64: dataUrlToSend,
-                    nome_assinatura: nome.trim(),
-                    cpf_assinatura: cpfDigits,
-                }),
+            const blob = dataUrlToBlob(dataUrlToStore);
+
+            /*
+             * Sempre persiste antes no IndexedDB.
+             * Uma queda de internet durante o envio não perde a assinatura.
+             */
+            const local = await saveOfflineSignature({
+                recordId: String(registro.id),
+                kind: tipo,
+                name: nome.trim(),
+                cpf: cpfDigits,
+                blob,
             });
 
-            if (res?.sucesso) {
-                setMsg({ text: "Assinatura salva!", ok: true });
+            onSaved(undefined);
 
-                // res.url pode vir como "/uploads/..." -> normaliza para domínio de uploads
-                const absolute = normAssUrl(res?.url || "");
-                setUrlPublica(absolute);
-                onSaved(absolute);
-
-                // baixa novamente via proxy para atualizar o preview (dataURL)
-                const b64 = await fetchViaProxyToDataURL(absolute);
-                if (b64) setAssinaturaB64(b64);
-            } else {
-                setMsg({ text: res?.msg || "Falha ao salvar.", ok: false });
+            if (!browserSaysOnline()) {
+                setMsg({
+                    text: "Assinatura salva no aparelho. Ela será enviada automaticamente quando a internet voltar.",
+                    ok: true,
+                });
+                return;
             }
+
+            setMsg({
+                text: "Assinatura salva no aparelho. Sincronizando com o servidor...",
+                ok: true,
+            });
+
+            await syncOperationalQueue();
+
+            let current = await getOfflineSignature(local.signatureId);
+
+            if (
+                current &&
+                current.status !== "synced" &&
+                current.status !== "requires_attention" &&
+                browserSaysOnline()
+            ) {
+                await syncOperationalQueue();
+                current = await getOfflineSignature(local.signatureId);
+            }
+
+            if (current?.status === "synced") {
+                const absolute = normAssUrl(current.serverUrl || "");
+
+                if (absolute) {
+                    setUrlPublica(absolute);
+                }
+
+                setMsg({
+                    text: "Assinatura salva e sincronizada!",
+                    ok: true,
+                });
+
+                onSaved(absolute || undefined);
+                return;
+            }
+
+            if (current?.status === "requires_attention") {
+                setMsg({
+                    text:
+                        current.lastError ||
+                        "A assinatura foi preservada no aparelho, mas o servidor recusou a sincronização.",
+                    ok: false,
+                });
+                return;
+            }
+
+            if (current?.status === "blocked_auth") {
+                setMsg({
+                    text:
+                        current.lastError ||
+                        "A assinatura está salva no aparelho e aguardará o mesmo usuário entrar novamente.",
+                    ok: false,
+                });
+                return;
+            }
+
+            setMsg({
+                text: "Assinatura salva no aparelho e aguardando sincronização.",
+                ok: true,
+            });
         } catch (e: any) {
-            setMsg({ text: e?.message || "Erro ao salvar.", ok: false });
+            setMsg({
+                text: e?.message || "Erro ao salvar assinatura.",
+                ok: false,
+            });
         } finally {
             setSaving(false);
         }
@@ -525,11 +637,11 @@ export default function SignatureModal({
             ctx.font = "normal 20px Helvetica, Arial, sans-serif";
             if (!materiais.length) {
                 y += 8;
-                y += wrapText(ctx, "— Nenhum item selecionado —", margin, y, maxW, 26);
+                y += wrapText(ctx, "- Nenhum item selecionado -", margin, y, maxW, 26);
             } else {
                 y += 10;
                 for (const it of materiais.sort((a, b) => a.rotulo.localeCompare(b.rotulo))) {
-                    y += wrapText(ctx, `– ${it.rotulo}: ${it.qtd}`, margin, y, maxW, 26);
+                    y += wrapText(ctx, `- ${it.rotulo}: ${it.qtd}`, margin, y, maxW, 26);
                     y += 2;
                 }
             }
@@ -608,9 +720,9 @@ export default function SignatureModal({
             </h3>
 
             <div className="mt-2 text-xs text-muted-foreground">
-                {step === 0 && "Passo 1 de 3 — Identificação: Nome"}
-                {step === 1 && "Passo 2 de 3 — Identificação: CPF"}
-                {step === 2 && "Passo 3 de 3 — Assinatura"}
+                {step === 0 && "Passo 1 de 3 - Identificação: Nome"}
+                {step === 1 && "Passo 2 de 3 - Identificação: CPF"}
+                {step === 2 && "Passo 3 de 3 - Assinatura"}
             </div>
 
             {step === 0 && (
@@ -700,7 +812,7 @@ export default function SignatureModal({
                         {/* ✅ baixa o TERMO (PNG) com assinatura e dados */}
                         <button
                             className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
-                            title="Baixar a página do termo assinada (PNG)"
+                            title="Gerar e baixar o termo assinado no aparelho (PNG)"
                             disabled={!assinaturaB64 || !nome.trim() || cpfDigits.length !== 11}
                             onClick={() => baixarTermoImagem("image/png")}
                         >

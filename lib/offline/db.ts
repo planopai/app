@@ -1,7 +1,7 @@
 "use client";
 
 export const OFFLINE_DB_NAME = "pai-operacional-offline";
-export const OFFLINE_DB_VERSION = 1;
+export const OFFLINE_DB_VERSION = 2;
 
 export const OFFLINE_STORES = {
   records: "records",
@@ -9,6 +9,7 @@ export const OFFLINE_STORES = {
   actions: "actions",
   photos: "photos",
   materialChecks: "materialChecks",
+  signatures: "signatures",
   sessions: "sessions",
   meta: "meta",
 } as const;
@@ -107,6 +108,16 @@ export function openOfflineDb(): Promise<IDBDatabase> {
         ["userId", "userId"],
         ["recordId", "recordId"],
         ["operationId", "operationId"],
+      ]);
+
+      configureStore(db, tx, OFFLINE_STORES.signatures, "signatureId", [
+        ["userId", "userId"],
+        ["recordId", "recordId"],
+        ["operationId", "operationId", { unique: true }],
+        ["userStatus", ["userId", "status"]],
+        ["userRecord", ["userId", "recordId"]],
+        ["userRecordKind", ["userId", "recordId", "kind"]],
+        ["createdAt", "createdAt"],
       ]);
 
       configureStore(db, tx, OFFLINE_STORES.sessions, "userId", [
