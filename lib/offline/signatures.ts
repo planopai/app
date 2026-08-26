@@ -34,7 +34,18 @@ export type OfflineSignature = {
   name: string;
   cpf: string;
 
-  blob: Blob;
+  /**
+   * Formato atual, usado para evitar problemas do Safari/iOS
+   * ao regravar Blob dentro do IndexedDB.
+   */
+  dataUrl?: string;
+
+  /**
+   * Compatibilidade com registros criados pelas versões anteriores.
+   * Novas assinaturas não gravam Blob no IndexedDB.
+   */
+  blob?: Blob;
+
   mimeType: string;
   size: number;
 
@@ -60,22 +71,42 @@ function onlyCpfDigits(value: unknown): string {
     .slice(0, 11);
 }
 
-/**
- * Faz uma cópia real para ArrayBuffer.
- * Isso evita incompatibilidade entre ArrayBufferLike/SharedArrayBuffer
- * e BlobPart nas versões recentes das tipagens do TypeScript.
- */
 function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   return buffer;
 }
 
+function validateSignatureDataUrl(dataUrl: string): string {
+  const value = String(dataUrl || "").trim();
+
+  if (!/^data:image\/png;base64,/i.test(value)) {
+    throw new Error("Assinatura em formato inválido.");
+  }
+
+  return value;
+}
+
+function estimateDataUrlBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(",");
+
+  if (comma < 0) {
+    return dataUrl.length;
+  }
+
+  const payload = dataUrl.slice(comma + 1);
+  const padding =
+    payload.endsWith("==") ? 2 :
+      payload.endsWith("=") ? 1 :
+        0;
+
+  return Math.max(
+    0,
+    Math.floor((payload.length * 3) / 4) - padding,
+  );
+}
+
 export function dataUrlToBlob(dataUrl: string): Blob {
-  /*
-   * Usamos [\s\S]* no lugar da flag /s porque o projeto está com
-   * target ES2017.
-   */
   const match = String(dataUrl || "").match(
     /^data:([^;,]+)?(;base64)?,([\s\S]*)$/,
   );
@@ -132,6 +163,51 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+/**
+ * Lê tanto o formato novo (dataUrl) quanto o formato legado (Blob).
+ */
+export async function signatureToDataUrl(
+  signature: Pick<OfflineSignature, "dataUrl" | "blob">,
+): Promise<string> {
+  const direct = String(signature.dataUrl || "").trim();
+
+  if (direct) {
+    return direct;
+  }
+
+  if (signature.blob instanceof Blob) {
+    return blobToDataUrl(signature.blob);
+  }
+
+  throw new Error(
+    "Imagem da assinatura não está disponível no armazenamento local.",
+  );
+}
+
+/**
+ * Antes de qualquer regravação de status, converte uma linha antiga
+ * com Blob para o novo formato string. Assim o Safari não precisa
+ * reescrever Blob repetidamente no IndexedDB.
+ */
+async function normalizeForStorage(
+  signature: OfflineSignature,
+): Promise<OfflineSignature> {
+  let dataUrl = String(signature.dataUrl || "").trim();
+
+  if (!dataUrl && signature.blob instanceof Blob) {
+    dataUrl = await blobToDataUrl(signature.blob);
+  }
+
+  const normalized: OfflineSignature = {
+    ...signature,
+    dataUrl: dataUrl || undefined,
+  };
+
+  delete (normalized as any).blob;
+
+  return normalized;
+}
+
 async function currentSessionOrThrow() {
   const session = await getCurrentOfflineSession({
     refreshIfOnline: false,
@@ -152,7 +228,17 @@ export async function saveOfflineSignature(input: {
   kind: OfflineSignatureKind;
   name: string;
   cpf: string;
-  blob: Blob;
+
+  /**
+   * Preferido. O SignatureModal envia diretamente o PNG como dataURL.
+   */
+  dataUrl?: string;
+
+  /**
+   * Compatibilidade caso algum outro ponto antigo ainda envie Blob.
+   */
+  blob?: Blob;
+
   operationId?: string;
 }): Promise<OfflineSignature> {
   const session = await currentSessionOrThrow();
@@ -175,52 +261,42 @@ export async function saveOfflineSignature(input: {
     throw new Error("Informe um CPF com 11 dígitos.");
   }
 
-  if (
-    !(input.blob instanceof Blob) ||
-    input.blob.size <= 0
-  ) {
-    throw new Error("Assinatura vazia.");
+  let dataUrl = String(input.dataUrl || "").trim();
+
+  if (!dataUrl && input.blob instanceof Blob) {
+    dataUrl = await blobToDataUrl(input.blob);
   }
+
+  dataUrl = validateSignatureDataUrl(dataUrl);
 
   const stamp = await getOperationalTimestamp();
   const deviceId = await getOfflineDeviceId();
+
   const operationId =
     input.operationId ||
     newOfflineId("signature");
 
   /*
-   * iOS/Safari:
-   * Não apagamos a assinatura anterior antes de gravar a nova.
+   * Chave determinística:
+   * sempre existe uma única linha atual por usuário + atendimento + tipo.
    *
-   * O Safari pode abortar a sequência delete -> nova transação com Blob.
-   * Em vez disso, reaproveitamos a mesma chave primária e fazemos apenas
-   * um put(), que substitui atomicamente o conteúdo da linha existente.
+   * Não precisamos apagar, consultar ou recriar a linha anterior.
+   * Um único put() substitui a assinatura de forma atômica.
    */
+  const signatureId = [
+    "signature-row",
+    session.userId,
+    recordId,
+    input.kind,
+  ].join(":");
+
   const previous =
-    await idbGetAllByIndex<OfflineSignature>(
+    await idbGet<OfflineSignature>(
       OFFLINE_STORES.signatures,
-      "userRecordKind",
-      IDBKeyRange.only([
-        session.userId,
-        recordId,
-        input.kind,
-      ]),
+      signatureId,
     );
 
-  previous.sort(
-    (a, b) =>
-      Number(b.updatedAt ?? 0) -
-      Number(a.updatedAt ?? 0),
-  );
-
-  const previousCurrent =
-    previous[0] ?? null;
-
   const now = Date.now();
-
-  const signatureId =
-    previousCurrent?.signatureId ||
-    newOfflineId("signature-row");
 
   const row: OfflineSignature = {
     signatureId,
@@ -231,63 +307,61 @@ export async function saveOfflineSignature(input: {
     kind: input.kind,
     name,
     cpf,
-    blob: input.blob,
-    mimeType:
-      input.blob.type || "image/png",
-    size: input.blob.size,
+    dataUrl,
+    mimeType: "image/png",
+    size: estimateDataUrlBytes(dataUrl),
     occurredAt: stamp.occurredAt,
-    deviceOccurredAt:
-      stamp.deviceOccurredAt,
-    clockOffsetMs:
-      stamp.clockOffsetMs,
-    timezoneOffsetMinutes:
-      stamp.timezoneOffsetMinutes,
+    deviceOccurredAt: stamp.deviceOccurredAt,
+    clockOffsetMs: stamp.clockOffsetMs,
+    timezoneOffsetMinutes: stamp.timezoneOffsetMinutes,
     deviceId,
     status: "pending",
     tries: 0,
     createdAt:
-      previousCurrent?.createdAt ?? now,
+      previous?.createdAt ?? now,
     updatedAt: now,
   };
 
+  /*
+   * Esta é a única gravação crítica da assinatura.
+   * A linha contém apenas strings/números, sem Blob.
+   */
   await idbPut(
     OFFLINE_STORES.signatures,
     row,
   );
 
-  /*
-   * Tipagem explícita evita a inferência de união com propriedades
-   * opcionais undefined no strict mode do projeto.
-   */
   const patch: Record<string, any> =
     input.kind === "recebimento"
       ? {
-        assinatura_responsavel_nome:
-          name,
-        assinatura_responsavel_cpf:
-          cpf,
-        __assinaturaRecebimentoStatus:
-          "pending",
+        assinatura_responsavel_nome: name,
+        assinatura_responsavel_cpf: cpf,
+        __assinaturaRecebimentoStatus: "pending",
       }
       : {
-        assinatura_requerente_nome:
-          name,
-        assinatura_requerente_cpf:
-          cpf,
-        __assinaturaRequisicaoStatus:
-          "pending",
+        assinatura_requerente_nome: name,
+        assinatura_requerente_cpf: cpf,
+        __assinaturaRequisicaoStatus: "pending",
       };
 
-  await patchCachedRegistro<Record<string, any>>(
-    recordId,
-    patch,
-    session.userId,
-  );
-
   /*
-   * O item já está seguro no IndexedDB.
-   * A partir daqui pedimos ao navegador para tentar Background Sync.
+   * O snapshot da tabela é auxiliar.
+   * Se o Safari falhar ao atualizar esse cache, não consideramos
+   * a assinatura perdida, pois ela já está salva na store signatures.
    */
+  try {
+    await patchCachedRegistro<Record<string, any>>(
+      recordId,
+      patch,
+      session.userId,
+    );
+  } catch (error) {
+    console.warn(
+      "[ASSINATURA] Assinatura salva, mas o snapshot local não pôde ser atualizado.",
+      error,
+    );
+  }
+
   await requestOperationalBackgroundSync();
 
   return row;
@@ -324,6 +398,29 @@ export async function getLatestOfflineSignature(
     return null;
   }
 
+  /*
+   * Primeiro tenta a chave determinística da versão atual.
+   */
+  const currentKey = [
+    "signature-row",
+    resolvedUserId,
+    String(recordId),
+    kind,
+  ].join(":");
+
+  const current =
+    await idbGet<OfflineSignature>(
+      OFFLINE_STORES.signatures,
+      currentKey,
+    );
+
+  if (current) {
+    return current;
+  }
+
+  /*
+   * Compatibilidade com linhas antigas que usavam IDs aleatórios.
+   */
   const rows =
     await idbGetAllByIndex<OfflineSignature>(
       OFFLINE_STORES.signatures,
@@ -365,7 +462,32 @@ export async function getSignaturesForUser(
     )
     : rows;
 
-  return filtered.sort(
+  /*
+   * Pode existir uma linha antiga com signatureId aleatório e uma linha
+   * nova determinística para o mesmo atendimento/tipo. Sincronizamos
+   * somente a mais recente de cada assinatura lógica.
+   */
+  const latestByLogicalKey = new Map<string, OfflineSignature>();
+
+  for (const row of filtered) {
+    const key = [
+      row.userId,
+      row.recordId,
+      row.kind,
+    ].join(":");
+
+    const current = latestByLogicalKey.get(key);
+
+    if (
+      !current ||
+      Number(row.updatedAt ?? 0) >
+      Number(current.updatedAt ?? 0)
+    ) {
+      latestByLogicalKey.set(key, row);
+    }
+  }
+
+  return Array.from(latestByLogicalKey.values()).sort(
     (a, b) =>
       Number(a.createdAt ?? 0) -
       Number(b.createdAt ?? 0),
@@ -382,10 +504,13 @@ export async function updateOfflineSignature(
     updatedAt: Date.now(),
   };
 
+  const normalized =
+    await normalizeForStorage(next);
+
   await idbPut(
     OFFLINE_STORES.signatures,
-    next,
+    normalized,
   );
 
-  return next;
+  return normalized;
 }

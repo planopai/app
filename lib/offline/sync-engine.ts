@@ -16,8 +16,8 @@ import {
 } from "./photos";
 import { patchCachedRegistro } from "./registros";
 import {
-  blobToDataUrl,
   getSignaturesForUser,
+  signatureToDataUrl,
   type OfflineSignature,
   updateOfflineSignature,
 } from "./signatures";
@@ -81,7 +81,7 @@ async function parseJsonResponse(response: Response): Promise<any> {
 }
 
 async function syncSignature(signature: OfflineSignature): Promise<any> {
-  const base64 = await blobToDataUrl(signature.blob);
+  const base64 = await signatureToDataUrl(signature);
 
   const response = await fetch(`${ENDPOINT}/informativo.php`, {
     method: "POST",
@@ -149,22 +149,22 @@ async function syncPendingSignatures(
 
       const url = String(data?.url ?? signature.serverUrl ?? "").trim();
 
-      const patch =
+      const patch: Record<string, any> =
         signature.kind === "recebimento"
           ? {
-              assinatura_responsavel: url,
-              assinatura_recebimento_url: url,
-              assinatura_responsavel_nome: signature.name,
-              assinatura_responsavel_cpf: signature.cpf,
-              __assinaturaRecebimentoStatus: "synced",
-            }
+            assinatura_responsavel: url,
+            assinatura_recebimento_url: url,
+            assinatura_responsavel_nome: signature.name,
+            assinatura_responsavel_cpf: signature.cpf,
+            __assinaturaRecebimentoStatus: "synced",
+          }
           : {
-              assinatura_requerente: url,
-              assinatura_requisicao_url: url,
-              assinatura_requerente_nome: signature.name,
-              assinatura_requerente_cpf: signature.cpf,
-              __assinaturaRequisicaoStatus: "synced",
-            };
+            assinatura_requerente: url,
+            assinatura_requisicao_url: url,
+            assinatura_requerente_nome: signature.name,
+            assinatura_requerente_cpf: signature.cpf,
+            __assinaturaRequisicaoStatus: "synced",
+          };
 
       await patchCachedRegistro(
         signature.recordId,
@@ -318,14 +318,14 @@ async function syncStatus(action: OfflineAction): Promise<void> {
   const body =
     action.command === "fase11"
       ? {
-          acao: "material_recolhido",
-          ...common,
-        }
+        acao: "material_recolhido",
+        ...common,
+      }
       : {
-          acao: "atualizar_status",
-          status: action.statusNovo,
-          ...common,
-        };
+        acao: "atualizar_status",
+        status: action.statusNovo,
+        ...common,
+      };
 
   const response = await fetch(`${ENDPOINT}/informativo.php`, {
     method: "POST",

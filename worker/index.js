@@ -47,7 +47,7 @@ function requestToPromise(request) {
     request.onerror = () =>
       reject(
         request.error ||
-          new Error("Falha em operação IndexedDB no Service Worker.")
+        new Error("Falha em operação IndexedDB no Service Worker.")
       );
   });
 }
@@ -58,12 +58,12 @@ function transactionDone(tx) {
     tx.onabort = () =>
       reject(
         tx.error ||
-          new Error("Transação IndexedDB cancelada no Service Worker.")
+        new Error("Transação IndexedDB cancelada no Service Worker.")
       );
     tx.onerror = () =>
       reject(
         tx.error ||
-          new Error("Falha na transação IndexedDB do Service Worker.")
+        new Error("Falha na transação IndexedDB do Service Worker.")
       );
   });
 }
@@ -81,7 +81,7 @@ function openDb() {
     request.onerror = () =>
       reject(
         request.error ||
-          new Error("Não foi possível abrir o banco offline no Service Worker.")
+        new Error("Não foi possível abrir o banco offline no Service Worker.")
       );
   });
 }
@@ -232,8 +232,8 @@ async function parseJsonResponse(response) {
     throw new HttpSyncError(
       String(
         data?.msg ||
-          data?.erro ||
-          `HTTP ${response.status}`
+        data?.erro ||
+        `HTTP ${response.status}`
       ),
       response.status,
       data
@@ -260,8 +260,7 @@ async function resolveAuthenticatedUserId() {
     );
   } catch (error) {
     throw new TransientSyncError(
-      `Rede indisponível ao validar sessão: ${
-        error?.message || "erro de rede"
+      `Rede indisponível ao validar sessão: ${error?.message || "erro de rede"
       }`
     );
   }
@@ -283,7 +282,7 @@ async function resolveAuthenticatedUserId() {
       throw new TransientSyncError(
         String(
           data?.msg ||
-            `Falha temporária ao validar sessão (${response.status}).`
+          `Falha temporária ao validar sessão (${response.status}).`
         )
       );
     }
@@ -333,9 +332,23 @@ async function blobToDataUrl(blob) {
 }
 
 async function syncSignature(signature) {
-  const base64 = await blobToDataUrl(
-    signature.blob
-  );
+  let base64 =
+    String(signature?.dataUrl || "").trim();
+
+  /*
+   * Compatibilidade com filas antigas que ainda armazenavam Blob.
+   */
+  if (!base64 && signature?.blob) {
+    base64 = await blobToDataUrl(
+      signature.blob
+    );
+  }
+
+  if (!base64) {
+    throw new Error(
+      "Imagem da assinatura offline não encontrada."
+    );
+  }
 
   const response = await fetch(
     `${ENDPOINT}/informativo.php`,
@@ -518,17 +531,17 @@ async function syncStatus(action) {
   const body =
     action.command === "fase11"
       ? {
-          acao:
-            "material_recolhido",
-          ...common,
-        }
+        acao:
+          "material_recolhido",
+        ...common,
+      }
       : {
-          acao:
-            "atualizar_status",
-          status:
-            action.statusNovo,
-          ...common,
-        };
+        acao:
+          "atualizar_status",
+        status:
+          action.statusNovo,
+        ...common,
+      };
 
   const response = await fetch(
     `${ENDPOINT}/informativo.php`,
@@ -559,7 +572,7 @@ async function markSignatureError(
 
   const message = String(
     error?.message ||
-      "Falha ao sincronizar assinatura."
+    "Falha ao sincronizar assinatura."
   );
 
   if (
@@ -606,13 +619,13 @@ async function markSignatureError(
       signature.userId,
       signature.kind === "recebimento"
         ? {
-            __assinaturaRecebimentoStatus:
-              "requires_attention",
-          }
+          __assinaturaRecebimentoStatus:
+            "requires_attention",
+        }
         : {
-            __assinaturaRequisicaoStatus:
-              "requires_attention",
-          }
+          __assinaturaRequisicaoStatus:
+            "requires_attention",
+        }
     );
 
     summary.requiresAttention += 1;
@@ -696,8 +709,8 @@ async function syncSignaturesForUser(
 
       const serverUrl = String(
         data?.url ||
-          signature.serverUrl ||
-          ""
+        signature.serverUrl ||
+        ""
       ).trim();
 
       signature = {
@@ -725,29 +738,29 @@ async function syncSignaturesForUser(
         signature.userId,
         signature.kind === "recebimento"
           ? {
-              assinatura_responsavel:
-                serverUrl,
-              assinatura_recebimento_url:
-                serverUrl,
-              assinatura_responsavel_nome:
-                signature.name,
-              assinatura_responsavel_cpf:
-                signature.cpf,
-              __assinaturaRecebimentoStatus:
-                "synced",
-            }
+            assinatura_responsavel:
+              serverUrl,
+            assinatura_recebimento_url:
+              serverUrl,
+            assinatura_responsavel_nome:
+              signature.name,
+            assinatura_responsavel_cpf:
+              signature.cpf,
+            __assinaturaRecebimentoStatus:
+              "synced",
+          }
           : {
-              assinatura_requerente:
-                serverUrl,
-              assinatura_requisicao_url:
-                serverUrl,
-              assinatura_requerente_nome:
-                signature.name,
-              assinatura_requerente_cpf:
-                signature.cpf,
-              __assinaturaRequisicaoStatus:
-                "synced",
-            }
+            assinatura_requerente:
+              serverUrl,
+            assinatura_requisicao_url:
+              serverUrl,
+            assinatura_requerente_nome:
+              signature.name,
+            assinatura_requerente_cpf:
+              signature.cpf,
+            __assinaturaRequisicaoStatus:
+              "synced",
+          }
       );
 
       summary.synced += 1;
@@ -781,7 +794,7 @@ async function markActionError(
 
   const message = String(
     error?.message ||
-      "Falha ao sincronizar ação."
+    "Falha ao sincronizar ação."
   );
 
   if (

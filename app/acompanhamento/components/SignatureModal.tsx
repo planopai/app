@@ -6,8 +6,7 @@ import Modal from "./Modal";
 import type { Registro } from "./types";
 import { browserSaysOnline } from "@/lib/offline/session";
 import {
-    blobToDataUrl,
-    dataUrlToBlob,
+    signatureToDataUrl,
     getLatestOfflineSignature,
     getOfflineSignature,
     saveOfflineSignature,
@@ -149,7 +148,7 @@ export default function SignatureModal({
                         if (local.name) setNome(local.name);
                         if (local.cpf) setCpf(formatCpf(local.cpf));
 
-                        const localDataUrl = await blobToDataUrl(local.blob);
+                        const localDataUrl = await signatureToDataUrl(local);
 
                         if (!cancelled && localDataUrl) {
                             setAssinaturaB64(localDataUrl);
@@ -355,18 +354,18 @@ export default function SignatureModal({
                 setAssinaturaB64(dataUrlToStore);
             }
 
-            const blob = dataUrlToBlob(dataUrlToStore);
-
             /*
-             * Sempre persiste antes no IndexedDB.
-             * Uma queda de internet durante o envio não perde a assinatura.
+             * Persiste diretamente como dataURL string.
+             *
+             * Não convertemos para Blob antes de gravar no IndexedDB porque
+             * o Safari/iOS pode abortar regravações de registros com Blob.
              */
             const local = await saveOfflineSignature({
                 recordId: String(registro.id),
                 kind: tipo,
                 name: nome.trim(),
                 cpf: cpfDigits,
-                blob,
+                dataUrl: dataUrlToStore,
             });
 
             onSaved(undefined);

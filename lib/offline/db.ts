@@ -159,7 +159,15 @@ export async function idbPut<T>(storeName: OfflineStoreName, value: T): Promise<
   const db = await openOfflineDb();
   const tx = db.transaction(storeName, "readwrite");
   const done = transactionDone(tx);
-  tx.objectStore(storeName).put(value as any);
+
+  const request = tx.objectStore(storeName).put(value as any);
+
+  /*
+   * Importante para Safari/iOS:
+   * aguarda também a requisição individual, não apenas a transação.
+   * Assim ConstraintError/DataCloneError aparecem com a causa real.
+   */
+  await requestToPromise(request);
   await done;
 }
 
@@ -167,7 +175,10 @@ export async function idbDelete(storeName: OfflineStoreName, key: IDBValidKey): 
   const db = await openOfflineDb();
   const tx = db.transaction(storeName, "readwrite");
   const done = transactionDone(tx);
-  tx.objectStore(storeName).delete(key);
+
+  const request = tx.objectStore(storeName).delete(key);
+
+  await requestToPromise(request);
   await done;
 }
 
@@ -197,7 +208,7 @@ export async function idbGetAllByIndex<T>(
 
 export async function replaceRecordsForUser(
   userId: string,
-  rows: Array<{ pk: string; [key: string]: any }>,
+  rows: Array<{ pk: string;[key: string]: any }>,
 ): Promise<void> {
   const db = await openOfflineDb();
   const tx = db.transaction(OFFLINE_STORES.records, "readwrite");
