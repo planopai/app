@@ -44,9 +44,30 @@ function isSim(v?: string) {
 }
 
 function isTerceiro(r: Registro) {
-    // Não inferir pelo conteúdo dos campos: um atendimento funerário normal
-    // também pode ter Assistência, Tanato e Ornamentação marcados como Não.
     return String((r as any).tipo_atendimento ?? "").trim().toLowerCase() === "terceiro";
+}
+
+function SyncBadge({ registro }: { registro: Registro }) {
+    const status = String((registro as any).__syncStatus ?? "synced");
+    const count = Number((registro as any).__pendingCount ?? 0) || 0;
+
+    if (status === "requires_attention") {
+        return (
+            <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+                Requer atenção
+            </span>
+        );
+    }
+
+    if (status === "pending") {
+        return (
+            <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-800">
+                {count > 1 ? `${count} pendentes` : "Pendente"}
+            </span>
+        );
+    }
+
+    return null;
 }
 
 export default function TabelaAtendimentos({
@@ -55,35 +76,17 @@ export default function TabelaAtendimentos({
     onInfo,
     onCompartilhar,
 }: Props) {
-    /**
-     * Regras de visibilidade:
-     * - fase11 continua sendo o encerramento quando há material para recolher;
-     * - registros antigos, sem os novos campos, mantêm o fluxo anterior;
-     * - sem Assistência, o registro some na última fase operacional aplicável;
-     * - sem Sepultamento, a última fase pode ser Entrega de Corpo (fase08);
-     * - sem Velório e sem Sepultamento, a última fase pode ser Corpo Pronto (fase12).
-     */
     const visiveis = registros.filter((r) => {
         if (r.status === "fase11") return false;
 
-        if (isTerceiro(r)) {
-            return r.status !== "fase10";
-        }
-
-        // Com assistência, ainda existe a etapa final de Material Recolhido.
+        if (isTerceiro(r)) return r.status !== "fase10";
         if (isSim(r.assistencia)) return true;
 
         const semVelorio = isNao((r as any).realiza_velorio);
         const semSepultamento = isNao((r as any).realiza_sepultamento);
 
-        if (!semSepultamento) {
-            return r.status !== "fase10";
-        }
-
-        if (!semVelorio) {
-            return r.status !== "fase08";
-        }
-
+        if (!semSepultamento) return r.status !== "fase10";
+        if (!semVelorio) return r.status !== "fase08";
         return r.status !== "fase12";
     });
 
@@ -92,7 +95,7 @@ export default function TabelaAtendimentos({
             <table className="min-w-full text-sm">
                 <thead className="bg-muted/50">
                     <tr>
-                        <th className="w-40 px-3 py-2 text-left font-semibold">Status</th>
+                        <th className="w-44 px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Falecido(a)</th>
                         <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
                         <th className="w-40 px-3 py-2 text-left font-semibold">Ações</th>
@@ -105,18 +108,19 @@ export default function TabelaAtendimentos({
                     {visiveis.length === 0 ? (
                         <tr>
                             <td className="px-3 py-6 text-center opacity-70" colSpan={6}>
-                                Nenhum registro cadastrado.
+                                Nenhum registro disponível neste aparelho.
                             </td>
                         </tr>
                     ) : (
                         visiveis.map((r, idx) => (
                             <tr key={String(r.id ?? `row-${idx}`)} className="border-t">
                                 <td className="px-3 py-2">
-                                    <span
-                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBg(r.status)}`}
-                                    >
-                                        {capitalizeStatus(r.status)}
-                                    </span>
+                                    <div className="flex flex-col items-start gap-1">
+                                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusBg(r.status)}`}>
+                                            {capitalizeStatus(r.status)}
+                                        </span>
+                                        <SyncBadge registro={r} />
+                                    </div>
                                 </td>
 
                                 <td className="px-3 py-2">
@@ -125,9 +129,7 @@ export default function TabelaAtendimentos({
                                     </div>
                                 </td>
 
-                                <td className="hidden px-3 py-2 sm:table-cell">
-                                    {r.agente || ""}
-                                </td>
+                                <td className="hidden px-3 py-2 sm:table-cell">{r.agente || ""}</td>
 
                                 <td className="px-3 py-2">
                                     <div className="flex flex-col gap-2">
@@ -138,7 +140,6 @@ export default function TabelaAtendimentos({
                                             Ações
                                         </button>
 
-                                        {/* Mobile: Info e Compartilhar aparecem dentro da coluna Ações */}
                                         <button
                                             className="rounded-md bg-blue-400 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 sm:hidden"
                                             onClick={() => r.id != null && onInfo(r.id)}

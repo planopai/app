@@ -4,6 +4,11 @@ import React, { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import type { Registro } from "./types";
+import { browserSaysOnline, getCurrentOfflineSession } from "@/lib/offline/session";
+import { getOperationalTimestamp } from "@/lib/offline/clock";
+import { getOfflineDeviceId } from "@/lib/offline/device";
+import { newOfflineId } from "@/lib/offline/db";
+import { saveOfflinePhoto } from "@/lib/offline/photos";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -235,25 +240,36 @@ async function salvarFotoAcao({
     tipo,
     foto,
     signal,
+    operationId,
+    ocorreuEm,
+    deviceId,
+    userId,
 }: {
     id: string | number;
     tipo: FotoAcaoTipo;
     foto: Blob;
     signal: AbortSignal;
+    operationId: string;
+    ocorreuEm: string;
+    deviceId: string;
+    userId: string;
 }) {
     const form = new FormData();
     form.append("acao", "salvar_foto_acao");
     form.append("id", String(id));
     form.append("tipo", tipo);
     form.append("foto", foto, `${tipo}.jpg`);
+    form.append("operation_id", operationId);
+    form.append("ocorreu_em", ocorreuEm);
+    form.append("device_id", deviceId);
+    form.append("usuario_id", userId);
+    form.append("origem", "online");
 
     const res = await fetch(`${ENDPOINT}/informativo.php`, {
         method: "POST",
         credentials: "include",
         cache: "no-store",
-        headers: {
-            Accept: "application/json",
-        },
+        headers: { Accept: "application/json" },
         body: form,
         signal,
     });
@@ -261,7 +277,9 @@ async function salvarFotoAcao({
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.sucesso) {
-        throw new Error(data?.msg || `Erro HTTP ${res.status} ao salvar a foto.`);
+        const err: any = new Error(data?.msg || `Erro HTTP ${res.status} ao salvar a foto.`);
+        err.status = res.status;
+        throw err;
     }
 
     return data as {
@@ -301,6 +319,10 @@ export default function FotoAcaoModal({
         tipo: FotoAcaoTipo;
         url?: string;
         path?: string;
+        offline?: boolean;
+        photoId?: string;
+        photoOperationId?: string;
+        occurredAt?: string;
     }) => void | Promise<void>;
 }) {
     const inputRef = useRef<HTMLInputElement>(null);
@@ -560,17 +582,71 @@ export default function FotoAcaoModal({
         }
 
         if (fotoBlob.size > HARD_PHOTO_BYTES) {
-            setMsg({
-                ok: false,
-                text: "A foto ficou acima do limite seguro. Tire novamente.",
+            setMsg({ ok: false, text: "A foto ficou acima do limite seguro. Tire novamente." });
+            return;
+        }
+
+        // Somente Entrega de Corpo (fase08) é autorizada offline nesta versão.
+        if (!browserSaysOnline() && String(fase) !== "fase08") {
+            setMsg({ ok: false, text: "Esta etapa exige conexão com a internet." });
+            return;
+        }
+
+        const session = await getCurrentOfflineSession({
+            refreshIfOnline: browserSaysOnline(),
+            allowCachedOnNetworkFailure: true,
+        });
+        if (!session) {
+            setMsg({ ok: false, text: "Usuário não identificado para registrar a foto." });
+            return;
+        }
+
+        const timestamp = await getOperationalTimestamp();
+        const deviceId = await getOfflineDeviceId();
+        const photoOperationId = newOfflineId("photo-op");
+
+        const saveLocally = async () => {
+            if (String(fase) !== "fase08" || tipo !== "entrega_corpo") {
+                throw new Error("Somente a foto da Entrega de Corpo pode ser guardada offline nesta versão.");
+            }
+
+            const local = await saveOfflinePhoto({
+                recordId: resolvedId,
+                kind: tipo,
+                blob: fotoBlob,
+                operationId: photoOperationId,
+                capturedAt: timestamp.occurredAt,
             });
+
+            setMsg({ ok: true, text: "Foto guardada no aparelho. A ação será sincronizada quando a internet voltar." });
+            await onSaved({
+                id: resolvedId,
+                fase,
+                tipo,
+                offline: true,
+                photoId: local.photoId,
+                photoOperationId: local.operationId,
+                occurredAt: local.capturedAt,
+            });
+            limparFoto();
+            onClose();
+        };
+
+        if (!browserSaysOnline()) {
+            try {
+                setSaving(true);
+                await saveLocally();
+            } catch (e: any) {
+                setMsg({ ok: false, text: e?.message || "Falha ao guardar a foto offline." });
+            } finally {
+                setSaving(false);
+            }
             return;
         }
 
         const controller = new AbortController();
         uploadAbortRef.current?.abort();
         uploadAbortRef.current = controller;
-
         const timer = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
         try {
@@ -581,33 +657,46 @@ export default function FotoAcaoModal({
                 tipo,
                 foto: fotoBlob,
                 signal: controller.signal,
+                operationId: photoOperationId,
+                ocorreuEm: timestamp.occurredAt,
+                deviceId,
+                userId: session.userId,
             });
 
             setMsg({ ok: true, text: "Foto salva com sucesso. Confirmando ação..." });
-
             await onSaved({
                 id: resolvedId,
                 fase,
                 tipo,
                 url: saved.url,
                 path: saved.path,
+                offline: false,
+                photoOperationId,
+                occurredAt: timestamp.occurredAt,
             });
 
             limparFoto();
             onClose();
         } catch (e: any) {
-            const abortado = e?.name === "AbortError";
-            setMsg({
-                ok: false,
-                text: abortado
-                    ? "O envio demorou demais. Verifique a internet e tente novamente."
-                    : e?.message || "Falha ao salvar a foto.",
-            });
+            const networkFailure =
+                e?.name === "AbortError" ||
+                e?.name === "TypeError" ||
+                String(e?.message || "").toLowerCase().includes("failed to fetch") ||
+                String(e?.message || "").toLowerCase().includes("network") ||
+                String(e?.message || "").toLowerCase().includes("load failed");
+
+            if (networkFailure && String(fase) === "fase08" && tipo === "entrega_corpo") {
+                try {
+                    await saveLocally();
+                } catch (fallbackError: any) {
+                    setMsg({ ok: false, text: fallbackError?.message || "Falha ao guardar a foto offline." });
+                }
+            } else {
+                setMsg({ ok: false, text: e?.message || "Falha ao salvar a foto." });
+            }
         } finally {
             window.clearTimeout(timer);
-            if (uploadAbortRef.current === controller) {
-                uploadAbortRef.current = null;
-            }
+            if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
             setSaving(false);
         }
     }

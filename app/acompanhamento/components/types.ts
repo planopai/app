@@ -199,6 +199,24 @@ export type Registro = {
     foto_entrega_corpo_em?: string;
     foto_entrega_corpo_usuario?: string;
 
+    // Responsabilidade operacional.
+    // fase07 define o responsável pelo trecho até a Entrega de Corpo (fase08).
+    responsavel_velorio_id?: number | string | null;
+    responsavel_velorio_nome?: string | null;
+    responsavel_velorio_desde?: string | null;
+
+    // fase09 define o responsável pelo trecho até Sepultamento Concluído (fase10).
+    responsavel_sepultamento_id?: number | string | null;
+    responsavel_sepultamento_nome?: string | null;
+    responsavel_sepultamento_desde?: string | null;
+
+    // Metadados somente do cliente offline. Nunca são autoridade do backend.
+    __cachedAt?: number;
+    __syncStatus?: "synced" | "pending" | "requires_attention" | string;
+    __pendingCount?: number;
+    __lastOfflineOccurredAt?: string;
+    __pendingActions?: any[];
+
     assinatura_responsavel?: string;
     assinatura_requerente?: string;
     assinatura_responsavel_nome?: string;

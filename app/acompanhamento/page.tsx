@@ -53,6 +53,28 @@ import MateriaisConferenciaModal, {
   MateriaisConferenciaResult,
 } from "./components/MateriaisConferenciaModal";
 
+import {
+  loadCachedRegistros,
+  saveRegistrosSnapshot,
+} from "@/lib/offline/registros";
+import {
+  applyPendingActionsToRegistros,
+  isOperationalOfflineCommand,
+  queueOperationalAction,
+} from "@/lib/offline/actions";
+import {
+  browserSaysOnline,
+  getCurrentOfflineSession,
+} from "@/lib/offline/session";
+import { getOperationalTimestamp } from "@/lib/offline/clock";
+import { getOfflineDeviceId } from "@/lib/offline/device";
+import { newOfflineId } from "@/lib/offline/db";
+import { saveOfflineMaterialCheck } from "@/lib/offline/material-checks";
+import {
+  installOperationalSyncListeners,
+  syncOperationalQueue,
+} from "@/lib/offline/sync-engine";
+
 type TipoAtendimento = "funerario" | "terceiro";
 
 // ✅ endpoint da baixa automática (novo PHP independente)
@@ -708,6 +730,32 @@ export default function AcompanhamentoPage() {
   const flushingRef = useRef(false);
 
   const fetchRegistros = useCallback(async () => {
+    let session = null as Awaited<ReturnType<typeof getCurrentOfflineSession>>;
+
+    try {
+      session = await getCurrentOfflineSession({
+        refreshIfOnline: isOnlineNow(),
+        allowCachedOnNetworkFailure: true,
+      });
+    } catch (e: any) {
+      // 401/403 online não deve trocar silenciosamente de identidade.
+      console.warn("[OFFLINE] Não foi possível confirmar o usuário:", e?.message || e);
+    }
+
+    const showCached = async () => {
+      const cached = await loadCachedRegistros<Registro>(session?.userId);
+      if (!cached.length) return;
+      const merged = session
+        ? await applyPendingActionsToRegistros(cached, session.userId)
+        : cached;
+      setRegistros(merged);
+    };
+
+    if (!isOnlineNow()) {
+      await showCached();
+      return;
+    }
+
     try {
       const r = await fetch(
         `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
@@ -717,10 +765,16 @@ export default function AcompanhamentoPage() {
         },
       );
 
-      if (r.status === 401) return;
+      if (r.status === 401) {
+        await showCached();
+        return;
+      }
 
       const data = await r.json().catch(() => null);
-      if (data?.need_login) return;
+      if (data?.need_login) {
+        await showCached();
+        return;
+      }
 
       const sane: Registro[] = Array.isArray(data)
         ? data.map((it: any) => ({
@@ -783,6 +837,14 @@ export default function AcompanhamentoPage() {
           realiza_velorio: String(it?.realiza_velorio ?? ""),
           realiza_sepultamento: String(it?.realiza_sepultamento ?? ""),
 
+          // ✅ RESPONSABILIDADE OPERACIONAL
+          responsavel_velorio_id: it?.responsavel_velorio_id ?? null,
+          responsavel_velorio_nome: String(it?.responsavel_velorio_nome ?? ""),
+          responsavel_velorio_desde: String(it?.responsavel_velorio_desde ?? ""),
+          responsavel_sepultamento_id: it?.responsavel_sepultamento_id ?? null,
+          responsavel_sepultamento_nome: String(it?.responsavel_sepultamento_nome ?? ""),
+          responsavel_sepultamento_desde: String(it?.responsavel_sepultamento_desde ?? ""),
+
           // ✅ INSUMOS (novo formato dentro do arrumacao_json)
           arrumacao_json: String(it?.arrumacao_json ?? ""),
 
@@ -808,12 +870,18 @@ export default function AcompanhamentoPage() {
         }))
         : [];
 
-      setRegistros(sane);
-    } catch {
-      setRegistros([]);
+      if (session) {
+        await saveRegistrosSnapshot(sane, session.userId);
+        const merged = await applyPendingActionsToRegistros(sane, session.userId);
+        setRegistros(merged);
+      } else {
+        setRegistros(sane);
+      }
+    } catch (e) {
+      console.warn("[OFFLINE] Falha ao atualizar atendimentos, usando snapshot local.", e);
+      await showCached();
     }
   }, []);
-
   const fetchRegistrosSafe = useCallback(async () => {
     await fetchRegistros();
   }, [fetchRegistros]);
@@ -1069,6 +1137,24 @@ export default function AcompanhamentoPage() {
       window.removeEventListener("online", onOnline);
     };
   }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
+
+  useEffect(() => {
+    const removeSyncListeners = installOperationalSyncListeners();
+
+    const onSyncComplete = () => {
+      void fetchRegistros();
+    };
+    window.addEventListener("pai-offline-sync-complete", onSyncComplete);
+
+    if (browserSaysOnline()) {
+      void syncOperationalQueue().then(() => fetchRegistros());
+    }
+
+    return () => {
+      removeSyncListeners();
+      window.removeEventListener("pai-offline-sync-complete", onSyncComplete);
+    };
+  }, [fetchRegistros]);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -2530,35 +2616,61 @@ export default function AcompanhamentoPage() {
         if (!ok) return false;
       }
 
-      // Corpo Pronto executa baixa de estoque e não pode ser concluído offline.
-      // As demais fases continuam usando a fila local já existente.
-      if (!isOnlineNow() && statusCode === "fase12") {
+      // Ações que assumem responsabilidade precisam ser confirmadas no servidor.
+      if (!isOnlineNow() && (statusCode === "fase07" || statusCode === "fase09")) {
         setAcaoMsg({
           ok: false,
-          text: "Corpo Pronto exige conexão com a internet para processar as baixas de estoque.",
+          text:
+            statusCode === "fase07"
+              ? "Transportando Óbito P/Velório precisa ser iniciado com internet para registrar o responsável."
+              : "Transportando P/ Sepultamento precisa ser iniciado com internet para registrar o responsável.",
         });
         return false;
       }
 
-      if (!isOnlineNow()) {
+      if (!isOnlineNow() && !isOperationalOfflineCommand(statusCode)) {
+        setAcaoMsg({
+          ok: false,
+          text: "Esta etapa exige conexão com a internet nesta versão offline.",
+        });
+        return false;
+      }
+
+      if (!isOnlineNow() && isOperationalOfflineCommand(statusCode)) {
+        const reg = registros.find((x) => String(x.id) === String(acaoId));
+        if (!reg) {
+          setAcaoMsg({ ok: false, text: "Atendimento não encontrado no armazenamento local." });
+          return false;
+        }
+
         try {
           setAcaoSubmitting(true);
-          enqueueOffline(
-            {
-              acao: "atualizar_status",
-              id: acaoId,
-              status: statusCode || acao,
-              ...extraPayload,
-              ...(needsBackendConfirm ? { confirmar: true } : {}),
-            },
-            "offline",
-          );
+          const action = await queueOperationalAction({
+            registro: reg,
+            command: statusCode,
+            photoId: extraPayload.offlinePhotoId,
+            photoAlreadyUploaded: !!extraPayload.photoAlreadyUploaded,
+            materialCheckId: extraPayload.materialCheckId,
+            occurredAt: extraPayload.occurredAt,
+            operationId: extraPayload.operationId,
+          });
+
+          const session = await getCurrentOfflineSession({ refreshIfOnline: false });
+          const cached = await loadCachedRegistros<Registro>(session?.userId);
+          const merged = session
+            ? await applyPendingActionsToRegistros(cached, session.userId)
+            : cached;
+          if (merged.length) setRegistros(merged);
+
           setAcaoMsg({
-            text: "Sem internet: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
+            text: `${action.label} registrada no aparelho às ${new Date(action.occurredAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Aguardando sincronização.`,
             ok: true,
           });
           setAcaoOpen(false);
           return true;
+        } catch (e: any) {
+          setAcaoMsg({ ok: false, text: e?.message || "Falha ao guardar a ação offline." });
+          return false;
         } finally {
           setAcaoSubmitting(false);
         }
@@ -2644,14 +2756,44 @@ export default function AcompanhamentoPage() {
       }
 
       setAcaoSubmitting(true);
+      let onlineOperationId = String(extraPayload.operationId || newOfflineId("status-op"));
+      let onlineOccurredAt = String(extraPayload.occurredAt || "");
+      let onlineDeviceId = "";
+      let onlineSession: Awaited<ReturnType<typeof getCurrentOfflineSession>> = null;
+
       try {
-        const json = await enviarRegistroPHP({
-          acao: "atualizar_status",
-          id: acaoId,
-          status: statusCode || acao,
-          ...extraPayload,
-          ...(needsBackendConfirm ? { confirmar: true } : {}),
+        onlineSession = await getCurrentOfflineSession({
+          refreshIfOnline: true,
+          allowCachedOnNetworkFailure: true,
         });
+        const ts = await getOperationalTimestamp();
+        if (!onlineOccurredAt) onlineOccurredAt = ts.occurredAt;
+        onlineDeviceId = await getOfflineDeviceId();
+
+        const commonMeta = {
+          id: acaoId,
+          operation_id: onlineOperationId,
+          ocorreu_em: onlineOccurredAt,
+          device_id: onlineDeviceId,
+          usuario_id: onlineSession?.userId || undefined,
+          origem: "online",
+          status_anterior: registros.find((x) => String(x.id) === String(acaoId))?.status || undefined,
+        };
+
+        const requestPayload = statusCode === "fase11"
+          ? {
+            acao: "material_recolhido",
+            ...commonMeta,
+          }
+          : {
+            acao: "atualizar_status",
+            status: statusCode || acao,
+            ...commonMeta,
+            ...extraPayload,
+            ...(needsBackendConfirm ? { confirmar: true } : {}),
+          };
+
+        const json = await enviarRegistroPHP(requestPayload);
 
         if (json?.sucesso) {
           setAcaoMsg({
@@ -2710,22 +2852,56 @@ export default function AcompanhamentoPage() {
           (msg.includes("fetch") && msg.includes("failed"));
 
         if (isNetwork) {
-          enqueueOffline(
-            {
-              acao: "atualizar_status",
-              id: acaoId,
-              status: statusCode || acao,
-              ...extraPayload,
-              ...(needsBackendConfirm ? { confirmar: true } : {}),
-            },
-            msg,
-          );
+          // fase07 e fase09 assumem responsabilidade e nunca são transformadas
+          // em ação offline se a confirmação online não retornar.
+          if (statusCode === "fase07" || statusCode === "fase09") {
+            setAcaoMsg({
+              text: "A conexão caiu antes da confirmação. Esta ação não foi assumida como concluída. Reconecte e tente novamente.",
+              ok: false,
+            });
+            return false;
+          }
+
+          if (isOperationalOfflineCommand(statusCode)) {
+            const reg = registros.find((x) => String(x.id) === String(acaoId));
+            if (!reg) {
+              setAcaoMsg({ text: "Atendimento não encontrado no cache local.", ok: false });
+              return false;
+            }
+
+            try {
+              const action = await queueOperationalAction({
+                registro: reg,
+                command: statusCode,
+                operationId: onlineOperationId,
+                occurredAt: onlineOccurredAt || undefined,
+                photoId: extraPayload.offlinePhotoId,
+                photoAlreadyUploaded:
+                  statusCode === "fase08" && !!extraPayload.photoAlreadyUploaded,
+                materialCheckId: extraPayload.materialCheckId,
+                materialCheckAlreadyUploaded:
+                  statusCode === "fase11" && !!extraPayload.materialCheckAlreadyUploaded,
+              });
+              setAcaoMsg({
+                text: `${action.label} guardada no aparelho após falha de conexão. Aguardando sincronização.`,
+                ok: true,
+              });
+              setAcaoOpen(false);
+              return true;
+            } catch (queueError: any) {
+              setAcaoMsg({
+                text: queueError?.message || "Não foi possível guardar a ação offline.",
+                ok: false,
+              });
+              return false;
+            }
+          }
+
           setAcaoMsg({
-            text: "Falha de conexão: ação guardada offline e será enviada automaticamente quando a conexão voltar.",
-            ok: true,
+            text: "A conexão caiu. Esta etapa exige internet e não foi colocada na fila offline.",
+            ok: false,
           });
-          setAcaoOpen(false);
-          return true;
+          return false;
         }
 
         setAcaoMsg({ text: msg || "Erro ao atualizar status.", ok: false });
@@ -2758,42 +2934,42 @@ export default function AcompanhamentoPage() {
         statusCode === "fase03" || statusCode === "fase04";
 
       if (!isOnlineNow()) {
-        enqueueOffline(
-          {
-            acao: "atualizar_status",
-            id,
-            status: statusCode || fase,
-            ...(needsBackendConfirm ? { confirmar: true } : {}),
-          },
-          "offline",
-        );
+        // A confirmação silenciosa é usada principalmente no início dos transportes.
+        // fase07/fase09 não podem ser assumidas offline porque definem o responsável.
+        console.warn("[OFFLINE] Ação silenciosa não confirmada sem internet:", statusCode || fase);
         return;
       }
 
       try {
+        const session = await getCurrentOfflineSession({
+          refreshIfOnline: true,
+          allowCachedOnNetworkFailure: false,
+        });
+        const ts = await getOperationalTimestamp();
+        const deviceId = await getOfflineDeviceId();
+        const atual = registros.find((x) => String(x.id) === String(id));
+
         await enviarRegistroPHP({
           acao: "atualizar_status",
           id,
           status: statusCode || fase,
+          operation_id: newOfflineId("status-op"),
+          ocorreu_em: ts.occurredAt,
+          device_id: deviceId,
+          usuario_id: session?.userId || undefined,
+          origem: "online",
+          status_anterior: atual?.status || undefined,
           ...(needsBackendConfirm ? { confirmar: true } : {}),
         });
 
         await fetchRegistros();
       } catch (e: any) {
-        enqueueOffline(
-          {
-            acao: "atualizar_status",
-            id,
-            status: statusCode || fase,
-            ...(needsBackendConfirm ? { confirmar: true } : {}),
-          },
-          e?.message,
-        );
+        console.warn("[OFFLINE] Falha ao confirmar ação silenciosa; não enfileirada:", e?.message || e);
       } finally {
         flushOfflineQueue();
       }
     },
-    [teleRegistroId, acaoId, fetchRegistros, flushOfflineQueue],
+    [teleRegistroId, acaoId, registros, fetchRegistros, flushOfflineQueue],
   );
 
   /* -------------------- Info por ID -------------------- */
@@ -3057,12 +3233,26 @@ export default function AcompanhamentoPage() {
         registroId={fotoAcaoId}
         fase={fotoAcaoFase}
         tipo={fotoAcaoTipo}
-        onSaved={async ({ id, fase }) => {
+        onSaved={async ({
+          id,
+          fase,
+          offline,
+          photoId,
+          occurredAt,
+        }) => {
           setAcaoId(id != null ? String(id) : null);
           setFotoAcaoOpen(false);
 
-          // A foto já foi salva; agora confirma a etapa sem perguntar de novo.
-          await registrarAcao(fase, { skipConfirm: true });
+          // Offline: a foto já está no IndexedDB.
+          // Online: a foto já foi enviada ao servidor.
+          await registrarAcao(fase, {
+            skipConfirm: true,
+            extra: {
+              offlinePhotoId: offline ? photoId : undefined,
+              photoAlreadyUploaded: !offline,
+              occurredAt,
+            },
+          });
           await fetchRegistros();
         }}
       />
@@ -3095,17 +3285,48 @@ export default function AcompanhamentoPage() {
               nomeFinal = reg ? resolveFalecidoNome(reg) : "";
             }
 
+            const itensNormalizados: Array<{
+              key: string;
+              nome: string;
+              qtd: number;
+              ok: 0 | 1;
+              nao_conforme: 0 | 1;
+            }> = (result.itens || []).map((it) => ({
+              key: String(it.key),
+              nome: String(it.nome),
+              qtd: Number(it.qtd ?? 0),
+              ok: it.ok ? 1 : 0,
+              nao_conforme: it.naoConforme ? 1 : 0,
+            }));
+
+            if (!isOnlineNow()) {
+              const localCheck = await saveOfflineMaterialCheck({
+                recordId: registro_id,
+                falecidoNome: nomeFinal,
+                observacao: result.observacao,
+                itens: itensNormalizados,
+              });
+
+              setMatCheckOpen(false);
+              setMatCheckReturnToAcao(false);
+              setMatCheckSaving(false);
+
+              await registrarAcao("fase11", {
+                skipMaterialCheck: true,
+                skipConfirm: true,
+                extra: {
+                  materialCheckId: localCheck.checkId,
+                  occurredAt: localCheck.occurredAt,
+                },
+              });
+              return;
+            }
+
             await salvarConferenciaNoPHP({
               registro_id,
               falecido_nome: nomeFinal,
               observacao: result.observacao,
-              itens: (result.itens || []).map((it) => ({
-                key: String(it.key),
-                nome: String(it.nome),
-                qtd: Number(it.qtd ?? 0),
-                ok: it.ok ? 1 : 0,
-                nao_conforme: it.naoConforme ? 1 : 0,
-              })),
+              itens: itensNormalizados,
             });
 
             setMatCheckOpen(false);
@@ -3115,6 +3336,7 @@ export default function AcompanhamentoPage() {
             await registrarAcao("fase11", {
               skipMaterialCheck: true,
               skipConfirm: true,
+              extra: { materialCheckAlreadyUploaded: true },
             });
           } catch (e: any) {
             setMatCheckSaving(false);

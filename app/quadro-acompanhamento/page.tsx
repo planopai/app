@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { loadCachedRegistros, saveRegistrosSnapshot } from "@/lib/offline/registros";
+import { applyPendingActionsToRegistros } from "@/lib/offline/actions";
+import { getCurrentOfflineSession } from "@/lib/offline/session";
+import { getHistoryOfflineAware } from "@/lib/offline/history";
 
 /* =========================
    Cache rápido (memória + localStorage)
@@ -1413,23 +1417,9 @@ function getSepultamentoIdFromRegistro(r: Registro): string {
 
 async function buscarLogsDoRegistro(r: Registro): Promise<LogItem[]> {
     const sepId = getSepultamentoIdFromRegistro(r);
-
-    if (!sepId) {
-        console.warn("Registro sem sepultamento_id para histórico:", r);
-        return [];
-    }
-
-    const BASE = `https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(
-        String(sepId)
-    )}`;
-    const url = `${BASE}&_ts=${Date.now()}`;
-    const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
-
-    let logs: LogItem[] = [];
-    if (Array.isArray(json)) logs = json as LogItem[];
-    else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
-
-    return [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+    if (!sepId) return [];
+    const logs = await getHistoryOfflineAware(sepId);
+    return [...(logs as LogItem[])].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
 }
 
 function getFotoFalecidoTimeline(r?: Registro | null): TimelineFoto | null {
@@ -1755,7 +1745,7 @@ export default function QuadroAtendimentoPage() {
     const [clockDate, setClockDate] = useState("");
     const [nowMs, setNowMs] = useState(() => Date.now());
 
-    const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
+    const [registros, setRegistros] = useState<Registro[]>([]);
     const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
 
     const [open, setOpen] = useState(false);
@@ -1775,6 +1765,24 @@ export default function QuadroAtendimentoPage() {
 
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
     const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
+
+    useEffect(() => {
+        let alive = true;
+        void (async () => {
+            try {
+                const session = await getCurrentOfflineSession({ refreshIfOnline: false });
+                const cached = await loadCachedRegistros<Registro>(session?.userId);
+                if (!alive || !cached.length) return;
+                const merged = session
+                    ? await applyPendingActionsToRegistros(cached, session.userId)
+                    : cached;
+                if (alive) setRegistros(merged);
+            } catch (e) {
+                console.warn("[QUADRO OFFLINE] Falha ao carregar snapshot local", e);
+            }
+        })();
+        return () => { alive = false; };
+    }, []);
 
     useEffect(() => {
         const update = () => {
@@ -1805,10 +1813,19 @@ export default function QuadroAtendimentoPage() {
                 const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
                 if (!alive) return;
                 const arr = Array.isArray(j) ? (j as Registro[]) : [];
-                setRegistros(arr);
-                writeLS("qa_registros", arr);
+                const session = await getCurrentOfflineSession({
+                    refreshIfOnline: true,
+                    allowCachedOnNetworkFailure: true,
+                });
+                if (session) {
+                    await saveRegistrosSnapshot(arr, session.userId);
+                    const merged = await applyPendingActionsToRegistros(arr, session.userId);
+                    setRegistros(merged);
+                } else {
+                    setRegistros(arr);
+                }
             } catch {
-                // mant
+                // mantém o que já está na tela / IndexedDB
             }
         }
 
@@ -2165,7 +2182,7 @@ export default function QuadroAtendimentoPage() {
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            Atualizado em tempo real — <span className="font-medium">{clockTime}</span> • {clockDate}
+                            Atualizado em tempo real - <span className="font-medium">{clockTime}</span> • {clockDate}
                         </p>
                     </div>
                 </div>
@@ -3072,7 +3089,7 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
 }
 
 /* =========================
-   Linha do tempo — padrão relatório
+   Linha do tempo - padrão relatório
    ========================= */
 
 const FASES_NOMES_QA: Record<string, string> = {
