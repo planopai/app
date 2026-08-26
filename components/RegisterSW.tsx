@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 import {
     OFFLINE_ROUTES,
@@ -13,6 +14,8 @@ import {
     applyNetworkStatusToDocument,
     isOnlineNow,
 } from "@/lib/offline/network";
+import { syncOperationalQueue } from "@/lib/offline/sync-engine";
+import { requestOperationalBackgroundSync } from "@/lib/offline/background-sync";
 
 const WARMUP_STATE_KEY =
     "pai_offline_routes_warmup_v2";
@@ -372,9 +375,60 @@ function installOfflineNavigationFallback():
     };
 }
 
+async function runOperationalSyncNow(reason: string): Promise<void> {
+    if (!isOnlineNow()) {
+        await requestOperationalBackgroundSync();
+        return;
+    }
+
+    try {
+        const summary = await syncOperationalQueue();
+
+        if (
+            summary.attempted > 0 ||
+            summary.synced > 0 ||
+            summary.requiresAttention > 0 ||
+            summary.blockedAuth
+        ) {
+            console.log(
+                `[OFFLINE] Sincronização global (${reason}):`,
+                summary
+            );
+        }
+    } catch (error) {
+        console.warn(
+            `[OFFLINE] Falha na sincronização global (${reason}).`,
+            error
+        );
+
+        await requestOperationalBackgroundSync();
+    }
+}
+
 export default function RegisterSW() {
+    const pathname = usePathname();
+
+    /*
+     * Também tenta sincronizar a cada navegação.
+     * Assim, sair do login para a Home ou abrir qualquer tela do sistema
+     * já dispara a fila, sem depender de Serviço Funerário.
+     */
+    useEffect(() => {
+        if (isOnlineNow()) {
+            void runOperationalSyncNow(`rota:${pathname ?? "/"}`);
+        } else {
+            void requestOperationalBackgroundSync();
+        }
+    }, [pathname]);
+
     useEffect(() => {
         applyNetworkStatusToDocument();
+
+        if (isOnlineNow()) {
+            void runOperationalSyncNow("abertura-pwa");
+        } else {
+            void requestOperationalBackgroundSync();
+        }
 
         if (
             !("serviceWorker" in navigator)
@@ -389,6 +443,7 @@ export default function RegisterSW() {
 
         const handleOffline = () => {
             applyNetworkStatusToDocument();
+            void requestOperationalBackgroundSync();
         };
 
         const handleOnline = () => {
@@ -397,6 +452,32 @@ export default function RegisterSW() {
             void prepareOfflineRoutes(
                 false
             );
+
+            /*
+             * Se a página ainda está viva quando a rede volta, tentamos agora.
+             * No Android fechado/suspenso, o worker/index.js é a segunda camada.
+             */
+            void runOperationalSyncNow("evento-online");
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== "visible") {
+                return;
+            }
+
+            applyNetworkStatusToDocument();
+            void runOperationalSyncNow("voltou-primeiro-plano");
+        };
+
+        const handlePageShow = () => {
+            applyNetworkStatusToDocument();
+            void runOperationalSyncNow("pageshow");
+        };
+
+        const handleFocus = () => {
+            if (document.visibilityState === "visible") {
+                void runOperationalSyncNow("focus");
+            }
         };
 
         window.addEventListener(
@@ -407,6 +488,50 @@ export default function RegisterSW() {
             "online",
             handleOnline
         );
+        document.addEventListener(
+            "visibilitychange",
+            handleVisibilityChange
+        );
+        window.addEventListener(
+            "pageshow",
+            handlePageShow
+        );
+        window.addEventListener(
+            "focus",
+            handleFocus
+        );
+
+        const handleServiceWorkerMessage = (
+            event: MessageEvent
+        ) => {
+            const data = event.data;
+
+            if (
+                !data ||
+                data.type !==
+                "PAI_BACKGROUND_SYNC_COMPLETE"
+            ) {
+                return;
+            }
+
+            /*
+             * Mantém as telas que já escutam esse evento compatíveis.
+             * O worker atualiza o IndexedDB e avisa qualquer janela aberta.
+             */
+            window.dispatchEvent(
+                new CustomEvent(
+                    "pai-offline-sync-complete",
+                    {
+                        detail: data.summary ?? null,
+                    }
+                )
+            );
+        };
+
+        navigator.serviceWorker.addEventListener(
+            "message",
+            handleServiceWorkerMessage
+        );
 
         const handleControllerChange =
             () => {
@@ -416,6 +541,9 @@ export default function RegisterSW() {
                 ) {
                     void prepareOfflineRoutes(
                         true
+                    );
+                    void runOperationalSyncNow(
+                        "controllerchange"
                     );
                 }
             };
@@ -464,6 +592,14 @@ export default function RegisterSW() {
                 await prepareOfflineRoutes(
                     false
                 );
+
+                /*
+                 * Home, Dashboard ou qualquer outra rota.
+                 * O RegisterSW está no layout raiz, então este gatilho é global.
+                 */
+                await runOperationalSyncNow(
+                    "service-worker-ready"
+                );
             } catch (error) {
                 if (!cancelled) {
                     console.error(
@@ -489,7 +625,23 @@ export default function RegisterSW() {
                 "online",
                 handleOnline
             );
+            document.removeEventListener(
+                "visibilitychange",
+                handleVisibilityChange
+            );
+            window.removeEventListener(
+                "pageshow",
+                handlePageShow
+            );
+            window.removeEventListener(
+                "focus",
+                handleFocus
+            );
 
+            navigator.serviceWorker.removeEventListener(
+                "message",
+                handleServiceWorkerMessage
+            );
             navigator.serviceWorker.removeEventListener(
                 "controllerchange",
                 handleControllerChange

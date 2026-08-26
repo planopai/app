@@ -7,6 +7,7 @@ import {
   newOfflineId,
 } from "./db";
 import { getOperationalTimestamp } from "./clock";
+import { requestOperationalBackgroundSync } from "./background-sync";
 import { getOfflineDeviceId } from "./device";
 import { patchCachedRegistro } from "./registros";
 import { getCurrentOfflineSession, type OfflineSession } from "./session";
@@ -166,12 +167,24 @@ export async function queueOperationalAction(input: {
   };
 
   await idbPut(OFFLINE_STORES.actions, action);
-  await patchCachedRegistro(recordId, {
-    status: input.command,
-    agente: session.userName,
-    __syncStatus: "pending",
-    __lastOfflineOccurredAt: action.occurredAt,
-  });
+  await patchCachedRegistro(
+    recordId,
+    {
+      status: input.command,
+      agente: session.userName,
+      __syncStatus: "pending",
+      __lastOfflineOccurredAt: action.occurredAt,
+    },
+    session.userId,
+  );
+
+  /*
+   * A fila já está persistida. Agora pedimos ao navegador que acorde
+   * o Service Worker quando a conexão voltar, quando houver suporte.
+   * No iOS esta chamada simplesmente retorna false e o fluxo normal
+   * de sincronização na abertura do PWA continua funcionando.
+   */
+  await requestOperationalBackgroundSync();
 
   return action;
 }

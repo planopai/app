@@ -1,5 +1,6 @@
 "use client";
 
+import { requestOperationalBackgroundSync } from "./background-sync";
 import {
   getActionsForUser,
   type OfflineAction,
@@ -216,7 +217,15 @@ async function syncPendingSignatures(
         lastError: message,
       });
 
-      if (isNetworkLike(error) || status >= 500 || status === 0) {
+      if (
+        isNetworkLike(error) ||
+        status >= 500 ||
+        status === 0 ||
+        status === 408 ||
+        status === 425 ||
+        status === 429
+      ) {
+        await requestOperationalBackgroundSync();
         return false;
       }
     }
@@ -350,7 +359,10 @@ async function runSync(): Promise<SyncSummary> {
     blockedAuth: false,
   };
 
-  if (!browserSaysOnline()) return summary;
+  if (!browserSaysOnline()) {
+    await requestOperationalBackgroundSync();
+    return summary;
+  }
 
   let session;
 
@@ -359,6 +371,8 @@ async function runSync(): Promise<SyncSummary> {
   } catch (error: any) {
     if (error?.status === 401 || error?.status === 403) {
       summary.blockedAuth = true;
+    } else {
+      await requestOperationalBackgroundSync();
     }
 
     return summary;
@@ -479,7 +493,15 @@ async function runSync(): Promise<SyncSummary> {
         lastError: message,
       });
 
-      if (isNetworkLike(error) || status >= 500 || status === 0) {
+      if (
+        isNetworkLike(error) ||
+        status >= 500 ||
+        status === 0 ||
+        status === 408 ||
+        status === 425 ||
+        status === 429
+      ) {
+        await requestOperationalBackgroundSync();
         break;
       }
 

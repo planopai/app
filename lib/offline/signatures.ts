@@ -9,6 +9,7 @@ import {
   newOfflineId,
 } from "./db";
 import { getOperationalTimestamp } from "./clock";
+import { requestOperationalBackgroundSync } from "./background-sync";
 import { getOfflineDeviceId } from "./device";
 import { patchCachedRegistro } from "./registros";
 import { getCurrentOfflineSession } from "./session";
@@ -55,11 +56,30 @@ export type OfflineSignature = {
 };
 
 function onlyCpfDigits(value: unknown): string {
-  return String(value ?? "").replace(/\D+/g, "").slice(0, 11);
+  return String(value ?? "")
+    .replace(/\D+/g, "")
+    .slice(0, 11);
+}
+
+/**
+ * Faz uma cópia real para ArrayBuffer.
+ * Isso evita incompatibilidade entre ArrayBufferLike/SharedArrayBuffer
+ * e BlobPart nas versões recentes das tipagens do TypeScript.
+ */
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 export function dataUrlToBlob(dataUrl: string): Blob {
-  const match = String(dataUrl || "").match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  /*
+   * Usamos [\s\S]* no lugar da flag /s porque o projeto está com
+   * target ES2017.
+   */
+  const match = String(dataUrl || "").match(
+    /^data:([^;,]+)?(;base64)?,([\s\S]*)$/,
+  );
 
   if (!match) {
     throw new Error("Assinatura em formato inválido.");
@@ -69,29 +89,45 @@ export function dataUrlToBlob(dataUrl: string): Blob {
   const isBase64 = Boolean(match[2]);
   const payload = match[3] || "";
 
-  let bytes: Uint8Array;
-
   if (isBase64) {
     const binary = atob(payload);
-    bytes = new Uint8Array(binary.length);
+    const bytes = new Uint8Array(binary.length);
 
     for (let i = 0; i < binary.length; i += 1) {
       bytes[i] = binary.charCodeAt(i);
     }
-  } else {
-    bytes = new TextEncoder().encode(decodeURIComponent(payload));
+
+    return new Blob(
+      [bytesToArrayBuffer(bytes)],
+      { type: mime },
+    );
   }
 
-  return new Blob([bytes], { type: mime });
+  const decoded = decodeURIComponent(payload);
+  const encoded = new TextEncoder().encode(decoded);
+
+  return new Blob(
+    [bytesToArrayBuffer(encoded)],
+    { type: mime },
+  );
 }
 
 export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () =>
-      reject(reader.error ?? new Error("Não foi possível ler a assinatura local."));
+    reader.onload = () => {
+      resolve(String(reader.result || ""));
+    };
+
+    reader.onerror = () => {
+      reject(
+        reader.error ??
+        new Error(
+          "Não foi possível ler a assinatura local.",
+        ),
+      );
+    };
 
     reader.readAsDataURL(blob);
   });
@@ -140,23 +176,37 @@ export async function saveOfflineSignature(input: {
     throw new Error("Informe um CPF com 11 dígitos.");
   }
 
-  if (!(input.blob instanceof Blob) || input.blob.size <= 0) {
+  if (
+    !(input.blob instanceof Blob) ||
+    input.blob.size <= 0
+  ) {
     throw new Error("Assinatura vazia.");
   }
 
   const stamp = await getOperationalTimestamp();
   const deviceId = await getOfflineDeviceId();
-  const operationId = input.operationId || newOfflineId("signature");
-  const signatureId = newOfflineId("signature-row");
+  const operationId =
+    input.operationId ||
+    newOfflineId("signature");
+  const signatureId =
+    newOfflineId("signature-row");
 
-  const previous = await idbGetAllByIndex<OfflineSignature>(
-    OFFLINE_STORES.signatures,
-    "userRecordKind",
-    IDBKeyRange.only([session.userId, recordId, input.kind]),
-  );
+  const previous =
+    await idbGetAllByIndex<OfflineSignature>(
+      OFFLINE_STORES.signatures,
+      "userRecordKind",
+      IDBKeyRange.only([
+        session.userId,
+        recordId,
+        input.kind,
+      ]),
+    );
 
   for (const row of previous) {
-    await idbDelete(OFFLINE_STORES.signatures, row.signatureId);
+    await idbDelete(
+      OFFLINE_STORES.signatures,
+      row.signatureId,
+    );
   }
 
   const now = Date.now();
@@ -171,12 +221,16 @@ export async function saveOfflineSignature(input: {
     name,
     cpf,
     blob: input.blob,
-    mimeType: input.blob.type || "image/png",
+    mimeType:
+      input.blob.type || "image/png",
     size: input.blob.size,
     occurredAt: stamp.occurredAt,
-    deviceOccurredAt: stamp.deviceOccurredAt,
-    clockOffsetMs: stamp.clockOffsetMs,
-    timezoneOffsetMinutes: stamp.timezoneOffsetMinutes,
+    deviceOccurredAt:
+      stamp.deviceOccurredAt,
+    clockOffsetMs:
+      stamp.clockOffsetMs,
+    timezoneOffsetMinutes:
+      stamp.timezoneOffsetMinutes,
     deviceId,
     status: "pending",
     tries: 0,
@@ -184,22 +238,45 @@ export async function saveOfflineSignature(input: {
     updatedAt: now,
   };
 
-  await idbPut(OFFLINE_STORES.signatures, row);
+  await idbPut(
+    OFFLINE_STORES.signatures,
+    row,
+  );
 
-  const patch =
+  /*
+   * Tipagem explícita evita a inferência de união com propriedades
+   * opcionais undefined no strict mode do projeto.
+   */
+  const patch: Record<string, any> =
     input.kind === "recebimento"
       ? {
-          assinatura_responsavel_nome: name,
-          assinatura_responsavel_cpf: cpf,
-          __assinaturaRecebimentoStatus: "pending",
-        }
+        assinatura_responsavel_nome:
+          name,
+        assinatura_responsavel_cpf:
+          cpf,
+        __assinaturaRecebimentoStatus:
+          "pending",
+      }
       : {
-          assinatura_requerente_nome: name,
-          assinatura_requerente_cpf: cpf,
-          __assinaturaRequisicaoStatus: "pending",
-        };
+        assinatura_requerente_nome:
+          name,
+        assinatura_requerente_cpf:
+          cpf,
+        __assinaturaRequisicaoStatus:
+          "pending",
+      };
 
-  await patchCachedRegistro(recordId, patch, session.userId);
+  await patchCachedRegistro<Record<string, any>>(
+    recordId,
+    patch,
+    session.userId,
+  );
+
+  /*
+   * O item já está seguro no IndexedDB.
+   * A partir daqui pedimos ao navegador para tentar Background Sync.
+   */
+  await requestOperationalBackgroundSync();
 
   return row;
 }
@@ -223,27 +300,38 @@ export async function getLatestOfflineSignature(
   const session = userId
     ? null
     : await getCurrentOfflineSession({
-        refreshIfOnline: false,
-        allowCachedOnNetworkFailure: true,
-      });
+      refreshIfOnline: false,
+      allowCachedOnNetworkFailure: true,
+    });
 
-  const resolvedUserId = String(userId ?? session?.userId ?? "").trim();
+  const resolvedUserId = String(
+    userId ?? session?.userId ?? "",
+  ).trim();
 
   if (!resolvedUserId) {
     return null;
   }
 
-  const rows = await idbGetAllByIndex<OfflineSignature>(
-    OFFLINE_STORES.signatures,
-    "userRecordKind",
-    IDBKeyRange.only([resolvedUserId, String(recordId), kind]),
-  );
+  const rows =
+    await idbGetAllByIndex<OfflineSignature>(
+      OFFLINE_STORES.signatures,
+      "userRecordKind",
+      IDBKeyRange.only([
+        resolvedUserId,
+        String(recordId),
+        kind,
+      ]),
+    );
 
   if (!rows.length) {
     return null;
   }
 
-  rows.sort((a, b) => Number(b.updatedAt ?? 0) - Number(a.updatedAt ?? 0));
+  rows.sort(
+    (a, b) =>
+      Number(b.updatedAt ?? 0) -
+      Number(a.updatedAt ?? 0),
+  );
 
   return rows[0] ?? null;
 }
@@ -252,18 +340,23 @@ export async function getSignaturesForUser(
   userId: string,
   statuses?: OfflineSignatureStatus[],
 ): Promise<OfflineSignature[]> {
-  const rows = await idbGetAllByIndex<OfflineSignature>(
-    OFFLINE_STORES.signatures,
-    "userId",
-    String(userId),
-  );
+  const rows =
+    await idbGetAllByIndex<OfflineSignature>(
+      OFFLINE_STORES.signatures,
+      "userId",
+      String(userId),
+    );
 
   const filtered = statuses?.length
-    ? rows.filter((row) => statuses.includes(row.status))
+    ? rows.filter((row) =>
+      statuses.includes(row.status),
+    )
     : rows;
 
   return filtered.sort(
-    (a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0),
+    (a, b) =>
+      Number(a.createdAt ?? 0) -
+      Number(b.createdAt ?? 0),
   );
 }
 
@@ -277,7 +370,10 @@ export async function updateOfflineSignature(
     updatedAt: Date.now(),
   };
 
-  await idbPut(OFFLINE_STORES.signatures, next);
+  await idbPut(
+    OFFLINE_STORES.signatures,
+    next,
+  );
 
   return next;
 }

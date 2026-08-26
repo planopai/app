@@ -12,6 +12,12 @@ const withPWA = require("next-pwa")({
   sw: "sw.js",
 
   /*
+   * Código adicional incorporado ao Service Worker gerado.
+   * worker/index.js contém o Background Sync operacional.
+   */
+  customWorkerDir: "worker",
+
+  /*
    * A Home é dinâmica porque depende de sessão/cookies.
    * O next-pwa cria a estratégia "start-url", e o RegisterSW
    * alimenta explicitamente esse cache depois que o usuário
