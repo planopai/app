@@ -44,6 +44,7 @@ import CompartilharModal from "./components/CompartilharModal";
 import TelemetriaModal, {
   TipoTele,
   TelemetriaHandle,
+  remapOfflineTelemetryRecordId,
 } from "./components/TelemetriaModal";
 import FotoAcaoModal, { FotoAcaoTipo } from "./components/FotoAcaoModal";
 
@@ -70,6 +71,16 @@ import { getOperationalTimestamp } from "@/lib/offline/clock";
 import { getOfflineDeviceId } from "@/lib/offline/device";
 import { newOfflineId } from "@/lib/offline/db";
 import { saveOfflineMaterialCheck } from "@/lib/offline/material-checks";
+import {
+  createLocalAttendance,
+  getLocalAttendance,
+  isLocalAttendanceId,
+  markLocalAttendancePhase01,
+  markLocalAttendancePhase01Synced,
+  mergeLocalAttendancesWithRecords,
+  removeLocalAttendance,
+  setLocalAttendanceServerId,
+} from "@/lib/offline/local-attendances";
 import {
   installOperationalSyncListeners,
   syncOperationalQueue,
@@ -287,6 +298,13 @@ type OfflineQueueItem = {
   tries: number;
   lastError?: string;
   payload: any;
+
+  /**
+   * Presente quando este item representa um atendimento criado offline.
+   * O registro temporário fica separado da lista recebida do servidor.
+   */
+  localRecordId?: string;
+  userId?: string;
 };
 
 const OFFLINE_QUEUE_KEY = "acomp_offline_queue_v1";
@@ -319,17 +337,30 @@ function isOnlineNow() {
   return navigator.onLine !== false;
 }
 
-function enqueueOffline(payload: any, errMsg?: string) {
+function enqueueOffline(
+  payload: any,
+  errMsg?: string,
+  meta?: {
+    localRecordId?: string;
+    userId?: string;
+  },
+) {
   const items = safeReadQueue();
-  items.push({
+
+  const item: OfflineQueueItem = {
     qid: genQid(),
     createdAt: Date.now(),
     tries: 0,
     lastError: errMsg,
     payload,
-  });
+    localRecordId: meta?.localRecordId,
+    userId: meta?.userId,
+  };
+
+  items.push(item);
   safeWriteQueue(items);
-  return items.length;
+
+  return item;
 }
 
 // ✅ tenta resolver nome do falecido
@@ -744,10 +775,26 @@ export default function AcompanhamentoPage() {
 
     const showCached = async () => {
       const cached = await loadCachedRegistros<Registro>(session?.userId);
-      if (!cached.length) return;
-      const merged = session
-        ? await applyPendingActionsToRegistros(cached, session.userId)
-        : cached;
+
+      if (!session) {
+        if (cached.length) {
+          setRegistros(cached);
+        }
+        return;
+      }
+
+      const withLocal =
+        mergeLocalAttendancesWithRecords(
+          cached,
+          session.userId,
+        );
+
+      const merged =
+        await applyPendingActionsToRegistros(
+          withLocal,
+          session.userId,
+        );
+
       setRegistros(merged);
     };
 
@@ -871,8 +918,23 @@ export default function AcompanhamentoPage() {
         : [];
 
       if (session) {
-        await saveRegistrosSnapshot(sane, session.userId);
-        const merged = await applyPendingActionsToRegistros(sane, session.userId);
+        await saveRegistrosSnapshot(
+          sane,
+          session.userId,
+        );
+
+        const withLocal =
+          mergeLocalAttendancesWithRecords(
+            sane,
+            session.userId,
+          );
+
+        const merged =
+          await applyPendingActionsToRegistros(
+            withLocal,
+            session.userId,
+          );
+
         setRegistros(merged);
       } else {
         setRegistros(sane);
@@ -903,18 +965,148 @@ export default function AcompanhamentoPage() {
           const json = await enviarRegistroPHP(item.payload);
 
           if (json?.sucesso) {
+            const acao =
+              String(item.payload?.acao ?? "");
+
+            const novoId =
+              json?.id ??
+              json?.novo_id ??
+              json?.last_id ??
+              null;
+
             try {
-              const acao = String(item.payload?.acao ?? "");
-              const tipoAt = String(item.payload?.tipo_atendimento ?? "");
-              if (acao === "novo" && tipoAt === "terceiro") {
-                const novoId =
-                  json?.id ?? json?.novo_id ?? json?.last_id ?? null;
-                addTerceiroIdToSession(novoId);
+              const tipoAt =
+                String(
+                  item.payload?.tipo_atendimento ??
+                  "",
+                );
+
+              if (
+                acao === "novo" &&
+                tipoAt === "terceiro"
+              ) {
+                addTerceiroIdToSession(
+                  novoId,
+                );
               }
             } catch { }
 
-            // ✅ enviado com sucesso -> remove da fila
-            const after = safeReadQueue().filter((x) => x.qid !== item.qid);
+            /*
+             * Atendimento que nasceu offline:
+             * 1. recebe o ID real;
+             * 2. remapeia a telemetria;
+             * 3. envia fase01, caso o usuário já tenha iniciado a remoção;
+             * 4. só então remove o registro temporário.
+             */
+            if (
+              acao === "novo" &&
+              item.localRecordId &&
+              novoId != null
+            ) {
+              const localId =
+                String(
+                  item.localRecordId,
+                );
+
+              setLocalAttendanceServerId(
+                localId,
+                String(novoId),
+              );
+
+              remapOfflineTelemetryRecordId(
+                localId,
+                String(novoId),
+              );
+
+              if (
+                String(
+                  teleRegistroIdRef.current ??
+                  "",
+                ) === localId
+              ) {
+                definirTeleRegistroId(
+                  String(novoId),
+                );
+              }
+
+              const localEntry =
+                getLocalAttendance(
+                  localId,
+                );
+
+              if (
+                localEntry?.phase01 &&
+                localEntry.phase01.status !==
+                "synced"
+              ) {
+                const phase =
+                  localEntry.phase01;
+
+                const phaseJson =
+                  await jsonWith401(
+                    `${ENDPOINT}/informativo.php`,
+                    {
+                      method: "POST",
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+                      },
+                      credentials:
+                        "include",
+                      cache: "no-store",
+                      body: JSON.stringify({
+                        acao:
+                          "atualizar_status",
+                        id: String(novoId),
+                        status: "fase01",
+                        operation_id:
+                          phase.operationId,
+                        ocorreu_em:
+                          phase.occurredAt,
+                        device_ocorreu_em:
+                          phase.deviceOccurredAt,
+                        clock_offset_ms:
+                          phase.clockOffsetMs,
+                        device_id:
+                          phase.deviceId,
+                        usuario_id:
+                          phase.userId,
+                        origem:
+                          "offline",
+                        status_anterior:
+                          "fase00",
+                      }),
+                    },
+                  );
+
+                if (
+                  !phaseJson?.sucesso
+                ) {
+                  throw new Error(
+                    phaseJson?.msg ||
+                    phaseJson?.erro ||
+                    "Atendimento criado, mas não foi possível sincronizar Indo Retirar o Óbito.",
+                  );
+                }
+
+                markLocalAttendancePhase01Synced(
+                  localId,
+                );
+              }
+
+              removeLocalAttendance(
+                localId,
+              );
+            }
+
+            // enviado com sucesso -> remove da fila
+            const after =
+              safeReadQueue().filter(
+                (x) =>
+                  x.qid !==
+                  item.qid,
+              );
+
             safeWriteQueue(after);
           } else {
             const msg =
@@ -982,7 +1174,10 @@ export default function AcompanhamentoPage() {
     } finally {
       flushingRef.current = false;
     }
-  }, [fetchRegistrosSafe]);
+  }, [
+    fetchRegistrosSafe,
+    definirTeleRegistroId,
+  ]);
 
   /* -------------------- Avisos -------------------- */
   const fetchAvisos = useCallback(async () => {
@@ -1941,6 +2136,18 @@ export default function AcompanhamentoPage() {
     const dataAtualizada: any = salvarGrupoWizard();
     if (!dataAtualizada) return;
 
+    /*
+     * Cada criação recebe um operation_id estável durante esta tentativa.
+     * Se a resposta se perder depois do INSERT, a fila reutiliza o mesmo ID
+     * e o backend devolve o atendimento já criado.
+     */
+    const creationOperationId =
+      !wizardEditing
+        ? newOfflineId(
+          "new-attendance-op",
+        )
+        : null;
+
     // ✅ Prioridade de escopo:
     // 1) Escopo vindo dos modais internos: Materiais/Arrumação.
     // 2) Escopo da aba editada no InfoModal.
@@ -2242,33 +2449,124 @@ export default function AcompanhamentoPage() {
     if (!isOnlineNow()) {
       try {
         setWizardSubmitting(true);
+
         const payload: any = {
           ...dataAtualizada,
-          acao: wizardEditing ? "editar" : "novo",
+          acao:
+            wizardEditing
+              ? "editar"
+              : "novo",
         };
 
-        aplicarEscopoNoPayload(payload);
-
-        if (payload.acao === "editar") {
-          // ✅ remove roupa do payload se não mudou
-          scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+        if (
+          payload.acao === "novo" &&
+          creationOperationId
+        ) {
+          payload.operation_id =
+            creationOperationId;
+          payload.origem =
+            "offline";
         }
 
-        enqueueOffline(payload, "offline");
+        aplicarEscopoNoPayload(
+          payload,
+        );
 
-        setWizardMsg({
-          text: "Sem internet: registro salvo offline e será enviado automaticamente quando a conexão voltar.",
-          ok: true,
-        });
-        setTimeout(() => setWizardOpen(false), 950);
+        if (
+          payload.acao === "editar"
+        ) {
+          scrubRoupaNoEditar(
+            payload,
+            wizardOriginalRoupaRef.current,
+          );
+        }
+
+        if (
+          payload.acao === "novo"
+        ) {
+          const session =
+            await getCurrentOfflineSession({
+              refreshIfOnline:
+                false,
+              allowCachedOnNetworkFailure:
+                true,
+            });
+
+          if (!session?.userId) {
+            throw new Error(
+              "Usuário offline não identificado. Abra o PAI com internet ao menos uma vez antes de criar atendimento offline.",
+            );
+          }
+
+          payload.usuario_id =
+            session.userId;
+
+          const local =
+            createLocalAttendance({
+              payload,
+              userId:
+                session.userId,
+              userName:
+                session.userName,
+              operationId:
+                String(
+                  payload.operation_id,
+                ),
+            });
+
+          enqueueOffline(
+            payload,
+            "offline",
+            {
+              localRecordId:
+                local.localId,
+              userId:
+                session.userId,
+            },
+          );
+
+          setRegistros(
+            (current) =>
+              mergeLocalAttendancesWithRecords(
+                current,
+                session.userId,
+              ) as Registro[],
+          );
+
+          setWizardMsg({
+            text:
+              "Sem internet: atendimento criado neste aparelho e aguardando sincronização.",
+            ok: true,
+          });
+        } else {
+          enqueueOffline(
+            payload,
+            "offline",
+          );
+
+          setWizardMsg({
+            text:
+              "Sem internet: alteração salva offline e será enviada automaticamente quando a conexão voltar.",
+            ok: true,
+          });
+        }
+
+        setTimeout(
+          () =>
+            setWizardOpen(false),
+          950,
+        );
       } catch (e: any) {
         setWizardMsg({
-          text: e?.message || "Não foi possível salvar offline.",
+          text:
+            e?.message ||
+            "Não foi possível salvar offline.",
           ok: false,
         });
       } finally {
         setWizardSubmitting(false);
       }
+
       return;
     }
 
@@ -2276,10 +2574,25 @@ export default function AcompanhamentoPage() {
       setWizardSubmitting(true);
       const payload: any = {
         ...dataAtualizada,
-        acao: wizardEditing ? "editar" : "novo",
+        acao:
+          wizardEditing
+            ? "editar"
+            : "novo",
       };
 
-      aplicarEscopoNoPayload(payload);
+      if (
+        payload.acao === "novo" &&
+        creationOperationId
+      ) {
+        payload.operation_id =
+          creationOperationId;
+        payload.origem =
+          "online";
+      }
+
+      aplicarEscopoNoPayload(
+        payload,
+      );
 
       if (payload.acao === "editar") {
         // ✅ remove roupa do payload se não mudou
@@ -2384,23 +2697,124 @@ export default function AcompanhamentoPage() {
       if (isNetwork) {
         const payload: any = {
           ...dataAtualizada,
-          acao: wizardEditing ? "editar" : "novo",
+          acao:
+            wizardEditing
+              ? "editar"
+              : "novo",
         };
 
-        aplicarEscopoNoPayload(payload);
-        if (payload.acao === "editar") {
+        if (
+          payload.acao === "novo" &&
+          creationOperationId
+        ) {
+          payload.operation_id =
+            creationOperationId;
+          payload.origem =
+            "offline";
+        }
+
+        aplicarEscopoNoPayload(
+          payload,
+        );
+
+        if (
+          payload.acao === "editar"
+        ) {
           try {
-            scrubRoupaNoEditar(payload, wizardOriginalRoupaRef.current);
+            scrubRoupaNoEditar(
+              payload,
+              wizardOriginalRoupaRef.current,
+            );
           } catch {
-            // se scrub lançar erro aqui, ignora e mantém payload original para não travar o offline
+            // mantém o payload original
           }
         }
-        enqueueOffline(payload, msg);
-        setWizardMsg({
-          text: "Falha de conexão: registro guardado offline e será enviado automaticamente quando a conexão voltar.",
-          ok: true,
-        });
-        setTimeout(() => setWizardOpen(false), 950);
+
+        if (
+          payload.acao === "novo"
+        ) {
+          try {
+            const session =
+              await getCurrentOfflineSession({
+                refreshIfOnline:
+                  false,
+                allowCachedOnNetworkFailure:
+                  true,
+              });
+
+            if (!session?.userId) {
+              throw new Error(
+                "Usuário offline não identificado.",
+              );
+            }
+
+            payload.usuario_id =
+              session.userId;
+
+            const local =
+              createLocalAttendance({
+                payload,
+                userId:
+                  session.userId,
+                userName:
+                  session.userName,
+                operationId:
+                  String(
+                    payload.operation_id,
+                  ),
+              });
+
+            enqueueOffline(
+              payload,
+              msg,
+              {
+                localRecordId:
+                  local.localId,
+                userId:
+                  session.userId,
+              },
+            );
+
+            setRegistros(
+              (current) =>
+                mergeLocalAttendancesWithRecords(
+                  current,
+                  session.userId,
+                ) as Registro[],
+            );
+
+            setWizardMsg({
+              text:
+                "Falha de conexão: atendimento preservado neste aparelho e aguardando sincronização.",
+              ok: true,
+            });
+          } catch (localError: any) {
+            setWizardMsg({
+              text:
+                localError?.message ||
+                "Falha de conexão e não foi possível preservar o atendimento localmente.",
+              ok: false,
+            });
+            return;
+          }
+        } else {
+          enqueueOffline(
+            payload,
+            msg,
+          );
+
+          setWizardMsg({
+            text:
+              "Falha de conexão: alteração guardada offline e será enviada automaticamente quando a conexão voltar.",
+            ok: true,
+          });
+        }
+
+        setTimeout(
+          () =>
+            setWizardOpen(false),
+          950,
+        );
       } else {
         // ❗ erro real do servidor (ex.: validação 400) -> não enfileira
         setWizardMsg({
@@ -2611,6 +3025,175 @@ export default function AcompanhamentoPage() {
         return false;
       }
 
+      const registroSelecionado =
+        registros.find(
+          (x) =>
+            String(x.id) ===
+            String(acaoId),
+        ) as any;
+
+      const atendimentoLocal =
+        isLocalAttendanceId(
+          registroSelecionado?.id ??
+          acaoId,
+        ) ||
+        registroSelecionado?.__localOnly ===
+        true;
+
+      /*
+       * Atendimento ainda inexistente no servidor:
+       * somente fase01 pode avançar.
+       *
+       * A fase fica no próprio registro local e não entra em IndexedDB/actions,
+       * evitando que Background Sync tente enviar um ID local ao PHP.
+       */
+      if (atendimentoLocal) {
+        if (
+          statusCode !== "fase01"
+        ) {
+          setAcaoMsg({
+            ok: false,
+            text:
+              "Este atendimento ainda está aguardando criação no servidor. Somente Indo Retirar o Óbito pode ser confirmado antes da sincronização.",
+          });
+          return false;
+        }
+
+        if (!opts?.skipConfirm) {
+          const ok =
+            window.confirm(
+              "Deseja confirmar essa ação?",
+            );
+
+          if (!ok) {
+            return false;
+          }
+        }
+
+        try {
+          setAcaoSubmitting(true);
+
+          const session =
+            await getCurrentOfflineSession({
+              refreshIfOnline:
+                false,
+              allowCachedOnNetworkFailure:
+                true,
+            });
+
+          if (!session?.userId) {
+            throw new Error(
+              "Usuário offline não identificado.",
+            );
+          }
+
+          const now =
+            Date.now();
+
+          let occurredAt =
+            new Date(now).toISOString();
+          let deviceOccurredAt =
+            occurredAt;
+          let clockOffsetMs = 0;
+
+          try {
+            const stamp =
+              await getOperationalTimestamp();
+
+            occurredAt =
+              stamp.occurredAt;
+            deviceOccurredAt =
+              stamp.deviceOccurredAt;
+            clockOffsetMs =
+              stamp.clockOffsetMs;
+          } catch {
+            // horário local acima
+          }
+
+          let deviceId =
+            newOfflineId(
+              "local-device",
+            );
+
+          try {
+            deviceId =
+              await getOfflineDeviceId();
+          } catch {
+            // fallback acima
+          }
+
+          const updated =
+            markLocalAttendancePhase01(
+              String(acaoId),
+              {
+                operationId:
+                  String(
+                    extraPayload.operationId ||
+                    newOfflineId(
+                      "status-op",
+                    ),
+                  ),
+                occurredAt:
+                  String(
+                    extraPayload.occurredAt ||
+                    occurredAt,
+                  ),
+                deviceOccurredAt,
+                clockOffsetMs,
+                deviceId,
+                userId:
+                  session.userId,
+                userName:
+                  session.userName,
+              },
+            );
+
+          setRegistros(
+            (current) =>
+              current.map((row) =>
+                String(row.id) ===
+                  String(acaoId)
+                  ? ({
+                    ...(row as any),
+                    ...(updated.record as any),
+                    id:
+                      updated.localId,
+                    status:
+                      "fase01",
+                    agente:
+                      session.userName,
+                    __localOnly:
+                      true,
+                    __syncStatus:
+                      "pending",
+                    __pendingCount:
+                      2,
+                  } as Registro)
+                  : row,
+              ),
+          );
+
+          setAcaoMsg({
+            text:
+              "Indo Retirar o Óbito registrado neste aparelho. O atendimento e a fase serão sincronizados quando houver conexão.",
+            ok: true,
+          });
+
+          setAcaoOpen(false);
+          return true;
+        } catch (e: any) {
+          setAcaoMsg({
+            ok: false,
+            text:
+              e?.message ||
+              "Falha ao guardar Indo Retirar o Óbito no aparelho.",
+          });
+          return false;
+        } finally {
+          setAcaoSubmitting(false);
+        }
+      }
+
       if (!opts?.skipConfirm) {
         const ok = window.confirm("Deseja confirmar essa ação?");
         if (!ok) return false;
@@ -2655,12 +3238,36 @@ export default function AcompanhamentoPage() {
             operationId: extraPayload.operationId,
           });
 
-          const session = await getCurrentOfflineSession({ refreshIfOnline: false });
-          const cached = await loadCachedRegistros<Registro>(session?.userId);
-          const merged = session
-            ? await applyPendingActionsToRegistros(cached, session.userId)
-            : cached;
-          if (merged.length) setRegistros(merged);
+          const session =
+            await getCurrentOfflineSession({
+              refreshIfOnline:
+                false,
+            });
+
+          const cached =
+            await loadCachedRegistros<Registro>(
+              session?.userId,
+            );
+
+          const withLocal =
+            session
+              ? mergeLocalAttendancesWithRecords(
+                cached,
+                session.userId,
+              )
+              : cached;
+
+          const merged =
+            session
+              ? await applyPendingActionsToRegistros(
+                withLocal,
+                session.userId,
+              )
+              : withLocal;
+
+          if (merged.length) {
+            setRegistros(merged);
+          }
 
           setAcaoMsg({
             text: `${action.label} registrada no aparelho às ${new Date(action.occurredAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Aguardando sincronização.`,

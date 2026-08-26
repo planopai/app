@@ -1,4 +1,4 @@
-"use client";
+
 
 import {
   OFFLINE_STORES,
@@ -12,7 +12,7 @@ import { getOfflineDeviceId } from "./device";
 import { patchCachedRegistro } from "./registros";
 import { getCurrentOfflineSession, type OfflineSession } from "./session";
 
-export type OfflineCommand = "fase08" | "fase10" | "fase11";
+export type OfflineCommand = "fase01" | "fase08" | "fase10" | "fase11";
 export type OfflineActionStatus =
   | "pending"
   | "sending"
@@ -46,6 +46,7 @@ export type OfflineAction = {
 };
 
 const LABELS: Record<OfflineCommand, string> = {
+  fase01: "Indo Retirar o Óbito",
   fase08: "Entrega de Corpo",
   fase10: "Sepultamento Concluído",
   fase11: "Material Recolhido",
@@ -62,7 +63,12 @@ function normalizeStatus(status: unknown): string {
 }
 
 export function isOperationalOfflineCommand(command: string): command is OfflineCommand {
-  return command === "fase08" || command === "fase10" || command === "fase11";
+  return (
+    command === "fase01" ||
+    command === "fase08" ||
+    command === "fase10" ||
+    command === "fase11"
+  );
 }
 
 export function validateOfflineResponsibility(

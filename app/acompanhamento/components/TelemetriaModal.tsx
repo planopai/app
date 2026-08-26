@@ -122,6 +122,75 @@ function writeQueue(q: OffPayload[]) {
     } catch { }
 }
 
+function isLocalAttendanceId(value: unknown) {
+    return String(value ?? "").startsWith("local-atendimento-");
+}
+
+/**
+ * Chamado pelo page.tsx assim que o atendimento criado offline recebe
+ * o ID definitivo do servidor.
+ *
+ * Atualiza tanto a fila de telemetria encerrada quanto a sessão ativa.
+ */
+export function remapOfflineTelemetryRecordId(
+    localId: string,
+    serverId: string | number
+): void {
+    if (typeof window === "undefined") return;
+
+    const local = String(localId);
+    const server = String(serverId);
+
+    try {
+        const queue = readQueue().map((item) => {
+            const current = String(
+                item?.body?.sepultamento_id ??
+                item?.body?.id ??
+                ""
+            );
+
+            if (current !== local) return item;
+
+            return {
+                ...item,
+                body: {
+                    ...(item.body || {}),
+                    sepultamento_id: server,
+                },
+            };
+        });
+
+        writeQueue(queue);
+    } catch { }
+
+    try {
+        const raw = localStorage.getItem("tele_active_snapshot");
+
+        if (raw) {
+            const snapshot = JSON.parse(raw);
+
+            if (
+                snapshot &&
+                typeof snapshot === "object" &&
+                String(
+                    snapshot.id ??
+                    snapshot.sepultamento_id ??
+                    ""
+                ) === local
+            ) {
+                localStorage.setItem(
+                    "tele_active_snapshot",
+                    JSON.stringify({
+                        ...snapshot,
+                        id: server,
+                        sepultamento_id: server,
+                    })
+                );
+            }
+        }
+    } catch { }
+}
+
 async function postTelemetria(payload: any) {
     const r = await fetch(TELEMETRIA_URL, {
         method: "POST",
@@ -155,6 +224,22 @@ async function flushQueue() {
     const rest: OffPayload[] = [];
 
     for (const item of q) {
+        const recordId = String(
+            item?.body?.sepultamento_id ??
+            item?.body?.id ??
+            ""
+        );
+
+        /*
+         * Atendimento ainda não existe no servidor.
+         * Mantém a telemetria no aparelho até o page.tsx trocar o ID local
+         * pelo ID definitivo.
+         */
+        if (isLocalAttendanceId(recordId)) {
+            rest.push(item);
+            continue;
+        }
+
         try {
             await postTelemetria(item.body);
         } catch {
@@ -452,6 +537,15 @@ export default forwardRef<
             console.log("[TELEMETRIA] payload stopAndSave", payload);
 
             try {
+                const payloadRecordId = String(
+                    payload.sepultamento_id ??
+                    ""
+                );
+
+                if (isLocalAttendanceId(payloadRecordId)) {
+                    throw new Error("atendimento-local");
+                }
+
                 if (typeof navigator === "undefined" || navigator.onLine !== false) {
                     const retorno = await postTelemetria(payload);
                     console.log("[TELEMETRIA] retorno PHP", retorno);
