@@ -166,11 +166,23 @@ async function syncPendingSignatures(
             __assinaturaRequisicaoStatus: "synced",
           };
 
-      await patchCachedRegistro(
-        signature.recordId,
-        patch,
-        signature.userId,
-      );
+      try {
+        await patchCachedRegistro(
+          signature.recordId,
+          patch,
+          signature.userId,
+        );
+      } catch (error) {
+        /*
+         * A assinatura já foi aceita pelo servidor e a fila local já
+         * foi marcada como synced. Uma falha do IndexedDB do iOS no
+         * snapshot não pode transformar a assinatura em pending de novo.
+         */
+        console.warn(
+          "[ASSINATURA] Sincronizada no servidor, mas o snapshot IndexedDB não pôde ser atualizado.",
+          error,
+        );
+      }
 
       summary.synced += 1;
     } catch (error: any) {
@@ -200,13 +212,20 @@ async function syncPendingSignatures(
           lastError: message,
         });
 
-        await patchCachedRegistro(
-          signature.recordId,
-          signature.kind === "recebimento"
-            ? { __assinaturaRecebimentoStatus: "requires_attention" }
-            : { __assinaturaRequisicaoStatus: "requires_attention" },
-          signature.userId,
-        );
+        try {
+          await patchCachedRegistro(
+            signature.recordId,
+            signature.kind === "recebimento"
+              ? { __assinaturaRecebimentoStatus: "requires_attention" }
+              : { __assinaturaRequisicaoStatus: "requires_attention" },
+            signature.userId,
+          );
+        } catch (snapshotError) {
+          console.warn(
+            "[ASSINATURA] Não foi possível atualizar o snapshot local de atenção.",
+            snapshotError,
+          );
+        }
 
         summary.requiresAttention += 1;
         continue;
@@ -393,11 +412,28 @@ async function runSync(): Promise<SyncSummary> {
     return summary;
   }
 
-  const actions = await getActionsForUser(session.userId, [
-    "pending",
-    "sending",
-    "blocked_auth",
-  ]);
+  let actions: OfflineAction[];
+
+  try {
+    actions = await getActionsForUser(session.userId, [
+      "pending",
+      "sending",
+      "blocked_auth",
+    ]);
+  } catch (error) {
+    /*
+     * No iOS a assinatura usa fallback independente.
+     * Se o banco operacional estiver indisponível, não desfazemos
+     * uma assinatura que já foi sincronizada com sucesso.
+     */
+    console.warn(
+      "[OFFLINE] Fila operacional IndexedDB indisponível após sincronizar assinaturas.",
+      error,
+    );
+
+    dispatchSyncComplete(summary);
+    return summary;
+  }
 
   const blockedRecords = new Set<string>();
 
