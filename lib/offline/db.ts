@@ -1,7 +1,7 @@
 "use client";
 
 export const OFFLINE_DB_NAME = "pai-operacional-offline";
-export const OFFLINE_DB_VERSION = 2;
+export const OFFLINE_DB_VERSION = 3;
 
 export const OFFLINE_STORES = {
   records: "records",
@@ -129,7 +129,16 @@ export function openOfflineDb(): Promise<IDBDatabase> {
 
     request.onsuccess = () => {
       const db = request.result;
-      db.onversionchange = () => db.close();
+
+      db.onversionchange = () => {
+        /*
+         * Fecha a conexão antiga para permitir upgrades em Safari/iOS
+         * e limpa a Promise para a próxima abertura usar a versão nova.
+         */
+        db.close();
+        dbPromise = null;
+      };
+
       resolve(db);
     };
 
@@ -139,7 +148,9 @@ export function openOfflineDb(): Promise<IDBDatabase> {
     };
 
     request.onblocked = () => {
-      console.warn("[OFFLINE] Atualização do IndexedDB bloqueada por outra aba aberta.");
+      console.warn(
+        "[OFFLINE] Atualização do IndexedDB bloqueada. Feche outras janelas do PAI e abra novamente.",
+      );
     };
   });
 
