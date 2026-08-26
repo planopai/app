@@ -2,7 +2,6 @@
 
 import {
   OFFLINE_STORES,
-  idbDelete,
   idbGet,
   idbGetAllByIndex,
   idbPut,
@@ -188,9 +187,15 @@ export async function saveOfflineSignature(input: {
   const operationId =
     input.operationId ||
     newOfflineId("signature");
-  const signatureId =
-    newOfflineId("signature-row");
 
+  /*
+   * iOS/Safari:
+   * Não apagamos a assinatura anterior antes de gravar a nova.
+   *
+   * O Safari pode abortar a sequência delete -> nova transação com Blob.
+   * Em vez disso, reaproveitamos a mesma chave primária e fazemos apenas
+   * um put(), que substitui atomicamente o conteúdo da linha existente.
+   */
   const previous =
     await idbGetAllByIndex<OfflineSignature>(
       OFFLINE_STORES.signatures,
@@ -202,14 +207,20 @@ export async function saveOfflineSignature(input: {
       ]),
     );
 
-  for (const row of previous) {
-    await idbDelete(
-      OFFLINE_STORES.signatures,
-      row.signatureId,
-    );
-  }
+  previous.sort(
+    (a, b) =>
+      Number(b.updatedAt ?? 0) -
+      Number(a.updatedAt ?? 0),
+  );
+
+  const previousCurrent =
+    previous[0] ?? null;
 
   const now = Date.now();
+
+  const signatureId =
+    previousCurrent?.signatureId ||
+    newOfflineId("signature-row");
 
   const row: OfflineSignature = {
     signatureId,
@@ -234,7 +245,8 @@ export async function saveOfflineSignature(input: {
     deviceId,
     status: "pending",
     tries: 0,
-    createdAt: now,
+    createdAt:
+      previousCurrent?.createdAt ?? now,
     updatedAt: now,
   };
 
