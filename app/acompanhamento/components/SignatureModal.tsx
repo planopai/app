@@ -4,7 +4,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
-import { API } from "./constants";
 import { browserSaysOnline } from "@/lib/offline/session";
 import {
     blobToDataUrl,
@@ -20,8 +19,8 @@ type MatItem = { rotulo: string; qtd: number };
 
 /** Domínio onde os uploads realmente moram (sem "pai.") */
 const UPLOADS_BASE = "https://planoassistencialintegrado.com.br";
-/** Endpoint same-origin que evita CORS */
-const PROXY = `${API}/api/php/proxy_assinatura.php`;
+/** Endpoint direto da API para carregar a imagem da assinatura */
+const PROXY = "https://api.planoassistencialintegrado.com.br/proxy_assinatura.php";
 
 /* ---------------------- helpers URL/proxy ---------------------- */
 function normAssUrl(u?: string) {
