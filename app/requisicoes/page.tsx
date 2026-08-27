@@ -370,6 +370,36 @@ function destinationDepositId(row?: ReqListRow | ReqDetail | null) {
     return Number.isFinite(id) && id > 0 ? id : 0;
 }
 
+
+/**
+ * Verifica se um depósito consegue atender integralmente uma requisição.
+ *
+ * As quantidades são somadas por produto antes da comparação. Isso evita um
+ * falso positivo quando o mesmo produto aparece em mais de uma linha da
+ * requisição.
+ */
+function depositoAtendeRequisicao(depositoId: number, req: ReqDetail | null | undefined, saldoMap: Map<string, number>) {
+    if (depositoId <= 0 || !req?.items?.length) return false;
+
+    const necessarioPorProduto = new Map<number, number>();
+
+    for (const item of req.items) {
+        const produtoId = Number(item.produto_id);
+        const qtd = asNumber(item.quantidade_solicitada);
+
+        if (produtoId <= 0 || qtd <= 0) return false;
+
+        necessarioPorProduto.set(produtoId, (necessarioPorProduto.get(produtoId) || 0) + qtd);
+    }
+
+    for (const [produtoId, necessario] of necessarioPorProduto) {
+        const disponivel = saldoMap.get(`${produtoId}:${depositoId}`) || 0;
+        if (necessario - 0.0001 > disponivel) return false;
+    }
+
+    return true;
+}
+
 /**
  * Retorna o código exibido da requisição.
  *
@@ -656,6 +686,17 @@ export default function OperarRequisicoesPage() {
     const [okMsg, setOkMsg] = useState("");
 
     /**
+     * Estados do modal de início da separação.
+     *
+     * A origem passa a ser definida antes da mudança para EM_SEPARACAO.
+     * A lista mostra somente depósitos capazes de atender todos os itens.
+     */
+    const [separationOpen, setSeparationOpen] = useState(false);
+    const [separationReq, setSeparationReq] = useState<ReqDetail | null>(null);
+    const [separationDepositoId, setSeparationDepositoId] = useState<number>(0);
+    const [separationObs, setSeparationObs] = useState("");
+
+    /**
      * Estados do modal de envio.
      *
      * `sendReq` guarda a requisição detalhada, já com itens.
@@ -695,24 +736,62 @@ export default function OperarRequisicoesPage() {
     }, [saldos]);
 
     /**
-     * Depósito de destino da requisição aberta no modal de envio.
+     * Destino e depósitos elegíveis para iniciar a separação.
      *
-     * Quando o destino é um depósito, ele é removido da lista de possíveis
-     * origens e também é bloqueado pela validação antes do POST.
+     * Um depósito só aparece se não for o próprio destino e se tiver saldo
+     * suficiente para atender integralmente todos os itens solicitados.
+     */
+    const separationDestinationDepositoId = useMemo(() => destinationDepositId(separationReq), [separationReq]);
+
+    const separationDepositosDisponiveis = useMemo(() => {
+        if (!separationReq?.items?.length) return [];
+
+        return depositos.filter((d) => {
+            const depositoId = Number(d.id);
+            if (separationDestinationDepositoId > 0 && depositoId === separationDestinationDepositoId) return false;
+            return depositoAtendeRequisicao(depositoId, separationReq, saldoMap);
+        });
+    }, [depositos, saldoMap, separationDestinationDepositoId, separationReq]);
+
+    const separationValidation = useMemo(() => {
+        if (!separationReq) return { ok: false, msg: "Requisição não carregada." };
+        if (!separationReq.items?.length) return { ok: false, msg: "Requisição sem itens." };
+        if (!separationDepositosDisponiveis.length) {
+            return { ok: false, msg: "Nenhum estoque possui saldo suficiente para atender todos os itens desta requisição." };
+        }
+        if (!separationDepositoId) return { ok: false, msg: "Selecione o estoque de origem." };
+
+        const permitido = separationDepositosDisponiveis.some((d) => Number(d.id) === Number(separationDepositoId));
+        if (!permitido) return { ok: false, msg: "O estoque selecionado não consegue atender integralmente esta requisição." };
+
+        return { ok: true, msg: "Estoque com saldo suficiente para iniciar a separação." };
+    }, [separationDepositoId, separationDepositosDisponiveis, separationReq]);
+
+    /**
+     * Depósito de destino da requisição aberta no modal de envio.
      */
     const sendDestinationDepositoId = useMemo(() => destinationDepositId(sendReq), [sendReq]);
 
     /**
-     * Lista de depósitos que podem ser usados como origem.
-     *
-     * Para transferências entre depósitos, o próprio depósito de destino nunca
-     * aparece como opção de origem.
+     * Na nova regra, a origem já vem registrada desde o início da separação.
+     * Para registros antigos sem origem, o fallback mostra somente depósitos que
+     * conseguem atender integralmente a requisição.
      */
     const sendDepositosPermitidos = useMemo(() => {
-        if (!sendDestinationDepositoId) return depositos;
+        if (!sendReq?.items?.length) return [];
 
-        return depositos.filter((d) => Number(d.id) !== sendDestinationDepositoId);
-    }, [depositos, sendDestinationDepositoId]);
+        const origemRegistrada = Number(sendReq.deposito_origem_id || 0);
+        const base = depositos.filter((d) => {
+            const depositoId = Number(d.id);
+            return !(sendDestinationDepositoId > 0 && depositoId === sendDestinationDepositoId);
+        });
+
+        if (origemRegistrada > 0) {
+            return base.filter((d) => Number(d.id) === origemRegistrada);
+        }
+
+        return base.filter((d) => depositoAtendeRequisicao(Number(d.id), sendReq, saldoMap));
+    }, [depositos, saldoMap, sendDestinationDepositoId, sendReq]);
 
     /**
      * Carrega dados iniciais da tela.
@@ -791,12 +870,12 @@ export default function OperarRequisicoesPage() {
     }
 
     /**
-     * Inicia a separação de uma requisição pendente.
+     * Prepara o início da separação.
      *
-     * Essa ação muda a requisição de PENDENTE para EM_SEPARACAO. Após sucesso,
-     * a tela é atualizada e orienta o operador para o próximo passo.
+     * Busca os itens antes de abrir o modal, porque a elegibilidade do estoque
+     * depende dos produtos e das quantidades solicitadas.
      */
-    async function startSeparation(row: ReqListRow) {
+    async function prepareSeparation(row: ReqListRow) {
         if (busy) return;
 
         setBusy(true);
@@ -804,11 +883,58 @@ export default function OperarRequisicoesPage() {
         setOkMsg("");
 
         try {
-            const data = await apiPost<ActionResp>({ action: "iniciar_separacao", id: row.id });
+            const data = await apiGet<DetailResp>({ action: "detalhar", id: row.id });
+
+            if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível carregar os itens da requisição.");
+            if (!data.row.items?.length) throw new Error("A requisição não possui itens para separar.");
+
+            const destinoId = destinationDepositId(data.row);
+            const candidatos = depositos.filter((d) => {
+                const depositoId = Number(d.id);
+                if (destinoId > 0 && depositoId === destinoId) return false;
+                return depositoAtendeRequisicao(depositoId, data.row, saldoMap);
+            });
+
+            setSeparationReq(data.row);
+            setSeparationDepositoId(candidatos.length === 1 ? Number(candidatos[0].id) : 0);
+            setSeparationObs("");
+            setSeparationOpen(true);
+        } catch (e: any) {
+            setError(e?.message || "Erro ao preparar a separação.");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    /**
+     * Confirma o início da separação já vinculando o estoque de origem.
+     *
+     * O backend repete a validação de saldo, portanto uma alteração concorrente
+     * no estoque entre a abertura do modal e a confirmação não passa em silêncio.
+     */
+    async function confirmStartSeparation() {
+        if (!separationReq || !separationValidation.ok || busy) return;
+
+        setBusy(true);
+        setError("");
+        setOkMsg("");
+
+        try {
+            const data = await apiPost<ActionResp>({
+                action: "iniciar_separacao",
+                id: separationReq.id,
+                deposito_origem_id: separationDepositoId,
+                observacao: separationObs.trim(),
+            });
 
             if (!data.ok) throw new Error(data.msg || "Não foi possível iniciar a separação.");
 
-            await refreshAfterAction(data.msg || "Separação iniciada. Próximo passo: enviar.");
+            setSeparationOpen(false);
+            setSeparationReq(null);
+            setSeparationDepositoId(0);
+            setSeparationObs("");
+
+            await refreshAfterAction(data.msg || "Separação iniciada. Origem registrada.");
         } catch (e: any) {
             setError(e?.message || "Erro ao iniciar separação.");
         } finally {
@@ -836,14 +962,14 @@ export default function OperarRequisicoesPage() {
             if (!data.ok || !data.row) throw new Error(data.msg || "Não foi possível carregar os itens da requisição.");
 
             const destinoId = destinationDepositId(data.row);
-            const depositosPermitidos = destinoId
-                ? depositos.filter((d) => Number(d.id) !== destinoId)
-                : depositos;
-
             const origemAtual = Number(data.row.deposito_origem_id || 0);
+            const base = depositos.filter((d) => !(destinoId > 0 && Number(d.id) === destinoId));
+            const depositosPermitidos = origemAtual > 0
+                ? base.filter((d) => Number(d.id) === origemAtual)
+                : base.filter((d) => depositoAtendeRequisicao(Number(d.id), data.row, saldoMap));
+
             const origemAtualPermitida =
                 origemAtual > 0 &&
-                origemAtual !== destinoId &&
                 depositosPermitidos.some((d) => Number(d.id) === origemAtual);
 
             const origemInicial = origemAtualPermitida
@@ -882,7 +1008,7 @@ export default function OperarRequisicoesPage() {
         if (!sendReq) return { ok: false, msg: "Requisição não carregada." };
         if (!sendReq.items?.length) return { ok: false, msg: "Requisição sem itens." };
         if (!sendDepositosPermitidos.length) {
-            return { ok: false, msg: "Não há outro depósito disponível para usar como origem." };
+            return { ok: false, msg: "Não há estoque elegível para esta requisição." };
         }
         if (!sendDepositoId) return { ok: false, msg: "Selecione o depósito de origem." };
 
@@ -897,13 +1023,27 @@ export default function OperarRequisicoesPage() {
             return { ok: false, msg: "Depósito de origem inválido para esta requisição." };
         }
 
+        const necessarioPorProduto = new Map<number, { quantidade: number; nome: string }>();
+
         for (const item of sendReq.items) {
+            const produtoId = Number(item.produto_id);
             const qtd = asNumber(item.quantidade_solicitada);
-            const disponivel = saldoMap.get(`${Number(item.produto_id)}:${sendDepositoId}`) || 0;
             const nome = item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`;
 
-            if (qtd <= 0) return { ok: false, msg: `Quantidade inválida para ${nome}.` };
-            if (qtd - 0.0001 > disponivel) return { ok: false, msg: `Saldo insuficiente para ${nome}.` };
+            if (produtoId <= 0 || qtd <= 0) return { ok: false, msg: `Quantidade inválida para ${nome}.` };
+
+            const atual = necessarioPorProduto.get(produtoId);
+            necessarioPorProduto.set(produtoId, {
+                quantidade: (atual?.quantidade || 0) + qtd,
+                nome: atual?.nome || nome,
+            });
+        }
+
+        for (const [produtoId, requisito] of necessarioPorProduto) {
+            const disponivel = saldoMap.get(`${produtoId}:${sendDepositoId}`) || 0;
+            if (requisito.quantidade - 0.0001 > disponivel) {
+                return { ok: false, msg: `Saldo insuficiente para ${requisito.nome}.` };
+            }
         }
 
         return { ok: true, msg: "Pronto para enviar." };
@@ -1020,7 +1160,7 @@ export default function OperarRequisicoesPage() {
         const status = toStatus(row.status);
 
         if (status === "PENDENTE") {
-            await startSeparation(row);
+            await prepareSeparation(row);
             return;
         }
 
@@ -1066,13 +1206,89 @@ export default function OperarRequisicoesPage() {
                 )}
             </div>
 
+            <Modal
+                open={separationOpen}
+                title={separationReq ? `Iniciar separação ${reqCode(separationReq)}` : "Iniciar separação"}
+                onClose={() => setSeparationOpen(false)}
+                maxWidth="max-w-2xl"
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-slate-600">
+                        Selecione de qual estoque os itens serão separados. São exibidos somente estoques com saldo suficiente para atender integralmente a requisição.
+                    </p>
+
+                    <Field label="Estoque de origem">
+                        <Select
+                            value={separationDepositoId || ""}
+                            onChange={(e) => setSeparationDepositoId(Number(e.target.value || 0))}
+                            disabled={busy || separationDepositosDisponiveis.length === 0}
+                        >
+                            <option value="">Selecione...</option>
+                            {separationDepositosDisponiveis.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.nome}
+                                </option>
+                            ))}
+                        </Select>
+
+                        {separationDestinationDepositoId > 0 ? (
+                            <span className="mt-1 block text-xs font-semibold text-slate-500">
+                                Destino: <b>{destinationText(separationReq)}</b>. O estoque de destino não pode ser usado como origem.
+                            </span>
+                        ) : null}
+                    </Field>
+
+                    {separationDepositosDisponiveis.length === 0 ? (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">
+                            Nenhum estoque possui saldo suficiente para atender todos os itens desta requisição.
+                        </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                        {(separationReq?.items || []).map((item) => {
+                            const disponivel = separationDepositoId ? saldoMap.get(`${Number(item.produto_id)}:${separationDepositoId}`) || 0 : 0;
+
+                            return (
+                                <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                    <p className="font-bold text-slate-900">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                        Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b>
+                                        {separationDepositoId ? <> | Disponível: <b>{numberBR(disponivel)}</b></> : null}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <Field label="Observação, opcional">
+                        <TextArea rows={3} value={separationObs} onChange={(e) => setSeparationObs(e.target.value)} />
+                    </Field>
+
+                    <div className={[
+                        "rounded-2xl border p-3 text-sm font-bold",
+                        separationValidation.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800",
+                    ].join(" ")}>
+                        {separationValidation.msg}
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button type="button" onClick={confirmStartSeparation} disabled={busy || !separationValidation.ok}>
+                            Iniciar separação
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={() => setSeparationOpen(false)}>
+                            Voltar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
             <Modal open={sendOpen} title={sendReq ? `Enviar ${reqCode(sendReq)}` : "Enviar requisição"} onClose={() => setSendOpen(false)} maxWidth="max-w-2xl">
                 <div className="space-y-4">
                     <Field label="Depósito de origem">
                         <Select
                             value={sendDepositoId || ""}
                             onChange={(e) => setSendDepositoId(Number(e.target.value || 0))}
-                            disabled={busy || sendDepositosPermitidos.length === 0}
+                            disabled={busy || sendDepositosPermitidos.length === 0 || Number(sendReq?.deposito_origem_id || 0) > 0}
                         >
                             <option value="">Selecione...</option>
                             {sendDepositosPermitidos.map((d) => (
@@ -1082,9 +1298,15 @@ export default function OperarRequisicoesPage() {
                             ))}
                         </Select>
 
+                        {Number(sendReq?.deposito_origem_id || 0) > 0 ? (
+                            <span className="mt-1 block text-xs font-semibold text-slate-500">
+                                Origem definida no início da separação e bloqueada para alteração nesta etapa.
+                            </span>
+                        ) : null}
+
                         {sendDestinationDepositoId > 0 ? (
                             <span className="mt-1 block text-xs font-semibold text-slate-500">
-                                Destino: <b>{destinationText(sendReq)}</b>. O depósito de destino não pode ser selecionado como origem.
+                                Destino: <b>{destinationText(sendReq)}</b>. O estoque de destino não pode ser selecionado como origem.
                             </span>
                         ) : null}
                     </Field>
@@ -1150,7 +1372,7 @@ export default function OperarRequisicoesPage() {
  *
  * Mostra os principais dados da requisição e oferece duas ações:
  * ação principal do fluxo e recusa. A ação principal muda conforme o status:
- * PENDENTE vira "Iniciar", EM_SEPARACAO vira "Enviar" e EM_TRANSITO fica
+ * PENDENTE abre a escolha de origem para "Iniciar", EM_SEPARACAO vira "Enviar" e EM_TRANSITO fica
  * aguardando a confirmação do solicitante.
  */
 function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: boolean; onMain: () => void; onReject: () => void }) {
@@ -1169,7 +1391,7 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
     /**
      * Texto auxiliar que orienta o operador sobre o próximo passo do fluxo.
      */
-    const nextText = status === "PENDENTE" ? "Próximo passo: enviar" : status === "EM_SEPARACAO" ? "Após o envio, o solicitante confirma o recebimento" : status === "EM_TRANSITO" ? "Aguardando confirmação do solicitante" : "";
+    const nextText = status === "PENDENTE" ? "Próximo passo: escolher a origem e iniciar a separação" : status === "EM_SEPARACAO" ? "Origem definida. Próximo passo: enviar" : status === "EM_TRANSITO" ? "Aguardando confirmação do solicitante" : "";
 
     return (
         <Card className={isTruthy(row.atrasada_24h) ? "border-rose-200" : ""}>
