@@ -807,19 +807,36 @@ export default function SolicitarProdutoPage() {
      */
     const produtosDisponiveis =
         useMemo(() => {
-            if (!justificativaId) {
-                return produtos;
-            }
+            return produtos.filter((p) => {
+                const saldoTotal =
+                    saldoTotalByProd.get(p.id) || 0;
 
-            return produtos.filter((p) =>
-                produtoPermitidoPorJustificativa(
+                /*
+                 * Produtos sem saldo não podem ser solicitados
+                 * e, por isso, não aparecem na busca.
+                 */
+                if (saldoTotal <= 0) {
+                    return false;
+                }
+
+                /*
+                 * Antes do primeiro produto, basta possuir saldo.
+                 * Depois, mantém também a regra de classificação
+                 * definida automaticamente pela requisição.
+                 */
+                if (!justificativaId) {
+                    return true;
+                }
+
+                return produtoPermitidoPorJustificativa(
                     p,
                     justificativaId
-                )
-            );
+                );
+            });
         }, [
             produtos,
             justificativaId,
+            saldoTotalByProd,
         ]);
 
     /* =====================================================
@@ -979,6 +996,25 @@ export default function SolicitarProdutoPage() {
             setErr(
                 "Selecione um produto."
             );
+
+            return;
+        }
+
+        /*
+         * Proteção adicional para impedir inclusão de um produto
+         * sem saldo caso a seleção tenha ficado aberta enquanto
+         * os dados da tela foram atualizados.
+         */
+        const saldoDisponivel =
+            saldoTotalByProd.get(produto.id) || 0;
+
+        if (saldoDisponivel <= 0) {
+            setErr(
+                `O produto "${produto.nome}" está sem saldo disponível.`
+            );
+
+            setProdutoId(0);
+            setProdutoQuery("");
 
             return;
         }
