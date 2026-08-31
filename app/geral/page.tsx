@@ -8843,6 +8843,20 @@ export default function Page() {
                                     </tbody>
                                 </table>
                             </div>
+
+                            <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-right">
+                                    <p className="text-xs font-medium text-slate-500">Total da entrada</p>
+                                    <p className="mt-1 text-xl font-bold text-slate-900">
+                                        {moneyBRL(
+                                            ratearFreteEntrada(
+                                                entradaItens,
+                                                parseBRLToNumber(entradaFreteTotal)
+                                            ).reduce((total, item) => total + (item.custoTotal || 0), 0)
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
                         </section>
                     ) : null}
 
