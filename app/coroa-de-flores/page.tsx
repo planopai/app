@@ -1448,6 +1448,26 @@ export default function Page() {
     const estoqueLoadedAtRef = React.useRef(0);
     const estoqueAbortRef = React.useRef<AbortController | null>(null);
 
+    // Evita que o gesto vertical escape para a página atrás do modal no Android.
+    // O scroll continua acontecendo normalmente dentro da lista de modelos.
+    React.useEffect(() => {
+        if (!modeloModalOpen) return;
+
+        const bodyOverflow = document.body.style.overflow;
+        const bodyOverscrollBehavior = document.body.style.overscrollBehavior;
+        const htmlOverflow = document.documentElement.style.overflow;
+
+        document.body.style.overflow = "hidden";
+        document.body.style.overscrollBehavior = "none";
+        document.documentElement.style.overflow = "hidden";
+
+        return () => {
+            document.body.style.overflow = bodyOverflow;
+            document.body.style.overscrollBehavior = bodyOverscrollBehavior;
+            document.documentElement.style.overflow = htmlOverflow;
+        };
+    }, [modeloModalOpen]);
+
     const depositoIdPorNome = React.useMemo(() => {
         const map = new Map<string, number>();
         for (const dep of estoqueDepositos) {
@@ -3589,13 +3609,13 @@ export default function Page() {
             {/* Drawer manual */}
             {modeloModalOpen && (
                 <div
-                    className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-2 sm:p-4"
+                    className="fixed inset-0 z-[80] flex min-h-0 items-center justify-center overflow-hidden bg-black/50 p-2 sm:p-4"
                     role="dialog"
                     aria-modal="true"
                     aria-label={`Selecionar Coroa ${rotuloTipoCoroa(modeloTipo)}`}
                 >
-                    <div className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl">
-                        <div className="flex items-start justify-between gap-3 border-b p-4">
+                    <div className="flex h-[calc(100dvh-1rem)] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl sm:h-auto sm:max-h-[94dvh]">
+                        <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
                             <div className="min-w-0">
                                 <h2 className="text-lg font-semibold">
                                     Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
@@ -3615,7 +3635,7 @@ export default function Page() {
                             </button>
                         </div>
 
-                        <div className="border-b p-4">
+                        <div className="shrink-0 border-b p-4">
                             <div className="relative">
                                 <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                                 <input
@@ -3623,7 +3643,6 @@ export default function Page() {
                                     onChange={(e) => setModeloBusca(e.target.value)}
                                     className="w-full rounded-xl border bg-background py-2 pl-9 pr-3 text-[16px] sm:text-sm"
                                     placeholder="Pesquisar modelo pelo nome ou código..."
-                                    autoFocus
                                 />
                             </div>
 
@@ -3652,7 +3671,7 @@ export default function Page() {
                             )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
                             {modeloLoading && modelosDisponiveis.length === 0 ? (
                                 <div className="p-8 text-center text-sm text-muted-foreground">
                                     Carregando modelos...
@@ -3799,7 +3818,7 @@ export default function Page() {
                             )}
                         </div>
 
-                        <div className="border-t p-3 text-right">
+                        <div className="shrink-0 border-t p-3 text-right">
                             <button
                                 type="button"
                                 className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
