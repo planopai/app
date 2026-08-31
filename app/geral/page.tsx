@@ -2892,8 +2892,21 @@ export default function Page() {
         }
 
         const sep = ";";
-        const header = ["Produto", "Código de Barras", "Depósito", "Categoria", "Fabricante", "Quantidade", "Min", "Rep", "Valor (un)", "Preço de Custo (un)", "Custo Total"];
 
+        // O CSV exporta o código de barras em uma coluna própria, logo após o produto.
+        const header = [
+            "Produto",
+            "Código de Barras",
+            "Depósito",
+            "Categoria",
+            "Fabricante",
+            "Quantidade",
+            "Min",
+            "Rep",
+            "Valor (un)",
+            "Preço de Custo (un)",
+            "Custo Total",
+        ];
 
         const lines: string[] = [];
         lines.push("\uFEFF" + header.map((h) => escapeCsvCell(h, sep)).join(sep));
@@ -2901,13 +2914,25 @@ export default function Page() {
         for (const { p, d, qtd, s, min, rep } of estoqueRows) {
             const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
             const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
+            const codigoBarras = String(p.codigo_barras ?? "").trim();
             const valorNum = Number(p.valor) || 0;
             const precoCustoNum = custoMedioMovelProduto(p.id);
             const custoTotalItem = custoTotalMovelProduto(p.id, qtd);
 
             lines.push(
-                [p.nome, p.codigo_barras, d.nome, cat, fab, qtd, min, rep, moneyBRL(valorNum), moneyBRL(precoCustoNum), moneyBRL(custoTotalItem)]
-
+                [
+                    p.nome,
+                    codigoBarras,
+                    d.nome,
+                    cat,
+                    fab,
+                    qtd,
+                    min,
+                    rep,
+                    moneyBRL(valorNum),
+                    moneyBRL(precoCustoNum),
+                    moneyBRL(custoTotalItem),
+                ]
                     .map((x) => escapeCsvCell(x, sep))
                     .join(sep)
             );
@@ -10239,7 +10264,7 @@ export default function Page() {
             </Modal>
 
 
-            {/* 10) IMPORTAR CSV */}
+            {/* 10) IMPORTAR CSV PARA PUBLICAÇÃO DE VARIOS PRODUTOS AO MESMO TEMPO*/}
             <Modal
                 open={advImportOpen}
                 title="Importar produtos e saldos via CSV"
