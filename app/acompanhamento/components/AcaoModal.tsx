@@ -1,17 +1,17 @@
-// FLUXO OPERACIONAL OFFLINE V1
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
-import { fases, salasMemorial } from "./constants";
+import { fases } from "./constants";
 import {
     acaoToStatus,
     isTanatoNo,
     proximaFaseDoRegistro,
     normalizarStatus,
     consultarStatusAtual,
+    isVelorioMemorial,
 } from "./helpers";
 import {
     browserSaysOnline,
@@ -187,6 +187,7 @@ export default function AcaoModal({
                 ...online,
                 status: online.status as Fase,
                 local_velorio: online.local_velorio || registroLocal?.local_velorio || "",
+                sala_velorio: online.sala_velorio || registroLocal?.sala_velorio || "",
                 tanato: online.tanato || registroLocal?.tanato || "",
                 ornamentacao: online.ornamentacao || registroLocal?.ornamentacao || "",
                 assistencia: online.assistencia || registroLocal?.assistencia || "",
@@ -211,7 +212,7 @@ export default function AcaoModal({
 
     const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
     const skipOrnamentacao = !!efetivo && isNao(efetivo.ornamentacao);
-    const skipTransportando = !!efetivo && salasMemorial.includes((efetivo.local_velorio || "").trim());
+    const skipTransportando = !!efetivo && isVelorioMemorial(efetivo);
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
     const skipVelorio = !!efetivo && isNao(efetivo.realiza_velorio);
     const skipSepultamento = !!efetivo && isNao(efetivo.realiza_sepultamento);
@@ -251,6 +252,7 @@ export default function AcaoModal({
             {
                 status: efetivo.status ?? "fase00",
                 local_velorio: efetivo.local_velorio,
+                sala_velorio: efetivo.sala_velorio,
                 tanato: efetivo.tanato,
                 ornamentacao: efetivo.ornamentacao,
                 assistencia: efetivo.assistencia,

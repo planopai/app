@@ -1,5 +1,3 @@
-
-
 import {
   OFFLINE_STORES,
   idbGetAllByIndex,
@@ -62,6 +60,47 @@ function normalizeStatus(status: unknown): string {
   return raw;
 }
 
+function normalizeText(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * As opções Sala 01/02/03 do acompanhamento representam as salas internas
+ * do Memorial Senhor do Bonfim. Nesses atendimentos a fase07 é pulada.
+ */
+function isVelorioMemorial(registro: any): boolean {
+  const local = normalizeText(registro?.local_velorio);
+  const sala = normalizeText(registro?.sala_velorio);
+
+  if (
+    local === "memorial - sala 01" ||
+    local === "memorial - sala 02" ||
+    local === "memorial - sala 03"
+  ) {
+    return true;
+  }
+
+  return [
+    "sala 01",
+    "sala 1",
+    "01",
+    "1",
+    "sala 02",
+    "sala 2",
+    "02",
+    "2",
+    "sala 03",
+    "sala 3",
+    "03",
+    "3",
+  ].includes(sala);
+}
+
 export function isOperationalOfflineCommand(command: string): command is OfflineCommand {
   return (
     command === "fase01" ||
@@ -79,18 +118,29 @@ export function validateOfflineResponsibility(
   if (command === "fase08") {
     const ownerId = String(registro?.responsavel_velorio_id ?? "").trim();
     const ownerName = String(registro?.responsavel_velorio_nome ?? "").trim();
+    const memorial = isVelorioMemorial(registro);
 
+    /*
+     * Fora do Memorial, a fase08 continua pertencendo a quem iniciou a fase07.
+     * No Memorial a fase07 não existe. Se ainda não houver responsável, o
+     * primeiro agente que registrar a Entrega de Corpo pode prosseguir e o
+     * backend assumirá esse agente como responsável pelo trecho do velório.
+     */
     if (!ownerId || ownerId === "0") {
+      if (memorial) return { ok: true };
+
       return {
         ok: false,
-        message: "O transporte para o velório precisa ser iniciado online antes da Entrega de Corpo offline.",
+        message:
+          "O transporte para o velório precisa ser iniciado online antes da Entrega de Corpo offline.",
       };
     }
 
     if (ownerId !== String(session.userId)) {
       return {
         ok: false,
-        message: `Somente ${ownerName || "o agente que iniciou o transporte para o velório"} pode confirmar a Entrega de Corpo.`,
+        message: `Somente ${ownerName || "o agente responsável pelo velório"
+          } pode confirmar a Entrega de Corpo.`,
       };
     }
   }
@@ -102,14 +152,16 @@ export function validateOfflineResponsibility(
     if (!ownerId || ownerId === "0") {
       return {
         ok: false,
-        message: "Transportando P/ Sepultamento precisa ser confirmado online antes da conclusão offline.",
+        message:
+          "Transportando P/ Sepultamento precisa ser confirmado online antes da conclusão offline.",
       };
     }
 
     if (ownerId !== String(session.userId)) {
       return {
         ok: false,
-        message: `Somente ${ownerName || "o agente que iniciou o transporte para sepultamento"} pode concluir o sepultamento.`,
+        message: `Somente ${ownerName || "o agente que iniciou o transporte para sepultamento"
+          } pode concluir o sepultamento.`,
       };
     }
   }
@@ -129,23 +181,43 @@ export async function queueOperationalAction(input: {
 }): Promise<OfflineAction> {
   const session = await getCurrentOfflineSession({ refreshIfOnline: false });
   if (!session) {
-    throw new Error("Usuário offline não identificado. Abra o PAI online antes de sair da empresa.");
+    throw new Error(
+      "Usuário offline não identificado. Abra o PAI online antes de sair da empresa.",
+    );
   }
 
-  const validation = validateOfflineResponsibility(input.registro, input.command, session);
-  if (!validation.ok) throw new Error(validation.message);
+  const validation = validateOfflineResponsibility(
+    input.registro,
+    input.command,
+    session,
+  );
+  if ("message" in validation) {
+    throw new Error(validation.message);
+  }
 
-  if (input.command === "fase08" && !input.photoId && !input.photoAlreadyUploaded) {
+  if (
+    input.command === "fase08" &&
+    !input.photoId &&
+    !input.photoAlreadyUploaded
+  ) {
     throw new Error("A foto da Entrega de Corpo é obrigatória.");
   }
 
-  if (input.command === "fase11" && !input.materialCheckId && !input.materialCheckAlreadyUploaded) {
-    throw new Error("A conferência de materiais precisa ser concluída antes de Material Recolhido.");
+  if (
+    input.command === "fase11" &&
+    !input.materialCheckId &&
+    !input.materialCheckAlreadyUploaded
+  ) {
+    throw new Error(
+      "A conferência de materiais precisa ser concluída antes de Material Recolhido.",
+    );
   }
 
   const timestamp = await getOperationalTimestamp();
   const deviceId = await getOfflineDeviceId();
-  const recordId = String(input.registro?.id ?? input.registro?.sepultamento_id ?? "").trim();
+  const recordId = String(
+    input.registro?.id ?? input.registro?.sepultamento_id ?? "",
+  ).trim();
   if (!recordId) throw new Error("Atendimento inválido para operação offline.");
 
   const currentLocal = normalizeStatus(input.registro?.status);
@@ -173,11 +245,27 @@ export async function queueOperationalAction(input: {
   };
 
   await idbPut(OFFLINE_STORES.actions, action);
+
+  const ownerVelorioAtual = String(
+    input.registro?.responsavel_velorio_id ?? "",
+  ).trim();
+  const assumeVelorioMemorial =
+    input.command === "fase08" &&
+    isVelorioMemorial(input.registro) &&
+    (!ownerVelorioAtual || ownerVelorioAtual === "0");
+
   await patchCachedRegistro(
     recordId,
     {
       status: input.command,
       agente: session.userName,
+      ...(assumeVelorioMemorial
+        ? {
+          responsavel_velorio_id: session.userId,
+          responsavel_velorio_nome: session.userName,
+          responsavel_velorio_desde: action.occurredAt,
+        }
+        : {}),
       __syncStatus: "pending",
       __lastOfflineOccurredAt: action.occurredAt,
     },
@@ -215,7 +303,12 @@ export async function getActionsForUser(
 export async function getPendingOperationalActions(
   userId: string,
 ): Promise<OfflineAction[]> {
-  return getActionsForUser(userId, ["pending", "sending", "blocked_auth", "requires_attention"]);
+  return getActionsForUser(userId, [
+    "pending",
+    "sending",
+    "blocked_auth",
+    "requires_attention",
+  ]);
 }
 
 export async function updateOfflineAction(
@@ -231,11 +324,15 @@ export async function updateOfflineAction(
   return next;
 }
 
-export async function applyPendingActionsToRegistros<T extends Record<string, any>>(
-  registros: T[],
-  userId: string,
-): Promise<T[]> {
-  const actions = await getActionsForUser(userId, ["pending", "sending", "blocked_auth", "requires_attention"]);
+export async function applyPendingActionsToRegistros<
+  T extends Record<string, any>,
+>(registros: T[], userId: string): Promise<T[]> {
+  const actions = await getActionsForUser(userId, [
+    "pending",
+    "sending",
+    "blocked_auth",
+    "requires_attention",
+  ]);
   const grouped = new Map<string, OfflineAction[]>();
 
   for (const action of actions) {
@@ -245,19 +342,26 @@ export async function applyPendingActionsToRegistros<T extends Record<string, an
   }
 
   return registros.map((registro) => {
-    const recordId = String((registro as any)?.id ?? (registro as any)?.sepultamento_id ?? "");
-    const list = (grouped.get(recordId) ?? []).sort((a, b) => a.createdAt - b.createdAt);
+    const recordId = String(
+      (registro as any)?.id ?? (registro as any)?.sepultamento_id ?? "",
+    );
+    const list = (grouped.get(recordId) ?? []).sort(
+      (a, b) => a.createdAt - b.createdAt,
+    );
     if (!list.length) return registro;
 
     const last = list[list.length - 1];
-    const needsAttention = list.some((a) => a.status === "requires_attention");
+    const needsAttention = list.some(
+      (a) => a.status === "requires_attention",
+    );
 
     return {
       ...registro,
       status: last.statusNovo,
       agente: last.userName,
       __syncStatus: needsAttention ? "requires_attention" : "pending",
-      __pendingCount: list.filter((a) => a.status !== "requires_attention").length,
+      __pendingCount: list.filter((a) => a.status !== "requires_attention")
+        .length,
       __pendingActions: list,
       __lastOfflineOccurredAt: last.occurredAt,
     } as T;

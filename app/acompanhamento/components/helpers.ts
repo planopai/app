@@ -542,12 +542,19 @@ export type StatusConsulta = {
     id: string;
     status: string; // sempre normalizado "faseNN"
     local_velorio: string;
+    sala_velorio: string;
     tanato: string;
     ornamentacao: string;
     assistencia: string;
     realiza_velorio: string;
     realiza_sepultamento: string;
     tipo_atendimento: "funerario" | "terceiro" | "";
+    responsavel_velorio_id: number | null;
+    responsavel_velorio_nome: string;
+    responsavel_velorio_desde: string;
+    responsavel_sepultamento_id: number | null;
+    responsavel_sepultamento_nome: string;
+    responsavel_sepultamento_desde: string;
 };
 
 export async function consultarStatusAtual(
@@ -568,12 +575,25 @@ export async function consultarStatusAtual(
         id: String(data.id ?? id),
         status,
         local_velorio: String(data.local_velorio ?? ""),
+        sala_velorio: String(data.sala_velorio ?? ""),
         tanato: String(data.tanato ?? ""),
         ornamentacao: String(data.ornamentacao ?? ""),
         assistencia: String(data.assistencia ?? ""),
         realiza_velorio: String(data.realiza_velorio ?? ""),
         realiza_sepultamento: String(data.realiza_sepultamento ?? ""),
         tipo_atendimento: tipo === "terceiro" ? "terceiro" : tipo === "funerario" ? "funerario" : "",
+        responsavel_velorio_id:
+            data.responsavel_velorio_id != null && Number(data.responsavel_velorio_id) > 0
+                ? Number(data.responsavel_velorio_id)
+                : null,
+        responsavel_velorio_nome: String(data.responsavel_velorio_nome ?? ""),
+        responsavel_velorio_desde: String(data.responsavel_velorio_desde ?? ""),
+        responsavel_sepultamento_id:
+            data.responsavel_sepultamento_id != null && Number(data.responsavel_sepultamento_id) > 0
+                ? Number(data.responsavel_sepultamento_id)
+                : null,
+        responsavel_sepultamento_nome: String(data.responsavel_sepultamento_nome ?? ""),
+        responsavel_sepultamento_desde: String(data.responsavel_sepultamento_desde ?? ""),
     };
 }
 
@@ -581,6 +601,7 @@ export async function consultarStatusAtual(
 export type RegistroFluxo = {
     status?: string;
     local_velorio?: string;
+    sala_velorio?: string;
     tanato?: string;
     ornamentacao?: string;
     assistencia?: string;
@@ -588,11 +609,38 @@ export type RegistroFluxo = {
     realiza_sepultamento?: string;
 };
 
+export function isVelorioMemorial(
+    r?: Pick<RegistroFluxo, "local_velorio" | "sala_velorio"> | null
+): boolean {
+    if (!r) return false;
+
+    const local = normalizeKey(String(r.local_velorio ?? ""));
+    const sala = normalizeKey(String(r.sala_velorio ?? ""));
+
+    const locaisMemorial = salasMemorial.map((item) => normalizeKey(item));
+    if (locaisMemorial.includes(local)) return true;
+
+    return [
+        "sala 01",
+        "sala 1",
+        "01",
+        "1",
+        "sala 02",
+        "sala 2",
+        "02",
+        "2",
+        "sala 03",
+        "sala 3",
+        "03",
+        "3",
+    ].includes(sala);
+}
+
 export function fasesVisiveisDoRegistro(
     r: RegistroFluxo,
     fases: readonly string[]
 ): string[] {
-    const skipTransportando = salasMemorial.includes((r.local_velorio || "").trim());
+    const skipTransportando = isVelorioMemorial(r);
     const skipConservacao = isTanatoNo(r.tanato);
     const skipOrnamentacao = isNao(r.ornamentacao);
     const skipMaterialRecolhido = isNao(r.assistencia);
@@ -649,6 +697,7 @@ export async function proximaFaseOnline(
         {
             status: s.status,
             local_velorio: s.local_velorio,
+            sala_velorio: s.sala_velorio,
             tanato: s.tanato,
             ornamentacao: s.ornamentacao,
             assistencia: s.assistencia,
