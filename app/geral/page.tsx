@@ -6770,13 +6770,32 @@ export default function Page() {
                                 <div className="flex flex-wrap gap-2 sm:justify-end">
 
 
-                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoqueCSV}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                    >
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoqueExcel} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
-                                        📊 Excel
+
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoqueExcel}
+                                        type="button"
+                                        title="Exportar produtos filtrados para Excel com código de barras escaneável"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="!border-emerald-200 !bg-emerald-50 !text-emerald-800 hover:!bg-emerald-100"
+                                    >
+                                        📊 Excel (.xlsx)
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoquePDF}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                    >
                                         🧾 PDF
                                     </Button>
                                 </div>
