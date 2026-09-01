@@ -201,6 +201,18 @@ type CustosMediosMoveisResp = {
     need_login?: 1;
 };
 
+type CatalogoProdutoLinhaRow = {
+    produto_id: ID;
+    linha?: string | null;
+};
+
+type CatalogoProdutoLinhasResp = {
+    ok: boolean;
+    rows?: CatalogoProdutoLinhaRow[];
+    msg?: string;
+    need_login?: 1;
+};
+
 type EstoquePageSize = 10 | 50 | 100 | 500 | "ALL";
 
 type EstoqueColumnKey =
@@ -488,6 +500,96 @@ type TrfItem = { id: number; payload: any; resumo: string };
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
+const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
+
+/* =========================
+   CACHE GUARD / BUILD
+   =========================
+   IMPORTANTE:
+   - Troque APP_BUILD_ID a cada publicação.
+   - As requisições GET recebem um cache-buster único.
+   - O navegador recebe instruções explícitas para não reutilizar respostas.
+   - Na primeira execução de um build novo, caches do Cache Storage e o
+     Service Worker que controla esta página são descartados.
+   - O middleware.ts fornecido junto com este arquivo impede cache do HTML/RSC
+     no navegador, proxy e CDN.
+*/
+const APP_BUILD_ID = "ESTOQUE-2026-09-01-1430-CACHE-GUARD-01";
+const APP_BUILD_LABEL = "2026.09.01-1430";
+const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
+
+function noCacheHeaders(extra?: HeadersInit): HeadersInit {
+    return {
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+        ...(extra || {}),
+    };
+}
+
+function applyCacheBuster(url: URL) {
+    url.searchParams.set(
+        "__cb",
+        `${APP_BUILD_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+}
+
+async function clearClientRuntimeCaches() {
+    if (typeof window === "undefined") return;
+
+    // Cache Storage (PWA/Service Worker/runtime caches).
+    try {
+        if ("caches" in window) {
+            const names = await window.caches.keys();
+            await Promise.all(names.map((name) => window.caches.delete(name)));
+        }
+    } catch (err) {
+        console.warn("Não foi possível limpar Cache Storage.", err);
+    }
+
+    // Remove somente o Service Worker que atende o escopo desta página.
+    try {
+        if ("serviceWorker" in navigator) {
+            const registration = await navigator.serviceWorker.getRegistration();
+            if (registration) {
+                await registration.unregister();
+            }
+        }
+    } catch (err) {
+        console.warn("Não foi possível remover o Service Worker.", err);
+    }
+}
+
+async function markAndCleanNewBuild() {
+    if (typeof window === "undefined") return;
+
+    try {
+        const previousBuild = window.localStorage.getItem(APP_BUILD_STORAGE_KEY);
+        if (previousBuild === APP_BUILD_ID) return;
+
+        await clearClientRuntimeCaches();
+        window.localStorage.setItem(APP_BUILD_STORAGE_KEY, APP_BUILD_ID);
+    } catch (err) {
+        // Navegação privada ou política do browser pode bloquear localStorage.
+        console.warn("Não foi possível registrar a versão do build.", err);
+    }
+}
+
+async function forceFreshReload() {
+    if (typeof window === "undefined") return;
+
+    await clearClientRuntimeCaches();
+
+    try {
+        window.localStorage.setItem(APP_BUILD_STORAGE_KEY, APP_BUILD_ID);
+    } catch {
+        // sem problema: o cache-buster da URL continua forçando nova navegação.
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("__fresh", `${APP_BUILD_ID}-${Date.now()}`);
+    window.location.replace(url.toString());
+}
 
 function clampInt(v: unknown) {
     const n = Number(v);
@@ -703,20 +805,44 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
         u.searchParams.set(k, String(v));
     });
 
+    applyCacheBuster(u);
+
     const r = await fetch(u.toString(), {
         method: "GET",
         cache: "no-store",
         credentials: "include",
+        headers: noCacheHeaders(),
+    });
+    return await safeJson<T>(r);
+}
+
+async function catalogoApiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
+    const u = new URL(CATALOGO_API_BASE, window.location.origin);
+    Object.entries(qs).forEach(([k, v]) => {
+        if (v === undefined) return;
+        u.searchParams.set(k, String(v));
+    });
+
+    applyCacheBuster(u);
+
+    const r = await fetch(u.toString(), {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+        headers: noCacheHeaders(),
     });
     return await safeJson<T>(r);
 }
 
 async function apiPost<T>(body: any) {
-    const r = await fetch(API_BASE, {
+    const u = new URL(API_BASE, window.location.origin);
+    applyCacheBuster(u);
+
+    const r = await fetch(u.toString(), {
         method: "POST",
         cache: "no-store",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: noCacheHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(body),
     });
 
@@ -1998,6 +2124,12 @@ export default function Page() {
         return m;
     }, [saldos]);
 
+    // Ao entrar em uma publicação nova, descarta caches de runtime antigos.
+    // Não recarrega em loop: apenas registra o APP_BUILD_ID atual.
+    useEffect(() => {
+        void markAndCleanNewBuild();
+    }, []);
+
     useEffect(() => {
         if (!prodEditId || !editMinMaxDepId) return;
 
@@ -2926,14 +3058,465 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
-    // ✅ PDF REAL (download direto) - Estoque (logo + horizontal)
+    // ✅ EXCEL REAL (.xlsx)
+    // Gera 3 abas no mesmo arquivo:
+    // 1) Produtos: Produto, Código de Barras, Linha, Valor e barcode para leitura.
+    // 2) Frente: etiquetas em grade 4 x 4 por página A4, com produto e linha.
+    // 3) Verso: mesma grade 4 x 4 por página A4, com barcode e código numérico.
+    async function exportarEstoqueExcel() {
+        if (!estoqueRows.length) {
+            alert("Nenhum item para exportar com os filtros atuais.");
+            return;
+        }
+
+        try {
+            // A coluna Linha vem do vínculo do produto com o catálogo.
+            // catalogo_api.php?produto_linhas=1 retorna produto_id + nome(s) do(s) nó(s) do catálogo.
+            const linhasResp = await catalogoApiGet<CatalogoProdutoLinhasResp>({
+                produto_linhas: 1,
+                _ts: Date.now(),
+            });
+
+            if (!linhasResp.ok) {
+                throw new Error(linhasResp.msg || "Não foi possível carregar as linhas do catálogo.");
+            }
+
+            const linhaByProdutoId = new Map<ID, string>();
+            for (const item of linhasResp.rows || []) {
+                const produtoId = Number(item.produto_id || 0);
+                if (!produtoId) continue;
+                linhaByProdutoId.set(produtoId, String(item.linha || "").trim());
+            }
+
+            // Imports sob demanda para não aumentar o carregamento inicial da tela.
+            const [ExcelJS, JsBarcodeModule] = await Promise.all([
+                import("exceljs"),
+                import("jsbarcode"),
+            ]);
+
+            const JsBarcode = JsBarcodeModule.default;
+            const workbook = new ExcelJS.Workbook();
+
+            workbook.creator = "Sistema de Materiais";
+            workbook.created = new Date();
+            workbook.modified = new Date();
+
+            type ProdutoExcel = {
+                id: ID;
+                nome: string;
+                codigoBarras: string;
+                linha: string;
+                valor: number;
+            };
+
+            // A mesma lista filtrada da tela alimenta todas as três abas.
+            const produtosExcel: ProdutoExcel[] = estoqueRows.map(({ p }) => ({
+                id: Number(p.id),
+                nome: String(p.nome || "").trim(),
+                codigoBarras: String(p.codigo_barras || "").trim(),
+                linha: linhaByProdutoId.get(Number(p.id)) || "",
+                valor: Number(p.valor) || 0,
+            }));
+
+            // Cache único para não gerar e armazenar duas vezes a mesma imagem.
+            // O mesmo imageId é reutilizado na aba Produtos e na aba Verso.
+            const barcodeCache = new Map<
+                string,
+                { dataUrl: string; imageId: number }
+            >();
+
+            function getBarcodeAsset(codigo: string): { dataUrl: string; imageId: number } | null {
+                const valor = String(codigo || "").trim();
+                if (!valor) return null;
+
+                const cached = barcodeCache.get(valor);
+                if (cached) return cached;
+
+                try {
+                    const canvas = document.createElement("canvas");
+
+                    JsBarcode(canvas, valor, {
+                        format: "CODE128",
+                        // O número não é desenhado dentro da imagem.
+                        // Na aba Verso o número é escrito em uma célula separada, abaixo do barcode.
+                        displayValue: false,
+                        height: 46,
+                        width: 2,
+                        margin: 4,
+                        background: "#ffffff",
+                        lineColor: "#000000",
+                    });
+
+                    const dataUrl = canvas.toDataURL("image/png");
+                    const imageId = workbook.addImage({
+                        base64: dataUrl,
+                        extension: "png",
+                    });
+
+                    const asset = { dataUrl, imageId };
+                    barcodeCache.set(valor, asset);
+                    return asset;
+                } catch (err) {
+                    console.warn(`Não foi possível gerar o código de barras ${valor}.`, err);
+                    return null;
+                }
+            }
+
+            /* =========================================================
+               ABA 1: PRODUTOS
+            ========================================================= */
+
+            const worksheet = workbook.addWorksheet("Produtos");
+
+            worksheet.columns = [
+                { header: "Produto", key: "produto", width: 38 },
+                { header: "Código de Barras", key: "codigo", width: 22 },
+                { header: "Linha", key: "linha", width: 28 },
+                { header: "Valor", key: "valor", width: 16 },
+                { header: "Código de Barras para Leitura", key: "barcodeImagem", width: 34 },
+            ];
+
+            const headerRow = worksheet.getRow(1);
+            headerRow.height = 28;
+            headerRow.font = { bold: true };
+            headerRow.alignment = {
+                vertical: "middle",
+                horizontal: "center",
+                wrapText: true,
+            };
+
+            worksheet.views = [{ state: "frozen", ySplit: 1 }];
+            worksheet.autoFilter = { from: "A1", to: "E1" };
+
+            // Código em texto para preservar zeros à esquerda e códigos longos.
+            worksheet.getColumn("codigo").numFmt = "@";
+            worksheet.getColumn("valor").numFmt = 'R$ #,##0.00';
+
+            for (const produto of produtosExcel) {
+                const row = worksheet.addRow({
+                    produto: produto.nome,
+                    codigo: produto.codigoBarras,
+                    linha: produto.linha,
+                    valor: produto.valor,
+                    barcodeImagem: "",
+                });
+
+                row.height = 54;
+                row.alignment = { vertical: "middle", wrapText: true };
+
+                // Reforça que a célula do código é texto.
+                row.getCell(2).value = produto.codigoBarras;
+                row.getCell(2).numFmt = "@";
+
+                const barcodeAsset = getBarcodeAsset(produto.codigoBarras);
+                if (barcodeAsset) {
+                    // Coluna E = índice 4 na API de posicionamento de imagem do ExcelJS.
+                    worksheet.addImage(barcodeAsset.imageId, {
+                        tl: { col: 4.10, row: row.number - 0.88 },
+                        ext: { width: 205, height: 44 },
+                        editAs: "oneCell",
+                    });
+                }
+            }
+
+            worksheet.getColumn(2).alignment = {
+                vertical: "middle",
+                horizontal: "center",
+            };
+            worksheet.getColumn(4).alignment = {
+                vertical: "middle",
+                horizontal: "right",
+            };
+            worksheet.getColumn(5).alignment = {
+                vertical: "middle",
+                horizontal: "center",
+            };
+
+            /* =========================================================
+               ABAS 2 E 3: FRENTE / VERSO
+               Cada página A4 possui exatamente 4 colunas x 4 linhas.
+               Cada página comporta 16 produtos.
+            ========================================================= */
+
+            const frente = workbook.addWorksheet("Frente");
+            const verso = workbook.addWorksheet("Verso");
+
+            const ETIQUETAS_POR_LINHA = 4;
+            const LINHAS_POR_PAGINA = 4;
+            const ETIQUETAS_POR_PAGINA = ETIQUETAS_POR_LINHA * LINHAS_POR_PAGINA;
+
+            // Cada etiqueta ocupa 8 linhas do Excel e existe uma linha curta de respiro
+            // entre uma fileira de etiquetas e a próxima.
+            const LINHAS_ETIQUETA = 8;
+            const LINHA_RESPIRO = 1;
+            const BLOCO_LINHAS = LINHAS_ETIQUETA + LINHA_RESPIRO;
+            const LINHAS_POR_PAGINA_EXCEL = LINHAS_POR_PAGINA * BLOCO_LINHAS;
+
+            // As etiquetas ocupam A, C, E e G. B, D e F são espaços entre elas.
+            const COLUNAS_ETIQUETA = [1, 3, 5, 7];
+
+            const totalPaginas = Math.max(
+                1,
+                Math.ceil(produtosExcel.length / ETIQUETAS_POR_PAGINA)
+            );
+            const totalSlots = totalPaginas * ETIQUETAS_POR_PAGINA;
+            const totalLinhasImpressao = totalPaginas * LINHAS_POR_PAGINA_EXCEL;
+
+            const bordaFina = { style: "thin", color: { argb: "FF000000" } } as const;
+
+            function letraColuna(numero: number): string {
+                let n = numero;
+                let out = "";
+                while (n > 0) {
+                    const resto = (n - 1) % 26;
+                    out = String.fromCharCode(65 + resto) + out;
+                    n = Math.floor((n - 1) / 26);
+                }
+                return out;
+            }
+
+            function configurarFolhaEtiquetas(sheet: any) {
+                // Largura dos quatro cartões e dos três espaços entre cartões.
+                for (const col of COLUNAS_ETIQUETA) {
+                    sheet.getColumn(col).width = 24;
+                }
+                sheet.getColumn(2).width = 2.5;
+                sheet.getColumn(4).width = 2.5;
+                sheet.getColumn(6).width = 2.5;
+
+                // Alturas fixas mantêm o desenho 4 x 4 constante em todas as páginas.
+                for (let page = 0; page < totalPaginas; page++) {
+                    const pageStart = page * LINHAS_POR_PAGINA_EXCEL + 1;
+
+                    for (let fila = 0; fila < LINHAS_POR_PAGINA; fila++) {
+                        const inicio = pageStart + fila * BLOCO_LINHAS;
+
+                        for (let r = inicio; r < inicio + LINHAS_ETIQUETA; r++) {
+                            sheet.getRow(r).height = 22;
+                        }
+
+                        sheet.getRow(inicio + LINHAS_ETIQUETA).height = 8;
+                    }
+                }
+
+                sheet.views = [{ showGridLines: false }];
+
+                // A4 retrato. Uma página de largura e quantas páginas forem necessárias na altura.
+                sheet.pageSetup = {
+                    paperSize: 9,
+                    orientation: "portrait",
+                    fitToPage: true,
+                    fitToWidth: 1,
+                    fitToHeight: 0,
+                    pageOrder: "downThenOver",
+                    horizontalCentered: true,
+                    verticalCentered: false,
+                    margins: {
+                        left: 0.18,
+                        right: 0.18,
+                        top: 0.20,
+                        bottom: 0.20,
+                        header: 0,
+                        footer: 0,
+                    },
+                    printArea: `$A$1:$G$${totalLinhasImpressao}`,
+                };
+
+                // Quebra manual a cada 16 etiquetas para garantir nova folha A4.
+                for (let page = 1; page < totalPaginas; page++) {
+                    sheet
+                        .getRow(page * LINHAS_POR_PAGINA_EXCEL)
+                        .addPageBreak();
+                }
+            }
+
+            configurarFolhaEtiquetas(frente);
+            configurarFolhaEtiquetas(verso);
+
+            function desenharFrente(
+                sheet: any,
+                coluna: number,
+                linhaInicial: number,
+                produto: ProdutoExcel | null
+            ) {
+                const letra = letraColuna(coluna);
+                const linhaFinal = linhaInicial + LINHAS_ETIQUETA - 1;
+                const linhaFinalProduto = linhaFinal - 1;
+
+                const faixaProduto = `${letra}${linhaInicial}:${letra}${linhaFinalProduto}`;
+                sheet.mergeCells(faixaProduto);
+
+                const produtoCell = sheet.getCell(linhaInicial, coluna);
+                produtoCell.value = produto?.nome || "";
+                produtoCell.font = {
+                    name: "Arial",
+                    size: 10,
+                    bold: false,
+                    color: { argb: "FF000000" },
+                };
+                produtoCell.alignment = {
+                    horizontal: "center",
+                    vertical: "middle",
+                    wrapText: true,
+                    shrinkToFit: true,
+                };
+                produtoCell.border = {
+                    top: bordaFina,
+                    left: bordaFina,
+                    right: bordaFina,
+                };
+
+                const linhaCell = sheet.getCell(linhaFinal, coluna);
+                linhaCell.value = produto?.linha || "";
+                linhaCell.font = {
+                    name: "Arial",
+                    size: 7,
+                    bold: true,
+                    color: { argb: "FF000000" },
+                };
+                linhaCell.alignment = {
+                    horizontal: "center",
+                    vertical: "middle",
+                    wrapText: true,
+                    shrinkToFit: true,
+                };
+                linhaCell.border = {
+                    bottom: bordaFina,
+                    left: bordaFina,
+                    right: bordaFina,
+                };
+            }
+
+            function desenharVerso(
+                sheet: any,
+                coluna: number,
+                linhaInicial: number,
+                produto: ProdutoExcel | null
+            ) {
+                const letra = letraColuna(coluna);
+                const linhaFinal = linhaInicial + LINHAS_ETIQUETA - 1;
+                const linhaFinalImagem = linhaInicial + 5;
+                const linhaInicialCodigo = linhaInicial + 6;
+
+                const faixaImagem = `${letra}${linhaInicial}:${letra}${linhaFinalImagem}`;
+                const faixaCodigo = `${letra}${linhaInicialCodigo}:${letra}${linhaFinal}`;
+
+                sheet.mergeCells(faixaImagem);
+                sheet.mergeCells(faixaCodigo);
+
+                const imagemCell = sheet.getCell(linhaInicial, coluna);
+                imagemCell.value = "";
+                imagemCell.alignment = {
+                    horizontal: "center",
+                    vertical: "middle",
+                };
+                imagemCell.border = {
+                    top: bordaFina,
+                    left: bordaFina,
+                    right: bordaFina,
+                };
+
+                const codigoCell = sheet.getCell(linhaInicialCodigo, coluna);
+                codigoCell.value = produto?.codigoBarras || "";
+                codigoCell.numFmt = "@";
+                codigoCell.font = {
+                    name: "Arial",
+                    size: 7,
+                    bold: false,
+                    color: { argb: "FF000000" },
+                };
+                codigoCell.alignment = {
+                    horizontal: "center",
+                    vertical: "middle",
+                    wrapText: false,
+                    shrinkToFit: true,
+                };
+                codigoCell.border = {
+                    bottom: bordaFina,
+                    left: bordaFina,
+                    right: bordaFina,
+                };
+
+                if (!produto?.codigoBarras) return;
+
+                const barcodeAsset = getBarcodeAsset(produto.codigoBarras);
+                if (!barcodeAsset) return;
+
+                // A imagem fica centralizada na parte superior do cartão.
+                // col e row usam base zero e aceitam frações para ajuste fino.
+                sheet.addImage(barcodeAsset.imageId, {
+                    tl: {
+                        col: coluna - 1 + 0.08,
+                        row: linhaInicial - 1 + 1.75,
+                    },
+                    ext: {
+                        width: 145,
+                        height: 44,
+                    },
+                    editAs: "oneCell",
+                });
+            }
+
+            // Cria todos os 16 slots de cada página, inclusive os vazios da última página.
+            // Isso evita que o Excel redimensione a última folha e mantém o corte sempre no mesmo lugar.
+            for (let slot = 0; slot < totalSlots; slot++) {
+                const pagina = Math.floor(slot / ETIQUETAS_POR_PAGINA);
+                const slotNaPagina = slot % ETIQUETAS_POR_PAGINA;
+                const fila = Math.floor(slotNaPagina / ETIQUETAS_POR_LINHA);
+                const colunaNaPagina = slotNaPagina % ETIQUETAS_POR_LINHA;
+
+                const colunaExcel = COLUNAS_ETIQUETA[colunaNaPagina];
+                const linhaInicial =
+                    pagina * LINHAS_POR_PAGINA_EXCEL +
+                    fila * BLOCO_LINHAS +
+                    1;
+
+                const produto = produtosExcel[slot] || null;
+
+                // A ordem é idêntica nas duas abas, seguindo o exemplo fornecido.
+                desenharFrente(frente, colunaExcel, linhaInicial, produto);
+                desenharVerso(verso, colunaExcel, linhaInicial, produto);
+            }
+
+            // Mantém o arquivo na aba Produtos quando ele for aberto.
+            worksheet.views = [{ state: "frozen", ySplit: 1, activeCell: "A1" }];
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer as BlobPart], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            });
+
+            const url = URL.createObjectURL(blob);
+            const safeName = `produtos_frente_verso_${new Date()
+                .toISOString()
+                .slice(0, 19)
+                .replace(/[:T]/g, "-")}`;
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${safeName}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+        } catch (err: any) {
+            console.error("Falha ao exportar Excel:", err);
+            alert(
+                err?.message
+                    ? `Não foi possível gerar o Excel: ${err.message}`
+                    : "Não foi possível gerar o arquivo Excel."
+            );
+        }
+    }
+
+    // ✅ PDF REAL (download direto) - Estoque filtrado com custo unitário e total
     async function exportarEstoquePDF() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
             return;
         }
 
-        // libs (lazy import)
         const { default: jsPDF } = await import("jspdf");
         const autoTable = (await import("jspdf-autotable")).default;
 
@@ -2953,9 +3536,7 @@ export default function Page() {
                 .trim()
                 .toUpperCase();
 
-        // =========================================================
-        // 1) ORGANIZAÇÃO TOTAL (Depósito -> Categoria -> Fabricante -> Valor desc)
-        // =========================================================
+        // Mesma lista filtrada exibida na aba Produtos.
         const sortedRows = [...estoqueRows].sort((a, b) => {
             const depA = norm(a.d?.nome || "");
             const depB = norm(b.d?.nome || "");
@@ -2969,57 +3550,63 @@ export default function Page() {
             const fabB = norm(b.p?.fabricante_nome || "");
             if (fabA !== fabB) return fabA.localeCompare(fabB, "pt-BR");
 
-            const vA = Number(a.p?.valor) || 0;
-            const vB = Number(b.p?.valor) || 0;
-            if (vA !== vB) return vB - vA;
-
-            const nA = (a.p?.nome || "").toString();
-            const nB = (b.p?.nome || "").toString();
-            return nA.localeCompare(nB, "pt-BR");
+            return (a.p?.nome || "").localeCompare(b.p?.nome || "", "pt-BR");
         });
 
-        // =========================================================
-        // 2) REGRAS DE COLUNAS DINÂMICAS
-        // =========================================================
-        const isEmpty = (v: any) => v === null || v === undefined || String(v).trim() === "";
+        const isEmpty = (v: any) =>
+            v === null || v === undefined || String(v).trim() === "";
 
         const hasCodigo = sortedRows.some((r) => !isEmpty(r.p?.codigo_barras));
         const hasDeposito = sortedRows.some((r) => !isEmpty(r.d?.nome));
         const hasCategoria = sortedRows.some((r) => !isEmpty(r.p?.categoria_nome));
         const hasFabricante = sortedRows.some((r) => !isEmpty(r.p?.fabricante_nome));
 
-        const showValorCol = sortedRows.some((r) => (Number(r.p?.valor) || 0) !== 0);
-
-        // ✅ segue a regra do sistema: se no(s) depósito(s) exportado(s) ninguém tem min/max, não mostra
-        const showMinCol = showMinRepColumns;
-        const showRepCol = showMinRepColumns;
-
-
-        // =========================================================
-        // 3) TOTAIS
-        // =========================================================
-        const totalLinhas = new Set(sortedRows.map((r) => r.p.id)).size;
-
         let totalQuantidade = 0;
-        let totalValor = 0;
-        for (const { p, qtd } of sortedRows) {
-            const q = clampInt(qtd);
-            totalQuantidade += q;
-            totalValor += q * (Number(p.valor) || 0);
-        }
+        let totalCustoEstoque = 0;
+        const totalModelos = new Set(sortedRows.map((r) => Number(r.p.id))).size;
 
-        // helper: busca imagem e converte para dataURL
+        const body = sortedRows.map(({ p, d, qtd }) => {
+            const categoria =
+                p.categoria_nome ||
+                (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
+                "";
+
+            const fabricante =
+                p.fabricante_nome ||
+                (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                "";
+
+            const quantidade = clampInt(qtd);
+            const precoCustoUnitario = custoMedioMovelProduto(p.id);
+            // Regra solicitada: Total = quantidade total x preço de custo unitário.
+            const totalItem = roundCost(quantidade * precoCustoUnitario);
+
+            totalQuantidade += quantidade;
+            totalCustoEstoque += totalItem;
+
+            const row: any[] = [p.nome];
+            if (hasCodigo) row.push(p.codigo_barras || "");
+            if (hasDeposito) row.push(d?.nome || "");
+            if (hasCategoria) row.push(categoria);
+            if (hasFabricante) row.push(fabricante);
+            row.push(String(quantidade));
+            row.push(moneyBRL(precoCustoUnitario));
+            row.push(moneyBRL(totalItem));
+            return row;
+        });
+
+        totalCustoEstoque = roundCost(totalCustoEstoque);
+
         async function toDataUrl(url: string): Promise<string | null> {
             try {
                 const r = await fetch(url, { mode: "cors", cache: "no-store" });
                 const b = await r.blob();
-                const reader = await new Promise<string>((resolve, reject) => {
+                return await new Promise<string>((resolve, reject) => {
                     const fr = new FileReader();
                     fr.onerror = () => reject(new Error("Falha ao ler logo"));
                     fr.onload = () => resolve(String(fr.result || ""));
                     fr.readAsDataURL(b);
                 });
-                return reader;
             } catch {
                 return null;
             }
@@ -3028,14 +3615,11 @@ export default function Page() {
         const logoDataUrl = await toDataUrl(LOGO_URL);
         const logoFormat = logoDataUrl?.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
 
-        // ✅ A4 landscape
         const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
         const pageW = doc.internal.pageSize.getWidth();
-        const marginX = 12;
-        let y = 12;
+        const marginX = 10;
+        let y = 10;
 
-        // ===== HEADER (logo + título + meta)
         if (logoDataUrl) {
             doc.addImage(logoDataUrl, logoFormat as any, marginX, y, 55, 14);
         }
@@ -3045,34 +3629,27 @@ export default function Page() {
         doc.text("Relatório de Estoque", marginX + 62, y + 8);
 
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.text(`Gerado em: ${geradoEm}`, marginX + 62, y + 14);
 
         y += 22;
 
-        // ===== FILTROS (caixa leve)
-        doc.setDrawColor(226, 232, 240); // #e2e8f0
-        doc.setFillColor(248, 250, 252); // #f8fafc
+        doc.setDrawColor(226, 232, 240);
+        doc.setFillColor(248, 250, 252);
         doc.roundedRect(marginX, y, pageW - marginX * 2, 22, 2, 2, "FD");
-
-        doc.setFontSize(9);
         doc.setTextColor(51, 65, 85);
+        doc.setFontSize(8.5);
 
-        // sem "Busca"
         doc.text(`Depósito: ${f.deposito}`, marginX + 3, y + 6);
         doc.text(`Categoria: ${f.categoria}`, marginX + 3, y + 11);
         doc.text(`Fabricante: ${f.fabricante}`, marginX + 3, y + 16);
         doc.text(`Classificação: ${(f as any).classificacao}`, marginX + 3, y + 21);
-
-        // direita
-        doc.text(`Somente alerta (do mínimo): ${f.somenteAlerta}`, pageW / 2, y + 6);
+        doc.text(`Somente em alerta: ${f.somenteAlerta}`, pageW / 2, y + 6);
         doc.text(`Somente saldo > 0: ${(f as any).somenteSaldoPositivo}`, pageW / 2, y + 11);
 
         y += 28;
 
-        // =========================================================
-        // 4) TABELA (autoTable) com colunas dinâmicas + RODAPÉ
-        // =========================================================
+        // IMPORTANTE: estas são as ÚNICAS colunas do PDF.
         const head: string[] = [
             "Produto",
             ...(hasCodigo ? ["Código"] : []),
@@ -3080,78 +3657,40 @@ export default function Page() {
             ...(hasCategoria ? ["Categoria"] : []),
             ...(hasFabricante ? ["Fabricante"] : []),
             "Quantidade",
-            ...(showMinCol ? ["Mín"] : []),
-            ...(showRepCol ? ["Reposição"] : []),
-            ...(showValorCol ? ["Valor"] : []),
+            "Preço de Custo (un)",
+            "Total",
         ];
 
-
-        const body = sortedRows.map(({ p, d, qtd, rep, min, hasMinMax }) => {
-            const cat = p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "";
-            const fab = p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "";
-            const valorNum = Number(p.valor) || 0;
-
-            const row: any[] = [];
-            row.push(p.nome);
-
-            if (hasCodigo) row.push(p.codigo_barras || "");
-            if (hasDeposito) row.push(d.nome || "");
-            if (hasCategoria) row.push(cat);
-            if (hasFabricante) row.push(fab);
-
-            row.push(String(clampInt(qtd)));
-
-            if (showMinCol) row.push(hasMinMax ? String(clampInt(min)) : "");
-            if (showRepCol) row.push(hasMinMax ? String(clampInt(rep)) : "");
-
-            if (showValorCol) row.push(moneyBRL(valorNum));
-
-            return row;
-        });
-
-
-        // ✅ RODAPÉ (totais alinhados por coluna) — precisa vir ANTES do autoTable
         const footRow = new Array(head.length).fill("");
+        footRow[0] = `Modelos: ${totalModelos}`;
 
-        // "Modelos:" na 1ª coluna (Produto)
-        footRow[0] = `Modelos: ${totalLinhas}`;
-
-        // Total embaixo de Quantidade
         const idxQtd = head.indexOf("Quantidade");
         if (idxQtd >= 0) footRow[idxQtd] = String(totalQuantidade);
 
-        // Valor total embaixo de Valor (se existir)
-        const idxValor = head.indexOf("Valor");
-        if (idxValor >= 0) footRow[idxValor] = moneyBRL(totalValor);
+        const idxTotal = head.indexOf("Total");
+        if (idxTotal >= 0) footRow[idxTotal] = moneyBRL(totalCustoEstoque);
 
         autoTable(doc, {
             startY: y,
             head: [head],
             body,
-
-            // ✅ rodapé na tabela
             foot: [footRow],
             showFoot: "lastPage",
-
             margin: { left: marginX, right: marginX },
-
             styles: {
                 font: "helvetica",
-                fontSize: 9.2,
-                cellPadding: 2.2,
-                valign: "top",
+                fontSize: 8.2,
+                cellPadding: 1.8,
+                valign: "middle",
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
-
             headStyles: {
                 fillColor: [241, 245, 249],
                 textColor: [15, 23, 42],
                 fontStyle: "bold",
                 valign: "middle",
             },
-
-            // ✅ estilo do rodapé
             footStyles: {
                 fillColor: [248, 250, 252],
                 textColor: [15, 23, 42],
@@ -3159,49 +3698,24 @@ export default function Page() {
                 lineColor: [226, 232, 240],
                 lineWidth: 0.2,
             },
-
             didParseCell: (data) => {
                 const colName = head[data.column.index];
-
-                // ✅ alinha numéricos à direita (inclusive no rodapé)
-                if (["Quantidade", "Reposição", "Valor"].includes(colName)) {
+                if (["Quantidade", "Preço de Custo (un)", "Total"].includes(colName)) {
                     data.cell.styles.halign = "right";
                 }
-
-                // ✅ rodapé: 1ª coluna à esquerda
-                if (data.section === "foot" && data.column.index === 0) {
-                    data.cell.styles.halign = "left";
-                }
-
-                // daqui pra baixo: só body
-                if (data.section !== "body") return;
-
-                // ✅ alerta (≤ mínimo): pinta Quantidade em vermelho
-                if (colName === "Quantidade") {
-                    const r = sortedRows[data.row.index];
-                    const low = !!r.hasMinMax && clampInt(r.qtd) <= clampInt(r.min);
-                    if (low) data.cell.styles.textColor = [185, 28, 28];
-                }
-
-
-                // ✅ reposição verde
-                if (colName === "Reposição") {
-                    const txt = String(data.cell.raw || "");
-                    if (txt && txt !== "0") data.cell.styles.textColor = [22, 163, 74];
-                }
             },
-
-            // ✅ deixa Produto quebrar linha quando precisar
             columnStyles: {
-                0: { cellWidth: 85, overflow: "linebreak" }, // Produto
+                0: { cellWidth: 76, overflow: "linebreak" },
             },
         });
 
-        // ===== DOWNLOAD DIRETO
-        const safeName = `estoque_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+        const safeName = `estoque_${new Date()
+            .toISOString()
+            .slice(0, 19)
+            .replace(/[:T]/g, "-")}`.replace(/\s+/g, "_");
+
         doc.save(`${safeName}.pdf`);
     }
-
 
 
     // =========================
@@ -4013,7 +4527,7 @@ export default function Page() {
     const [entradaBarcode, setEntradaBarcode] = useState("");
     const [entradaDepositoId, setEntradaDepositoId] = useState<ID>(0);
     const [entradaQtd, setEntradaQtd] = useState<string>("1");
-    const [entradaCustoUnitario, setEntradaCustoUnitario] = useState<string>("R$ 0,00");
+    const [entradaCustoUnitario, setEntradaCustoUnitario] = useState<string>("");
     const [entradaFreteTotal, setEntradaFreteTotal] = useState<string>("R$ 0,00");
 
     // ✅ agora a observação fica visualmente abaixo da fila (mas continua sendo usada)
@@ -4303,7 +4817,7 @@ export default function Page() {
         setEntradaFabFiltroId("Todos");
         setEntradaCatFiltroId("Todas");
         setEntradaQtd("1");
-        setEntradaCustoUnitario("R$ 0,00");
+        setEntradaCustoUnitario("");
         setEntradaFreteTotal("R$ 0,00");
         setEntradaObs("");
     }
@@ -4315,7 +4829,7 @@ export default function Page() {
         setEntradaProdutoId(0);
         setEntradaProdQuery("");
         setEntradaQtd("1");
-        setEntradaCustoUnitario("R$ 0,00");
+        setEntradaCustoUnitario("");
         // O frete é único para toda a entrada e permanece ao adicionar novos itens.
     }
 
@@ -6200,6 +6714,9 @@ export default function Page() {
 
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : "—"}</b>
+                                <span className="ml-2 whitespace-nowrap">
+                                    • Build: <b>{APP_BUILD_LABEL}</b>
+                                </span>
                             </p>
                         </div>
 
@@ -6218,9 +6735,10 @@ export default function Page() {
 
                             <Button
                                 variant="ghost"
-                                onClick={refreshInit}
+                                onClick={() => void forceFreshReload()}
                                 disabled={loading}
                                 type="button"
+                                title="Limpa os caches do navegador e recarrega a versão mais recente"
                             >
                                 Atualizar
                             </Button>
@@ -6360,14 +6878,34 @@ export default function Page() {
                                     <h2 className="text-base font-semibold text-slate-900">Produtos</h2>
 
                                 </div>
-                                <div className="flex flex-wrap gap-2 sm:justify-end">
-
-
-                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoqueCSV}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                    >
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoquePDF}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                    >
                                         🧾 PDF
+                                    </Button>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoqueExcel}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                        data-build={APP_BUILD_ID}
+                                    >
+                                        📊 Excel
                                     </Button>
                                 </div>
                             </div>
@@ -8784,11 +9322,13 @@ export default function Page() {
                             />
                         </Field>
 
-                        <Field label="Preço de custo por unidade" hint="Valor unitário antes do frete.">
+                        <Field label="Preço de custo por unidade *" hint="Obrigatório. Valor unitário antes do frete.">
                             <TextInput
                                 value={entradaCustoUnitario}
                                 onChange={(e) => setEntradaCustoUnitario(maskBRLInput(e.target.value))}
                                 placeholder="R$ 0,00"
+                                required
+                                aria-required="true"
                             />
                         </Field>
 
@@ -8798,7 +9338,7 @@ export default function Page() {
                                 onClick={addEntradaItemToList}
                                 type="button"
                                 className="w-full"
-                                disabled={!entradaProdutoExistente}
+                                disabled={!entradaProdutoExistente || parseBRLToNumber(entradaCustoUnitario) <= 0}
                             >
                                 + Adicionar
                             </Button>
@@ -8910,6 +9450,20 @@ export default function Page() {
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+
+                            <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-right">
+                                    <p className="text-xs font-medium text-slate-500">Total da entrada</p>
+                                    <p className="mt-1 text-xl font-bold text-slate-900">
+                                        {moneyBRL(
+                                            ratearFreteEntrada(
+                                                entradaItens,
+                                                parseBRLToNumber(entradaFreteTotal)
+                                            ).reduce((total, item) => total + (item.custoTotal || 0), 0)
+                                        )}
+                                    </p>
+                                </div>
                             </div>
                         </section>
                     ) : null}
