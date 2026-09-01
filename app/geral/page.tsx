@@ -503,29 +503,22 @@ const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
 const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
 
 /* =========================
-   CACHE GUARD / BUILD
+   CACHE GUARD / BUILD - CORS SAFE
    =========================
    IMPORTANTE:
    - Troque APP_BUILD_ID a cada publicação.
-   - As requisições GET recebem um cache-buster único.
-   - O navegador recebe instruções explícitas para não reutilizar respostas.
+   - GETs recebem um cache-buster único (__cb) e usam cache: "no-store".
+   - NÃO enviamos Cache-Control, Pragma ou Expires como headers da requisição.
+     Esses headers extras provocavam preflight CORS e eram bloqueados pela API.
+   - O próprio materiais_gerais.php já devolve Cache-Control/Pragma/Expires na
+     resposta, portanto o navegador continua impedido de reaproveitar a API.
    - Na primeira execução de um build novo, caches do Cache Storage e o
      Service Worker que controla esta página são descartados.
-   - O middleware.ts fornecido junto com este arquivo impede cache do HTML/RSC
-     no navegador, proxy e CDN.
+   - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-01-1430-CACHE-GUARD-01";
-const APP_BUILD_LABEL = "2026.09.01-1430";
+const APP_BUILD_ID = "ESTOQUE-2026-09-01-1455-CORS-FIX-02";
+const APP_BUILD_LABEL = "2026.09.01-1455-CORS-FIX";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
-
-function noCacheHeaders(extra?: HeadersInit): HeadersInit {
-    return {
-        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        ...(extra || {}),
-    };
-}
 
 function applyCacheBuster(url: URL) {
     url.searchParams.set(
@@ -811,7 +804,6 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
         method: "GET",
         cache: "no-store",
         credentials: "include",
-        headers: noCacheHeaders(),
     });
     return await safeJson<T>(r);
 }
@@ -829,7 +821,6 @@ async function catalogoApiGet<T>(qs: Record<string, string | number | boolean | 
         method: "GET",
         cache: "no-store",
         credentials: "include",
-        headers: noCacheHeaders(),
     });
     return await safeJson<T>(r);
 }
@@ -842,7 +833,9 @@ async function apiPost<T>(body: any) {
         method: "POST",
         cache: "no-store",
         credentials: "include",
-        headers: noCacheHeaders({ "Content-Type": "application/json" }),
+        // Content-Type já é permitido pelo CORS do materiais_gerais.php.
+        // Não adicionar Expires/Pragma/Cache-Control aqui.
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
     });
 
@@ -6904,6 +6897,7 @@ export default function Page() {
                                         disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
                                         className="w-full whitespace-nowrap sm:w-auto"
                                         data-build={APP_BUILD_ID}
+                                        title={`Excel 3 abas • ${APP_BUILD_LABEL}`}
                                     >
                                         📊 Excel
                                     </Button>
