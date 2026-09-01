@@ -201,6 +201,18 @@ type CustosMediosMoveisResp = {
     need_login?: 1;
 };
 
+type CatalogoProdutoLinhaRow = {
+    produto_id: ID;
+    linha?: string | null;
+};
+
+type CatalogoProdutoLinhasResp = {
+    ok: boolean;
+    rows?: CatalogoProdutoLinhaRow[];
+    msg?: string;
+    need_login?: 1;
+};
+
 type EstoquePageSize = 10 | 50 | 100 | 500 | "ALL";
 
 type EstoqueColumnKey =
@@ -488,6 +500,7 @@ type TrfItem = { id: number; payload: any; resumo: string };
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
+const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
 
 function clampInt(v: unknown) {
     const n = Number(v);
@@ -698,6 +711,21 @@ async function safeJson<T>(r: Response): Promise<T> {
 
 async function apiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
     const u = new URL(API_BASE, window.location.origin);
+    Object.entries(qs).forEach(([k, v]) => {
+        if (v === undefined) return;
+        u.searchParams.set(k, String(v));
+    });
+
+    const r = await fetch(u.toString(), {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+    });
+    return await safeJson<T>(r);
+}
+
+async function catalogoApiGet<T>(qs: Record<string, string | number | boolean | undefined>) {
+    const u = new URL(CATALOGO_API_BASE, window.location.origin);
     Object.entries(qs).forEach(([k, v]) => {
         if (v === undefined) return;
         u.searchParams.set(k, String(v));
@@ -2926,7 +2954,7 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
-    // ✅ EXCEL REAL (.xlsx) - Estoque filtrado com imagem escaneável do código de barras
+    // ✅ EXCEL REAL (.xlsx) - 5 colunas: Produto, Código de Barras, Linha, Valor e barcode para leitura
     async function exportarEstoqueExcel() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
@@ -2934,6 +2962,24 @@ export default function Page() {
         }
 
         try {
+            // A coluna Linha vem do vínculo do produto com o catálogo.
+            // catalogo_api.php?produto_linhas=1 retorna produto_id + nome(s) do(s) nó(s) do catálogo.
+            const linhasResp = await catalogoApiGet<CatalogoProdutoLinhasResp>({
+                produto_linhas: 1,
+                _ts: Date.now(),
+            });
+
+            if (!linhasResp.ok) {
+                throw new Error(linhasResp.msg || "Não foi possível carregar as linhas do catálogo.");
+            }
+
+            const linhaByProdutoId = new Map<ID, string>();
+            for (const item of linhasResp.rows || []) {
+                const produtoId = Number(item.produto_id || 0);
+                if (!produtoId) continue;
+                linhaByProdutoId.set(produtoId, String(item.linha || "").trim());
+            }
+
             // Imports sob demanda para não aumentar o carregamento inicial da tela.
             const [ExcelJS, JsBarcodeModule] = await Promise.all([
                 import("exceljs"),
@@ -2948,34 +2994,30 @@ export default function Page() {
             workbook.created = new Date();
             workbook.modified = new Date();
 
+            // Somente as cinco colunas solicitadas.
             worksheet.columns = [
-                { header: "Produto", key: "produto", width: 36 },
+                { header: "Produto", key: "produto", width: 38 },
                 { header: "Código de Barras", key: "codigo", width: 22 },
+                { header: "Linha", key: "linha", width: 28 },
+                { header: "Valor", key: "valor", width: 16 },
                 { header: "Código de Barras para Leitura", key: "barcodeImagem", width: 34 },
-                { header: "Depósito", key: "deposito", width: 24 },
-                { header: "Categoria", key: "categoria", width: 22 },
-                { header: "Fabricante", key: "fabricante", width: 22 },
-                { header: "Quantidade", key: "quantidade", width: 13 },
-                { header: "Min", key: "minimo", width: 10 },
-                { header: "Rep", key: "reposicao", width: 10 },
-                { header: "Valor (un)", key: "valor", width: 16 },
-                { header: "Preço de Custo (un)", key: "custo", width: 20 },
-                { header: "Custo Total", key: "total", width: 18 },
             ];
 
             const headerRow = worksheet.getRow(1);
             headerRow.height = 28;
             headerRow.font = { bold: true };
-            headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+            headerRow.alignment = {
+                vertical: "middle",
+                horizontal: "center",
+                wrapText: true,
+            };
 
-            // Mantém a primeira linha visível e habilita filtro dentro do próprio Excel.
             worksheet.views = [{ state: "frozen", ySplit: 1 }];
-            worksheet.autoFilter = { from: "A1", to: "L1" };
+            worksheet.autoFilter = { from: "A1", to: "E1" };
 
-            // Formatação monetária nativa do Excel, mantendo os valores como números.
+            // Código em texto para preservar zeros à esquerda e códigos longos.
+            worksheet.getColumn("codigo").numFmt = "@";
             worksheet.getColumn("valor").numFmt = 'R$ #,##0.00';
-            worksheet.getColumn("custo").numFmt = 'R$ #,##0.00';
-            worksheet.getColumn("total").numFmt = 'R$ #,##0.00';
 
             const barcodeCache = new Map<string, string>();
 
@@ -2986,16 +3028,13 @@ export default function Page() {
                 try {
                     const canvas = document.createElement("canvas");
 
-                    // CODE128 aceita códigos numéricos e alfanuméricos e funciona bem
-                    // para leitura por scanners comuns diretamente da tela do Excel.
                     JsBarcode(canvas, valor, {
                         format: "CODE128",
-                        displayValue: true,
-                        fontSize: 14,
-                        fontOptions: "bold",
-                        height: 44,
+                        // O número NÃO aparece embaixo do código de barras.
+                        displayValue: false,
+                        height: 46,
                         width: 2,
-                        margin: 6,
+                        margin: 5,
                         background: "#ffffff",
                         lineColor: "#000000",
                     });
@@ -3007,40 +3046,25 @@ export default function Page() {
                 }
             }
 
-            for (const { p, d, qtd, min, rep } of estoqueRows) {
-                const categoria =
-                    p.categoria_nome ||
-                    (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
-                    "";
-
-                const fabricante =
-                    p.fabricante_nome ||
-                    (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
-                    "";
-
-                const valorNum = Number(p.valor) || 0;
-                const precoCustoNum = custoMedioMovelProduto(p.id);
-                const custoTotalItem = custoTotalMovelProduto(p.id, qtd);
+            for (const { p } of estoqueRows) {
                 const codigoBarras = String(p.codigo_barras || "").trim();
+                const linha = linhaByProdutoId.get(Number(p.id)) || "";
+                const valorNum = Number(p.valor) || 0;
 
                 const row = worksheet.addRow({
                     produto: p.nome,
                     codigo: codigoBarras,
-                    barcodeImagem: "",
-                    deposito: d.nome,
-                    categoria,
-                    fabricante,
-                    quantidade: qtd,
-                    minimo: min,
-                    reposicao: rep,
+                    linha,
                     valor: valorNum,
-                    custo: precoCustoNum,
-                    total: custoTotalItem,
+                    barcodeImagem: "",
                 });
 
-                // Altura maior para que a imagem do código de barras fique legível.
-                row.height = 60;
+                row.height = 54;
                 row.alignment = { vertical: "middle", wrapText: true };
+
+                // Reforça que a célula do código é texto.
+                row.getCell(2).value = codigoBarras;
+                row.getCell(2).numFmt = "@";
 
                 if (codigoBarras) {
                     let barcodePng = barcodeCache.get(codigoBarras) || null;
@@ -3056,27 +3080,25 @@ export default function Page() {
                             extension: "png",
                         });
 
-                        // ExcelJS usa índices de coluna/linha iniciando em zero nesta API.
-                        // Coluna C = índice 2.
+                        // Coluna E = índice 4 na API de posicionamento de imagem do ExcelJS.
                         worksheet.addImage(imageId, {
-                            tl: { col: 2.08, row: row.number - 0.90 },
-                            ext: { width: 215, height: 54 },
+                            tl: { col: 4.10, row: row.number - 0.88 },
+                            ext: { width: 205, height: 44 },
                             editAs: "oneCell",
                         });
                     }
                 }
             }
 
-            // Alinhamentos específicos para facilitar leitura e impressão.
-            [2, 7, 8, 9, 10, 11, 12].forEach((col) => {
-                worksheet.getColumn(col).alignment = {
-                    vertical: "middle",
-                    horizontal: "center",
-                    wrapText: true,
-                };
-            });
-
-            worksheet.getColumn(3).alignment = {
+            worksheet.getColumn(2).alignment = {
+                vertical: "middle",
+                horizontal: "center",
+            };
+            worksheet.getColumn(4).alignment = {
+                vertical: "middle",
+                horizontal: "right",
+            };
+            worksheet.getColumn(5).alignment = {
                 vertical: "middle",
                 horizontal: "center",
             };
@@ -3087,7 +3109,7 @@ export default function Page() {
             });
 
             const url = URL.createObjectURL(blob);
-            const safeName = `estoque_${new Date()
+            const safeName = `produtos_codigo_barras_${new Date()
                 .toISOString()
                 .slice(0, 19)
                 .replace(/[:T]/g, "-")}`;
