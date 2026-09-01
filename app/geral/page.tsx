@@ -2926,6 +2926,190 @@ export default function Page() {
         URL.revokeObjectURL(url);
     }
 
+    // ✅ EXCEL REAL (.xlsx) - Estoque filtrado com imagem escaneável do código de barras
+    async function exportarEstoqueExcel() {
+        if (!estoqueRows.length) {
+            alert("Nenhum item para exportar com os filtros atuais.");
+            return;
+        }
+
+        try {
+            // Imports sob demanda para não aumentar o carregamento inicial da tela.
+            const [ExcelJS, JsBarcodeModule] = await Promise.all([
+                import("exceljs"),
+                import("jsbarcode"),
+            ]);
+
+            const JsBarcode = JsBarcodeModule.default;
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet("Produtos");
+
+            workbook.creator = "Sistema de Materiais";
+            workbook.created = new Date();
+            workbook.modified = new Date();
+
+            worksheet.columns = [
+                { header: "Produto", key: "produto", width: 36 },
+                { header: "Código de Barras", key: "codigo", width: 22 },
+                { header: "Código de Barras para Leitura", key: "barcodeImagem", width: 34 },
+                { header: "Depósito", key: "deposito", width: 24 },
+                { header: "Categoria", key: "categoria", width: 22 },
+                { header: "Fabricante", key: "fabricante", width: 22 },
+                { header: "Quantidade", key: "quantidade", width: 13 },
+                { header: "Min", key: "minimo", width: 10 },
+                { header: "Rep", key: "reposicao", width: 10 },
+                { header: "Valor (un)", key: "valor", width: 16 },
+                { header: "Preço de Custo (un)", key: "custo", width: 20 },
+                { header: "Custo Total", key: "total", width: 18 },
+            ];
+
+            const headerRow = worksheet.getRow(1);
+            headerRow.height = 28;
+            headerRow.font = { bold: true };
+            headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+
+            // Mantém a primeira linha visível e habilita filtro dentro do próprio Excel.
+            worksheet.views = [{ state: "frozen", ySplit: 1 }];
+            worksheet.autoFilter = { from: "A1", to: "L1" };
+
+            // Formatação monetária nativa do Excel, mantendo os valores como números.
+            worksheet.getColumn("valor").numFmt = 'R$ #,##0.00';
+            worksheet.getColumn("custo").numFmt = 'R$ #,##0.00';
+            worksheet.getColumn("total").numFmt = 'R$ #,##0.00';
+
+            const barcodeCache = new Map<string, string>();
+
+            function gerarBarcodePng(codigo: string): string | null {
+                const valor = String(codigo || "").trim();
+                if (!valor) return null;
+
+                try {
+                    const canvas = document.createElement("canvas");
+
+                    // CODE128 aceita códigos numéricos e alfanuméricos e funciona bem
+                    // para leitura por scanners comuns diretamente da tela do Excel.
+                    JsBarcode(canvas, valor, {
+                        format: "CODE128",
+                        displayValue: true,
+                        fontSize: 14,
+                        fontOptions: "bold",
+                        height: 44,
+                        width: 2,
+                        margin: 6,
+                        background: "#ffffff",
+                        lineColor: "#000000",
+                    });
+
+                    return canvas.toDataURL("image/png");
+                } catch (err) {
+                    console.warn(`Não foi possível gerar o código de barras ${valor}.`, err);
+                    return null;
+                }
+            }
+
+            for (const { p, d, qtd, min, rep } of estoqueRows) {
+                const categoria =
+                    p.categoria_nome ||
+                    (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
+                    "";
+
+                const fabricante =
+                    p.fabricante_nome ||
+                    (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") ||
+                    "";
+
+                const valorNum = Number(p.valor) || 0;
+                const precoCustoNum = custoMedioMovelProduto(p.id);
+                const custoTotalItem = custoTotalMovelProduto(p.id, qtd);
+                const codigoBarras = String(p.codigo_barras || "").trim();
+
+                const row = worksheet.addRow({
+                    produto: p.nome,
+                    codigo: codigoBarras,
+                    barcodeImagem: "",
+                    deposito: d.nome,
+                    categoria,
+                    fabricante,
+                    quantidade: qtd,
+                    minimo: min,
+                    reposicao: rep,
+                    valor: valorNum,
+                    custo: precoCustoNum,
+                    total: custoTotalItem,
+                });
+
+                // Altura maior para que a imagem do código de barras fique legível.
+                row.height = 60;
+                row.alignment = { vertical: "middle", wrapText: true };
+
+                if (codigoBarras) {
+                    let barcodePng = barcodeCache.get(codigoBarras) || null;
+
+                    if (!barcodePng) {
+                        barcodePng = gerarBarcodePng(codigoBarras);
+                        if (barcodePng) barcodeCache.set(codigoBarras, barcodePng);
+                    }
+
+                    if (barcodePng) {
+                        const imageId = workbook.addImage({
+                            base64: barcodePng,
+                            extension: "png",
+                        });
+
+                        // ExcelJS usa índices de coluna/linha iniciando em zero nesta API.
+                        // Coluna C = índice 2.
+                        worksheet.addImage(imageId, {
+                            tl: { col: 2.08, row: row.number - 0.90 },
+                            ext: { width: 215, height: 54 },
+                            editAs: "oneCell",
+                        });
+                    }
+                }
+            }
+
+            // Alinhamentos específicos para facilitar leitura e impressão.
+            [2, 7, 8, 9, 10, 11, 12].forEach((col) => {
+                worksheet.getColumn(col).alignment = {
+                    vertical: "middle",
+                    horizontal: "center",
+                    wrapText: true,
+                };
+            });
+
+            worksheet.getColumn(3).alignment = {
+                vertical: "middle",
+                horizontal: "center",
+            };
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer as BlobPart], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            });
+
+            const url = URL.createObjectURL(blob);
+            const safeName = `estoque_${new Date()
+                .toISOString()
+                .slice(0, 19)
+                .replace(/[:T]/g, "-")}`;
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${safeName}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+        } catch (err: any) {
+            console.error("Falha ao exportar Excel:", err);
+            alert(
+                err?.message
+                    ? `Não foi possível gerar o Excel: ${err.message}`
+                    : "Não foi possível gerar o arquivo Excel."
+            );
+        }
+    }
+
     // ✅ PDF REAL (download direto) - Estoque filtrado com custo unitário e total
     async function exportarEstoquePDF() {
         if (!estoqueRows.length) {
@@ -6298,6 +6482,9 @@ export default function Page() {
                                     </Button>
                                     <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
                                         🧾 PDF
+                                    </Button>
+                                    <Button variant="soft" onClick={exportarEstoqueExcel} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                        📊 Excel
                                     </Button>
                                 </div>
                             </div>
