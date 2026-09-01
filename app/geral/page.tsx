@@ -502,6 +502,95 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
 const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
 
+/* =========================
+   CACHE GUARD / BUILD
+   =========================
+   IMPORTANTE:
+   - Troque APP_BUILD_ID a cada publicação.
+   - As requisições GET recebem um cache-buster único.
+   - O navegador recebe instruções explícitas para não reutilizar respostas.
+   - Na primeira execução de um build novo, caches do Cache Storage e o
+     Service Worker que controla esta página são descartados.
+   - O middleware.ts fornecido junto com este arquivo impede cache do HTML/RSC
+     no navegador, proxy e CDN.
+*/
+const APP_BUILD_ID = "ESTOQUE-2026-09-01-1430-CACHE-GUARD-01";
+const APP_BUILD_LABEL = "2026.09.01-1430";
+const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
+
+function noCacheHeaders(extra?: HeadersInit): HeadersInit {
+    return {
+        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+        ...(extra || {}),
+    };
+}
+
+function applyCacheBuster(url: URL) {
+    url.searchParams.set(
+        "__cb",
+        `${APP_BUILD_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+}
+
+async function clearClientRuntimeCaches() {
+    if (typeof window === "undefined") return;
+
+    // Cache Storage (PWA/Service Worker/runtime caches).
+    try {
+        if ("caches" in window) {
+            const names = await window.caches.keys();
+            await Promise.all(names.map((name) => window.caches.delete(name)));
+        }
+    } catch (err) {
+        console.warn("Não foi possível limpar Cache Storage.", err);
+    }
+
+    // Remove somente o Service Worker que atende o escopo desta página.
+    try {
+        if ("serviceWorker" in navigator) {
+            const registration = await navigator.serviceWorker.getRegistration();
+            if (registration) {
+                await registration.unregister();
+            }
+        }
+    } catch (err) {
+        console.warn("Não foi possível remover o Service Worker.", err);
+    }
+}
+
+async function markAndCleanNewBuild() {
+    if (typeof window === "undefined") return;
+
+    try {
+        const previousBuild = window.localStorage.getItem(APP_BUILD_STORAGE_KEY);
+        if (previousBuild === APP_BUILD_ID) return;
+
+        await clearClientRuntimeCaches();
+        window.localStorage.setItem(APP_BUILD_STORAGE_KEY, APP_BUILD_ID);
+    } catch (err) {
+        // Navegação privada ou política do browser pode bloquear localStorage.
+        console.warn("Não foi possível registrar a versão do build.", err);
+    }
+}
+
+async function forceFreshReload() {
+    if (typeof window === "undefined") return;
+
+    await clearClientRuntimeCaches();
+
+    try {
+        window.localStorage.setItem(APP_BUILD_STORAGE_KEY, APP_BUILD_ID);
+    } catch {
+        // sem problema: o cache-buster da URL continua forçando nova navegação.
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("__fresh", `${APP_BUILD_ID}-${Date.now()}`);
+    window.location.replace(url.toString());
+}
+
 function clampInt(v: unknown) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
@@ -716,10 +805,13 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
         u.searchParams.set(k, String(v));
     });
 
+    applyCacheBuster(u);
+
     const r = await fetch(u.toString(), {
         method: "GET",
         cache: "no-store",
         credentials: "include",
+        headers: noCacheHeaders(),
     });
     return await safeJson<T>(r);
 }
@@ -731,20 +823,26 @@ async function catalogoApiGet<T>(qs: Record<string, string | number | boolean | 
         u.searchParams.set(k, String(v));
     });
 
+    applyCacheBuster(u);
+
     const r = await fetch(u.toString(), {
         method: "GET",
         cache: "no-store",
         credentials: "include",
+        headers: noCacheHeaders(),
     });
     return await safeJson<T>(r);
 }
 
 async function apiPost<T>(body: any) {
-    const r = await fetch(API_BASE, {
+    const u = new URL(API_BASE, window.location.origin);
+    applyCacheBuster(u);
+
+    const r = await fetch(u.toString(), {
         method: "POST",
         cache: "no-store",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: noCacheHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(body),
     });
 
@@ -2025,6 +2123,12 @@ export default function Page() {
         for (const s of saldos) m.set(`${s.produto_id}::${s.deposito_id}`, s);
         return m;
     }, [saldos]);
+
+    // Ao entrar em uma publicação nova, descarta caches de runtime antigos.
+    // Não recarrega em loop: apenas registra o APP_BUILD_ID atual.
+    useEffect(() => {
+        void markAndCleanNewBuild();
+    }, []);
 
     useEffect(() => {
         if (!prodEditId || !editMinMaxDepId) return;
@@ -6610,6 +6714,9 @@ export default function Page() {
 
                             <p className="mt-1 text-xs text-slate-500">
                                 Operador (fixo): <b>{me ? `${me.nome} (${me.usuario})` : "—"}</b>
+                                <span className="ml-2 whitespace-nowrap">
+                                    • Build: <b>{APP_BUILD_LABEL}</b>
+                                </span>
                             </p>
                         </div>
 
@@ -6628,9 +6735,10 @@ export default function Page() {
 
                             <Button
                                 variant="ghost"
-                                onClick={refreshInit}
+                                onClick={() => void forceFreshReload()}
                                 disabled={loading}
                                 type="button"
+                                title="Limpa os caches do navegador e recarrega a versão mais recente"
                             >
                                 Atualizar
                             </Button>
@@ -6770,16 +6878,33 @@ export default function Page() {
                                     <h2 className="text-base font-semibold text-slate-900">Produtos</h2>
 
                                 </div>
-                                <div className="flex flex-wrap gap-2 sm:justify-end">
-
-
-                                    <Button variant="soft" onClick={exportarEstoqueCSV} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoqueCSV}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                    >
                                         ⬇️ CSV
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoquePDF} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoquePDF}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                    >
                                         🧾 PDF
                                     </Button>
-                                    <Button variant="soft" onClick={exportarEstoqueExcel} type="button" disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEstoqueExcel}
+                                        type="button"
+                                        disabled={loading || custosMediosLoading || !!custosMediosErr || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                        data-build={APP_BUILD_ID}
+                                    >
                                         📊 Excel
                                     </Button>
                                 </div>
