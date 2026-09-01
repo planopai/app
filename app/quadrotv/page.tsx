@@ -6,6 +6,10 @@
  * - Coroas: modelo + solicitante, Falecido, Entrega, Pagamento e timeline Ampulheta/Flor/Faixa/Concluída;
  * - Coroas finalizadas permanecem no quadro até a confirmação do status Entregue;
  * - atualização da fila de Coroas a cada 3 segundos, sem cache atrasando novos pedidos online;
+ * - FIX STATUS PERSISTENTE: falha/timeout no histórico nunca apaga etapas já carregadas;
+ * - FIX STATUS PERSISTENTE: histórico dos atendimentos é preservado no localStorage;
+ * - FIX STATUS PERSISTENTE: status atual do atendimento nunca volta visualmente para fase01 por ausência temporária de logs;
+ * - FIX STATUS PERSISTENTE: atualização imediata ao voltar para a aba, recuperar foco ou reconectar a internet;
  * - tamanho original permanece no modo NORMAL;
  * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
  *   não cabe na altura disponível da TV.
@@ -150,6 +154,11 @@ type LogItem = {
     detalhes?: any;
     usuario?: string;
 };
+
+// Histórico visual persistente dos atendimentos.
+// A lista principal já era preservada em qa_registros; agora os logs também são.
+const STATUS_LOGS_STORAGE_KEY = "qa_status_logs_v2";
+const STATUS_LOGS_STORAGE_MAX_ENTRIES = 250;
 
 /* =========================
    Coroas de Flores — quadro TV
@@ -1675,7 +1684,44 @@ function formatDurationMs(msRaw: number): string {
 const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
 const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase12", "fase07"]);
 
+// Ordem operacional real. A fase12 (Corpo Pronto) acontece antes da fase07.
+// Este ranking é usado somente para impedir regressões visuais causadas por
+// resposta antiga, cache intermediário ou indisponibilidade temporária dos logs.
+const STATUS_FLOW_ORDER = [
+    "fase01",
+    "fase02",
+    "fase03",
+    "fase04",
+    "fase05",
+    "fase06",
+    "fase12",
+    "fase07",
+    "fase08",
+    "fase09",
+    "fase10",
+    "fase11",
+] as const;
+
+const STATUS_FLOW_RANK = new Map<string, number>(
+    STATUS_FLOW_ORDER.map((key, index) => [key, index])
+);
+
+function statusFlowRank(status?: string): number {
+    const key = normalizarStatus(status);
+    if (!key) return -1;
+    return STATUS_FLOW_RANK.get(key) ?? -1;
+}
+
+function parseRegistroTimestampCandidate(value: unknown): number {
+    const raw = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
+    if (!raw) return 0;
+
+    const ts = Date.parse(raw.replace(" ", "T"));
+    return Number.isNaN(ts) ? 0 : ts;
+}
+
 function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
+    // A primeira evidência do histórico é a melhor fonte para o início real.
     const logTimes = (logs ?? [])
         .map((log) => parseLogTs(log.datahora))
         .filter((ts) => ts > 0)
@@ -1683,12 +1729,58 @@ function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, n
 
     if (logTimes.length > 0) return logTimes[0];
 
-    const registroTs = parseRegistroDateTime(registro);
-    return registroTs > 0 ? registroTs : nowMs;
+    // Registros de APIs diferentes podem usar nomes diferentes para criação.
+    // Preferimos um timestamp explícito em vez de hora de início/fim do velório.
+    const explicitCandidates = [
+        (registro as any).criado_em,
+        (registro as any).criadoEm,
+        (registro as any).created_at,
+        (registro as any).createdAt,
+        (registro as any).data_criacao,
+        (registro as any).datahora_criacao,
+        (registro as any).data_hora_criacao,
+        (registro as any).aberto_em,
+        (registro as any).inicio_em,
+    ];
+
+    for (const value of explicitCandidates) {
+        const ts = parseRegistroTimestampCandidate(value);
+        if (ts > 0 && ts <= nowMs + 5 * 60_000) return ts;
+    }
+
+    // Fallback estável para registros legados: usa apenas a DATA.
+    // A implementação anterior usava hora_fim_velorio/hora_inicio_velorio,
+    // que não representam a criação do atendimento e podiam zerar/distorcer tempos.
+    const rawDate = decodeHtmlEntitiesDeep(String(registro.data ?? "")).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        const ts = Date.parse(`${rawDate}T00:00:00`);
+        if (!Number.isNaN(ts) && ts > 0 && ts <= nowMs + 5 * 60_000) return ts;
+    }
+
+    return nowMs;
+}
+
+function getRegistroStatusUpdatedTs(registro: Registro, createdTs: number, nowMs: number): number {
+    const candidates = [
+        (registro as any).status_atualizado_em,
+        (registro as any).status_alterado_em,
+        (registro as any).status_updated_at,
+        (registro as any).atualizado_em,
+        (registro as any).updated_at,
+        (registro as any).updatedAt,
+    ];
+
+    for (const value of candidates) {
+        const ts = parseRegistroTimestampCandidate(value);
+        if (ts >= createdTs && ts <= nowMs + 5 * 60_000) return ts;
+    }
+
+    return 0;
 }
 
 function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
-    const currentKey = normalizarStatus(registro.status);
+    const currentKeyRaw = normalizarStatus(registro.status);
+    const currentKey = currentKeyRaw?.startsWith("fase") ? currentKeyRaw : undefined;
     const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
 
     const statusEvents = (logs ?? [])
@@ -1700,31 +1792,51 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
 
     for (const ev of statusEvents) {
         if (ev.ts < createdTs) continue;
-
-        // Removendo começa no momento da criação do atendimento. Portanto, o comando
-        // explícito de "Indo retirar" não é necessário para iniciar a contagem/piscada.
         if (ev.key === "fase01") continue;
 
-        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
-            unique.push(ev);
-        }
+        const last = unique[unique.length - 1];
+        if (last?.key === ev.key) continue;
+
+        // Nunca deixa um log antigo/tardio fazer a TV voltar para uma fase anterior.
+        // Ex.: já vimos fase08; uma resposta atrasada contendo fase05 não regride a tela.
+        const lastRank = statusFlowRank(last?.key);
+        const nextRank = statusFlowRank(ev.key);
+        if (lastRank >= 0 && nextRank >= 0 && nextRank < lastRank) continue;
+
+        unique.push(ev);
     }
 
-    const hasAdvancedByLog = unique.some((ev) => ev.key !== "fase01");
+    const lastKnown = unique[unique.length - 1];
+    const lastKnownRank = statusFlowRank(lastKnown?.key);
+    const currentRank = statusFlowRank(currentKey);
 
-    // Enquanto ainda não existe nenhum log real indicando "Corpo na Clínica /
-    // Aguardando Procedimento" ou fase posterior, a etapa Removendo permanece ativa,
-    // piscando e contando desde a criação do atendimento.
-    const effectiveCurrentKey = hasAdvancedByLog ? currentKey : "fase01";
+    // Fonte de verdade visual:
+    // - se o registro atual está mais avançado, usa o registro;
+    // - se o histórico persistido está mais avançado, mantém o histórico;
+    // - assim uma falha/atraso nunca devolve o atendimento para o começo.
+    const effectiveCurrentKey =
+        currentKey && currentRank >= lastKnownRank
+            ? currentKey
+            : lastKnown?.key || currentKey || "fase01";
 
-    if (hasAdvancedByLog && currentKey && unique[unique.length - 1]?.key !== currentKey) {
-        unique.push({ key: currentKey, ts: nowMs });
+    if (effectiveCurrentKey && lastKnown?.key !== effectiveCurrentKey) {
+        const explicitStatusTs = getRegistroStatusUpdatedTs(registro, createdTs, nowMs);
+        const inferredStart = explicitStatusTs > 0
+            ? explicitStatusTs
+            : Math.max(createdTs, lastKnown?.ts || createdTs);
+
+        unique.push({
+            key: effectiveCurrentKey,
+            ts: Math.min(nowMs, inferredStart),
+        });
     }
 
     return unique.map((ev, idx) => {
         const info = getStatusStepInfo(ev.key);
         const isLast = idx === unique.length - 1;
-        const end = isLast ? nowMs : unique[idx + 1].ts;
+        const nextStart = unique[idx + 1]?.ts ?? nowMs;
+        const end = isLast ? nowMs : Math.max(ev.ts, nextStart);
+
         return {
             key: info.key,
             label: info.label,
@@ -1776,7 +1888,9 @@ export default function QuadroAtendimentoPage() {
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
-    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
+    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>(
+        () => readLS<Record<string, LogItem[]>>(STATUS_LOGS_STORAGE_KEY) ?? {}
+    );
 
     /* Coroas de Flores — painel inferior */
     const [coroasTv, setCoroasTv] = useState<CoroaTvPedido[]>(
@@ -1814,21 +1928,50 @@ export default function QuadroAtendimentoPage() {
         async function load() {
             try {
                 const url = `${BASE_INFO}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 0,
+                    timeoutMs: 12_000,
+                    cacheKey: "informativo_listar",
+                });
+
                 if (!alive) return;
-                const arr = Array.isArray(j) ? (j as Registro[]) : [];
+
+                // Não transforma erro de sessão/resposta inválida em lista vazia.
+                // Uma resposta inválida mantém o último quadro conhecido.
+                if (!Array.isArray(j)) {
+                    throw new Error("Resposta inválida ao consultar atendimentos.");
+                }
+
+                const arr = j as Registro[];
                 setRegistros(arr);
                 writeLS("qa_registros", arr);
-            } catch {
-                // mantém o que já tem
+            } catch (err) {
+                // Mantém o que já tem. A TV não deve apagar nem reiniciar o quadro
+                // por timeout, perda de rede, suspensão do navegador ou erro momentâneo.
+                console.warn("Não foi possível atualizar os atendimentos; mantendo último estado conhecido.", err);
             }
         }
 
-        load();
-        const id = setInterval(load, 8000);
+        void load();
+
+        const id = window.setInterval(() => {
+            if (!document.hidden) void load();
+        }, 8000);
+
+        const refreshWhenActive = () => {
+            if (!document.hidden) void load();
+        };
+
+        document.addEventListener("visibilitychange", refreshWhenActive);
+        window.addEventListener("focus", refreshWhenActive);
+        window.addEventListener("online", refreshWhenActive);
+
         return () => {
             alive = false;
-            clearInterval(id);
+            window.clearInterval(id);
+            document.removeEventListener("visibilitychange", refreshWhenActive);
+            window.removeEventListener("focus", refreshWhenActive);
+            window.removeEventListener("online", refreshWhenActive);
         };
     }, []);
 
@@ -2034,47 +2177,131 @@ export default function QuadroAtendimentoPage() {
         return withTs.map((x) => x.r);
     }, [registros]);
 
+    // Identidade estável dos atendimentos acompanhados pelo histórico.
+    // A lista de registros é atualizada a cada 8s, mas o timer dos logs só precisa
+    // ser recriado quando os IDs realmente mudarem.
+    const statusTrackingTargets = ativosOrdenados
+        .map((r) => ({
+            id: getRegistroBackendId(r),
+            trackingId: getRegistroTrackingId(r),
+        }))
+        .filter((x): x is { id: string; trackingId: string } => !!x.id);
+
+    const statusTrackingSignature = statusTrackingTargets
+        .map((x) => `${x.id}:${x.trackingId}`)
+        .sort()
+        .join("|");
+
     useEffect(() => {
         let alive = true;
+        let loading = false;
+
+        // A assinatura é a dependência do efeito. Se ela não mudou, os alvos
+        // capturados aqui representam os mesmos IDs e não reiniciamos o timer.
+        const targets = statusTrackingTargets;
 
         async function loadStatusLogs() {
-            const updates: Record<string, LogItem[]> = {};
-            const ativosComId = ativosOrdenados
-                .map((r) => ({ r, id: getRegistroBackendId(r), trackingId: getRegistroTrackingId(r) }))
-                .filter((x) => !!x.id);
+            if (loading || !alive) return;
+            loading = true;
 
-            await Promise.all(
-                ativosComId.map(async ({ id, trackingId }) => {
-                    try {
-                        const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
-                        const url = `${BASE}&_ts=${Date.now()}`;
-                        const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${id}` });
+            try {
+                const updates: Record<string, LogItem[]> = {};
 
-                        let logs: LogItem[] = [];
-                        if (Array.isArray(json)) logs = json as LogItem[];
-                        else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
+                await Promise.all(
+                    targets.map(async ({ id, trackingId }) => {
+                        try {
+                            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
+                            const url = `${BASE}&_ts=${Date.now()}`;
 
-                        updates[trackingId] = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
-                    } catch {
-                        updates[trackingId] = [];
+                            // ttl 0: o histórico é pequeno e deve refletir a etapa real.
+                            const json: any = await fetchJsonFast<any>(url, {
+                                ttlMs: 0,
+                                timeoutMs: 12_000,
+                                cacheKey: `hist_${id}`,
+                            });
+
+                            let logs: LogItem[] | null = null;
+                            if (Array.isArray(json)) {
+                                logs = json as LogItem[];
+                            } else if (json?.sucesso && Array.isArray(json.dados)) {
+                                logs = json.dados as LogItem[];
+                            } else {
+                                throw new Error("Resposta inválida do histórico.");
+                            }
+
+                            updates[trackingId] = [...logs].sort(
+                                (a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora)
+                            );
+                        } catch (err) {
+                            // REGRA CRÍTICA: nunca escrevemos [] em caso de erro.
+                            // O último histórico válido continua em memória/localStorage.
+                            console.warn(`Falha ao atualizar histórico do atendimento ${id}; mantendo histórico anterior.`, err);
+                        }
+                    })
+                );
+
+                if (!alive) return;
+
+                // Se nenhuma consulta teve resposta válida, não toca no estado persistido.
+                if (Object.keys(updates).length === 0) return;
+
+                setStatusLogsById((prev) => {
+                    const merged: Record<string, LogItem[]> = { ...prev };
+
+                    for (const [trackingId, logs] of Object.entries(updates)) {
+                        // Uma resposta vazia não apaga um histórico válido já conhecido.
+                        // Isso protege contra respostas intermediárias/replicação atrasada.
+                        if (logs.length === 0 && (prev[trackingId]?.length ?? 0) > 0) {
+                            continue;
+                        }
+
+                        // Move o atendimento atualizado para o fim do objeto. Assim,
+                        // quando houver compactação, os históricos mais recentes ficam.
+                        delete merged[trackingId];
+                        merged[trackingId] = logs;
                     }
-                })
-            );
 
-            if (!alive) return;
-            setStatusLogsById((prev) => ({ ...prev, ...updates }));
+                    // Mantém um histórico razoável de atendimentos anteriores e, ao mesmo
+                    // tempo, impede crescimento ilimitado do localStorage ao longo dos meses.
+                    // Os ativos são atualizados periodicamente e naturalmente ficam entre
+                    // as entradas mais recentes.
+                    const entries = Object.entries(merged);
+                    const compactEntries = entries.slice(-STATUS_LOGS_STORAGE_MAX_ENTRIES);
+                    const compact = Object.fromEntries(compactEntries) as Record<string, LogItem[]>;
+
+                    writeLS(STATUS_LOGS_STORAGE_KEY, compact);
+                    return compact;
+                });
+            } finally {
+                loading = false;
+            }
         }
 
-        loadStatusLogs();
+        void loadStatusLogs();
+
         const id = window.setInterval(() => {
-            void loadStatusLogs();
+            if (!document.hidden) void loadStatusLogs();
         }, 30000);
+
+        const refreshWhenActive = () => {
+            if (!document.hidden) void loadStatusLogs();
+        };
+
+        document.addEventListener("visibilitychange", refreshWhenActive);
+        window.addEventListener("focus", refreshWhenActive);
+        window.addEventListener("online", refreshWhenActive);
 
         return () => {
             alive = false;
             window.clearInterval(id);
+            document.removeEventListener("visibilitychange", refreshWhenActive);
+            window.removeEventListener("focus", refreshWhenActive);
+            window.removeEventListener("online", refreshWhenActive);
         };
-    }, [ativosOrdenados]);
+        // A lista completa muda a cada polling de 8s; a assinatura evita reiniciar
+        // este efeito sem necessidade.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [statusTrackingSignature]);
 
     const TAG_SERVICO = "Atendimento:";
 
