@@ -2029,7 +2029,7 @@ export default function QuadroAtendimentoPage() {
             if (!document.hidden) {
                 void loadCoroas();
             }
-        }, 3_000);
+        }, 30_000);
 
         const onVisibility = () => {
             if (!document.hidden) {
