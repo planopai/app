@@ -516,8 +516,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-01-1455-CORS-FIX-02";
-const APP_BUILD_LABEL = "2026.09.01-1455-CORS-FIX";
+const APP_BUILD_ID = "ESTOQUE-2026-09-02-1005-EXCEL-ETIQUETAS-FIX-03";
+const APP_BUILD_LABEL = "2026.09.02-1005-EXCEL-ETIQUETAS-FIX";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -3056,6 +3056,13 @@ export default function Page() {
     // 1) Produtos: Produto, Código de Barras, Linha, Valor e barcode para leitura.
     // 2) Frente: etiquetas em grade 4 x 4 por página A4, com produto e linha.
     // 3) Verso: mesma grade 4 x 4 por página A4, com barcode e código numérico.
+    //
+    // Ajustes desta versão:
+    // - Fonte Nunito em todas as células textuais das três abas.
+    // - Linha do produto posicionada mais acima na aba Frente.
+    // - Barcode mais centralizado na aba Verso.
+    // - Número do código de barras maior e mais legível na aba Verso.
+    // - Remoção de quebras manuais de página, evitando estruturas que o Excel pode reparar.
     async function exportarEstoqueExcel() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
@@ -3064,14 +3071,15 @@ export default function Page() {
 
         try {
             // A coluna Linha vem do vínculo do produto com o catálogo.
-            // catalogo_api.php?produto_linhas=1 retorna produto_id + nome(s) do(s) nó(s) do catálogo.
             const linhasResp = await catalogoApiGet<CatalogoProdutoLinhasResp>({
                 produto_linhas: 1,
                 _ts: Date.now(),
             });
 
             if (!linhasResp.ok) {
-                throw new Error(linhasResp.msg || "Não foi possível carregar as linhas do catálogo.");
+                throw new Error(
+                    linhasResp.msg || "Não foi possível carregar as linhas do catálogo."
+                );
             }
 
             const linhaByProdutoId = new Map<ID, string>();
@@ -3091,8 +3099,11 @@ export default function Page() {
             const workbook = new ExcelJS.Workbook();
 
             workbook.creator = "Sistema de Materiais";
+            workbook.lastModifiedBy = "Sistema de Materiais";
             workbook.created = new Date();
             workbook.modified = new Date();
+
+            const FONT_NAME = "Nunito";
 
             type ProdutoExcel = {
                 id: ID;
@@ -3102,7 +3113,7 @@ export default function Page() {
                 valor: number;
             };
 
-            // A mesma lista filtrada da tela alimenta todas as três abas.
+            // A mesma lista filtrada da tela alimenta as três abas.
             const produtosExcel: ProdutoExcel[] = estoqueRows.map(({ p }) => ({
                 id: Number(p.id),
                 nome: String(p.nome || "").trim(),
@@ -3111,14 +3122,15 @@ export default function Page() {
                 valor: Number(p.valor) || 0,
             }));
 
-            // Cache único para não gerar e armazenar duas vezes a mesma imagem.
-            // O mesmo imageId é reutilizado na aba Produtos e na aba Verso.
+            // Cache único: o mesmo barcode é reutilizado nas abas Produtos e Verso.
             const barcodeCache = new Map<
                 string,
                 { dataUrl: string; imageId: number }
             >();
 
-            function getBarcodeAsset(codigo: string): { dataUrl: string; imageId: number } | null {
+            function getBarcodeAsset(
+                codigo: string
+            ): { dataUrl: string; imageId: number } | null {
                 const valor = String(codigo || "").trim();
                 if (!valor) return null;
 
@@ -3130,10 +3142,10 @@ export default function Page() {
 
                     JsBarcode(canvas, valor, {
                         format: "CODE128",
-                        // O número não é desenhado dentro da imagem.
-                        // Na aba Verso o número é escrito em uma célula separada, abaixo do barcode.
+                        // O número é escrito em uma célula separada para podermos
+                        // controlar fonte, tamanho e alinhamento independentemente.
                         displayValue: false,
-                        height: 46,
+                        height: 52,
                         width: 2,
                         margin: 4,
                         background: "#ffffff",
@@ -3150,7 +3162,10 @@ export default function Page() {
                     barcodeCache.set(valor, asset);
                     return asset;
                 } catch (err) {
-                    console.warn(`Não foi possível gerar o código de barras ${valor}.`, err);
+                    console.warn(
+                        `Não foi possível gerar o código de barras ${valor}.`,
+                        err
+                    );
                     return null;
                 }
             }
@@ -3166,19 +3181,48 @@ export default function Page() {
                 { header: "Código de Barras", key: "codigo", width: 22 },
                 { header: "Linha", key: "linha", width: 28 },
                 { header: "Valor", key: "valor", width: 16 },
-                { header: "Código de Barras para Leitura", key: "barcodeImagem", width: 34 },
+                {
+                    header: "Código de Barras para Leitura",
+                    key: "barcodeImagem",
+                    width: 34,
+                },
             ];
 
             const headerRow = worksheet.getRow(1);
-            headerRow.height = 28;
-            headerRow.font = { bold: true };
+            headerRow.height = 30;
+            headerRow.font = {
+                name: FONT_NAME,
+                size: 11,
+                bold: true,
+                color: { argb: "FF000000" },
+            };
             headerRow.alignment = {
                 vertical: "middle",
                 horizontal: "center",
                 wrapText: true,
             };
 
-            worksheet.views = [{ state: "frozen", ySplit: 1 }];
+            headerRow.eachCell((cell) => {
+                cell.fill = {
+                    type: "pattern",
+                    pattern: "solid",
+                    fgColor: { argb: "FFF1F5F9" },
+                };
+                cell.border = {
+                    bottom: {
+                        style: "thin",
+                        color: { argb: "FFD1D5DB" },
+                    },
+                };
+            });
+
+            worksheet.views = [
+                {
+                    state: "frozen",
+                    ySplit: 1,
+                    activeCell: "A1",
+                },
+            ];
             worksheet.autoFilter = { from: "A1", to: "E1" };
 
             // Código em texto para preservar zeros à esquerda e códigos longos.
@@ -3194,41 +3238,79 @@ export default function Page() {
                     barcodeImagem: "",
                 });
 
-                row.height = 54;
-                row.alignment = { vertical: "middle", wrapText: true };
+                row.height = 58;
+                row.font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.alignment = {
+                    vertical: "middle",
+                    wrapText: true,
+                };
 
-                // Reforça que a célula do código é texto.
-                row.getCell(2).value = produto.codigoBarras;
-                row.getCell(2).numFmt = "@";
+                // Reforça o tipo texto do código.
+                const codigoCell = row.getCell(2);
+                codigoCell.value = produto.codigoBarras;
+                codigoCell.numFmt = "@";
+                codigoCell.font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                codigoCell.alignment = {
+                    vertical: "middle",
+                    horizontal: "center",
+                };
+
+                row.getCell(1).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(3).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(4).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(4).alignment = {
+                    vertical: "middle",
+                    horizontal: "right",
+                };
+                row.getCell(5).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(5).alignment = {
+                    vertical: "middle",
+                    horizontal: "center",
+                };
 
                 const barcodeAsset = getBarcodeAsset(produto.codigoBarras);
                 if (barcodeAsset) {
-                    // Coluna E = índice 4 na API de posicionamento de imagem do ExcelJS.
                     worksheet.addImage(barcodeAsset.imageId, {
-                        tl: { col: 4.10, row: row.number - 0.88 },
-                        ext: { width: 205, height: 44 },
+                        tl: {
+                            col: 4.12,
+                            row: row.number - 0.84,
+                        },
+                        ext: {
+                            width: 202,
+                            height: 47,
+                        },
                         editAs: "oneCell",
                     });
                 }
             }
 
-            worksheet.getColumn(2).alignment = {
-                vertical: "middle",
-                horizontal: "center",
-            };
-            worksheet.getColumn(4).alignment = {
-                vertical: "middle",
-                horizontal: "right",
-            };
-            worksheet.getColumn(5).alignment = {
-                vertical: "middle",
-                horizontal: "center",
-            };
-
             /* =========================================================
                ABAS 2 E 3: FRENTE / VERSO
-               Cada página A4 possui exatamente 4 colunas x 4 linhas.
-               Cada página comporta 16 produtos.
+               Cada página A4 possui 4 colunas x 4 linhas = 16 produtos.
             ========================================================= */
 
             const frente = workbook.addWorksheet("Frente");
@@ -3236,16 +3318,16 @@ export default function Page() {
 
             const ETIQUETAS_POR_LINHA = 4;
             const LINHAS_POR_PAGINA = 4;
-            const ETIQUETAS_POR_PAGINA = ETIQUETAS_POR_LINHA * LINHAS_POR_PAGINA;
+            const ETIQUETAS_POR_PAGINA =
+                ETIQUETAS_POR_LINHA * LINHAS_POR_PAGINA;
 
-            // Cada etiqueta ocupa 8 linhas do Excel e existe uma linha curta de respiro
-            // entre uma fileira de etiquetas e a próxima.
+            // Cada etiqueta ocupa 8 linhas e uma linha curta de respiro.
             const LINHAS_ETIQUETA = 8;
             const LINHA_RESPIRO = 1;
             const BLOCO_LINHAS = LINHAS_ETIQUETA + LINHA_RESPIRO;
             const LINHAS_POR_PAGINA_EXCEL = LINHAS_POR_PAGINA * BLOCO_LINHAS;
 
-            // As etiquetas ocupam A, C, E e G. B, D e F são espaços entre elas.
+            // Etiquetas em A, C, E e G. B, D e F são espaços entre cartões.
             const COLUNAS_ETIQUETA = [1, 3, 5, 7];
 
             const totalPaginas = Math.max(
@@ -3253,31 +3335,39 @@ export default function Page() {
                 Math.ceil(produtosExcel.length / ETIQUETAS_POR_PAGINA)
             );
             const totalSlots = totalPaginas * ETIQUETAS_POR_PAGINA;
-            const totalLinhasImpressao = totalPaginas * LINHAS_POR_PAGINA_EXCEL;
+            const totalLinhasImpressao =
+                totalPaginas * LINHAS_POR_PAGINA_EXCEL;
 
-            const bordaFina = { style: "thin", color: { argb: "FF000000" } } as const;
+            const bordaFina = {
+                style: "thin",
+                color: { argb: "FF000000" },
+            } as const;
 
             function letraColuna(numero: number): string {
                 let n = numero;
                 let out = "";
+
                 while (n > 0) {
                     const resto = (n - 1) % 26;
                     out = String.fromCharCode(65 + resto) + out;
                     n = Math.floor((n - 1) / 26);
                 }
+
                 return out;
             }
 
             function configurarFolhaEtiquetas(sheet: any) {
-                // Largura dos quatro cartões e dos três espaços entre cartões.
+                // Largura dos quatro cartões.
                 for (const col of COLUNAS_ETIQUETA) {
                     sheet.getColumn(col).width = 24;
                 }
+
+                // Espaçamento entre os cartões.
                 sheet.getColumn(2).width = 2.5;
                 sheet.getColumn(4).width = 2.5;
                 sheet.getColumn(6).width = 2.5;
 
-                // Alturas fixas mantêm o desenho 4 x 4 constante em todas as páginas.
+                // Alturas fixas mantêm o desenho 4 x 4 constante.
                 for (let page = 0; page < totalPaginas; page++) {
                     const pageStart = page * LINHAS_POR_PAGINA_EXCEL + 1;
 
@@ -3294,13 +3384,16 @@ export default function Page() {
 
                 sheet.views = [{ showGridLines: false }];
 
-                // A4 retrato. Uma página de largura e quantas páginas forem necessárias na altura.
+                // A4 retrato.
+                // Não são usadas quebras manuais via addPageBreak(), pois a combinação
+                // de rowBreaks + merges + imagens pode fazer algumas versões do Excel
+                // abrirem o arquivo pedindo reparo.
                 sheet.pageSetup = {
                     paperSize: 9,
                     orientation: "portrait",
                     fitToPage: true,
                     fitToWidth: 1,
-                    fitToHeight: 0,
+                    fitToHeight: totalPaginas,
                     pageOrder: "downThenOver",
                     horizontalCentered: true,
                     verticalCentered: false,
@@ -3309,22 +3402,24 @@ export default function Page() {
                         right: 0.18,
                         top: 0.20,
                         bottom: 0.20,
-                        header: 0,
-                        footer: 0,
+                        header: 0.1,
+                        footer: 0.1,
                     },
                     printArea: `$A$1:$G$${totalLinhasImpressao}`,
                 };
 
-                // Quebra manual a cada 16 etiquetas para garantir nova folha A4.
-                for (let page = 1; page < totalPaginas; page++) {
-                    sheet
-                        .getRow(page * LINHAS_POR_PAGINA_EXCEL)
-                        .addPageBreak();
-                }
+                sheet.headerFooter = {
+                    oddHeader: "",
+                    oddFooter: "",
+                };
             }
 
             configurarFolhaEtiquetas(frente);
             configurarFolhaEtiquetas(verso);
+
+            /* =========================================================
+               FRENTE
+            ========================================================= */
 
             function desenharFrente(
                 sheet: any,
@@ -3334,15 +3429,25 @@ export default function Page() {
             ) {
                 const letra = letraColuna(coluna);
                 const linhaFinal = linhaInicial + LINHAS_ETIQUETA - 1;
-                const linhaFinalProduto = linhaFinal - 1;
 
-                const faixaProduto = `${letra}${linhaInicial}:${letra}${linhaFinalProduto}`;
+                // Produto ocupa as 6 primeiras linhas.
+                // A Linha ocupa as duas últimas linhas, ficando visivelmente
+                // mais alta do que na versão anterior, onde ficava só na última.
+                const linhaFinalProduto = linhaInicial + 5;
+                const linhaInicialLinha = linhaInicial + 6;
+
+                const faixaProduto =
+                    `${letra}${linhaInicial}:${letra}${linhaFinalProduto}`;
+                const faixaLinha =
+                    `${letra}${linhaInicialLinha}:${letra}${linhaFinal}`;
+
                 sheet.mergeCells(faixaProduto);
+                sheet.mergeCells(faixaLinha);
 
                 const produtoCell = sheet.getCell(linhaInicial, coluna);
                 produtoCell.value = produto?.nome || "";
                 produtoCell.font = {
-                    name: "Arial",
+                    name: FONT_NAME,
                     size: 10,
                     bold: false,
                     color: { argb: "FF000000" },
@@ -3359,11 +3464,11 @@ export default function Page() {
                     right: bordaFina,
                 };
 
-                const linhaCell = sheet.getCell(linhaFinal, coluna);
+                const linhaCell = sheet.getCell(linhaInicialLinha, coluna);
                 linhaCell.value = produto?.linha || "";
                 linhaCell.font = {
-                    name: "Arial",
-                    size: 7,
+                    name: FONT_NAME,
+                    size: 8,
                     bold: true,
                     color: { argb: "FF000000" },
                 };
@@ -3380,6 +3485,10 @@ export default function Page() {
                 };
             }
 
+            /* =========================================================
+               VERSO
+            ========================================================= */
+
             function desenharVerso(
                 sheet: any,
                 coluna: number,
@@ -3391,14 +3500,21 @@ export default function Page() {
                 const linhaFinalImagem = linhaInicial + 5;
                 const linhaInicialCodigo = linhaInicial + 6;
 
-                const faixaImagem = `${letra}${linhaInicial}:${letra}${linhaFinalImagem}`;
-                const faixaCodigo = `${letra}${linhaInicialCodigo}:${letra}${linhaFinal}`;
+                const faixaImagem =
+                    `${letra}${linhaInicial}:${letra}${linhaFinalImagem}`;
+                const faixaCodigo =
+                    `${letra}${linhaInicialCodigo}:${letra}${linhaFinal}`;
 
                 sheet.mergeCells(faixaImagem);
                 sheet.mergeCells(faixaCodigo);
 
                 const imagemCell = sheet.getCell(linhaInicial, coluna);
                 imagemCell.value = "";
+                imagemCell.font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
                 imagemCell.alignment = {
                     horizontal: "center",
                     vertical: "middle",
@@ -3413,8 +3529,9 @@ export default function Page() {
                 codigoCell.value = produto?.codigoBarras || "";
                 codigoCell.numFmt = "@";
                 codigoCell.font = {
-                    name: "Arial",
-                    size: 7,
+                    name: FONT_NAME,
+                    // Aumentado de 7 para 10 para melhorar a leitura.
+                    size: 10,
                     bold: false,
                     color: { argb: "FF000000" },
                 };
@@ -3435,23 +3552,23 @@ export default function Page() {
                 const barcodeAsset = getBarcodeAsset(produto.codigoBarras);
                 if (!barcodeAsset) return;
 
-                // A imagem fica centralizada na parte superior do cartão.
-                // col e row usam base zero e aceitam frações para ajuste fino.
+                // O barcode foi deslocado para a direita em relação à versão anterior,
+                // corrigindo a aparência de imagem puxada para a esquerda.
                 sheet.addImage(barcodeAsset.imageId, {
                     tl: {
-                        col: coluna - 1 + 0.08,
-                        row: linhaInicial - 1 + 1.75,
+                        col: coluna - 1 + 0.14,
+                        row: linhaInicial - 1 + 1.62,
                     },
                     ext: {
                         width: 145,
-                        height: 44,
+                        height: 50,
                     },
                     editAs: "oneCell",
                 });
             }
 
-            // Cria todos os 16 slots de cada página, inclusive os vazios da última página.
-            // Isso evita que o Excel redimensione a última folha e mantém o corte sempre no mesmo lugar.
+            // Cria todos os 16 slots de cada página, inclusive os vazios da última.
+            // Isso mantém a geometria das folhas Frente e Verso idêntica.
             for (let slot = 0; slot < totalSlots; slot++) {
                 const pagina = Math.floor(slot / ETIQUETAS_POR_PAGINA);
                 const slotNaPagina = slot % ETIQUETAS_POR_PAGINA;
@@ -3466,16 +3583,21 @@ export default function Page() {
 
                 const produto = produtosExcel[slot] || null;
 
-                // A ordem é idêntica nas duas abas, seguindo o exemplo fornecido.
                 desenharFrente(frente, colunaExcel, linhaInicial, produto);
                 desenharVerso(verso, colunaExcel, linhaInicial, produto);
             }
 
-            // Mantém o arquivo na aba Produtos quando ele for aberto.
-            worksheet.views = [{ state: "frozen", ySplit: 1, activeCell: "A1" }];
+            /* =========================================================
+               GERAÇÃO / DOWNLOAD
+            ========================================================= */
 
             const buffer = await workbook.xlsx.writeBuffer();
-            const blob = new Blob([buffer as BlobPart], {
+
+            // Cria um Uint8Array independente antes do Blob. Isso evita problemas
+            // com buffers que tenham offset interno em alguns navegadores.
+            const bytes = new Uint8Array(buffer as ArrayBuffer);
+
+            const blob = new Blob([bytes], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
 
@@ -3488,11 +3610,13 @@ export default function Page() {
             const a = document.createElement("a");
             a.href = url;
             a.download = `${safeName}.xlsx`;
+            a.style.display = "none";
             document.body.appendChild(a);
             a.click();
             a.remove();
 
-            setTimeout(() => URL.revokeObjectURL(url), 0);
+            // Não revoga imediatamente; dá tempo para o navegador consumir o Blob.
+            window.setTimeout(() => URL.revokeObjectURL(url), 1500);
         } catch (err: any) {
             console.error("Falha ao exportar Excel:", err);
             alert(
