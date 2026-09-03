@@ -4030,7 +4030,7 @@ export default function Page() {
                     minFontPt: 6.4,
                     maxLinhas: 3,
                     cinza: 0,
-                    peso: 300,
+                    peso: 500,
                 });
 
                 // Linha bem menor, sem separador, próxima da base.
@@ -4045,7 +4045,7 @@ export default function Page() {
                         minFontPt: 5.2,
                         maxLinhas: 2,
                         cinza: 0,
-                        peso: 300,
+                        peso: 500,
                     });
                 }
             }
@@ -4097,7 +4097,7 @@ export default function Page() {
                         minFontPt: 3.7,
                         maxLinhas: 1,
                         cinza: 0,
-                        peso: 300,
+                        peso: 500,
                     });
                 } else {
                     adicionarTextoImagem({
@@ -4110,7 +4110,7 @@ export default function Page() {
                         minFontPt: 4.2,
                         maxLinhas: 2,
                         cinza: 0,
-                        peso: 300,
+                        peso: 500,
                     });
                 }
 
@@ -4125,7 +4125,7 @@ export default function Page() {
                     minFontPt: 4.4,
                     maxLinhas: 2,
                     cinza: 0,
-                    peso: 300,
+                    peso: 500,
                 });
             }
 
