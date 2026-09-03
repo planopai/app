@@ -516,8 +516,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-SEGOE-CUTMARKS-V05";
-const APP_BUILD_LABEL = "2026.09.03-TAG-SEGOE-CUTMARKS-V05";
+const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-SEGOE-PRETO-V06";
+const APP_BUILD_LABEL = "2026.09.03-TAG-SEGOE-PRETO-V06";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -3628,16 +3628,15 @@ export default function Page() {
     }
 
 
-    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V05
+    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V06
     // Layout pensado para corte com régua + estilete:
     // - 4 colunas x 4 linhas = 16 etiquetas por lado.
     // - Etiquetas ENCOSTADAS: sem GAP, sem moldura e sem linhas internas.
     // - Apenas pequenas marcas de corte nas bordas externas da folha.
-    // - Frente: X de furação no topo, nome mais abaixo e linha pequena no rodapé.
-    // - Verso: X no topo, CODE128 abaixo do centro, número minúsculo colado ao código
-    //   e frase institucional bem pequena no rodapé.
-    // - Texto renderizado em canvas usando Segoe UI Light/Segoe UI quando disponível
-    //   no dispositivo, para manter o aspecto leve sem depender de arquivo TTF no projeto.
+    // - Frente: X de furação no topo, nome mais abaixo e linha maior no rodapé.
+    // - Verso: X no topo, CODE128 abaixo do centro, número praticamente colado
+    //   ao código e mensagem institucional maior, preta e forçada em duas linhas equilibradas.
+    // - Todo texto principal é preto, mantendo a Segoe UI Light/Segoe UI.
     // - Verso espelhado horizontalmente para duplex em "virar na borda longa".
     async function exportarEtiquetasPDF() {
         if (!estoqueRows.length) {
@@ -3730,7 +3729,7 @@ export default function Page() {
             const ETIQUETA_H = (PAGE_H - MARGEM_Y * 2) / LINHAS; // 71,75 mm
 
             const FRASE_VERSO =
-                "Consulte detalhes e valores com nossos consultores através desse código.";
+                "Consulte detalhes e valores com\nnossos consultores através desse código.";
 
             // =========================
             // POSIÇÃO DE CADA ETIQUETA
@@ -3795,20 +3794,32 @@ export default function Page() {
                 texto: string,
                 maxWidthPx: number
             ) {
-                const palavras = String(texto || "").trim().split(/\s+/).filter(Boolean);
-                const linhas: string[] = [];
-                let atual = "";
+                // Respeita quebras manuais (\n). Isso permite controlar mensagens
+                // institucionais para que fiquem visualmente equilibradas em duas linhas.
+                const blocos = String(texto || "")
+                    .split(/\r?\n/)
+                    .map((bloco) => bloco.trim())
+                    .filter(Boolean);
 
-                for (const palavra of palavras) {
-                    const teste = atual ? `${atual} ${palavra}` : palavra;
-                    if (!atual || ctx.measureText(teste).width <= maxWidthPx) {
-                        atual = teste;
-                    } else {
-                        linhas.push(atual);
-                        atual = palavra;
+                const linhas: string[] = [];
+
+                for (const bloco of blocos) {
+                    const palavras = bloco.split(/\s+/).filter(Boolean);
+                    let atual = "";
+
+                    for (const palavra of palavras) {
+                        const teste = atual ? `${atual} ${palavra}` : palavra;
+                        if (!atual || ctx.measureText(teste).width <= maxWidthPx) {
+                            atual = teste;
+                        } else {
+                            linhas.push(atual);
+                            atual = palavra;
+                        }
                     }
+
+                    if (atual) linhas.push(atual);
                 }
-                if (atual) linhas.push(atual);
+
                 return linhas;
             }
 
@@ -3952,7 +3963,7 @@ export default function Page() {
                     fontPt: 4.2,
                     minFontPt: 4.2,
                     maxLinhas: 1,
-                    cinza: 120,
+                    cinza: 0,
                     peso: 300,
                 });
             }
@@ -4018,7 +4029,7 @@ export default function Page() {
                     fontPt: 10.2,
                     minFontPt: 6.4,
                     maxLinhas: 3,
-                    cinza: 52,
+                    cinza: 0,
                     peso: 300,
                 });
 
@@ -4027,13 +4038,13 @@ export default function Page() {
                     adicionarTextoImagem({
                         texto: produto.linha,
                         x: x + 6,
-                        y: y + ETIQUETA_H - 11.0,
+                        y: y + ETIQUETA_H - 11.4,
                         largura: ETIQUETA_W - 12,
-                        altura: 5.5,
-                        fontPt: 4.7,
-                        minFontPt: 3.9,
+                        altura: 6.2,
+                        fontPt: 6.1,
+                        minFontPt: 5.2,
                         maxLinhas: 2,
-                        cinza: 100,
+                        cinza: 0,
                         peso: 300,
                     });
                 }
@@ -4076,13 +4087,16 @@ export default function Page() {
                     adicionarTextoImagem({
                         texto: codigo,
                         x: x + 7,
-                        y: barcodeBottom + 0.5,
+                        // A imagem de texto começa ligeiramente sobre a base do barcode;
+                        // como o texto fica centralizado no canvas, o resultado visual é
+                        // o número praticamente colado às barras.
+                        y: barcodeBottom - 0.55,
                         largura: ETIQUETA_W - 14,
-                        altura: 3.0,
-                        fontPt: 3.8,
-                        minFontPt: 3.4,
+                        altura: 2.6,
+                        fontPt: 4.0,
+                        minFontPt: 3.7,
                         maxLinhas: 1,
-                        cinza: 100,
+                        cinza: 0,
                         peso: 300,
                     });
                 } else {
@@ -4095,7 +4109,7 @@ export default function Page() {
                         fontPt: 5.2,
                         minFontPt: 4.2,
                         maxLinhas: 2,
-                        cinza: 100,
+                        cinza: 0,
                         peso: 300,
                     });
                 }
@@ -4103,14 +4117,14 @@ export default function Page() {
                 // Frase institucional no rodapé, pequena e discreta.
                 adicionarTextoImagem({
                     texto: FRASE_VERSO,
-                    x: x + 5.5,
-                    y: y + ETIQUETA_H - 9.2,
-                    largura: ETIQUETA_W - 11,
-                    altura: 6.4,
-                    fontPt: 3.45,
-                    minFontPt: 3.1,
+                    x: x + 4.0,
+                    y: y + ETIQUETA_H - 10.8,
+                    largura: ETIQUETA_W - 8,
+                    altura: 8.0,
+                    fontPt: 4.8,
+                    minFontPt: 4.4,
                     maxLinhas: 2,
-                    cinza: 112,
+                    cinza: 0,
                     peso: 300,
                 });
             }
@@ -4139,14 +4153,14 @@ export default function Page() {
                 }
             }
 
-            const safeName = `etiquetas_tag_v05_${new Date()
+            const safeName = `etiquetas_tag_v06_${new Date()
                 .toISOString()
                 .slice(0, 19)
                 .replace(/[:T]/g, "-")}`;
 
             doc.save(`${safeName}.pdf`);
         } catch (err: any) {
-            console.error("Falha ao gerar Etiqueta PDF TAG V05:", err);
+            console.error("Falha ao gerar Etiqueta PDF TAG V06:", err);
             alert(
                 err?.message
                     ? `Não foi possível gerar as etiquetas em PDF: ${err.message}`
@@ -7549,7 +7563,7 @@ export default function Page() {
                                         disabled={loading || !estoqueRows.length}
                                         className="w-full whitespace-nowrap sm:w-auto"
                                         data-build={APP_BUILD_ID}
-                                        title="TAG V05 • A4 4x4 • Segoe UI Light • sem bordas • guias de corte • duplex borda longa"
+                                        title="TAG V06 • texto preto • linha maior • mensagem 2 linhas • código colado • A4 4x4 • duplex borda longa"
                                     >
                                         🏷️ Etiqueta PDF TAG
                                     </Button>
