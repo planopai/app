@@ -516,8 +516,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-SEGOE-PRETO-V06";
-const APP_BUILD_LABEL = "2026.09.03-TAG-SEGOE-PRETO-V06";
+const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-BOLD-120-CUTMARKS-V07";
+const APP_BUILD_LABEL = "2026.09.03-TAG-BOLD-120-CUTMARKS-V07";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -3628,7 +3628,7 @@ export default function Page() {
     }
 
 
-    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V06
+    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V07
     // Layout pensado para corte com régua + estilete:
     // - 4 colunas x 4 linhas = 16 etiquetas por lado.
     // - Etiquetas ENCOSTADAS: sem GAP, sem moldura e sem linhas internas.
@@ -3636,7 +3636,7 @@ export default function Page() {
     // - Frente: X de furação no topo, nome mais abaixo e linha maior no rodapé.
     // - Verso: X no topo, CODE128 abaixo do centro, número praticamente colado
     //   ao código e mensagem institucional maior, preta e forçada em duas linhas equilibradas.
-    // - Todo texto principal é preto, mantendo a Segoe UI Light/Segoe UI.
+    // - Todo texto da TAG está 20% maior, preto e em negrito (peso 700).
     // - Verso espelhado horizontalmente para duplex em "virar na borda longa".
     async function exportarEtiquetasPDF() {
         if (!estoqueRows.length) {
@@ -3754,24 +3754,37 @@ export default function Page() {
             // Para cada linha de corte, desenha somente um pequeno traço nas bordas
             // superior/inferior ou esquerda/direita da folha.
             function desenharGuiasDeCorte() {
-                const LEN = 3.2;
-                const BORDA = 0.7;
+                // V07: guias mais longas e fortes para ficarem claramente visíveis
+                // na impressão, sem criar linhas atravessando as etiquetas.
+                const LEN_TOPO_BASE = 6.5;
+                const LEN_LATERAL = 10.0;
+                const BORDA = 0.5;
 
-                doc.setDrawColor(105, 105, 105);
-                doc.setLineWidth(0.12);
+                doc.setDrawColor(0, 0, 0);
+                doc.setLineWidth(0.25);
 
-                // Cortes verticais: pequenas marcas no topo e na base.
+                // Cortes verticais: marcas no topo e na base.
                 for (let i = 0; i <= COLUNAS; i++) {
                     const x = MARGEM_X + i * ETIQUETA_W;
-                    doc.line(x, BORDA, x, BORDA + LEN);
-                    doc.line(x, PAGE_H - BORDA - LEN, x, PAGE_H - BORDA);
+                    doc.line(x, BORDA, x, BORDA + LEN_TOPO_BASE);
+                    doc.line(
+                        x,
+                        PAGE_H - BORDA - LEN_TOPO_BASE,
+                        x,
+                        PAGE_H - BORDA
+                    );
                 }
 
-                // Cortes horizontais: pequenas marcas nas laterais esquerda/direita.
+                // Cortes horizontais: marcas laterais bem mais compridas.
                 for (let i = 0; i <= LINHAS; i++) {
                     const y = MARGEM_Y + i * ETIQUETA_H;
-                    doc.line(BORDA, y, BORDA + LEN, y);
-                    doc.line(PAGE_W - BORDA - LEN, y, PAGE_W - BORDA, y);
+                    doc.line(BORDA, y, BORDA + LEN_LATERAL, y);
+                    doc.line(
+                        PAGE_W - BORDA - LEN_LATERAL,
+                        y,
+                        PAGE_W - BORDA,
+                        y
+                    );
                 }
             }
 
@@ -3785,8 +3798,9 @@ export default function Page() {
             const PX_POR_MM = 13; // ~330 DPI
 
             function familiaSegoe() {
-                // Em Windows normalmente "Segoe UI Light" / "Segoe UI" estarão disponíveis.
-                return '"Segoe UI Light", "Segoe UI", Arial, sans-serif';
+                // V07: Segoe UI primeiro para permitir peso 700 real/sintetizado.
+                // Mantém Segoe UI Light como fallback da mesma família visual.
+                return '"Segoe UI", "Segoe UI Light", Arial, sans-serif';
             }
 
             function quebrarLinhaCanvas(
@@ -3831,7 +3845,7 @@ export default function Page() {
                 minFontPt,
                 maxLinhas,
                 cinza,
-                peso = 300,
+                peso = 700,
             }: {
                 texto: string;
                 larguraMm: number;
@@ -3958,13 +3972,13 @@ export default function Page() {
                     texto: "X",
                     x: x + ETIQUETA_W / 2 - 2.2,
                     y: y + 4.0,
-                    largura: 4.4,
-                    altura: 3.4,
-                    fontPt: 4.2,
-                    minFontPt: 4.2,
+                    largura: 5.28,
+                    altura: 4.08,
+                    fontPt: 5.04,
+                    minFontPt: 5.04,
                     maxLinhas: 1,
                     cinza: 0,
-                    peso: 300,
+                    peso: 700,
                 });
             }
 
@@ -4025,12 +4039,12 @@ export default function Page() {
                     x: x + 5,
                     y: y + ETIQUETA_H * 0.47,
                     largura: ETIQUETA_W - 10,
-                    altura: 15,
-                    fontPt: 10.2,
-                    minFontPt: 6.4,
+                    altura: 18.0,
+                    fontPt: 12.24,
+                    minFontPt: 7.68,
                     maxLinhas: 3,
                     cinza: 0,
-                    peso: 500,
+                    peso: 700,
                 });
 
                 // Linha bem menor, sem separador, próxima da base.
@@ -4040,12 +4054,12 @@ export default function Page() {
                         x: x + 6,
                         y: y + ETIQUETA_H - 11.4,
                         largura: ETIQUETA_W - 12,
-                        altura: 6.2,
-                        fontPt: 6.1,
-                        minFontPt: 5.2,
+                        altura: 7.44,
+                        fontPt: 7.32,
+                        minFontPt: 6.24,
                         maxLinhas: 2,
                         cinza: 0,
-                        peso: 500,
+                        peso: 700,
                     });
                 }
             }
@@ -4092,12 +4106,12 @@ export default function Page() {
                         // o número praticamente colado às barras.
                         y: barcodeBottom - 0.55,
                         largura: ETIQUETA_W - 14,
-                        altura: 2.6,
-                        fontPt: 4.0,
-                        minFontPt: 3.7,
+                        altura: 3.12,
+                        fontPt: 4.8,
+                        minFontPt: 4.44,
                         maxLinhas: 1,
                         cinza: 0,
-                        peso: 500,
+                        peso: 700,
                     });
                 } else {
                     adicionarTextoImagem({
@@ -4105,12 +4119,12 @@ export default function Page() {
                         x: x + 6,
                         y: y + ETIQUETA_H * 0.49,
                         largura: ETIQUETA_W - 12,
-                        altura: 8,
-                        fontPt: 5.2,
-                        minFontPt: 4.2,
+                        altura: 9.6,
+                        fontPt: 6.24,
+                        minFontPt: 5.04,
                         maxLinhas: 2,
                         cinza: 0,
-                        peso: 500,
+                        peso: 700,
                     });
                 }
 
@@ -4120,12 +4134,12 @@ export default function Page() {
                     x: x + 4.0,
                     y: y + ETIQUETA_H - 10.8,
                     largura: ETIQUETA_W - 8,
-                    altura: 8.0,
-                    fontPt: 4.8,
-                    minFontPt: 4.4,
+                    altura: 9.6,
+                    fontPt: 5.76,
+                    minFontPt: 5.28,
                     maxLinhas: 2,
                     cinza: 0,
-                    peso: 500,
+                    peso: 700,
                 });
             }
 
@@ -4153,14 +4167,14 @@ export default function Page() {
                 }
             }
 
-            const safeName = `etiquetas_tag_v06_${new Date()
+            const safeName = `etiquetas_tag_v07_${new Date()
                 .toISOString()
                 .slice(0, 19)
                 .replace(/[:T]/g, "-")}`;
 
             doc.save(`${safeName}.pdf`);
         } catch (err: any) {
-            console.error("Falha ao gerar Etiqueta PDF TAG V06:", err);
+            console.error("Falha ao gerar Etiqueta PDF TAG V07:", err);
             alert(
                 err?.message
                     ? `Não foi possível gerar as etiquetas em PDF: ${err.message}`
@@ -7563,7 +7577,7 @@ export default function Page() {
                                         disabled={loading || !estoqueRows.length}
                                         className="w-full whitespace-nowrap sm:w-auto"
                                         data-build={APP_BUILD_ID}
-                                        title="TAG V06 • texto preto • linha maior • mensagem 2 linhas • código colado • A4 4x4 • duplex borda longa"
+                                        title="TAG V07 • fontes +20% • negrito • guias laterais 10mm • A4 4x4 • duplex borda longa"
                                     >
                                         🏷️ Etiqueta PDF TAG
                                     </Button>
