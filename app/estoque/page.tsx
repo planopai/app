@@ -516,8 +516,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-03-ETIQUETAS-PDF-01";
-const APP_BUILD_LABEL = "2026.09.03-ETIQUETAS-PDF-01";
+const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-SEGOE-CUTMARKS-V05";
+const APP_BUILD_LABEL = "2026.09.03-TAG-SEGOE-CUTMARKS-V05";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -3628,13 +3628,17 @@ export default function Page() {
     }
 
 
-    // ✅ ETIQUETAS PDF A4
-    // Gera as etiquetas dos produtos atualmente filtrados em páginas A4:
+    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V05
+    // Layout pensado para corte com régua + estilete:
     // - 4 colunas x 4 linhas = 16 etiquetas por lado.
-    // - Frente: nome do produto + linha.
-    // - Verso: código de barras + número.
-    // - O verso espelha as colunas para impressão duplex em "virar na borda longa".
-    // - Geometria em milímetros, sem depender de células, zoom ou ajuste do Excel.
+    // - Etiquetas ENCOSTADAS: sem GAP, sem moldura e sem linhas internas.
+    // - Apenas pequenas marcas de corte nas bordas externas da folha.
+    // - Frente: X de furação no topo, nome mais abaixo e linha pequena no rodapé.
+    // - Verso: X no topo, CODE128 abaixo do centro, número minúsculo colado ao código
+    //   e frase institucional bem pequena no rodapé.
+    // - Texto renderizado em canvas usando Segoe UI Light/Segoe UI quando disponível
+    //   no dispositivo, para manter o aspecto leve sem depender de arquivo TTF no projeto.
+    // - Verso espelhado horizontalmente para duplex em "virar na borda longa".
     async function exportarEtiquetasPDF() {
         if (!estoqueRows.length) {
             alert("Nenhum item para gerar etiquetas com os filtros atuais.");
@@ -3657,17 +3661,13 @@ export default function Page() {
             for (const item of linhasResp.rows || []) {
                 const produtoId = Number(item.produto_id || 0);
                 if (!produtoId) continue;
-                linhaByProdutoId.set(
-                    produtoId,
-                    String(item.linha || "").trim()
-                );
+                linhaByProdutoId.set(produtoId, String(item.linha || "").trim());
             }
 
             const [{ default: jsPDF }, JsBarcodeModule] = await Promise.all([
                 import("jspdf"),
                 import("jsbarcode"),
             ]);
-
             const JsBarcode = JsBarcodeModule.default;
 
             type ProdutoEtiquetaPDF = {
@@ -3677,15 +3677,12 @@ export default function Page() {
                 codigoBarras: string;
             };
 
-            // estoqueRows já representa exatamente a lista filtrada da tela.
-            const produtosEtiqueta: ProdutoEtiquetaPDF[] = estoqueRows.map(
-                ({ p }) => ({
-                    id: Number(p.id),
-                    nome: String(p.nome || "").trim(),
-                    linha: linhaByProdutoId.get(Number(p.id)) || "",
-                    codigoBarras: String(p.codigo_barras || "").trim(),
-                })
-            );
+            const produtosEtiqueta: ProdutoEtiquetaPDF[] = estoqueRows.map(({ p }) => ({
+                id: Number(p.id),
+                nome: String(p.nome || "").trim(),
+                linha: linhaByProdutoId.get(Number(p.id)) || "",
+                codigoBarras: String(p.codigo_barras || "").trim(),
+            }));
 
             const doc = new jsPDF({
                 orientation: "portrait",
@@ -3696,15 +3693,12 @@ export default function Page() {
             });
 
             doc.setProperties({
-                title: "Etiquetas de Produtos",
-                subject: "Etiquetas A4 frente e verso",
+                title: "Etiquetas TAG de Produtos",
+                subject: "Etiquetas A4 4x4 frente e verso com guias de corte",
                 author: "Sistema de Materiais",
                 creator: "Sistema de Materiais",
             });
 
-            // Sugere ao leitor de PDF impressão em tamanho real e duplex pela borda longa.
-            // Nem todo driver respeita essas preferências, por isso a geometria do PDF
-            // continua sendo calculada em tamanho físico A4.
             try {
                 (doc as any).viewerPreferences?.({
                     PrintScaling: "None",
@@ -3712,57 +3706,278 @@ export default function Page() {
                     PickTrayByPDFSize: true,
                 });
             } catch {
-                // Alguns builds do jsPDF podem não expor viewerPreferences.
+                // viewerPreferences não existe em todas as versões do jsPDF.
             }
 
+            // =========================
+            // GEOMETRIA FÍSICA DA FOLHA
+            // =========================
             const PAGE_W = 210;
             const PAGE_H = 297;
-
             const COLUNAS = 4;
             const LINHAS = 4;
             const ETIQUETAS_POR_PAGINA = COLUNAS * LINHAS;
 
-            // Margens seguras para impressoras A4 comuns.
+            // Margem externa pequena, suficiente para impressoras A4 comuns.
             const MARGEM_X = 5;
             const MARGEM_Y = 5;
 
-            // Espaço físico entre cartões.
-            const GAP_X = 2;
-            const GAP_Y = 2;
+            // IMPORTANTE: não há espaço entre as etiquetas.
+            const GAP_X = 0;
+            const GAP_Y = 0;
 
-            const ETIQUETA_W =
-                (PAGE_W - MARGEM_X * 2 - GAP_X * (COLUNAS - 1)) / COLUNAS;
-            const ETIQUETA_H =
-                (PAGE_H - MARGEM_Y * 2 - GAP_Y * (LINHAS - 1)) / LINHAS;
+            const ETIQUETA_W = (PAGE_W - MARGEM_X * 2) / COLUNAS; // 50 mm
+            const ETIQUETA_H = (PAGE_H - MARGEM_Y * 2) / LINHAS; // 71,75 mm
 
-            const MM_POR_PT = 0.352777778;
+            const FRASE_VERSO =
+                "Consulte detalhes e valores com nossos consultores através desse código.";
 
-            const barcodeCache = new Map<
+            // =========================
+            // POSIÇÃO DE CADA ETIQUETA
+            // =========================
+            function posicaoEtiqueta(slotNaPagina: number, espelharColunas: boolean) {
+                const linha = Math.floor(slotNaPagina / COLUNAS);
+                const colunaOriginal = slotNaPagina % COLUNAS;
+                const coluna = espelharColunas
+                    ? COLUNAS - 1 - colunaOriginal
+                    : colunaOriginal;
+
+                return {
+                    x: MARGEM_X + coluna * (ETIQUETA_W + GAP_X),
+                    y: MARGEM_Y + linha * (ETIQUETA_H + GAP_Y),
+                };
+            }
+
+            // =========================
+            // GUIAS DE CORTE
+            // =========================
+            // NÃO desenha retângulos nem linhas internas.
+            // Para cada linha de corte, desenha somente um pequeno traço nas bordas
+            // superior/inferior ou esquerda/direita da folha.
+            function desenharGuiasDeCorte() {
+                const LEN = 3.2;
+                const BORDA = 0.7;
+
+                doc.setDrawColor(105, 105, 105);
+                doc.setLineWidth(0.12);
+
+                // Cortes verticais: pequenas marcas no topo e na base.
+                for (let i = 0; i <= COLUNAS; i++) {
+                    const x = MARGEM_X + i * ETIQUETA_W;
+                    doc.line(x, BORDA, x, BORDA + LEN);
+                    doc.line(x, PAGE_H - BORDA - LEN, x, PAGE_H - BORDA);
+                }
+
+                // Cortes horizontais: pequenas marcas nas laterais esquerda/direita.
+                for (let i = 0; i <= LINHAS; i++) {
+                    const y = MARGEM_Y + i * ETIQUETA_H;
+                    doc.line(BORDA, y, BORDA + LEN, y);
+                    doc.line(PAGE_W - BORDA - LEN, y, PAGE_W - BORDA, y);
+                }
+            }
+
+            // =========================
+            // TEXTO EM SEGOE UI LIGHT
+            // =========================
+            // jsPDF não usa fontes do sistema diretamente. Para obter Segoe UI Light
+            // sem exigir um TTF dentro do projeto, o texto é desenhado em canvas pelo
+            // navegador e inserido no PDF como PNG transparente em alta resolução.
+            const TEXTO_CACHE = new Map<string, string>();
+            const PX_POR_MM = 13; // ~330 DPI
+
+            function familiaSegoe() {
+                // Em Windows normalmente "Segoe UI Light" / "Segoe UI" estarão disponíveis.
+                return '"Segoe UI Light", "Segoe UI", Arial, sans-serif';
+            }
+
+            function quebrarLinhaCanvas(
+                ctx: CanvasRenderingContext2D,
+                texto: string,
+                maxWidthPx: number
+            ) {
+                const palavras = String(texto || "").trim().split(/\s+/).filter(Boolean);
+                const linhas: string[] = [];
+                let atual = "";
+
+                for (const palavra of palavras) {
+                    const teste = atual ? `${atual} ${palavra}` : palavra;
+                    if (!atual || ctx.measureText(teste).width <= maxWidthPx) {
+                        atual = teste;
+                    } else {
+                        linhas.push(atual);
+                        atual = palavra;
+                    }
+                }
+                if (atual) linhas.push(atual);
+                return linhas;
+            }
+
+            function criarTextoPNG({
+                texto,
+                larguraMm,
+                alturaMm,
+                fontPt,
+                minFontPt,
+                maxLinhas,
+                cinza,
+                peso = 300,
+            }: {
+                texto: string;
+                larguraMm: number;
+                alturaMm: number;
+                fontPt: number;
+                minFontPt: number;
+                maxLinhas: number;
+                cinza: number;
+                peso?: number;
+            }): string | null {
+                const valor = String(texto || "").trim();
+                if (!valor) return null;
+
+                const cacheKey = JSON.stringify({
+                    valor,
+                    larguraMm,
+                    alturaMm,
+                    fontPt,
+                    minFontPt,
+                    maxLinhas,
+                    cinza,
+                    peso,
+                });
+                const cached = TEXTO_CACHE.get(cacheKey);
+                if (cached) return cached;
+
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.max(2, Math.round(larguraMm * PX_POR_MM));
+                canvas.height = Math.max(2, Math.round(alturaMm * PX_POR_MM));
+                const ctx = canvas.getContext("2d");
+                if (!ctx) return null;
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = `rgb(${cinza}, ${cinza}, ${cinza})`;
+
+                const ptToPx = (pt: number) => pt * (25.4 / 72) * PX_POR_MM;
+                let tamanhoPt = fontPt;
+                let linhas: string[] = [];
+                const maxWidthPx = canvas.width * 0.95;
+
+                while (tamanhoPt >= minFontPt) {
+                    const fontPx = ptToPx(tamanhoPt);
+                    ctx.font = `${peso} ${fontPx}px ${familiaSegoe()}`;
+                    linhas = quebrarLinhaCanvas(ctx, valor, maxWidthPx);
+
+                    const lineHeightPx = fontPx * 1.08;
+                    const totalH = linhas.length * lineHeightPx;
+                    if (linhas.length <= maxLinhas && totalH <= canvas.height * 0.92) {
+                        break;
+                    }
+                    tamanhoPt -= 0.25;
+                }
+
+                if (linhas.length > maxLinhas) {
+                    linhas = linhas.slice(0, maxLinhas);
+                    let ultima = linhas[maxLinhas - 1] || "";
+                    const fontPx = ptToPx(Math.max(minFontPt, tamanhoPt));
+                    ctx.font = `${peso} ${fontPx}px ${familiaSegoe()}`;
+                    while (
+                        ultima.length > 1 &&
+                        ctx.measureText(`${ultima}…`).width > maxWidthPx
+                    ) {
+                        ultima = ultima.slice(0, -1);
+                    }
+                    linhas[maxLinhas - 1] = `${ultima.trimEnd()}…`;
+                }
+
+                const fontPx = ptToPx(Math.max(minFontPt, tamanhoPt));
+                ctx.font = `${peso} ${fontPx}px ${familiaSegoe()}`;
+                const lineHeightPx = fontPx * 1.08;
+                const blocoH = linhas.length * lineHeightPx;
+                const startY = (canvas.height - blocoH) / 2 + lineHeightPx / 2;
+
+                linhas.forEach((linha, index) => {
+                    ctx.fillText(linha, canvas.width / 2, startY + index * lineHeightPx);
+                });
+
+                const dataUrl = canvas.toDataURL("image/png");
+                TEXTO_CACHE.set(cacheKey, dataUrl);
+                return dataUrl;
+            }
+
+            function adicionarTextoImagem(args: {
+                texto: string;
+                x: number;
+                y: number;
+                largura: number;
+                altura: number;
+                fontPt: number;
+                minFontPt: number;
+                maxLinhas: number;
+                cinza: number;
+                peso?: number;
+            }) {
+                const png = criarTextoPNG({
+                    texto: args.texto,
+                    larguraMm: args.largura,
+                    alturaMm: args.altura,
+                    fontPt: args.fontPt,
+                    minFontPt: args.minFontPt,
+                    maxLinhas: args.maxLinhas,
+                    cinza: args.cinza,
+                    peso: args.peso,
+                });
+                if (!png) return;
+
+                doc.addImage(
+                    png,
+                    "PNG",
+                    args.x,
+                    args.y,
+                    args.largura,
+                    args.altura,
+                    undefined,
+                    "FAST"
+                );
+            }
+
+            function desenharXDeFuracao(x: number, y: number) {
+                // Muito pequeno e discreto: apenas guia para o vazador/furador.
+                adicionarTextoImagem({
+                    texto: "X",
+                    x: x + ETIQUETA_W / 2 - 2.2,
+                    y: y + 4.0,
+                    largura: 4.4,
+                    altura: 3.4,
+                    fontPt: 4.2,
+                    minFontPt: 4.2,
+                    maxLinhas: 1,
+                    cinza: 120,
+                    peso: 300,
+                });
+            }
+
+            // =========================
+            // CODE128 DO VERSO
+            // =========================
+            const BARCODE_CACHE = new Map<
                 string,
-                {
-                    dataUrl: string;
-                    widthPx: number;
-                    heightPx: number;
-                } | null
+                { dataUrl: string; widthPx: number; heightPx: number } | null
             >();
 
             function gerarBarcode(codigo: string) {
                 const valor = String(codigo || "").trim();
                 if (!valor) return null;
-
-                if (barcodeCache.has(valor)) {
-                    return barcodeCache.get(valor) || null;
-                }
+                if (BARCODE_CACHE.has(valor)) return BARCODE_CACHE.get(valor) || null;
 
                 try {
                     const canvas = document.createElement("canvas");
-
                     JsBarcode(canvas, valor, {
                         format: "CODE128",
                         displayValue: false,
-                        width: 2,
-                        height: 64,
-                        margin: 8,
+                        width: 2.4,
+                        height: 100,
+                        margin: 10,
                         background: "#ffffff",
                         lineColor: "#000000",
                     });
@@ -3772,242 +3987,132 @@ export default function Page() {
                         widthPx: Math.max(1, canvas.width),
                         heightPx: Math.max(1, canvas.height),
                     };
-
-                    barcodeCache.set(valor, asset);
+                    BARCODE_CACHE.set(valor, asset);
                     return asset;
                 } catch (err) {
-                    console.warn(
-                        `Não foi possível gerar o código de barras ${valor}.`,
-                        err
-                    );
-                    barcodeCache.set(valor, null);
+                    console.warn(`Não foi possível gerar CODE128 para ${valor}.`, err);
+                    BARCODE_CACHE.set(valor, null);
                     return null;
                 }
             }
 
-            function posicaoEtiqueta(
-                slotNaPagina: number,
-                espelharColunas: boolean
-            ) {
-                const linha = Math.floor(slotNaPagina / COLUNAS);
-                const colunaOriginal = slotNaPagina % COLUNAS;
-                const coluna = espelharColunas
-                    ? COLUNAS - 1 - colunaOriginal
-                    : colunaOriginal;
-
-                const x = MARGEM_X + coluna * (ETIQUETA_W + GAP_X);
-                const y = MARGEM_Y + linha * (ETIQUETA_H + GAP_Y);
-
-                return { x, y };
-            }
-
-            function desenharBorda(x: number, y: number) {
-                doc.setDrawColor(0, 0, 0);
-                doc.setLineWidth(0.2);
-                doc.rect(x, y, ETIQUETA_W, ETIQUETA_H);
-            }
-
-            function escreverCentralizadoAjustando({
-                texto,
-                x,
-                y,
-                largura,
-                altura,
-                tamanhoInicial,
-                tamanhoMinimo,
-                maxLinhas,
-                negrito = false,
-            }: {
-                texto: string;
-                x: number;
-                y: number;
-                largura: number;
-                altura: number;
-                tamanhoInicial: number;
-                tamanhoMinimo: number;
-                maxLinhas: number;
-                negrito?: boolean;
-            }) {
-                const valor = String(texto || "").trim();
-                if (!valor) return;
-
-                const paddingX = 1.5;
-                const maxWidth = Math.max(1, largura - paddingX * 2);
-
-                let fontSize = tamanhoInicial;
-                let linhasTexto: string[] = [];
-
-                while (fontSize >= tamanhoMinimo) {
-                    doc.setFont("helvetica", negrito ? "bold" : "normal");
-                    doc.setFontSize(fontSize);
-
-                    linhasTexto = doc.splitTextToSize(valor, maxWidth) as string[];
-
-                    const lineHeightMm = fontSize * MM_POR_PT * 1.16;
-                    const totalHeight = linhasTexto.length * lineHeightMm;
-
-                    if (
-                        linhasTexto.length <= maxLinhas &&
-                        totalHeight <= altura
-                    ) {
-                        break;
-                    }
-
-                    fontSize -= 0.5;
-                }
-
-                if (linhasTexto.length > maxLinhas) {
-                    linhasTexto = linhasTexto.slice(0, maxLinhas);
-
-                    const ultima = linhasTexto.length - 1;
-                    if (ultima >= 0) {
-                        let final = linhasTexto[ultima];
-
-                        while (
-                            final.length > 1 &&
-                            doc.getTextWidth(`${final}...`) > maxWidth
-                        ) {
-                            final = final.slice(0, -1);
-                        }
-
-                        linhasTexto[ultima] = `${final.trimEnd()}...`;
-                    }
-                }
-
-                const lineHeightMm = fontSize * MM_POR_PT * 1.16;
-                const totalHeight = linhasTexto.length * lineHeightMm;
-                const primeiroBaseline =
-                    y +
-                    Math.max(0, (altura - totalHeight) / 2) +
-                    lineHeightMm * 0.82;
-
-                doc.setFont("helvetica", negrito ? "bold" : "normal");
-                doc.setFontSize(fontSize);
-                doc.setTextColor(0, 0, 0);
-
-                linhasTexto.forEach((linhaTexto, index) => {
-                    doc.text(
-                        linhaTexto,
-                        x + largura / 2,
-                        primeiroBaseline + index * lineHeightMm,
-                        {
-                            align: "center",
-                        }
-                    );
-                });
-            }
-
+            // =========================
+            // FRENTE
+            // =========================
             function desenharFrente(
                 slotNaPagina: number,
                 produto: ProdutoEtiquetaPDF | null
             ) {
                 const { x, y } = posicaoEtiqueta(slotNaPagina, false);
-                desenharBorda(x, y);
-
+                desenharXDeFuracao(x, y);
                 if (!produto) return;
 
-                // Nome ocupa a maior parte superior da etiqueta.
-                escreverCentralizadoAjustando({
+                // Nome propositalmente mais baixo que no layout anterior.
+                // Centro visual aproximado em 57% da altura da etiqueta.
+                adicionarTextoImagem({
                     texto: produto.nome,
-                    x: x + 2.5,
-                    y: y + 8,
-                    largura: ETIQUETA_W - 5,
-                    altura: 36,
-                    tamanhoInicial: 11,
-                    tamanhoMinimo: 7,
-                    maxLinhas: 4,
-                    negrito: true,
+                    x: x + 5,
+                    y: y + ETIQUETA_H * 0.47,
+                    largura: ETIQUETA_W - 10,
+                    altura: 15,
+                    fontPt: 10.2,
+                    minFontPt: 6.4,
+                    maxLinhas: 3,
+                    cinza: 52,
+                    peso: 300,
                 });
 
+                // Linha bem menor, sem separador, próxima da base.
                 if (produto.linha) {
-                    // Linha fica visualmente separada e mais próxima da base.
-                    doc.setDrawColor(210, 210, 210);
-                    doc.setLineWidth(0.15);
-                    doc.line(
-                        x + 6,
-                        y + ETIQUETA_H - 20,
-                        x + ETIQUETA_W - 6,
-                        y + ETIQUETA_H - 20
-                    );
-
-                    escreverCentralizadoAjustando({
+                    adicionarTextoImagem({
                         texto: produto.linha,
-                        x: x + 3,
-                        y: y + ETIQUETA_H - 18,
-                        largura: ETIQUETA_W - 6,
-                        altura: 12,
-                        tamanhoInicial: 9,
-                        tamanhoMinimo: 6.5,
+                        x: x + 6,
+                        y: y + ETIQUETA_H - 11.0,
+                        largura: ETIQUETA_W - 12,
+                        altura: 5.5,
+                        fontPt: 4.7,
+                        minFontPt: 3.9,
                         maxLinhas: 2,
-                        negrito: true,
+                        cinza: 100,
+                        peso: 300,
                     });
                 }
             }
 
+            // =========================
+            // VERSO
+            // =========================
             function desenharVerso(
                 slotNaPagina: number,
                 produto: ProdutoEtiquetaPDF | null
             ) {
-                // Espelhamento horizontal necessário para duplex "borda longa".
                 const { x, y } = posicaoEtiqueta(slotNaPagina, true);
-                desenharBorda(x, y);
-
+                desenharXDeFuracao(x, y);
                 if (!produto) return;
 
                 const codigo = produto.codigoBarras;
                 const asset = gerarBarcode(codigo);
 
+                // O barcode fica abaixo do centro geométrico, como na referência.
+                // Sua caixa começa aproximadamente em 48% da altura do cartão.
+                const barcodeMaxW = 31.5;
+                const barcodeMaxH = 14.5;
+                let barcodeBottom = y + ETIQUETA_H * 0.48 + barcodeMaxH;
+
                 if (asset) {
-                    const maxBarcodeW = ETIQUETA_W - 8;
-                    const maxBarcodeH = 21;
-
                     const scale = Math.min(
-                        maxBarcodeW / asset.widthPx,
-                        maxBarcodeH / asset.heightPx
+                        barcodeMaxW / asset.widthPx,
+                        barcodeMaxH / asset.heightPx
                     );
+                    const w = asset.widthPx * scale;
+                    const h = asset.heightPx * scale;
+                    const bx = x + (ETIQUETA_W - w) / 2;
+                    const by = y + ETIQUETA_H * 0.48;
+                    barcodeBottom = by + h;
 
-                    const barcodeW = asset.widthPx * scale;
-                    const barcodeH = asset.heightPx * scale;
-                    const barcodeX = x + (ETIQUETA_W - barcodeW) / 2;
-                    const barcodeY = y + 18;
+                    doc.addImage(asset.dataUrl, "PNG", bx, by, w, h, undefined, "FAST");
 
-                    doc.addImage(
-                        asset.dataUrl,
-                        "PNG",
-                        barcodeX,
-                        barcodeY,
-                        barcodeW,
-                        barcodeH,
-                        undefined,
-                        "FAST"
-                    );
-
-                    escreverCentralizadoAjustando({
+                    // Número minúsculo e praticamente colado ao barcode.
+                    adicionarTextoImagem({
                         texto: codigo,
-                        x: x + 3,
-                        y: barcodeY + barcodeH + 5,
-                        largura: ETIQUETA_W - 6,
-                        altura: 13,
-                        tamanhoInicial: 10,
-                        tamanhoMinimo: 7,
+                        x: x + 7,
+                        y: barcodeBottom + 0.5,
+                        largura: ETIQUETA_W - 14,
+                        altura: 3.0,
+                        fontPt: 3.8,
+                        minFontPt: 3.4,
                         maxLinhas: 1,
-                        negrito: false,
+                        cinza: 100,
+                        peso: 300,
                     });
                 } else {
-                    escreverCentralizadoAjustando({
-                        texto: codigo
-                            ? `Código inválido: ${codigo}`
-                            : "Sem código de barras",
-                        x: x + 4,
-                        y: y + 24,
-                        largura: ETIQUETA_W - 8,
-                        altura: 20,
-                        tamanhoInicial: 9,
-                        tamanhoMinimo: 7,
+                    adicionarTextoImagem({
+                        texto: codigo ? `Código inválido: ${codigo}` : "Sem código",
+                        x: x + 6,
+                        y: y + ETIQUETA_H * 0.49,
+                        largura: ETIQUETA_W - 12,
+                        altura: 8,
+                        fontPt: 5.2,
+                        minFontPt: 4.2,
                         maxLinhas: 2,
-                        negrito: false,
+                        cinza: 100,
+                        peso: 300,
                     });
                 }
+
+                // Frase institucional no rodapé, pequena e discreta.
+                adicionarTextoImagem({
+                    texto: FRASE_VERSO,
+                    x: x + 5.5,
+                    y: y + ETIQUETA_H - 9.2,
+                    largura: ETIQUETA_W - 11,
+                    altura: 6.4,
+                    fontPt: 3.45,
+                    minFontPt: 3.1,
+                    maxLinhas: 2,
+                    cinza: 112,
+                    peso: 300,
+                });
             }
 
             const totalPaginasFrente = Math.max(
@@ -4016,35 +4121,32 @@ export default function Page() {
             );
 
             for (let pagina = 0; pagina < totalPaginasFrente; pagina++) {
-                if (pagina > 0) {
-                    doc.addPage("a4", "portrait");
-                }
+                if (pagina > 0) doc.addPage("a4", "portrait");
 
                 const inicio = pagina * ETIQUETAS_POR_PAGINA;
 
                 // FRENTE
+                desenharGuiasDeCorte();
                 for (let slot = 0; slot < ETIQUETAS_POR_PAGINA; slot++) {
-                    const produto = produtosEtiqueta[inicio + slot] || null;
-                    desenharFrente(slot, produto);
+                    desenharFrente(slot, produtosEtiqueta[inicio + slot] || null);
                 }
 
-                // VERSO imediatamente depois da respectiva frente.
+                // VERSO imediatamente após a frente correspondente.
                 doc.addPage("a4", "portrait");
-
+                desenharGuiasDeCorte();
                 for (let slot = 0; slot < ETIQUETAS_POR_PAGINA; slot++) {
-                    const produto = produtosEtiqueta[inicio + slot] || null;
-                    desenharVerso(slot, produto);
+                    desenharVerso(slot, produtosEtiqueta[inicio + slot] || null);
                 }
             }
 
-            const safeName = `etiquetas_produtos_${new Date()
+            const safeName = `etiquetas_tag_v05_${new Date()
                 .toISOString()
                 .slice(0, 19)
                 .replace(/[:T]/g, "-")}`;
 
             doc.save(`${safeName}.pdf`);
         } catch (err: any) {
-            console.error("Falha ao gerar Etiqueta PDF:", err);
+            console.error("Falha ao gerar Etiqueta PDF TAG V05:", err);
             alert(
                 err?.message
                     ? `Não foi possível gerar as etiquetas em PDF: ${err.message}`
@@ -7447,9 +7549,9 @@ export default function Page() {
                                         disabled={loading || !estoqueRows.length}
                                         className="w-full whitespace-nowrap sm:w-auto"
                                         data-build={APP_BUILD_ID}
-                                        title="Etiquetas A4 4 x 4 • frente e verso • duplex na borda longa"
+                                        title="TAG V05 • A4 4x4 • Segoe UI Light • sem bordas • guias de corte • duplex borda longa"
                                     >
-                                        🏷️ Etiqueta PDF
+                                        🏷️ Etiqueta PDF TAG
                                     </Button>
                                     <Button
                                         variant="soft"
