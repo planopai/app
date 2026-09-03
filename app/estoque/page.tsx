@@ -516,8 +516,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-BOLD-120-CUTMARKS-V07";
-const APP_BUILD_LABEL = "2026.09.03-TAG-BOLD-120-CUTMARKS-V07";
+const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-LIGHT-105-V08";
+const APP_BUILD_LABEL = "2026.09.03-TAG-LIGHT-105-V08";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -3628,7 +3628,7 @@ export default function Page() {
     }
 
 
-    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V07
+    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V08
     // Layout pensado para corte com régua + estilete:
     // - 4 colunas x 4 linhas = 16 etiquetas por lado.
     // - Etiquetas ENCOSTADAS: sem GAP, sem moldura e sem linhas internas.
@@ -3636,7 +3636,7 @@ export default function Page() {
     // - Frente: X de furação no topo, nome mais abaixo e linha maior no rodapé.
     // - Verso: X no topo, CODE128 abaixo do centro, número praticamente colado
     //   ao código e mensagem institucional maior, preta e forçada em duas linhas equilibradas.
-    // - Todo texto da TAG está 20% maior, preto e em negrito (peso 700).
+    // - Todo texto da TAG está 5% maior que na V07, preto e sem negrito (peso 300).
     // - Verso espelhado horizontalmente para duplex em "virar na borda longa".
     async function exportarEtiquetasPDF() {
         if (!estoqueRows.length) {
@@ -3798,9 +3798,8 @@ export default function Page() {
             const PX_POR_MM = 13; // ~330 DPI
 
             function familiaSegoe() {
-                // V07: Segoe UI primeiro para permitir peso 700 real/sintetizado.
-                // Mantém Segoe UI Light como fallback da mesma família visual.
-                return '"Segoe UI", "Segoe UI Light", Arial, sans-serif';
+                // V08: volta a priorizar Segoe UI Light, sem negrito.
+                return '"Segoe UI Light", "Segoe UI", Arial, sans-serif';
             }
 
             function quebrarLinhaCanvas(
@@ -3845,7 +3844,7 @@ export default function Page() {
                 minFontPt,
                 maxLinhas,
                 cinza,
-                peso = 700,
+                peso = 300,
             }: {
                 texto: string;
                 larguraMm: number;
@@ -3972,13 +3971,13 @@ export default function Page() {
                     texto: "X",
                     x: x + ETIQUETA_W / 2 - 2.2,
                     y: y + 4.0,
-                    largura: 5.28,
-                    altura: 4.08,
-                    fontPt: 5.04,
-                    minFontPt: 5.04,
+                    largura: 5.544,
+                    altura: 4.284,
+                    fontPt: 5.292,
+                    minFontPt: 5.292,
                     maxLinhas: 1,
                     cinza: 0,
-                    peso: 700,
+                    peso: 300,
                 });
             }
 
@@ -4039,12 +4038,12 @@ export default function Page() {
                     x: x + 5,
                     y: y + ETIQUETA_H * 0.47,
                     largura: ETIQUETA_W - 10,
-                    altura: 18.0,
-                    fontPt: 12.24,
-                    minFontPt: 7.68,
+                    altura: 18.9,
+                    fontPt: 12.852,
+                    minFontPt: 8.064,
                     maxLinhas: 3,
                     cinza: 0,
-                    peso: 700,
+                    peso: 300,
                 });
 
                 // Linha bem menor, sem separador, próxima da base.
@@ -4054,12 +4053,12 @@ export default function Page() {
                         x: x + 6,
                         y: y + ETIQUETA_H - 11.4,
                         largura: ETIQUETA_W - 12,
-                        altura: 7.44,
-                        fontPt: 7.32,
-                        minFontPt: 6.24,
+                        altura: 7.812,
+                        fontPt: 7.686,
+                        minFontPt: 6.552,
                         maxLinhas: 2,
                         cinza: 0,
-                        peso: 700,
+                        peso: 300,
                     });
                 }
             }
@@ -4106,12 +4105,12 @@ export default function Page() {
                         // o número praticamente colado às barras.
                         y: barcodeBottom - 0.55,
                         largura: ETIQUETA_W - 14,
-                        altura: 3.12,
-                        fontPt: 4.8,
-                        minFontPt: 4.44,
+                        altura: 3.276,
+                        fontPt: 5.04,
+                        minFontPt: 4.662,
                         maxLinhas: 1,
                         cinza: 0,
-                        peso: 700,
+                        peso: 300,
                     });
                 } else {
                     adicionarTextoImagem({
@@ -4119,12 +4118,12 @@ export default function Page() {
                         x: x + 6,
                         y: y + ETIQUETA_H * 0.49,
                         largura: ETIQUETA_W - 12,
-                        altura: 9.6,
-                        fontPt: 6.24,
-                        minFontPt: 5.04,
+                        altura: 10.08,
+                        fontPt: 6.552,
+                        minFontPt: 5.292,
                         maxLinhas: 2,
                         cinza: 0,
-                        peso: 700,
+                        peso: 300,
                     });
                 }
 
@@ -4134,12 +4133,12 @@ export default function Page() {
                     x: x + 4.0,
                     y: y + ETIQUETA_H - 10.8,
                     largura: ETIQUETA_W - 8,
-                    altura: 9.6,
-                    fontPt: 5.76,
-                    minFontPt: 5.28,
+                    altura: 10.08,
+                    fontPt: 6.048,
+                    minFontPt: 5.544,
                     maxLinhas: 2,
                     cinza: 0,
-                    peso: 700,
+                    peso: 300,
                 });
             }
 
@@ -4167,14 +4166,14 @@ export default function Page() {
                 }
             }
 
-            const safeName = `etiquetas_tag_v07_${new Date()
+            const safeName = `etiquetas_tag_v08_${new Date()
                 .toISOString()
                 .slice(0, 19)
                 .replace(/[:T]/g, "-")}`;
 
             doc.save(`${safeName}.pdf`);
         } catch (err: any) {
-            console.error("Falha ao gerar Etiqueta PDF TAG V07:", err);
+            console.error("Falha ao gerar Etiqueta PDF TAG V08:", err);
             alert(
                 err?.message
                     ? `Não foi possível gerar as etiquetas em PDF: ${err.message}`
@@ -7577,7 +7576,7 @@ export default function Page() {
                                         disabled={loading || !estoqueRows.length}
                                         className="w-full whitespace-nowrap sm:w-auto"
                                         data-build={APP_BUILD_ID}
-                                        title="TAG V07 • fontes +20% • negrito • guias laterais 10mm • A4 4x4 • duplex borda longa"
+                                        title="TAG V08 • fontes +5% sobre V07 • sem negrito • Segoe UI Light • guias laterais 10mm • A4 4x4 • duplex borda longa"
                                     >
                                         🏷️ Etiqueta PDF TAG
                                     </Button>
