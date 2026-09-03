@@ -516,8 +516,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-02-1005-EXCEL-ETIQUETAS-FIX-03";
-const APP_BUILD_LABEL = "2026.09.02-1005-EXCEL-ETIQUETAS-FIX";
+const APP_BUILD_ID = "ESTOQUE-2026-09-03-ETIQUETAS-PDF-01";
+const APP_BUILD_LABEL = "2026.09.03-ETIQUETAS-PDF-01";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -3623,6 +3623,432 @@ export default function Page() {
                 err?.message
                     ? `Não foi possível gerar o Excel: ${err.message}`
                     : "Não foi possível gerar o arquivo Excel."
+            );
+        }
+    }
+
+
+    // ✅ ETIQUETAS PDF A4
+    // Gera as etiquetas dos produtos atualmente filtrados em páginas A4:
+    // - 4 colunas x 4 linhas = 16 etiquetas por lado.
+    // - Frente: nome do produto + linha.
+    // - Verso: código de barras + número.
+    // - O verso espelha as colunas para impressão duplex em "virar na borda longa".
+    // - Geometria em milímetros, sem depender de células, zoom ou ajuste do Excel.
+    async function exportarEtiquetasPDF() {
+        if (!estoqueRows.length) {
+            alert("Nenhum item para gerar etiquetas com os filtros atuais.");
+            return;
+        }
+
+        try {
+            const linhasResp = await catalogoApiGet<CatalogoProdutoLinhasResp>({
+                produto_linhas: 1,
+                _ts: Date.now(),
+            });
+
+            if (!linhasResp.ok) {
+                throw new Error(
+                    linhasResp.msg || "Não foi possível carregar as linhas do catálogo."
+                );
+            }
+
+            const linhaByProdutoId = new Map<ID, string>();
+            for (const item of linhasResp.rows || []) {
+                const produtoId = Number(item.produto_id || 0);
+                if (!produtoId) continue;
+                linhaByProdutoId.set(
+                    produtoId,
+                    String(item.linha || "").trim()
+                );
+            }
+
+            const [{ default: jsPDF }, JsBarcodeModule] = await Promise.all([
+                import("jspdf"),
+                import("jsbarcode"),
+            ]);
+
+            const JsBarcode = JsBarcodeModule.default;
+
+            type ProdutoEtiquetaPDF = {
+                id: ID;
+                nome: string;
+                linha: string;
+                codigoBarras: string;
+            };
+
+            // estoqueRows já representa exatamente a lista filtrada da tela.
+            const produtosEtiqueta: ProdutoEtiquetaPDF[] = estoqueRows.map(
+                ({ p }) => ({
+                    id: Number(p.id),
+                    nome: String(p.nome || "").trim(),
+                    linha: linhaByProdutoId.get(Number(p.id)) || "",
+                    codigoBarras: String(p.codigo_barras || "").trim(),
+                })
+            );
+
+            const doc = new jsPDF({
+                orientation: "portrait",
+                unit: "mm",
+                format: "a4",
+                compress: true,
+                putOnlyUsedFonts: true,
+            });
+
+            doc.setProperties({
+                title: "Etiquetas de Produtos",
+                subject: "Etiquetas A4 frente e verso",
+                author: "Sistema de Materiais",
+                creator: "Sistema de Materiais",
+            });
+
+            // Sugere ao leitor de PDF impressão em tamanho real e duplex pela borda longa.
+            // Nem todo driver respeita essas preferências, por isso a geometria do PDF
+            // continua sendo calculada em tamanho físico A4.
+            try {
+                (doc as any).viewerPreferences?.({
+                    PrintScaling: "None",
+                    Duplex: "DuplexFlipLongEdge",
+                    PickTrayByPDFSize: true,
+                });
+            } catch {
+                // Alguns builds do jsPDF podem não expor viewerPreferences.
+            }
+
+            const PAGE_W = 210;
+            const PAGE_H = 297;
+
+            const COLUNAS = 4;
+            const LINHAS = 4;
+            const ETIQUETAS_POR_PAGINA = COLUNAS * LINHAS;
+
+            // Margens seguras para impressoras A4 comuns.
+            const MARGEM_X = 5;
+            const MARGEM_Y = 5;
+
+            // Espaço físico entre cartões.
+            const GAP_X = 2;
+            const GAP_Y = 2;
+
+            const ETIQUETA_W =
+                (PAGE_W - MARGEM_X * 2 - GAP_X * (COLUNAS - 1)) / COLUNAS;
+            const ETIQUETA_H =
+                (PAGE_H - MARGEM_Y * 2 - GAP_Y * (LINHAS - 1)) / LINHAS;
+
+            const MM_POR_PT = 0.352777778;
+
+            const barcodeCache = new Map<
+                string,
+                {
+                    dataUrl: string;
+                    widthPx: number;
+                    heightPx: number;
+                } | null
+            >();
+
+            function gerarBarcode(codigo: string) {
+                const valor = String(codigo || "").trim();
+                if (!valor) return null;
+
+                if (barcodeCache.has(valor)) {
+                    return barcodeCache.get(valor) || null;
+                }
+
+                try {
+                    const canvas = document.createElement("canvas");
+
+                    JsBarcode(canvas, valor, {
+                        format: "CODE128",
+                        displayValue: false,
+                        width: 2,
+                        height: 64,
+                        margin: 8,
+                        background: "#ffffff",
+                        lineColor: "#000000",
+                    });
+
+                    const asset = {
+                        dataUrl: canvas.toDataURL("image/png"),
+                        widthPx: Math.max(1, canvas.width),
+                        heightPx: Math.max(1, canvas.height),
+                    };
+
+                    barcodeCache.set(valor, asset);
+                    return asset;
+                } catch (err) {
+                    console.warn(
+                        `Não foi possível gerar o código de barras ${valor}.`,
+                        err
+                    );
+                    barcodeCache.set(valor, null);
+                    return null;
+                }
+            }
+
+            function posicaoEtiqueta(
+                slotNaPagina: number,
+                espelharColunas: boolean
+            ) {
+                const linha = Math.floor(slotNaPagina / COLUNAS);
+                const colunaOriginal = slotNaPagina % COLUNAS;
+                const coluna = espelharColunas
+                    ? COLUNAS - 1 - colunaOriginal
+                    : colunaOriginal;
+
+                const x = MARGEM_X + coluna * (ETIQUETA_W + GAP_X);
+                const y = MARGEM_Y + linha * (ETIQUETA_H + GAP_Y);
+
+                return { x, y };
+            }
+
+            function desenharBorda(x: number, y: number) {
+                doc.setDrawColor(0, 0, 0);
+                doc.setLineWidth(0.2);
+                doc.rect(x, y, ETIQUETA_W, ETIQUETA_H);
+            }
+
+            function escreverCentralizadoAjustando({
+                texto,
+                x,
+                y,
+                largura,
+                altura,
+                tamanhoInicial,
+                tamanhoMinimo,
+                maxLinhas,
+                negrito = false,
+            }: {
+                texto: string;
+                x: number;
+                y: number;
+                largura: number;
+                altura: number;
+                tamanhoInicial: number;
+                tamanhoMinimo: number;
+                maxLinhas: number;
+                negrito?: boolean;
+            }) {
+                const valor = String(texto || "").trim();
+                if (!valor) return;
+
+                const paddingX = 1.5;
+                const maxWidth = Math.max(1, largura - paddingX * 2);
+
+                let fontSize = tamanhoInicial;
+                let linhasTexto: string[] = [];
+
+                while (fontSize >= tamanhoMinimo) {
+                    doc.setFont("helvetica", negrito ? "bold" : "normal");
+                    doc.setFontSize(fontSize);
+
+                    linhasTexto = doc.splitTextToSize(valor, maxWidth) as string[];
+
+                    const lineHeightMm = fontSize * MM_POR_PT * 1.16;
+                    const totalHeight = linhasTexto.length * lineHeightMm;
+
+                    if (
+                        linhasTexto.length <= maxLinhas &&
+                        totalHeight <= altura
+                    ) {
+                        break;
+                    }
+
+                    fontSize -= 0.5;
+                }
+
+                if (linhasTexto.length > maxLinhas) {
+                    linhasTexto = linhasTexto.slice(0, maxLinhas);
+
+                    const ultima = linhasTexto.length - 1;
+                    if (ultima >= 0) {
+                        let final = linhasTexto[ultima];
+
+                        while (
+                            final.length > 1 &&
+                            doc.getTextWidth(`${final}...`) > maxWidth
+                        ) {
+                            final = final.slice(0, -1);
+                        }
+
+                        linhasTexto[ultima] = `${final.trimEnd()}...`;
+                    }
+                }
+
+                const lineHeightMm = fontSize * MM_POR_PT * 1.16;
+                const totalHeight = linhasTexto.length * lineHeightMm;
+                const primeiroBaseline =
+                    y +
+                    Math.max(0, (altura - totalHeight) / 2) +
+                    lineHeightMm * 0.82;
+
+                doc.setFont("helvetica", negrito ? "bold" : "normal");
+                doc.setFontSize(fontSize);
+                doc.setTextColor(0, 0, 0);
+
+                linhasTexto.forEach((linhaTexto, index) => {
+                    doc.text(
+                        linhaTexto,
+                        x + largura / 2,
+                        primeiroBaseline + index * lineHeightMm,
+                        {
+                            align: "center",
+                        }
+                    );
+                });
+            }
+
+            function desenharFrente(
+                slotNaPagina: number,
+                produto: ProdutoEtiquetaPDF | null
+            ) {
+                const { x, y } = posicaoEtiqueta(slotNaPagina, false);
+                desenharBorda(x, y);
+
+                if (!produto) return;
+
+                // Nome ocupa a maior parte superior da etiqueta.
+                escreverCentralizadoAjustando({
+                    texto: produto.nome,
+                    x: x + 2.5,
+                    y: y + 8,
+                    largura: ETIQUETA_W - 5,
+                    altura: 36,
+                    tamanhoInicial: 11,
+                    tamanhoMinimo: 7,
+                    maxLinhas: 4,
+                    negrito: true,
+                });
+
+                if (produto.linha) {
+                    // Linha fica visualmente separada e mais próxima da base.
+                    doc.setDrawColor(210, 210, 210);
+                    doc.setLineWidth(0.15);
+                    doc.line(
+                        x + 6,
+                        y + ETIQUETA_H - 20,
+                        x + ETIQUETA_W - 6,
+                        y + ETIQUETA_H - 20
+                    );
+
+                    escreverCentralizadoAjustando({
+                        texto: produto.linha,
+                        x: x + 3,
+                        y: y + ETIQUETA_H - 18,
+                        largura: ETIQUETA_W - 6,
+                        altura: 12,
+                        tamanhoInicial: 9,
+                        tamanhoMinimo: 6.5,
+                        maxLinhas: 2,
+                        negrito: true,
+                    });
+                }
+            }
+
+            function desenharVerso(
+                slotNaPagina: number,
+                produto: ProdutoEtiquetaPDF | null
+            ) {
+                // Espelhamento horizontal necessário para duplex "borda longa".
+                const { x, y } = posicaoEtiqueta(slotNaPagina, true);
+                desenharBorda(x, y);
+
+                if (!produto) return;
+
+                const codigo = produto.codigoBarras;
+                const asset = gerarBarcode(codigo);
+
+                if (asset) {
+                    const maxBarcodeW = ETIQUETA_W - 8;
+                    const maxBarcodeH = 21;
+
+                    const scale = Math.min(
+                        maxBarcodeW / asset.widthPx,
+                        maxBarcodeH / asset.heightPx
+                    );
+
+                    const barcodeW = asset.widthPx * scale;
+                    const barcodeH = asset.heightPx * scale;
+                    const barcodeX = x + (ETIQUETA_W - barcodeW) / 2;
+                    const barcodeY = y + 18;
+
+                    doc.addImage(
+                        asset.dataUrl,
+                        "PNG",
+                        barcodeX,
+                        barcodeY,
+                        barcodeW,
+                        barcodeH,
+                        undefined,
+                        "FAST"
+                    );
+
+                    escreverCentralizadoAjustando({
+                        texto: codigo,
+                        x: x + 3,
+                        y: barcodeY + barcodeH + 5,
+                        largura: ETIQUETA_W - 6,
+                        altura: 13,
+                        tamanhoInicial: 10,
+                        tamanhoMinimo: 7,
+                        maxLinhas: 1,
+                        negrito: false,
+                    });
+                } else {
+                    escreverCentralizadoAjustando({
+                        texto: codigo
+                            ? `Código inválido: ${codigo}`
+                            : "Sem código de barras",
+                        x: x + 4,
+                        y: y + 24,
+                        largura: ETIQUETA_W - 8,
+                        altura: 20,
+                        tamanhoInicial: 9,
+                        tamanhoMinimo: 7,
+                        maxLinhas: 2,
+                        negrito: false,
+                    });
+                }
+            }
+
+            const totalPaginasFrente = Math.max(
+                1,
+                Math.ceil(produtosEtiqueta.length / ETIQUETAS_POR_PAGINA)
+            );
+
+            for (let pagina = 0; pagina < totalPaginasFrente; pagina++) {
+                if (pagina > 0) {
+                    doc.addPage("a4", "portrait");
+                }
+
+                const inicio = pagina * ETIQUETAS_POR_PAGINA;
+
+                // FRENTE
+                for (let slot = 0; slot < ETIQUETAS_POR_PAGINA; slot++) {
+                    const produto = produtosEtiqueta[inicio + slot] || null;
+                    desenharFrente(slot, produto);
+                }
+
+                // VERSO imediatamente depois da respectiva frente.
+                doc.addPage("a4", "portrait");
+
+                for (let slot = 0; slot < ETIQUETAS_POR_PAGINA; slot++) {
+                    const produto = produtosEtiqueta[inicio + slot] || null;
+                    desenharVerso(slot, produto);
+                }
+            }
+
+            const safeName = `etiquetas_produtos_${new Date()
+                .toISOString()
+                .slice(0, 19)
+                .replace(/[:T]/g, "-")}`;
+
+            doc.save(`${safeName}.pdf`);
+        } catch (err: any) {
+            console.error("Falha ao gerar Etiqueta PDF:", err);
+            alert(
+                err?.message
+                    ? `Não foi possível gerar as etiquetas em PDF: ${err.message}`
+                    : "Não foi possível gerar as etiquetas em PDF."
             );
         }
     }
@@ -6995,7 +7421,7 @@ export default function Page() {
                                     <h2 className="text-base font-semibold text-slate-900">Produtos</h2>
 
                                 </div>
-                                <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
+                                <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
                                     <Button
                                         variant="soft"
                                         onClick={exportarEstoqueCSV}
@@ -7013,6 +7439,17 @@ export default function Page() {
                                         className="w-full whitespace-nowrap sm:w-auto"
                                     >
                                         🧾 PDF
+                                    </Button>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEtiquetasPDF}
+                                        type="button"
+                                        disabled={loading || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                        data-build={APP_BUILD_ID}
+                                        title="Etiquetas A4 4 x 4 • frente e verso • duplex na borda longa"
+                                    >
+                                        🏷️ Etiqueta PDF
                                     </Button>
                                     <Button
                                         variant="soft"
