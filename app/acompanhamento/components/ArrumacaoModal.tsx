@@ -217,6 +217,7 @@ export default function ArrumacaoModal({
     setArrumacao,
     setWizardData,
     wizardData,
+    onSave,
 }: {
     open: boolean;
     setOpen: (open: boolean) => void;
@@ -224,6 +225,7 @@ export default function ArrumacaoModal({
     setArrumacao: React.Dispatch<React.SetStateAction<ArrumacaoState>>;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     wizardData?: Registro;
+    onSave?: (data: Registro) => void | Promise<void>;
 }) {
     const campos: { key: keyof ArrumacaoState; label: string }[] = [
         { key: "luvas", label: "Luvas" },
@@ -245,6 +247,11 @@ export default function ArrumacaoModal({
     const meAbortRef = useRef<AbortController | null>(null);
     const itensAbortRef = useRef<AbortController | null>(null);
 
+    // Mantém sempre a versão mais recente do atendimento sem fazer o efeito de
+    // inicialização reiniciar enquanto o usuário está digitando quantidades.
+    const wizardDataRef = useRef<Registro | undefined>(wizardData);
+    wizardDataRef.current = wizardData;
+
     useEffect(() => {
         if (!open) return;
 
@@ -254,9 +261,10 @@ export default function ArrumacaoModal({
         const controller = new AbortController();
         meAbortRef.current = controller;
 
+        const currentWizardData = wizardDataRef.current;
         const raw =
-            (wizardData as any)?.arrumacao_json ??
-            (wizardData as any)?.arrumacao ??
+            (currentWizardData as any)?.arrumacao_json ??
+            (currentWizardData as any)?.arrumacao ??
             null;
         const parsed = parseArrumacaoJson(raw);
 
@@ -305,7 +313,7 @@ export default function ArrumacaoModal({
             });
 
         return () => controller.abort();
-    }, [open, wizardData]);
+    }, [open]);
 
     useEffect(() => {
         if (!open || !depInsumos || !me) return;
@@ -382,7 +390,7 @@ export default function ArrumacaoModal({
     );
 
     const buildArrumacaoJson = (): string => {
-        const oldRaw = (wizardData as any)?.arrumacao_json ?? null;
+        const oldRaw = (wizardDataRef.current as any)?.arrumacao_json ?? null;
         const oldObj = safeParseJson(oldRaw);
 
         const itens = Object.entries(sel)
@@ -678,21 +686,32 @@ export default function ArrumacaoModal({
                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => {
                         const json = buildArrumacaoJson();
+                        const previous = wizardDataRef.current ?? ({} as Registro);
 
-                        setWizardData((previous: Registro) => ({
+                        // Monta uma única fotografia dos dados. Assim, a mesma quantidade
+                        // exibida no input é a quantidade entregue ao page.tsx para persistir.
+                        const nextData = {
                             ...previous,
                             arrumacao,
                             arrumacao_json: json,
-                            _wizard_restrict_ids: [
-                                "arrumacao_json",
-                            ] as any,
-                            _wizard_modal_restrict_ids: [
-                                "arrumacao_json",
-                            ] as any,
+                            _wizard_restrict_ids: ["arrumacao_json"] as any,
+                            _wizard_modal_restrict_ids: ["arrumacao_json"] as any,
                             _wizard_modal_scope: "arrumacao" as any,
-                        }));
+                        } as Registro;
 
+                        wizardDataRef.current = nextData;
+                        setWizardData(nextData);
+
+                        // Fecha o modal primeiro. Em atendimento já existente, o page.tsx
+                        // persiste arrumacao_json imediatamente; em cadastro novo, os dados
+                        // continuam no Wizard e serão gravados no Concluir.
                         setOpen(false);
+
+                        if (onSave) {
+                            void Promise.resolve(onSave(nextData)).catch((error) => {
+                                console.error("Falha ao salvar arrumação:", error);
+                            });
+                        }
                     }}
                 >
                     Salvar Arrumação

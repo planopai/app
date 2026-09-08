@@ -2130,10 +2130,17 @@ export default function AcompanhamentoPage() {
     tipoAtendimento,
   ]);
 
-  const concluirWizard = useCallback(async () => {
+  const concluirWizard = useCallback(async (options?: {
+    dataOverride?: Registro | null;
+    manterWizardAberto?: boolean;
+    mensagemSucesso?: string;
+  }) => {
     if (wizardSubmitting) return;
 
-    const dataAtualizada: any = salvarGrupoWizard();
+    // Quando o salvamento nasce de um modal interno (ex.: Arrumação), usamos
+    // exatamente o snapshot produzido por ele. Isso evita depender do próximo
+    // clique em "Salvar" do Wizard para persistir arrumacao_json.
+    const dataAtualizada: any = options?.dataOverride ?? salvarGrupoWizard();
     if (!dataAtualizada) return;
 
     /*
@@ -2551,11 +2558,13 @@ export default function AcompanhamentoPage() {
           });
         }
 
-        setTimeout(
-          () =>
-            setWizardOpen(false),
-          950,
-        );
+        if (!options?.manterWizardAberto) {
+          setTimeout(
+            () =>
+              setWizardOpen(false),
+            950,
+          );
+        }
       } catch (e: any) {
         setWizardMsg({
           text:
@@ -2663,7 +2672,10 @@ export default function AcompanhamentoPage() {
           };
         }
 
-        setWizardMsg({ text: "Registro salvo!", ok: true });
+        setWizardMsg({
+          text: options?.mensagemSucesso || "Registro salvo!",
+          ok: true,
+        });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
           const novoId =
@@ -2676,7 +2688,9 @@ export default function AcompanhamentoPage() {
         }
 
         fetchRegistros();
-        setTimeout(() => setWizardOpen(false), 950);
+        if (!options?.manterWizardAberto) {
+          setTimeout(() => setWizardOpen(false), 950);
+        }
       } else {
         setWizardMsg({
           text: json?.erro || json?.msg || "Erro ao salvar!",
@@ -2810,11 +2824,13 @@ export default function AcompanhamentoPage() {
           });
         }
 
-        setTimeout(
-          () =>
-            setWizardOpen(false),
-          950,
-        );
+        if (!options?.manterWizardAberto) {
+          setTimeout(
+            () =>
+              setWizardOpen(false),
+            950,
+          );
+        }
       } else {
         // ❗ erro real do servidor (ex.: validação 400) -> não enfileira
         setWizardMsg({
@@ -2838,6 +2854,44 @@ export default function AcompanhamentoPage() {
     flushOfflineQueue,
     sincronizarCoroasAtendimento,
   ]);
+
+  // Salva imediatamente a Arrumação/Insumos quando estamos EDITANDO um
+  // atendimento que já existe no servidor. Para atendimento novo, o modal
+  // apenas atualiza o Wizard e o registro continua sendo criado no Concluir.
+  const salvarArrumacaoPersistida = useCallback(
+    async (data: Registro) => {
+      const id = (data as any)?.id;
+
+      if (
+        !wizardEditing ||
+        id == null ||
+        String(id).trim() === "" ||
+        isLocalAttendanceId(id)
+      ) {
+        return;
+      }
+
+      try {
+        await concluirWizard({
+          dataOverride: data,
+          manterWizardAberto: true,
+          mensagemSucesso: "Arrumação salva no atendimento!",
+        });
+      } finally {
+        // O escopo especial serve somente para este salvamento imediato.
+        // Limpá-lo evita que um próximo Salvar do Wizard ignore outros campos
+        // que o usuário possa alterar depois.
+        setWizardData((current: Registro) => {
+          const next: any = { ...current };
+          delete next._wizard_restrict_ids;
+          delete next._wizard_modal_restrict_ids;
+          delete next._wizard_modal_scope;
+          return next as Registro;
+        });
+      }
+    },
+    [wizardEditing, concluirWizard],
+  );
 
   /* -------------------- Ações (status) -------------------- */
   const abrirPopupAcaoPorId = useCallback((id: Registro["id"]) => {
@@ -3819,6 +3873,7 @@ export default function AcompanhamentoPage() {
         setArrumacao={setArrumacao}
         setWizardData={setWizardData}
         wizardData={wizardData} // ✅ ESSENCIAL
+        onSave={salvarArrumacaoPersistida}
       />
 
       <AcaoModal
