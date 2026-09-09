@@ -37,7 +37,10 @@ import TabelaAtendimentos from "./components/TabelaAtendimentos";
 import Wizard from "./components/Wizard";
 import MateriaisModal from "./components/MateriaisModal";
 import ArrumacaoModal from "./components/ArrumacaoModal";
-import AcaoModal from "./components/AcaoModal";
+import AcaoModal, {
+  type EstoqueInsuficienteAlerta,
+  type EstoqueInsuficienteItem,
+} from "./components/AcaoModal";
 import InfoModal from "./components/InfoModal";
 import SignatureModal from "./components/SignatureModal";
 import CompartilharModal from "./components/CompartilharModal";
@@ -96,7 +99,36 @@ const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 const COROAS_API = `${ENDPOINT}/coroas.php`;
 
 // ===== Helpers de baixa (fase12: URNA / ROUPA / INVOL / INSUMOS) =====
-type BaixaTipo = "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "COROA_ARTIFICIAL" | "INSUMOS";
+type BaixaTipo =
+  | ""
+  | "URNA"
+  | "ROUPA"
+  | "INVOL"
+  | "CORDAO"
+  | "VEU"
+  | "KIT_LANCHE"
+  | "COROA_ARTIFICIAL"
+  | "INSUMOS";
+
+class EstoqueInsuficienteError extends Error {
+  readonly code = "ESTOQUE_INSUFICIENTE";
+  readonly itens: EstoqueInsuficienteItem[];
+
+  constructor(message: string, itens: EstoqueInsuficienteItem[]) {
+    super(message);
+    this.name = "EstoqueInsuficienteError";
+    this.itens = itens;
+  }
+}
+
+function isEstoqueInsuficienteError(
+  error: unknown,
+): error is EstoqueInsuficienteError {
+  return (
+    error instanceof EstoqueInsuficienteError ||
+    String((error as any)?.code ?? "") === "ESTOQUE_INSUFICIENTE"
+  );
+}
 
 function isSim(v: any): boolean {
   const s = String(v ?? "")
@@ -639,6 +671,8 @@ export default function AcompanhamentoPage() {
     null,
   );
   const [acaoSubmitting, setAcaoSubmitting] = useState(false);
+  const [estoqueInsuficiente, setEstoqueInsuficiente] =
+    useState<EstoqueInsuficienteAlerta | null>(null);
 
   // Foto obrigatória antes de confirmar fase06/fase08
   const [fotoAcaoOpen, setFotoAcaoOpen] = useState(false);
@@ -1493,18 +1527,128 @@ export default function AcompanhamentoPage() {
 
       if (r.status === 401)
         throw new Error("Sessão expirada. Faça login novamente.");
+
       const j = await r.json().catch(() => null);
-      if (!j)
+
+      if (!j) {
         throw new Error(
-          `Resposta inválida do servidor (baixa ${payload.tipo}).`,
+          `Resposta inválida do servidor (baixa ${payload.tipo || "completa"}).`,
         );
-      if (j?.need_login)
+      }
+
+      if (j?.need_login) {
         throw new Error("Sessão expirada. Faça login novamente.");
-      if (!r.ok || j?.ok === false)
+      }
+
+      if (!r.ok || j?.ok === false) {
+        const faltantesRaw = Array.isArray(j?.faltantes)
+          ? j.faltantes
+          : [];
+
+        if (
+          String(j?.error_code ?? "") === "ESTOQUE_INSUFICIENTE" ||
+          faltantesRaw.length > 0
+        ) {
+          const faltantes: EstoqueInsuficienteItem[] = faltantesRaw
+            .map((item: any) => ({
+              produto_id: Number(item?.produto_id ?? 0) || 0,
+              produto_nome:
+                String(
+                  item?.produto_nome ??
+                  item?.nome ??
+                  (item?.produto_id
+                    ? `Produto ${item.produto_id}`
+                    : "Produto"),
+                ).trim() || "Produto",
+              deposito_nome:
+                String(
+                  item?.deposito_nome ??
+                  item?.deposito_origem ??
+                  "",
+                ).trim(),
+              disponivel: Math.max(
+                0,
+                Number(
+                  item?.disponivel ??
+                  item?.saldo_atual ??
+                  0,
+                ) || 0,
+              ),
+              necessario: Math.max(
+                1,
+                Number(
+                  item?.necessario ??
+                  item?.quantidade_solicitada ??
+                  1,
+                ) || 1,
+              ),
+              faltante: Math.max(
+                0,
+                Number(
+                  item?.faltante ??
+                  (
+                    Number(
+                      item?.necessario ??
+                      item?.quantidade_solicitada ??
+                      1,
+                    ) -
+                    Number(
+                      item?.disponivel ??
+                      item?.saldo_atual ??
+                      0,
+                    )
+                  ),
+                ) || 0,
+              ),
+            }))
+            .filter((item: EstoqueInsuficienteItem) => item.produto_id > 0);
+
+          // Compatibilidade com uma resposta antiga que ainda traga apenas
+          // produto_id/saldo_atual/quantidade_solicitada no nível principal.
+          if (
+            faltantes.length === 0 &&
+            Number(j?.produto_id ?? 0) > 0
+          ) {
+            const necessario = Math.max(
+              1,
+              Number(j?.quantidade_solicitada ?? 1) || 1,
+            );
+            const disponivel = Math.max(
+              0,
+              Number(j?.saldo_atual ?? 0) || 0,
+            );
+
+            faltantes.push({
+              produto_id: Number(j.produto_id),
+              produto_nome:
+                String(
+                  j?.produto_nome ??
+                  `Produto ${j.produto_id}`,
+                ).trim(),
+              deposito_nome: String(
+                j?.deposito_origem ?? "",
+              ).trim(),
+              disponivel,
+              necessario,
+              faltante: Math.max(0, necessario - disponivel),
+            });
+          }
+
+          throw new EstoqueInsuficienteError(
+            String(
+              j?.msg ??
+              "Há item sem quantidade suficiente no estoque.",
+            ),
+            faltantes,
+          );
+        }
+
         throw new Error(
           j?.msg ||
-          `Falha ao dar baixa automática (${payload.tipo}) no Corpo Pronto.`,
+          `Falha ao dar baixa automática (${payload.tipo || "completa"}) no Corpo Pronto.`,
         );
+      }
+
       return j;
     },
     [],
@@ -2896,6 +3040,7 @@ export default function AcompanhamentoPage() {
   /* -------------------- Ações (status) -------------------- */
   const abrirPopupAcaoPorId = useCallback((id: Registro["id"]) => {
     setAcaoMsg(null);
+    setEstoqueInsuficiente(null);
     setAcaoId(id != null ? String(id) : null);
     setAcaoSubmitting(false);
     setAcaoOpen(true);
@@ -3337,80 +3482,44 @@ export default function AcompanhamentoPage() {
         }
       }
 
-      // ✅ fase12 (Corpo Pronto): baixa apenas os itens realmente selecionados
-      // antes de gravar o novo status. O endpoint é idempotente, então repetir
-      // a tentativa não duplica uma baixa que já tenha sido concluída.
+      // ✅ fase12 (Corpo Pronto): baixa todos os itens elegíveis em UMA ÚNICA
+      // transação no backend. O urna_saida.php valida todo o estoque antes de
+      // efetivar qualquer saída, permitindo informar todos os itens faltantes
+      // de uma vez e evitando uma baixa parcial quando algum produto está sem saldo.
       if (statusCode === "fase12") {
         try {
           setAcaoSubmitting(true);
+          setEstoqueInsuficiente(null);
 
-          const reg = registros.find(
-            (x) => String(x.id) === String(acaoId),
-          ) as any;
           const registro_id = String(acaoId);
 
-          // 1) URNA, somente quando houver urna selecionada.
-          const urnaTxt = String(reg?.urna ?? "").trim();
-          const urnaPid = Number(reg?.urna_produto_id ?? 0) || 0;
-          if (urnaTxt !== "" && urnaPid > 0) {
-            await baixarItensCorpoPronto({ registro_id, tipo: "URNA" });
-          }
-
-          // 2) ROUPA (se não for própria)
-          const roupaTxt = String(reg?.roupa ?? "").trim();
-          if (roupaTxt !== "" && !isRoupaPropria(roupaTxt)) {
-            await baixarItensCorpoPronto({ registro_id, tipo: "ROUPA" });
-          }
-
-          // 3) INVOL
-          if (isSim(reg?.invol)) {
-            await baixarItensCorpoPronto({ registro_id, tipo: "INVOL" });
-          }
-
-          // 4) VÉU
-          if (isSim(reg?.veu)) {
-            await baixarItensCorpoPronto({ registro_id, tipo: "VEU" });
-          }
-
-          // 5) CORDÃO
-          if (isSim(reg?.cordao)) {
-            await baixarItensCorpoPronto({ registro_id, tipo: "CORDAO" });
-          }
-
-          // 6) KIT LANCHE
-          // Produto fixo: código de barras 678560, depósito MEMORIAL.
-          if (isSim(reg?.kit_lanche)) {
-            await baixarItensCorpoPronto({
-              registro_id,
-              tipo: "KIT_LANCHE",
-            });
-          }
-
-          // 7) COROAS ARTIFICIAIS
-          // O backend lê todas as coroas da Ordem de Serviço vinculada ao atendimento,
-          // agrupa por produto+depósito e ignora as naturais.
-          if (isSim(reg?.coroa_flores)) {
-            await baixarItensCorpoPronto({
-              registro_id,
-              tipo: "COROA_ARTIFICIAL",
-            });
-          }
-
-          // 8) INSUMOS
-          const ins = parseInsumosFromArrumacaoJson(reg?.arrumacao_json);
-          if (ins && ins.itens.length > 0) {
-            await baixarItensCorpoPronto({
-              registro_id,
-              tipo: "INSUMOS",
-              deposito_nome: ins.deposito_nome,
-              itens: ins.itens,
-            });
-          }
+          await baixarItensCorpoPronto({
+            registro_id,
+            tipo: "",
+          });
         } catch (e: any) {
           setAcaoSubmitting(false);
+
+          if (isEstoqueInsuficienteError(e)) {
+            const itens = Array.isArray((e as any)?.itens)
+              ? ((e as any).itens as EstoqueInsuficienteItem[])
+              : [];
+
+            setAcaoMsg(null);
+            setEstoqueInsuficiente({
+              titulo: "Estoque insuficiente",
+              mensagem:
+                "Não é possível avançar para Corpo Pronto enquanto houver item sem quantidade suficiente no estoque.",
+              itens,
+            });
+            return false;
+          }
+
           setAcaoMsg({
             ok: false,
-            text: e?.message || "Falha ao processar as baixas do Corpo Pronto.",
+            text:
+              e?.message ||
+              "Falha ao processar as baixas do Corpo Pronto.",
           });
           return false;
         }
@@ -3884,6 +3993,8 @@ export default function AcompanhamentoPage() {
         registrarAcao={registrarAcao}
         acaoMsg={acaoMsg}
         acaoSubmitting={acaoSubmitting}
+        estoqueInsuficiente={estoqueInsuficiente}
+        onCloseEstoqueInsuficiente={() => setEstoqueInsuficiente(null)}
         onVeiculoRequired={handleVeiculoRequired}
         onFotoAcaoRequired={handleFotoAcaoRequired}
       />

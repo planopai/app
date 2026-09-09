@@ -1,4 +1,5 @@
 "use client";
+
 import React from "react";
 
 export default function Modal({
@@ -7,28 +8,41 @@ export default function Modal({
     children,
     ariaLabel,
     maxWidth,
+    role = "dialog",
+    closeOnBackdrop = true,
+    zIndex = 50,
+    contentClassName = "",
 }: {
     open: boolean;
     onClose: () => void;
     children: React.ReactNode;
     ariaLabel: string;
     maxWidth?: number;
+    role?: "dialog" | "alertdialog";
+    closeOnBackdrop?: boolean;
+    zIndex?: number;
+    contentClassName?: string;
 }) {
     if (!open) return null;
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            role="dialog"
+            className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+            style={{ zIndex }}
+            role={role}
             aria-modal="true"
             aria-label={ariaLabel}
             onClick={(e) => {
-                if (e.target === e.currentTarget) onClose();
+                if (
+                    closeOnBackdrop &&
+                    e.target === e.currentTarget
+                ) {
+                    onClose();
+                }
             }}
         >
-            {/* ✅ container com altura limitada */}
             <div
-                className="w-full rounded-xl bg-white p-5 shadow-xl outline-none max-h-[90vh] overflow-y-auto overscroll-contain"
+                className={`w-full rounded-xl bg-white p-5 shadow-xl outline-none max-h-[90vh] overflow-y-auto overscroll-contain ${contentClassName}`}
                 style={{ maxWidth: maxWidth ?? 720 }}
             >
                 {children}

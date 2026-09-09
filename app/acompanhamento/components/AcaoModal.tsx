@@ -26,6 +26,21 @@ import {
 type Fase = (typeof fases)[number];
 type FotoAcaoTipo = "fim_ornamentacao" | "entrega_corpo";
 
+export type EstoqueInsuficienteItem = {
+    produto_id: number;
+    produto_nome: string;
+    deposito_nome: string;
+    disponivel: number;
+    necessario: number;
+    faltante: number;
+};
+
+export type EstoqueInsuficienteAlerta = {
+    titulo: string;
+    mensagem: string;
+    itens: EstoqueInsuficienteItem[];
+};
+
 function isTerceiroBySession(id?: string | number | null | undefined) {
     try {
         if (id == null) return false;
@@ -61,6 +76,8 @@ export default function AcaoModal({
     registrarAcao,
     acaoMsg,
     acaoSubmitting,
+    estoqueInsuficiente,
+    onCloseEstoqueInsuficiente,
     onVeiculoRequired,
     onFotoAcaoRequired,
 }: {
@@ -78,6 +95,8 @@ export default function AcaoModal({
     ) => Promise<any>;
     acaoMsg: { text: string; ok: boolean } | null;
     acaoSubmitting: boolean;
+    estoqueInsuficiente?: EstoqueInsuficienteAlerta | null;
+    onCloseEstoqueInsuficiente?: () => void;
     onVeiculoRequired?: (id: string | number | null | undefined, fase: string) => void;
     onFotoAcaoRequired?: (
         id: string | number | null | undefined,
@@ -354,84 +373,168 @@ export default function AcaoModal({
     }
 
     return (
-        <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
-            <h2 className="text-xl font-semibold">Registrar uma ação</h2>
+        <>
+            <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
+                <h2 className="text-xl font-semibold">Registrar uma ação</h2>
 
-            <div className="mt-2 text-xs text-muted-foreground">
-                {!networkOnline && (
-                    <span className="font-semibold text-amber-700">
-                        Modo offline. Somente as etapas operacionais autorizadas ficam disponíveis.
-                    </span>
-                )}
-                {networkOnline && loadingOnline && "Sincronizando status com o servidor..."}
-                {networkOnline && !loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
-                {networkOnline && !loadingOnline && onlineError && (
-                    <span className="text-red-600">{onlineError}. Exibindo dados locais como fallback.</span>
-                )}
-            </div>
-
-            {efetivo && !networkOnline && (
-                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                    <div>Usuário: <b>{me?.userName || "não identificado"}</b></div>
-                    {efetivo.responsavel_velorio_nome && (
-                        <div>Responsável pelo velório: <b>{efetivo.responsavel_velorio_nome}</b></div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                    {!networkOnline && (
+                        <span className="font-semibold text-amber-700">
+                            Modo offline. Somente as etapas operacionais autorizadas ficam disponíveis.
+                        </span>
                     )}
-                    {efetivo.responsavel_sepultamento_nome && (
-                        <div>Responsável pelo sepultamento: <b>{efetivo.responsavel_sepultamento_nome}</b></div>
+                    {networkOnline && loadingOnline && "Sincronizando status com o servidor..."}
+                    {networkOnline && !loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
+                    {networkOnline && !loadingOnline && onlineError && (
+                        <span className="text-red-600">{onlineError}. Exibindo dados locais como fallback.</span>
                     )}
                 </div>
-            )}
 
-            {!efetivo && (
-                <p className="mt-4 text-sm text-muted-foreground">
-                    Nenhum registro selecionado. Selecione um registro para continuar.
-                </p>
-            )}
+                {efetivo && !networkOnline && (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        <div>Usuário: <b>{me?.userName || "não identificado"}</b></div>
+                        {efetivo.responsavel_velorio_nome && (
+                            <div>Responsável pelo velório: <b>{efetivo.responsavel_velorio_nome}</b></div>
+                        )}
+                        {efetivo.responsavel_sepultamento_nome && (
+                            <div>Responsável pelo sepultamento: <b>{efetivo.responsavel_sepultamento_nome}</b></div>
+                        )}
+                    </div>
+                )}
 
-            {efetivo && fasesVisiveis.length > 0 && (
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {fasesVisiveis.map((f) => {
-                        const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-                        const isConservacao = FASES_CONSERVACAO.includes(f);
-                        const bloqueadoPorCargo = isConservacao && !meLoading && !!me && !podeConservacao();
-                        const reason = habilitar ? offlineBlockReason(f) : null;
-                        const disabled = !habilitar || bloqueadoPorCargo || !!reason;
-                        const exigeFoto = FASES_COM_FOTO.includes(f);
+                {!efetivo && (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                        Nenhum registro selecionado. Selecione um registro para continuar.
+                    </p>
+                )}
 
-                        return (
-                            <button
-                                key={f}
-                                type="button"
-                                disabled={disabled}
-                                onClick={() => handleClickFase(f)}
-                                className={`rounded-md border px-3 py-2 text-left text-sm ${!disabled ? "hover:bg-muted" : "opacity-50"}`}
-                                title={
-                                    reason ||
-                                    (bloqueadoPorCargo
-                                        ? "Usuário sem permissão para conservação"
-                                        : habilitar && exigeFoto
-                                            ? "Anexar foto para confirmar esta etapa"
-                                            : habilitar
-                                                ? "Confirmar próxima etapa"
-                                                : "Aguardando etapas anteriores")
-                                }
+                {efetivo && fasesVisiveis.length > 0 && (
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {fasesVisiveis.map((f) => {
+                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+                            const isConservacao = FASES_CONSERVACAO.includes(f);
+                            const bloqueadoPorCargo = isConservacao && !meLoading && !!me && !podeConservacao();
+                            const reason = habilitar ? offlineBlockReason(f) : null;
+                            const disabled = !habilitar || bloqueadoPorCargo || !!reason;
+                            const exigeFoto = FASES_COM_FOTO.includes(f);
+
+                            return (
+                                <button
+                                    key={f}
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => handleClickFase(f)}
+                                    className={`rounded-md border px-3 py-2 text-left text-sm ${!disabled ? "hover:bg-muted" : "opacity-50"}`}
+                                    title={
+                                        reason ||
+                                        (bloqueadoPorCargo
+                                            ? "Usuário sem permissão para conservação"
+                                            : habilitar && exigeFoto
+                                                ? "Anexar foto para confirmar esta etapa"
+                                                : habilitar
+                                                    ? "Confirmar próxima etapa"
+                                                    : "Aguardando etapas anteriores")
+                                    }
+                                >
+                                    {acaoToStatus(f)}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {concluido && (
+                    <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                )}
+
+                {meError && !networkOnline && (
+                    <TextFeedback kind="error">{meError}</TextFeedback>
+                )}
+                {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
+                {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
+            </Modal>
+
+            <Modal
+                open={!!estoqueInsuficiente}
+                onClose={() => onCloseEstoqueInsuficiente?.()}
+                ariaLabel="Estoque insuficiente"
+                role="alertdialog"
+                maxWidth={560}
+                zIndex={80}
+                closeOnBackdrop={false}
+            >
+                <div className="text-center" aria-live="assertive">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-3xl font-bold text-red-700">
+                        !
+                    </div>
+
+                    <h2 className="mt-4 text-2xl font-bold text-red-700">
+                        {estoqueInsuficiente?.titulo || "Estoque insuficiente"}
+                    </h2>
+
+                    <p className="mt-3 text-base font-semibold text-red-700">
+                        {estoqueInsuficiente?.mensagem ||
+                            "Não é possível avançar para Corpo Pronto."}
+                    </p>
+                </div>
+
+                {!!estoqueInsuficiente?.itens?.length && (
+                    <div className="mt-5 space-y-3">
+                        {estoqueInsuficiente.itens.map((item, index) => (
+                            <div
+                                key={`${item.produto_id}-${item.deposito_nome}-${index}`}
+                                className="rounded-xl border-2 border-red-200 bg-red-50 p-4"
                             >
-                                {acaoToStatus(f)}
-                            </button>
-                        );
-                    })}
+                                <div className="text-base font-bold text-red-800">
+                                    {item.produto_nome || `Produto ${item.produto_id}`}
+                                </div>
+
+                                <div className="mt-1 text-sm text-red-700">
+                                    Depósito:{" "}
+                                    <b>{item.deposito_nome || "não informado"}</b>
+                                </div>
+
+                                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                                    <div className="rounded-lg bg-white p-2 text-red-800">
+                                        Disponível:{" "}
+                                        <b>{item.disponivel}</b>
+                                    </div>
+                                    <div className="rounded-lg bg-white p-2 text-red-800">
+                                        Necessário:{" "}
+                                        <b>{item.necessario}</b>
+                                    </div>
+                                </div>
+
+                                <p className="mt-3 text-sm font-semibold text-red-700">
+                                    É necessário repor este item
+                                    {item.faltante > 0
+                                        ? ` em pelo menos ${item.faltante} unidade${item.faltante === 1 ? "" : "s"}`
+                                        : ""}
+                                    {" "}para avançar.
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-center">
+                    <p className="text-sm font-bold text-red-800">
+                        Faça a reposição do estoque e tente novamente o comando
+                        Corpo Pronto.
+                    </p>
                 </div>
-            )}
 
-            {concluido && (
-                <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
-            )}
-
-            {meError && !networkOnline && (
-                <TextFeedback kind="error">{meError}</TextFeedback>
-            )}
-            {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
-            {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
-        </Modal>
+                <div className="mt-6 flex justify-center">
+                    <button
+                        type="button"
+                        autoFocus
+                        onClick={() => onCloseEstoqueInsuficiente?.()}
+                        className="min-w-40 rounded-lg bg-red-700 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    >
+                        Entendi
+                    </button>
+                </div>
+            </Modal>
+        </>
     );
 }
