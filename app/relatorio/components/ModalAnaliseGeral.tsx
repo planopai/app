@@ -162,6 +162,22 @@ function makeRange(aDe?: string, aAte?: string) {
 const norm = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
+/**
+ * Aceita os formatos mais comuns que podem vir do PHP/MySQL.
+ * Mantém compatibilidade com "Sim"/"Não", mas também trata 1/0 e boolean.
+ */
+function valorEhSim(v: any): boolean {
+    if (v === true || v === 1) return true;
+    if (v === false || v === 0 || v == null) return false;
+
+    const normalizado = normSimNao(String(v));
+    if (normalizado === "sim") return true;
+    if (normalizado === "nao") return false;
+
+    const s = norm(String(v));
+    return s === "1" || s === "true" || s === "yes" || s === "s";
+}
+
 const titleCase = (s: string) =>
     s
         .split(/\s+/)
@@ -386,7 +402,7 @@ function ModalListaTanato({
             <div className="bg-white w-[96%] md:w-[80%] lg:w-[60%] rounded-2xl shadow-2xl max-h-[90%] overflow-hidden">
                 <div className="flex items-center justify-between gap-3 border-b p-4 bg-white/90 backdrop-blur">
                     <div>
-                        <div className="text-base font-bold">Tanatopraxia — {agente}</div>
+                        <div className="text-base font-bold">Tanatopraxia: {agente}</div>
                         <div className="text-xs text-gray-500">{fmt0(itensOrdenados.length)} falecido(s)</div>
                     </div>
                     <button
@@ -413,7 +429,7 @@ function ModalListaTanato({
                                         {it.falecido || "(Sem nome do falecido)"}
                                     </div>
                                     <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-3">
-                                        <span>Data/hora: {fmtDateHora(it.ts) || "—"}</span>
+                                        <span>Data/hora: {fmtDateHora(it.ts) || "-"}</span>
                                         <span>Entidade: {it.entityKey}</span>
                                     </div>
                                 </div>
@@ -450,9 +466,24 @@ export default function ModalAnaliseGeral({
     setSomenteTanato: (v: boolean) => void;
     onRecarregar?: () => void;
 }) {
+    type CacheEntry = { logs: any[]; fetched: boolean };
+
     const [busy, setBusy] = React.useState(false);
     const [dados, setDados] = React.useState<RegistroAnalise[]>([]);
     const [erro, setErro] = React.useState<string | null>(null);
+    const [analiseInicialCarregada, setAnaliseInicialCarregada] = React.useState(false);
+
+    /*
+     * Cache dos logs usados no cálculo da Tanatopraxia.
+     *
+     * O ponto principal da correção é não liberar os cards enquanto existir
+     * alguma entidade de tanato cujo log ainda não terminou de carregar.
+     */
+    const cacheRef = React.useRef<Record<string, CacheEntry>>({});
+    const inFlightRef = React.useRef<Set<string>>(new Set());
+    const cicloLogsRef = React.useRef(0);
+    const requisicaoAnaliticoRef = React.useRef(0);
+    const [cacheVersion, setCacheVersion] = React.useState(0);
 
     const [tanatoModal, setTanatoModal] = React.useState<{
         aberto: boolean;
@@ -460,28 +491,67 @@ export default function ModalAnaliseGeral({
         itens: TanatoItem[];
     }>({ aberto: false, agente: "", itens: [] });
 
+    const resetarCacheTanato = React.useCallback(() => {
+        cicloLogsRef.current += 1;
+        cacheRef.current = {};
+        inFlightRef.current.clear();
+        setCacheVersion((v) => v + 1);
+    }, []);
+
     const carregar = React.useCallback(async () => {
+        const requisicao = ++requisicaoAnaliticoRef.current;
+
         try {
             setErro(null);
             setBusy(true);
+
             const lista = await listarAnalitico();
+
+            // Ignora uma resposta antiga se outra carga começou depois dela.
+            if (requisicao !== requisicaoAnaliticoRef.current) return;
+
             setDados(Array.isArray(lista) ? lista : []);
         } catch {
+            if (requisicao !== requisicaoAnaliticoRef.current) return;
+
             setErro("Falha ao carregar dados do analítico.");
             setDados([]);
         } finally {
-            setBusy(false);
+            if (requisicao === requisicaoAnaliticoRef.current) {
+                setBusy(false);
+                setAnaliseInicialCarregada(true);
+            }
         }
     }, []);
 
     React.useEffect(() => {
-        if (aberto) carregar();
-    }, [aberto, carregar]);
+        if (!aberto) {
+            // Invalida qualquer resposta que ainda esteja chegando após o fechamento.
+            requisicaoAnaliticoRef.current += 1;
+            cicloLogsRef.current += 1;
+            inFlightRef.current.clear();
+            setAnaliseInicialCarregada(false);
+            return;
+        }
+
+        /*
+         * Toda abertura começa um ciclo limpo. Assim o modal nunca mostra,
+         * nem por um frame, números de uma abertura anterior.
+         */
+        setAnaliseInicialCarregada(false);
+        resetarCacheTanato();
+        void carregar();
+    }, [aberto, carregar, resetarCacheTanato]);
 
     const handleRecarregar = React.useCallback(() => {
+        setAnaliseInicialCarregada(false);
+        resetarCacheTanato();
+
+        // Mantém compatibilidade com o callback já usado pelo componente pai.
         onRecarregar?.();
-        carregar();
-    }, [onRecarregar, carregar]);
+
+        void carregar();
+    }, [onRecarregar, carregar, resetarCacheTanato]);
 
     // filtro por período (para os demais cards)
     const dadosPeriodo = React.useMemo(() => {
@@ -499,17 +569,11 @@ export default function ModalAnaliseGeral({
 
     const rangeTanato = React.useMemo(() => makeRange(aDe, aAte), [aDe, aAte]);
 
-    type CacheEntry = { logs: any[]; fetched: boolean };
-
-    const cacheRef = React.useRef<Record<string, CacheEntry>>({});
-    const inFlightRef = React.useRef<Set<string>>(new Set());
-    const [cacheVersion, setCacheVersion] = React.useState(0);
-
     const tanatoEntities = React.useMemo(() => {
         const entityMap = new Map<string, Set<string>>();
 
         for (const r of dados || []) {
-            if (normSimNao(String((r as any).tanato || "")) !== "sim") continue;
+            if (!valorEhSim((r as any).tanato)) continue;
 
             const key = getEntityKey(r);
             if (!key) continue;
@@ -546,9 +610,11 @@ export default function ModalAnaliseGeral({
     }, [dados]);
 
     React.useEffect(() => {
-        if (!aberto) return;
-
-        if (tanatoEntities.list.length > 800) return;
+        /*
+         * Espera o analítico terminar. Isso elimina a corrida em que o modal
+         * renderizava Tanatopraxia = 0 antes de os logs começarem a chegar.
+         */
+        if (!aberto || busy || !analiseInicialCarregada) return;
 
         const targets = tanatoEntities.list.filter(
             (e) => !cacheRef.current[e.key]?.fetched && !inFlightRef.current.has(e.key)
@@ -556,20 +622,31 @@ export default function ModalAnaliseGeral({
 
         if (!targets.length) return;
 
-        let cancel = false;
+        let cancelado = false;
+        const ciclo = cicloLogsRef.current;
 
         async function run(maxConc = 4) {
             let i = 0;
 
-            for (const t of targets) inFlightRef.current.add(t.key);
-
             async function worker() {
-                while (i < targets.length && !cancel) {
-                    const item = targets[i++];
+                while (!cancelado && ciclo === cicloLogsRef.current) {
+                    const idx = i++;
+                    if (idx >= targets.length) break;
+
+                    const item = targets[idx];
+
+                    // Pode ter sido resolvido por outro ciclo/worker entre renders.
+                    if (cacheRef.current[item.key]?.fetched) continue;
+                    if (inFlightRef.current.has(item.key)) continue;
+
+                    inFlightRef.current.add(item.key);
+
                     try {
                         let logs: any[] = [];
 
                         for (const id of item.idsToTry) {
+                            if (cancelado || ciclo !== cicloLogsRef.current) break;
+
                             try {
                                 const res = await listarLogPorId(id);
                                 if (Array.isArray(res) && res.length) {
@@ -579,7 +656,14 @@ export default function ModalAnaliseGeral({
                             } catch { }
                         }
 
-                        cacheRef.current[item.key] = { logs, fetched: true };
+                        /*
+                         * Só grava se esta resposta ainda pertence à abertura atual.
+                         * Isso evita um fetch antigo sobrescrever o cache após fechar
+                         * e abrir novamente o modal.
+                         */
+                        if (!cancelado && ciclo === cicloLogsRef.current) {
+                            cacheRef.current[item.key] = { logs, fetched: true };
+                        }
                     } finally {
                         inFlightRef.current.delete(item.key);
                     }
@@ -587,18 +671,36 @@ export default function ModalAnaliseGeral({
             }
 
             await Promise.all(
-                Array.from({ length: Math.min(maxConc, targets.length) }, worker)
+                Array.from(
+                    { length: Math.max(1, Math.min(maxConc, targets.length)) },
+                    () => worker()
+                )
             );
 
-            if (!cancel) setCacheVersion((v) => v + 1);
+            if (!cancelado && ciclo === cicloLogsRef.current) {
+                /*
+                 * Uma única atualização ao final é suficiente para recalcular
+                 * tanatoCount, os agentes e liberar os cards já com o valor final.
+                 */
+                setCacheVersion((v) => v + 1);
+            }
         }
 
-        run();
+        void run();
 
         return () => {
-            cancel = true;
+            cancelado = true;
+
+            /*
+             * O código antigo adicionava todos os targets ao inFlight antes de
+             * processá-los. Se o efeito fosse cancelado, alguns IDs ficavam presos
+             * no Set e nunca eram buscados na reabertura.
+             */
+            for (const item of targets) {
+                inFlightRef.current.delete(item.key);
+            }
         };
-    }, [aberto, tanatoEntities]);
+    }, [aberto, busy, analiseInicialCarregada, tanatoEntities]);
 
     const {
         tanatoCount,
@@ -667,7 +769,7 @@ export default function ModalAnaliseGeral({
 
         // ===== RESTO (analítico filtrado por dadosPeriodo) =====
         for (const r of dadosPeriodo) {
-            if (normSimNao(String((r as any).assistencia || "")) === "sim") assist++;
+            if (valorEhSim((r as any).assistencia)) assist++;
 
             const ornTxt = String(
                 (r as any).ornamentacao_tipo ||
@@ -713,6 +815,24 @@ export default function ModalAnaliseGeral({
         };
     }, [dadosPeriodo, rangeTanato, cacheVersion, tanatoEntities, falecidoByEntity]);
 
+    /*
+     * Enquanto existir ao menos um tanato sem log resolvido, não mostramos os
+     * cards. Assim "0" só aparece quando o resultado final realmente for zero.
+     */
+    const tanatoPendente = React.useMemo(() => {
+        if (!aberto || busy || !analiseInicialCarregada) return false;
+        if (!tanatoEntities.list.length) return false;
+
+        return tanatoEntities.list.some(
+            (e) => !cacheRef.current[e.key]?.fetched
+        );
+    }, [aberto, busy, analiseInicialCarregada, tanatoEntities, cacheVersion]);
+
+    const carregandoAnalise =
+        busy ||
+        !analiseInicialCarregada ||
+        tanatoPendente;
+
     const ornTotal = (ornNatural || 0) + (ornArtificial || 0);
 
     const subTanato = React.useMemo(() => {
@@ -751,7 +871,7 @@ export default function ModalAnaliseGeral({
                         <div>
                             <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
                             <p className="text-xs text-gray-500">
-                                Período: {aDe || "—"} a {aAte || "—"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
+                                Período: {aDe || "-"} a {aAte || "-"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -805,9 +925,9 @@ export default function ModalAnaliseGeral({
 
                     {/* Corpo */}
                     <div className="p-4 pt-0">
-                        {busy ? (
+                        {carregandoAnalise ? (
                             <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
-                                Carregando análise…
+                                Carregando análise completa…
                             </div>
                         ) : erro ? (
                             <div className="rounded-lg border p-6 text-center text-sm text-red-600">
