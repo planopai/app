@@ -1,4 +1,4 @@
-// INSUMOS POR TECNICO FIX V1: Sandro ID 7 / Joseildo ID 16
+// INSUMOS POR TECNICO FIX V2: limite de quantidade pelo saldo disponível + validação defensiva
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -57,6 +57,24 @@ function getPidFromRow(item: EstoqueRow): number {
             0,
         ) || 0
     );
+}
+
+function getSaldoDisponivel(item: EstoqueRow): number {
+    return Math.max(
+        0,
+        Math.floor(Number(item?.saldo_total ?? 0) || 0),
+    );
+}
+
+function clampQtdAoSaldo(value: unknown, saldoDisponivel: number): number {
+    if (saldoDisponivel <= 0) return 0;
+
+    const digitado = Math.max(
+        1,
+        Math.floor(Number(value ?? 1) || 1),
+    );
+
+    return Math.min(digitado, saldoDisponivel);
 }
 
 function safeParseJson(raw: unknown): any {
@@ -241,6 +259,7 @@ export default function ArrumacaoModal({
     const [loadingMe, setLoadingMe] = useState(false);
     const [loadingItens, setLoadingItens] = useState(false);
     const [err, setErr] = useState("");
+    const [validationErr, setValidationErr] = useState("");
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const [sel, setSel] = useState<Record<number, InsumoSel>>({});
 
@@ -272,6 +291,7 @@ export default function ArrumacaoModal({
         setDepInsumos(null);
         setRows([]);
         setErr("");
+        setValidationErr("");
         setLoadingMe(true);
 
         consultarMe(controller.signal)
@@ -324,6 +344,7 @@ export default function ArrumacaoModal({
 
         setLoadingItens(true);
         setErr("");
+        setValidationErr("");
 
         const url = new URL(ESTOQUE_API);
         url.searchParams.set("action", "insumos_tanato_listar");
@@ -389,6 +410,58 @@ export default function ArrumacaoModal({
         [sel],
     );
 
+    const selectedStockIssues = useMemo(() => {
+        const estoquePorPid = new Map<number, EstoqueRow>();
+
+        for (const row of rows) {
+            const pid = getPidFromRow(row);
+            if (pid > 0) estoquePorPid.set(pid, row);
+        }
+
+        return Object.entries(sel)
+            .map(([pidString, value]) => {
+                const pid = Number(pidString) || 0;
+                if (pid <= 0 || !value?.checked) return null;
+
+                const qtd = Math.max(
+                    1,
+                    Math.floor(Number(value?.qtd ?? 1) || 1),
+                );
+
+                const row = estoquePorPid.get(pid);
+                const saldo = row ? getSaldoDisponivel(row) : 0;
+
+                if (qtd <= saldo && saldo > 0) return null;
+
+                return {
+                    pid,
+                    nome:
+                        String(value?.nome ?? row?.nome ?? "").trim() ||
+                        `Produto ${pid}`,
+                    qtd,
+                    saldo,
+                };
+            })
+            .filter(Boolean) as Array<{
+                pid: number;
+                nome: string;
+                qtd: number;
+                saldo: number;
+            }>;
+    }, [rows, sel]);
+
+    const validarEstoqueAntesDeSalvar = (): string | null => {
+        if (!selectedStockIssues.length) return null;
+
+        const primeiro = selectedStockIssues[0];
+
+        if (primeiro.saldo <= 0) {
+            return `${primeiro.nome} não possui saldo disponível no estoque. Desmarque o item ou faça a reposição antes de salvar.`;
+        }
+
+        return `${primeiro.nome}: quantidade informada (${primeiro.qtd}) é maior que o estoque disponível (${primeiro.saldo}). Informe no máximo ${primeiro.saldo}.`;
+    };
+
     const buildArrumacaoJson = (): string => {
         const oldRaw = (wizardDataRef.current as any)?.arrumacao_json ?? null;
         const oldObj = safeParseJson(oldRaw);
@@ -435,7 +508,13 @@ export default function ArrumacaoModal({
         return JSON.stringify(payload);
     };
 
-    const podeSalvar = !!me && !!depInsumos && !loadingMe && !err;
+    const podeSalvar =
+        !!me &&
+        !!depInsumos &&
+        !loadingMe &&
+        !loadingItens &&
+        !err &&
+        selectedStockIssues.length === 0;
 
     return (
         <Modal
@@ -476,8 +555,8 @@ export default function ArrumacaoModal({
                             Insumos Tanatopraxia
                         </div>
                         <div className="text-xs text-muted-foreground">
-                            Os itens serão descontados automaticamente na{" "}
-                            <b>fase05</b>.
+                            As quantidades são limitadas ao saldo atual e a baixa é
+                            confirmada em <b>Corpo Pronto (fase12)</b>.
                         </div>
                     </div>
 
@@ -520,12 +599,16 @@ export default function ArrumacaoModal({
 
                                     const current = sel[pid];
                                     const checked = !!current?.checked;
+                                    const saldoDisponivel =
+                                        getSaldoDisponivel(item);
                                     const qtd = Math.max(
                                         1,
                                         Math.floor(
                                             Number(current?.qtd ?? 1) || 1,
                                         ),
                                     );
+                                    const quantidadeExcedeSaldo =
+                                        checked && qtd > saldoDisponivel;
 
                                     return (
                                         <li
@@ -536,33 +619,44 @@ export default function ArrumacaoModal({
                                                 <input
                                                     type="checkbox"
                                                     checked={checked}
+                                                    disabled={saldoDisponivel <= 0}
+                                                    title={
+                                                        saldoDisponivel <= 0
+                                                            ? "Sem saldo disponível"
+                                                            : undefined
+                                                    }
                                                     onChange={(event) => {
                                                         const enabled =
-                                                            event.target
-                                                                .checked;
+                                                            event.target.checked;
+
+                                                        setValidationErr("");
 
                                                         setSel(
                                                             (previous) => ({
                                                                 ...previous,
                                                                 [pid]: {
                                                                     checked:
-                                                                        enabled,
-                                                                    qtd: Math.max(
-                                                                        1,
-                                                                        Math.floor(
-                                                                            Number(
-                                                                                previous?.[
-                                                                                    pid
-                                                                                ]
-                                                                                    ?.qtd ??
-                                                                                1,
-                                                                            ) ||
+                                                                        enabled &&
+                                                                        saldoDisponivel > 0,
+                                                                    qtd: enabled
+                                                                        ? clampQtdAoSaldo(
+                                                                            previous?.[
+                                                                                pid
+                                                                            ]?.qtd ?? 1,
+                                                                            saldoDisponivel,
+                                                                        )
+                                                                        : Math.max(
                                                                             1,
+                                                                            Math.floor(
+                                                                                Number(
+                                                                                    previous?.[
+                                                                                        pid
+                                                                                    ]?.qtd ?? 1,
+                                                                                ) || 1,
+                                                                            ),
                                                                         ),
-                                                                    ),
                                                                     nome: String(
-                                                                        item.nome ||
-                                                                        "",
+                                                                        item.nome || "",
                                                                     ).trim(),
                                                                     codigo_barras:
                                                                         String(
@@ -610,35 +704,41 @@ export default function ArrumacaoModal({
                                                 <input
                                                     type="number"
                                                     min={1}
+                                                    max={
+                                                        saldoDisponivel > 0
+                                                            ? saldoDisponivel
+                                                            : 1
+                                                    }
                                                     step={1}
-                                                    className="w-full rounded-md border px-2 py-1 text-sm"
+                                                    className={`w-full rounded-md border px-2 py-1 text-sm ${quantidadeExcedeSaldo
+                                                            ? "border-red-500 text-red-700"
+                                                            : ""
+                                                        }`}
                                                     value={qtd}
-                                                    disabled={!checked}
+                                                    disabled={
+                                                        !checked ||
+                                                        saldoDisponivel <= 0
+                                                    }
                                                     onChange={(event) => {
                                                         const nextQtd =
-                                                            Math.max(
-                                                                1,
-                                                                Math.floor(
-                                                                    Number(
-                                                                        event
-                                                                            .target
-                                                                            .value,
-                                                                    ) || 1,
-                                                                ),
+                                                            clampQtdAoSaldo(
+                                                                event.target.value,
+                                                                saldoDisponivel,
                                                             );
 
+                                                        if (nextQtd <= 0) return;
+
+                                                        setValidationErr("");
                                                         setSel(
                                                             (previous) => ({
                                                                 ...previous,
                                                                 [pid]: {
-                                                                    checked:
-                                                                        true,
+                                                                    checked: true,
                                                                     qtd: nextQtd,
                                                                     nome: String(
                                                                         previous?.[
                                                                             pid
-                                                                        ]
-                                                                            ?.nome ??
+                                                                        ]?.nome ??
                                                                         item.nome ??
                                                                         "",
                                                                     ).trim(),
@@ -659,13 +759,43 @@ export default function ArrumacaoModal({
                                                             }),
                                                         );
                                                     }}
-                                                    title="Quantidade"
+                                                    title={`Quantidade máxima disponível: ${saldoDisponivel}`}
                                                 />
+                                                <div
+                                                    className={`mt-1 text-[10px] ${quantidadeExcedeSaldo
+                                                            ? "font-semibold text-red-600"
+                                                            : "text-slate-500"
+                                                        }`}
+                                                >
+                                                    Máx. {saldoDisponivel}
+                                                </div>
                                             </div>
                                         </li>
                                     );
                                 })}
                             </ul>
+                        </div>
+                    )}
+
+                    {selectedStockIssues.length > 0 && (
+                        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            <div className="font-semibold">
+                                Ajuste a quantidade antes de salvar.
+                            </div>
+                            <ul className="mt-1 list-disc pl-5">
+                                {selectedStockIssues.map((issue) => (
+                                    <li key={issue.pid}>
+                                        {issue.nome}: disponível {issue.saldo},
+                                        informado {issue.qtd}.
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {validationErr && (
+                        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+                            {validationErr}
                         </div>
                     )}
                 </div>
@@ -685,6 +815,13 @@ export default function ArrumacaoModal({
                     disabled={!podeSalvar}
                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => {
+                        const estoqueError = validarEstoqueAntesDeSalvar();
+                        if (estoqueError) {
+                            setValidationErr(estoqueError);
+                            return;
+                        }
+
+                        setValidationErr("");
                         const json = buildArrumacaoJson();
                         const previous = wizardDataRef.current ?? ({} as Registro);
 
