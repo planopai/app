@@ -1,4 +1,4 @@
-// INSUMOS POR TECNICO FIX V2: limite de quantidade pelo saldo disponível + validação defensiva
+// INSUMOS POR TECNICO FIX V3: limite pelo saldo + campo vazio durante digitação + validação defensiva
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -262,6 +262,9 @@ export default function ArrumacaoModal({
     const [validationErr, setValidationErr] = useState("");
     const [rows, setRows] = useState<EstoqueRow[]>([]);
     const [sel, setSel] = useState<Record<number, InsumoSel>>({});
+    // Rascunho textual da quantidade. Permite apagar o "1" e deixar o campo
+    // temporariamente vazio enquanto o usuário digita um novo valor.
+    const [qtdDraft, setQtdDraft] = useState<Record<number, string>>({});
 
     const meAbortRef = useRef<AbortController | null>(null);
     const itensAbortRef = useRef<AbortController | null>(null);
@@ -292,6 +295,7 @@ export default function ArrumacaoModal({
         setRows([]);
         setErr("");
         setValidationErr("");
+        setQtdDraft({});
         setLoadingMe(true);
 
         consultarMe(controller.signal)
@@ -313,8 +317,22 @@ export default function ArrumacaoModal({
 
                 if (parsed.deposito_nome === deposito) {
                     setSel(parsed.itens);
+                    setQtdDraft(
+                        Object.fromEntries(
+                            Object.entries(parsed.itens).map(([pid, item]) => [
+                                Number(pid),
+                                String(
+                                    Math.max(
+                                        1,
+                                        Math.floor(Number(item?.qtd ?? 1) || 1),
+                                    ),
+                                ),
+                            ]),
+                        ),
+                    );
                 } else {
                     setSel({});
+                    setQtdDraft({});
                 }
             })
             .catch((error: any) => {
@@ -322,6 +340,7 @@ export default function ArrumacaoModal({
                 setMe(null);
                 setDepInsumos(null);
                 setSel({});
+                setQtdDraft({});
                 setRows([]);
                 setErr(
                     error?.message ||
@@ -450,7 +469,30 @@ export default function ArrumacaoModal({
             }>;
     }, [rows, sel]);
 
+    const selectedEmptyQuantityIds = useMemo(
+        () =>
+            Object.entries(sel)
+                .filter(([pidString, value]) => {
+                    if (!value?.checked) return false;
+                    const pid = Number(pidString) || 0;
+                    return pid > 0 && qtdDraft[pid] === "";
+                })
+                .map(([pidString]) => Number(pidString) || 0)
+                .filter((pid) => pid > 0),
+        [sel, qtdDraft],
+    );
+
     const validarEstoqueAntesDeSalvar = (): string | null => {
+        if (selectedEmptyQuantityIds.length > 0) {
+            const pid = selectedEmptyQuantityIds[0];
+            const nome =
+                String(sel[pid]?.nome ?? "").trim() ||
+                rows.find((row) => getPidFromRow(row) === pid)?.nome ||
+                `Produto ${pid}`;
+
+            return `${nome}: informe uma quantidade antes de salvar.`;
+        }
+
         if (!selectedStockIssues.length) return null;
 
         const primeiro = selectedStockIssues[0];
@@ -514,7 +556,8 @@ export default function ArrumacaoModal({
         !loadingMe &&
         !loadingItens &&
         !err &&
-        selectedStockIssues.length === 0;
+        selectedStockIssues.length === 0 &&
+        selectedEmptyQuantityIds.length === 0;
 
     return (
         <Modal
@@ -609,6 +652,14 @@ export default function ArrumacaoModal({
                                     );
                                     const quantidadeExcedeSaldo =
                                         checked && qtd > saldoDisponivel;
+                                    const possuiDraft =
+                                        Object.prototype.hasOwnProperty.call(
+                                            qtdDraft,
+                                            pid,
+                                        );
+                                    const qtdInputValue = possuiDraft
+                                        ? qtdDraft[pid]
+                                        : String(qtd);
 
                                     return (
                                         <li
@@ -630,6 +681,25 @@ export default function ArrumacaoModal({
                                                             event.target.checked;
 
                                                         setValidationErr("");
+
+                                                        if (
+                                                            enabled &&
+                                                            saldoDisponivel > 0
+                                                        ) {
+                                                            const qtdInicial =
+                                                                clampQtdAoSaldo(
+                                                                    qtd,
+                                                                    saldoDisponivel,
+                                                                );
+                                                            setQtdDraft(
+                                                                (previous) => ({
+                                                                    ...previous,
+                                                                    [pid]: String(
+                                                                        qtdInicial,
+                                                                    ),
+                                                                }),
+                                                            );
+                                                        }
 
                                                         setSel(
                                                             (previous) => ({
@@ -711,24 +781,50 @@ export default function ArrumacaoModal({
                                                     }
                                                     step={1}
                                                     className={`w-full rounded-md border px-2 py-1 text-sm ${quantidadeExcedeSaldo
-                                                            ? "border-red-500 text-red-700"
-                                                            : ""
+                                                        ? "border-red-500 text-red-700"
+                                                        : ""
                                                         }`}
-                                                    value={qtd}
+                                                    value={qtdInputValue}
                                                     disabled={
                                                         !checked ||
                                                         saldoDisponivel <= 0
                                                     }
                                                     onChange={(event) => {
+                                                        const raw =
+                                                            event.target.value;
+
+                                                        setValidationErr("");
+
+                                                        // O vazio é permitido enquanto o usuário digita.
+                                                        // Assim é possível apagar "1" e em seguida informar
+                                                        // 2, 3, 4... sem o React recolocar o 1 imediatamente.
+                                                        if (raw === "") {
+                                                            setQtdDraft(
+                                                                (previous) => ({
+                                                                    ...previous,
+                                                                    [pid]: "",
+                                                                }),
+                                                            );
+                                                            return;
+                                                        }
+
                                                         const nextQtd =
                                                             clampQtdAoSaldo(
-                                                                event.target.value,
+                                                                raw,
                                                                 saldoDisponivel,
                                                             );
 
                                                         if (nextQtd <= 0) return;
 
-                                                        setValidationErr("");
+                                                        setQtdDraft(
+                                                            (previous) => ({
+                                                                ...previous,
+                                                                [pid]: String(
+                                                                    nextQtd,
+                                                                ),
+                                                            }),
+                                                        );
+
                                                         setSel(
                                                             (previous) => ({
                                                                 ...previous,
@@ -759,12 +855,68 @@ export default function ArrumacaoModal({
                                                             }),
                                                         );
                                                     }}
+                                                    onBlur={() => {
+                                                        if (
+                                                            qtdDraft[pid] !== ""
+                                                        ) {
+                                                            return;
+                                                        }
+
+                                                        const fallbackQtd =
+                                                            clampQtdAoSaldo(
+                                                                current?.qtd ?? 1,
+                                                                saldoDisponivel,
+                                                            );
+
+                                                        if (fallbackQtd <= 0) {
+                                                            return;
+                                                        }
+
+                                                        setQtdDraft(
+                                                            (previous) => ({
+                                                                ...previous,
+                                                                [pid]: String(
+                                                                    fallbackQtd,
+                                                                ),
+                                                            }),
+                                                        );
+
+                                                        setSel(
+                                                            (previous) => ({
+                                                                ...previous,
+                                                                [pid]: {
+                                                                    checked: true,
+                                                                    qtd: fallbackQtd,
+                                                                    nome: String(
+                                                                        previous?.[
+                                                                            pid
+                                                                        ]?.nome ??
+                                                                        item.nome ??
+                                                                        "",
+                                                                    ).trim(),
+                                                                    codigo_barras:
+                                                                        String(
+                                                                            previous?.[
+                                                                                pid
+                                                                            ]
+                                                                                ?.codigo_barras ??
+                                                                            (
+                                                                                item as any
+                                                                            )
+                                                                                .codigo_barras ??
+                                                                            "",
+                                                                        ).trim() ||
+                                                                        undefined,
+                                                                },
+                                                            }),
+                                                        );
+                                                    }}
                                                     title={`Quantidade máxima disponível: ${saldoDisponivel}`}
                                                 />
                                                 <div
                                                     className={`mt-1 text-[10px] ${quantidadeExcedeSaldo
-                                                            ? "font-semibold text-red-600"
-                                                            : "text-slate-500"
+                                                        ? "font-semibold text-red-600"
+                                                        : "text-slate-500"
                                                         }`}
                                                 >
                                                     Máx. {saldoDisponivel}
