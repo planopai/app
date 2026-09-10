@@ -8,6 +8,8 @@ import LinhaDoTempoLogs from "./LinhaDoTempoLogs";
 import ResumoFinal from "./ResumoFinal";
 import BotaoExportarPdf from "./BotaoExportarPdf";
 import { estaFinalizado, montarResumoFinalDoLog } from "./Normalizadores";
+import { traduzirFase } from "./ConstantesFases";
+import { formataDataHora } from "./UtilDatas";
 
 interface Props {
     aberto: boolean;
@@ -24,10 +26,6 @@ function getRegistroId(item: FalecidoItem): string {
     const anyItem = item as any;
     return String(item?.sepultamento_id || anyItem?.id || "").trim();
 }
-
-/* ========================
-   Fotos das ações
-   ======================== */
 
 function safeJsonParse(v: any) {
     if (v == null) return null;
@@ -51,9 +49,9 @@ function extrairFotoAcaoUrl(v: any): string {
     if (!s) return "";
 
     const match =
-        s.match(/https?:\/\/[^\s"'<>]*\/uploads\/acoes_fotos\/[^\s"'<>]+/i) ||
-        s.match(/\/uploads\/acoes_fotos\/[^\s"'<>]+/i) ||
-        s.match(/uploads\/acoes_fotos\/[^\s"'<>]+/i);
+        s.match(/https?:\/\/[^\s\"'<>]*\/uploads\/acoes_fotos\/[^\s\"'<>]+/i) ||
+        s.match(/\/uploads\/acoes_fotos\/[^\s\"'<>]+/i) ||
+        s.match(/uploads\/acoes_fotos\/[^\s\"'<>]+/i);
 
     return match?.[0] || "";
 }
@@ -68,11 +66,11 @@ function normalizarFotoAcaoUrl(v: any): string {
         return url
             .replace(
                 "https://pai.planoassistencialintegrado.com.br",
-                "https://api.planoassistencialintegrado.com.br"
+                "https://api.planoassistencialintegrado.com.br",
             )
             .replace(
                 "https://planoassistencialintegrado.com.br",
-                "https://api.planoassistencialintegrado.com.br"
+                "https://api.planoassistencialintegrado.com.br",
             );
     }
 
@@ -112,41 +110,36 @@ function extrairFotosDosLogs(logs: LogItem[]): FotoHistorico[] {
         if (!url || seen.has(url)) return;
 
         seen.add(url);
-        out.push({
-            url,
-            titulo: nomeFotoAcaoPorTexto(raw),
-        });
+        out.push({ url, titulo: nomeFotoAcaoPorTexto(raw) });
     }
 
-    for (const log of logs || []) {
-        const raw = (log as any)?.detalhes;
-
-        pushFoto(raw);
-
-        const obj = safeJsonParse(raw);
-        if (obj && typeof obj === "object") {
-            for (const val of Object.values(obj)) {
-                pushFoto(val);
-            }
+    function walk(value: any) {
+        if (value == null) return;
+        if (typeof value === "string") {
+            pushFoto(value);
+            const parsed = safeJsonParse(value);
+            if (parsed && parsed !== value) walk(parsed);
+            return;
         }
+        if (Array.isArray(value)) {
+            value.forEach(walk);
+            return;
+        }
+        if (typeof value === "object") Object.values(value).forEach(walk);
     }
+
+    for (const log of logs || []) walk((log as any)?.detalhes);
 
     const ordem = (f: FotoHistorico) => {
         const t = f.titulo.toLowerCase();
-
         if (t.includes("falecido")) return 0;
         if (t.includes("ornamentação") || t.includes("ornamentacao")) return 1;
         if (t.includes("paramentação") || t.includes("paramentacao")) return 2;
-
         return 3;
     };
 
     return out.sort((a, b) => ordem(a) - ordem(b));
 }
-
-/* ========================
-   Foto do falecido
-   ======================== */
 
 function isFotoFalecidoUrl(v: any): boolean {
     const s = String(v ?? "").trim();
@@ -163,11 +156,11 @@ function normalizarFotoFalecidoUrl(v: any): string {
         return url
             .replace(
                 "https://pai.planoassistencialintegrado.com.br",
-                "https://api.planoassistencialintegrado.com.br"
+                "https://api.planoassistencialintegrado.com.br",
             )
             .replace(
                 "https://planoassistencialintegrado.com.br",
-                "https://api.planoassistencialintegrado.com.br"
+                "https://api.planoassistencialintegrado.com.br",
             );
     }
 
@@ -182,37 +175,52 @@ function normalizarFotoFalecidoUrl(v: any): string {
     return url;
 }
 
-/* ========================
-   Resumo dos novos dados
-   ======================== */
-
 function montarResumoDadosAtendimento(registro: FalecidoItem | null): Record<string, string> {
     if (!registro) return {};
 
-    const r = registro as any;
     const out: Record<string, string> = {};
 
-    if (r.data_nascimento) out.data_nascimento = String(r.data_nascimento);
-    if (r.data_falecimento) out.data_falecimento = String(r.data_falecimento);
-    if (r.nome_responsavel) out.nome_responsavel = String(r.nome_responsavel);
-    if (r.cpf_responsavel) out.cpf_responsavel = String(r.cpf_responsavel);
+    for (const [key, value] of Object.entries(registro as any)) {
+        if (value == null) continue;
+        if (typeof value === "object") continue;
+        const texto = String(value).trim();
+        if (!texto) continue;
+        out[key] = texto;
+    }
 
+    if (registro.falecido) out.falecido = String(registro.falecido);
     return out;
+}
+
+function primeiroLogData(logs: LogItem[]) {
+    return [...logs]
+        .filter((l) => l.datahora)
+        .sort((a, b) => String(a.datahora).localeCompare(String(b.datahora)))[0]?.datahora || "";
+}
+
+function ultimoStatus(logs: LogItem[]) {
+    const ordenados = [...logs].sort((a, b) =>
+        String(a.datahora || "").localeCompare(String(b.datahora || "")),
+    );
+
+    for (let i = ordenados.length - 1; i >= 0; i--) {
+        const status = String(ordenados[i]?.status_novo || "").trim();
+        if (status) return traduzirFase(status) || status;
+    }
+
+    return "";
 }
 
 export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Props) {
     const [logs, setLogs] = useState<LogItem[]>([]);
     const [loading, setLoading] = useState(false);
-
     const [materiaisMap, setMateriaisMap] = useState<MateriaisMap>({});
-
     const [fotosOpen, setFotosOpen] = useState(false);
 
     useEffect(() => {
         if (!aberto || !registro) return;
 
         const id = getRegistroId(registro);
-
         if (!id) {
             setLogs([]);
             return;
@@ -222,10 +230,9 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
         (async () => {
             setLoading(true);
-
             try {
-                const l = await listarLogPorId(id);
-                if (!cancel) setLogs(l);
+                const lista = await listarLogPorId(id);
+                if (!cancel) setLogs(lista);
             } finally {
                 if (!cancel) setLoading(false);
             }
@@ -240,7 +247,6 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
         if (!aberto) return;
 
         let cancel = false;
-
         (async () => {
             const map = await obterMateriaisMap();
             if (!cancel) setMateriaisMap(map || {});
@@ -252,40 +258,35 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     }, [aberto]);
 
     useEffect(() => {
-        if (!aberto) {
-            setFotosOpen(false);
-        }
+        if (!aberto) setFotosOpen(false);
     }, [aberto]);
 
     const finalizado = useMemo(() => estaFinalizado(logs), [logs]);
 
     const dadosAtendimentoResumo = useMemo(
         () => montarResumoDadosAtendimento(registro),
-        [registro]
+        [registro],
     );
 
-    const resumoFinal = useMemo(() => {
-        if (!finalizado) return undefined;
-
-        return {
+    const resumoAtual = useMemo(
+        () => ({
             ...dadosAtendimentoResumo,
             ...montarResumoFinalDoLog(logs, materiaisMap),
-        };
-    }, [finalizado, dadosAtendimentoResumo, logs, materiaisMap]);
+        }),
+        [dadosAtendimentoResumo, logs, materiaisMap],
+    );
+
+    const criacaoSelecionado = useMemo(() => primeiroLogData(logs), [logs]);
+    const statusAtual = useMemo(() => ultimoStatus(logs), [logs]);
 
     const fotos = useMemo(() => {
         const lista = extrairFotosDosLogs(logs);
-
         const fotoFalecido = normalizarFotoFalecidoUrl((registro as any)?.foto_falecido);
 
         if (fotoFalecido && isFotoFalecidoUrl(fotoFalecido)) {
             const jaExiste = lista.some((f) => f.url === fotoFalecido);
-
             if (!jaExiste) {
-                lista.unshift({
-                    url: fotoFalecido,
-                    titulo: "Foto do Falecido(a)",
-                });
+                lista.unshift({ url: fotoFalecido, titulo: "Foto do Falecido(a)" });
             }
         }
 
@@ -294,25 +295,40 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
     if (!aberto || !registro) return null;
 
+    const registroId = getRegistroId(registro);
+
     return (
         <>
             <div
                 className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3 sm:p-6"
                 role="dialog"
                 aria-modal="true"
+                aria-label={`Histórico de ${registro.falecido}`}
                 onClick={(e) => {
                     if (e.target === e.currentTarget) onFechar();
                 }}
             >
-                <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl border bg-white shadow-xl">
-                    <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-white/90 p-4 backdrop-blur">
+                <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-2xl border bg-white shadow-xl">
+                    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/95 p-4 backdrop-blur sm:px-5">
                         <div className="min-w-0">
-                            <h3 className="truncate text-lg font-semibold leading-tight">
+                            <h3 className="truncate text-lg font-semibold leading-tight text-slate-900">
                                 {registro.falecido}
                             </h3>
-                            <p className="text-xs text-muted-foreground">
-                                Histórico completo e relatório final quando concluído.
-                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                {registroId && <span>Atendimento #{registroId}</span>}
+                                {criacaoSelecionado && (
+                                    <span>Criado em {formataDataHora(criacaoSelecionado)}</span>
+                                )}
+                                {statusAtual && <span>Status: {statusAtual}</span>}
+                                <span
+                                    className={`rounded-full px-2 py-0.5 font-medium ${finalizado
+                                            ? "bg-emerald-50 text-emerald-700"
+                                            : "bg-amber-50 text-amber-700"
+                                        }`}
+                                >
+                                    {finalizado ? "Finalizado" : "Em andamento"}
+                                </span>
+                            </div>
                         </div>
 
                         <div className="flex shrink-0 items-center gap-2">
@@ -340,10 +356,11 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                     <BotaoExportarPdf
                                         desabilitado={loading || logs.length === 0}
                                         selecionadoNome={registro.falecido}
+                                        criacaoSelecionado={criacaoSelecionado}
                                         logVisiveis={logs}
-                                        resumoFinal={resumoFinal}
+                                        resumoFinal={resumoAtual}
                                         materiaisMap={materiaisMap}
-                                        sepultamentoId={getRegistroId(registro)}
+                                        sepultamentoId={registroId}
                                     />
                                 </div>
                             </div>
@@ -360,20 +377,34 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                         </div>
                     </div>
 
-                    <div className="h-[calc(90vh-56px)] overflow-auto p-4">
+                    <div className="h-[calc(92vh-72px)] overflow-auto bg-slate-50/40 p-4 sm:p-5">
                         {loading ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                            <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
                                 Carregando histórico…
                             </div>
                         ) : logs.length === 0 ? (
-                            <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+                            <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
                                 Nenhum log encontrado para este registro.
                             </div>
                         ) : (
-                            <>
-                                <LinhaDoTempoLogs logs={logs} materiaisMap={materiaisMap} />
-                                <ResumoFinal visivel={!!resumoFinal} resumo={resumoFinal || {}} />
-                            </>
+                            <div className="space-y-5">
+                                <ResumoFinal
+                                    visivel={Object.keys(resumoAtual).length > 0}
+                                    resumo={resumoAtual}
+                                    titulo={finalizado ? "Resumo Final" : "Resumo do Atendimento"}
+                                    subtitulo="Dados principais separados por assunto. Informações técnicas ficam recolhidas por padrão."
+                                />
+
+                                <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+                                    <div className="mb-4">
+                                        <h4 className="text-sm font-semibold text-slate-900">Linha do Tempo</h4>
+                                        <p className="mt-0.5 text-xs text-slate-500">
+                                            Eventos em ordem cronológica, mostrando apenas informações relevantes de cada ação.
+                                        </p>
+                                    </div>
+                                    <LinhaDoTempoLogs logs={logs} materiaisMap={materiaisMap} />
+                                </section>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -424,7 +455,6 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                             <div className="border-b px-3 py-2 text-sm font-semibold">
                                                 {foto.titulo}
                                             </div>
-
                                             <div className="bg-slate-50 p-3">
                                                 <img
                                                     src={foto.url}

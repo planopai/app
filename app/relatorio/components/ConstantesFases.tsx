@@ -6,15 +6,16 @@ import React from "react";
 export const FASES_NOMES: Record<string, string> = {
     fase01: "Indo Retirar o Óbito",
     fase02: "Corpo na Clínica",
-    fase03: "Ínicio de Conservação",
+    fase03: "Início de Conservação",
     fase04: "Fim da Conservação",
-    fase05: "Ínicio da Ornamentação",
+    fase05: "Início da Ornamentação",
     fase06: "Fim da Ornamentação",
     fase07: "Transportando Óbito P/Velório",
     fase08: "Entrega de Corpo",
     fase09: "Transportando P/ Sepultamento",
     fase10: "Sepultamento Concluído",
     fase11: "Material Recolhido",
+    fase12: "Corpo Pronto",
 };
 
 /**
@@ -33,6 +34,7 @@ export const FASES_ICONES: Record<string, string> = {
     fase09: "🚐", // Transportando para Sepultamento
     fase10: "✅", // Sepultamento Concluído
     fase11: "📦", // Material Recolhido
+    fase12: "✅", // Corpo Pronto
 };
 
 function normalizarFase(fase?: string) {
@@ -74,7 +76,7 @@ function normalizarFase(fase?: string) {
 
         "fim da ornamentacao": "fase06",
         "fim da ornamentação": "fase06",
-        "corpo pronto": "fase06",
+        "corpo pronto": "fase12",
 
         transportando: "fase07",
         "transportando obito p/velorio": "fase07",

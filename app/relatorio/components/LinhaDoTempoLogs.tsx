@@ -1,25 +1,30 @@
 "use client";
 
-import React, { useState } from "react";
-import { IconX } from "@tabler/icons-react";
+import React, { useMemo, useState } from "react";
+import { IconChevronDown, IconPhoto, IconX } from "@tabler/icons-react";
 import { LogItem } from "./TiposHistorico";
 import { traduzirFase, iconeAcao } from "./ConstantesFases";
-import { formataDataHora, formataSeDataIso } from "./UtilDatas";
-import { isNoChangeEntry, asBool } from "./Normalizadores";
-import {
-    overrideCampoNome,
-    substituirRotuloVisual,
-    titleCaseFromSnake,
-    sanitize,
-    capitalize,
-} from "./UtilTexto";
+import { formataDataHora } from "./UtilDatas";
+import { isNoChangeEntry } from "./Normalizadores";
+import { capitalize } from "./UtilTexto";
 import type { MateriaisMap } from "./Api";
+import {
+    contarDetalhesHumanos,
+    extrairDetalhesLogHumanos,
+    type DetalhesLogFormatados,
+    type MaterialRelatorio,
+} from "./FormatadorRelatorio";
 
 interface Props {
     logs: LogItem[];
     usuarioVisivel?: boolean;
     materiaisMap?: MateriaisMap;
 }
+
+type FotoHistorico = {
+    url: string;
+    titulo: string;
+};
 
 function safeJsonParse(v: any) {
     if (v == null) return null;
@@ -32,90 +37,6 @@ function safeJsonParse(v: any) {
     }
 }
 
-function labelFromKey(key: string) {
-    const m = String(key).match(/^(item|subitem)\s*:\s*(.+)$/i);
-    if (m) {
-        const tipo = m[1].toLowerCase() === "subitem" ? "Subitem" : "Item";
-        return `${tipo} ${String(m[2]).trim()}`;
-    }
-    const base = titleCaseFromSnake(String(key).replace(/:/g, "_"));
-    return overrideCampoNome(key, base);
-}
-
-function normMatKey(k: string) {
-    return String(k || "").trim().toLowerCase().replace(/\s+/g, "");
-}
-
-type MatLinha = { categoria: string; nome: string; qtd: number };
-
-function extrairMateriaisDoMateriaisJson(
-    materiaisJson: any,
-    materiaisMap?: MateriaisMap
-): MatLinha[] {
-    const mj = safeJsonParse(materiaisJson);
-    const out: MatLinha[] = [];
-    if (!mj || typeof mj !== "object") return out;
-
-    for (const [k, vv] of Object.entries(mj)) {
-        const v: any = vv || {};
-        const qtdNum = Number(v?.qtd ?? 0);
-        const qtd = Number.isFinite(qtdNum) ? Math.max(0, Math.floor(qtdNum)) : 0;
-
-        const checked = asBool(v?.checked) || qtd > 0;
-        if (!checked || qtd <= 0) continue;
-
-        const overrideNome =
-            (typeof v?.nome === "string" && v.nome.trim()) ||
-            (typeof v?.rotulo === "string" && v.rotulo.trim()) ||
-            (typeof v?.label === "string" && v.label.trim()) ||
-            "";
-
-        const fromMap = materiaisMap?.[normMatKey(String(k))];
-
-        const categoria =
-            (typeof v?.categoria_nome === "string" && v.categoria_nome.trim()) ||
-            (typeof v?.categoria === "string" && v.categoria.trim()) ||
-            fromMap?.categoria ||
-            "Material";
-
-        const nome = overrideNome || fromMap?.nome || labelFromKey(String(k));
-
-        out.push({ categoria, nome, qtd });
-    }
-
-    out.sort((a, b) =>
-        (a.categoria + " " + a.nome).localeCompare(b.categoria + " " + b.nome, "pt-BR", {
-            sensitivity: "base",
-        })
-    );
-
-    return out;
-}
-
-function agruparMateriais(mats: MatLinha[]) {
-    const map = new Map<string, MatLinha[]>();
-
-    for (const it of mats) {
-        const cat = (it.categoria || "").trim() || "Material";
-        if (!map.has(cat)) map.set(cat, []);
-        map.get(cat)!.push(it);
-    }
-
-    const grupos = Array.from(map.entries()).sort(([a], [b]) =>
-        a.localeCompare(b, "pt-BR", { sensitivity: "base" })
-    );
-
-    for (const [, arr] of grupos) {
-        arr.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
-    }
-
-    return grupos;
-}
-
-/* ========================
-   Fotos das ações
-   ======================== */
-
 function isFotoAcaoUrl(v: any): boolean {
     const s = String(v ?? "").trim();
     return s.includes("/uploads/acoes_fotos/") || s.includes("uploads/acoes_fotos/");
@@ -126,9 +47,9 @@ function extrairFotoAcaoUrl(v: any): string {
     if (!s) return "";
 
     const match =
-        s.match(/https?:\/\/[^\s"'<>]*\/uploads\/acoes_fotos\/[^\s"'<>]+/i) ||
-        s.match(/\/uploads\/acoes_fotos\/[^\s"'<>]+/i) ||
-        s.match(/uploads\/acoes_fotos\/[^\s"'<>]+/i);
+        s.match(/https?:\/\/[^\s\"'<>]*\/uploads\/acoes_fotos\/[^\s\"'<>]+/i) ||
+        s.match(/\/uploads\/acoes_fotos\/[^\s\"'<>]+/i) ||
+        s.match(/uploads\/acoes_fotos\/[^\s\"'<>]+/i);
 
     return match?.[0] || "";
 }
@@ -143,11 +64,11 @@ function normalizarFotoAcaoUrl(v: any): string {
         return url
             .replace(
                 "https://pai.planoassistencialintegrado.com.br",
-                "https://api.planoassistencialintegrado.com.br"
+                "https://api.planoassistencialintegrado.com.br",
             )
             .replace(
                 "https://planoassistencialintegrado.com.br",
-                "https://api.planoassistencialintegrado.com.br"
+                "https://api.planoassistencialintegrado.com.br",
             );
     }
 
@@ -176,47 +97,198 @@ function nomeFotoAcaoPorTexto(v: any): string {
     return "Foto da ação";
 }
 
-function fotoButtonHtml(url: string, titulo = "Foto da ação") {
-    const safeUrl = sanitize(url);
-    const safeTitle = sanitize(titulo);
+function extrairFotosDoDetalhe(raw: any): FotoHistorico[] {
+    const out: FotoHistorico[] = [];
+    const seen = new Set<string>();
 
-    return `
-        <button
-            type="button"
-            data-foto-url="${safeUrl}"
-            data-foto-title="${safeTitle}"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-            title="Ver foto"
-            aria-label="Ver foto"
-        >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-4 w-4"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-            >
-                <path d="M15 8h.01" />
-                <path d="M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" />
-                <path d="m3 16 5-5c.928-.893 2.072-.893 3 0l5 5" />
-                <path d="m14 14 1-1c.928-.893 2.072-.893 3 0l3 3" />
-            </svg>
-        </button>
-    `;
+    function walk(value: any) {
+        if (value == null) return;
+
+        if (typeof value === "string") {
+            if (isFotoAcaoUrl(value)) {
+                const url = normalizarFotoAcaoUrl(value);
+                if (url && !seen.has(url)) {
+                    seen.add(url);
+                    out.push({ url, titulo: nomeFotoAcaoPorTexto(value) });
+                }
+            }
+
+            const parsed = safeJsonParse(value);
+            if (parsed && parsed !== value) walk(parsed);
+            return;
+        }
+
+        if (Array.isArray(value)) {
+            value.forEach(walk);
+            return;
+        }
+
+        if (typeof value === "object") {
+            Object.values(value).forEach(walk);
+        }
+    }
+
+    walk(raw);
+    return out;
 }
 
 function tituloDoLog(ent: LogItem) {
-    if (ent.status_novo) {
-        return traduzirFase(ent.status_novo);
+    if (ent.status_novo) return traduzirFase(ent.status_novo);
+    return ent.acao ? capitalize(ent.acao) : "Ação registrada";
+}
+
+function pareceCadastroInicial(ent: LogItem, index: number, qtdDetalhes: number) {
+    const acao = String(ent.acao || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    return (
+        /cadastr|criou|criado|novo atendimento|registrou atendimento/.test(acao) ||
+        (index === 0 && qtdDetalhes >= 8)
+    );
+}
+
+function ListaMateriais({ titulo, itens }: { titulo: string; itens: MaterialRelatorio[] }) {
+    if (!itens.length) return null;
+
+    const grupos = new Map<string, MaterialRelatorio[]>();
+    for (const item of itens) {
+        const categoria = item.categoria || titulo;
+        if (!grupos.has(categoria)) grupos.set(categoria, []);
+        grupos.get(categoria)!.push(item);
     }
 
-    return ent.acao ? capitalize(ent.acao) : "";
+    return (
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                {titulo}
+            </div>
+            <div className="mt-2 space-y-2">
+                {Array.from(grupos.entries()).map(([categoria, linhas]) => (
+                    <div key={categoria}>
+                        {categoria !== titulo && (
+                            <div className="mb-1 text-[11px] font-medium text-slate-500">
+                                {categoria}
+                            </div>
+                        )}
+                        <ul className="space-y-1 text-sm text-slate-800">
+                            {linhas.map((item, index) => (
+                                <li
+                                    key={`${categoria}-${item.nome}-${index}`}
+                                    className="flex items-start justify-between gap-4"
+                                >
+                                    <span className="min-w-0 break-words">{item.nome}</span>
+                                    <span className="shrink-0 font-semibold">Qtd. {item.qtd}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function DetalhesHumanos({
+    detalhes,
+    compacto,
+}: {
+    detalhes: DetalhesLogFormatados;
+    compacto: boolean;
+}) {
+    const temHumanos = contarDetalhesHumanos(detalhes) > 0;
+
+    if (compacto && temHumanos) {
+        return (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Dados iniciais organizados no resumo do atendimento acima.
+            </div>
+        );
+    }
+
+    if (!temHumanos && !detalhes.tecnicos.length) return null;
+
+    return (
+        <div className="mt-3 space-y-3">
+            {detalhes.campos.length > 0 && (
+                <dl className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    {detalhes.campos.map((campo, index) => (
+                        <div
+                            key={`${campo.chave}-${index}`}
+                            className="grid grid-cols-1 gap-0.5 border-b border-slate-100 px-3 py-2 last:border-b-0 sm:grid-cols-[170px_1fr] sm:gap-3"
+                        >
+                            <dt className="text-xs font-medium text-slate-500">{campo.label}</dt>
+                            <dd className="min-w-0 break-words text-sm text-slate-900">{campo.valor}</dd>
+                        </div>
+                    ))}
+                </dl>
+            )}
+
+            <ListaMateriais titulo="Materiais" itens={detalhes.materiais} />
+            <ListaMateriais titulo="Insumos Tanatopraxia" itens={detalhes.insumos} />
+
+            {detalhes.arrumacao.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Conservação do corpo
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {detalhes.arrumacao.map((item) => (
+                            <span
+                                key={item}
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700"
+                            >
+                                {item}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {detalhes.coroas.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Coroas de flores
+                    </div>
+                    <ul className="mt-2 space-y-1 text-sm text-slate-800">
+                        {detalhes.coroas.map((item, index) => (
+                            <li key={`${item}-${index}`}>{item}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {detalhes.textoLivre.map((texto, index) => (
+                <div
+                    key={`${texto}-${index}`}
+                    className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-800"
+                >
+                    {texto}
+                </div>
+            ))}
+
+            {detalhes.tecnicos.length > 0 && (
+                <details className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60">
+                    <summary className="flex cursor-pointer list-none items-center gap-1 px-3 py-2 text-xs font-semibold text-slate-500">
+                        <IconChevronDown className="size-4" />
+                        Dados técnicos ({detalhes.tecnicos.length})
+                    </summary>
+                    <dl className="divide-y divide-slate-200 border-t border-dashed border-slate-300 px-3">
+                        {detalhes.tecnicos.map((campo, index) => (
+                            <div
+                                key={`${campo.chave}-${index}`}
+                                className="grid grid-cols-1 gap-1 py-2 text-xs sm:grid-cols-[180px_1fr]"
+                            >
+                                <dt className="font-medium text-slate-500">{campo.label}</dt>
+                                <dd className="break-all text-slate-700">{campo.valor}</dd>
+                            </div>
+                        ))}
+                    </dl>
+                </details>
+            )}
+        </div>
+    );
 }
 
 export default function LinhaDoTempoLogs({
@@ -224,273 +296,101 @@ export default function LinhaDoTempoLogs({
     usuarioVisivel = true,
     materiaisMap,
 }: Props) {
-    const [fotoModal, setFotoModal] = useState<{
-        open: boolean;
-        url: string;
-        title: string;
-    }>({
-        open: false,
-        url: "",
-        title: "",
-    });
+    const [fotoModal, setFotoModal] = useState<FotoHistorico | null>(null);
 
-    if (!logs || logs.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
-    }
+    const logsVisiveis = useMemo(
+        () => (logs || []).filter((log) => !isNoChangeEntry(log)),
+        [logs],
+    );
 
-    function handleClickDentroLog(e: React.MouseEvent<HTMLDivElement>) {
-        const target = e.target as HTMLElement | null;
-        const btn = target?.closest?.("[data-foto-url]") as HTMLElement | null;
-        if (!btn) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const url = btn.getAttribute("data-foto-url") || "";
-        const title = btn.getAttribute("data-foto-title") || "Foto da ação";
-
-        if (!url) return;
-
-        setFotoModal({
-            open: true,
-            url,
-            title,
-        });
+    if (!logsVisiveis.length) {
+        return <div className="p-4 text-center text-sm text-muted-foreground">Nenhum log encontrado.</div>;
     }
 
     return (
         <>
-            <div className="space-y-3" onClick={handleClickDentroLog}>
-                {logs
-                    .filter((l) => !isNoChangeEntry(l))
-                    .map((ent, i) => {
-                        let detalhesHtml = "";
-                        const raw = ent.detalhes as any;
+            <div className="relative space-y-0 pl-6">
+                <div className="absolute bottom-4 left-[9px] top-4 w-px bg-slate-200" />
 
-                        try {
-                            const obj =
-                                raw && typeof raw === "string"
-                                    ? (JSON.parse(raw) as Record<string, any>)
-                                    : (raw as Record<string, any>);
+                {logsVisiveis.map((ent, index) => {
+                    const detalhes = extrairDetalhesLogHumanos(ent.detalhes, materiaisMap);
+                    const qtdDetalhes = contarDetalhesHumanos(detalhes);
+                    const compacto = pareceCadastroInicial(ent, index, qtdDetalhes);
+                    const fotos = extrairFotosDoDetalhe(ent.detalhes);
 
-                            if (obj && typeof obj === "object") {
-                                const chips: string[] = [];
-                                const arrSet = new Set<string>();
+                    return (
+                        <article key={`${ent.datahora || "log"}-${index}`} className="relative pb-5">
+                            <div className="absolute -left-6 top-4 flex h-[19px] w-[19px] items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] shadow-sm">
+                                {iconeAcao(ent.acao, ent.status_novo)}
+                            </div>
 
-                                const mats = extrairMateriaisDoMateriaisJson(obj.materiais_json, materiaisMap);
-
-                                if (mats.length) {
-                                    const grupos = agruparMateriais(mats);
-
-                                    chips.push(
-                                        `<div class="mt-2"><b>Materiais:</b></div>` +
-                                        grupos
-                                            .map(([cat, items]) => {
-                                                const titulo = `<div class="mt-1 text-xs font-semibold text-muted-foreground">${sanitize(
-                                                    cat
-                                                )}</div>`;
-
-                                                const chipsItens = items
-                                                    .map(
-                                                        (it) =>
-                                                            `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">
-                                                                <b>${sanitize(it.nome)}:</b> ${sanitize(String(it.qtd))}
-                                                            </span>`
-                                                    )
-                                                    .join("");
-
-                                                return `<div>${titulo}${chipsItens}</div>`;
-                                            })
-                                            .join("")
-                                    );
-                                }
-
-                                for (const key of Object.keys(obj)) {
-                                    if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
-
-                                    if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
-                                        let aobj: any = obj[key] || {};
-                                        if (typeof aobj === "string") aobj = safeJsonParse(aobj) || {};
-
-                                        if (aobj && typeof aobj === "object") {
-                                            for (const [k, v] of Object.entries(aobj)) {
-                                                if (asBool(v)) arrSet.add(`✅ ${titleCaseFromSnake(k)}`);
-                                            }
-                                        }
-
-                                        continue;
-                                    }
-
-                                    const m = key.match(/^materiais_(.+?)_qtd$/i);
-
-                                    if (m) {
-                                        const valRaw = obj[key];
-
-                                        if (valRaw != null && String(valRaw).trim() !== "") {
-                                            const nomeBase = titleCaseFromSnake(m[1]);
-                                            const nome = overrideCampoNome(m[1], nomeBase);
-                                            const valFmt = formataSeDataIso(String(valRaw));
-
-                                            chips.push(
-                                                `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
-                                                    nome
-                                                )}:</b> ${sanitize(String(valFmt))}</span>`
-                                            );
-                                        }
-
-                                        continue;
-                                    }
-
-                                    if (typeof obj[key] === "object" && !Array.isArray(obj[key])) continue;
-
-                                    let val = obj[key];
-                                    if (val == null || String(val).trim() === "") continue;
-
-                                    let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-                                    nome = overrideCampoNome(key, nome);
-
-                                    if (isFotoAcaoUrl(val)) {
-                                        const fotoUrl = normalizarFotoAcaoUrl(val);
-
-                                        if (fotoUrl) {
-                                            const tituloFoto = nomeFotoAcaoPorTexto(val);
-
-                                            chips.push(
-                                                `<div class="mt-2 flex flex-wrap items-center gap-2">
-                                                    <span class="text-xs text-muted-foreground">${sanitize(tituloFoto)}:</span>
-                                                    ${fotoButtonHtml(fotoUrl, tituloFoto)}
-                                                </div>`
-                                            );
-                                        }
-
-                                        continue;
-                                    }
-
-                                    val = String(val);
-                                    if (val.startsWith("fase")) val = traduzirFase(val);
-                                    val = formataSeDataIso(val);
-
-                                    nome = substituirRotuloVisual(nome);
-                                    val = substituirRotuloVisual(val);
-
-                                    chips.push(
-                                        `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2"><b>${sanitize(
-                                            nome
-                                        )}:</b> ${sanitize(val)}</span>`
-                                    );
-                                }
-
-                                if (arrSet.size) {
-                                    const items = Array.from(arrSet);
-
-                                    chips.unshift(
-                                        `<div class="mt-2"><b>Arrumação:</b> ${items
-                                            .map(
-                                                (t) =>
-                                                    `<span class="inline-block rounded border px-2 py-1 text-xs mr-2 mb-2">${sanitize(
-                                                        t
-                                                    )}</span>`
-                                            )
-                                            .join("")}</div>`
-                                    );
-                                }
-
-                                if (chips.length) detalhesHtml = `<div class="mt-2">${chips.join("")}</div>`;
-                            }
-                        } catch {
-                            let detalhesRaw = String(raw || "");
-                            detalhesRaw = substituirRotuloVisual(detalhesRaw);
-
-                            if (isFotoAcaoUrl(detalhesRaw)) {
-                                const fotoUrl = normalizarFotoAcaoUrl(detalhesRaw);
-                                const tituloFoto = nomeFotoAcaoPorTexto(detalhesRaw);
-
-                                if (fotoUrl) {
-                                    detalhesHtml = `
-                                        <div class="mt-2 flex flex-wrap items-center gap-2">
-                                            <span class="text-xs text-muted-foreground">${sanitize(tituloFoto)}:</span>
-                                            ${fotoButtonHtml(fotoUrl, tituloFoto)}
+                            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                    <div className="min-w-0">
+                                        <div className="text-xs text-slate-500">
+                                            {formataDataHora(ent.datahora)}
                                         </div>
-                                    `;
-                                }
-                            } else if (detalhesRaw.trim()) {
-                                detalhesHtml = `<div class="mt-2 text-sm">${sanitize(detalhesRaw)}</div>`;
-                            }
-                        }
-
-                        const titulo = tituloDoLog(ent);
-                        const tituloHtml = titulo
-                            ? `<div class="text-sm font-bold">${sanitize(titulo)}</div>`
-                            : "";
-
-                        const usuarioHtml =
-                            usuarioVisivel && ent.usuario
-                                ? `<div class="text-xs font-bold text-muted-foreground">${sanitize(
-                                    ent.usuario || ""
-                                )}</div>`
-                                : "";
-
-                        return (
-                            <div
-                                key={i}
-                                className="log-entry rounded-xl border bg-background/60 p-3 shadow-sm"
-                                dangerouslySetInnerHTML={{
-                                    __html: `
-                                        <div class="flex gap-3">
-                                            <div class="text-xl leading-none">${iconeAcao(ent.acao, ent.status_novo)}</div>
-                                            <div class="flex-1">
-                                                <div class="text-xs text-muted-foreground">${formataDataHora(ent.datahora)}</div>
-                                                ${tituloHtml}
-                                                ${usuarioHtml}
-                                                ${detalhesHtml}
+                                        <h5 className="mt-0.5 text-sm font-semibold text-slate-900">
+                                            {tituloDoLog(ent)}
+                                        </h5>
+                                        {usuarioVisivel && ent.usuario && (
+                                            <div className="mt-0.5 text-xs text-slate-500">
+                                                Responsável: <span className="font-medium text-slate-700">{ent.usuario}</span>
                                             </div>
+                                        )}
+                                    </div>
+
+                                    {fotos.length > 0 && (
+                                        <div className="flex shrink-0 flex-wrap gap-2">
+                                            {fotos.map((foto) => (
+                                                <button
+                                                    key={foto.url}
+                                                    type="button"
+                                                    onClick={() => setFotoModal(foto)}
+                                                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                                >
+                                                    <IconPhoto className="size-4" />
+                                                    Ver foto
+                                                </button>
+                                            ))}
                                         </div>
-                                    `,
-                                }}
-                            />
-                        );
-                    })}
+                                    )}
+                                </div>
+
+                                <DetalhesHumanos detalhes={detalhes} compacto={compacto} />
+                            </div>
+                        </article>
+                    );
+                })}
             </div>
 
-            {fotoModal.open && (
+            {fotoModal && (
                 <div
                     className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3 sm:p-6"
                     role="dialog"
                     aria-modal="true"
-                    aria-label={fotoModal.title || "Foto da ação"}
+                    aria-label={fotoModal.titulo}
                     onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            setFotoModal({ open: false, url: "", title: "" });
-                        }
+                        if (e.target === e.currentTarget) setFotoModal(null);
                     }}
                 >
                     <div className="w-full max-w-4xl overflow-hidden rounded-2xl border bg-white shadow-2xl">
                         <div className="flex items-center justify-between gap-3 border-b p-3 sm:p-4">
-                            <div>
-                                <h3 className="text-base font-semibold">
-                                    {fotoModal.title || "Foto da ação"}
-                                </h3>
-                                <p className="text-xs text-muted-foreground">
-                                    Foto anexada ao histórico do atendimento.
-                                </p>
-                            </div>
-
+                            <div className="font-semibold">{fotoModal.titulo}</div>
                             <button
                                 type="button"
+                                onClick={() => setFotoModal(null)}
                                 className="inline-flex h-9 w-9 items-center justify-center rounded-md border hover:bg-muted"
-                                onClick={() => setFotoModal({ open: false, url: "", title: "" })}
-                                title="Fechar"
-                                aria-label="Fechar"
+                                aria-label="Fechar foto"
                             >
                                 <IconX className="size-5" />
                             </button>
                         </div>
-
-                        <div className="max-h-[78vh] overflow-auto bg-slate-50 p-3 sm:p-4">
+                        <div className="bg-slate-50 p-3 sm:p-4">
                             <img
                                 src={fotoModal.url}
-                                alt={fotoModal.title || "Foto da ação"}
-                                className="mx-auto max-h-[72vh] w-auto max-w-full rounded-xl border bg-white object-contain shadow-sm"
+                                alt={fotoModal.titulo}
+                                className="mx-auto max-h-[78vh] w-auto max-w-full rounded-lg border bg-white object-contain"
                             />
                         </div>
                     </div>

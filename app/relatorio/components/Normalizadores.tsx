@@ -6,6 +6,7 @@ import { FASES_NOMES } from "./ConstantesFases";
 import { formataSeDataIso } from "./UtilDatas";
 import { substituirRotuloVisual, overrideCampoNome, titleCaseFromSnake } from "./UtilTexto";
 import type { MateriaisMap } from "./Api";
+import { campoEhTecnico } from "./FormatadorRelatorio";
 
 /* ======================== Helpers de Normalização (completos) ======================== */
 
@@ -252,6 +253,9 @@ export function extrairParesDoDetalhe(raw: any, materiaisMap?: MateriaisMap): Re
                 if (["id", "acao", "materiais_json"].includes(key)) continue;
                 if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) continue;
                 if (/^materiais_.+?_qtd$/i.test(key)) continue;
+                // Campos internos continuam disponíveis no log bruto, mas não entram
+                // no resumo humano nem no PDF principal.
+                if (campoEhTecnico(key)) continue;
 
                 const val = (obj as any)[key];
 

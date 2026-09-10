@@ -12,6 +12,11 @@ import {
 } from "./UtilTexto";
 import { traduzirFase } from "./ConstantesFases";
 import { asBool } from "./Normalizadores";
+import {
+    contarDetalhesHumanos,
+    extrairDetalhesLogHumanos,
+    organizarResumoRelatorio,
+} from "./FormatadorRelatorio";
 
 /* ==== helpers de API para pegar assinaturas e normalizar URL ==== */
 import {
@@ -1004,87 +1009,67 @@ export default function BotaoExportarPdf({
                 y += 6;
             }
 
-            // Relatório Final
+            // Resumo organizado por seções, sem IDs/códigos técnicos no corpo principal.
             if (resumoFinal && Object.keys(resumoFinal).length) {
-                doc.setFont(titleFont[0], titleFont[1]);
-                doc.setFontSize(12.5);
-                doc.text("Relatório Final", marginL, y);
-                y += 5;
+                const organizado = organizarResumoRelatorio(resumoFinal);
 
-                const pairs: Array<[string, string]> = [];
-
-                for (const k of RESUMO_ORDER as string[]) {
-                    if (deveOcultarCampoResumoPdf(k)) continue;
-
-                    const v = resumoFinal[k];
-
-                    if (v) {
-                        pairs.push([
-                            substituirRotuloVisual(
-                                overrideCampoNome(k, titleCaseFromSnake(k))
-                            ).toUpperCase(),
-                            formatarValorResumoPdf(k, String(v)),
-                        ]);
-                    }
-                }
-
-                for (const [k, v] of Object.entries(resumoFinal)) {
-                    if ((RESUMO_ORDER as readonly string[]).includes(k)) continue;
-                    if (deveOcultarCampoResumoPdf(k)) continue;
-
-                    if (v) {
-                        pairs.push([
-                            substituirRotuloVisual(
-                                overrideCampoNome(k, titleCaseFromSnake(k))
-                            ).toUpperCase(),
-                            formatarValorResumoPdf(k, String(v)),
-                        ]);
-                    }
-                }
-
-                const gap = 4;
-                const colW = (contentW - gap) / 2;
-
-                doc.setFont(normalFont[0], normalFont[1]);
-
-                let cursorX = marginL;
-                let cursorY = y;
-
-                for (let i = 0; i < pairs.length; i++) {
-                    const [label, value] = pairs[i];
-
-                    doc.setFont(normalFont[0], normalFont[1]);
-                    doc.setFontSize(8.5);
-                    const labelH = textHeight(doc, label, colW - 8, 3.8).h;
-
+                if (organizado.secoes.length) {
                     doc.setFont(titleFont[0], titleFont[1]);
-                    doc.setFontSize(11);
-                    const valueH = textHeight(doc, value, colW - 8, 5).h;
+                    doc.setFontSize(12.5);
+                    doc.text("Resumo do Atendimento", marginL, y);
+                    y += 7;
 
-                    const cardH = labelH + 2 + valueH + 8;
-                    cursorY = ensurePageSpace(doc, cursorY, cardH, drawBg);
+                    for (const secao of organizado.secoes) {
+                        y = ensurePageSpace(doc, y, 14, drawBg);
 
-                    const used = drawCard(doc, cursorX, cursorY, colW, label, value, {
-                        normal: normalFont,
-                        title: titleFont,
-                    });
+                        doc.setFont(titleFont[0], titleFont[1]);
+                        doc.setFontSize(10);
+                        doc.setTextColor(70);
+                        doc.text(secao.titulo.toUpperCase(), marginL, y);
+                        y += 5;
 
-                    if (cursorX === marginL) {
-                        cursorX = marginL + colW + gap;
-                    } else {
-                        cursorX = marginL;
-                        cursorY += used + 3;
+                        for (const campo of secao.campos) {
+                            const labelW = Math.min(52, contentW * 0.34);
+                            const valueX = marginL + labelW + 4;
+                            const valueW = contentW - labelW - 4;
+
+                            doc.setFont(normalFont[0], normalFont[1]);
+                            doc.setFontSize(8.5);
+                            const labelLines = doc.splitTextToSize(campo.label, labelW);
+
+                            doc.setFont(titleFont[0], titleFont[1]);
+                            doc.setFontSize(9.8);
+                            const valueLines = doc.splitTextToSize(campo.valor, valueW);
+
+                            const rowH = Math.max(
+                                Math.max(1, labelLines.length) * 4.2,
+                                Math.max(1, valueLines.length) * 4.8,
+                            ) + 3;
+
+                            y = ensurePageSpace(doc, y, rowH + 2, drawBg);
+
+                            doc.setTextColor(105);
+                            doc.setFont(normalFont[0], normalFont[1]);
+                            doc.setFontSize(8.5);
+                            doc.text(labelLines, marginL, y + 3.5);
+
+                            doc.setTextColor(25);
+                            doc.setFont(titleFont[0], titleFont[1]);
+                            doc.setFontSize(9.8);
+                            doc.text(valueLines, valueX, y + 3.8);
+
+                            doc.setDrawColor(232);
+                            doc.setLineWidth(0.15);
+                            doc.line(marginL, y + rowH, marginL + contentW, y + rowH);
+                            y += rowH + 1.5;
+                        }
+
+                        y += 4;
                     }
                 }
-
-                if (cursorX !== marginL) {
-                    cursorY += 8;
-                }
-
-                y = cursorY + 4;
             }
 
-            // Cards de Log
+            // Linha do tempo: apenas dados humanos relevantes.
             const cardPadX = 6;
             const cardPadY = 6;
 
@@ -1099,7 +1084,6 @@ export default function BotaoExportarPdf({
 
                 try {
                     const obj = typeof det === "string" ? JSON.parse(det) : det;
-
                     if (obj && typeof obj === "object" && (obj as any).sem_alteracoes === true) {
                         return false;
                     }
@@ -1108,207 +1092,132 @@ export default function BotaoExportarPdf({
                 return true;
             });
 
-            for (const ent of logsParaImprimir) {
+            y = ensurePageSpace(doc, y, 14, drawBg);
+            doc.setFont(titleFont[0], titleFont[1]);
+            doc.setFontSize(12.5);
+            doc.setTextColor(20);
+            doc.text("Linha do Tempo", marginL, y);
+            y += 7;
+
+            for (const [logIndex, ent] of logsParaImprimir.entries()) {
                 const dataLine = formataDataHora(ent.datahora) || "";
                 const t = mapAcaoTitulo(ent.acao || "");
                 const statusTxt = ent.status_novo ? traduzirFase(ent.status_novo) : "";
-                const acaoFull = statusTxt ? `${t.titulo} — ${statusTxt}` : t.titulo;
-                const usuarioLine = ent.usuario ? `Usuário: ${ent.usuario}` : "";
+                const acaoFull = statusTxt ? `${t.titulo} - ${statusTxt}` : t.titulo;
+                const usuarioLine = ent.usuario ? `Responsável: ${ent.usuario}` : "";
 
                 const detalhesLines: string[] = [];
                 const ja = new Set<string>();
-
-                const addLine = (s: string) => {
-                    const key = normLine(s);
-
-                    if (key && !ja.has(key)) {
+                const addLine = (linha: string) => {
+                    const clean = String(linha || "").trim();
+                    const key = normLine(clean);
+                    if (clean && key && !ja.has(key)) {
                         ja.add(key);
-                        detalhesLines.push(s);
+                        detalhesLines.push(clean);
                     }
                 };
 
-                const raw = ent.detalhes as any;
-                const matsTmp: MatLinha[] = [];
+                if (!t.assinatura) {
+                    const detalhes = extrairDetalhesLogHumanos(ent.detalhes, materiaisMap);
+                    const qtdDetalhes = contarDetalhesHumanos(detalhes);
+                    const acaoNorm = String(ent.acao || "")
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "");
+                    const snapshotInicial =
+                        /cadastr|criou|criado|novo atendimento|registrou atendimento/.test(acaoNorm) ||
+                        (logIndex === 0 && qtdDetalhes >= 8);
 
-                try {
-                    const obj =
-                        raw && typeof raw === "string"
-                            ? (JSON.parse(raw) as Record<string, any>)
-                            : (raw as Record<string, any>);
+                    if (snapshotInicial && qtdDetalhes > 0) {
+                        addLine("Dados iniciais disponíveis no resumo do atendimento.");
+                    } else {
+                        detalhes.campos.forEach((campo) => addLine(`${campo.label}: ${campo.valor}`));
+                        detalhes.textoLivre.forEach(addLine);
 
-                    if (obj && typeof obj === "object") {
-                        if (!t.assinatura && obj.materiais_json) {
-                            const mj = safeJsonParse(obj.materiais_json) || obj.materiais_json;
-
-                            if (mj && typeof mj === "object") {
-                                for (const [k, vv] of Object.entries(mj)) {
-                                    const v: any = vv || {};
-                                    const qtd = Number(v?.qtd ?? 0);
-                                    const checked = asBool(v?.checked) || qtd > 0;
-
-                                    if (qtd > 0 && checked) {
-                                        const { categoria, nome } = resolveMaterialLabel(String(k), v, materiaisMap);
-                                        matsTmp.push({ categoria, nome, qtd });
-                                    }
-                                }
-                            }
+                        if (detalhes.arrumacao.length) {
+                            addLine(`Conservação do corpo: ${detalhes.arrumacao.join(", ")}`);
                         }
 
-                        if (!t.assinatura) {
-                            for (const key of Object.keys(obj)) {
-                                if (["materiais_json", "id", "acao", "sem_alteracoes"].includes(key)) continue;
-                                if (deveOcultarCampoResumoPdf(key)) continue;
-
-                                if (/^arruma[cç][aã]o(\s*json|_json)?$/i.test(key)) {
-                                    let aobj: any = {};
-                                    const val = obj[key];
-
-                                    if (typeof val === "string") {
-                                        try {
-                                            aobj = JSON.parse(val);
-                                        } catch {
-                                            aobj = {};
-                                        }
-                                    } else if (typeof val === "object" && val) {
-                                        aobj = val;
-                                    }
-
-                                    for (const [k, v] of Object.entries(aobj)) {
-                                        if (asBool(v)) {
-                                            addLine(`${titleCaseFromSnake(k)}: Sim`);
-                                        }
-                                    }
-
-                                    continue;
-                                }
-
-                                const m = key.match(/^materiais_(.+?)_qtd$/i);
-
-                                if (m) {
-                                    const nomeBase = titleCaseFromSnake(m[1]);
-                                    const nome = overrideCampoNome(m[1], nomeBase);
-                                    const qtd = (obj as any)[key];
-
-                                    if (qtd != null && String(qtd).trim() !== "") {
-                                        matsTmp.push({
-                                            categoria: "Material",
-                                            nome,
-                                            qtd: Number(qtd) || 0,
-                                        });
-                                    }
-
-                                    continue;
-                                }
-
-                                if (typeof (obj as any)[key] === "object" && !Array.isArray((obj as any)[key])) {
-                                    continue;
-                                }
-
-                                let v = (obj as any)[key];
-
-                                if (v == null || String(v).trim() === "") continue;
-
-                                let nome = key.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase());
-                                nome = overrideCampoNome(key, nome);
-
-                                v = String(v);
-
-                                if (v.startsWith("fase")) {
-                                    v = traduzirFase(v);
-                                }
-
-                                v = formatarValorResumoPdf(key, v);
-                                nome = substituirRotuloVisual(nome);
-
-                                if (/\/uploads\/assinaturas\//i.test(v)) continue;
-                                if (/\/uploads\/falecidos\//i.test(v)) continue;
-                                if (/\/uploads\/acoes_fotos\//i.test(v)) continue;
-
-                                addLine(`${nome}: ${v}`);
-                            }
+                        if (detalhes.coroas.length) {
+                            addLine("Coroas de flores:");
+                            detalhes.coroas.forEach((item) => addLine(`• ${item}`));
                         }
-                    }
-                } catch {
-                    let detalhesRaw = String(raw || "");
 
-                    if (/\/uploads\/assinaturas\//i.test(detalhesRaw)) detalhesRaw = "";
-                    if (/\/uploads\/falecidos\//i.test(detalhesRaw)) detalhesRaw = "";
-                    if (/\/uploads\/acoes_fotos\//i.test(detalhesRaw)) detalhesRaw = "";
+                        const addMateriais = (titulo: string, itens: Array<{ categoria: string; nome: string; qtd: number }>) => {
+                            if (!itens.length) return;
+                            addLine(`${titulo}:`);
+                            itens.forEach((item) => {
+                                const prefixo = item.categoria && item.categoria !== titulo
+                                    ? `${item.categoria} - `
+                                    : "";
+                                addLine(`• ${prefixo}${item.nome}: ${item.qtd}`);
+                            });
+                        };
 
-                    detalhesRaw = substituirRotuloVisual(detalhesRaw);
-
-                    if (detalhesRaw.trim()) {
-                        addLine(detalhesRaw.trim());
-                    }
-                }
-
-                if (matsTmp.length && !t.assinatura) {
-                    addLine("Materiais:");
-
-                    const grupos = agruparMateriais(matsTmp);
-
-                    for (const [cat, items] of grupos) {
-                        if (cat) addLine(cat);
-
-                        for (const it of items) {
-                            addLine(`• ${it.nome}: ${it.qtd}`);
-                        }
+                        addMateriais("Materiais", detalhes.materiais);
+                        addMateriais("Insumos Tanatopraxia", detalhes.insumos);
                     }
                 }
 
                 doc.setFont(normalFont[0], normalFont[1]);
-                doc.setFontSize(9);
+                doc.setFontSize(8.5);
                 const dataWrapped = doc.splitTextToSize(dataLine, contentW - cardPadX * 2);
 
                 doc.setFont(titleFont[0], titleFont[1]);
-                doc.setFontSize(12);
-                const acaoWrapped = doc.splitTextToSize(acaoFull, contentW - cardPadX * 2);
-
-                doc.setFont(normalFont[0], normalFont[1]);
-                doc.setFontSize(10);
-                const usuarioWrapped = doc.splitTextToSize(usuarioLine, contentW - cardPadX * 2);
-
-                doc.setFont(normalFont[0], normalFont[1]);
                 doc.setFontSize(11);
-                const detalhesWrapped = detalhesLines.flatMap((l) =>
-                    doc.splitTextToSize(l, contentW - cardPadX * 2)
+                const acaoWrapped = doc.splitTextToSize(acaoFull || "Ação registrada", contentW - cardPadX * 2);
+
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(9);
+                const usuarioWrapped = usuarioLine
+                    ? doc.splitTextToSize(usuarioLine, contentW - cardPadX * 2)
+                    : [];
+
+                doc.setFont(normalFont[0], normalFont[1]);
+                doc.setFontSize(9.5);
+                const detalhesWrapped = detalhesLines.flatMap((linha) =>
+                    doc.splitTextToSize(linha, contentW - cardPadX * 2),
                 );
 
                 const hData = dataWrapped.length ? 4 + (dataWrapped.length - 1) * 4 : 0;
-                const hAcao = acaoWrapped.length * 5;
-                const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 5 : 0;
-                const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 5 : 0;
-
-                const innerHeight = (hData ? hData + hUsuario + hDetalhes + 3 : hUsuario + hDetalhes + 3) + hAcao;
+                const hAcao = Math.max(1, acaoWrapped.length) * 5;
+                const hUsuario = usuarioWrapped.length ? usuarioWrapped.length * 4.5 : 0;
+                const hDetalhes = detalhesWrapped.length ? detalhesWrapped.length * 4.6 : 0;
+                const innerHeight = hData + hAcao + hUsuario + hDetalhes + 4;
                 const cardH = innerHeight + 2 * cardPadY;
 
-                y = ensurePageSpace(doc, y, cardH + 8, drawBg);
+                y = ensurePageSpace(doc, y, cardH + 6, drawBg);
 
-                doc.setDrawColor(210);
-                doc.setLineWidth(0.25);
-                (doc as any).roundedRect(marginL, y, contentW, cardH, 3, 3);
+                doc.setDrawColor(220);
+                doc.setFillColor(252, 252, 252);
+                doc.setLineWidth(0.2);
+                (doc as any).roundedRect(marginL, y, contentW, cardH, 2.5, 2.5, "DF");
 
                 let yy = y + cardPadY;
 
                 if (dataWrapped.length) {
-                    writeLine(dataWrapped, marginL + cardPadX, yy, 9, false);
-                    yy += 4 + (dataWrapped.length - 1) * 4 + 3;
+                    doc.setTextColor(105);
+                    writeLine(dataWrapped, marginL + cardPadX, yy, 8.5, false);
+                    yy += 4 + (dataWrapped.length - 1) * 4 + 2;
                 }
 
-                writeLine(acaoWrapped, marginL + cardPadX, yy, 12, true);
+                doc.setTextColor(20);
+                writeLine(acaoWrapped, marginL + cardPadX, yy, 11, true);
                 yy += hAcao;
 
                 if (usuarioWrapped.length) {
-                    writeLine(usuarioWrapped, marginL + cardPadX, yy, 10, false);
-                    yy += usuarioWrapped.length * 5;
+                    doc.setTextColor(90);
+                    writeLine(usuarioWrapped, marginL + cardPadX, yy, 9, false);
+                    yy += hUsuario;
                 }
 
                 if (detalhesWrapped.length) {
-                    writeLine(detalhesWrapped, marginL + cardPadX, yy, 11, false);
-                    yy += detalhesWrapped.length * 5;
+                    yy += 1;
+                    doc.setTextColor(35);
+                    writeLine(detalhesWrapped, marginL + cardPadX, yy, 9.5, false);
                 }
 
-                y += cardH + 8;
+                y += cardH + 6;
             }
 
             // Páginas extras
