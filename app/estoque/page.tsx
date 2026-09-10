@@ -117,6 +117,22 @@ type HistoricoResp = {
 };
 
 
+type DashboardMovimentoTipo = "TODOS" | "SAIDA" | "TRANSFERENCIA";
+
+type DashboardProdutoRow = {
+    produto_id: ID;
+    produto_nome: string;
+    codigo_barras: string;
+    categoria_nome: string;
+    fabricante_nome: string;
+    classificacao_nome: string;
+    saida: number;
+    transferencia: number;
+    total: number;
+    movimentos: number;
+};
+
+
 type ProdutoEditTab = "DADOS" | "ESTOQUE" | "VALOR" | "CUSTO";
 
 
@@ -469,6 +485,18 @@ const tabActions: TabAction[] = [
         ),
     },
     {
+        key: "DASHBOARD",
+        label: "Dashboard",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 20V10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M10 20V4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M16 20v-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M22 20H2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+    {
         key: "AVANCADO",
         label: "Avançado",
         icon: (
@@ -481,7 +509,7 @@ const tabActions: TabAction[] = [
 ];
 
 
-type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
+type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "DASHBOARD" | "AVANCADO";
 
 type EntradaItem = {
     id: number;
@@ -516,8 +544,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-03-TAG-LIGHT-105-V08";
-const APP_BUILD_LABEL = "2026.09.03-TAG-LIGHT-105-V08";
+const APP_BUILD_ID = "ESTOQUE-2026-09-10-DASHBOARD-MOV-V01";
+const APP_BUILD_LABEL = "2026.09.10-DASHBOARD-MOV-V01";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -599,6 +627,31 @@ function fmtDateTime(iso: string) {
     } catch {
         return iso;
     }
+}
+
+
+function localDateInputValue(date: Date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
+function dashboardTodayValue() {
+    return localDateInputValue(new Date());
+}
+
+function dashboardMonthStartValue() {
+    const d = new Date();
+    d.setDate(1);
+    return localDateInputValue(d);
+}
+
+function historicoTimestamp(value?: string | null) {
+    if (!value) return NaN;
+    const normalized = String(value).trim().replace(" ", "T");
+    const time = new Date(normalized).getTime();
+    return Number.isFinite(time) ? time : NaN;
 }
 
 function moneyBRL(n: number) {
@@ -7273,6 +7326,23 @@ export default function Page() {
     const [histTipo, setHistTipo] = useState<"Todos" | HistoricoRow["tipo"]>("Todos");
     const [histLimit, setHistLimit] = useState(300);
 
+
+    // DASHBOARD DE MOVIMENTAÇÕES
+    const [dashboardLoading, setDashboardLoading] = useState(false);
+    const [dashboardErr, setDashboardErr] = useState("");
+    const [dashboardMovimentos, setDashboardMovimentos] = useState<HistoricoRow[]>([]);
+
+    const [dashboardTipo, setDashboardTipo] =
+        useState<DashboardMovimentoTipo>("TODOS");
+    const [dashboardDe, setDashboardDe] = useState(dashboardMonthStartValue);
+    const [dashboardAte, setDashboardAte] = useState(dashboardTodayValue);
+    const [dashboardQ, setDashboardQ] = useState("");
+    const [dashboardDepositos, setDashboardDepositos] = useState<ID[]>([]);
+    const [dashboardCategorias, setDashboardCategorias] = useState<ID[]>([]);
+    const [dashboardFabricantes, setDashboardFabricantes] = useState<ID[]>([]);
+    const [dashboardClassificacoes, setDashboardClassificacoes] = useState<ID[]>([]);
+    const [dashboardTop, setDashboardTop] = useState(10);
+
     async function loadHistorico() {
         setHistLoading(true);
         setHistErr("");
@@ -7292,10 +7362,65 @@ export default function Page() {
         }
     }
 
+
+    async function loadDashboardMovimentos() {
+        setDashboardLoading(true);
+        setDashboardErr("");
+
+        try {
+            // Carrega separadamente para que ENTRADAS/AJUSTES não consumam
+            // o limite de registros usado pelo Dashboard.
+            const [saidaResp, transferenciaResp] = await Promise.all([
+                apiGet<HistoricoResp>({
+                    historico: 1,
+                    limit: 500,
+                    tipo: "SAIDA",
+                }),
+                apiGet<HistoricoResp>({
+                    historico: 1,
+                    limit: 500,
+                    tipo: "TRANSFERENCIA",
+                }),
+            ]);
+
+            if (!saidaResp.ok) {
+                throw new Error(
+                    saidaResp.msg || "Falha ao carregar as saídas do Dashboard."
+                );
+            }
+
+            if (!transferenciaResp.ok) {
+                throw new Error(
+                    transferenciaResp.msg ||
+                    "Falha ao carregar as transferências do Dashboard."
+                );
+            }
+
+            const rows = [
+                ...(saidaResp.rows || []),
+                ...(transferenciaResp.rows || []),
+            ].sort(
+                (a, b) =>
+                    historicoTimestamp(b.criado_em) -
+                    historicoTimestamp(a.criado_em)
+            );
+
+            setDashboardMovimentos(rows);
+        } catch (e: any) {
+            setDashboardErr(
+                e?.message || "Erro ao carregar os dados do Dashboard."
+            );
+            setDashboardMovimentos([]);
+        } finally {
+            setDashboardLoading(false);
+        }
+    }
+
     useEffect(() => {
         if (tab === "HISTORICO") loadHistorico();
         if (tab === "CONFERENCIA") loadConferenciasRegistros();
-        // eslint-disable-next-line 
+        if (tab === "DASHBOARD") loadDashboardMovimentos();
+        // eslint-disable-next-line
     }, [tab]);
 
     type HistoricoGrupo = {
@@ -7342,6 +7467,303 @@ export default function Page() {
 
         return grupos;
     }, [histRows]);
+
+    const dashboardFiltroOptions = useMemo(() => {
+        return {
+            depositos: depositos
+                .map((d) => ({ id: Number(d.id), nome: d.nome }))
+                .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+
+            categorias: uniqOptions(
+                produtos.map((p) => produtoCategoriaOption(p, catById))
+            ),
+
+            fabricantes: uniqOptions(
+                produtos.map((p) => produtoFabricanteOption(p, fabById))
+            ),
+
+            classificacoes: uniqOptions(
+                produtos.map((p) =>
+                    produtoClassificacaoOption(p, classById)
+                )
+            ),
+        };
+    }, [depositos, produtos, catById, fabById, classById]);
+
+    const dashboardMovimentosFiltrados = useMemo(() => {
+        const q = dashboardQ.trim().toLocaleLowerCase("pt-BR");
+
+        const depSet = dashboardDepositos.length
+            ? new Set(dashboardDepositos.map(Number))
+            : null;
+        const catSet = dashboardCategorias.length
+            ? new Set(dashboardCategorias.map(Number))
+            : null;
+        const fabSet = dashboardFabricantes.length
+            ? new Set(dashboardFabricantes.map(Number))
+            : null;
+        const classSet = dashboardClassificacoes.length
+            ? new Set(dashboardClassificacoes.map(Number))
+            : null;
+
+        const inicio = dashboardDe
+            ? new Date(`${dashboardDe}T00:00:00`).getTime()
+            : null;
+        const fim = dashboardAte
+            ? new Date(`${dashboardAte}T23:59:59.999`).getTime()
+            : null;
+
+        return dashboardMovimentos.filter((mov) => {
+            if (
+                dashboardTipo !== "TODOS" &&
+                mov.tipo !== dashboardTipo
+            ) {
+                return false;
+            }
+
+            const time = historicoTimestamp(mov.criado_em);
+
+            if (
+                inicio !== null &&
+                Number.isFinite(time) &&
+                time < inicio
+            ) {
+                return false;
+            }
+
+            if (
+                fim !== null &&
+                Number.isFinite(time) &&
+                time > fim
+            ) {
+                return false;
+            }
+
+            const produto = prodById.get(Number(mov.produto_id));
+
+            // Para o Dashboard "saídas", o depósito representa a origem
+            // física da mercadoria, inclusive nas transferências.
+            if (
+                depSet &&
+                !depSet.has(Number(mov.deposito_origem_id || 0))
+            ) {
+                return false;
+            }
+
+            if (catSet) {
+                const categoriaId = Number(produto?.categoria_id || 0);
+                if (!catSet.has(categoriaId)) return false;
+            }
+
+            if (fabSet) {
+                const fabricanteId = Number(produto?.fabricante_id || 0);
+                if (!fabSet.has(fabricanteId)) return false;
+            }
+
+            if (classSet) {
+                const classificacaoId = Number(
+                    produto?.classificacao_id || 0
+                );
+                if (!classSet.has(classificacaoId)) return false;
+            }
+
+            if (q) {
+                const categoria =
+                    produto?.categoria_nome ||
+                    (produto?.categoria_id
+                        ? catById.get(Number(produto.categoria_id))?.nome
+                        : "") ||
+                    "";
+
+                const fabricante =
+                    produto?.fabricante_nome ||
+                    (produto?.fabricante_id
+                        ? fabById.get(Number(produto.fabricante_id))?.nome
+                        : "") ||
+                    "";
+
+                const classificacao =
+                    produto?.classificacao_nome ||
+                    (produto?.classificacao_id
+                        ? classById.get(Number(produto.classificacao_id))
+                            ?.nome
+                        : "") ||
+                    "";
+
+                const blob = [
+                    mov.produto_nome,
+                    produto?.nome,
+                    mov.codigo_barras_snapshot,
+                    categoria,
+                    fabricante,
+                    classificacao,
+                    mov.deposito_origem_nome,
+                    mov.deposito_destino_nome,
+                    mov.destino_texto,
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLocaleLowerCase("pt-BR");
+
+                if (!blob.includes(q)) return false;
+            }
+
+            return true;
+        });
+    }, [
+        dashboardMovimentos,
+        dashboardTipo,
+        dashboardQ,
+        dashboardDepositos,
+        dashboardCategorias,
+        dashboardFabricantes,
+        dashboardClassificacoes,
+        dashboardDe,
+        dashboardAte,
+        prodById,
+        catById,
+        fabById,
+        classById,
+    ]);
+
+    const dashboardRanking = useMemo<DashboardProdutoRow[]>(() => {
+        const map = new Map<ID, DashboardProdutoRow>();
+
+        for (const mov of dashboardMovimentosFiltrados) {
+            const produtoId = Number(mov.produto_id || 0);
+            if (!produtoId) continue;
+
+            const produto = prodById.get(produtoId);
+            const quantidade = Math.max(
+                0,
+                Number(mov.quantidade || 0)
+            );
+
+            if (quantidade <= 0) continue;
+
+            const categoriaNome =
+                produto?.categoria_nome ||
+                (produto?.categoria_id
+                    ? catById.get(Number(produto.categoria_id))?.nome
+                    : "") ||
+                "Sem categoria";
+
+            const fabricanteNome =
+                produto?.fabricante_nome ||
+                (produto?.fabricante_id
+                    ? fabById.get(Number(produto.fabricante_id))?.nome
+                    : "") ||
+                "Sem fabricante";
+
+            const classificacaoNome =
+                produto?.classificacao_nome ||
+                (produto?.classificacao_id
+                    ? classById.get(Number(produto.classificacao_id))?.nome
+                    : "") ||
+                "Sem classificação";
+
+            const atual =
+                map.get(produtoId) ||
+                {
+                    produto_id: produtoId,
+                    produto_nome:
+                        mov.produto_nome ||
+                        produto?.nome ||
+                        `Produto ${produtoId}`,
+                    codigo_barras:
+                        mov.codigo_barras_snapshot ||
+                        produto?.codigo_barras ||
+                        "",
+                    categoria_nome: categoriaNome,
+                    fabricante_nome: fabricanteNome,
+                    classificacao_nome: classificacaoNome,
+                    saida: 0,
+                    transferencia: 0,
+                    total: 0,
+                    movimentos: 0,
+                };
+
+            if (mov.tipo === "SAIDA") {
+                atual.saida += quantidade;
+            }
+
+            if (mov.tipo === "TRANSFERENCIA") {
+                atual.transferencia += quantidade;
+            }
+
+            atual.total = atual.saida + atual.transferencia;
+            atual.movimentos += 1;
+
+            map.set(produtoId, atual);
+        }
+
+        return Array.from(map.values()).sort(
+            (a, b) =>
+                b.total - a.total ||
+                b.saida - a.saida ||
+                a.produto_nome.localeCompare(b.produto_nome, "pt-BR")
+        );
+    }, [
+        dashboardMovimentosFiltrados,
+        prodById,
+        catById,
+        fabById,
+        classById,
+    ]);
+
+    const dashboardTopRows = useMemo(
+        () => dashboardRanking.slice(0, dashboardTop),
+        [dashboardRanking, dashboardTop]
+    );
+
+    const dashboardResumo = useMemo(() => {
+        const saida = dashboardRanking.reduce(
+            (acc, row) => acc + row.saida,
+            0
+        );
+        const transferencia = dashboardRanking.reduce(
+            (acc, row) => acc + row.transferencia,
+            0
+        );
+
+        return {
+            produtos: dashboardRanking.length,
+            movimentos: dashboardMovimentosFiltrados.length,
+            saida,
+            transferencia,
+            total: saida + transferencia,
+        };
+    }, [dashboardRanking, dashboardMovimentosFiltrados.length]);
+
+    const dashboardMaxBar = useMemo(() => {
+        return Math.max(
+            1,
+            ...dashboardTopRows.flatMap((row) => [
+                row.saida,
+                row.transferencia,
+            ])
+        );
+    }, [dashboardTopRows]);
+
+    function dashboardBarWidth(value: number) {
+        if (value <= 0) return 0;
+        return Math.max(
+            2,
+            Math.min(100, (value / dashboardMaxBar) * 100)
+        );
+    }
+
+    function limparFiltrosDashboard() {
+        setDashboardTipo("TODOS");
+        setDashboardDe(dashboardMonthStartValue());
+        setDashboardAte(dashboardTodayValue());
+        setDashboardQ("");
+        setDashboardDepositos([]);
+        setDashboardCategorias([]);
+        setDashboardFabricantes([]);
+        setDashboardClassificacoes([]);
+        setDashboardTop(10);
+    }
 
     function limparFiltrosEstoque() {
         setQEstoque("");
@@ -7457,7 +7879,7 @@ export default function Page() {
                         </div>
 
                         <Card className="hidden p-2 sm:block">
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
                                 {tabActions.map((a) => (
                                     <button
                                         key={a.key}
@@ -8575,6 +8997,453 @@ export default function Page() {
                                 })}
                             </ul>
                         </Card>
+                    ) : null}
+
+                    {/* DASHBOARD */}
+                    {tab === "DASHBOARD" ? (
+                        <div className="space-y-4">
+                            <Card className="overflow-hidden">
+                                <div className="border-b border-slate-100 p-4 sm:p-5">
+                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h2 className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">
+                                                    Dashboard de movimentações
+                                                </h2>
+                                                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                                                    Estoque real
+                                                </span>
+                                            </div>
+                                            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                                                Produtos com maior volume de saída e transferência.
+                                                Use os filtros para analisar depósito de origem,
+                                                categoria, fabricante, classificação e período.
+                                            </p>
+                                        </div>
+
+                                        <Button
+                                            type="button"
+                                            variant="soft"
+                                            onClick={loadDashboardMovimentos}
+                                            disabled={dashboardLoading}
+                                            className="w-full whitespace-nowrap sm:w-auto"
+                                        >
+                                            {dashboardLoading
+                                                ? "Atualizando..."
+                                                : "Atualizar dados"}
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {dashboardErr ? (
+                                    <div className="m-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:m-5">
+                                        {dashboardErr}
+                                    </div>
+                                ) : null}
+
+                                <div className="p-4 sm:p-5">
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                        <div className="xl:col-span-2">
+                                            <Field label="Pesquisar produto">
+                                                <TextInput
+                                                    value={dashboardQ}
+                                                    onChange={(e) =>
+                                                        setDashboardQ(
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                    placeholder="Nome, código, categoria, fabricante ou classificação..."
+                                                />
+                                            </Field>
+                                        </div>
+
+                                        <Field label="Tipo de movimentação">
+                                            <Select
+                                                value={dashboardTipo}
+                                                onChange={(e) =>
+                                                    setDashboardTipo(
+                                                        e.target
+                                                            .value as DashboardMovimentoTipo
+                                                    )
+                                                }
+                                            >
+                                                <option value="TODOS">
+                                                    Saídas + Transferências
+                                                </option>
+                                                <option value="SAIDA">
+                                                    Somente Saídas
+                                                </option>
+                                                <option value="TRANSFERENCIA">
+                                                    Somente Transferências
+                                                </option>
+                                            </Select>
+                                        </Field>
+
+                                        <Field label="Quantidade no ranking">
+                                            <Select
+                                                value={dashboardTop}
+                                                onChange={(e) =>
+                                                    setDashboardTop(
+                                                        Number(
+                                                            e.target.value
+                                                        ) || 10
+                                                    )
+                                                }
+                                            >
+                                                <option value={5}>Top 5</option>
+                                                <option value={10}>Top 10</option>
+                                                <option value={15}>Top 15</option>
+                                                <option value={20}>Top 20</option>
+                                                <option value={30}>Top 30</option>
+                                            </Select>
+                                        </Field>
+
+                                        <Field label="Data inicial">
+                                            <TextInput
+                                                type="date"
+                                                value={dashboardDe}
+                                                onChange={(e) =>
+                                                    setDashboardDe(
+                                                        e.target.value
+                                                    )
+                                                }
+                                                max={
+                                                    dashboardAte ||
+                                                    undefined
+                                                }
+                                            />
+                                        </Field>
+
+                                        <Field label="Data final">
+                                            <TextInput
+                                                type="date"
+                                                value={dashboardAte}
+                                                onChange={(e) =>
+                                                    setDashboardAte(
+                                                        e.target.value
+                                                    )
+                                                }
+                                                min={
+                                                    dashboardDe ||
+                                                    undefined
+                                                }
+                                            />
+                                        </Field>
+
+                                        <MultiSelectDropdown
+                                            label="Depósito de origem"
+                                            options={
+                                                dashboardFiltroOptions.depositos
+                                            }
+                                            selectedIds={dashboardDepositos}
+                                            onChangeIds={
+                                                setDashboardDepositos
+                                            }
+                                            allLabel="Todos os depósitos"
+                                        />
+
+                                        <MultiSelectDropdown
+                                            label="Categorias"
+                                            options={
+                                                dashboardFiltroOptions.categorias
+                                            }
+                                            selectedIds={dashboardCategorias}
+                                            onChangeIds={
+                                                setDashboardCategorias
+                                            }
+                                            allLabel="Todas as categorias"
+                                        />
+
+                                        <MultiSelectDropdown
+                                            label="Fabricantes"
+                                            options={
+                                                dashboardFiltroOptions.fabricantes
+                                            }
+                                            selectedIds={dashboardFabricantes}
+                                            onChangeIds={
+                                                setDashboardFabricantes
+                                            }
+                                            allLabel="Todos os fabricantes"
+                                        />
+
+                                        <MultiSelectDropdown
+                                            label="Classificações"
+                                            options={
+                                                dashboardFiltroOptions.classificacoes
+                                            }
+                                            selectedIds={
+                                                dashboardClassificacoes
+                                            }
+                                            onChangeIds={
+                                                setDashboardClassificacoes
+                                            }
+                                            allLabel="Todas as classificações"
+                                        />
+                                    </div>
+
+                                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="text-xs leading-5 text-slate-500">
+                                            A análise usa até as 500 saídas e 500 transferências
+                                            mais recentes disponibilizadas pelo histórico atual.
+                                        </div>
+
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={
+                                                limparFiltrosDashboard
+                                            }
+                                            className="w-full sm:w-auto"
+                                        >
+                                            Limpar filtros
+                                        </Button>
+                                    </div>
+                                </div>
+                            </Card>
+
+                            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                        Produtos
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                                        {dashboardResumo.produtos}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        no filtro atual
+                                    </div>
+                                </Card>
+
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                        Movimentos
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                                        {dashboardResumo.movimentos}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        registros encontrados
+                                    </div>
+                                </Card>
+
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-rose-600">
+                                        Saídas
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-rose-700">
+                                        {dashboardResumo.saida.toLocaleString(
+                                            "pt-BR"
+                                        )}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        unidades
+                                    </div>
+                                </Card>
+
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-indigo-600">
+                                        Transferências
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-indigo-700">
+                                        {dashboardResumo.transferencia.toLocaleString(
+                                            "pt-BR"
+                                        )}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        unidades
+                                    </div>
+                                </Card>
+
+                                <Card className="col-span-2 p-4 lg:col-span-1">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-sky-600">
+                                        Total movimentado
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-sky-700">
+                                        {dashboardResumo.total.toLocaleString(
+                                            "pt-BR"
+                                        )}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        saída + transferência
+                                    </div>
+                                </Card>
+                            </div>
+
+                            <Card className="overflow-hidden">
+                                <div className="border-b border-slate-100 p-4 sm:p-5">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                            <h3 className="text-base font-bold text-slate-950">
+                                                Produtos que mais saíram
+                                            </h3>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                                                Ranking por quantidade movimentada no período e filtros selecionados.
+                                            </p>
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                                            <span className="inline-flex items-center gap-2 text-rose-700">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                                                Saída
+                                            </span>
+                                            <span className="inline-flex items-center gap-2 text-indigo-700">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                                                Transferência
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 sm:p-5">
+                                    {dashboardLoading ? (
+                                        <div className="space-y-3">
+                                            {Array.from({
+                                                length: 6,
+                                            }).map((_, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className="animate-pulse rounded-2xl border border-slate-100 p-4"
+                                                >
+                                                    <div className="h-4 w-2/3 rounded bg-slate-100" />
+                                                    <div className="mt-4 h-2.5 rounded-full bg-slate-100" />
+                                                    <div className="mt-2 h-2.5 w-4/5 rounded-full bg-slate-100" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : dashboardTopRows.length === 0 ? (
+                                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+                                            <div className="text-sm font-bold text-slate-700">
+                                                Nenhuma movimentação encontrada
+                                            </div>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                                                Altere o período ou os filtros para visualizar o ranking.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {dashboardTopRows.map(
+                                                (row, index) => (
+                                                    <div
+                                                        key={
+                                                            row.produto_id
+                                                        }
+                                                        className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-xs font-black text-slate-600">
+                                                                {index + 1}
+                                                            </div>
+
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                                    <div className="min-w-0">
+                                                                        <div className="break-words text-sm font-bold leading-5 text-slate-950 sm:text-[15px]">
+                                                                            {
+                                                                                row.produto_nome
+                                                                            }
+                                                                        </div>
+                                                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                                                                            {row.codigo_barras ? (
+                                                                                <span>
+                                                                                    CB{" "}
+                                                                                    {
+                                                                                        row.codigo_barras
+                                                                                    }
+                                                                                </span>
+                                                                            ) : null}
+                                                                            <span>
+                                                                                {
+                                                                                    row.categoria_nome
+                                                                                }
+                                                                            </span>
+                                                                            <span>
+                                                                                {
+                                                                                    row.classificacao_nome
+                                                                                }
+                                                                            </span>
+                                                                            <span>
+                                                                                {
+                                                                                    row.fabricante_nome
+                                                                                }
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="shrink-0 rounded-xl bg-slate-50 px-3 py-2 text-right">
+                                                                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                                                            Total
+                                                                        </div>
+                                                                        <div className="text-base font-black text-slate-950">
+                                                                            {row.total.toLocaleString(
+                                                                                "pt-BR"
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="mt-4 space-y-2.5">
+                                                                    <div className="grid grid-cols-[72px_minmax(0,1fr)_54px] items-center gap-2 sm:grid-cols-[105px_minmax(0,1fr)_72px]">
+                                                                        <span className="text-[11px] font-bold text-rose-700">
+                                                                            Saída
+                                                                        </span>
+                                                                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                                                                            <div
+                                                                                className="h-full rounded-full bg-rose-500 transition-[width] duration-500"
+                                                                                style={{
+                                                                                    width: `${dashboardBarWidth(
+                                                                                        row.saida
+                                                                                    )}%`,
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className="text-right text-xs font-bold text-slate-800">
+                                                                            {row.saida.toLocaleString(
+                                                                                "pt-BR"
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-[72px_minmax(0,1fr)_54px] items-center gap-2 sm:grid-cols-[105px_minmax(0,1fr)_72px]">
+                                                                        <span className="text-[11px] font-bold text-indigo-700">
+                                                                            Transfer.
+                                                                        </span>
+                                                                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                                                                            <div
+                                                                                className="h-full rounded-full bg-indigo-500 transition-[width] duration-500"
+                                                                                style={{
+                                                                                    width: `${dashboardBarWidth(
+                                                                                        row.transferencia
+                                                                                    )}%`,
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className="text-right text-xs font-bold text-slate-800">
+                                                                            {row.transferencia.toLocaleString(
+                                                                                "pt-BR"
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="mt-3 text-[11px] text-slate-400">
+                                                                    {
+                                                                        row.movimentos
+                                                                    }{" "}
+                                                                    {row.movimentos ===
+                                                                        1
+                                                                        ? "movimento"
+                                                                        : "movimentos"}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </Card>
+                        </div>
                     ) : null}
 
                     {/* AVANÇADO */}
