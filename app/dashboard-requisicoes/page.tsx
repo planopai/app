@@ -49,6 +49,22 @@ type DashboardData = {
     status_labels?: Partial<Record<StatusId, string>>;
 };
 
+type MovementProductRow = {
+    produto_id?: ID;
+    produto_nome: string;
+    saida: number;
+    transferencia: number;
+    total: number;
+};
+
+type MovementChartData = {
+    rows: MovementProductRow[];
+    total_saida: number;
+    total_transferencia: number;
+    total_geral: number;
+    origem: "backend" | "requisicoes";
+};
+
 type InitResp = {
     ok: boolean;
     me?: Me;
@@ -154,6 +170,25 @@ type AlertasResp = {
 type DetailResp = {
     ok: boolean;
     row?: ReqDetail;
+    msg?: string;
+    need_login?: 1;
+};
+
+type MovementResp = {
+    ok: boolean;
+    rows?: Array<{
+        produto_id?: ID;
+        produto_nome?: string;
+        nome?: string;
+        saida?: number | string;
+        transferencia?: number | string;
+        total?: number | string;
+    }>;
+    totais?: {
+        saida?: number | string;
+        transferencia?: number | string;
+        total?: number | string;
+    };
     msg?: string;
     need_login?: 1;
 };
@@ -332,6 +367,148 @@ function hoursSince(v?: string | null) {
 function compactEventName(v: string) {
     const s = String(v || "").replace(/_/g, " ").toLowerCase();
     return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function normalizeProductName(v: unknown) {
+    return String(v ?? "").trim().replace(/\s+/g, " ");
+}
+
+function parseResumoItens(raw?: string | null): Array<{ nome: string; quantidade: number }> {
+    const texto = String(raw ?? "").trim();
+    if (!texto) return [];
+
+    return texto
+        .split("|")
+        .map((parte) => parte.trim())
+        .filter(Boolean)
+        .map((parte) => {
+            const match = parte.match(/^(.*)\s+x\s+(-?\d+(?:[.,]\d+)?)\s*$/i);
+            if (!match) return null;
+
+            const nome = normalizeProductName(match[1]);
+            const quantidade = asNumber(match[2]);
+
+            if (!nome || quantidade <= 0) return null;
+            return { nome, quantidade };
+        })
+        .filter((item): item is { nome: string; quantidade: number } => item !== null);
+}
+
+function aggregateMovementsFromRequests(rows: ReqListRow[]): MovementChartData {
+    const map = new Map<
+        string,
+        { produto_nome: string; saida: number; transferencia: number }
+    >();
+
+    for (const row of rows || []) {
+        const status = toStatus(row.status);
+        const isTransferencia =
+            String(row.destino_tipo || "").toUpperCase() === "DEPOSITO";
+
+        const contaComoSaida =
+            !isTransferencia &&
+            (status === "EM_TRANSITO" || status === "ENTREGUE");
+
+        const contaComoTransferencia =
+            isTransferencia && status === "ENTREGUE";
+
+        if (!contaComoSaida && !contaComoTransferencia) continue;
+
+        for (const item of parseResumoItens(row.itens_resumo)) {
+            const key = item.nome.toLocaleLowerCase("pt-BR");
+            const atual = map.get(key) || {
+                produto_nome: item.nome,
+                saida: 0,
+                transferencia: 0,
+            };
+
+            if (contaComoSaida) atual.saida += item.quantidade;
+            if (contaComoTransferencia) atual.transferencia += item.quantidade;
+
+            map.set(key, atual);
+        }
+    }
+
+    const result = Array.from(map.values())
+        .map((item) => ({
+            ...item,
+            total: item.saida + item.transferencia,
+        }))
+        .sort(
+            (a, b) =>
+                b.total - a.total ||
+                a.produto_nome.localeCompare(b.produto_nome, "pt-BR"),
+        );
+
+    const total_saida = result.reduce((acc, item) => acc + item.saida, 0);
+    const total_transferencia = result.reduce(
+        (acc, item) => acc + item.transferencia,
+        0,
+    );
+
+    return {
+        rows: result,
+        total_saida,
+        total_transferencia,
+        total_geral: total_saida + total_transferencia,
+        origem: "requisicoes",
+    };
+}
+
+function normalizeMovementResponse(resp: MovementResp): MovementChartData | null {
+    if (!resp?.ok || !Array.isArray(resp.rows)) return null;
+
+    const rows = resp.rows
+        .map((item): MovementProductRow | null => {
+            const produto_nome = normalizeProductName(
+                item.produto_nome ?? item.nome,
+            );
+            const saida = Math.max(0, asNumber(item.saida));
+            const transferencia = Math.max(
+                0,
+                asNumber(item.transferencia),
+            );
+            const totalInformado = Math.max(0, asNumber(item.total));
+            const total =
+                totalInformado > 0
+                    ? totalInformado
+                    : saida + transferencia;
+
+            if (!produto_nome || total <= 0) return null;
+
+            return {
+                produto_id: item.produto_id,
+                produto_nome,
+                saida,
+                transferencia,
+                total,
+            };
+        })
+        .filter((item): item is MovementProductRow => item !== null)
+        .sort((a, b) => b.total - a.total);
+
+    const total_saida =
+        resp.totais?.saida != null
+            ? Math.max(0, asNumber(resp.totais.saida))
+            : rows.reduce((acc, item) => acc + item.saida, 0);
+
+    const total_transferencia =
+        resp.totais?.transferencia != null
+            ? Math.max(0, asNumber(resp.totais.transferencia))
+            : rows.reduce((acc, item) => acc + item.transferencia, 0);
+
+    const total_geral =
+        resp.totais?.total != null
+            ? Math.max(0, asNumber(resp.totais.total))
+            : total_saida + total_transferencia;
+
+    return {
+        rows,
+        total_saida,
+        total_transferencia,
+        total_geral,
+        origem: "backend",
+    };
 }
 
 async function safeJson<T>(r: Response): Promise<T> {
@@ -586,6 +763,224 @@ function ProductSelect({ produtos, value, onChange }: { produtos: Produto[]; val
     );
 }
 
+
+function MovementChart({
+    data,
+    loading,
+    topN,
+    onTopNChange,
+    onProductClick,
+}: {
+    data: MovementChartData;
+    loading: boolean;
+    topN: number;
+    onTopNChange: (n: number) => void;
+    onProductClick: (row: MovementProductRow) => void;
+}) {
+    const topRows = data.rows.slice(0, topN);
+    const maxValue = Math.max(
+        1,
+        ...topRows.flatMap((row) => [row.saida, row.transferencia]),
+    );
+
+    const percent = (v: number) =>
+        v <= 0 ? 0 : Math.max(2.5, Math.min(100, (v / maxValue) * 100));
+
+    return (
+        <Card className="overflow-hidden">
+            <div className="border-b border-slate-100 p-4 sm:p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-base font-bold tracking-tight text-slate-950">
+                                Itens com maior movimentação
+                            </h2>
+                            <Badge className="border-slate-200 bg-slate-50 text-slate-700">
+                                Top {topN}
+                            </Badge>
+                        </div>
+                        <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-600">
+                            Ranking dos produtos com maior volume de saída e transferência
+                            dentro dos filtros aplicados.
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500">
+                            Exibir
+                        </span>
+                        <Select
+                            value={topN}
+                            onChange={(e) =>
+                                onTopNChange(Number(e.target.value) || 10)
+                            }
+                            className="w-auto py-2 text-sm"
+                        >
+                            <option value={5}>Top 5</option>
+                            <option value={10}>Top 10</option>
+                            <option value={15}>Top 15</option>
+                            <option value={20}>Top 20</option>
+                        </Select>
+                    </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                            Total movimentado
+                        </div>
+                        <div className="mt-1 text-xl font-bold text-slate-950">
+                            {numberBR(data.total_geral, 3)}
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-sky-700">
+                            Saídas
+                        </div>
+                        <div className="mt-1 text-xl font-bold text-sky-900">
+                            {numberBR(data.total_saida, 3)}
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-violet-700">
+                            Transferências
+                        </div>
+                        <div className="mt-1 text-xl font-bold text-violet-900">
+                            {numberBR(data.total_transferencia, 3)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-4 sm:p-5">
+                <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-600">
+                    <span className="inline-flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                        Saída
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+                        Transferência
+                    </span>
+                    <span className="text-slate-400">
+                        Toque em um produto para filtrar as requisições.
+                    </span>
+                </div>
+
+                {loading ? (
+                    <div className="space-y-3">
+                        {Array.from({ length: Math.min(topN, 6) }).map(
+                            (_, i) => (
+                                <div
+                                    key={i}
+                                    className="animate-pulse rounded-xl border border-slate-100 p-3"
+                                >
+                                    <div className="h-4 w-2/3 rounded bg-slate-100" />
+                                    <div className="mt-3 h-2.5 rounded-full bg-slate-100" />
+                                    <div className="mt-2 h-2.5 w-4/5 rounded-full bg-slate-100" />
+                                </div>
+                            ),
+                        )}
+                    </div>
+                ) : topRows.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                        <div className="text-sm font-bold text-slate-700">
+                            Nenhuma movimentação encontrada
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Ajuste o período ou os filtros para visualizar saídas e
+                            transferências.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {topRows.map((row, index) => (
+                            <button
+                                key={`${row.produto_id ?? "nome"}-${row.produto_nome}`}
+                                type="button"
+                                onClick={() => onProductClick(row)}
+                                className="group w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm sm:p-4"
+                                title={`Filtrar por ${row.produto_nome}`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-600">
+                                        {index + 1}
+                                    </div>
+
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                            <div className="min-w-0">
+                                                <div className="break-words text-sm font-bold leading-5 text-slate-900">
+                                                    {row.produto_nome}
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0 text-xs font-bold text-slate-500">
+                                                Total {numberBR(row.total, 3)}
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-3 grid gap-2">
+                                            <div className="grid grid-cols-[70px_minmax(0,1fr)_58px] items-center gap-2 sm:grid-cols-[92px_minmax(0,1fr)_72px]">
+                                                <span className="text-[11px] font-bold text-sky-700">
+                                                    Saída
+                                                </span>
+                                                <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                                                    <div
+                                                        className="h-full rounded-full bg-sky-500 transition-all duration-500"
+                                                        style={{
+                                                            width: `${percent(row.saida)}%`,
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span className="text-right text-xs font-bold text-slate-800">
+                                                    {numberBR(row.saida, 3)}
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-[70px_minmax(0,1fr)_58px] items-center gap-2 sm:grid-cols-[92px_minmax(0,1fr)_72px]">
+                                                <span className="text-[11px] font-bold text-violet-700">
+                                                    Transfer.
+                                                </span>
+                                                <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                                                    <div
+                                                        className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                                                        style={{
+                                                            width: `${percent(
+                                                                row.transferencia,
+                                                            )}%`,
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span className="text-right text-xs font-bold text-slate-800">
+                                                    {numberBR(
+                                                        row.transferencia,
+                                                        3,
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {!loading && data.origem === "requisicoes" ? (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                        O ranking está sendo calculado pelas requisições disponíveis no
+                        endpoint atual. Se o backend passar a oferecer a ação
+                        dashboard_top_movimentacoes, esta página utilizará automaticamente
+                        os dados agregados da tabela de movimentos.
+                    </div>
+                ) : null}
+            </div>
+        </Card>
+    );
+}
+
 function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) => void }) {
     const late = Number(row.atrasada_24h || 0) === 1;
     const transitHours = late ? hoursSince(row.enviado_em) : null;
@@ -812,6 +1207,16 @@ export default function DashboardRequisicoesPage() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [exporting, setExporting] = useState(false);
 
+    const [movementData, setMovementData] = useState<MovementChartData>({
+        rows: [],
+        total_saida: 0,
+        total_transferencia: 0,
+        total_geral: 0,
+        origem: "requisicoes",
+    });
+    const [movementLoading, setMovementLoading] = useState(true);
+    const [movementTopN, setMovementTopN] = useState(10);
+
     const statusOptions = STATUS_OPTIONS;
 
     const totalFiltrado = useMemo(() => {
@@ -865,6 +1270,55 @@ export default function DashboardRequisicoesPage() {
         setProdutos(init.produtos || []);
     }, []);
 
+    const loadMovements = useCallback(async (f: Filters) => {
+        setMovementLoading(true);
+
+        try {
+            try {
+                const analytic = await apiGet<MovementResp>(
+                    "dashboard_top_movimentacoes",
+                    f,
+                    { limit: 100 },
+                );
+
+                const normalized = normalizeMovementResponse(analytic);
+                if (normalized) {
+                    setMovementData(normalized);
+                    return;
+                }
+            } catch {
+                // Compatibilidade com o backend atual, que ainda pode não
+                // expor uma rota agregada específica de movimentações.
+            }
+
+            const listResp = await apiGet<ListResp>(
+                "dashboard_listar",
+                f,
+                { limit: 500, offset: 0 },
+            );
+
+            if (!listResp.ok) {
+                throw new Error(
+                    listResp.msg || "Erro ao carregar movimentações.",
+                );
+            }
+
+            setMovementData(
+                aggregateMovementsFromRequests(listResp.rows || []),
+            );
+        } catch {
+            setMovementData({
+                rows: [],
+                total_saida: 0,
+                total_transferencia: 0,
+                total_geral: 0,
+                origem: "requisicoes",
+            });
+        } finally {
+            setMovementLoading(false);
+        }
+    }, []);
+
     const loadDashboard = useCallback(
         async (f: Filters, nextOffset = offset, nextLimit = limit) => {
             setLoading(true);
@@ -901,7 +1355,12 @@ export default function DashboardRequisicoesPage() {
             setMsg("");
             try {
                 await loadMeta();
-                if (!cancelled) await loadDashboard(appliedFilters, 0, limit);
+                if (!cancelled) {
+                    await Promise.all([
+                        loadDashboard(appliedFilters, 0, limit),
+                        loadMovements(appliedFilters),
+                    ]);
+                }
             } catch (e: any) {
                 if (!cancelled) setMsg(e?.message || "Erro ao carregar dashboard.");
             } finally {
@@ -921,13 +1380,27 @@ export default function DashboardRequisicoesPage() {
         setAppliedFilters(f);
         setOffset(0);
         setFilterOpen(false);
-        await loadDashboard(f, 0, limit);
+        await Promise.all([
+            loadDashboard(f, 0, limit),
+            loadMovements(f),
+        ]);
     }
 
     async function goPage(direction: "prev" | "next") {
         const nextOffset = direction === "prev" ? Math.max(0, offset - limit) : offset + limit;
         setOffset(nextOffset);
         await loadDashboard(appliedFilters, nextOffset, limit);
+    }
+
+    function filterByMovementProduct(item: MovementProductRow) {
+        const next: Filters = {
+            ...appliedFilters,
+            produto_id: item.produto_id ? String(item.produto_id) : "",
+            q: item.produto_id ? appliedFilters.q : item.produto_nome,
+        };
+
+        setFilters(next);
+        void applyFilters(next);
     }
 
     async function openDetail(id: ID) {
@@ -1004,7 +1477,17 @@ export default function DashboardRequisicoesPage() {
                         <Button type="button" variant="ghost" onClick={() => setFilterOpen(true)}>
                             Filtrar
                         </Button>
-                        <Button type="button" variant="soft" onClick={() => void loadDashboard(appliedFilters, offset, limit)} disabled={loading}>
+                        <Button
+                            type="button"
+                            variant="soft"
+                            onClick={() =>
+                                void Promise.all([
+                                    loadDashboard(appliedFilters, offset, limit),
+                                    loadMovements(appliedFilters),
+                                ])
+                            }
+                            disabled={loading || movementLoading}
+                        >
                             Atualizar
                         </Button>
                         <Button type="button" onClick={() => void exportCsv()} disabled={exporting}>
@@ -1088,6 +1571,14 @@ export default function DashboardRequisicoesPage() {
                         </div>
                     </Card>
                 </div>
+
+                <MovementChart
+                    data={movementData}
+                    loading={movementLoading}
+                    topN={movementTopN}
+                    onTopNChange={setMovementTopN}
+                    onProductClick={filterByMovementProduct}
+                />
 
                 {alertasTransito.length > 0 ? (
                     <Card className="p-4 sm:p-5">
