@@ -117,6 +117,22 @@ type HistoricoResp = {
 };
 
 
+type DashboardMovimentoTipo = "TODOS" | "SAIDA" | "TRANSFERENCIA";
+
+type DashboardProdutoRow = {
+    produto_id: ID;
+    produto_nome: string;
+    codigo_barras: string;
+    categoria_nome: string;
+    fabricante_nome: string;
+    classificacao_nome: string;
+    saida: number;
+    transferencia: number;
+    total: number;
+    movimentos: number;
+};
+
+
 type ProdutoEditTab = "DADOS" | "ESTOQUE" | "VALOR" | "CUSTO";
 
 
@@ -469,6 +485,18 @@ const tabActions: TabAction[] = [
         ),
     },
     {
+        key: "DASHBOARD",
+        label: "Dashboard",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 20V10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M10 20V4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M16 20v-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M22 20H2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+    {
         key: "AVANCADO",
         label: "Avançado",
         icon: (
@@ -481,7 +509,7 @@ const tabActions: TabAction[] = [
 ];
 
 
-type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "AVANCADO";
+type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "DASHBOARD" | "AVANCADO";
 
 type EntradaItem = {
     id: number;
@@ -516,8 +544,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-01-1455-CORS-FIX-02";
-const APP_BUILD_LABEL = "2026.09.01-1455-CORS-FIX";
+const APP_BUILD_ID = "ESTOQUE-2026-09-10-DASHBOARD-FILTROS-MODAL-V02";
+const APP_BUILD_LABEL = "2026.09.10-DASHBOARD-FILTROS-MODAL-V02";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -599,6 +627,31 @@ function fmtDateTime(iso: string) {
     } catch {
         return iso;
     }
+}
+
+
+function localDateInputValue(date: Date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
+function dashboardTodayValue() {
+    return localDateInputValue(new Date());
+}
+
+function dashboardMonthStartValue() {
+    const d = new Date();
+    d.setDate(1);
+    return localDateInputValue(d);
+}
+
+function historicoTimestamp(value?: string | null) {
+    if (!value) return NaN;
+    const normalized = String(value).trim().replace(" ", "T");
+    const time = new Date(normalized).getTime();
+    return Number.isFinite(time) ? time : NaN;
 }
 
 function moneyBRL(n: number) {
@@ -3056,6 +3109,13 @@ export default function Page() {
     // 1) Produtos: Produto, Código de Barras, Linha, Valor e barcode para leitura.
     // 2) Frente: etiquetas em grade 4 x 4 por página A4, com produto e linha.
     // 3) Verso: mesma grade 4 x 4 por página A4, com barcode e código numérico.
+    //
+    // Ajustes desta versão:
+    // - Fonte Nunito em todas as células textuais das três abas.
+    // - Linha do produto posicionada mais acima na aba Frente.
+    // - Barcode mais centralizado na aba Verso.
+    // - Número do código de barras maior e mais legível na aba Verso.
+    // - Remoção de quebras manuais de página, evitando estruturas que o Excel pode reparar.
     async function exportarEstoqueExcel() {
         if (!estoqueRows.length) {
             alert("Nenhum item para exportar com os filtros atuais.");
@@ -3064,14 +3124,15 @@ export default function Page() {
 
         try {
             // A coluna Linha vem do vínculo do produto com o catálogo.
-            // catalogo_api.php?produto_linhas=1 retorna produto_id + nome(s) do(s) nó(s) do catálogo.
             const linhasResp = await catalogoApiGet<CatalogoProdutoLinhasResp>({
                 produto_linhas: 1,
                 _ts: Date.now(),
             });
 
             if (!linhasResp.ok) {
-                throw new Error(linhasResp.msg || "Não foi possível carregar as linhas do catálogo.");
+                throw new Error(
+                    linhasResp.msg || "Não foi possível carregar as linhas do catálogo."
+                );
             }
 
             const linhaByProdutoId = new Map<ID, string>();
@@ -3091,8 +3152,11 @@ export default function Page() {
             const workbook = new ExcelJS.Workbook();
 
             workbook.creator = "Sistema de Materiais";
+            workbook.lastModifiedBy = "Sistema de Materiais";
             workbook.created = new Date();
             workbook.modified = new Date();
+
+            const FONT_NAME = "Nunito";
 
             type ProdutoExcel = {
                 id: ID;
@@ -3102,7 +3166,7 @@ export default function Page() {
                 valor: number;
             };
 
-            // A mesma lista filtrada da tela alimenta todas as três abas.
+            // A mesma lista filtrada da tela alimenta as três abas.
             const produtosExcel: ProdutoExcel[] = estoqueRows.map(({ p }) => ({
                 id: Number(p.id),
                 nome: String(p.nome || "").trim(),
@@ -3111,14 +3175,15 @@ export default function Page() {
                 valor: Number(p.valor) || 0,
             }));
 
-            // Cache único para não gerar e armazenar duas vezes a mesma imagem.
-            // O mesmo imageId é reutilizado na aba Produtos e na aba Verso.
+            // Cache único: o mesmo barcode é reutilizado nas abas Produtos e Verso.
             const barcodeCache = new Map<
                 string,
                 { dataUrl: string; imageId: number }
             >();
 
-            function getBarcodeAsset(codigo: string): { dataUrl: string; imageId: number } | null {
+            function getBarcodeAsset(
+                codigo: string
+            ): { dataUrl: string; imageId: number } | null {
                 const valor = String(codigo || "").trim();
                 if (!valor) return null;
 
@@ -3130,10 +3195,10 @@ export default function Page() {
 
                     JsBarcode(canvas, valor, {
                         format: "CODE128",
-                        // O número não é desenhado dentro da imagem.
-                        // Na aba Verso o número é escrito em uma célula separada, abaixo do barcode.
+                        // O número é escrito em uma célula separada para podermos
+                        // controlar fonte, tamanho e alinhamento independentemente.
                         displayValue: false,
-                        height: 46,
+                        height: 52,
                         width: 2,
                         margin: 4,
                         background: "#ffffff",
@@ -3150,7 +3215,10 @@ export default function Page() {
                     barcodeCache.set(valor, asset);
                     return asset;
                 } catch (err) {
-                    console.warn(`Não foi possível gerar o código de barras ${valor}.`, err);
+                    console.warn(
+                        `Não foi possível gerar o código de barras ${valor}.`,
+                        err
+                    );
                     return null;
                 }
             }
@@ -3166,19 +3234,48 @@ export default function Page() {
                 { header: "Código de Barras", key: "codigo", width: 22 },
                 { header: "Linha", key: "linha", width: 28 },
                 { header: "Valor", key: "valor", width: 16 },
-                { header: "Código de Barras para Leitura", key: "barcodeImagem", width: 34 },
+                {
+                    header: "Código de Barras para Leitura",
+                    key: "barcodeImagem",
+                    width: 34,
+                },
             ];
 
             const headerRow = worksheet.getRow(1);
-            headerRow.height = 28;
-            headerRow.font = { bold: true };
+            headerRow.height = 30;
+            headerRow.font = {
+                name: FONT_NAME,
+                size: 11,
+                bold: true,
+                color: { argb: "FF000000" },
+            };
             headerRow.alignment = {
                 vertical: "middle",
                 horizontal: "center",
                 wrapText: true,
             };
 
-            worksheet.views = [{ state: "frozen", ySplit: 1 }];
+            headerRow.eachCell((cell) => {
+                cell.fill = {
+                    type: "pattern",
+                    pattern: "solid",
+                    fgColor: { argb: "FFF1F5F9" },
+                };
+                cell.border = {
+                    bottom: {
+                        style: "thin",
+                        color: { argb: "FFD1D5DB" },
+                    },
+                };
+            });
+
+            worksheet.views = [
+                {
+                    state: "frozen",
+                    ySplit: 1,
+                    activeCell: "A1",
+                },
+            ];
             worksheet.autoFilter = { from: "A1", to: "E1" };
 
             // Código em texto para preservar zeros à esquerda e códigos longos.
@@ -3194,41 +3291,79 @@ export default function Page() {
                     barcodeImagem: "",
                 });
 
-                row.height = 54;
-                row.alignment = { vertical: "middle", wrapText: true };
+                row.height = 58;
+                row.font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.alignment = {
+                    vertical: "middle",
+                    wrapText: true,
+                };
 
-                // Reforça que a célula do código é texto.
-                row.getCell(2).value = produto.codigoBarras;
-                row.getCell(2).numFmt = "@";
+                // Reforça o tipo texto do código.
+                const codigoCell = row.getCell(2);
+                codigoCell.value = produto.codigoBarras;
+                codigoCell.numFmt = "@";
+                codigoCell.font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                codigoCell.alignment = {
+                    vertical: "middle",
+                    horizontal: "center",
+                };
+
+                row.getCell(1).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(3).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(4).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(4).alignment = {
+                    vertical: "middle",
+                    horizontal: "right",
+                };
+                row.getCell(5).font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
+                row.getCell(5).alignment = {
+                    vertical: "middle",
+                    horizontal: "center",
+                };
 
                 const barcodeAsset = getBarcodeAsset(produto.codigoBarras);
                 if (barcodeAsset) {
-                    // Coluna E = índice 4 na API de posicionamento de imagem do ExcelJS.
                     worksheet.addImage(barcodeAsset.imageId, {
-                        tl: { col: 4.10, row: row.number - 0.88 },
-                        ext: { width: 205, height: 44 },
+                        tl: {
+                            col: 4.12,
+                            row: row.number - 0.84,
+                        },
+                        ext: {
+                            width: 202,
+                            height: 47,
+                        },
                         editAs: "oneCell",
                     });
                 }
             }
 
-            worksheet.getColumn(2).alignment = {
-                vertical: "middle",
-                horizontal: "center",
-            };
-            worksheet.getColumn(4).alignment = {
-                vertical: "middle",
-                horizontal: "right",
-            };
-            worksheet.getColumn(5).alignment = {
-                vertical: "middle",
-                horizontal: "center",
-            };
-
             /* =========================================================
                ABAS 2 E 3: FRENTE / VERSO
-               Cada página A4 possui exatamente 4 colunas x 4 linhas.
-               Cada página comporta 16 produtos.
+               Cada página A4 possui 4 colunas x 4 linhas = 16 produtos.
             ========================================================= */
 
             const frente = workbook.addWorksheet("Frente");
@@ -3236,16 +3371,16 @@ export default function Page() {
 
             const ETIQUETAS_POR_LINHA = 4;
             const LINHAS_POR_PAGINA = 4;
-            const ETIQUETAS_POR_PAGINA = ETIQUETAS_POR_LINHA * LINHAS_POR_PAGINA;
+            const ETIQUETAS_POR_PAGINA =
+                ETIQUETAS_POR_LINHA * LINHAS_POR_PAGINA;
 
-            // Cada etiqueta ocupa 8 linhas do Excel e existe uma linha curta de respiro
-            // entre uma fileira de etiquetas e a próxima.
+            // Cada etiqueta ocupa 8 linhas e uma linha curta de respiro.
             const LINHAS_ETIQUETA = 8;
             const LINHA_RESPIRO = 1;
             const BLOCO_LINHAS = LINHAS_ETIQUETA + LINHA_RESPIRO;
             const LINHAS_POR_PAGINA_EXCEL = LINHAS_POR_PAGINA * BLOCO_LINHAS;
 
-            // As etiquetas ocupam A, C, E e G. B, D e F são espaços entre elas.
+            // Etiquetas em A, C, E e G. B, D e F são espaços entre cartões.
             const COLUNAS_ETIQUETA = [1, 3, 5, 7];
 
             const totalPaginas = Math.max(
@@ -3253,31 +3388,39 @@ export default function Page() {
                 Math.ceil(produtosExcel.length / ETIQUETAS_POR_PAGINA)
             );
             const totalSlots = totalPaginas * ETIQUETAS_POR_PAGINA;
-            const totalLinhasImpressao = totalPaginas * LINHAS_POR_PAGINA_EXCEL;
+            const totalLinhasImpressao =
+                totalPaginas * LINHAS_POR_PAGINA_EXCEL;
 
-            const bordaFina = { style: "thin", color: { argb: "FF000000" } } as const;
+            const bordaFina = {
+                style: "thin",
+                color: { argb: "FF000000" },
+            } as const;
 
             function letraColuna(numero: number): string {
                 let n = numero;
                 let out = "";
+
                 while (n > 0) {
                     const resto = (n - 1) % 26;
                     out = String.fromCharCode(65 + resto) + out;
                     n = Math.floor((n - 1) / 26);
                 }
+
                 return out;
             }
 
             function configurarFolhaEtiquetas(sheet: any) {
-                // Largura dos quatro cartões e dos três espaços entre cartões.
+                // Largura dos quatro cartões.
                 for (const col of COLUNAS_ETIQUETA) {
                     sheet.getColumn(col).width = 24;
                 }
+
+                // Espaçamento entre os cartões.
                 sheet.getColumn(2).width = 2.5;
                 sheet.getColumn(4).width = 2.5;
                 sheet.getColumn(6).width = 2.5;
 
-                // Alturas fixas mantêm o desenho 4 x 4 constante em todas as páginas.
+                // Alturas fixas mantêm o desenho 4 x 4 constante.
                 for (let page = 0; page < totalPaginas; page++) {
                     const pageStart = page * LINHAS_POR_PAGINA_EXCEL + 1;
 
@@ -3294,13 +3437,16 @@ export default function Page() {
 
                 sheet.views = [{ showGridLines: false }];
 
-                // A4 retrato. Uma página de largura e quantas páginas forem necessárias na altura.
+                // A4 retrato.
+                // Não são usadas quebras manuais via addPageBreak(), pois a combinação
+                // de rowBreaks + merges + imagens pode fazer algumas versões do Excel
+                // abrirem o arquivo pedindo reparo.
                 sheet.pageSetup = {
                     paperSize: 9,
                     orientation: "portrait",
                     fitToPage: true,
                     fitToWidth: 1,
-                    fitToHeight: 0,
+                    fitToHeight: totalPaginas,
                     pageOrder: "downThenOver",
                     horizontalCentered: true,
                     verticalCentered: false,
@@ -3309,22 +3455,24 @@ export default function Page() {
                         right: 0.18,
                         top: 0.20,
                         bottom: 0.20,
-                        header: 0,
-                        footer: 0,
+                        header: 0.1,
+                        footer: 0.1,
                     },
                     printArea: `$A$1:$G$${totalLinhasImpressao}`,
                 };
 
-                // Quebra manual a cada 16 etiquetas para garantir nova folha A4.
-                for (let page = 1; page < totalPaginas; page++) {
-                    sheet
-                        .getRow(page * LINHAS_POR_PAGINA_EXCEL)
-                        .addPageBreak();
-                }
+                sheet.headerFooter = {
+                    oddHeader: "",
+                    oddFooter: "",
+                };
             }
 
             configurarFolhaEtiquetas(frente);
             configurarFolhaEtiquetas(verso);
+
+            /* =========================================================
+               FRENTE
+            ========================================================= */
 
             function desenharFrente(
                 sheet: any,
@@ -3334,15 +3482,25 @@ export default function Page() {
             ) {
                 const letra = letraColuna(coluna);
                 const linhaFinal = linhaInicial + LINHAS_ETIQUETA - 1;
-                const linhaFinalProduto = linhaFinal - 1;
 
-                const faixaProduto = `${letra}${linhaInicial}:${letra}${linhaFinalProduto}`;
+                // Produto ocupa as 6 primeiras linhas.
+                // A Linha ocupa as duas últimas linhas, ficando visivelmente
+                // mais alta do que na versão anterior, onde ficava só na última.
+                const linhaFinalProduto = linhaInicial + 5;
+                const linhaInicialLinha = linhaInicial + 6;
+
+                const faixaProduto =
+                    `${letra}${linhaInicial}:${letra}${linhaFinalProduto}`;
+                const faixaLinha =
+                    `${letra}${linhaInicialLinha}:${letra}${linhaFinal}`;
+
                 sheet.mergeCells(faixaProduto);
+                sheet.mergeCells(faixaLinha);
 
                 const produtoCell = sheet.getCell(linhaInicial, coluna);
                 produtoCell.value = produto?.nome || "";
                 produtoCell.font = {
-                    name: "Arial",
+                    name: FONT_NAME,
                     size: 10,
                     bold: false,
                     color: { argb: "FF000000" },
@@ -3359,11 +3517,11 @@ export default function Page() {
                     right: bordaFina,
                 };
 
-                const linhaCell = sheet.getCell(linhaFinal, coluna);
+                const linhaCell = sheet.getCell(linhaInicialLinha, coluna);
                 linhaCell.value = produto?.linha || "";
                 linhaCell.font = {
-                    name: "Arial",
-                    size: 7,
+                    name: FONT_NAME,
+                    size: 8,
                     bold: true,
                     color: { argb: "FF000000" },
                 };
@@ -3380,6 +3538,10 @@ export default function Page() {
                 };
             }
 
+            /* =========================================================
+               VERSO
+            ========================================================= */
+
             function desenharVerso(
                 sheet: any,
                 coluna: number,
@@ -3391,14 +3553,21 @@ export default function Page() {
                 const linhaFinalImagem = linhaInicial + 5;
                 const linhaInicialCodigo = linhaInicial + 6;
 
-                const faixaImagem = `${letra}${linhaInicial}:${letra}${linhaFinalImagem}`;
-                const faixaCodigo = `${letra}${linhaInicialCodigo}:${letra}${linhaFinal}`;
+                const faixaImagem =
+                    `${letra}${linhaInicial}:${letra}${linhaFinalImagem}`;
+                const faixaCodigo =
+                    `${letra}${linhaInicialCodigo}:${letra}${linhaFinal}`;
 
                 sheet.mergeCells(faixaImagem);
                 sheet.mergeCells(faixaCodigo);
 
                 const imagemCell = sheet.getCell(linhaInicial, coluna);
                 imagemCell.value = "";
+                imagemCell.font = {
+                    name: FONT_NAME,
+                    size: 10,
+                    color: { argb: "FF000000" },
+                };
                 imagemCell.alignment = {
                     horizontal: "center",
                     vertical: "middle",
@@ -3413,8 +3582,9 @@ export default function Page() {
                 codigoCell.value = produto?.codigoBarras || "";
                 codigoCell.numFmt = "@";
                 codigoCell.font = {
-                    name: "Arial",
-                    size: 7,
+                    name: FONT_NAME,
+                    // Aumentado de 7 para 10 para melhorar a leitura.
+                    size: 10,
                     bold: false,
                     color: { argb: "FF000000" },
                 };
@@ -3435,23 +3605,23 @@ export default function Page() {
                 const barcodeAsset = getBarcodeAsset(produto.codigoBarras);
                 if (!barcodeAsset) return;
 
-                // A imagem fica centralizada na parte superior do cartão.
-                // col e row usam base zero e aceitam frações para ajuste fino.
+                // O barcode foi deslocado para a direita em relação à versão anterior,
+                // corrigindo a aparência de imagem puxada para a esquerda.
                 sheet.addImage(barcodeAsset.imageId, {
                     tl: {
-                        col: coluna - 1 + 0.08,
-                        row: linhaInicial - 1 + 1.75,
+                        col: coluna - 1 + 0.14,
+                        row: linhaInicial - 1 + 1.62,
                     },
                     ext: {
                         width: 145,
-                        height: 44,
+                        height: 50,
                     },
                     editAs: "oneCell",
                 });
             }
 
-            // Cria todos os 16 slots de cada página, inclusive os vazios da última página.
-            // Isso evita que o Excel redimensione a última folha e mantém o corte sempre no mesmo lugar.
+            // Cria todos os 16 slots de cada página, inclusive os vazios da última.
+            // Isso mantém a geometria das folhas Frente e Verso idêntica.
             for (let slot = 0; slot < totalSlots; slot++) {
                 const pagina = Math.floor(slot / ETIQUETAS_POR_PAGINA);
                 const slotNaPagina = slot % ETIQUETAS_POR_PAGINA;
@@ -3466,16 +3636,21 @@ export default function Page() {
 
                 const produto = produtosExcel[slot] || null;
 
-                // A ordem é idêntica nas duas abas, seguindo o exemplo fornecido.
                 desenharFrente(frente, colunaExcel, linhaInicial, produto);
                 desenharVerso(verso, colunaExcel, linhaInicial, produto);
             }
 
-            // Mantém o arquivo na aba Produtos quando ele for aberto.
-            worksheet.views = [{ state: "frozen", ySplit: 1, activeCell: "A1" }];
+            /* =========================================================
+               GERAÇÃO / DOWNLOAD
+            ========================================================= */
 
             const buffer = await workbook.xlsx.writeBuffer();
-            const blob = new Blob([buffer as BlobPart], {
+
+            // Cria um Uint8Array independente antes do Blob. Isso evita problemas
+            // com buffers que tenham offset interno em alguns navegadores.
+            const bytes = new Uint8Array(buffer as ArrayBuffer);
+
+            const blob = new Blob([bytes], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
 
@@ -3488,17 +3663,574 @@ export default function Page() {
             const a = document.createElement("a");
             a.href = url;
             a.download = `${safeName}.xlsx`;
+            a.style.display = "none";
             document.body.appendChild(a);
             a.click();
             a.remove();
 
-            setTimeout(() => URL.revokeObjectURL(url), 0);
+            // Não revoga imediatamente; dá tempo para o navegador consumir o Blob.
+            window.setTimeout(() => URL.revokeObjectURL(url), 1500);
         } catch (err: any) {
             console.error("Falha ao exportar Excel:", err);
             alert(
                 err?.message
                     ? `Não foi possível gerar o Excel: ${err.message}`
                     : "Não foi possível gerar o arquivo Excel."
+            );
+        }
+    }
+
+
+    // ✅ ETIQUETAS PDF A4 — TAG PARA CORDÃO / V08
+    // Layout pensado para corte com régua + estilete:
+    // - 4 colunas x 4 linhas = 16 etiquetas por lado.
+    // - Etiquetas ENCOSTADAS: sem GAP, sem moldura e sem linhas internas.
+    // - Apenas pequenas marcas de corte nas bordas externas da folha.
+    // - Frente: X de furação no topo, nome mais abaixo e linha maior no rodapé.
+    // - Verso: X no topo, CODE128 abaixo do centro, número praticamente colado
+    //   ao código e mensagem institucional maior, preta e forçada em duas linhas equilibradas.
+    // - Todo texto da TAG está 5% maior que na V07, preto e sem negrito (peso 300).
+    // - Verso espelhado horizontalmente para duplex em "virar na borda longa".
+    async function exportarEtiquetasPDF() {
+        if (!estoqueRows.length) {
+            alert("Nenhum item para gerar etiquetas com os filtros atuais.");
+            return;
+        }
+
+        try {
+            const linhasResp = await catalogoApiGet<CatalogoProdutoLinhasResp>({
+                produto_linhas: 1,
+                _ts: Date.now(),
+            });
+
+            if (!linhasResp.ok) {
+                throw new Error(
+                    linhasResp.msg || "Não foi possível carregar as linhas do catálogo."
+                );
+            }
+
+            const linhaByProdutoId = new Map<ID, string>();
+            for (const item of linhasResp.rows || []) {
+                const produtoId = Number(item.produto_id || 0);
+                if (!produtoId) continue;
+                linhaByProdutoId.set(produtoId, String(item.linha || "").trim());
+            }
+
+            const [{ default: jsPDF }, JsBarcodeModule] = await Promise.all([
+                import("jspdf"),
+                import("jsbarcode"),
+            ]);
+            const JsBarcode = JsBarcodeModule.default;
+
+            type ProdutoEtiquetaPDF = {
+                id: ID;
+                nome: string;
+                linha: string;
+                codigoBarras: string;
+            };
+
+            const produtosEtiqueta: ProdutoEtiquetaPDF[] = estoqueRows.map(({ p }) => ({
+                id: Number(p.id),
+                nome: String(p.nome || "").trim(),
+                linha: linhaByProdutoId.get(Number(p.id)) || "",
+                codigoBarras: String(p.codigo_barras || "").trim(),
+            }));
+
+            const doc = new jsPDF({
+                orientation: "portrait",
+                unit: "mm",
+                format: "a4",
+                compress: true,
+                putOnlyUsedFonts: true,
+            });
+
+            doc.setProperties({
+                title: "Etiquetas TAG de Produtos",
+                subject: "Etiquetas A4 4x4 frente e verso com guias de corte",
+                author: "Sistema de Materiais",
+                creator: "Sistema de Materiais",
+            });
+
+            try {
+                (doc as any).viewerPreferences?.({
+                    PrintScaling: "None",
+                    Duplex: "DuplexFlipLongEdge",
+                    PickTrayByPDFSize: true,
+                });
+            } catch {
+                // viewerPreferences não existe em todas as versões do jsPDF.
+            }
+
+            // =========================
+            // GEOMETRIA FÍSICA DA FOLHA
+            // =========================
+            const PAGE_W = 210;
+            const PAGE_H = 297;
+            const COLUNAS = 4;
+            const LINHAS = 4;
+            const ETIQUETAS_POR_PAGINA = COLUNAS * LINHAS;
+
+            // Margem externa pequena, suficiente para impressoras A4 comuns.
+            const MARGEM_X = 5;
+            const MARGEM_Y = 5;
+
+            // IMPORTANTE: não há espaço entre as etiquetas.
+            const GAP_X = 0;
+            const GAP_Y = 0;
+
+            const ETIQUETA_W = (PAGE_W - MARGEM_X * 2) / COLUNAS; // 50 mm
+            const ETIQUETA_H = (PAGE_H - MARGEM_Y * 2) / LINHAS; // 71,75 mm
+
+            const FRASE_VERSO =
+                "Consulte detalhes e valores com\nnossos consultores através desse código.";
+
+            // =========================
+            // POSIÇÃO DE CADA ETIQUETA
+            // =========================
+            function posicaoEtiqueta(slotNaPagina: number, espelharColunas: boolean) {
+                const linha = Math.floor(slotNaPagina / COLUNAS);
+                const colunaOriginal = slotNaPagina % COLUNAS;
+                const coluna = espelharColunas
+                    ? COLUNAS - 1 - colunaOriginal
+                    : colunaOriginal;
+
+                return {
+                    x: MARGEM_X + coluna * (ETIQUETA_W + GAP_X),
+                    y: MARGEM_Y + linha * (ETIQUETA_H + GAP_Y),
+                };
+            }
+
+            // =========================
+            // GUIAS DE CORTE
+            // =========================
+            // NÃO desenha retângulos nem linhas internas.
+            // Para cada linha de corte, desenha somente um pequeno traço nas bordas
+            // superior/inferior ou esquerda/direita da folha.
+            function desenharGuiasDeCorte() {
+                // V07: guias mais longas e fortes para ficarem claramente visíveis
+                // na impressão, sem criar linhas atravessando as etiquetas.
+                const LEN_TOPO_BASE = 6.5;
+                const LEN_LATERAL = 10.0;
+                const BORDA = 0.5;
+
+                doc.setDrawColor(0, 0, 0);
+                doc.setLineWidth(0.25);
+
+                // Cortes verticais: marcas no topo e na base.
+                for (let i = 0; i <= COLUNAS; i++) {
+                    const x = MARGEM_X + i * ETIQUETA_W;
+                    doc.line(x, BORDA, x, BORDA + LEN_TOPO_BASE);
+                    doc.line(
+                        x,
+                        PAGE_H - BORDA - LEN_TOPO_BASE,
+                        x,
+                        PAGE_H - BORDA
+                    );
+                }
+
+                // Cortes horizontais: marcas laterais bem mais compridas.
+                for (let i = 0; i <= LINHAS; i++) {
+                    const y = MARGEM_Y + i * ETIQUETA_H;
+                    doc.line(BORDA, y, BORDA + LEN_LATERAL, y);
+                    doc.line(
+                        PAGE_W - BORDA - LEN_LATERAL,
+                        y,
+                        PAGE_W - BORDA,
+                        y
+                    );
+                }
+            }
+
+            // =========================
+            // TEXTO EM SEGOE UI LIGHT
+            // =========================
+            // jsPDF não usa fontes do sistema diretamente. Para obter Segoe UI Light
+            // sem exigir um TTF dentro do projeto, o texto é desenhado em canvas pelo
+            // navegador e inserido no PDF como PNG transparente em alta resolução.
+            const TEXTO_CACHE = new Map<string, string>();
+            const PX_POR_MM = 13; // ~330 DPI
+
+            function familiaSegoe() {
+                // V08: volta a priorizar Segoe UI Light, sem negrito.
+                return '"Segoe UI Light", "Segoe UI", Arial, sans-serif';
+            }
+
+            function quebrarLinhaCanvas(
+                ctx: CanvasRenderingContext2D,
+                texto: string,
+                maxWidthPx: number
+            ) {
+                // Respeita quebras manuais (\n). Isso permite controlar mensagens
+                // institucionais para que fiquem visualmente equilibradas em duas linhas.
+                const blocos = String(texto || "")
+                    .split(/\r?\n/)
+                    .map((bloco) => bloco.trim())
+                    .filter(Boolean);
+
+                const linhas: string[] = [];
+
+                for (const bloco of blocos) {
+                    const palavras = bloco.split(/\s+/).filter(Boolean);
+                    let atual = "";
+
+                    for (const palavra of palavras) {
+                        const teste = atual ? `${atual} ${palavra}` : palavra;
+                        if (!atual || ctx.measureText(teste).width <= maxWidthPx) {
+                            atual = teste;
+                        } else {
+                            linhas.push(atual);
+                            atual = palavra;
+                        }
+                    }
+
+                    if (atual) linhas.push(atual);
+                }
+
+                return linhas;
+            }
+
+            function criarTextoPNG({
+                texto,
+                larguraMm,
+                alturaMm,
+                fontPt,
+                minFontPt,
+                maxLinhas,
+                cinza,
+                peso = 300,
+            }: {
+                texto: string;
+                larguraMm: number;
+                alturaMm: number;
+                fontPt: number;
+                minFontPt: number;
+                maxLinhas: number;
+                cinza: number;
+                peso?: number;
+            }): string | null {
+                const valor = String(texto || "").trim();
+                if (!valor) return null;
+
+                const cacheKey = JSON.stringify({
+                    valor,
+                    larguraMm,
+                    alturaMm,
+                    fontPt,
+                    minFontPt,
+                    maxLinhas,
+                    cinza,
+                    peso,
+                });
+                const cached = TEXTO_CACHE.get(cacheKey);
+                if (cached) return cached;
+
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.max(2, Math.round(larguraMm * PX_POR_MM));
+                canvas.height = Math.max(2, Math.round(alturaMm * PX_POR_MM));
+                const ctx = canvas.getContext("2d");
+                if (!ctx) return null;
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = `rgb(${cinza}, ${cinza}, ${cinza})`;
+
+                const ptToPx = (pt: number) => pt * (25.4 / 72) * PX_POR_MM;
+                let tamanhoPt = fontPt;
+                let linhas: string[] = [];
+                const maxWidthPx = canvas.width * 0.95;
+
+                while (tamanhoPt >= minFontPt) {
+                    const fontPx = ptToPx(tamanhoPt);
+                    ctx.font = `${peso} ${fontPx}px ${familiaSegoe()}`;
+                    linhas = quebrarLinhaCanvas(ctx, valor, maxWidthPx);
+
+                    const lineHeightPx = fontPx * 1.08;
+                    const totalH = linhas.length * lineHeightPx;
+                    if (linhas.length <= maxLinhas && totalH <= canvas.height * 0.92) {
+                        break;
+                    }
+                    tamanhoPt -= 0.25;
+                }
+
+                if (linhas.length > maxLinhas) {
+                    linhas = linhas.slice(0, maxLinhas);
+                    let ultima = linhas[maxLinhas - 1] || "";
+                    const fontPx = ptToPx(Math.max(minFontPt, tamanhoPt));
+                    ctx.font = `${peso} ${fontPx}px ${familiaSegoe()}`;
+                    while (
+                        ultima.length > 1 &&
+                        ctx.measureText(`${ultima}…`).width > maxWidthPx
+                    ) {
+                        ultima = ultima.slice(0, -1);
+                    }
+                    linhas[maxLinhas - 1] = `${ultima.trimEnd()}…`;
+                }
+
+                const fontPx = ptToPx(Math.max(minFontPt, tamanhoPt));
+                ctx.font = `${peso} ${fontPx}px ${familiaSegoe()}`;
+                const lineHeightPx = fontPx * 1.08;
+                const blocoH = linhas.length * lineHeightPx;
+                const startY = (canvas.height - blocoH) / 2 + lineHeightPx / 2;
+
+                linhas.forEach((linha, index) => {
+                    ctx.fillText(linha, canvas.width / 2, startY + index * lineHeightPx);
+                });
+
+                const dataUrl = canvas.toDataURL("image/png");
+                TEXTO_CACHE.set(cacheKey, dataUrl);
+                return dataUrl;
+            }
+
+            function adicionarTextoImagem(args: {
+                texto: string;
+                x: number;
+                y: number;
+                largura: number;
+                altura: number;
+                fontPt: number;
+                minFontPt: number;
+                maxLinhas: number;
+                cinza: number;
+                peso?: number;
+            }) {
+                const png = criarTextoPNG({
+                    texto: args.texto,
+                    larguraMm: args.largura,
+                    alturaMm: args.altura,
+                    fontPt: args.fontPt,
+                    minFontPt: args.minFontPt,
+                    maxLinhas: args.maxLinhas,
+                    cinza: args.cinza,
+                    peso: args.peso,
+                });
+                if (!png) return;
+
+                doc.addImage(
+                    png,
+                    "PNG",
+                    args.x,
+                    args.y,
+                    args.largura,
+                    args.altura,
+                    undefined,
+                    "FAST"
+                );
+            }
+
+            function desenharXDeFuracao(x: number, y: number) {
+                // Muito pequeno e discreto: apenas guia para o vazador/furador.
+                adicionarTextoImagem({
+                    texto: "X",
+                    x: x + ETIQUETA_W / 2 - 2.2,
+                    y: y + 4.0,
+                    largura: 5.544,
+                    altura: 4.284,
+                    fontPt: 5.292,
+                    minFontPt: 5.292,
+                    maxLinhas: 1,
+                    cinza: 0,
+                    peso: 300,
+                });
+            }
+
+            // =========================
+            // CODE128 DO VERSO
+            // =========================
+            const BARCODE_CACHE = new Map<
+                string,
+                { dataUrl: string; widthPx: number; heightPx: number } | null
+            >();
+
+            function gerarBarcode(codigo: string) {
+                const valor = String(codigo || "").trim();
+                if (!valor) return null;
+                if (BARCODE_CACHE.has(valor)) return BARCODE_CACHE.get(valor) || null;
+
+                try {
+                    const canvas = document.createElement("canvas");
+                    JsBarcode(canvas, valor, {
+                        format: "CODE128",
+                        displayValue: false,
+                        width: 2.4,
+                        height: 100,
+                        margin: 10,
+                        background: "#ffffff",
+                        lineColor: "#000000",
+                    });
+
+                    const asset = {
+                        dataUrl: canvas.toDataURL("image/png"),
+                        widthPx: Math.max(1, canvas.width),
+                        heightPx: Math.max(1, canvas.height),
+                    };
+                    BARCODE_CACHE.set(valor, asset);
+                    return asset;
+                } catch (err) {
+                    console.warn(`Não foi possível gerar CODE128 para ${valor}.`, err);
+                    BARCODE_CACHE.set(valor, null);
+                    return null;
+                }
+            }
+
+            // =========================
+            // FRENTE
+            // =========================
+            function desenharFrente(
+                slotNaPagina: number,
+                produto: ProdutoEtiquetaPDF | null
+            ) {
+                const { x, y } = posicaoEtiqueta(slotNaPagina, false);
+                desenharXDeFuracao(x, y);
+                if (!produto) return;
+
+                // Nome propositalmente mais baixo que no layout anterior.
+                // Centro visual aproximado em 57% da altura da etiqueta.
+                adicionarTextoImagem({
+                    texto: produto.nome,
+                    x: x + 5,
+                    y: y + ETIQUETA_H * 0.47,
+                    largura: ETIQUETA_W - 10,
+                    altura: 18.9,
+                    fontPt: 12.852,
+                    minFontPt: 8.064,
+                    maxLinhas: 3,
+                    cinza: 0,
+                    peso: 300,
+                });
+
+                // Linha bem menor, sem separador, próxima da base.
+                if (produto.linha) {
+                    adicionarTextoImagem({
+                        texto: produto.linha,
+                        x: x + 6,
+                        y: y + ETIQUETA_H - 11.4,
+                        largura: ETIQUETA_W - 12,
+                        altura: 7.812,
+                        fontPt: 7.686,
+                        minFontPt: 6.552,
+                        maxLinhas: 2,
+                        cinza: 0,
+                        peso: 300,
+                    });
+                }
+            }
+
+            // =========================
+            // VERSO
+            // =========================
+            function desenharVerso(
+                slotNaPagina: number,
+                produto: ProdutoEtiquetaPDF | null
+            ) {
+                const { x, y } = posicaoEtiqueta(slotNaPagina, true);
+                desenharXDeFuracao(x, y);
+                if (!produto) return;
+
+                const codigo = produto.codigoBarras;
+                const asset = gerarBarcode(codigo);
+
+                // O barcode fica abaixo do centro geométrico, como na referência.
+                // Sua caixa começa aproximadamente em 48% da altura do cartão.
+                const barcodeMaxW = 31.5;
+                const barcodeMaxH = 14.5;
+                let barcodeBottom = y + ETIQUETA_H * 0.48 + barcodeMaxH;
+
+                if (asset) {
+                    const scale = Math.min(
+                        barcodeMaxW / asset.widthPx,
+                        barcodeMaxH / asset.heightPx
+                    );
+                    const w = asset.widthPx * scale;
+                    const h = asset.heightPx * scale;
+                    const bx = x + (ETIQUETA_W - w) / 2;
+                    const by = y + ETIQUETA_H * 0.48;
+                    barcodeBottom = by + h;
+
+                    doc.addImage(asset.dataUrl, "PNG", bx, by, w, h, undefined, "FAST");
+
+                    // Número minúsculo e praticamente colado ao barcode.
+                    adicionarTextoImagem({
+                        texto: codigo,
+                        x: x + 7,
+                        // A imagem de texto começa ligeiramente sobre a base do barcode;
+                        // como o texto fica centralizado no canvas, o resultado visual é
+                        // o número praticamente colado às barras.
+                        y: barcodeBottom - 0.55,
+                        largura: ETIQUETA_W - 14,
+                        altura: 3.276,
+                        fontPt: 5.04,
+                        minFontPt: 4.662,
+                        maxLinhas: 1,
+                        cinza: 0,
+                        peso: 300,
+                    });
+                } else {
+                    adicionarTextoImagem({
+                        texto: codigo ? `Código inválido: ${codigo}` : "Sem código",
+                        x: x + 6,
+                        y: y + ETIQUETA_H * 0.49,
+                        largura: ETIQUETA_W - 12,
+                        altura: 10.08,
+                        fontPt: 6.552,
+                        minFontPt: 5.292,
+                        maxLinhas: 2,
+                        cinza: 0,
+                        peso: 300,
+                    });
+                }
+
+                // Frase institucional no rodapé, pequena e discreta.
+                adicionarTextoImagem({
+                    texto: FRASE_VERSO,
+                    x: x + 4.0,
+                    y: y + ETIQUETA_H - 10.8,
+                    largura: ETIQUETA_W - 8,
+                    altura: 10.08,
+                    fontPt: 6.048,
+                    minFontPt: 5.544,
+                    maxLinhas: 2,
+                    cinza: 0,
+                    peso: 300,
+                });
+            }
+
+            const totalPaginasFrente = Math.max(
+                1,
+                Math.ceil(produtosEtiqueta.length / ETIQUETAS_POR_PAGINA)
+            );
+
+            for (let pagina = 0; pagina < totalPaginasFrente; pagina++) {
+                if (pagina > 0) doc.addPage("a4", "portrait");
+
+                const inicio = pagina * ETIQUETAS_POR_PAGINA;
+
+                // FRENTE
+                desenharGuiasDeCorte();
+                for (let slot = 0; slot < ETIQUETAS_POR_PAGINA; slot++) {
+                    desenharFrente(slot, produtosEtiqueta[inicio + slot] || null);
+                }
+
+                // VERSO imediatamente após a frente correspondente.
+                doc.addPage("a4", "portrait");
+                desenharGuiasDeCorte();
+                for (let slot = 0; slot < ETIQUETAS_POR_PAGINA; slot++) {
+                    desenharVerso(slot, produtosEtiqueta[inicio + slot] || null);
+                }
+            }
+
+            const safeName = `etiquetas_tag_v08_${new Date()
+                .toISOString()
+                .slice(0, 19)
+                .replace(/[:T]/g, "-")}`;
+
+            doc.save(`${safeName}.pdf`);
+        } catch (err: any) {
+            console.error("Falha ao gerar Etiqueta PDF TAG V08:", err);
+            alert(
+                err?.message
+                    ? `Não foi possível gerar as etiquetas em PDF: ${err.message}`
+                    : "Não foi possível gerar as etiquetas em PDF."
             );
         }
     }
@@ -6594,6 +7326,33 @@ export default function Page() {
     const [histTipo, setHistTipo] = useState<"Todos" | HistoricoRow["tipo"]>("Todos");
     const [histLimit, setHistLimit] = useState(300);
 
+
+    // DASHBOARD DE MOVIMENTAÇÕES
+    const [dashboardLoading, setDashboardLoading] = useState(false);
+    const [dashboardErr, setDashboardErr] = useState("");
+    const [dashboardMovimentos, setDashboardMovimentos] = useState<HistoricoRow[]>([]);
+
+    const [dashboardTipo, setDashboardTipo] =
+        useState<DashboardMovimentoTipo>("TODOS");
+    const [dashboardDe, setDashboardDe] = useState(dashboardMonthStartValue);
+    const [dashboardAte, setDashboardAte] = useState(dashboardTodayValue);
+    const [dashboardQ, setDashboardQ] = useState("");
+    const [dashboardDepositos, setDashboardDepositos] = useState<ID[]>([]);
+    const [dashboardCategorias, setDashboardCategorias] = useState<ID[]>([]);
+    const [dashboardFabricantes, setDashboardFabricantes] = useState<ID[]>([]);
+    const [dashboardClassificacoes, setDashboardClassificacoes] = useState<ID[]>([]);
+    const [dashboardTop, setDashboardTop] = useState(10);
+
+    const [dashboardFilterOpen, setDashboardFilterOpen] = useState(false);
+    const [dashboardFilterSectionOpen, setDashboardFilterSectionOpen] =
+        useState<
+            | "DEPOSITOS"
+            | "CATEGORIAS"
+            | "FABRICANTES"
+            | "CLASSIFICACOES"
+            | null
+        >(null);
+
     async function loadHistorico() {
         setHistLoading(true);
         setHistErr("");
@@ -6613,10 +7372,65 @@ export default function Page() {
         }
     }
 
+
+    async function loadDashboardMovimentos() {
+        setDashboardLoading(true);
+        setDashboardErr("");
+
+        try {
+            // Carrega separadamente para que ENTRADAS/AJUSTES não consumam
+            // o limite de registros usado pelo Dashboard.
+            const [saidaResp, transferenciaResp] = await Promise.all([
+                apiGet<HistoricoResp>({
+                    historico: 1,
+                    limit: 500,
+                    tipo: "SAIDA",
+                }),
+                apiGet<HistoricoResp>({
+                    historico: 1,
+                    limit: 500,
+                    tipo: "TRANSFERENCIA",
+                }),
+            ]);
+
+            if (!saidaResp.ok) {
+                throw new Error(
+                    saidaResp.msg || "Falha ao carregar as saídas do Dashboard."
+                );
+            }
+
+            if (!transferenciaResp.ok) {
+                throw new Error(
+                    transferenciaResp.msg ||
+                        "Falha ao carregar as transferências do Dashboard."
+                );
+            }
+
+            const rows = [
+                ...(saidaResp.rows || []),
+                ...(transferenciaResp.rows || []),
+            ].sort(
+                (a, b) =>
+                    historicoTimestamp(b.criado_em) -
+                    historicoTimestamp(a.criado_em)
+            );
+
+            setDashboardMovimentos(rows);
+        } catch (e: any) {
+            setDashboardErr(
+                e?.message || "Erro ao carregar os dados do Dashboard."
+            );
+            setDashboardMovimentos([]);
+        } finally {
+            setDashboardLoading(false);
+        }
+    }
+
     useEffect(() => {
         if (tab === "HISTORICO") loadHistorico();
         if (tab === "CONFERENCIA") loadConferenciasRegistros();
-        // eslint-disable-next-line 
+        if (tab === "DASHBOARD") loadDashboardMovimentos();
+        // eslint-disable-next-line
     }, [tab]);
 
     type HistoricoGrupo = {
@@ -6663,6 +7477,347 @@ export default function Page() {
 
         return grupos;
     }, [histRows]);
+
+    const dashboardFiltroOptions = useMemo(() => {
+        return {
+            depositos: depositos
+                .map((d) => ({ id: Number(d.id), nome: d.nome }))
+                .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+
+            categorias: uniqOptions(
+                produtos.map((p) => produtoCategoriaOption(p, catById))
+            ),
+
+            fabricantes: uniqOptions(
+                produtos.map((p) => produtoFabricanteOption(p, fabById))
+            ),
+
+            classificacoes: uniqOptions(
+                produtos.map((p) =>
+                    produtoClassificacaoOption(p, classById)
+                )
+            ),
+        };
+    }, [depositos, produtos, catById, fabById, classById]);
+
+    const dashboardMovimentosFiltrados = useMemo(() => {
+        const q = dashboardQ.trim().toLocaleLowerCase("pt-BR");
+
+        const depSet = dashboardDepositos.length
+            ? new Set(dashboardDepositos.map(Number))
+            : null;
+        const catSet = dashboardCategorias.length
+            ? new Set(dashboardCategorias.map(Number))
+            : null;
+        const fabSet = dashboardFabricantes.length
+            ? new Set(dashboardFabricantes.map(Number))
+            : null;
+        const classSet = dashboardClassificacoes.length
+            ? new Set(dashboardClassificacoes.map(Number))
+            : null;
+
+        const inicio = dashboardDe
+            ? new Date(`${dashboardDe}T00:00:00`).getTime()
+            : null;
+        const fim = dashboardAte
+            ? new Date(`${dashboardAte}T23:59:59.999`).getTime()
+            : null;
+
+        return dashboardMovimentos.filter((mov) => {
+            if (
+                dashboardTipo !== "TODOS" &&
+                mov.tipo !== dashboardTipo
+            ) {
+                return false;
+            }
+
+            const time = historicoTimestamp(mov.criado_em);
+
+            if (
+                inicio !== null &&
+                Number.isFinite(time) &&
+                time < inicio
+            ) {
+                return false;
+            }
+
+            if (
+                fim !== null &&
+                Number.isFinite(time) &&
+                time > fim
+            ) {
+                return false;
+            }
+
+            const produto = prodById.get(Number(mov.produto_id));
+
+            // Para o Dashboard "saídas", o depósito representa a origem
+            // física da mercadoria, inclusive nas transferências.
+            if (
+                depSet &&
+                !depSet.has(Number(mov.deposito_origem_id || 0))
+            ) {
+                return false;
+            }
+
+            if (catSet) {
+                const categoriaId = Number(produto?.categoria_id || 0);
+                if (!catSet.has(categoriaId)) return false;
+            }
+
+            if (fabSet) {
+                const fabricanteId = Number(produto?.fabricante_id || 0);
+                if (!fabSet.has(fabricanteId)) return false;
+            }
+
+            if (classSet) {
+                const classificacaoId = Number(
+                    produto?.classificacao_id || 0
+                );
+                if (!classSet.has(classificacaoId)) return false;
+            }
+
+            if (q) {
+                const categoria =
+                    produto?.categoria_nome ||
+                    (produto?.categoria_id
+                        ? catById.get(Number(produto.categoria_id))?.nome
+                        : "") ||
+                    "";
+
+                const fabricante =
+                    produto?.fabricante_nome ||
+                    (produto?.fabricante_id
+                        ? fabById.get(Number(produto.fabricante_id))?.nome
+                        : "") ||
+                    "";
+
+                const classificacao =
+                    produto?.classificacao_nome ||
+                    (produto?.classificacao_id
+                        ? classById.get(Number(produto.classificacao_id))
+                              ?.nome
+                        : "") ||
+                    "";
+
+                const blob = [
+                    mov.produto_nome,
+                    produto?.nome,
+                    mov.codigo_barras_snapshot,
+                    categoria,
+                    fabricante,
+                    classificacao,
+                    mov.deposito_origem_nome,
+                    mov.deposito_destino_nome,
+                    mov.destino_texto,
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLocaleLowerCase("pt-BR");
+
+                if (!blob.includes(q)) return false;
+            }
+
+            return true;
+        });
+    }, [
+        dashboardMovimentos,
+        dashboardTipo,
+        dashboardQ,
+        dashboardDepositos,
+        dashboardCategorias,
+        dashboardFabricantes,
+        dashboardClassificacoes,
+        dashboardDe,
+        dashboardAte,
+        prodById,
+        catById,
+        fabById,
+        classById,
+    ]);
+
+    const dashboardRanking = useMemo<DashboardProdutoRow[]>(() => {
+        const map = new Map<ID, DashboardProdutoRow>();
+
+        for (const mov of dashboardMovimentosFiltrados) {
+            const produtoId = Number(mov.produto_id || 0);
+            if (!produtoId) continue;
+
+            const produto = prodById.get(produtoId);
+            const quantidade = Math.max(
+                0,
+                Number(mov.quantidade || 0)
+            );
+
+            if (quantidade <= 0) continue;
+
+            const categoriaNome =
+                produto?.categoria_nome ||
+                (produto?.categoria_id
+                    ? catById.get(Number(produto.categoria_id))?.nome
+                    : "") ||
+                "Sem categoria";
+
+            const fabricanteNome =
+                produto?.fabricante_nome ||
+                (produto?.fabricante_id
+                    ? fabById.get(Number(produto.fabricante_id))?.nome
+                    : "") ||
+                "Sem fabricante";
+
+            const classificacaoNome =
+                produto?.classificacao_nome ||
+                (produto?.classificacao_id
+                    ? classById.get(Number(produto.classificacao_id))?.nome
+                    : "") ||
+                "Sem classificação";
+
+            const atual =
+                map.get(produtoId) ||
+                {
+                    produto_id: produtoId,
+                    produto_nome:
+                        mov.produto_nome ||
+                        produto?.nome ||
+                        `Produto ${produtoId}`,
+                    codigo_barras:
+                        mov.codigo_barras_snapshot ||
+                        produto?.codigo_barras ||
+                        "",
+                    categoria_nome: categoriaNome,
+                    fabricante_nome: fabricanteNome,
+                    classificacao_nome: classificacaoNome,
+                    saida: 0,
+                    transferencia: 0,
+                    total: 0,
+                    movimentos: 0,
+                };
+
+            if (mov.tipo === "SAIDA") {
+                atual.saida += quantidade;
+            }
+
+            if (mov.tipo === "TRANSFERENCIA") {
+                atual.transferencia += quantidade;
+            }
+
+            atual.total = atual.saida + atual.transferencia;
+            atual.movimentos += 1;
+
+            map.set(produtoId, atual);
+        }
+
+        return Array.from(map.values()).sort(
+            (a, b) =>
+                b.total - a.total ||
+                b.saida - a.saida ||
+                a.produto_nome.localeCompare(b.produto_nome, "pt-BR")
+        );
+    }, [
+        dashboardMovimentosFiltrados,
+        prodById,
+        catById,
+        fabById,
+        classById,
+    ]);
+
+    const dashboardTopRows = useMemo(
+        () => dashboardRanking.slice(0, dashboardTop),
+        [dashboardRanking, dashboardTop]
+    );
+
+    const dashboardResumo = useMemo(() => {
+        const saida = dashboardRanking.reduce(
+            (acc, row) => acc + row.saida,
+            0
+        );
+        const transferencia = dashboardRanking.reduce(
+            (acc, row) => acc + row.transferencia,
+            0
+        );
+
+        return {
+            produtos: dashboardRanking.length,
+            movimentos: dashboardMovimentosFiltrados.length,
+            saida,
+            transferencia,
+            total: saida + transferencia,
+        };
+    }, [dashboardRanking, dashboardMovimentosFiltrados.length]);
+
+    const dashboardMaxBar = useMemo(() => {
+        return Math.max(
+            1,
+            ...dashboardTopRows.flatMap((row) => [
+                row.saida,
+                row.transferencia,
+            ])
+        );
+    }, [dashboardTopRows]);
+
+
+    const dashboardFiltrosAtivos = useMemo(() => {
+        let total = 0;
+
+        if (dashboardQ.trim()) total += 1;
+        if (dashboardTipo !== "TODOS") total += 1;
+        if (dashboardDepositos.length) total += dashboardDepositos.length;
+        if (dashboardCategorias.length) total += dashboardCategorias.length;
+        if (dashboardFabricantes.length) total += dashboardFabricantes.length;
+        if (dashboardClassificacoes.length) total += dashboardClassificacoes.length;
+
+        if (dashboardDe !== dashboardMonthStartValue()) total += 1;
+        if (dashboardAte !== dashboardTodayValue()) total += 1;
+
+        return total;
+    }, [
+        dashboardQ,
+        dashboardTipo,
+        dashboardDepositos,
+        dashboardCategorias,
+        dashboardFabricantes,
+        dashboardClassificacoes,
+        dashboardDe,
+        dashboardAte,
+    ]);
+
+    const dashboardPeriodoLabel = useMemo(() => {
+        const format = (value: string) => {
+            if (!value) return "";
+            const [y, m, d] = value.split("-");
+            if (!y || !m || !d) return value;
+            return `${d}/${m}/${y}`;
+        };
+
+        if (dashboardDe && dashboardAte) {
+            return `${format(dashboardDe)} até ${format(dashboardAte)}`;
+        }
+
+        if (dashboardDe) return `Desde ${format(dashboardDe)}`;
+        if (dashboardAte) return `Até ${format(dashboardAte)}`;
+        return "Todo o período";
+    }, [dashboardDe, dashboardAte]);
+
+    function dashboardBarWidth(value: number) {
+        if (value <= 0) return 0;
+        return Math.max(
+            2,
+            Math.min(100, (value / dashboardMaxBar) * 100)
+        );
+    }
+
+    function limparFiltrosDashboard() {
+        setDashboardTipo("TODOS");
+        setDashboardDe(dashboardMonthStartValue());
+        setDashboardAte(dashboardTodayValue());
+        setDashboardQ("");
+        setDashboardDepositos([]);
+        setDashboardCategorias([]);
+        setDashboardFabricantes([]);
+        setDashboardClassificacoes([]);
+        setDashboardTop(10);
+        setDashboardFilterSectionOpen(null);
+    }
 
     function limparFiltrosEstoque() {
         setQEstoque("");
@@ -6778,7 +7933,7 @@ export default function Page() {
                         </div>
 
                         <Card className="hidden p-2 sm:block">
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
                                 {tabActions.map((a) => (
                                     <button
                                         key={a.key}
@@ -6871,7 +8026,7 @@ export default function Page() {
                                     <h2 className="text-base font-semibold text-slate-900">Produtos</h2>
 
                                 </div>
-                                <div className="grid w-full grid-cols-3 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
+                                <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
                                     <Button
                                         variant="soft"
                                         onClick={exportarEstoqueCSV}
@@ -6889,6 +8044,17 @@ export default function Page() {
                                         className="w-full whitespace-nowrap sm:w-auto"
                                     >
                                         🧾 PDF
+                                    </Button>
+                                    <Button
+                                        variant="soft"
+                                        onClick={exportarEtiquetasPDF}
+                                        type="button"
+                                        disabled={loading || !estoqueRows.length}
+                                        className="w-full whitespace-nowrap sm:w-auto"
+                                        data-build={APP_BUILD_ID}
+                                        title="TAG V08 • fontes +5% sobre V07 • sem negrito • Segoe UI Light • guias laterais 10mm • A4 4x4 • duplex borda longa"
+                                    >
+                                        🏷️ Etiqueta PDF TAG
                                     </Button>
                                     <Button
                                         variant="soft"
@@ -7885,6 +9051,556 @@ export default function Page() {
                                 })}
                             </ul>
                         </Card>
+                    ) : null}
+
+                    {/* DASHBOARD */}
+                    {tab === "DASHBOARD" ? (
+                        <div className="space-y-4">
+                            <Card className="overflow-hidden">
+                                <div className="p-4 sm:p-5">
+                                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h2 className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">
+                                                    Dashboard de movimentações
+                                                </h2>
+
+                                                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
+                                                    Estoque real
+                                                </span>
+                                            </div>
+
+                                            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                                                Produtos com maior volume de saída e transferência.
+                                                Os filtros ficam organizados em uma janela própria para
+                                                funcionar corretamente em qualquer tamanho de tela.
+                                            </p>
+
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                    Período: {dashboardPeriodoLabel}
+                                                </span>
+
+                                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                    {dashboardTipo === "SAIDA"
+                                                        ? "Somente saídas"
+                                                        : dashboardTipo === "TRANSFERENCIA"
+                                                            ? "Somente transferências"
+                                                            : "Saídas + transferências"}
+                                                </span>
+
+                                                {dashboardDepositos.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardDepositos.length} depósito(s)
+                                                    </span>
+                                                ) : null}
+
+                                                {dashboardCategorias.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardCategorias.length} categoria(s)
+                                                    </span>
+                                                ) : null}
+
+                                                {dashboardFabricantes.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardFabricantes.length} fabricante(s)
+                                                    </span>
+                                                ) : null}
+
+                                                {dashboardClassificacoes.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardClassificacoes.length} classificação(ões)
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:shrink-0">
+                                            <Button
+                                                type="button"
+                                                variant="solid"
+                                                onClick={() => setDashboardFilterOpen(true)}
+                                                className="w-full whitespace-nowrap sm:w-auto"
+                                            >
+                                                <span className="inline-flex items-center gap-2">
+                                                    <svg
+                                                        width="18"
+                                                        height="18"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M4 6h16M7 12h10M10 18h4"
+                                                            stroke="currentColor"
+                                                            strokeWidth="1.8"
+                                                            strokeLinecap="round"
+                                                        />
+                                                    </svg>
+                                                    Filtros
+                                                    {dashboardFiltrosAtivos > 0 ? (
+                                                        <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
+                                                            {dashboardFiltrosAtivos}
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            </Button>
+
+                                            <Button
+                                                type="button"
+                                                variant="soft"
+                                                onClick={loadDashboardMovimentos}
+                                                disabled={dashboardLoading}
+                                                className="w-full whitespace-nowrap sm:w-auto"
+                                            >
+                                                {dashboardLoading
+                                                    ? "Atualizando..."
+                                                    : "Atualizar dados"}
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    {dashboardErr ? (
+                                        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                            {dashboardErr}
+                                        </div>
+                                    ) : null}
+
+                                    <div className="mt-4 text-xs leading-5 text-slate-500">
+                                        A análise usa até as 500 saídas e 500 transferências
+                                        mais recentes disponibilizadas pelo histórico atual.
+                                    </div>
+                                </div>
+                            </Card>
+
+                            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                        Produtos
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                                        {dashboardResumo.produtos}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        no filtro atual
+                                    </div>
+                                </Card>
+
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                        Movimentos
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                                        {dashboardResumo.movimentos}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        registros encontrados
+                                    </div>
+                                </Card>
+
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-rose-600">
+                                        Saídas
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-rose-700">
+                                        {dashboardResumo.saida.toLocaleString(
+                                            "pt-BR"
+                                        )}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        unidades
+                                    </div>
+                                </Card>
+
+                                <Card className="p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-indigo-600">
+                                        Transferências
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-indigo-700">
+                                        {dashboardResumo.transferencia.toLocaleString(
+                                            "pt-BR"
+                                        )}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        unidades
+                                    </div>
+                                </Card>
+
+                                <Card className="col-span-2 p-4 lg:col-span-1">
+                                    <div className="text-[10px] font-bold uppercase tracking-wide text-sky-600">
+                                        Total movimentado
+                                    </div>
+                                    <div className="mt-2 text-2xl font-black tracking-tight text-sky-700">
+                                        {dashboardResumo.total.toLocaleString(
+                                            "pt-BR"
+                                        )}
+                                    </div>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        saída + transferência
+                                    </div>
+                                </Card>
+                            </div>
+
+                            <Card className="overflow-hidden">
+                                <div className="border-b border-slate-100 p-4 sm:p-5">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                            <h3 className="text-base font-bold text-slate-950">
+                                                Produtos que mais saíram
+                                            </h3>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                                                Ranking por quantidade movimentada no período e filtros selecionados.
+                                            </p>
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                                            <span className="inline-flex items-center gap-2 text-rose-700">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                                                Saída
+                                            </span>
+                                            <span className="inline-flex items-center gap-2 text-indigo-700">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                                                Transferência
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 sm:p-5">
+                                    {dashboardLoading ? (
+                                        <div className="space-y-3">
+                                            {Array.from({
+                                                length: 6,
+                                            }).map((_, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className="animate-pulse rounded-2xl border border-slate-100 p-4"
+                                                >
+                                                    <div className="h-4 w-2/3 rounded bg-slate-100" />
+                                                    <div className="mt-4 h-2.5 rounded-full bg-slate-100" />
+                                                    <div className="mt-2 h-2.5 w-4/5 rounded-full bg-slate-100" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : dashboardTopRows.length === 0 ? (
+                                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+                                            <div className="text-sm font-bold text-slate-700">
+                                                Nenhuma movimentação encontrada
+                                            </div>
+                                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                                                Altere o período ou os filtros para visualizar o ranking.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {dashboardTopRows.map(
+                                                (row, index) => (
+                                                    <div
+                                                        key={
+                                                            row.produto_id
+                                                        }
+                                                        className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-xs font-black text-slate-600">
+                                                                {index + 1}
+                                                            </div>
+
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                                    <div className="min-w-0">
+                                                                        <div className="break-words text-sm font-bold leading-5 text-slate-950 sm:text-[15px]">
+                                                                            {
+                                                                                row.produto_nome
+                                                                            }
+                                                                        </div>
+                                                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                                                                            {row.codigo_barras ? (
+                                                                                <span>
+                                                                                    CB{" "}
+                                                                                    {
+                                                                                        row.codigo_barras
+                                                                                    }
+                                                                                </span>
+                                                                            ) : null}
+                                                                            <span>
+                                                                                {
+                                                                                    row.categoria_nome
+                                                                                }
+                                                                            </span>
+                                                                            <span>
+                                                                                {
+                                                                                    row.classificacao_nome
+                                                                                }
+                                                                            </span>
+                                                                            <span>
+                                                                                {
+                                                                                    row.fabricante_nome
+                                                                                }
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="shrink-0 rounded-xl bg-slate-50 px-3 py-2 text-right">
+                                                                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                                                            Total
+                                                                        </div>
+                                                                        <div className="text-base font-black text-slate-950">
+                                                                            {row.total.toLocaleString(
+                                                                                "pt-BR"
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="mt-4 space-y-2.5">
+                                                                    <div className="grid grid-cols-[72px_minmax(0,1fr)_54px] items-center gap-2 sm:grid-cols-[105px_minmax(0,1fr)_72px]">
+                                                                        <span className="text-[11px] font-bold text-rose-700">
+                                                                            Saída
+                                                                        </span>
+                                                                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                                                                            <div
+                                                                                className="h-full rounded-full bg-rose-500 transition-[width] duration-500"
+                                                                                style={{
+                                                                                    width: `${dashboardBarWidth(
+                                                                                        row.saida
+                                                                                    )}%`,
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className="text-right text-xs font-bold text-slate-800">
+                                                                            {row.saida.toLocaleString(
+                                                                                "pt-BR"
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-[72px_minmax(0,1fr)_54px] items-center gap-2 sm:grid-cols-[105px_minmax(0,1fr)_72px]">
+                                                                        <span className="text-[11px] font-bold text-indigo-700">
+                                                                            Transfer.
+                                                                        </span>
+                                                                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                                                                            <div
+                                                                                className="h-full rounded-full bg-indigo-500 transition-[width] duration-500"
+                                                                                style={{
+                                                                                    width: `${dashboardBarWidth(
+                                                                                        row.transferencia
+                                                                                    )}%`,
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                        <span className="text-right text-xs font-bold text-slate-800">
+                                                                            {row.transferencia.toLocaleString(
+                                                                                "pt-BR"
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="mt-3 text-[11px] text-slate-400">
+                                                                    {
+                                                                        row.movimentos
+                                                                    }{" "}
+                                                                    {row.movimentos ===
+                                                                    1
+                                                                        ? "movimento"
+                                                                        : "movimentos"}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </Card>
+                            <FilterPanelModal
+                                open={dashboardFilterOpen}
+                                onClose={() => {
+                                    setDashboardFilterOpen(false);
+                                    setDashboardFilterSectionOpen(null);
+                                }}
+                                title="Filtros do Dashboard"
+                                subtitle="Refine o ranking de movimentações. As opções ficam dentro desta janela para evitar cortes e sobreposição no conteúdo principal."
+                                panelClassName="sm:max-w-4xl"
+                                footer={
+                                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={limparFiltrosDashboard}
+                                            className="w-full sm:w-auto"
+                                        >
+                                            Limpar filtros
+                                        </Button>
+
+                                        <Button
+                                            type="button"
+                                            onClick={() => {
+                                                setDashboardFilterOpen(false);
+                                                setDashboardFilterSectionOpen(null);
+                                            }}
+                                            className="w-full sm:w-auto"
+                                        >
+                                            Aplicar filtros
+                                        </Button>
+                                    </div>
+                                }
+                            >
+                                <div className="space-y-4">
+                                    <Card className="p-4 sm:p-5">
+                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                            <div className="md:col-span-2">
+                                                <Field label="Pesquisar produto">
+                                                    <TextInput
+                                                        value={dashboardQ}
+                                                        onChange={(e) =>
+                                                            setDashboardQ(e.target.value)
+                                                        }
+                                                        placeholder="Nome, código, categoria, fabricante ou classificação..."
+                                                    />
+                                                </Field>
+                                            </div>
+
+                                            <Field label="Tipo de movimentação">
+                                                <Select
+                                                    value={dashboardTipo}
+                                                    onChange={(e) =>
+                                                        setDashboardTipo(
+                                                            e.target.value as DashboardMovimentoTipo
+                                                        )
+                                                    }
+                                                >
+                                                    <option value="TODOS">
+                                                        Saídas + Transferências
+                                                    </option>
+                                                    <option value="SAIDA">
+                                                        Somente Saídas
+                                                    </option>
+                                                    <option value="TRANSFERENCIA">
+                                                        Somente Transferências
+                                                    </option>
+                                                </Select>
+                                            </Field>
+
+                                            <Field label="Quantidade no ranking">
+                                                <Select
+                                                    value={dashboardTop}
+                                                    onChange={(e) =>
+                                                        setDashboardTop(
+                                                            Number(e.target.value) || 10
+                                                        )
+                                                    }
+                                                >
+                                                    <option value={5}>Top 5</option>
+                                                    <option value={10}>Top 10</option>
+                                                    <option value={15}>Top 15</option>
+                                                    <option value={20}>Top 20</option>
+                                                    <option value={30}>Top 30</option>
+                                                </Select>
+                                            </Field>
+
+                                            <Field label="Data inicial">
+                                                <TextInput
+                                                    type="date"
+                                                    value={dashboardDe}
+                                                    onChange={(e) =>
+                                                        setDashboardDe(e.target.value)
+                                                    }
+                                                    max={dashboardAte || undefined}
+                                                />
+                                            </Field>
+
+                                            <Field label="Data final">
+                                                <TextInput
+                                                    type="date"
+                                                    value={dashboardAte}
+                                                    onChange={(e) =>
+                                                        setDashboardAte(e.target.value)
+                                                    }
+                                                    min={dashboardDe || undefined}
+                                                />
+                                            </Field>
+                                        </div>
+                                    </Card>
+
+                                    <FilterOptionPanel
+                                        title="Depósitos de origem"
+                                        options={dashboardFiltroOptions.depositos}
+                                        selectedIds={dashboardDepositos}
+                                        onChangeIds={setDashboardDepositos}
+                                        allLabel="Todos os depósitos"
+                                        open={dashboardFilterSectionOpen === "DEPOSITOS"}
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "DEPOSITOS"
+                                                    ? null
+                                                    : "DEPOSITOS"
+                                            )
+                                        }
+                                    />
+
+                                    <FilterOptionPanel
+                                        title="Categorias"
+                                        options={dashboardFiltroOptions.categorias}
+                                        selectedIds={dashboardCategorias}
+                                        onChangeIds={setDashboardCategorias}
+                                        allLabel="Todas as categorias"
+                                        open={dashboardFilterSectionOpen === "CATEGORIAS"}
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "CATEGORIAS"
+                                                    ? null
+                                                    : "CATEGORIAS"
+                                            )
+                                        }
+                                    />
+
+                                    <FilterOptionPanel
+                                        title="Fabricantes"
+                                        options={dashboardFiltroOptions.fabricantes}
+                                        selectedIds={dashboardFabricantes}
+                                        onChangeIds={setDashboardFabricantes}
+                                        allLabel="Todos os fabricantes"
+                                        open={dashboardFilterSectionOpen === "FABRICANTES"}
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "FABRICANTES"
+                                                    ? null
+                                                    : "FABRICANTES"
+                                            )
+                                        }
+                                    />
+
+                                    <FilterOptionPanel
+                                        title="Classificações"
+                                        options={dashboardFiltroOptions.classificacoes}
+                                        selectedIds={dashboardClassificacoes}
+                                        onChangeIds={setDashboardClassificacoes}
+                                        allLabel="Todas as classificações"
+                                        open={
+                                            dashboardFilterSectionOpen ===
+                                            "CLASSIFICACOES"
+                                        }
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "CLASSIFICACOES"
+                                                    ? null
+                                                    : "CLASSIFICACOES"
+                                            )
+                                        }
+                                    />
+
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+                                        Os filtros são aplicados ao ranking imediatamente.
+                                        O botão <b>Aplicar filtros</b> apenas fecha esta janela
+                                        e mantém as opções escolhidas.
+                                    </div>
+                                </div>
+                            </FilterPanelModal>
+
+                        </div>
                     ) : null}
 
                     {/* AVANÇADO */}

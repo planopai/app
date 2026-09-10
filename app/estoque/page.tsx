@@ -544,8 +544,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-10-DASHBOARD-MOV-V01";
-const APP_BUILD_LABEL = "2026.09.10-DASHBOARD-MOV-V01";
+const APP_BUILD_ID = "ESTOQUE-2026-09-10-DASHBOARD-FILTROS-MODAL-V02";
+const APP_BUILD_LABEL = "2026.09.10-DASHBOARD-FILTROS-MODAL-V02";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -7343,6 +7343,16 @@ export default function Page() {
     const [dashboardClassificacoes, setDashboardClassificacoes] = useState<ID[]>([]);
     const [dashboardTop, setDashboardTop] = useState(10);
 
+    const [dashboardFilterOpen, setDashboardFilterOpen] = useState(false);
+    const [dashboardFilterSectionOpen, setDashboardFilterSectionOpen] =
+        useState<
+            | "DEPOSITOS"
+            | "CATEGORIAS"
+            | "FABRICANTES"
+            | "CLASSIFICACOES"
+            | null
+        >(null);
+
     async function loadHistorico() {
         setHistLoading(true);
         setHistErr("");
@@ -7745,6 +7755,49 @@ export default function Page() {
         );
     }, [dashboardTopRows]);
 
+
+    const dashboardFiltrosAtivos = useMemo(() => {
+        let total = 0;
+
+        if (dashboardQ.trim()) total += 1;
+        if (dashboardTipo !== "TODOS") total += 1;
+        if (dashboardDepositos.length) total += dashboardDepositos.length;
+        if (dashboardCategorias.length) total += dashboardCategorias.length;
+        if (dashboardFabricantes.length) total += dashboardFabricantes.length;
+        if (dashboardClassificacoes.length) total += dashboardClassificacoes.length;
+
+        if (dashboardDe !== dashboardMonthStartValue()) total += 1;
+        if (dashboardAte !== dashboardTodayValue()) total += 1;
+
+        return total;
+    }, [
+        dashboardQ,
+        dashboardTipo,
+        dashboardDepositos,
+        dashboardCategorias,
+        dashboardFabricantes,
+        dashboardClassificacoes,
+        dashboardDe,
+        dashboardAte,
+    ]);
+
+    const dashboardPeriodoLabel = useMemo(() => {
+        const format = (value: string) => {
+            if (!value) return "";
+            const [y, m, d] = value.split("-");
+            if (!y || !m || !d) return value;
+            return `${d}/${m}/${y}`;
+        };
+
+        if (dashboardDe && dashboardAte) {
+            return `${format(dashboardDe)} até ${format(dashboardAte)}`;
+        }
+
+        if (dashboardDe) return `Desde ${format(dashboardDe)}`;
+        if (dashboardAte) return `Até ${format(dashboardAte)}`;
+        return "Todo o período";
+    }, [dashboardDe, dashboardAte]);
+
     function dashboardBarWidth(value: number) {
         if (value <= 0) return 0;
         return Math.max(
@@ -7763,6 +7816,7 @@ export default function Page() {
         setDashboardFabricantes([]);
         setDashboardClassificacoes([]);
         setDashboardTop(10);
+        setDashboardFilterSectionOpen(null);
     }
 
     function limparFiltrosEstoque() {
@@ -9003,200 +9057,118 @@ export default function Page() {
                     {tab === "DASHBOARD" ? (
                         <div className="space-y-4">
                             <Card className="overflow-hidden">
-                                <div className="border-b border-slate-100 p-4 sm:p-5">
-                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="p-4 sm:p-5">
+                                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                         <div className="min-w-0">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <h2 className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">
                                                     Dashboard de movimentações
                                                 </h2>
+
                                                 <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
                                                     Estoque real
                                                 </span>
                                             </div>
+
                                             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
                                                 Produtos com maior volume de saída e transferência.
-                                                Use os filtros para analisar depósito de origem,
-                                                categoria, fabricante, classificação e período.
+                                                Os filtros ficam organizados em uma janela própria para
+                                                funcionar corretamente em qualquer tamanho de tela.
                                             </p>
+
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                    Período: {dashboardPeriodoLabel}
+                                                </span>
+
+                                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                    {dashboardTipo === "SAIDA"
+                                                        ? "Somente saídas"
+                                                        : dashboardTipo === "TRANSFERENCIA"
+                                                            ? "Somente transferências"
+                                                            : "Saídas + transferências"}
+                                                </span>
+
+                                                {dashboardDepositos.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardDepositos.length} depósito(s)
+                                                    </span>
+                                                ) : null}
+
+                                                {dashboardCategorias.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardCategorias.length} categoria(s)
+                                                    </span>
+                                                ) : null}
+
+                                                {dashboardFabricantes.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardFabricantes.length} fabricante(s)
+                                                    </span>
+                                                ) : null}
+
+                                                {dashboardClassificacoes.length ? (
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                        {dashboardClassificacoes.length} classificação(ões)
+                                                    </span>
+                                                ) : null}
+                                            </div>
                                         </div>
 
-                                        <Button
-                                            type="button"
-                                            variant="soft"
-                                            onClick={loadDashboardMovimentos}
-                                            disabled={dashboardLoading}
-                                            className="w-full whitespace-nowrap sm:w-auto"
-                                        >
-                                            {dashboardLoading
-                                                ? "Atualizando..."
-                                                : "Atualizar dados"}
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {dashboardErr ? (
-                                    <div className="m-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:m-5">
-                                        {dashboardErr}
-                                    </div>
-                                ) : null}
-
-                                <div className="p-4 sm:p-5">
-                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                                        <div className="xl:col-span-2">
-                                            <Field label="Pesquisar produto">
-                                                <TextInput
-                                                    value={dashboardQ}
-                                                    onChange={(e) =>
-                                                        setDashboardQ(
-                                                            e.target.value
-                                                        )
-                                                    }
-                                                    placeholder="Nome, código, categoria, fabricante ou classificação..."
-                                                />
-                                            </Field>
-                                        </div>
-
-                                        <Field label="Tipo de movimentação">
-                                            <Select
-                                                value={dashboardTipo}
-                                                onChange={(e) =>
-                                                    setDashboardTipo(
-                                                        e.target
-                                                            .value as DashboardMovimentoTipo
-                                                    )
-                                                }
+                                        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:shrink-0">
+                                            <Button
+                                                type="button"
+                                                variant="solid"
+                                                onClick={() => setDashboardFilterOpen(true)}
+                                                className="w-full whitespace-nowrap sm:w-auto"
                                             >
-                                                <option value="TODOS">
-                                                    Saídas + Transferências
-                                                </option>
-                                                <option value="SAIDA">
-                                                    Somente Saídas
-                                                </option>
-                                                <option value="TRANSFERENCIA">
-                                                    Somente Transferências
-                                                </option>
-                                            </Select>
-                                        </Field>
+                                                <span className="inline-flex items-center gap-2">
+                                                    <svg
+                                                        width="18"
+                                                        height="18"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M4 6h16M7 12h10M10 18h4"
+                                                            stroke="currentColor"
+                                                            strokeWidth="1.8"
+                                                            strokeLinecap="round"
+                                                        />
+                                                    </svg>
+                                                    Filtros
+                                                    {dashboardFiltrosAtivos > 0 ? (
+                                                        <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
+                                                            {dashboardFiltrosAtivos}
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            </Button>
 
-                                        <Field label="Quantidade no ranking">
-                                            <Select
-                                                value={dashboardTop}
-                                                onChange={(e) =>
-                                                    setDashboardTop(
-                                                        Number(
-                                                            e.target.value
-                                                        ) || 10
-                                                    )
-                                                }
+                                            <Button
+                                                type="button"
+                                                variant="soft"
+                                                onClick={loadDashboardMovimentos}
+                                                disabled={dashboardLoading}
+                                                className="w-full whitespace-nowrap sm:w-auto"
                                             >
-                                                <option value={5}>Top 5</option>
-                                                <option value={10}>Top 10</option>
-                                                <option value={15}>Top 15</option>
-                                                <option value={20}>Top 20</option>
-                                                <option value={30}>Top 30</option>
-                                            </Select>
-                                        </Field>
-
-                                        <Field label="Data inicial">
-                                            <TextInput
-                                                type="date"
-                                                value={dashboardDe}
-                                                onChange={(e) =>
-                                                    setDashboardDe(
-                                                        e.target.value
-                                                    )
-                                                }
-                                                max={
-                                                    dashboardAte ||
-                                                    undefined
-                                                }
-                                            />
-                                        </Field>
-
-                                        <Field label="Data final">
-                                            <TextInput
-                                                type="date"
-                                                value={dashboardAte}
-                                                onChange={(e) =>
-                                                    setDashboardAte(
-                                                        e.target.value
-                                                    )
-                                                }
-                                                min={
-                                                    dashboardDe ||
-                                                    undefined
-                                                }
-                                            />
-                                        </Field>
-
-                                        <MultiSelectDropdown
-                                            label="Depósito de origem"
-                                            options={
-                                                dashboardFiltroOptions.depositos
-                                            }
-                                            selectedIds={dashboardDepositos}
-                                            onChangeIds={
-                                                setDashboardDepositos
-                                            }
-                                            allLabel="Todos os depósitos"
-                                        />
-
-                                        <MultiSelectDropdown
-                                            label="Categorias"
-                                            options={
-                                                dashboardFiltroOptions.categorias
-                                            }
-                                            selectedIds={dashboardCategorias}
-                                            onChangeIds={
-                                                setDashboardCategorias
-                                            }
-                                            allLabel="Todas as categorias"
-                                        />
-
-                                        <MultiSelectDropdown
-                                            label="Fabricantes"
-                                            options={
-                                                dashboardFiltroOptions.fabricantes
-                                            }
-                                            selectedIds={dashboardFabricantes}
-                                            onChangeIds={
-                                                setDashboardFabricantes
-                                            }
-                                            allLabel="Todos os fabricantes"
-                                        />
-
-                                        <MultiSelectDropdown
-                                            label="Classificações"
-                                            options={
-                                                dashboardFiltroOptions.classificacoes
-                                            }
-                                            selectedIds={
-                                                dashboardClassificacoes
-                                            }
-                                            onChangeIds={
-                                                setDashboardClassificacoes
-                                            }
-                                            allLabel="Todas as classificações"
-                                        />
+                                                {dashboardLoading
+                                                    ? "Atualizando..."
+                                                    : "Atualizar dados"}
+                                            </Button>
+                                        </div>
                                     </div>
 
-                                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="text-xs leading-5 text-slate-500">
-                                            A análise usa até as 500 saídas e 500 transferências
-                                            mais recentes disponibilizadas pelo histórico atual.
+                                    {dashboardErr ? (
+                                        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                            {dashboardErr}
                                         </div>
+                                    ) : null}
 
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            onClick={
-                                                limparFiltrosDashboard
-                                            }
-                                            className="w-full sm:w-auto"
-                                        >
-                                            Limpar filtros
-                                        </Button>
+                                    <div className="mt-4 text-xs leading-5 text-slate-500">
+                                        A análise usa até as 500 saídas e 500 transferências
+                                        mais recentes disponibilizadas pelo histórico atual.
                                     </div>
                                 </div>
                             </Card>
@@ -9443,6 +9415,191 @@ export default function Page() {
                                     )}
                                 </div>
                             </Card>
+                            <FilterPanelModal
+                                open={dashboardFilterOpen}
+                                onClose={() => {
+                                    setDashboardFilterOpen(false);
+                                    setDashboardFilterSectionOpen(null);
+                                }}
+                                title="Filtros do Dashboard"
+                                subtitle="Refine o ranking de movimentações. As opções ficam dentro desta janela para evitar cortes e sobreposição no conteúdo principal."
+                                panelClassName="sm:max-w-4xl"
+                                footer={
+                                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={limparFiltrosDashboard}
+                                            className="w-full sm:w-auto"
+                                        >
+                                            Limpar filtros
+                                        </Button>
+
+                                        <Button
+                                            type="button"
+                                            onClick={() => {
+                                                setDashboardFilterOpen(false);
+                                                setDashboardFilterSectionOpen(null);
+                                            }}
+                                            className="w-full sm:w-auto"
+                                        >
+                                            Aplicar filtros
+                                        </Button>
+                                    </div>
+                                }
+                            >
+                                <div className="space-y-4">
+                                    <Card className="p-4 sm:p-5">
+                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                            <div className="md:col-span-2">
+                                                <Field label="Pesquisar produto">
+                                                    <TextInput
+                                                        value={dashboardQ}
+                                                        onChange={(e) =>
+                                                            setDashboardQ(e.target.value)
+                                                        }
+                                                        placeholder="Nome, código, categoria, fabricante ou classificação..."
+                                                    />
+                                                </Field>
+                                            </div>
+
+                                            <Field label="Tipo de movimentação">
+                                                <Select
+                                                    value={dashboardTipo}
+                                                    onChange={(e) =>
+                                                        setDashboardTipo(
+                                                            e.target.value as DashboardMovimentoTipo
+                                                        )
+                                                    }
+                                                >
+                                                    <option value="TODOS">
+                                                        Saídas + Transferências
+                                                    </option>
+                                                    <option value="SAIDA">
+                                                        Somente Saídas
+                                                    </option>
+                                                    <option value="TRANSFERENCIA">
+                                                        Somente Transferências
+                                                    </option>
+                                                </Select>
+                                            </Field>
+
+                                            <Field label="Quantidade no ranking">
+                                                <Select
+                                                    value={dashboardTop}
+                                                    onChange={(e) =>
+                                                        setDashboardTop(
+                                                            Number(e.target.value) || 10
+                                                        )
+                                                    }
+                                                >
+                                                    <option value={5}>Top 5</option>
+                                                    <option value={10}>Top 10</option>
+                                                    <option value={15}>Top 15</option>
+                                                    <option value={20}>Top 20</option>
+                                                    <option value={30}>Top 30</option>
+                                                </Select>
+                                            </Field>
+
+                                            <Field label="Data inicial">
+                                                <TextInput
+                                                    type="date"
+                                                    value={dashboardDe}
+                                                    onChange={(e) =>
+                                                        setDashboardDe(e.target.value)
+                                                    }
+                                                    max={dashboardAte || undefined}
+                                                />
+                                            </Field>
+
+                                            <Field label="Data final">
+                                                <TextInput
+                                                    type="date"
+                                                    value={dashboardAte}
+                                                    onChange={(e) =>
+                                                        setDashboardAte(e.target.value)
+                                                    }
+                                                    min={dashboardDe || undefined}
+                                                />
+                                            </Field>
+                                        </div>
+                                    </Card>
+
+                                    <FilterOptionPanel
+                                        title="Depósitos de origem"
+                                        options={dashboardFiltroOptions.depositos}
+                                        selectedIds={dashboardDepositos}
+                                        onChangeIds={setDashboardDepositos}
+                                        allLabel="Todos os depósitos"
+                                        open={dashboardFilterSectionOpen === "DEPOSITOS"}
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "DEPOSITOS"
+                                                    ? null
+                                                    : "DEPOSITOS"
+                                            )
+                                        }
+                                    />
+
+                                    <FilterOptionPanel
+                                        title="Categorias"
+                                        options={dashboardFiltroOptions.categorias}
+                                        selectedIds={dashboardCategorias}
+                                        onChangeIds={setDashboardCategorias}
+                                        allLabel="Todas as categorias"
+                                        open={dashboardFilterSectionOpen === "CATEGORIAS"}
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "CATEGORIAS"
+                                                    ? null
+                                                    : "CATEGORIAS"
+                                            )
+                                        }
+                                    />
+
+                                    <FilterOptionPanel
+                                        title="Fabricantes"
+                                        options={dashboardFiltroOptions.fabricantes}
+                                        selectedIds={dashboardFabricantes}
+                                        onChangeIds={setDashboardFabricantes}
+                                        allLabel="Todos os fabricantes"
+                                        open={dashboardFilterSectionOpen === "FABRICANTES"}
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "FABRICANTES"
+                                                    ? null
+                                                    : "FABRICANTES"
+                                            )
+                                        }
+                                    />
+
+                                    <FilterOptionPanel
+                                        title="Classificações"
+                                        options={dashboardFiltroOptions.classificacoes}
+                                        selectedIds={dashboardClassificacoes}
+                                        onChangeIds={setDashboardClassificacoes}
+                                        allLabel="Todas as classificações"
+                                        open={
+                                            dashboardFilterSectionOpen ===
+                                            "CLASSIFICACOES"
+                                        }
+                                        onToggle={() =>
+                                            setDashboardFilterSectionOpen((current) =>
+                                                current === "CLASSIFICACOES"
+                                                    ? null
+                                                    : "CLASSIFICACOES"
+                                            )
+                                        }
+                                    />
+
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+                                        Os filtros são aplicados ao ranking imediatamente.
+                                        O botão <b>Aplicar filtros</b> apenas fecha esta janela
+                                        e mantém as opções escolhidas.
+                                    </div>
+                                </div>
+                            </FilterPanelModal>
+
                         </div>
                     ) : null}
 
