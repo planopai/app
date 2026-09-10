@@ -37,6 +37,19 @@ export type DetalhesLogFormatados = {
     textoLivre: string[];
 };
 
+
+const ROTULOS_DERIVADOS: Record<string, string> = {
+    materiais: "Materiais de Assistência",
+    insumos_tanatopraxia: "Insumos Tanatopraxia",
+    coroas_detalhes: "Coroas de Flores",
+    conservacao_itens: "Conservação do Corpo",
+};
+
+const CHAVES_DERIVADAS_POR_SECAO: Record<string, string[]> = {
+    servicos: ["conservacao_itens"],
+    itens: ["insumos_tanatopraxia", "coroas_detalhes"],
+};
+
 const CAMPOS_TECNICOS_EXATOS = new Set([
     "id",
     "sepultamento_id",
@@ -201,22 +214,109 @@ export function campoRelatorioDe(key: string, value: any): CampoRelatorio | null
     const valor = formatarValorRelatorio(key, value);
     if (!valor) return null;
 
+    const chave = normalizarChaveVisual(key);
+
     return {
-        chave: normalizarChaveVisual(key),
-        label: overrideCampoNome(key, titleCaseFromSnake(normalizarChaveVisual(key))),
+        chave,
+        label:
+            ROTULOS_DERIVADOS[chave] ??
+            overrideCampoNome(key, titleCaseFromSnake(chave)),
         valor,
     };
 }
 
-export function organizarResumoRelatorio(resumo?: Record<string, any>) {
-    const origem = resumo || {};
+function textoSimNaoEhNao(value: any): boolean {
+    const s = String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    return s === "nao" || s === "n" || s === "0" || s === "false";
+}
+
+function textoMateriais(items: MaterialRelatorio[]): string {
+    return items
+        .map((item) => {
+            const categoria =
+                item.categoria && item.categoria !== "Material"
+                    ? `${item.categoria}: `
+                    : "";
+            return `${categoria}${item.nome} (${item.qtd})`;
+        })
+        .join(" • ");
+}
+
+function prepararOrigemResumo(
+    resumo?: Record<string, any>,
+    materiaisMap?: MateriaisMap,
+): Record<string, any> {
+    const origem: Record<string, any> = { ...(resumo || {}) };
+
+    // Materiais de assistência
+    const materiais = extrairMateriais(origem.materiais_json, materiaisMap);
+    if (materiais.length) {
+        origem.materiais = textoMateriais(materiais);
+    }
+
+    // Conservação / Insumos Tanatopraxia
+    const arr = extrairArrumacao(origem.arrumacao_json ?? origem.arrumacao);
+    if (arr.arrumacao.length) {
+        origem.conservacao_itens = arr.arrumacao.join(", ");
+    }
+    if (arr.insumos.length) {
+        origem.insumos_tanatopraxia = textoMateriais(arr.insumos);
+    }
+
+    // Coroas
+    const coroas = extrairCoroas(origem.coroas_itens);
+    if (coroas.length) {
+        origem.coroas_detalhes = coroas.join(" • ");
+
+        // Quando temos a lista estruturada, não repete os campos legados
+        // de um único modelo/tipo.
+        delete origem.coroa_tipo;
+        delete origem.coroa_modelo;
+    }
+
+    // Campos dependentes só fazem sentido quando o serviço/item está ativo.
+    if (textoSimNaoEhNao(origem.veu)) {
+        delete origem.veu_item;
+    }
+
+    if (textoSimNaoEhNao(origem.cordao)) {
+        delete origem.cordao_item;
+    }
+
+    if (textoSimNaoEhNao(origem.invol)) {
+        delete origem.invol_item;
+    }
+
+    if (textoSimNaoEhNao(origem.coroa_flores)) {
+        delete origem.coroa_tipo;
+        delete origem.coroa_modelo;
+        delete origem.coroas_detalhes;
+    }
+
+    return origem;
+}
+
+export function organizarResumoRelatorio(
+    resumo?: Record<string, any>,
+    materiaisMap?: MateriaisMap,
+) {
+    const origem = prepararOrigemResumo(resumo, materiaisMap);
     const usados = new Set<string>();
     const secoes: SecaoRelatorio[] = [];
 
     for (const config of RESUMO_SECTIONS) {
         const campos: CampoRelatorio[] = [];
+        const chaves = [
+            ...config.chaves,
+            ...(CHAVES_DERIVADAS_POR_SECAO[config.id] || []),
+        ];
 
-        for (const key of config.chaves) {
+        for (const key of chaves) {
             const valor = origem[key];
             const campo = campoRelatorioDe(key, valor);
             if (!campo) continue;

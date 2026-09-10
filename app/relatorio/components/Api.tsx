@@ -225,9 +225,14 @@ export async function listarLogPorId(id: string): Promise<LogItem[]> {
     }
 }
 
-export async function listarAnalitico(): Promise<RegistroAnalise[]> {
+export async function listarAnalitico(
+    opts?: { useCache?: boolean; ttlMs?: number },
+): Promise<RegistroAnalise[]> {
     try {
-        const json = await fetchJson<any>(LISTAR_ANALITICO, { ttlMs: 10_000 });
+        const json = await fetchJson<any>(LISTAR_ANALITICO, {
+            ttlMs: opts?.ttlMs ?? 10_000,
+            useCache: opts?.useCache ?? true,
+        });
         if (json?.sucesso && Array.isArray(json?.dados))
             return json.dados as RegistroAnalise[];
         if (Array.isArray(json)) return json as RegistroAnalise[];
@@ -235,6 +240,34 @@ export async function listarAnalitico(): Promise<RegistroAnalise[]> {
     } catch {
         return [];
     }
+}
+
+/**
+ * Busca a fotografia atual do atendimento diretamente na listagem analítica.
+ * O detalhe do relatório usa useCache:false para não depender de um snapshot
+ * antigo da tela de análise.
+ */
+export async function obterRegistroAnaliticoPorId(
+    id: string | number,
+): Promise<RegistroAnalise | null> {
+    const sid = String(id ?? "").trim();
+    if (!sid) return null;
+
+    const lista = await listarAnalitico({ useCache: false });
+
+    return (
+        lista.find((item: any) => {
+            const candidatos = [
+                item?.sepultamento_id,
+                item?.id,
+                item?.atendimento_id,
+            ]
+                .map((v) => String(v ?? "").trim())
+                .filter(Boolean);
+
+            return candidatos.includes(sid);
+        }) ?? null
+    );
 }
 
 /* ======================== Lista com criação (SEM N+1) ======================== */

@@ -32,7 +32,7 @@ interface Props {
     selecionadoAssinatura?: string;
     criacaoSelecionado?: string;
     logVisiveis: LogItem[];
-    resumoFinal?: Record<string, string>;
+    resumoFinal?: Record<string, any>;
     assinaturaResponsavelUrl?: string;
     assinaturaRequerenteUrl?: string;
     sepultamentoId?: string | number;
@@ -1011,7 +1011,7 @@ export default function BotaoExportarPdf({
 
             // Resumo organizado por seções, sem IDs/códigos técnicos no corpo principal.
             if (resumoFinal && Object.keys(resumoFinal).length) {
-                const organizado = organizarResumoRelatorio(resumoFinal);
+                const organizado = organizarResumoRelatorio(resumoFinal, materiaisMap);
 
                 if (organizado.secoes.length) {
                     doc.setFont(titleFont[0], titleFont[1]);

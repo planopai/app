@@ -2,8 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { IconFileTypePdf, IconPhoto, IconX } from "@tabler/icons-react";
-import { FalecidoItem, LogItem } from "./TiposHistorico";
-import { listarLogPorId, obterMateriaisMap, type MateriaisMap } from "./Api";
+import { FalecidoItem, LogItem, RegistroAnalise } from "./TiposHistorico";
+import {
+    listarLogPorId,
+    obterMateriaisMap,
+    obterRegistroAnaliticoPorId,
+    type MateriaisMap,
+} from "./Api";
 import LinhaDoTempoLogs from "./LinhaDoTempoLogs";
 import ResumoFinal from "./ResumoFinal";
 import BotaoExportarPdf from "./BotaoExportarPdf";
@@ -175,20 +180,50 @@ function normalizarFotoFalecidoUrl(v: any): string {
     return url;
 }
 
-function montarResumoDadosAtendimento(registro: FalecidoItem | null): Record<string, string> {
+function temValorRelatorio(value: any): boolean {
+    if (value == null) return false;
+    if (typeof value === "string") return value.trim() !== "";
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "object") return Object.keys(value).length > 0;
+    return true;
+}
+
+function montarResumoDadosAtendimento(
+    registro: FalecidoItem | RegistroAnalise | null,
+): Record<string, any> {
     if (!registro) return {};
 
-    const out: Record<string, string> = {};
+    const out: Record<string, any> = {};
 
     for (const [key, value] of Object.entries(registro as any)) {
-        if (value == null) continue;
-        if (typeof value === "object") continue;
-        const texto = String(value).trim();
-        if (!texto) continue;
-        out[key] = texto;
+        if (!temValorRelatorio(value)) continue;
+
+        // Mantém também objetos e arrays estruturados. O FormatadorRelatorio
+        // decide como transformá-los em conteúdo humano.
+        out[key] = value;
     }
 
-    if (registro.falecido) out.falecido = String(registro.falecido);
+    if ((registro as any).falecido) {
+        out.falecido = String((registro as any).falecido);
+    }
+
+    return out;
+}
+
+function mesclarResumoAtendimento(
+    ...fontes: Array<Record<string, any> | null | undefined>
+): Record<string, any> {
+    const out: Record<string, any> = {};
+
+    for (const fonte of fontes) {
+        if (!fonte) continue;
+
+        for (const [key, value] of Object.entries(fonte)) {
+            if (!temValorRelatorio(value)) continue;
+            out[key] = value;
+        }
+    }
+
     return out;
 }
 
@@ -213,6 +248,8 @@ function ultimoStatus(logs: LogItem[]) {
 
 export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Props) {
     const [logs, setLogs] = useState<LogItem[]>([]);
+    const [registroCompleto, setRegistroCompleto] =
+        useState<RegistroAnalise | null>(null);
     const [loading, setLoading] = useState(false);
     const [materiaisMap, setMateriaisMap] = useState<MateriaisMap>({});
     const [fotosOpen, setFotosOpen] = useState(false);
@@ -223,6 +260,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
         const id = getRegistroId(registro);
         if (!id) {
             setLogs([]);
+            setRegistroCompleto(null);
             return;
         }
 
@@ -230,9 +268,20 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
         (async () => {
             setLoading(true);
+            setRegistroCompleto(null);
+
             try {
-                const lista = await listarLogPorId(id);
-                if (!cancel) setLogs(lista);
+                // O histórico explica o que aconteceu; o informativo.php fornece
+                // a fotografia atual e completa do atendimento.
+                const [listaLogs, atual] = await Promise.all([
+                    listarLogPorId(id),
+                    obterRegistroAnaliticoPorId(id),
+                ]);
+
+                if (cancel) return;
+
+                setLogs(Array.isArray(listaLogs) ? listaLogs : []);
+                setRegistroCompleto(atual);
             } finally {
                 if (!cancel) setLoading(false);
             }
@@ -263,25 +312,56 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
     const finalizado = useMemo(() => estaFinalizado(logs), [logs]);
 
-    const dadosAtendimentoResumo = useMemo(
+    const dadosListaResumo = useMemo(
         () => montarResumoDadosAtendimento(registro),
         [registro],
     );
 
-    const resumoAtual = useMemo(
-        () => ({
-            ...dadosAtendimentoResumo,
-            ...montarResumoFinalDoLog(logs, materiaisMap),
-        }),
-        [dadosAtendimentoResumo, logs, materiaisMap],
+    const dadosBancoResumo = useMemo(
+        () => montarResumoDadosAtendimento(registroCompleto),
+        [registroCompleto],
     );
 
-    const criacaoSelecionado = useMemo(() => primeiroLogData(logs), [logs]);
-    const statusAtual = useMemo(() => ultimoStatus(logs), [logs]);
+    const dadosLogsResumo = useMemo(
+        () => montarResumoFinalDoLog(logs, materiaisMap),
+        [logs, materiaisMap],
+    );
+
+    const resumoAtual = useMemo(
+        () =>
+            mesclarResumoAtendimento(
+                dadosListaResumo,
+                dadosLogsResumo,
+                dadosBancoResumo,
+            ),
+        [dadosListaResumo, dadosLogsResumo, dadosBancoResumo],
+    );
+
+    const criacaoSelecionado = useMemo(
+        () =>
+            primeiroLogData(logs) ||
+            String((registroCompleto as any)?.created_at ?? (registro as any)?.criacao ?? ""),
+        [logs, registroCompleto, registro],
+    );
+
+    const statusAtual = useMemo(() => {
+        const atual = String((registroCompleto as any)?.status ?? "").trim();
+        return atual ? traduzirFase(atual) || atual : ultimoStatus(logs);
+    }, [registroCompleto, logs]);
+
+    const nomeFalecidoAtual =
+        String(
+            (registroCompleto as any)?.falecido ??
+            registro?.falecido ??
+            "",
+        ).trim();
 
     const fotos = useMemo(() => {
         const lista = extrairFotosDosLogs(logs);
-        const fotoFalecido = normalizarFotoFalecidoUrl((registro as any)?.foto_falecido);
+        const fotoFalecido = normalizarFotoFalecidoUrl(
+            (registroCompleto as any)?.foto_falecido ??
+            (registro as any)?.foto_falecido,
+        );
 
         if (fotoFalecido && isFotoFalecidoUrl(fotoFalecido)) {
             const jaExiste = lista.some((f) => f.url === fotoFalecido);
@@ -291,7 +371,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
         }
 
         return lista;
-    }, [logs, registro]);
+    }, [logs, registro, registroCompleto]);
 
     if (!aberto || !registro) return null;
 
@@ -303,7 +383,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                 className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3 sm:p-6"
                 role="dialog"
                 aria-modal="true"
-                aria-label={`Histórico de ${registro.falecido}`}
+                aria-label={`Histórico de ${nomeFalecidoAtual}`}
                 onClick={(e) => {
                     if (e.target === e.currentTarget) onFechar();
                 }}
@@ -312,7 +392,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                     <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/95 p-4 backdrop-blur sm:px-5">
                         <div className="min-w-0">
                             <h3 className="truncate text-lg font-semibold leading-tight text-slate-900">
-                                {registro.falecido}
+                                {nomeFalecidoAtual}
                             </h3>
                             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                                 {registroId && <span>Atendimento #{registroId}</span>}
@@ -322,8 +402,8 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                 {statusAtual && <span>Status: {statusAtual}</span>}
                                 <span
                                     className={`rounded-full px-2 py-0.5 font-medium ${finalizado
-                                            ? "bg-emerald-50 text-emerald-700"
-                                            : "bg-amber-50 text-amber-700"
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-amber-50 text-amber-700"
                                         }`}
                                 >
                                     {finalizado ? "Finalizado" : "Em andamento"}
@@ -355,7 +435,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                 <div className="[&_button]:!h-10 [&_button]:!w-10 [&_button]:!overflow-hidden [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-0 [&_button]:!text-transparent [&_button]:hover:!bg-transparent">
                                     <BotaoExportarPdf
                                         desabilitado={loading || logs.length === 0}
-                                        selecionadoNome={registro.falecido}
+                                        selecionadoNome={nomeFalecidoAtual}
                                         criacaoSelecionado={criacaoSelecionado}
                                         logVisiveis={logs}
                                         resumoFinal={resumoAtual}
@@ -393,6 +473,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                     resumo={resumoAtual}
                                     titulo={finalizado ? "Resumo Final" : "Resumo do Atendimento"}
                                     subtitulo="Dados principais separados por assunto. Informações técnicas ficam recolhidas por padrão."
+                                    materiaisMap={materiaisMap}
                                 />
 
                                 <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">

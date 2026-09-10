@@ -2,12 +2,14 @@
 
 import React from "react";
 import { organizarResumoRelatorio } from "./FormatadorRelatorio";
+import type { MateriaisMap } from "./Api";
 
 interface Props {
     visivel: boolean;
-    resumo: Record<string, string>;
+    resumo: Record<string, any>;
     titulo?: string;
     subtitulo?: string;
+    materiaisMap?: MateriaisMap;
 }
 
 export default function ResumoFinal({
@@ -15,10 +17,11 @@ export default function ResumoFinal({
     resumo,
     titulo = "Resumo do Atendimento",
     subtitulo = "Informações organizadas por assunto para facilitar a conferência.",
+    materiaisMap,
 }: Props) {
     if (!visivel) return null;
 
-    const { secoes, tecnicos } = organizarResumoRelatorio(resumo);
+    const { secoes, tecnicos } = organizarResumoRelatorio(resumo, materiaisMap);
     if (!secoes.length && !tecnicos.length) return null;
 
     return (
