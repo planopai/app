@@ -807,7 +807,7 @@ export default function SignatureModal({
                             {saving ? "Salvando..." : "Salvar Assinatura"}
                         </button>
 
-                        {/* ✅ baixa o TERMO (PNG) com assinatura e dados */}
+                        {/* ✅ baixa o TERMO (PNG) com assinatura */}
                         <button
                             className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
                             title="Gerar e baixar o termo assinado no aparelho (PNG)"

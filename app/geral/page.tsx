@@ -7402,7 +7402,7 @@ export default function Page() {
             if (!transferenciaResp.ok) {
                 throw new Error(
                     transferenciaResp.msg ||
-                        "Falha ao carregar as transferências do Dashboard."
+                    "Falha ao carregar as transferências do Dashboard."
                 );
             }
 
@@ -7596,7 +7596,7 @@ export default function Page() {
                     produto?.classificacao_nome ||
                     (produto?.classificacao_id
                         ? classById.get(Number(produto.classificacao_id))
-                              ?.nome
+                            ?.nome
                         : "") ||
                     "";
 
@@ -9402,7 +9402,7 @@ export default function Page() {
                                                                         row.movimentos
                                                                     }{" "}
                                                                     {row.movimentos ===
-                                                                    1
+                                                                        1
                                                                         ? "movimento"
                                                                         : "movimentos"}
                                                                 </div>
