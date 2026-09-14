@@ -1721,6 +1721,7 @@ export default function AssociadosGeralPage() {
     const headers = useMemo(() => ({ "Content-Type": "application/json" } as Record<string, string>), []);
 
     const listAbortRef = useRef<AbortController | null>(null);
+    const listRequestSeqRef = useRef(0);
     const detailAbortRef = useRef<AbortController | null>(null);
 
     // Cache de detalhes
@@ -1758,7 +1759,12 @@ export default function AssociadosGeralPage() {
     const loadContracts = useCallback(
         async (opts?: { resetPage?: boolean }) => {
             const nextPage = opts?.resetPage ? 1 : page;
-            if (opts?.resetPage) setPage(1);
+
+            if (opts?.resetPage && page !== 1) {
+                setPage(1);
+            }
+
+            const requestSeq = ++listRequestSeqRef.current;
 
             listAbortRef.current?.abort();
             const ac = new AbortController();
@@ -1768,7 +1774,9 @@ export default function AssociadosGeralPage() {
                 setLoading(true);
                 setError(null);
 
-                const res = await fetch(buildListUrl(nextPage), {
+                const requestUrl = buildListUrl(nextPage);
+
+                const res = await fetch(requestUrl, {
                     method: "GET",
                     headers,
                     cache: "no-store",
@@ -1776,17 +1784,49 @@ export default function AssociadosGeralPage() {
                 });
 
                 const data = await safeJson<any>(res);
-                if (!res.ok || !data?.ok) throw new Error(data?.error || "Erro ao carregar contratos.");
 
-                setContracts(normalizeContractsPayload(data));
-                setPagination(parseXPagination(res.headers) ?? { pageNumber: nextPage, pageSize });
+                // Uma resposta antiga nunca pode sobrescrever a pesquisa atual.
+                if (requestSeq !== listRequestSeqRef.current) return;
+
+                if (!res.ok || !data?.ok) {
+                    throw new Error(
+                        data?.error ||
+                        "Erro ao carregar contratos.",
+                    );
+                }
+
+                setContracts(
+                    normalizeContractsPayload(data),
+                );
+
+                setPagination(
+                    parseXPagination(res.headers) ?? {
+                        pageNumber: nextPage,
+                        pageSize,
+                    },
+                );
             } catch (e: any) {
-                if (e?.name === "AbortError") return;
-                setError(e?.message || "Falha ao carregar.");
+                if (
+                    e?.name === "AbortError" ||
+                    requestSeq !== listRequestSeqRef.current
+                ) {
+                    return;
+                }
+
+                setError(
+                    e?.message ||
+                    "Falha ao carregar.",
+                );
+
                 setContracts([]);
                 setPagination(null);
             } finally {
-                setLoading(false);
+                if (
+                    requestSeq ===
+                    listRequestSeqRef.current
+                ) {
+                    setLoading(false);
+                }
             }
         },
         [buildListUrl, headers, page]
@@ -1815,9 +1855,8 @@ export default function AssociadosGeralPage() {
         }
     }, [headers]);
 
-    // inicial
+    // inicial: opções globais. A lista é carregada pelos effects abaixo.
     useEffect(() => {
-        loadContracts({ resetPage: true });
         loadFilterOptions();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
