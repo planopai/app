@@ -152,6 +152,14 @@ type BeneficiarioApi = {
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
 const toUpperTrim = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
+const normalizeSearchText = (v: unknown) =>
+    String(v ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toUpperCase();
+
+
 function fmtCpf(value?: string): string {
     const digits = onlyDigits(value || "");
 
@@ -338,21 +346,192 @@ function useDebounced<T>(value: T, delayMs: number) {
     return debounced;
 }
 
-function parseXPagination(headers: Headers): PaginationInfo | null {
-    const raw = headers.get("x-pagination") || headers.get("X-Pagination");
+function normalizePaginationObject(
+    value: any,
+    fallbackPage = 1,
+    fallbackPageSize = 10,
+): PaginationInfo | null {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    const pick = (...keys: string[]) => {
+        for (const key of keys) {
+            const candidate = value?.[key];
+
+            if (
+                candidate !== undefined &&
+                candidate !== null &&
+                candidate !== ""
+            ) {
+                return candidate;
+            }
+        }
+
+        return undefined;
+    };
+
+    const pageNumber =
+        Number(
+            pick(
+                "pageNumber",
+                "PageNumber",
+                "currentPage",
+                "CurrentPage",
+                "currentPageNumber",
+                "CurrentPageNumber",
+            ) ?? fallbackPage,
+        ) || fallbackPage;
+
+    const pageSize =
+        Number(
+            pick(
+                "pageSize",
+                "PageSize",
+                "itemsPerPage",
+                "ItemsPerPage",
+            ) ?? fallbackPageSize,
+        ) || fallbackPageSize;
+
+    const totalItemCount =
+        Number(
+            pick(
+                "totalItemCount",
+                "TotalItemCount",
+                "totalCount",
+                "TotalCount",
+                "totalRecords",
+                "TotalRecords",
+                "recordCount",
+                "RecordCount",
+            ) ?? 0,
+        ) || 0;
+
+    let pageCount =
+        Number(
+            pick(
+                "pageCount",
+                "PageCount",
+                "totalPages",
+                "TotalPages",
+            ) ?? 0,
+        ) || 0;
+
+    if (
+        pageCount <= 0 &&
+        totalItemCount > 0 &&
+        pageSize > 0
+    ) {
+        pageCount = Math.ceil(
+            totalItemCount / pageSize,
+        );
+    }
+
+    const boolValue = (
+        input: unknown,
+        fallback: boolean,
+    ) => {
+        if (typeof input === "boolean") {
+            return input;
+        }
+
+        if (typeof input === "number") {
+            return input !== 0;
+        }
+
+        const normalized = String(input ?? "")
+            .trim()
+            .toLowerCase();
+
+        if (
+            ["true", "1", "yes", "sim"].includes(
+                normalized,
+            )
+        ) {
+            return true;
+        }
+
+        if (
+            ["false", "0", "no", "nao", "não"].includes(
+                normalized,
+            )
+        ) {
+            return false;
+        }
+
+        return fallback;
+    };
+
+    const hasNextPage = boolValue(
+        pick(
+            "hasNextPage",
+            "HasNextPage",
+            "hasNext",
+            "HasNext",
+        ),
+        pageCount > 0
+            ? pageNumber < pageCount
+            : false,
+    );
+
+    const hasPreviousPage = boolValue(
+        pick(
+            "hasPreviousPage",
+            "HasPreviousPage",
+            "hasPrevious",
+            "HasPrevious",
+        ),
+        pageNumber > 1,
+    );
+
+    const firstItemOnPage =
+        Number(
+            pick(
+                "firstItemOnPage",
+                "FirstItemOnPage",
+            ) ?? 0,
+        ) || undefined;
+
+    const lastItemOnPage =
+        Number(
+            pick(
+                "lastItemOnPage",
+                "LastItemOnPage",
+            ) ?? 0,
+        ) || undefined;
+
+    return {
+        pageNumber,
+        pageSize,
+        pageCount:
+            pageCount > 0
+                ? pageCount
+                : undefined,
+        totalItemCount,
+        hasNextPage,
+        hasPreviousPage,
+        firstItemOnPage,
+        lastItemOnPage,
+    };
+}
+
+function parseXPagination(
+    headers: Headers,
+    fallbackPage = 1,
+    fallbackPageSize = 10,
+): PaginationInfo | null {
+    const raw =
+        headers.get("x-pagination") ||
+        headers.get("X-Pagination");
+
     if (!raw) return null;
+
     try {
-        const j = JSON.parse(raw);
-        return {
-            pageNumber: Number(j.pageNumber ?? 1) || 1,
-            pageSize: Number(j.pageSize ?? 10) || 10,
-            pageCount: j.pageCount ?? undefined,
-            totalItemCount: j.totalItemCount ?? undefined,
-            hasNextPage: j.hasNextPage ?? undefined,
-            hasPreviousPage: j.hasPreviousPage ?? undefined,
-            firstItemOnPage: j.firstItemOnPage ?? undefined,
-            lastItemOnPage: j.lastItemOnPage ?? undefined,
-        };
+        return normalizePaginationObject(
+            JSON.parse(raw),
+            fallbackPage,
+            fallbackPageSize,
+        );
     } catch {
         return null;
     }
@@ -1198,7 +1377,24 @@ function Pager({
                     {pageSize ? <span className="ml-2 text-xs">(por pág: {pageSize})</span> : null}
                 </div>
 
-                <button onClick={onNext} disabled={disabled || (pageCount ? page >= pageCount : false)} className={btnNeutral}>
+                <button
+                    onClick={onNext}
+                    disabled={
+                        disabled ||
+                        (
+                            pageCount
+                                ? page >= pageCount
+                                : (
+                                    totalItemCount !== undefined &&
+                                        totalItemCount !== null &&
+                                        totalItemCount > 0
+                                        ? page * pageSize >= totalItemCount
+                                        : false
+                                )
+                        )
+                    }
+                    className={btnNeutral}
+                >
                     Próximo
                     <IconChevronRight className="size-4" />
                 </button>
@@ -1757,16 +1953,15 @@ export default function AssociadosGeralPage() {
     );
 
     const loadContracts = useCallback(
-        async (opts?: { resetPage?: boolean }) => {
-            const nextPage = opts?.resetPage ? 1 : page;
+        async (pageNum: number = page) => {
+            const requestedPage =
+                Math.max(1, pageNum);
 
-            if (opts?.resetPage && page !== 1) {
-                setPage(1);
-            }
-
-            const requestSeq = ++listRequestSeqRef.current;
+            const requestSeq =
+                ++listRequestSeqRef.current;
 
             listAbortRef.current?.abort();
+
             const ac = new AbortController();
             listAbortRef.current = ac;
 
@@ -1774,19 +1969,28 @@ export default function AssociadosGeralPage() {
                 setLoading(true);
                 setError(null);
 
-                const requestUrl = buildListUrl(nextPage);
+                const requestUrl =
+                    buildListUrl(requestedPage);
 
-                const res = await fetch(requestUrl, {
-                    method: "GET",
-                    headers,
-                    cache: "no-store",
-                    signal: ac.signal,
-                });
+                const res = await fetch(
+                    requestUrl,
+                    {
+                        method: "GET",
+                        headers,
+                        cache: "no-store",
+                        signal: ac.signal,
+                    },
+                );
 
-                const data = await safeJson<any>(res);
+                const data =
+                    await safeJson<any>(res);
 
-                // Uma resposta antiga nunca pode sobrescrever a pesquisa atual.
-                if (requestSeq !== listRequestSeqRef.current) return;
+                if (
+                    requestSeq !==
+                    listRequestSeqRef.current
+                ) {
+                    return;
+                }
 
                 if (!res.ok || !data?.ok) {
                     throw new Error(
@@ -1795,20 +1999,45 @@ export default function AssociadosGeralPage() {
                     );
                 }
 
-                setContracts(
-                    normalizeContractsPayload(data),
-                );
+                const nextContracts =
+                    normalizeContractsPayload(data);
 
-                setPagination(
-                    parseXPagination(res.headers) ?? {
-                        pageNumber: nextPage,
+                setContracts(nextContracts);
+
+                const fromHeader =
+                    parseXPagination(
+                        res.headers,
+                        requestedPage,
                         pageSize,
-                    },
-                );
+                    );
+
+                const fromBody =
+                    normalizePaginationObject(
+                        data?.pagination,
+                        requestedPage,
+                        pageSize,
+                    );
+
+                const resolvedPagination =
+                    fromHeader ??
+                    fromBody ?? {
+                        pageNumber:
+                            requestedPage,
+                        pageSize,
+                        totalItemCount:
+                            nextContracts.length,
+                    };
+
+                setPagination({
+                    ...resolvedPagination,
+                    pageNumber:
+                        requestedPage,
+                });
             } catch (e: any) {
                 if (
                     e?.name === "AbortError" ||
-                    requestSeq !== listRequestSeqRef.current
+                    requestSeq !==
+                    listRequestSeqRef.current
                 ) {
                     return;
                 }
@@ -1829,7 +2058,11 @@ export default function AssociadosGeralPage() {
                 }
             }
         },
-        [buildListUrl, headers, page]
+        [
+            buildListUrl,
+            headers,
+            page,
+        ],
     );
 
     // ✅ carrega todas as opções de filtros varrendo todas as páginas
@@ -1855,47 +2088,167 @@ export default function AssociadosGeralPage() {
         }
     }, [headers]);
 
-    // inicial: opções globais. A lista é carregada pelos effects abaixo.
+    // Opções de filtro carregam em paralelo com a lista.
     useEffect(() => {
         loadFilterOptions();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // busca (debounced) => recarrega
-    useEffect(() => {
-        loadContracts({ resetPage: true });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedQuery]);
+    /*
+     * Um único effect controla pesquisa, filtros e paginação.
+     * Isso evita chamadas duplicadas e reset de página concorrente.
+     */
+    const listCriteriaKey = useMemo(
+        () =>
+            [
+                debouncedQuery.trim(),
+                appliedCidade,
+                appliedPlano,
+                appliedSituacao,
+            ].join("|"),
+        [
+            debouncedQuery,
+            appliedCidade,
+            appliedPlano,
+            appliedSituacao,
+        ],
+    );
 
-    // paginação => recarrega
-    useEffect(() => {
-        loadContracts();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page]);
+    const previousCriteriaRef =
+        useRef<string | null>(null);
 
-    // filtro aplicado => recarrega
     useEffect(() => {
-        loadContracts({ resetPage: true });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [appliedCidade, appliedPlano, appliedSituacao]);
+        const criteriaChanged =
+            previousCriteriaRef.current !==
+            listCriteriaKey;
 
-    // fallback: caso o backend NÃO filtre, filtramos no front (na página atual)
+        previousCriteriaRef.current =
+            listCriteriaKey;
+
+        if (
+            criteriaChanged &&
+            page !== 1
+        ) {
+            setPage(1);
+            return;
+        }
+
+        loadContracts(page);
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, listCriteriaKey]);
+
+    // Segurança adicional no frontend para os critérios atuais.
     const filteredContracts = useMemo(() => {
-        const cCity = toUpperTrim(appliedCidade);
-        const cPlan = toUpperTrim(appliedPlano);
-        const cSit = toUpperTrim(appliedSituacao);
+        const cCity =
+            toUpperTrim(appliedCidade);
+
+        const cPlan =
+            toUpperTrim(appliedPlano);
+
+        const cSit =
+            toUpperTrim(appliedSituacao);
+
+        const queryText =
+            normalizeSearchText(
+                debouncedQuery,
+            );
+
+        const queryDigits =
+            onlyDigits(debouncedQuery);
 
         return contracts.filter((c) => {
-            if (cCity && toUpperTrim(c.cidade) !== cCity) return false;
+            if (queryText || queryDigits) {
+                const name =
+                    normalizeSearchText(
+                        c.nome,
+                    );
 
-            // ✅ "Plano" do filtro = cobertura quando existir; senão plano
-            const planLike = toUpperTrim(c.cobertura ?? c.plano);
-            if (cPlan && planLike !== cPlan) return false;
+                const cpf =
+                    onlyDigits(
+                        c.cpf_cnpj || "",
+                    );
 
-            if (cSit && toUpperTrim(c.situacao) !== cSit) return false;
+                const contract =
+                    String(
+                        c.contrato_numero ??
+                        c.contrato ??
+                        "",
+                    );
+
+                const contractText =
+                    normalizeSearchText(
+                        contract,
+                    );
+
+                const contractDigits =
+                    onlyDigits(contract);
+
+                const matchesSearch =
+                    (
+                        queryText &&
+                        name.includes(queryText)
+                    ) ||
+                    (
+                        queryDigits &&
+                        cpf.includes(queryDigits)
+                    ) ||
+                    (
+                        queryDigits &&
+                        contractDigits.includes(
+                            queryDigits,
+                        )
+                    ) ||
+                    (
+                        queryText &&
+                        contractText.includes(
+                            queryText,
+                        )
+                    );
+
+                if (!matchesSearch) {
+                    return false;
+                }
+            }
+
+            if (
+                cCity &&
+                toUpperTrim(c.cidade) !==
+                cCity
+            ) {
+                return false;
+            }
+
+            const planLike =
+                toUpperTrim(
+                    c.cobertura ??
+                    c.plano,
+                );
+
+            if (
+                cPlan &&
+                planLike !== cPlan
+            ) {
+                return false;
+            }
+
+            if (
+                cSit &&
+                toUpperTrim(c.situacao) !==
+                cSit
+            ) {
+                return false;
+            }
+
             return true;
         });
-    }, [contracts, appliedCidade, appliedPlano, appliedSituacao]);
+    }, [
+        contracts,
+        debouncedQuery,
+        appliedCidade,
+        appliedPlano,
+        appliedSituacao,
+    ]);
 
     const fetchDetail = useCallback(
         async (c: Contract) => {
@@ -2234,7 +2587,7 @@ export default function AssociadosGeralPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button onClick={() => loadContracts()} className={btnNeutral} title="Atualizar" disabled={loading}>
+                    <button onClick={() => loadContracts(page)} className={btnNeutral} title="Atualizar" disabled={loading}>
                         <IconRefresh className="size-4" />
                         Atualizar
                     </button>
@@ -2373,7 +2726,7 @@ export default function AssociadosGeralPage() {
             )}
 
             <Pager
-                page={pagination?.pageNumber ?? page}
+                page={page}
                 pageCount={pagination?.pageCount}
                 totalItemCount={pagination?.totalItemCount}
                 pageSize={pagination?.pageSize ?? pageSize}
