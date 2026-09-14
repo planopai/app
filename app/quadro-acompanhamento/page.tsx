@@ -1,31 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadCachedRegistros, saveRegistrosSnapshot } from "@/lib/offline/registros";
 import { applyPendingActionsToRegistros } from "@/lib/offline/actions";
 import { getCurrentOfflineSession } from "@/lib/offline/session";
 import { getHistoryOfflineAware } from "@/lib/offline/history";
 
 /* =========================
-   Cache rápido (memória + localStorage)
+   Fallback local (somente offline)
    ========================= */
-type CacheEntry = { exp: number; data: any };
-const MEM_CACHE = new Map<string, CacheEntry>();
-const INFLIGHT = new Map<string, Promise<any>>();
-
-function getMem<T>(k: string): T | null {
-    const hit = MEM_CACHE.get(k);
-    if (!hit) return null;
-    if (Date.now() > hit.exp) {
-        MEM_CACHE.delete(k);
-        return null;
-    }
-    return hit.data as T;
-}
-function setMem(k: string, data: any, ttlMs: number) {
-    MEM_CACHE.set(k, { exp: Date.now() + ttlMs, data });
-}
-
 function readLS<T>(k: string): T | null {
     if (typeof window === "undefined") return null;
     try {
@@ -45,41 +28,31 @@ function writeLS(k: string, v: any) {
     }
 }
 
-async function fetchJsonFast<T = any>(
-    url: string,
-    opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
-): Promise<T> {
-    const ttlMs = opts?.ttlMs ?? 8_000;
-    const timeoutMs = opts?.timeoutMs ?? 12_000;
-    const cacheKey = opts?.cacheKey ?? url;
+/**
+ * Busca sempre a fonte remota e não reutiliza resposta em memória; por isso, é
+ * adequada para os dados operacionais que precisam estar atuais ao entrar
+ * ou retornar para a página.
+ */
+async function fetchJsonFresh<T = any>(url: string, timeoutMs = 10_000): Promise<T> {
+    const ac = new AbortController();
+    const t = window.setTimeout(() => ac.abort(), timeoutMs);
 
-    const cached = getMem<T>(cacheKey);
-    if (cached) return cached;
+    try {
+        const resp = await fetch(url, {
+            cache: "no-store",
+            credentials: "include",
+            signal: ac.signal,
+            headers: {
+                "Cache-Control": "no-cache",
+                Pragma: "no-cache",
+            },
+        });
 
-    const inF = INFLIGHT.get(cacheKey);
-    if (inF) return (await inF) as T;
-
-    const p = (async () => {
-        const ac = new AbortController();
-        const t = setTimeout(() => ac.abort(), timeoutMs);
-        try {
-            const resp = await fetch(url, {
-                cache: "no-store",
-                credentials: "include",
-                signal: ac.signal,
-            });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const data = (await resp.json()) as T;
-            setMem(cacheKey, data, ttlMs);
-            return data;
-        } finally {
-            clearTimeout(t);
-            INFLIGHT.delete(cacheKey);
-        }
-    })();
-
-    INFLIGHT.set(cacheKey, p);
-    return (await p) as T;
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return (await resp.json()) as T;
+    } finally {
+        window.clearTimeout(t);
+    }
 }
 
 /* =========================
@@ -1637,6 +1610,22 @@ function getRegistroTrackingId(r: Registro): string {
     );
 }
 
+/**
+ * Identifica mudanças relevantes que exigem revalidar o histórico usado no
+ * quadro. Status é o principal sinal; campos de atualização são aproveitados
+ * quando o backend os disponibiliza.
+ */
+function getRegistroLogFingerprint(r: Registro): string {
+    const updatedAt =
+        (r as any).atualizado_em ??
+        (r as any).updated_at ??
+        (r as any).data_atualizacao ??
+        (r as any).datahora_atualizacao ??
+        "";
+
+    return `${normalizarStatus(r.status) ?? ""}|${String(updatedAt ?? "").trim()}`;
+}
+
 function getStatusFromLog(log: LogItem): string | undefined {
     const detalhes = isPlainObject(log.detalhes) ? (log.detalhes as Record<string, unknown>) : {};
     const raw =
@@ -1746,7 +1735,7 @@ export default function QuadroAtendimentoPage() {
     const [nowMs, setNowMs] = useState(() => Date.now());
 
     const [registros, setRegistros] = useState<Registro[]>([]);
-    const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
+    const [avisos, setAvisos] = useState<Aviso[]>([]);
 
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
@@ -1765,24 +1754,7 @@ export default function QuadroAtendimentoPage() {
 
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
     const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
-
-    useEffect(() => {
-        let alive = true;
-        void (async () => {
-            try {
-                const session = await getCurrentOfflineSession({ refreshIfOnline: false });
-                const cached = await loadCachedRegistros<Registro>(session?.userId);
-                if (!alive || !cached.length) return;
-                const merged = session
-                    ? await applyPendingActionsToRegistros(cached, session.userId)
-                    : cached;
-                if (alive) setRegistros(merged);
-            } catch (e) {
-                console.warn("[QUADRO OFFLINE] Falha ao carregar snapshot local", e);
-            }
-        })();
-        return () => { alive = false; };
-    }, []);
+    const statusLogFingerprintRef = useRef<Record<string, string>>({});
 
     useEffect(() => {
         const update = () => {
@@ -1803,62 +1775,181 @@ export default function QuadroAtendimentoPage() {
         return () => clearInterval(id);
     }, []);
 
+    /*
+     * Atendimentos: servidor é a fonte autoritativa quando há conexão.
+     * O snapshot local só entra como fallback offline/falha de rede. Isso evita
+     * a antiga corrida em que IndexedDB podia terminar depois e sobrescrever
+     * dados recém-carregados da API.
+     */
     useEffect(() => {
         let alive = true;
+        let loading = false;
+        let hasFreshServerData = false;
         const BASE = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
 
-        async function load() {
+        async function loadCachedFallback() {
             try {
-                const url = `${BASE}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, { ttlMs: 6_000, cacheKey: "informativo_listar" });
-                if (!alive) return;
-                const arr = Array.isArray(j) ? (j as Registro[]) : [];
-                const session = await getCurrentOfflineSession({
-                    refreshIfOnline: true,
-                    allowCachedOnNetworkFailure: true,
-                });
-                if (session) {
-                    await saveRegistrosSnapshot(arr, session.userId);
-                    const merged = await applyPendingActionsToRegistros(arr, session.userId);
-                    setRegistros(merged);
-                } else {
-                    setRegistros(arr);
-                }
-            } catch {
-                // mantém o que já está na tela / IndexedDB
+                const session = await getCurrentOfflineSession({ refreshIfOnline: false });
+                const cached = await loadCachedRegistros<Registro>(session?.userId);
+                if (!alive || !cached.length || hasFreshServerData) return;
+
+                const merged = session
+                    ? await applyPendingActionsToRegistros(cached, session.userId)
+                    : cached;
+
+                if (alive && !hasFreshServerData) setRegistros(merged);
+            } catch (e) {
+                console.warn("[QUADRO OFFLINE] Falha ao carregar snapshot local", e);
             }
         }
 
-        load();
-        const id = setInterval(load, 8000);
+        async function load(options?: { allowOfflineFallback?: boolean }) {
+            if (!alive || loading) return;
+
+            const allowOfflineFallback = options?.allowOfflineFallback === true;
+            const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+
+            if (offline) {
+                if (allowOfflineFallback || !hasFreshServerData) await loadCachedFallback();
+                return;
+            }
+
+            loading = true;
+            try {
+                const url = `${BASE}&_ts=${Date.now()}`;
+                const j = await fetchJsonFresh<any>(url, 10_000);
+                if (!alive) return;
+                if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar atendimentos.");
+
+                const arr = j as Registro[];
+
+                // A resposta nova entra na tela imediatamente. A camada offline
+                // não participa do caminho crítico de renderização.
+                hasFreshServerData = true;
+                setRegistros(arr);
+
+                try {
+                    const session = await getCurrentOfflineSession({
+                        refreshIfOnline: false,
+                        allowCachedOnNetworkFailure: true,
+                    });
+
+                    if (session) {
+                        try {
+                            const merged = await applyPendingActionsToRegistros(arr, session.userId);
+                            if (alive) setRegistros(merged);
+                        } catch (e) {
+                            console.warn("[QUADRO] Falha ao aplicar ações pendentes sobre dados atuais", e);
+                        }
+
+                        // Persistência para uso offline acontece fora do caminho
+                        // crítico: nunca segura a atualização visual da página.
+                        void saveRegistrosSnapshot(arr, session.userId).catch((e) => {
+                            console.warn("[QUADRO] Falha ao atualizar snapshot local", e);
+                        });
+                    }
+                } catch (e) {
+                    // A falha da sessão/offline layer não pode impedir a exibição
+                    // da resposta nova que já veio do servidor.
+                    console.warn("[QUADRO] Falha ao consultar sessão offline", e);
+                }
+            } catch (e) {
+                console.warn("[QUADRO] Falha ao atualizar atendimentos", e);
+                if (allowOfflineFallback && !hasFreshServerData) {
+                    await loadCachedFallback();
+                }
+            } finally {
+                loading = false;
+            }
+        }
+
+        const refreshNow = () => {
+            void load();
+        };
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") refreshNow();
+        };
+
+        // A primeira renderização online aguarda a fonte autoritativa; cache local
+        // aparece somente se estivermos offline ou a rede falhar.
+        void load({ allowOfflineFallback: true });
+
+        const id = window.setInterval(refreshNow, 8000);
+        window.addEventListener("focus", refreshNow);
+        window.addEventListener("online", refreshNow);
+        document.addEventListener("visibilitychange", onVisibilityChange);
+
         return () => {
             alive = false;
-            clearInterval(id);
+            window.clearInterval(id);
+            window.removeEventListener("focus", refreshNow);
+            window.removeEventListener("online", refreshNow);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
         };
     }, []);
 
+    /* Avisos seguem a mesma regra: rede primeiro; localStorage apenas fallback. */
     useEffect(() => {
         let alive = true;
+        let loading = false;
+        let hasFreshServerData = false;
         const BASE = "https://api.planoassistencialintegrado.com.br/avisos.php?listar=1";
 
-        async function load() {
+        function loadCachedFallback() {
+            if (!alive || hasFreshServerData) return;
+            const cached = readLS<Aviso[]>("qa_avisos") ?? [];
+            if (cached.length) setAvisos(cached);
+        }
+
+        async function load(options?: { allowOfflineFallback?: boolean }) {
+            if (!alive || loading) return;
+
+            const allowOfflineFallback = options?.allowOfflineFallback === true;
+            const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+            if (offline) {
+                if (allowOfflineFallback || !hasFreshServerData) loadCachedFallback();
+                return;
+            }
+
+            loading = true;
             try {
                 const url = `${BASE}&_ts=${Date.now()}`;
-                const j = await fetchJsonFast<any>(url, { ttlMs: 15_000, cacheKey: "avisos_listar" });
+                const j = await fetchJsonFresh<any>(url, 10_000);
                 if (!alive) return;
-                const arr = Array.isArray(j) ? (j as Aviso[]) : [];
+                if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar avisos.");
+
+                const arr = j as Aviso[];
+                hasFreshServerData = true;
                 setAvisos(arr);
                 writeLS("qa_avisos", arr);
-            } catch {
-                // mantém o que já tem
+            } catch (e) {
+                console.warn("[QUADRO] Falha ao atualizar avisos", e);
+                if (allowOfflineFallback && !hasFreshServerData) loadCachedFallback();
+            } finally {
+                loading = false;
             }
         }
 
-        load();
-        const id = setInterval(load, 20000);
+        const refreshNow = () => {
+            void load();
+        };
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") refreshNow();
+        };
+
+        void load({ allowOfflineFallback: true });
+
+        const id = window.setInterval(refreshNow, 20000);
+        window.addEventListener("focus", refreshNow);
+        window.addEventListener("online", refreshNow);
+        document.addEventListener("visibilitychange", onVisibilityChange);
+
         return () => {
             alive = false;
-            clearInterval(id);
+            window.clearInterval(id);
+            window.removeEventListener("focus", refreshNow);
+            window.removeEventListener("online", refreshNow);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
         };
     }, []);
 
@@ -1867,9 +1958,10 @@ export default function QuadroAtendimentoPage() {
 
         async function loadMateriaisCatalog() {
             try {
-                // ✅ DEPOIS (direto no PHP)
+                // Catálogo também é buscado sem cache ao acessar a página para
+                // que nomes/categorias exibidos acompanhem o servidor atual.
                 const url = `https://api.planoassistencialintegrado.com.br/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
-                const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
+                const res = await fetchJsonFresh<any>(url, 10_000);
 
                 const tree = (res?.data ?? res) as any[];
                 const map: Record<string, MatLookupInfo> = {};
@@ -1932,6 +2024,16 @@ export default function QuadroAtendimentoPage() {
         resetDetailTimeline();
     }, [resetDetailTimeline]);
 
+    // Mantém o modal aberto apontando para a versão mais recente do mesmo
+    // atendimento sempre que a listagem for atualizada pelo servidor.
+    useEffect(() => {
+        if (!open || !detail) return;
+
+        const trackingId = getRegistroTrackingId(detail);
+        const latest = registros.find((r) => getRegistroTrackingId(r) === trackingId);
+        if (latest && latest !== detail) setDetail(latest);
+    }, [open, detail, registros]);
+
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") closeDetail();
@@ -1956,7 +2058,13 @@ export default function QuadroAtendimentoPage() {
 
             const pendentes = registrosVisiveis.filter((r) => {
                 const trackingId = getRegistroTrackingId(r);
-                return trackingId && !statusLogsById[trackingId];
+                if (!trackingId) return false;
+
+                const fingerprint = getRegistroLogFingerprint(r);
+                return (
+                    !statusLogsById[trackingId] ||
+                    statusLogFingerprintRef.current[trackingId] !== fingerprint
+                );
             });
 
             if (pendentes.length === 0) return;
@@ -1964,12 +2072,13 @@ export default function QuadroAtendimentoPage() {
             const pares = await Promise.all(
                 pendentes.map(async (r) => {
                     const trackingId = getRegistroTrackingId(r);
+                    const fingerprint = getRegistroLogFingerprint(r);
 
                     try {
                         const logs = await buscarLogsDoRegistro(r);
-                        return [trackingId, logs] as const;
+                        return { trackingId, fingerprint, logs, ok: true } as const;
                     } catch {
-                        return [trackingId, [] as LogItem[]] as const;
+                        return { trackingId, fingerprint, logs: [] as LogItem[], ok: false } as const;
                     }
                 })
             );
@@ -1979,19 +2088,23 @@ export default function QuadroAtendimentoPage() {
             setStatusLogsById((prev) => {
                 const next = { ...prev };
 
-                for (const [trackingId, logs] of pares) {
-                    next[trackingId] = logs;
+                for (const item of pares) {
+                    if (!item.ok) continue;
+                    next[item.trackingId] = item.logs;
+                    statusLogFingerprintRef.current[item.trackingId] = item.fingerprint;
                 }
 
                 return next;
             });
         }
 
-        carregarLogsDaLista();
+        void carregarLogsDaLista();
 
         return () => {
             alive = false;
         };
+        // statusLogsById é lido somente para decidir se existe cache; a mudança
+        // de registros/status em ativosOrdenados é que dispara a revalidação.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ativosOrdenados]);
 
@@ -2066,48 +2179,56 @@ export default function QuadroAtendimentoPage() {
         }
     }, [detail, matLookup]);
 
-    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro): Promise<LogItem[]> => {
-        setDetailLogs([]);
-        setDetailLogsError(null);
-        setDetailLogsLoading(true);
-        setDetailLogsLoaded(false);
+    const carregarHistoricoDoDetalhe = useCallback(
+        async (r: Registro, options?: { preserveExisting?: boolean }): Promise<LogItem[]> => {
+            if (!options?.preserveExisting) setDetailLogs([]);
+            setDetailLogsError(null);
+            setDetailLogsLoading(true);
+            setDetailLogsLoaded(false);
 
-        try {
-            const logs = await buscarLogsDoRegistro(r);
-            setDetailLogs(logs);
+            try {
+                const logs = await buscarLogsDoRegistro(r);
+                setDetailLogs(logs);
 
-            const trackingId = getRegistroTrackingId(r);
-            if (trackingId) {
-                setStatusLogsById((prev) => ({ ...prev, [trackingId]: logs }));
+                const trackingId = getRegistroTrackingId(r);
+                if (trackingId) {
+                    statusLogFingerprintRef.current[trackingId] = getRegistroLogFingerprint(r);
+                    setStatusLogsById((prev) => ({ ...prev, [trackingId]: logs }));
+                }
+
+                return logs;
+            } catch (e) {
+                console.error(e);
+                setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
+                return [];
+            } finally {
+                setDetailLogsLoading(false);
+                setDetailLogsLoaded(true);
             }
+        },
+        []
+    );
 
-            return logs;
-        } catch (e) {
-            console.error(e);
-            setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
-            return [];
-        } finally {
-            setDetailLogsLoading(false);
-            setDetailLogsLoaded(true);
-        }
-    }, []);
-
-    // Carrega o histórico ao abrir os detalhes para que Data/Hora do topo
-    // representem a criação real do atendimento, sem depender de abrir a timeline.
+    // Ao abrir os detalhes, usa o histórico já conhecido apenas para resposta
+    // visual imediata, mas sempre revalida a fonte em seguida.
     useEffect(() => {
         if (!open || !detail || detailLogsLoading || detailLogsLoaded) return;
 
         const trackingId = getRegistroTrackingId(detail);
         const logsEmCache = trackingId ? statusLogsById[trackingId] : undefined;
 
-        if (logsEmCache) {
-            setDetailLogs(logsEmCache);
-            setDetailLogsLoaded(true);
-            return;
-        }
-
-        void carregarHistoricoDoDetalhe(detail);
+        if (logsEmCache) setDetailLogs(logsEmCache);
+        void carregarHistoricoDoDetalhe(detail, { preserveExisting: !!logsEmCache });
     }, [open, detail, detailLogsLoading, detailLogsLoaded, statusLogsById, carregarHistoricoDoDetalhe]);
+
+    // Se a listagem detectar mudança de status e atualizar o histórico enquanto
+    // o modal estiver aberto, reflete o novo histórico no detalhe imediatamente.
+    useEffect(() => {
+        if (!open || !detail) return;
+        const trackingId = getRegistroTrackingId(detail);
+        const logs = trackingId ? statusLogsById[trackingId] : undefined;
+        if (logs) setDetailLogs(logs);
+    }, [open, detail, statusLogsById]);
 
     const toggleTimelineDetalhe = useCallback(async () => {
         if (!detail) return;
