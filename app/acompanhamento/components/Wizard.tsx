@@ -1811,7 +1811,69 @@ export default function Wizard({
     if (!open) return null;
 
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Wizard" maxWidth={740}>
+        <Modal
+            open={open}
+            onClose={onClose}
+            ariaLabel="Wizard"
+            maxWidth={740}
+            footer={
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs text-muted-foreground">
+                        {isRestrito && (
+                            <>
+                                Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="flex w-full justify-end gap-2 sm:w-auto">
+                        <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={wizardSubmitting}>
+                            Cancelar
+                        </button>
+
+                        {isRestrito ? (
+                            <button
+                                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                                onClick={tentarConcluir}
+                                disabled={wizardSubmitting || bloqueiaPorAssistencia}
+                                aria-busy={wizardSubmitting}
+                                title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
+                            >
+                                {wizardSubmitting ? "Salvando…" : "Salvar"}
+                            </button>
+                        ) : (
+                            <>
+                                {wizardStep > 0 && (
+                                    <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={goPrev} disabled={wizardSubmitting}>
+                                        Anterior
+                                    </button>
+                                )}
+                                {isLastStep ? (
+                                    <button
+                                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                                        onClick={tentarConcluir}
+                                        disabled={wizardSubmitting || bloqueiaPorAssistencia}
+                                        aria-busy={wizardSubmitting}
+                                        title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
+                                    >
+                                        {wizardSubmitting ? "Salvando…" : "Concluir"}
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                                        onClick={goNext}
+                                        disabled={wizardSubmitting || bloqueiaPorAssistencia}
+                                        title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
+                                    >
+                                        Próximo
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            }
+        >
             <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold">{wizardTitle}</h2>
                 {wizardSubmitting && (
@@ -3323,61 +3385,6 @@ export default function Wizard({
                 })}
             </div>
 
-            <div className="mt-6 flex items-center justify-between">
-                <div className="text-xs text-muted-foreground">
-                    {isRestrito && (
-                        <>
-                            Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
-                        </>
-                    )}
-                </div>
-
-                <div className="flex gap-2">
-                    <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={wizardSubmitting}>
-                        Cancelar
-                    </button>
-
-                    {isRestrito ? (
-                        <button
-                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                            onClick={tentarConcluir}
-                            disabled={wizardSubmitting || bloqueiaPorAssistencia}
-                            aria-busy={wizardSubmitting}
-                            title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
-                        >
-                            {wizardSubmitting ? "Salvando…" : "Salvar"}
-                        </button>
-                    ) : (
-                        <>
-                            {wizardStep > 0 && (
-                                <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={goPrev} disabled={wizardSubmitting}>
-                                    Anterior
-                                </button>
-                            )}
-                            {isLastStep ? (
-                                <button
-                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                                    onClick={tentarConcluir}
-                                    disabled={wizardSubmitting || bloqueiaPorAssistencia}
-                                    aria-busy={wizardSubmitting}
-                                    title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
-                                >
-                                    {wizardSubmitting ? "Salvando…" : "Concluir"}
-                                </button>
-                            ) : (
-                                <button
-                                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-                                    onClick={goNext}
-                                    disabled={wizardSubmitting || bloqueiaPorAssistencia}
-                                    title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
-                                >
-                                    Próximo
-                                </button>
-                            )}
-                        </>
-                    )}
-                </div>
-            </div>
         </Modal>
     );
 }
