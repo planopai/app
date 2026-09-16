@@ -1865,6 +1865,19 @@ function getStatusDisplayData(segments: StatusSegment[]) {
     return { durations, activeKey };
 }
 
+function compararCoroasPorOrdemDeChegada(a: CoroaTvPedido, b: CoroaTvPedido): number {
+    const ta = parseLogTs(a.criado_em || undefined);
+    const tb = parseLogTs(b.criado_em || undefined);
+
+    // Quando ambos possuem data válida, a ordem cronológica real é soberana.
+    if (ta > 0 && tb > 0 && ta !== tb) {
+        return ta - tb;
+    }
+
+    // Fallback para registros legados: IDs menores chegaram primeiro.
+    return Number(a.id || 0) - Number(b.id || 0);
+}
+
 /* =========================
    Página
    ========================= */
@@ -1872,6 +1885,9 @@ const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quint
 
 const ATENDIMENTOS_POR_PAGINA = 6;
 const INTERVALO_PAGINACAO_ATENDIMENTOS_MS = 15_000;
+
+const COROAS_POR_PAGINA = 3;
+const INTERVALO_PAGINACAO_COROAS_MS = 15_000;
 
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
@@ -1901,9 +1917,13 @@ export default function QuadroAtendimentoPage() {
 
     /* Coroas de Flores — painel inferior */
     const [coroasTv, setCoroasTv] = useState<CoroaTvPedido[]>(
-        () => readLS<CoroaTvPedido[]>("qa_coroas_tv") ?? []
+        () => [...(readLS<CoroaTvPedido[]>("qa_coroas_tv") ?? [])].sort(compararCoroasPorOrdemDeChegada)
     );
     const [coroasTvError, setCoroasTvError] = useState<string | null>(null);
+
+    /* Paginação automática das coroas */
+    const [paginaCoroas, setPaginaCoroas] = useState(0);
+    const coroasPaginationSignatureRef = useRef("");
 
     /* Ajuste automático de densidade da TV */
     const [qaDensity, setQaDensity] = useState<QaDensity>("normal");
@@ -2009,7 +2029,7 @@ export default function QuadroAtendimentoPage() {
 
                     const arr = j.dados
                         .filter(coroaEmConfeccao)
-                        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+                        .sort(compararCoroasPorOrdemDeChegada);
 
                     setCoroasTv(arr);
                     writeLS("qa_coroas_tv", arr);
@@ -2250,6 +2270,76 @@ export default function QuadroAtendimentoPage() {
 
         return () => window.clearInterval(id);
     }, [totalPaginasAtendimentos]);
+
+    /*
+     * Paginação das coroas:
+     * - no máximo 3 pedidos por página;
+     * - ordem sempre do pedido mais antigo para o mais novo;
+     * - acima de 3, cria páginas adicionais;
+     * - troca automaticamente a cada 15 segundos;
+     * - quando entra/sai um pedido, volta para a primeira página para manter
+     *   o pedido mais antigo imediatamente visível no início da fila.
+     */
+    const coroasOrdenadas = useMemo(
+        () => [...coroasTv].sort(compararCoroasPorOrdemDeChegada),
+        [coroasTv]
+    );
+
+    const totalPaginasCoroas = Math.max(
+        1,
+        Math.ceil(coroasOrdenadas.length / COROAS_POR_PAGINA)
+    );
+
+    const paginaAtualCoroas = Math.min(
+        paginaCoroas,
+        totalPaginasCoroas - 1
+    );
+
+    const coroasPagina = useMemo(() => {
+        const inicio = paginaAtualCoroas * COROAS_POR_PAGINA;
+        return coroasOrdenadas.slice(
+            inicio,
+            inicio + COROAS_POR_PAGINA
+        );
+    }, [coroasOrdenadas, paginaAtualCoroas]);
+
+    const coroasPaginationSignature = useMemo(
+        () => coroasOrdenadas.map((pedido) => String(pedido.id)).join("|"),
+        [coroasOrdenadas]
+    );
+
+    useEffect(() => {
+        const anterior = coroasPaginationSignatureRef.current;
+
+        if (anterior && anterior !== coroasPaginationSignature) {
+            setPaginaCoroas(0);
+        }
+
+        coroasPaginationSignatureRef.current = coroasPaginationSignature;
+    }, [coroasPaginationSignature]);
+
+    useEffect(() => {
+        setPaginaCoroas((pagina) =>
+            Math.min(pagina, totalPaginasCoroas - 1)
+        );
+    }, [totalPaginasCoroas]);
+
+    useEffect(() => {
+        if (totalPaginasCoroas <= 1) {
+            setPaginaCoroas(0);
+            return;
+        }
+
+        const id = window.setInterval(() => {
+            if (document.hidden) return;
+
+            setPaginaCoroas(
+                (pagina) => (pagina + 1) % totalPaginasCoroas
+            );
+        }, INTERVALO_PAGINACAO_COROAS_MS);
+
+        return () => window.clearInterval(id);
+    }, [totalPaginasCoroas]);
 
     // Identidade estável dos atendimentos acompanhados pelo histórico.
     // A lista de registros é atualizada a cada 8s, mas o timer dos logs só precisa
@@ -2587,6 +2677,9 @@ export default function QuadroAtendimentoPage() {
         ativosPagina.length,
         paginaAtualAtendimentos,
         totalPaginasAtendimentos,
+        coroasPagina.length,
+        paginaAtualCoroas,
+        totalPaginasCoroas,
         coroasTv.length,
         clockDate,
     ]);
@@ -3195,7 +3288,10 @@ export default function QuadroAtendimentoPage() {
                     </div>
 
                     <CoroasTvBoard
-                        pedidos={coroasTv}
+                        pedidos={coroasPagina}
+                        totalPedidos={coroasTv.length}
+                        paginaAtual={paginaAtualCoroas}
+                        totalPaginas={totalPaginasCoroas}
                         error={coroasTvError}
                         nowMs={nowMs}
                     />
@@ -3861,10 +3957,16 @@ function CoroaTimelineCell({
 
 const CoroasTvBoard = React.memo(function CoroasTvBoard({
     pedidos,
+    totalPedidos,
+    paginaAtual,
+    totalPaginas,
     error,
     nowMs,
 }: {
     pedidos: CoroaTvPedido[];
+    totalPedidos: number;
+    paginaAtual: number;
+    totalPaginas: number;
     error?: string | null;
     nowMs: number;
 }) {
@@ -3883,11 +3985,17 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                     </div>
 
                     <span className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 px-1.5 py-0.5 text-[9px] font-black text-slate-200">
-                        {pedidos.length}
+                        {totalPedidos}
                     </span>
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2 text-[9px] qa-text-muted">
+                    {totalPaginas > 1 && (
+                        <span className="hidden sm:inline whitespace-nowrap">
+                            Página {paginaAtual + 1}/{totalPaginas} • troca a cada 15s
+                        </span>
+                    )}
+
                     {error ? (
                         <>
                             <span className="h-2 w-2 rounded-full bg-amber-400" />
