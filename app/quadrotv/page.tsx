@@ -1420,12 +1420,12 @@ function coroaEmConfeccao(order: CoroaTvPedido): boolean {
 /* =========================
    Regras do painel
    ========================= */
-function isNao(v?: string) {
-    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
+function isNao(v: unknown): boolean {
+    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
-function isSim(v?: string) {
-    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
+function isSim(v: unknown): boolean {
+    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
     return s === "sim" || s === "s";
 }
 function isTerceiroRegistro(r: Registro) {
