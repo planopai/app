@@ -1870,6 +1870,9 @@ function getStatusDisplayData(segments: StatusSegment[]) {
    ========================= */
 const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
+const ATENDIMENTOS_POR_PAGINA = 6;
+const INTERVALO_PAGINACAO_ATENDIMENTOS_MS = 15_000;
+
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
@@ -1891,6 +1894,10 @@ export default function QuadroAtendimentoPage() {
     const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>(
         () => readLS<Record<string, LogItem[]>>(STATUS_LOGS_STORAGE_KEY) ?? {}
     );
+
+    /* Paginação automática dos atendimentos */
+    const [paginaAtendimentos, setPaginaAtendimentos] = useState(0);
+    const paginationSignatureRef = useRef("");
 
     /* Coroas de Flores — painel inferior */
     const [coroasTv, setCoroasTv] = useState<CoroaTvPedido[]>(
@@ -2177,6 +2184,73 @@ export default function QuadroAtendimentoPage() {
         return withTs.map((x) => x.r);
     }, [registros]);
 
+    /*
+     * Paginação do quadro:
+     * - no máximo 6 atendimentos por página;
+     * - acima de 6, cria páginas adicionais;
+     * - troca automaticamente a cada 15 segundos;
+     * - quando entra/sai um atendimento, volta para a primeira página para
+     *   mostrar imediatamente a composição mais recente do quadro.
+     */
+    const totalPaginasAtendimentos = Math.max(
+        1,
+        Math.ceil(ativosOrdenados.length / ATENDIMENTOS_POR_PAGINA)
+    );
+
+    const paginaAtualAtendimentos = Math.min(
+        paginaAtendimentos,
+        totalPaginasAtendimentos - 1
+    );
+
+    const ativosPagina = useMemo(() => {
+        const inicio = paginaAtualAtendimentos * ATENDIMENTOS_POR_PAGINA;
+        return ativosOrdenados.slice(
+            inicio,
+            inicio + ATENDIMENTOS_POR_PAGINA
+        );
+    }, [ativosOrdenados, paginaAtualAtendimentos]);
+
+    const paginationSignature = useMemo(
+        () =>
+            ativosOrdenados
+                .map((r, index) => getRegistroTrackingId(r) || `idx:${index}`)
+                .join("|"),
+        [ativosOrdenados]
+    );
+
+    useEffect(() => {
+        const anterior = paginationSignatureRef.current;
+
+        if (anterior && anterior !== paginationSignature) {
+            setPaginaAtendimentos(0);
+        }
+
+        paginationSignatureRef.current = paginationSignature;
+    }, [paginationSignature]);
+
+    useEffect(() => {
+        setPaginaAtendimentos((pagina) =>
+            Math.min(pagina, totalPaginasAtendimentos - 1)
+        );
+    }, [totalPaginasAtendimentos]);
+
+    useEffect(() => {
+        if (totalPaginasAtendimentos <= 1) {
+            setPaginaAtendimentos(0);
+            return;
+        }
+
+        const id = window.setInterval(() => {
+            if (document.hidden) return;
+
+            setPaginaAtendimentos(
+                (pagina) => (pagina + 1) % totalPaginasAtendimentos
+            );
+        }, INTERVALO_PAGINACAO_ATENDIMENTOS_MS);
+
+        return () => window.clearInterval(id);
+    }, [totalPaginasAtendimentos]);
+
     // Identidade estável dos atendimentos acompanhados pelo histórico.
     // A lista de registros é atualizada a cada 8s, mas o timer dos logs só precisa
     // ser recriado quando os IDs realmente mudarem.
@@ -2453,10 +2527,10 @@ export default function QuadroAtendimentoPage() {
         return "Pendências de horário.";
     }, []);
 
-    const desktopAtivos = ativosOrdenados;
-    const mobileAtivos = ativosOrdenados;
-    const desktopHiddenCount = 0;
-    const mobileHiddenCount = 0;
+    const desktopAtivos = ativosPagina;
+    const mobileAtivos = ativosPagina;
+    const desktopHiddenCount = Math.max(0, ativosOrdenados.length - desktopAtivos.length);
+    const mobileHiddenCount = Math.max(0, ativosOrdenados.length - mobileAtivos.length);
 
     const recalcularDensidadeTv = useCallback(() => {
         const el = dashboardContentRef.current;
@@ -2510,7 +2584,9 @@ export default function QuadroAtendimentoPage() {
         };
     }, [
         recalcularDensidadeTv,
-        ativosOrdenados.length,
+        ativosPagina.length,
+        paginaAtualAtendimentos,
+        totalPaginasAtendimentos,
         coroasTv.length,
         clockDate,
     ]);
@@ -3076,7 +3152,12 @@ export default function QuadroAtendimentoPage() {
                             <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
                                 Quadro de Atendimentos
                             </h1>
-                            <p className="mt-0.5 text-[11px] font-medium qa-text-muted">Atualizado em tempo real</p>
+                            <p className="mt-0.5 text-[11px] font-medium qa-text-muted">
+                                Atualizado em tempo real
+                                {totalPaginasAtendimentos > 1
+                                    ? ` • Atendimentos ${paginaAtualAtendimentos + 1}/${totalPaginasAtendimentos} • troca a cada 15s`
+                                    : ""}
+                            </p>
                         </div>
 
                         <div className="shrink-0 text-right leading-tight">
@@ -4081,8 +4162,20 @@ function StatusTimelineCell({
 }
 
 function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
+    // Tanatopraxia explicitamente marcada como "Não".
     if (stepKey === "fase03") return isNao(registro.tanato);
+
+    // Ornamentação explicitamente marcada como "Não".
     if (stepKey === "fase05") return isNao(registro.ornamentacao);
+
+    // Velório explicitamente marcado como "Não".
+    // Campo vazio/NULL continua preservando a compatibilidade dos registros legados.
+    if (stepKey === "fase08") return isNao(registro.realiza_velorio);
+
+    // Assistência (materiais) explicitamente marcada como "Não":
+    // a etapa visual de Material Recolhido não se aplica.
+    if (stepKey === "fase10") return isNao(registro.assistencia);
+
     return false;
 }
 
