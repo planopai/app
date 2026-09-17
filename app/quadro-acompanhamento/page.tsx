@@ -1817,7 +1817,10 @@ export default function QuadroAtendimentoPage() {
             loading = true;
             try {
                 const url = `${BASE}&_ts=${Date.now()}`;
-                const j = await fetchJsonFresh<any>(url, 10_000);
+                // Em conexão lenta, 10s podia abortar uma resposta válida e forçar
+                // o fallback local. A listagem operacional tolera até 30s antes de
+                // considerar a tentativa realmente indisponível.
+                const j = await fetchJsonFresh<any>(url, 30_000);
                 if (!alive) return;
                 if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar atendimentos.");
 
@@ -1835,15 +1838,18 @@ export default function QuadroAtendimentoPage() {
                     });
 
                     if (session) {
-                        try {
-                            const merged = await applyPendingActionsToRegistros(arr, session.userId);
-                            if (alive) setRegistros(merged);
-                        } catch (e) {
-                            console.warn("[QUADRO] Falha ao aplicar ações pendentes sobre dados atuais", e);
-                        }
+                        /*
+                         * ONLINE: a resposta válida da API é a fonte autoritativa.
+                         * Não reaplicamos a fila offline sobre `arr` depois que o
+                         * servidor respondeu, pois uma ação antiga/rejeitada poderia
+                         * fazer a tela regredir para um estado que o servidor já não tem.
+                         *
+                         * A fila continua sendo aplicada no fallback realmente offline
+                         * em loadCachedFallback(), preservando o funcionamento sem rede.
+                         */
 
                         // Persistência para uso offline acontece fora do caminho
-                        // crítico: nunca segura a atualização visual da página.
+                        // crítico: nunca segura nem substitui a atualização visual.
                         void saveRegistrosSnapshot(arr, session.userId).catch((e) => {
                             console.warn("[QUADRO] Falha ao atualizar snapshot local", e);
                         });

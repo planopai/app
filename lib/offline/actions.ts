@@ -333,6 +333,7 @@ export async function applyPendingActionsToRegistros<
     "blocked_auth",
     "requires_attention",
   ]);
+
   const grouped = new Map<string, OfflineAction[]>();
 
   for (const action of actions) {
@@ -345,25 +346,82 @@ export async function applyPendingActionsToRegistros<
     const recordId = String(
       (registro as any)?.id ?? (registro as any)?.sepultamento_id ?? "",
     );
+
     const list = (grouped.get(recordId) ?? []).sort(
       (a, b) => a.createdAt - b.createdAt,
     );
+
     if (!list.length) return registro;
 
-    const last = list[list.length - 1];
     const needsAttention = list.some(
-      (a) => a.status === "requires_attention",
+      (action) => action.status === "requires_attention",
     );
+    const blockedAuth = list.some(
+      (action) => action.status === "blocked_auth",
+    );
+
+    /*
+     * requires_attention e blocked_auth representam ações que o servidor não
+     * aceitou. Elas devem continuar visíveis como pendência/erro de sync, mas
+     * nunca podem substituir status/agente canônicos recebidos da API.
+     *
+     * Se uma nova ação pending/sending foi criada DEPOIS da última ação
+     * terminal, ela ainda pode aparecer de forma otimista enquanto aguarda
+     * sincronização. Isso preserva o comportamento offline sem ressuscitar uma
+     * ação antiga já rejeitada.
+     */
+    let lastTerminalIndex = -1;
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const status = list[i].status;
+      if (status === "requires_attention" || status === "blocked_auth") {
+        lastTerminalIndex = i;
+        break;
+      }
+    }
+
+    const optimisticActions = list
+      .slice(lastTerminalIndex + 1)
+      .filter(
+        (action) =>
+          action.status === "pending" ||
+          action.status === "sending",
+      );
+
+    const lastOptimistic =
+      optimisticActions.length > 0
+        ? optimisticActions[optimisticActions.length - 1]
+        : null;
+
+    const lastAction = list[list.length - 1];
+
+    const syncStatus = needsAttention
+      ? "requires_attention"
+      : blockedAuth
+        ? "blocked_auth"
+        : optimisticActions.length > 0
+          ? "pending"
+          : undefined;
 
     return {
       ...registro,
-      status: last.statusNovo,
-      agente: last.userName,
-      __syncStatus: needsAttention ? "requires_attention" : "pending",
-      __pendingCount: list.filter((a) => a.status !== "requires_attention")
-        .length,
+
+      // Somente ação ainda realmente pendente/em envio pode fazer overlay.
+      ...(lastOptimistic
+        ? {
+          status: lastOptimistic.statusNovo,
+          agente: lastOptimistic.userName,
+        }
+        : {}),
+
+      ...(syncStatus ? { __syncStatus: syncStatus } : {}),
+      __pendingCount: list.filter(
+        (action) =>
+          action.status === "pending" ||
+          action.status === "sending" ||
+          action.status === "blocked_auth",
+      ).length,
       __pendingActions: list,
-      __lastOfflineOccurredAt: last.occurredAt,
+      __lastOfflineOccurredAt: lastAction.occurredAt,
     } as T;
   });
 }

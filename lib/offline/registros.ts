@@ -22,6 +22,16 @@ function recordIdOf(record: any): string {
   return String(record?.id ?? record?.sepultamento_id ?? "").trim();
 }
 
+/*
+ * Serializa as gravações de snapshot por usuário.
+ *
+ * Se duas atualizações forem agendadas muito próximas, a mais antiga não pode
+ * terminar depois e deixar o IndexedDB em uma versão anterior à última resposta
+ * recebida do servidor.
+ */
+const snapshotGenerationByUser = new Map<string, number>();
+const snapshotWriteTailByUser = new Map<string, Promise<void>>();
+
 export async function saveRegistrosSnapshot<T extends Record<string, any>>(
   registros: T[],
   userId?: string | null,
@@ -31,6 +41,10 @@ export async function saveRegistrosSnapshot<T extends Record<string, any>>(
     : await getCurrentOfflineSession({ refreshIfOnline: false });
   const resolvedUserId = String(userId ?? session?.userId ?? "").trim();
   if (!resolvedUserId) return;
+
+  const generation =
+    (snapshotGenerationByUser.get(resolvedUserId) ?? 0) + 1;
+  snapshotGenerationByUser.set(resolvedUserId, generation);
 
   const now = Date.now();
   const rows: CachedRegistroRow<T>[] = [];
@@ -47,7 +61,32 @@ export async function saveRegistrosSnapshot<T extends Record<string, any>>(
     });
   }
 
-  await replaceRecordsForUser(resolvedUserId, rows);
+  const previous =
+    snapshotWriteTailByUser.get(resolvedUserId) ?? Promise.resolve();
+
+  const current = previous
+    .catch(() => undefined)
+    .then(async () => {
+      /*
+       * Se uma versão mais nova foi agendada antes desta gravação começar,
+       * esta já perdeu autoridade e não precisa tocar no IndexedDB.
+       */
+      if (snapshotGenerationByUser.get(resolvedUserId) !== generation) {
+        return;
+      }
+
+      await replaceRecordsForUser(resolvedUserId, rows);
+    });
+
+  snapshotWriteTailByUser.set(resolvedUserId, current);
+
+  try {
+    await current;
+  } finally {
+    if (snapshotWriteTailByUser.get(resolvedUserId) === current) {
+      snapshotWriteTailByUser.delete(resolvedUserId);
+    }
+  }
 }
 
 export async function loadCachedRegistros<T = any>(
