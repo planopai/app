@@ -14,7 +14,7 @@
  * - o usuário atual é enviado como fallback para as notificações de ação;
  * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
  * - interface reduzida a Confecção + Finalizadas; Finalizadas reúne Venda Direta e Loja On-line;
- * - áreas longas usam scroll touch dedicado para corrigir rolagem vertical em Android;
+ * - rolagem vertical aceita toque e roda do mouse mesmo dentro do shell fixo da aplicação;
  * - evita montar simultaneamente as linhas mobile e desktop;
  * - foto final e comprovantes usam multipart/form-data, sem Base64;
  * - câmera direta captura em até 960x720 e JPEG leve, com fallback para câmera nativa;
@@ -1106,7 +1106,7 @@ const WC_STATUS_OPTIONS: Array<{ value: WcOrder["status"] | "all"; label: string
     { value: "pending", label: "Pendente" },
     { value: "processing", label: "Processando" },
     { value: "on-hold", label: "Em espera" },
-    { value: "completed", label: "Concluído" },
+    { value: "completed", label: "Entregue" },
     { value: "cancelled", label: "Cancelado" },
     { value: "refunded", label: "Reembolsado" },
     { value: "failed", label: "Falhou" },
@@ -1318,6 +1318,88 @@ export default function Page() {
     const [tab, setTab] = React.useState<"confeccao" | "finalizadas">("confeccao");
     const [isDesktop, setIsDesktop] = React.useState(false);
     const [usuarioAtual, setUsuarioAtual] = React.useState("");
+    const pageScrollRef = React.useRef<HTMLDivElement>(null);
+
+    // Alguns shells fixos/PWAs/WebViews permitem arrastar a barra vertical, mas
+    // interceptam a roda do mouse antes de o container principal rolar.
+    // Este fallback atua em capture no window: respeita qualquer scroll interno
+    // (modais/drawers/listas) e, fora deles, move o scroll real da página.
+    React.useEffect(() => {
+        const root = pageScrollRef.current;
+        if (!root) return;
+
+        const canScrollInDirection = (element: HTMLElement, deltaY: number) => {
+            if (element.scrollHeight <= element.clientHeight + 1) return false;
+            if (deltaY > 0) {
+                return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+            }
+            return element.scrollTop > 0;
+        };
+
+        const isScrollableY = (element: HTMLElement) => {
+            const overflowY = window.getComputedStyle(element).overflowY;
+            return /auto|scroll|overlay/i.test(overflowY);
+        };
+
+        const normalizeDeltaY = (event: WheelEvent, reference: HTMLElement) => {
+            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * 40;
+            if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+                return event.deltaY * Math.max(1, reference.clientHeight);
+            }
+            return event.deltaY;
+        };
+
+        const findInnerScrollable = (start: HTMLElement | null, deltaY: number) => {
+            let current = start;
+            while (current && current !== root) {
+                if (isScrollableY(current) && canScrollInDirection(current, deltaY)) {
+                    return current;
+                }
+                current = current.parentElement;
+            }
+            return null;
+        };
+
+        const findMainScrollable = (deltaY: number): HTMLElement | null => {
+            let current: HTMLElement | null = root;
+            while (current) {
+                if (isScrollableY(current) && canScrollInDirection(current, deltaY)) {
+                    return current;
+                }
+                current = current.parentElement;
+            }
+
+            const doc = document.scrollingElement as HTMLElement | null;
+            if (doc && canScrollInDirection(doc, deltaY)) return doc;
+            return null;
+        };
+
+        const onWheel = (event: WheelEvent) => {
+            if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if (Math.abs(event.deltaY) < 0.01) return;
+
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            if (!target || !root.contains(target)) return;
+
+            const provisionalDelta = event.deltaY;
+
+            // Se o ponteiro estiver sobre um modal/drawer/lista com scroll próprio
+            // e ele ainda puder rolar nessa direção, deixa o navegador cuidar.
+            if (findInnerScrollable(target, provisionalDelta)) return;
+
+            const scrollTarget = findMainScrollable(provisionalDelta);
+            if (!scrollTarget) return;
+
+            const deltaY = normalizeDeltaY(event, scrollTarget);
+            if (!canScrollInDirection(scrollTarget, deltaY)) return;
+
+            event.preventDefault();
+            scrollTarget.scrollTop += deltaY;
+        };
+
+        window.addEventListener("wheel", onWheel, { passive: false, capture: true });
+        return () => window.removeEventListener("wheel", onWheel, true);
+    }, []);
 
     React.useEffect(() => {
         let ativo = true;
@@ -2610,6 +2692,7 @@ export default function Page() {
 
     return (
         <div
+            ref={pageScrollRef}
             className="mobile-y-scroll flex h-full min-h-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain"
             style={{
                 WebkitOverflowScrolling: "touch",
@@ -2657,7 +2740,7 @@ export default function Page() {
             {/* Cabeçalho */}
             <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
                 <div className="flex items-center justify-between gap-3">
-                    <h1 className="min-w-0 text-xl font-semibold">Pedidos — Coroas de Flores</h1>
+                    <h1 className="min-w-0 text-xl font-semibold">Pedidos</h1>
 
                     <button
                         className="inline-flex shrink-0 items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
@@ -2941,7 +3024,7 @@ export default function Page() {
                                 onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "entregue")}
                             >
                                 <option value="todos">Todos</option>
-                                <option value="entregue">Concluídos / Entregues</option>
+                                <option value="entregue">Entregue</option>
                             </select>
                         </div>
                         <div>
@@ -4230,7 +4313,7 @@ export default function Page() {
                                         className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
                                         onClick={() => detail && notifyWhatsApp(detail.id)}
                                         disabled={!canNotifyDetail}
-                                        title={canNotifyDetail ? "Compartilhar mensagem" : "Só é possível notificar pedidos Concluídos."}
+                                        title={canNotifyDetail ? "Compartilhar mensagem" : "Só é possível notificar pedidos Entregues."}
                                     >
                                         <IconSend className="size-4" /> Notificar (WhatsApp)
                                     </button>
