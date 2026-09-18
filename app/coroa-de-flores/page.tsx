@@ -13,6 +13,8 @@
  * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
  * - o usuário atual é enviado como fallback para as notificações de ação;
  * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
+ * - interface reduzida a Confecção + Finalizadas; Finalizadas reúne Venda Direta e Loja On-line;
+ * - áreas longas usam scroll touch dedicado para corrigir rolagem vertical em Android;
  * - evita montar simultaneamente as linhas mobile e desktop;
  * - foto final e comprovantes usam multipart/form-data, sem Base64;
  * - câmera direta captura em até 960x720 e JPEG leve, com fallback para câmera nativa;
@@ -314,6 +316,12 @@ function pedidoEhOnline(order?: ManualOrder | null): boolean {
 
 function origemPedidoLabel(order?: ManualOrder | null): string {
     return pedidoEhOnline(order) ? "Pedido Online" : origemLabel(order?.origem);
+}
+
+// Rótulo usado especificamente na aba Finalizadas.
+// Pedidos sincronizados do WooCommerce são identificados por origem_externa_id.
+function origemFinalizadaLabel(order?: ManualOrder | null): string {
+    return pedidoEhOnline(order) ? "Loja On-line" : "Venda Direta";
 }
 
 function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
@@ -1448,10 +1456,18 @@ export default function Page() {
     const estoqueLoadedAtRef = React.useRef(0);
     const estoqueAbortRef = React.useRef<AbortController | null>(null);
 
-    // Evita que o gesto vertical escape para a página atrás do modal no Android.
-    // O scroll continua acontecendo normalmente dentro da lista de modelos.
+    // Em Android / dispositivos touch, bloquear o body pode interromper o gesto
+    // vertical de listas internas em alguns WebViews. Nesses aparelhos deixamos
+    // o body livre e o próprio modal contém o overscroll. Em desktop mantemos
+    // o bloqueio para impedir a página de fundo de se mover.
     React.useEffect(() => {
         if (!modeloModalOpen) return;
+
+        const touchLike =
+            window.matchMedia?.("(pointer: coarse)")?.matches ||
+            /Android/i.test(navigator.userAgent || "");
+
+        if (touchLike) return;
 
         const bodyOverflow = document.body.style.overflow;
         const bodyOverscrollBehavior = document.body.style.overscrollBehavior;
@@ -2507,13 +2523,19 @@ export default function Page() {
     const canNotifyDetail = detail?.status === "completed";
 
     return (
-        <div className="flex h-full max-w-full flex-col overflow-x-hidden">
+        <div className="flex h-full min-h-0 max-w-full flex-col overflow-x-hidden">
             <style jsx global>{`
                 html,
                 body {
                     max-width: 100%;
                     overflow-x: hidden;
                     overscroll-behavior-x: none;
+                }
+
+                .mobile-y-scroll {
+                    -webkit-overflow-scrolling: touch;
+                    overscroll-behavior-y: contain;
+                    touch-action: pan-y;
                 }
 
                 input,
@@ -2550,9 +2572,9 @@ export default function Page() {
                 </div>
             </div>
 
-            {/* Abas — sempre em uma única linha, igualmente divididas */}
+            {/* Duas áreas operacionais: produção e histórico finalizado. */}
             <div className="px-4 pb-3 lg:px-6">
-                <div className="grid w-full grid-cols-3 gap-1 rounded-lg border bg-muted/30 p-1">
+                <div className="grid w-full grid-cols-2 gap-1 rounded-lg border bg-muted/30 p-1">
                     <button
                         type="button"
                         className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "confeccao"
@@ -2571,17 +2593,7 @@ export default function Page() {
                             }`}
                         onClick={() => setTab("manuais")}
                     >
-                        Pedidos Manuais
-                    </button>
-                    <button
-                        type="button"
-                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "online"
-                            ? "bg-background shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        onClick={() => setTab("online")}
-                    >
-                        Pedidos Online
+                        Finalizadas
                     </button>
                 </div>
             </div>
@@ -2635,7 +2647,7 @@ export default function Page() {
                     </form>
 
                     {/* Confecção mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
+                    <div className="mobile-y-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
                             {(!isDesktop ? confeccaoOrders : []).map((o) => (
                                 <div key={o.id} className="rounded-lg border bg-card p-3">
@@ -2778,11 +2790,11 @@ export default function Page() {
             )}
 
             {/* =====================================================
-                PEDIDOS MANUAIS — entregues, sem Ações
+                FINALIZADAS — Venda Direta + Loja On-line
                 ===================================================== */}
             {tab === "manuais" && (
                 <>
-                    {/* Mesmos filtros do Online */}
+                    {/* Filtros das finalizadas */}
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
@@ -2866,14 +2878,14 @@ export default function Page() {
                         </div>
                     </form>
 
-                    {/* Manual histórico mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
+                    {/* Finalizadas mobile */}
+                    <div className="mobile-y-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
                             {(!isDesktop ? manualHistoricoOrders : []).map((o) => (
                                 <div key={o.id} className="rounded-lg border bg-card p-3">
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="text-xs text-muted-foreground">
-                                            Nº <b>{o.id}</b> • {formatDate(o.criado_em)}
+                                            <b>{origemFinalizadaLabel(o)}</b> • {formatDate(o.criado_em)}
                                         </div>
                                         <span className={`rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
                                             {manualStatusLabel(o.status)}
@@ -2901,21 +2913,21 @@ export default function Page() {
                                 </div>
                             ))}
                             {!manualLoading && manualHistoricoOrders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido manual encontrado.</div>
+                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido finalizado encontrado.</div>
                             )}
                             {manualLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
                             {manualError && <div className="text-sm text-rose-600">{manualError}</div>}
                         </div>
                     </div>
 
-                    {/* Manual histórico desktop — padrão semelhante ao Online */}
+                    {/* Finalizadas desktop */}
                     <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
                         <div className="overflow-hidden rounded-lg border bg-card">
                             <div className="overflow-x-auto">
                                 <table className="min-w-full text-sm">
                                     <thead className="bg-muted/50 text-left">
                                         <tr>
-                                            <th className="px-3 py-2 font-medium">Nº</th>
+                                            <th className="px-3 py-2 font-medium">Origem</th>
                                             <th className="px-3 py-2 font-medium">Data</th>
                                             <th className="px-3 py-2 font-medium">Cliente</th>
                                             <th className="px-3 py-2 font-medium">Total</th>
@@ -2927,7 +2939,7 @@ export default function Page() {
                                     <tbody>
                                         {(isDesktop ? manualHistoricoOrders : []).map((o) => (
                                             <tr key={o.id} className="border-t">
-                                                <td className="px-3 py-2">{o.id}</td>
+                                                <td className="px-3 py-2 font-medium">{origemFinalizadaLabel(o)}</td>
                                                 <td className="px-3 py-2">{formatDate(o.criado_em)}</td>
                                                 <td className="px-3 py-2">{o.solicitante || "—"}</td>
                                                 <td className="px-3 py-2">{totalManual(o) > 0 ? dinheiroBRL(totalManual(o)) : "—"}</td>
@@ -2956,7 +2968,7 @@ export default function Page() {
                                         {!manualLoading && manualHistoricoOrders.length === 0 && (
                                             <tr>
                                                 <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido manual encontrado.
+                                                    Nenhum pedido finalizado encontrado.
                                                 </td>
                                             </tr>
                                         )}
@@ -3000,251 +3012,13 @@ export default function Page() {
                 </>
             )}
 
-            {/* =====================================================
-                PEDIDOS ONLINE
-                ===================================================== */}
-            {tab === "online" && (
-                <>
-                    {/* ONLINE — filtros existentes */}
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            setOnlineAppliedQ(q.trim());
-                            setOnlineAppliedStatus(wcStatus);
-                            setOnlineAppliedAfter(after);
-                            setOnlineAppliedBefore(before);
-                            setPage(1);
-                            setOnlineRefreshToken((v) => v + 1);
-                        }}
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
-                    >
-                        <div className="col-span-1 sm:col-span-2 lg:col-span-2">
-                            <label className="mb-1 block text-xs font-medium">Buscar</label>
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                                <input
-                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                                    placeholder="Nome, e-mail, nº do pedido..."
-                                    value={q}
-                                    onChange={(e) => setQ(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Status</label>
-                            <select
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={wcStatus}
-                                onChange={(e) => setWcStatus(e.target.value as any)}
-                            >
-                                {WC_STATUS_OPTIONS.map((o) => (
-                                    <option key={o.value} value={o.value}>
-                                        {o.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">De</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={after}
-                                onChange={(e) => setAfter(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Até</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={before}
-                                onChange={(e) => setBefore(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                type="submit"
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                                disabled={loading}
-                            >
-                                <IconSearch className="size-4" />
-                                Buscar
-                            </button>
-                            <button
-                                type="button"
-                                className="inline-flex w-full items-center justify-center rounded-md border px-3 py-2 text-sm"
-                                onClick={() => {
-                                    setQ("");
-                                    setWcStatus("all");
-                                    setAfter("");
-                                    setBefore("");
-                                    setOnlineAppliedQ("");
-                                    setOnlineAppliedStatus("all");
-                                    setOnlineAppliedAfter("");
-                                    setOnlineAppliedBefore("");
-                                    setPage(1);
-                                    setOnlineRefreshToken((v) => v + 1);
-                                }}
-                            >
-                                Limpar
-                            </button>
-                        </div>
-                    </form>
-
-                    {/* Online mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
-                        <div className="space-y-3">
-                            {(!isDesktop ? orders : []).map((o) => {
-                                const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
-                                const disabled = !canNotifyRow(o);
-                                return (
-                                    <div key={o.id} className="rounded-lg border bg-card p-3">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="text-xs text-muted-foreground">
-                                                Nº <b>{o.number || o.id}</b> • {formatDate(o.date_created)}
-                                            </div>
-                                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${clsWcStatusBadge(o.status)}`}>
-                                                {WC_STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 text-sm">
-                                            <div className="font-medium">{cliente}</div>
-                                            <div className="mt-1 text-muted-foreground">{formatCurrency(o.total, o.currency || "BRL")}</div>
-                                        </div>
-                                        <div className="mt-3 flex gap-2">
-                                            <button
-                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                                onClick={() => openDetail(o.id)}
-                                            >
-                                                <IconEye className="size-4" /> Ver
-                                            </button>
-                                            <button
-                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs disabled:opacity-50"
-                                                onClick={() => notifyWhatsApp(o.id)}
-                                                disabled={disabled}
-                                            >
-                                                <IconSend className="size-4" /> Notificar
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {!loading && orders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">Nenhum pedido encontrado.</div>
-                            )}
-                            {loading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
-                            {error && <div className="text-sm text-rose-600">{error}</div>}
-                        </div>
-                    </div>
-
-                    {/* Online desktop */}
-                    <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
-                        <div className="overflow-hidden rounded-lg border bg-card">
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-3 py-2 font-medium">Nº</th>
-                                            <th className="px-3 py-2 font-medium">Data</th>
-                                            <th className="px-3 py-2 font-medium">Cliente</th>
-                                            <th className="px-3 py-2 font-medium">Total</th>
-                                            <th className="px-3 py-2 font-medium">Status</th>
-                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(isDesktop ? orders : []).map((o) => {
-                                            const cliente = `${o.billing?.first_name || ""} ${o.billing?.last_name || ""}`.trim() || "—";
-                                            const disabled = !canNotifyRow(o);
-                                            return (
-                                                <tr key={o.id} className="border-t">
-                                                    <td className="px-3 py-2">{o.number || o.id}</td>
-                                                    <td className="px-3 py-2">{formatDate(o.date_created)}</td>
-                                                    <td className="px-3 py-2">{cliente}</td>
-                                                    <td className="px-3 py-2">{formatCurrency(o.total, o.currency || "BRL")}</td>
-                                                    <td className="px-3 py-2">
-                                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${clsWcStatusBadge(o.status)}`}>
-                                                            {WC_STATUS_OPTIONS.find((s) => s.value === o.status)?.label ?? o.status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-3 py-2">
-                                                        <div className="flex justify-end gap-2">
-                                                            <button
-                                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
-                                                                onClick={() => openDetail(o.id)}
-                                                            >
-                                                                <IconEye className="size-4" /> Ver
-                                                            </button>
-                                                            <button
-                                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                                                onClick={() => notifyWhatsApp(o.id)}
-                                                                disabled={disabled}
-                                                            >
-                                                                <IconSend className="size-4" /> Notificar
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                        {!loading && orders.length === 0 && (
-                                            <tr>
-                                                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido encontrado.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                                {loading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando pedidos…</div>}
-                                {error && <div className="px-3 pb-3 text-sm text-rose-600">{error}</div>}
-                            </div>
-                            <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
-                                <div className="text-xs text-muted-foreground">
-                                    Página {meta.page} de {meta.totalPages} — {meta.total} pedidos
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                        disabled={page <= 1 || loading}
-                                    >
-                                        <IconChevronLeft className="size-4" /> Anterior
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => setPage((p) => (meta.totalPages ? Math.min(meta.totalPages, p + 1) : p + 1))}
-                                        disabled={meta.totalPages ? page >= meta.totalPages || loading : loading}
-                                    >
-                                        Próxima <IconChevronRight className="size-4" />
-                                    </button>
-                                    <select
-                                        className="rounded-md border bg-background px-2 py-1 text-xs"
-                                        value={perPage}
-                                        onChange={(e) => {
-                                            setPerPage(Number(e.target.value));
-                                            setPage(1);
-                                        }}
-                                    >
-                                        {[10, 20, 50, 100].map((n) => (
-                                            <option key={n} value={n}>{n} por página</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
             {/* Modal NOVO */}
             {newOpen && (
                 <div className="fixed inset-0 z-50 grid place-items-center p-4">
                     <div className="absolute inset-0 bg-black/40" onClick={() => !newSaving && setNewOpen(false)} />
                     <form
                         onSubmit={salvarNovoPedido}
-                        className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-x-hidden overflow-y-auto rounded-xl border bg-background shadow-xl"
+                        className="mobile-y-scroll relative z-10 max-h-[92vh] w-full max-w-2xl touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-background shadow-xl"
                     >
                         <div className="flex items-center justify-between border-b px-4 py-3">
                             <div>
@@ -3614,7 +3388,7 @@ export default function Page() {
                     aria-modal="true"
                     aria-label={`Selecionar Coroa ${rotuloTipoCoroa(modeloTipo)}`}
                 >
-                    <div className="flex h-[calc(100dvh-1rem)] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl sm:h-auto sm:max-h-[94dvh]">
+                    <div className="flex h-[calc(100vh-1rem)] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl sm:h-auto sm:max-h-[94dvh]" style={{ height: "calc(100dvh - 1rem)" }}>
                         <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
                             <div className="min-w-0">
                                 <h2 className="text-lg font-semibold">
@@ -3671,7 +3445,7 @@ export default function Page() {
                             )}
                         </div>
 
-                        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
+                        <div className="mobile-y-scroll min-h-0 flex-1 touch-pan-y overflow-y-scroll overscroll-contain" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "contain" }}>
                             {modeloLoading && modelosDisponiveis.length === 0 ? (
                                 <div className="p-8 text-center text-sm text-muted-foreground">
                                     Carregando modelos...
@@ -3980,7 +3754,7 @@ export default function Page() {
             {manualPanel === "ver" && (
                 <div className="fixed inset-0 z-50">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setManualPanel(null)} />
-                    <div className="absolute right-0 top-0 h-full w-full overflow-x-hidden overflow-y-auto bg-white shadow-xl md:max-w-xl">
+                    <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl">
                         <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
                             <div>
                                 <div className="text-sm text-muted-foreground">
