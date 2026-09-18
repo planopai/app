@@ -14,6 +14,8 @@
  * - o usuário atual é enviado como fallback para as notificações de ação;
  * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
  * - interface reduzida a Confecção + Finalizadas; Finalizadas reúne Venda Direta e Loja On-line;
+ * - filtro de Origem permite Todas, Venda Direta ou Loja On-line;
+ * - todo status Entregue usa o mesmo destaque verde, independentemente da origem;
  * - rolagem vertical aceita toque e roda do mouse mesmo dentro do shell fixo da aplicação;
  * - evita montar simultaneamente as linhas mobile e desktop;
  * - foto final e comprovantes usam multipart/form-data, sem Base64;
@@ -282,7 +284,7 @@ function manualStatusClass(status?: ManualStatus | string) {
         case "finalizada":
             return "bg-emerald-100 text-emerald-900 border-emerald-200";
         case "entregue":
-            return "bg-zinc-200 text-zinc-800 border-zinc-300";
+            return "bg-emerald-100 text-emerald-900 border-emerald-200";
         default:
             return "bg-muted text-foreground border-border";
     }
@@ -1732,10 +1734,12 @@ export default function Page() {
     const [manualError, setManualError] = React.useState<string | null>(null);
     const [manualQ, setManualQ] = React.useState("");
     const [manualStatusFilter, setManualStatusFilter] = React.useState<"todos" | "entregue">("todos");
+    const [manualOrigemFilter, setManualOrigemFilter] = React.useState<"todos" | "venda_direta" | "loja_online">("todos");
     const [manualAfter, setManualAfter] = React.useState("");
     const [manualBefore, setManualBefore] = React.useState("");
     const [manualAppliedQ, setManualAppliedQ] = React.useState("");
     const [manualAppliedStatus, setManualAppliedStatus] = React.useState<"todos" | "entregue">("todos");
+    const [manualAppliedOrigem, setManualAppliedOrigem] = React.useState<"todos" | "venda_direta" | "loja_online">("todos");
     const [manualAppliedAfter, setManualAppliedAfter] = React.useState("");
     const [manualAppliedBefore, setManualAppliedBefore] = React.useState("");
     const [manualRefreshToken, setManualRefreshToken] = React.useState(0);
@@ -2446,6 +2450,23 @@ export default function Page() {
 
     const fetchOrders = React.useCallback(async (forceFresh = false) => {
         onlineAbortRef.current?.abort();
+
+        // Quando o filtro é exclusivamente Venda Direta, não consulta WooCommerce.
+        // A origem local continua vindo de coroas.php.
+        if (manualAppliedOrigem === "venda_direta") {
+            onlineAbortRef.current = null;
+            setOrders([]);
+            setMeta({
+                page: 1,
+                per_page: perPage,
+                total: 0,
+                totalPages: 0,
+            });
+            setLoading(false);
+            setError(null);
+            return;
+        }
+
         const controller = new AbortController();
         onlineAbortRef.current = controller;
 
@@ -2496,6 +2517,7 @@ export default function Page() {
         onlineAppliedAfter,
         onlineAppliedBefore,
         onlineRefreshToken,
+        manualAppliedOrigem,
     ]);
 
     React.useEffect(() => {
@@ -2615,21 +2637,28 @@ export default function Page() {
             return Number.isFinite(ts) ? ts : 0;
         };
 
-        const manuais = manualHistoricoOrders.map((order) => ({
-            source: "manual" as const,
-            key: `manual-${order.id}`,
-            origem: origemFinalizadaLabel(order),
-            dataRaw: order.criado_em || "",
-            dataLabel: formatDate(order.criado_em),
-            cliente: order.solicitante || "—",
-            totalLabel: totalManual(order) > 0 ? dinheiroBRL(totalManual(order)) : "—",
-            statusLabel: manualStatusLabel(order.status),
-            statusClass: manualStatusClass(order.status),
-            sortTime: parseTime(order.criado_em),
-            order,
-        }));
+        const manuais = manualHistoricoOrders
+            .filter((order) => {
+                if (manualAppliedOrigem === "venda_direta") return !pedidoEhOnline(order);
+                if (manualAppliedOrigem === "loja_online") return pedidoEhOnline(order);
+                return true;
+            })
+            .map((order) => ({
+                source: "manual" as const,
+                key: `manual-${order.id}`,
+                origem: origemFinalizadaLabel(order),
+                dataRaw: order.criado_em || "",
+                dataLabel: formatDate(order.criado_em),
+                cliente: order.solicitante || "—",
+                totalLabel: totalManual(order) > 0 ? dinheiroBRL(totalManual(order)) : "—",
+                statusLabel: manualStatusLabel(order.status),
+                statusClass: manualStatusClass(order.status),
+                sortTime: parseTime(order.criado_em),
+                order,
+            }));
 
         const online = orders
+            .filter(() => manualAppliedOrigem !== "venda_direta")
             .filter((order) => {
                 const id = String(order.id || "").trim();
                 const number = String(order.number || "").trim();
@@ -2665,7 +2694,7 @@ export default function Page() {
             if (a.sortTime !== b.sortTime) return b.sortTime - a.sortTime;
             return b.key.localeCompare(a.key);
         });
-    }, [manualHistoricoOrders, orders]);
+    }, [manualHistoricoOrders, orders, manualAppliedOrigem]);
 
     const finalizadasLoading = manualLoading || loading;
     const finalizadasError = manualError || error;
@@ -2989,6 +3018,7 @@ export default function Page() {
 
                             setManualAppliedQ(busca);
                             setManualAppliedStatus(manualStatusFilter);
+                            setManualAppliedOrigem(manualOrigemFilter);
                             setManualAppliedAfter(manualAfter);
                             setManualAppliedBefore(manualBefore);
 
@@ -3002,7 +3032,7 @@ export default function Page() {
                             setManualRefreshToken((v) => v + 1);
                             setOnlineRefreshToken((v) => v + 1);
                         }}
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-6"
+                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-7"
                     >
                         <div className="col-span-1 sm:col-span-2 lg:col-span-2">
                             <label className="mb-1 block text-xs font-medium">Buscar</label>
@@ -3025,6 +3055,22 @@ export default function Page() {
                             >
                                 <option value="todos">Todos</option>
                                 <option value="entregue">Entregue</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-medium">Origem</label>
+                            <select
+                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                value={manualOrigemFilter}
+                                onChange={(e) =>
+                                    setManualOrigemFilter(
+                                        e.target.value as "todos" | "venda_direta" | "loja_online",
+                                    )
+                                }
+                            >
+                                <option value="todos">Todas</option>
+                                <option value="venda_direta">Venda Direta</option>
+                                <option value="loja_online">Loja On-line</option>
                             </select>
                         </div>
                         <div>
@@ -3060,11 +3106,13 @@ export default function Page() {
                                 onClick={() => {
                                     setManualQ("");
                                     setManualStatusFilter("todos");
+                                    setManualOrigemFilter("todos");
                                     setManualAfter("");
                                     setManualBefore("");
 
                                     setManualAppliedQ("");
                                     setManualAppliedStatus("todos");
+                                    setManualAppliedOrigem("todos");
                                     setManualAppliedAfter("");
                                     setManualAppliedBefore("");
 
