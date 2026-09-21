@@ -15,19 +15,16 @@ async function fetchJsonFresh<T = any>(rawUrl: string, timeoutMs = 10_000): Prom
 
     try {
         const url = new URL(rawUrl, window.location.origin);
-        url.searchParams.set("_ts", `${Date.now()}-${performance.now().toFixed(3)}`);
+
+        // Cache-buster pela URL. Não envia headers customizados, evitando
+        // preflight CORS em APIs que não liberam Cache-Control/Pragma.
+        url.searchParams.set("_ts", `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
         const resp = await fetch(url.toString(), {
             method: "GET",
-            cache: "no-store",
             credentials: "include",
+            cache: "no-store",
             signal: ac.signal,
-            headers: {
-                Accept: "application/json",
-                "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
-                Pragma: "no-cache",
-                Expires: "0",
-            },
         });
 
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1714,7 +1711,7 @@ const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quint
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
-    const [nowMs, setNowMs] = useState(() => Date.now());
+    const [nowMs, setNowMs] = useState(0);
 
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [avisos, setAvisos] = useState<Aviso[]>([]);
@@ -2748,6 +2745,39 @@ function StatusTimelineCell({
     nowMs: number;
     variant?: "desktop" | "mobile";
 }) {
+    if (nowMs <= 0) {
+        return (
+            <div
+                className={
+                    variant === "mobile"
+                        ? "grid w-full min-w-0 grid-cols-8 items-center justify-items-center gap-0 px-1 py-0.5"
+                        : "-ml-5 flex w-full min-w-0 items-center justify-start gap-1 px-0 pr-1"
+                }
+                aria-label="Carregando tempos do atendimento"
+            >
+                {STATUS_STEPS.map((step) => (
+                    <StatusPill
+                        key={step.key}
+                        icon={step.icon}
+                        label={step.shortLabel}
+                        time="00:00"
+                        muted
+                        variant={variant}
+                        title={`${step.label} • 00:00`}
+                    />
+                ))}
+                <StatusPill
+                    icon="timer"
+                    label="Total"
+                    time="00:00"
+                    total
+                    variant={variant}
+                    title="Tempo total em atendimento"
+                />
+            </div>
+        );
+    }
+
     const segments = buildStatusSegments(registro, logs, nowMs);
     const firstStart = segments[0]?.start ?? nowMs;
     const totalMs = Math.max(0, nowMs - firstStart);
