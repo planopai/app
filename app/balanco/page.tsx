@@ -281,10 +281,10 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 function SummaryCard({ label, value }: { label: string; value: string }) {
     return (
         <Card className="p-4 sm:p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                 {label}
             </div>
-            <div className="mt-2 break-words text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            <div className="mt-2 break-words text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
                 {value}
             </div>
         </Card>
@@ -337,10 +337,10 @@ function FinancialMetric({ label, value, helper, tone = "default" }: FinancialMe
 
     return (
         <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/70">
-            <div className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                 {label}
             </div>
-            <div className={`mt-2 text-2xl font-black tracking-tight ${toneClass}`}>
+            <div className={`mt-2 text-2xl font-semibold tracking-tight ${toneClass}`}>
                 {value}
             </div>
             {helper ? (
@@ -359,11 +359,8 @@ function MarginGauge({ margem, lucro }: { margem: number; lucro: number }) {
     return (
         <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70">
             <div className="mb-3 text-center">
-                <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                     Margem
-                </div>
-                <div className="mt-1 text-xs text-slate-400">
-                    Retorno ÷ receita
                 </div>
             </div>
 
@@ -394,10 +391,10 @@ function MarginGauge({ margem, lucro }: { margem: number; lucro: number }) {
 
                 <div className="absolute inset-0 grid place-items-center text-center">
                     <div>
-                        <div className={`text-3xl font-black ${positive ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
+                        <div className={`text-3xl font-semibold ${positive ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
                             {percentBR(margem)}
                         </div>
-                        <div className="mt-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
                             margem
                         </div>
                     </div>
@@ -496,7 +493,7 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
         >
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                    <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                         Receita × custo × retorno
                     </div>
                     <div className="mt-1 text-xs text-slate-400">
@@ -504,7 +501,7 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     <span className="inline-flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                         Receita
@@ -640,12 +637,12 @@ function PaginationControls({
                     type="button"
                     onClick={() => onPageChange(Math.max(1, safePage - 1))}
                     disabled={safePage <= 1}
-                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
                 >
                     Anterior
                 </button>
 
-                <div className="min-w-[92px] text-center text-xs font-bold text-slate-600 dark:text-slate-300">
+                <div className="min-w-[92px] text-center text-xs font-medium text-slate-600 dark:text-slate-300">
                     {numberBR(safePage)} / {numberBR(totalPages)}
                 </div>
 
@@ -653,7 +650,7 @@ function PaginationControls({
                     type="button"
                     onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
                     disabled={safePage >= totalPages}
-                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
                 >
                     Próxima
                 </button>
@@ -999,7 +996,7 @@ export default function BalancoPage() {
         <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
             <div className="mx-auto w-full max-w-7xl space-y-4 p-4 sm:p-6 lg:p-8">
                 <div className="flex items-center justify-between gap-3">
-                    <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Balanço</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Balanço</h1>
 
                     <div className="flex items-center gap-2">
                         <button
@@ -1051,7 +1048,7 @@ export default function BalancoPage() {
                                     type="button"
                                     onClick={() => escolherPreset(value)}
                                     className={[
-                                        "rounded-xl px-4 py-2 text-sm font-bold transition",
+                                        "rounded-xl px-4 py-2 text-sm font-medium transition",
                                         draftPreset === value
                                             ? "bg-sky-600 text-white shadow-sm"
                                             : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
@@ -1064,7 +1061,7 @@ export default function BalancoPage() {
 
                         <div className="mt-4 grid gap-3 md:grid-cols-3">
                             <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">Data inicial</span>
+                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Data inicial</span>
                                 <input
                                     type="date"
                                     value={draftInicio}
@@ -1077,7 +1074,7 @@ export default function BalancoPage() {
                             </label>
 
                             <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">Data final</span>
+                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Data final</span>
                                 <input
                                     type="date"
                                     value={draftFim}
@@ -1090,7 +1087,7 @@ export default function BalancoPage() {
                             </label>
 
                             <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-600 dark:text-slate-300">Convênio</span>
+                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Convênio</span>
                                 <select
                                     value={draftConvenio}
                                     onChange={(e) => setDraftConvenio(e.target.value)}
@@ -1113,7 +1110,7 @@ export default function BalancoPage() {
                             <button
                                 type="button"
                                 onClick={limparFiltros}
-                                className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                                className="h-10 rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                             >
                                 Limpar
                             </button>
@@ -1121,7 +1118,7 @@ export default function BalancoPage() {
                                 type="button"
                                 onClick={aplicarFiltros}
                                 disabled={loading}
-                                className="h-10 rounded-xl bg-slate-900 px-5 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                                className="h-10 rounded-xl bg-slate-900 px-5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                             >
                                 Aplicar
                             </button>
@@ -1159,7 +1156,7 @@ export default function BalancoPage() {
                             >
                                 <div
                                     className={[
-                                        "text-[11px] font-black uppercase tracking-[0.12em]",
+                                        "text-[11px] font-semibold uppercase tracking-[0.12em]",
                                         selected
                                             ? "text-sky-700 dark:text-sky-300"
                                             : "text-slate-500 dark:text-slate-400",
@@ -1167,7 +1164,7 @@ export default function BalancoPage() {
                                 >
                                     {area.label}
                                 </div>
-                                <div className="mt-2 break-words text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                                <div className="mt-2 break-words text-xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
                                     {moneyBRL(gastosPorArea[area.value])}
                                 </div>
                             </button>
@@ -1177,18 +1174,7 @@ export default function BalancoPage() {
 
                 <Card className="overflow-hidden">
                     <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                            <div>
-                                <h2 className="text-lg font-black">Resultado</h2>
-                                <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                                    Receita calculada pela coluna <strong>valor</strong> dos produtos e serviços do atendimento.
-                                    Retorno = receita − custo.
-                                </p>
-                            </div>
-                            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                Alimentação, limpeza e descartáveis não entram neste retorno
-                            </div>
-                        </div>
+                        <h2 className="text-lg font-semibold">Resultado</h2>
                     </div>
 
                     <div className="min-w-0 p-4 sm:p-5">
@@ -1196,24 +1182,20 @@ export default function BalancoPage() {
                             <FinancialMetric
                                 label="Receita"
                                 value={moneyBRL(receitaFuneraria)}
-                                helper={resumo.atendimentos > 0 ? `${moneyBRL(receitaFuneraria / resumo.atendimentos)} por atendimento` : undefined}
                                 tone="info"
                             />
                             <FinancialMetric
                                 label="Custo"
                                 value={moneyBRL(custoFunerario)}
-                                helper="Preço de custo + consumíveis + ornamentação + serviços ativos"
                             />
                             <FinancialMetric
                                 label="Retorno"
                                 value={moneyBRL(lucroFunerario)}
-                                helper={resumo.atendimentos > 0 ? `${moneyBRL(lucroFunerario / resumo.atendimentos)} por atendimento` : undefined}
                                 tone={lucroFunerario >= 0 ? "positive" : "negative"}
                             />
                             <FinancialMetric
                                 label="Margem"
                                 value={percentBR(margemFuneraria)}
-                                helper="Retorno dividido pela receita"
                                 tone={lucroFunerario >= 0 ? "positive" : "negative"}
                             />
                         </div>
@@ -1229,7 +1211,7 @@ export default function BalancoPage() {
                     <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
-                                <h2 className="text-lg font-black">{areaAtual.label}</h2>
+                                <h2 className="text-lg font-semibold">{areaAtual.label}</h2>
                                 {areaGasto !== "ATENDIMENTOS_FUNERARIOS" ? (
                                     <div className="mt-1 text-xs text-slate-400">
                                         Classificação: MATERIAL DE USO E CONSUMO
@@ -1252,7 +1234,7 @@ export default function BalancoPage() {
                                     className="h-10 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none ring-sky-200 focus:ring-2 dark:border-slate-700 dark:bg-slate-900"
                                 />
 
-                                <label className="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                <label className="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                                     <span className="whitespace-nowrap">Por página</span>
                                     <select
                                         value={pageSize}
@@ -1260,7 +1242,7 @@ export default function BalancoPage() {
                                             setPageSize(Number(e.target.value));
                                             setCurrentPage(1);
                                         }}
-                                        className="bg-transparent text-sm font-black text-slate-900 outline-none dark:text-white"
+                                        className="bg-transparent text-sm font-semibold text-slate-900 outline-none dark:text-white"
                                     >
                                         {[10, 20, 50, 100].map((size) => (
                                             <option key={size} value={size}>
@@ -1318,34 +1300,34 @@ export default function BalancoPage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => void abrirDetalhe(row.atendimento_id)}
-                                                                className="font-black text-sky-700 hover:underline dark:text-sky-300"
+                                                                className="font-semibold text-sky-700 hover:underline dark:text-sky-300"
                                                             >
                                                                 {safeText(row.falecido, `Atendimento #${row.atendimento_id}`)}
                                                             </button>
                                                             {(row.assistencia_ativa || row.tanatopraxia_ativa) ? (
                                                                 <div className="mt-1 flex flex-wrap gap-1">
                                                                     {row.assistencia_ativa ? (
-                                                                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                                                                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                                                                             Assistência
                                                                         </span>
                                                                     ) : null}
                                                                     {row.tanatopraxia_ativa ? (
-                                                                        <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-[10px] font-bold text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
+                                                                        <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-[10px] font-medium text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
                                                                             Tanatopraxia
                                                                         </span>
                                                                     ) : null}
                                                                 </div>
                                                             ) : null}
                                                         </td>
-                                                        <td className="px-5 py-4 text-right font-bold text-slate-700 dark:text-slate-200">
+                                                        <td className="px-5 py-4 text-right font-medium text-slate-700 dark:text-slate-200">
                                                             {moneyBRL(row.custo_total)}
                                                         </td>
-                                                        <td className="px-5 py-4 text-right font-black text-sky-700 dark:text-sky-300">
+                                                        <td className="px-5 py-4 text-right font-semibold text-sky-700 dark:text-sky-300">
                                                             {moneyBRL(receita)}
                                                         </td>
                                                         <td
                                                             className={[
-                                                                "px-5 py-4 text-right font-black",
+                                                                "px-5 py-4 text-right font-semibold",
                                                                 lucro >= 0
                                                                     ? "text-emerald-700 dark:text-emerald-300"
                                                                     : "text-rose-700 dark:text-rose-300",
@@ -1355,7 +1337,7 @@ export default function BalancoPage() {
                                                         </td>
                                                         <td
                                                             className={[
-                                                                "px-5 py-4 text-right font-bold",
+                                                                "px-5 py-4 text-right font-medium",
                                                                 lucro >= 0
                                                                     ? "text-emerald-700 dark:text-emerald-300"
                                                                     : "text-rose-700 dark:text-rose-300",
@@ -1385,19 +1367,19 @@ export default function BalancoPage() {
                                                 <div className="text-xs text-slate-400">
                                                     {dateBR(row.data_referencia)} · {safeText(row.convenio, "Sem convênio")}
                                                 </div>
-                                                <div className="mt-1 truncate font-black text-sky-700 dark:text-sky-300">
+                                                <div className="mt-1 truncate font-semibold text-sky-700 dark:text-sky-300">
                                                     {safeText(row.falecido, `Atendimento #${row.atendimento_id}`)}
                                                 </div>
 
                                                 {(row.assistencia_ativa || row.tanatopraxia_ativa) ? (
                                                     <div className="mt-2 flex flex-wrap gap-1">
                                                         {row.assistencia_ativa ? (
-                                                            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                                                            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                                                                 Assistência
                                                             </span>
                                                         ) : null}
                                                         {row.tanatopraxia_ativa ? (
-                                                            <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-[10px] font-bold text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
+                                                            <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-[10px] font-medium text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
                                                                 Tanatopraxia
                                                             </span>
                                                         ) : null}
@@ -1406,16 +1388,16 @@ export default function BalancoPage() {
 
                                                 <div className="mt-3 grid grid-cols-3 gap-2">
                                                     <div className="rounded-xl bg-slate-50 p-2 dark:bg-slate-900">
-                                                        <div className="text-[10px] font-bold uppercase text-slate-400">Custo</div>
-                                                        <div className="mt-1 text-xs font-black">{moneyBRL(row.custo_total)}</div>
+                                                        <div className="text-[10px] font-medium uppercase text-slate-400">Custo</div>
+                                                        <div className="mt-1 text-xs font-semibold">{moneyBRL(row.custo_total)}</div>
                                                     </div>
                                                     <div className="rounded-xl bg-sky-50 p-2 dark:bg-sky-950/30">
-                                                        <div className="text-[10px] font-bold uppercase text-sky-500">Receita</div>
-                                                        <div className="mt-1 text-xs font-black text-sky-700 dark:text-sky-300">{moneyBRL(receita)}</div>
+                                                        <div className="text-[10px] font-medium uppercase text-sky-500">Receita</div>
+                                                        <div className="mt-1 text-xs font-semibold text-sky-700 dark:text-sky-300">{moneyBRL(receita)}</div>
                                                     </div>
                                                     <div className={lucro >= 0 ? "rounded-xl bg-emerald-50 p-2 dark:bg-emerald-950/30" : "rounded-xl bg-rose-50 p-2 dark:bg-rose-950/30"}>
-                                                        <div className={lucro >= 0 ? "text-[10px] font-bold uppercase text-emerald-500" : "text-[10px] font-bold uppercase text-rose-500"}>Retorno</div>
-                                                        <div className={lucro >= 0 ? "mt-1 text-xs font-black text-emerald-700 dark:text-emerald-300" : "mt-1 text-xs font-black text-rose-700 dark:text-rose-300"}>
+                                                        <div className={lucro >= 0 ? "text-[10px] font-medium uppercase text-emerald-500" : "text-[10px] font-medium uppercase text-rose-500"}>Retorno</div>
+                                                        <div className={lucro >= 0 ? "mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300" : "mt-1 text-xs font-semibold text-rose-700 dark:text-rose-300"}>
                                                             {moneyBRL(lucro)}
                                                         </div>
                                                     </div>
@@ -1449,13 +1431,13 @@ export default function BalancoPage() {
                                         {saidasConsumoPaginadas.map((row) => (
                                             <tr key={row.movimento_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/70">
                                                 <td className="whitespace-nowrap px-5 py-4">{dateBR(row.data_referencia)}</td>
-                                                <td className="px-5 py-4 font-bold">{safeText(row.produto_nome, "Produto")}</td>
+                                                <td className="px-5 py-4 font-medium">{safeText(row.produto_nome, "Produto")}</td>
                                                 <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{safeText(row.codigo_barras)}</td>
-                                                <td className="px-5 py-4 text-right font-bold">{numberBR(row.quantidade_saida)}</td>
+                                                <td className="px-5 py-4 text-right font-medium">{numberBR(row.quantidade_saida)}</td>
                                                 <td className="px-5 py-4 text-right">
                                                     {row.custo_unitario == null ? "Sem custo" : moneyBRL(row.custo_unitario)}
                                                 </td>
-                                                <td className="px-5 py-4 text-right font-black text-emerald-700 dark:text-emerald-300">
+                                                <td className="px-5 py-4 text-right font-semibold text-emerald-700 dark:text-emerald-300">
                                                     {row.custo_total == null ? "-" : moneyBRL(row.custo_total)}
                                                 </td>
                                             </tr>
@@ -1472,14 +1454,14 @@ export default function BalancoPage() {
                                                 <div className="text-xs text-slate-400">
                                                     {dateBR(row.data_referencia)} · CB: {safeText(row.codigo_barras)}
                                                 </div>
-                                                <div className="mt-1 font-black text-slate-900 dark:text-white">
+                                                <div className="mt-1 font-semibold text-slate-900 dark:text-white">
                                                     {safeText(row.produto_nome, "Produto")}
                                                 </div>
                                                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                                     Saída: {numberBR(row.quantidade_saida)} · Unitário: {row.custo_unitario == null ? "Sem custo" : moneyBRL(row.custo_unitario)}
                                                 </div>
                                             </div>
-                                            <div className="shrink-0 font-black text-emerald-700 dark:text-emerald-300">
+                                            <div className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">
                                                 {row.custo_total == null ? "-" : moneyBRL(row.custo_total)}
                                             </div>
                                         </div>
@@ -1512,18 +1494,18 @@ export default function BalancoPage() {
                     <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-slate-950 sm:rounded-3xl">
                         <div className="flex items-center justify-between gap-4 border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
                             <div className="min-w-0">
-                                <h2 className="truncate text-xl font-black">
+                                <h2 className="truncate text-xl font-semibold">
                                     {detail?.atendimento?.falecido || "Carregando..."}
                                 </h2>
                                 {detail?.atendimento ? (
                                     <div className="mt-2 flex flex-wrap gap-1.5">
                                         {detail.atendimento.assistencia_ativa ? (
-                                            <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                                            <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                                                 Assistência ativa
                                             </span>
                                         ) : null}
                                         {detail.atendimento.tanatopraxia_ativa ? (
-                                            <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
+                                            <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
                                                 Tanatopraxia ativa
                                             </span>
                                         ) : null}
@@ -1534,7 +1516,7 @@ export default function BalancoPage() {
                             <button
                                 type="button"
                                 onClick={fecharDetalhe}
-                                className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-slate-200 text-xl font-bold text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                                className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-slate-200 text-xl font-medium text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                                 aria-label="Fechar"
                             >
                                 ×
@@ -1562,7 +1544,7 @@ export default function BalancoPage() {
                                         </div>
                                     ) : null}
 
-                                    <div className="hidden grid-cols-[minmax(0,1fr)_80px_110px_120px_120px] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 sm:grid">
+                                    <div className="hidden grid-cols-[minmax(0,1fr)_80px_110px_120px_120px] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 sm:grid">
                                         <div>Item</div>
                                         <div className="text-right">Qtd.</div>
                                         <div className="text-right">Custo</div>
@@ -1586,11 +1568,11 @@ export default function BalancoPage() {
                                                         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_80px_110px_120px_120px] sm:items-center sm:gap-4">
                                                             <div className="min-w-0">
                                                                 <div className="flex flex-wrap items-center gap-2">
-                                                                    <div className="truncate text-sm font-black text-slate-900 dark:text-white">
+                                                                    <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                                                                         {safeText(item.produto_nome, "Produto")}
                                                                     </div>
                                                                     {isServico ? (
-                                                                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                                                                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                                                                             Serviço ativo
                                                                         </span>
                                                                     ) : null}
@@ -1598,39 +1580,39 @@ export default function BalancoPage() {
                                                             </div>
 
                                                             <div className="sm:text-right">
-                                                                <div className="text-[10px] font-bold uppercase text-slate-400 sm:hidden">
+                                                                <div className="text-[10px] font-medium uppercase text-slate-400 sm:hidden">
                                                                     Quantidade
                                                                 </div>
-                                                                <div className="text-sm font-black">
+                                                                <div className="text-sm font-semibold">
                                                                     {numberBR(Number(item.quantidade ?? 1))}
                                                                 </div>
                                                             </div>
 
                                                             <div className="sm:text-right">
-                                                                <div className="text-[10px] font-bold uppercase text-slate-400 sm:hidden">
+                                                                <div className="text-[10px] font-medium uppercase text-slate-400 sm:hidden">
                                                                     Custo
                                                                 </div>
-                                                                <div className="text-sm font-black text-slate-700 dark:text-slate-200">
+                                                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                                                                     {moneyBRL(custo)}
                                                                 </div>
                                                             </div>
 
                                                             <div className="sm:text-right">
-                                                                <div className="text-[10px] font-bold uppercase text-slate-400 sm:hidden">
+                                                                <div className="text-[10px] font-medium uppercase text-slate-400 sm:hidden">
                                                                     Receita
                                                                 </div>
-                                                                <div className="text-sm font-black text-sky-700 dark:text-sky-300">
+                                                                <div className="text-sm font-semibold text-sky-700 dark:text-sky-300">
                                                                     {moneyBRL(receita)}
                                                                 </div>
                                                             </div>
 
                                                             <div className="sm:text-right">
-                                                                <div className="text-[10px] font-bold uppercase text-slate-400 sm:hidden">
+                                                                <div className="text-[10px] font-medium uppercase text-slate-400 sm:hidden">
                                                                     Retorno
                                                                 </div>
                                                                 <div
                                                                     className={[
-                                                                        "text-sm font-black",
+                                                                        "text-sm font-semibold",
                                                                         lucro >= 0
                                                                             ? "text-emerald-700 dark:text-emerald-300"
                                                                             : "text-rose-700 dark:text-rose-300",
@@ -1654,19 +1636,19 @@ export default function BalancoPage() {
                                     <div className="border-t border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
                                         <div className="grid gap-3 sm:grid-cols-3">
                                             <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-                                                <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                                                     Custo
                                                 </div>
-                                                <div className="mt-1 text-xl font-black">
+                                                <div className="mt-1 text-xl font-semibold">
                                                     {moneyBRL(detail.atendimento.custo_total)}
                                                 </div>
                                             </div>
 
                                             <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900/60 dark:bg-sky-950/30">
-                                                <div className="text-[10px] font-black uppercase tracking-wide text-sky-500">
+                                                <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-500">
                                                     Receita
                                                 </div>
-                                                <div className="mt-1 text-xl font-black text-sky-700 dark:text-sky-300">
+                                                <div className="mt-1 text-xl font-semibold text-sky-700 dark:text-sky-300">
                                                     {moneyBRL(Number(detail.atendimento.receita_total ?? 0))}
                                                 </div>
                                             </div>
@@ -1681,7 +1663,7 @@ export default function BalancoPage() {
                                             >
                                                 <div
                                                     className={[
-                                                        "text-[10px] font-black uppercase tracking-wide",
+                                                        "text-[10px] font-semibold uppercase tracking-wide",
                                                         Number(detail.atendimento.lucro_total ?? 0) >= 0
                                                             ? "text-emerald-500"
                                                             : "text-rose-500",
@@ -1691,7 +1673,7 @@ export default function BalancoPage() {
                                                 </div>
                                                 <div
                                                     className={[
-                                                        "mt-1 text-xl font-black",
+                                                        "mt-1 text-xl font-semibold",
                                                         Number(detail.atendimento.lucro_total ?? 0) >= 0
                                                             ? "text-emerald-700 dark:text-emerald-300"
                                                             : "text-rose-700 dark:text-rose-300",
