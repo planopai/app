@@ -9,6 +9,7 @@ type Periodo = { inicio: string; fim: string };
 type Preset = "HOJE" | "SEMANA" | "MES" | "ANO" | "PERSONALIZADO";
 
 type Resumo = {
+    /** Total geral: funerários + alimentação + limpeza + descartáveis. */
     total_gasto: number;
     custo_direto: number;
     custo_consumiveis_estimado: number;
@@ -17,6 +18,13 @@ type Resumo = {
     custo_medio_atendimento: number;
     itens_utilizados: number;
     movimentos_saida: number;
+
+    /** Novos campos retornados pelo balanco.php. */
+    gasto_atendimentos_funerarios?: number;
+    gasto_alimentacao?: number;
+    gasto_material_limpeza?: number;
+    gasto_material_descartavel?: number;
+    saidas_sem_custo?: number;
 };
 
 type AtendimentoRow = {
@@ -32,6 +40,19 @@ type ConvenioOption = {
     label: string;
 };
 
+type SaidaConsumoRow = {
+    movimento_id: number;
+    data_referencia: string;
+    produto_id: number;
+    produto_nome: string;
+    codigo_barras: string;
+    classificacao: string;
+    categoria: string;
+    quantidade_saida: number;
+    custo_unitario: number | null;
+    custo_total: number | null;
+};
+
 type BalancoResponse = {
     ok: boolean;
     need_login?: 1;
@@ -41,7 +62,21 @@ type BalancoResponse = {
     convenios_disponiveis?: ConvenioOption[];
     resumo?: Resumo;
     atendimentos?: AtendimentoRow[];
+    saidas_consumo?: SaidaConsumoRow[];
 };
+
+type AreaGasto =
+    | "ATENDIMENTOS_FUNERARIOS"
+    | "ALIMENTACAO"
+    | "MATERIAL_LIMPEZA"
+    | "MATERIAL_DESCARTAVEL";
+
+const AREAS_GASTO: Array<{ value: AreaGasto; label: string }> = [
+    { value: "ATENDIMENTOS_FUNERARIOS", label: "Atendimentos Funerários" },
+    { value: "ALIMENTACAO", label: "Alimentação" },
+    { value: "MATERIAL_LIMPEZA", label: "Material de Limpeza" },
+    { value: "MATERIAL_DESCARTAVEL", label: "Material Descartável" },
+];
 
 type DetalheItem = {
     tipo_custo: "BAIXA_ESTOQUE" | "CONSUMIVEL_ESTIMADO" | "ORNAMENTACAO";
@@ -127,6 +162,22 @@ function dateBR(value?: string | null): string {
 function safeText(value?: string | null, fallback = "-"): string {
     const text = String(value ?? "").trim();
     return text || fallback;
+}
+
+function normalizeKey(value?: string | null): string {
+    return String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toUpperCase();
+}
+
+function areaDaCategoria(categoria?: string | null): AreaGasto | null {
+    const key = normalizeKey(categoria);
+    if (key === "ALIMENTACAO") return "ALIMENTACAO";
+    if (key === "MATERIAL DE LIMPEZA") return "MATERIAL_LIMPEZA";
+    if (key === "MATERIAL DESCARTAVEL") return "MATERIAL_DESCARTAVEL";
+    return null;
 }
 
 async function fetchFresh<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -216,6 +267,7 @@ export default function BalancoPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [query, setQuery] = useState("");
+    const [areaGasto, setAreaGasto] = useState<AreaGasto>("ATENDIMENTOS_FUNERARIOS");
 
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [detail, setDetail] = useState<DetalheResponse | null>(null);
@@ -383,6 +435,25 @@ export default function BalancoPage() {
         });
     }, [data?.atendimentos, query]);
 
+    const saidasConsumoFiltradas = useMemo(() => {
+        if (areaGasto === "ATENDIMENTOS_FUNERARIOS") return [];
+
+        const q = query.trim().toLocaleLowerCase("pt-BR");
+        const rows = (data?.saidas_consumo ?? []).filter((row) => {
+            if (normalizeKey(row.classificacao) !== "MATERIAL DE USO E CONSUMO") return false;
+            return areaDaCategoria(row.categoria) === areaGasto;
+        });
+
+        if (!q) return rows;
+
+        return rows.filter((row) => {
+            const produto = String(row.produto_nome ?? "").toLocaleLowerCase("pt-BR");
+            const codigo = String(row.codigo_barras ?? "").toLocaleLowerCase("pt-BR");
+            const categoria = String(row.categoria ?? "").toLocaleLowerCase("pt-BR");
+            return produto.includes(q) || codigo.includes(q) || categoria.includes(q);
+        });
+    }, [areaGasto, data?.saidas_consumo, query]);
+
     const resumo: Resumo = data?.resumo ?? {
         total_gasto: 0,
         custo_direto: 0,
@@ -392,10 +463,69 @@ export default function BalancoPage() {
         custo_medio_atendimento: 0,
         itens_utilizados: 0,
         movimentos_saida: 0,
+        gasto_atendimentos_funerarios: 0,
+        gasto_alimentacao: 0,
+        gasto_material_limpeza: 0,
+        gasto_material_descartavel: 0,
+        saidas_sem_custo: 0,
     };
 
+    const gastosConsumoCalculados = useMemo(() => {
+        const totais: Record<Exclude<AreaGasto, "ATENDIMENTOS_FUNERARIOS">, number> = {
+            ALIMENTACAO: 0,
+            MATERIAL_LIMPEZA: 0,
+            MATERIAL_DESCARTAVEL: 0,
+        };
+
+        for (const row of data?.saidas_consumo ?? []) {
+            if (normalizeKey(row.classificacao) !== "MATERIAL DE USO E CONSUMO") continue;
+            const area = areaDaCategoria(row.categoria);
+            if (!area || area === "ATENDIMENTOS_FUNERARIOS" || row.custo_total == null) continue;
+            totais[area] += Number(row.custo_total) || 0;
+        }
+
+        return totais;
+    }, [data?.saidas_consumo]);
+
+    const temDadosNovos =
+        Array.isArray(data?.saidas_consumo) ||
+        typeof data?.resumo?.gasto_atendimentos_funerarios === "number" ||
+        typeof data?.resumo?.gasto_alimentacao === "number" ||
+        typeof data?.resumo?.gasto_material_limpeza === "number" ||
+        typeof data?.resumo?.gasto_material_descartavel === "number";
+
+    const gastoAtendimentos = typeof resumo.gasto_atendimentos_funerarios === "number"
+        ? Number(resumo.gasto_atendimentos_funerarios)
+        : Number(resumo.total_gasto ?? 0);
+    const gastoAlimentacao = typeof resumo.gasto_alimentacao === "number"
+        ? Number(resumo.gasto_alimentacao)
+        : gastosConsumoCalculados.ALIMENTACAO;
+    const gastoLimpeza = typeof resumo.gasto_material_limpeza === "number"
+        ? Number(resumo.gasto_material_limpeza)
+        : gastosConsumoCalculados.MATERIAL_LIMPEZA;
+    const gastoDescartavel = typeof resumo.gasto_material_descartavel === "number"
+        ? Number(resumo.gasto_material_descartavel)
+        : gastosConsumoCalculados.MATERIAL_DESCARTAVEL;
+    const totalGastoGeral = temDadosNovos
+        ? gastoAtendimentos + gastoAlimentacao + gastoLimpeza + gastoDescartavel
+        : Number(resumo.total_gasto ?? 0);
+
+    const gastosPorArea: Record<AreaGasto, number> = {
+        ATENDIMENTOS_FUNERARIOS: gastoAtendimentos,
+        ALIMENTACAO: gastoAlimentacao,
+        MATERIAL_LIMPEZA: gastoLimpeza,
+        MATERIAL_DESCARTAVEL: gastoDescartavel,
+    };
+
+    const areaAtual = AREAS_GASTO.find((area) => area.value === areaGasto) ?? AREAS_GASTO[0];
     const convenios = data?.convenios_disponiveis ?? [];
     const detailItens = detail?.itens ?? [];
+
+    function selecionarArea(nextArea: AreaGasto) {
+        setAreaGasto(nextArea);
+        setQuery("");
+        fecharDetalhe();
+    }
 
     return (
         <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
@@ -505,6 +635,9 @@ export default function BalancoPage() {
                                         </option>
                                     ))}
                                 </select>
+                                <span className="mt-1 block text-[11px] text-slate-400">
+                                    O convênio filtra apenas os atendimentos funerários.
+                                </span>
                             </label>
                         </div>
 
@@ -535,21 +668,91 @@ export default function BalancoPage() {
                 ) : null}
 
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <SummaryCard label="Gasto total" value={moneyBRL(resumo.total_gasto)} />
+                    <SummaryCard label="Gasto total" value={moneyBRL(totalGastoGeral)} />
                     <SummaryCard label="Atendimentos" value={numberBR(resumo.atendimentos)} />
-                    <SummaryCard label="Custo médio" value={moneyBRL(resumo.custo_medio_atendimento)} />
+                    <SummaryCard label="Custo médio funerário" value={moneyBRL(resumo.custo_medio_atendimento)} />
                     <SummaryCard label="Itens com baixa" value={numberBR(resumo.itens_utilizados)} />
                 </div>
+
+                <Card className="p-4 sm:p-5">
+                    <div className="mb-3">
+                        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                            Gastos por área
+                        </h2>
+                        <p className="mt-1 text-xs text-slate-400">
+                            Clique em uma área para filtrar os lançamentos exibidos abaixo.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        {AREAS_GASTO.map((area) => {
+                            const selected = area.value === areaGasto;
+                            return (
+                                <button
+                                    key={area.value}
+                                    type="button"
+                                    onClick={() => selecionarArea(area.value)}
+                                    aria-pressed={selected}
+                                    className={[
+                                        "rounded-2xl border p-4 text-left transition",
+                                        selected
+                                            ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40"
+                                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900",
+                                    ].join(" ")}
+                                >
+                                    <div className={[
+                                        "text-xs font-black uppercase tracking-wide",
+                                        selected ? "text-sky-700 dark:text-sky-300" : "text-slate-500 dark:text-slate-400",
+                                    ].join(" ")}>
+                                        {area.label}
+                                    </div>
+                                    <div className="mt-2 text-xl font-black text-slate-900 dark:text-white">
+                                        {moneyBRL(gastosPorArea[area.value])}
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {(() => {
+                        const semCustoCalculado = (data?.saidas_consumo ?? []).filter((row) =>
+                            normalizeKey(row.classificacao) === "MATERIAL DE USO E CONSUMO" &&
+                            areaDaCategoria(row.categoria) !== null &&
+                            row.custo_total == null,
+                        ).length;
+                        const semCusto = typeof resumo.saidas_sem_custo === "number"
+                            ? Number(resumo.saidas_sem_custo)
+                            : semCustoCalculado;
+
+                        return semCusto > 0 ? (
+                            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                                Atenção: existem {numberBR(semCusto)} saídas de material sem custo registrado.
+                                Esses movimentos não devem ser tratados silenciosamente como custo zero.
+                            </div>
+                        ) : null;
+                    })()}
+                </Card>
 
                 <Card className="overflow-hidden">
                     <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <h2 className="text-lg font-black">Atendimentos</h2>
+                            <div>
+                                <h2 className="text-lg font-black">{areaAtual.label}</h2>
+                                {areaGasto !== "ATENDIMENTOS_FUNERARIOS" ? (
+                                    <div className="mt-1 text-xs text-slate-400">
+                                        Classificação: MATERIAL DE USO E CONSUMO
+                                    </div>
+                                ) : null}
+                            </div>
                             <input
                                 type="search"
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Buscar falecido ou convênio"
+                                placeholder={
+                                    areaGasto === "ATENDIMENTOS_FUNERARIOS"
+                                        ? "Buscar falecido ou convênio"
+                                        : "Buscar produto ou código de barras"
+                                }
                                 className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none ring-sky-200 focus:ring-2 dark:border-slate-700 dark:bg-slate-900 sm:max-w-sm"
                             />
                         </div>
@@ -559,38 +762,102 @@ export default function BalancoPage() {
                         <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-slate-500">
                             <Spinner /> Carregando...
                         </div>
-                    ) : atendimentosFiltrados.length === 0 ? (
+                    ) : areaGasto === "ATENDIMENTOS_FUNERARIOS" ? (
+                        atendimentosFiltrados.length === 0 ? (
+                            <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                                Nenhum atendimento encontrado.
+                            </div>
+                        ) : (
+                            <>
+                                <div className="hidden overflow-x-auto md:block">
+                                    <table className="w-full min-w-[760px] text-left text-sm">
+                                        <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                                            <tr>
+                                                <th className="px-5 py-3">Data</th>
+                                                <th className="px-5 py-3">Convênio</th>
+                                                <th className="px-5 py-3">Falecido</th>
+                                                <th className="px-5 py-3 text-right">Total gasto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {atendimentosFiltrados.map((row) => (
+                                                <tr key={row.atendimento_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/70">
+                                                    <td className="whitespace-nowrap px-5 py-4">{dateBR(row.data_referencia)}</td>
+                                                    <td className="px-5 py-4">{safeText(row.convenio, "Sem convênio")}</td>
+                                                    <td className="px-5 py-4">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void abrirDetalhe(row.atendimento_id)}
+                                                            className="font-black text-sky-700 hover:underline dark:text-sky-300"
+                                                        >
+                                                            {safeText(row.falecido, `Atendimento #${row.atendimento_id}`)}
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-5 py-4 text-right font-black text-emerald-700 dark:text-emerald-300">
+                                                        {moneyBRL(row.custo_total)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+                                    {atendimentosFiltrados.map((row) => (
+                                        <button
+                                            key={row.atendimento_id}
+                                            type="button"
+                                            onClick={() => void abrirDetalhe(row.atendimento_id)}
+                                            className="block w-full p-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs text-slate-400">
+                                                        {dateBR(row.data_referencia)} · {safeText(row.convenio, "Sem convênio")}
+                                                    </div>
+                                                    <div className="mt-1 truncate font-black text-sky-700 dark:text-sky-300">
+                                                        {safeText(row.falecido, `Atendimento #${row.atendimento_id}`)}
+                                                    </div>
+                                                </div>
+                                                <div className="shrink-0 font-black text-emerald-700 dark:text-emerald-300">
+                                                    {moneyBRL(row.custo_total)}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )
+                    ) : saidasConsumoFiltradas.length === 0 ? (
                         <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                            Nenhum atendimento encontrado.
+                            Nenhuma saída encontrada para {areaAtual.label.toLocaleLowerCase("pt-BR")} no período selecionado.
                         </div>
                     ) : (
                         <>
                             <div className="hidden overflow-x-auto md:block">
-                                <table className="w-full min-w-[760px] text-left text-sm">
+                                <table className="w-full min-w-[900px] text-left text-sm">
                                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
                                         <tr>
                                             <th className="px-5 py-3">Data</th>
-                                            <th className="px-5 py-3">Convênio</th>
-                                            <th className="px-5 py-3">Falecido</th>
-                                            <th className="px-5 py-3 text-right">Total gasto</th>
+                                            <th className="px-5 py-3">Produto</th>
+                                            <th className="px-5 py-3">Código</th>
+                                            <th className="px-5 py-3 text-right">Qtd. saída</th>
+                                            <th className="px-5 py-3 text-right">Custo unit.</th>
+                                            <th className="px-5 py-3 text-right">Total</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {atendimentosFiltrados.map((row) => (
-                                            <tr key={row.atendimento_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/70">
-                                                <td className="px-5 py-4 whitespace-nowrap">{dateBR(row.data_referencia)}</td>
-                                                <td className="px-5 py-4">{safeText(row.convenio, "Sem convênio")}</td>
-                                                <td className="px-5 py-4">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => void abrirDetalhe(row.atendimento_id)}
-                                                        className="font-black text-sky-700 hover:underline dark:text-sky-300"
-                                                    >
-                                                        {safeText(row.falecido, `Atendimento #${row.atendimento_id}`)}
-                                                    </button>
+                                        {saidasConsumoFiltradas.map((row) => (
+                                            <tr key={row.movimento_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/70">
+                                                <td className="whitespace-nowrap px-5 py-4">{dateBR(row.data_referencia)}</td>
+                                                <td className="px-5 py-4 font-bold">{safeText(row.produto_nome, "Produto")}</td>
+                                                <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{safeText(row.codigo_barras)}</td>
+                                                <td className="px-5 py-4 text-right font-bold">{numberBR(row.quantidade_saida)}</td>
+                                                <td className="px-5 py-4 text-right">
+                                                    {row.custo_unitario == null ? "Sem custo" : moneyBRL(row.custo_unitario)}
                                                 </td>
                                                 <td className="px-5 py-4 text-right font-black text-emerald-700 dark:text-emerald-300">
-                                                    {moneyBRL(row.custo_total)}
+                                                    {row.custo_total == null ? "-" : moneyBRL(row.custo_total)}
                                                 </td>
                                             </tr>
                                         ))}
@@ -599,27 +866,25 @@ export default function BalancoPage() {
                             </div>
 
                             <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
-                                {atendimentosFiltrados.map((row) => (
-                                    <button
-                                        key={row.atendimento_id}
-                                        type="button"
-                                        onClick={() => void abrirDetalhe(row.atendimento_id)}
-                                        className="block w-full p-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900"
-                                    >
+                                {saidasConsumoFiltradas.map((row) => (
+                                    <div key={row.movimento_id} className="p-4">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
                                                 <div className="text-xs text-slate-400">
-                                                    {dateBR(row.data_referencia)} · {safeText(row.convenio, "Sem convênio")}
+                                                    {dateBR(row.data_referencia)} · CB: {safeText(row.codigo_barras)}
                                                 </div>
-                                                <div className="mt-1 truncate font-black text-sky-700 dark:text-sky-300">
-                                                    {safeText(row.falecido, `Atendimento #${row.atendimento_id}`)}
+                                                <div className="mt-1 font-black text-slate-900 dark:text-white">
+                                                    {safeText(row.produto_nome, "Produto")}
+                                                </div>
+                                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                    Saída: {numberBR(row.quantidade_saida)} · Unitário: {row.custo_unitario == null ? "Sem custo" : moneyBRL(row.custo_unitario)}
                                                 </div>
                                             </div>
                                             <div className="shrink-0 font-black text-emerald-700 dark:text-emerald-300">
-                                                {moneyBRL(row.custo_total)}
+                                                {row.custo_total == null ? "-" : moneyBRL(row.custo_total)}
                                             </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 ))}
                             </div>
                         </>
