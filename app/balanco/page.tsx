@@ -360,10 +360,10 @@ function MarginGauge({ margem, lucro }: { margem: number; lucro: number }) {
         <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70">
             <div className="mb-3 text-center">
                 <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                    Margem funerária
+                    Margem
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                    Lucro ÷ receita
+                    Retorno ÷ receita
                 </div>
             </div>
 
@@ -408,23 +408,48 @@ function MarginGauge({ margem, lucro }: { margem: number; lucro: number }) {
 }
 
 function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
-    const data = rows.slice(-31);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const [containerWidth, setContainerWidth] = useState(760);
+
+    useEffect(() => {
+        const element = containerRef.current;
+        if (!element) return;
+
+        const updateWidth = () => {
+            const nextWidth = Math.max(280, Math.floor(element.clientWidth));
+            setContainerWidth(nextWidth);
+        };
+
+        updateWidth();
+
+        if (typeof ResizeObserver !== "undefined") {
+            const observer = new ResizeObserver(updateWidth);
+            observer.observe(element);
+            return () => observer.disconnect();
+        }
+
+        window.addEventListener("resize", updateWidth);
+        return () => window.removeEventListener("resize", updateWidth);
+    }, []);
+
+    const compact = containerWidth < 560;
+    const data = rows.slice(compact ? -14 : -31);
 
     if (!data.length) {
         return (
-            <div className="flex min-h-64 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
+            <div className="flex min-h-64 min-w-0 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
                 Ainda não há dados suficientes para montar o gráfico financeiro no período selecionado.
             </div>
         );
     }
 
-    const width = 760;
-    const height = 280;
-    const left = 56;
-    const right = 18;
+    const width = containerWidth;
+    const height = compact ? 250 : 280;
+    const left = compact ? 46 : 60;
+    const right = compact ? 10 : 18;
     const top = 24;
     const bottom = 42;
-    const chartW = width - left - right;
+    const chartW = Math.max(1, width - left - right);
     const chartH = height - top - bottom;
 
     const maxValue = Math.max(
@@ -438,6 +463,7 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
 
     const xFor = (index: number) =>
         left + (data.length <= 1 ? chartW / 2 : (index / (data.length - 1)) * chartW);
+
     const yFor = (value: number) =>
         top + chartH - (Math.max(0, value) / maxValue) * chartH;
 
@@ -452,23 +478,33 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
 
     const receitaPath = makePath((row) => Number(row.receita_total ?? 0));
     const custoPath = makePath((row) => Number(row.custo_total ?? 0));
-    const lucroPath = makePath((row) => Math.max(0, Number(row.lucro_total ?? 0)));
+    const retornoPath = makePath((row) => Math.max(0, Number(row.lucro_total ?? 0)));
 
-    const gridValues = [0, 0.25, 0.5, 0.75, 1];
+    const gridValues = compact ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
+
+    const axisMoney = (value: number) => {
+        const absolute = Math.abs(value);
+        if (absolute >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1).replace(".", ",")} mi`;
+        if (absolute >= 1_000) return `R$ ${(value / 1_000).toFixed(0)} mil`;
+        return `R$ ${Math.round(value)}`;
+    };
 
     return (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/70 sm:p-4">
+        <div
+            ref={containerRef}
+            className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/70 sm:p-4"
+        >
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+                <div className="min-w-0">
                     <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                        Receita × custo × lucro
+                        Receita × custo × retorno
                     </div>
                     <div className="mt-1 text-xs text-slate-400">
                         Evolução diária dos atendimentos funerários
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
                     <span className="inline-flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                         Receita
@@ -479,17 +515,17 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                        Lucro
+                        Retorno
                     </span>
                 </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="min-w-0 w-full max-w-full overflow-hidden">
                 <svg
                     viewBox={`0 0 ${width} ${height}`}
-                    className="h-[280px] min-w-[680px] w-full"
+                    className="block h-auto w-full max-w-full"
                     role="img"
-                    aria-label="Gráfico de receita, custo e lucro funerário"
+                    aria-label="Gráfico de receita, custo e retorno"
                 >
                     {gridValues.map((fraction) => {
                         const value = maxValue * fraction;
@@ -506,38 +542,38 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
                                     strokeDasharray="4 5"
                                 />
                                 <text
-                                    x={left - 8}
+                                    x={left - 7}
                                     y={y + 4}
                                     textAnchor="end"
                                     className="fill-slate-400 text-[10px]"
                                 >
-                                    {moneyBRL(value).replace("R$", "").trim()}
+                                    {axisMoney(value)}
                                 </text>
                             </g>
                         );
                     })}
 
-                    <path d={receitaPath} fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="stroke-sky-500" />
-                    <path d={custoPath} fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="stroke-amber-500" />
-                    <path d={lucroPath} fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="stroke-emerald-500" />
+                    <path d={receitaPath} fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-sky-500" />
+                    <path d={custoPath} fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-amber-500" />
+                    <path d={retornoPath} fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-emerald-500" />
 
                     {data.map((row, index) => {
                         const x = xFor(index);
                         const receita = Number(row.receita_total ?? 0);
                         const custo = Number(row.custo_total ?? 0);
-                        const lucro = Number(row.lucro_total ?? 0);
+                        const retorno = Number(row.lucro_total ?? 0);
 
                         return (
                             <g key={`${row.data}-${index}`}>
-                                <circle cx={x} cy={yFor(receita)} r="4" className="fill-sky-500">
+                                <circle cx={x} cy={yFor(receita)} r={compact ? 3 : 4} className="fill-sky-500">
                                     <title>{`${dateBR(row.data)} · Receita ${moneyBRL(receita)}`}</title>
                                 </circle>
-                                <circle cx={x} cy={yFor(custo)} r="4" className="fill-amber-500">
+                                <circle cx={x} cy={yFor(custo)} r={compact ? 3 : 4} className="fill-amber-500">
                                     <title>{`${dateBR(row.data)} · Custo ${moneyBRL(custo)}`}</title>
                                 </circle>
-                                {lucro >= 0 ? (
-                                    <circle cx={x} cy={yFor(lucro)} r="4" className="fill-emerald-500">
-                                        <title>{`${dateBR(row.data)} · Lucro ${moneyBRL(lucro)}`}</title>
+                                {retorno >= 0 ? (
+                                    <circle cx={x} cy={yFor(retorno)} r={compact ? 3 : 4} className="fill-emerald-500">
+                                        <title>{`${dateBR(row.data)} · Retorno ${moneyBRL(retorno)}`}</title>
                                     </circle>
                                 ) : null}
                             </g>
@@ -565,9 +601,63 @@ function FinancialTrendChart({ rows }: { rows: EvolucaoRow[] }) {
 
             {data.some((row) => Number(row.lucro_total ?? 0) < 0) ? (
                 <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
-                    Existem dias com resultado negativo. A linha de lucro mostra apenas a parte positiva; os valores negativos continuam considerados nos indicadores.
+                    Existem dias com retorno negativo. A linha de retorno mostra apenas a parte positiva; os valores negativos continuam considerados nos indicadores.
                 </div>
             ) : null}
+        </div>
+    );
+}
+
+type PaginationControlsProps = {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    pageSize: number;
+    onPageChange: (page: number) => void;
+};
+
+function PaginationControls({
+    currentPage,
+    totalPages,
+    totalItems,
+    pageSize,
+    onPageChange,
+}: PaginationControlsProps) {
+    if (totalItems <= 0) return null;
+
+    const safePage = Math.max(1, Math.min(currentPage, totalPages));
+    const firstItem = (safePage - 1) * pageSize + 1;
+    const lastItem = Math.min(safePage * pageSize, totalItems);
+
+    return (
+        <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                Mostrando {numberBR(firstItem)}–{numberBR(lastItem)} de {numberBR(totalItems)}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <button
+                    type="button"
+                    onClick={() => onPageChange(Math.max(1, safePage - 1))}
+                    disabled={safePage <= 1}
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                >
+                    Anterior
+                </button>
+
+                <div className="min-w-[92px] text-center text-xs font-bold text-slate-600 dark:text-slate-300">
+                    {numberBR(safePage)} / {numberBR(totalPages)}
+                </div>
+
+                <button
+                    type="button"
+                    onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
+                    disabled={safePage >= totalPages}
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                >
+                    Próxima
+                </button>
+            </div>
         </div>
     );
 }
@@ -591,6 +681,8 @@ export default function BalancoPage() {
     const [error, setError] = useState("");
     const [query, setQuery] = useState("");
     const [areaGasto, setAreaGasto] = useState<AreaGasto>("ATENDIMENTOS_FUNERARIOS");
+    const [pageSize, setPageSize] = useState(10);
+    const [currentPage, setCurrentPage] = useState(1);
 
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [detail, setDetail] = useState<DetalheResponse | null>(null);
@@ -717,6 +809,7 @@ export default function BalancoPage() {
         setConvenio(draftConvenio);
         setPreset(draftPreset);
         setFiltersOpen(false);
+        setCurrentPage(1);
         fecharDetalhe();
         void carregarBalanco(draftInicio, draftFim, draftConvenio);
     }
@@ -776,6 +869,25 @@ export default function BalancoPage() {
             return produto.includes(q) || codigo.includes(q) || categoria.includes(q);
         });
     }, [areaGasto, data?.saidas_consumo, query]);
+
+    const totalItensLista =
+        areaGasto === "ATENDIMENTOS_FUNERARIOS"
+            ? atendimentosFiltrados.length
+            : saidasConsumoFiltradas.length;
+
+    const totalPaginas = Math.max(1, Math.ceil(totalItensLista / pageSize));
+    const paginaAtual = Math.min(currentPage, totalPaginas);
+    const inicioPagina = (paginaAtual - 1) * pageSize;
+
+    const atendimentosPaginados = useMemo(
+        () => atendimentosFiltrados.slice(inicioPagina, inicioPagina + pageSize),
+        [atendimentosFiltrados, inicioPagina, pageSize],
+    );
+
+    const saidasConsumoPaginadas = useMemo(
+        () => saidasConsumoFiltradas.slice(inicioPagina, inicioPagina + pageSize),
+        [saidasConsumoFiltradas, inicioPagina, pageSize],
+    );
 
 
     const resumo: Resumo = data?.resumo ?? {
@@ -879,6 +991,7 @@ export default function BalancoPage() {
     function selecionarArea(nextArea: AreaGasto) {
         setAreaGasto(nextArea);
         setQuery("");
+        setCurrentPage(1);
         fecharDetalhe();
     }
 
@@ -1025,41 +1138,74 @@ export default function BalancoPage() {
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     <SummaryCard label="Gasto total" value={moneyBRL(totalGastoGeral)} />
                     <SummaryCard label="Atendimentos" value={numberBR(resumo.atendimentos)} />
-                    <SummaryCard label="Custo médio funerário" value={moneyBRL(resumo.custo_medio_atendimento)} />
+                    <SummaryCard label="Custo médio" value={moneyBRL(resumo.custo_medio_atendimento)} />
                     <SummaryCard label="Itens com baixa" value={numberBR(resumo.itens_utilizados)} />
+
+                    {AREAS_GASTO.map((area) => {
+                        const selected = area.value === areaGasto;
+
+                        return (
+                            <button
+                                key={area.value}
+                                type="button"
+                                onClick={() => selecionarArea(area.value)}
+                                aria-pressed={selected}
+                                className={[
+                                    "rounded-2xl border bg-white p-4 text-left shadow-sm transition sm:p-5 dark:bg-slate-950",
+                                    selected
+                                        ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40"
+                                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900",
+                                ].join(" ")}
+                            >
+                                <div
+                                    className={[
+                                        "text-[11px] font-black uppercase tracking-[0.12em]",
+                                        selected
+                                            ? "text-sky-700 dark:text-sky-300"
+                                            : "text-slate-500 dark:text-slate-400",
+                                    ].join(" ")}
+                                >
+                                    {area.label}
+                                </div>
+                                <div className="mt-2 break-words text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                                    {moneyBRL(gastosPorArea[area.value])}
+                                </div>
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <Card className="overflow-hidden">
                     <div className="border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                             <div>
-                                <h2 className="text-lg font-black">Resultado Funerário</h2>
+                                <h2 className="text-lg font-black">Resultado</h2>
                                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                                    Receita calculada pela coluna <strong>valor</strong> dos produtos/serviços funerários.
-                                    Lucro = receita − custo funerário.
+                                    Receita calculada pela coluna <strong>valor</strong> dos produtos e serviços do atendimento.
+                                    Retorno = receita − custo.
                                 </p>
                             </div>
                             <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                                Alimentação, limpeza e descartáveis não entram neste lucro
+                                Alimentação, limpeza e descartáveis não entram neste retorno
                             </div>
                         </div>
                     </div>
 
-                    <div className="p-4 sm:p-5">
+                    <div className="min-w-0 p-4 sm:p-5">
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             <FinancialMetric
-                                label="Receita funerária"
+                                label="Receita"
                                 value={moneyBRL(receitaFuneraria)}
                                 helper={resumo.atendimentos > 0 ? `${moneyBRL(receitaFuneraria / resumo.atendimentos)} por atendimento` : undefined}
                                 tone="info"
                             />
                             <FinancialMetric
-                                label="Custo funerário"
+                                label="Custo"
                                 value={moneyBRL(custoFunerario)}
                                 helper="Preço de custo + consumíveis + ornamentação + serviços ativos"
                             />
                             <FinancialMetric
-                                label="Lucro funerário"
+                                label="Retorno"
                                 value={moneyBRL(lucroFunerario)}
                                 helper={resumo.atendimentos > 0 ? `${moneyBRL(lucroFunerario / resumo.atendimentos)} por atendimento` : undefined}
                                 tone={lucroFunerario >= 0 ? "positive" : "negative"}
@@ -1067,94 +1213,16 @@ export default function BalancoPage() {
                             <FinancialMetric
                                 label="Margem"
                                 value={percentBR(margemFuneraria)}
-                                helper="Lucro dividido pela receita funerária"
+                                helper="Retorno dividido pela receita"
                                 tone={lucroFunerario >= 0 ? "positive" : "negative"}
                             />
                         </div>
 
-                        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+                        <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
                             <FinancialTrendChart rows={evolucaoFinanceira} />
                             <MarginGauge margem={margemFuneraria} lucro={lucroFunerario} />
                         </div>
                     </div>
-                </Card>
-
-                {data?.alertas?.length ? (
-                    <Card className="overflow-hidden">
-                        <div className="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-5">
-                            Verificações do balanço
-                        </div>
-                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {data.alertas.map((alerta, index) => (
-                                <div
-                                    key={`${index}-${alerta}`}
-                                    className="flex gap-3 px-4 py-3 text-xs leading-relaxed text-amber-800 dark:text-amber-300 sm:px-5"
-                                >
-                                    <span className="mt-0.5 shrink-0">⚠</span>
-                                    <span>{alerta}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                ) : null}
-
-                <Card className="p-4 sm:p-5">
-                    <div className="mb-3">
-                        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                            Gastos por área
-                        </h2>
-                        <p className="mt-1 text-xs text-slate-400">
-                            Clique em uma área para filtrar os lançamentos exibidos abaixo.
-                        </p>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        {AREAS_GASTO.map((area) => {
-                            const selected = area.value === areaGasto;
-                            return (
-                                <button
-                                    key={area.value}
-                                    type="button"
-                                    onClick={() => selecionarArea(area.value)}
-                                    aria-pressed={selected}
-                                    className={[
-                                        "rounded-2xl border p-4 text-left transition",
-                                        selected
-                                            ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40"
-                                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900",
-                                    ].join(" ")}
-                                >
-                                    <div className={[
-                                        "text-xs font-black uppercase tracking-wide",
-                                        selected ? "text-sky-700 dark:text-sky-300" : "text-slate-500 dark:text-slate-400",
-                                    ].join(" ")}>
-                                        {area.label}
-                                    </div>
-                                    <div className="mt-2 text-xl font-black text-slate-900 dark:text-white">
-                                        {moneyBRL(gastosPorArea[area.value])}
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {(() => {
-                        const semCustoCalculado = (data?.saidas_consumo ?? []).filter((row) =>
-                            normalizeKey(row.classificacao) === "MATERIAL DE USO E CONSUMO" &&
-                            areaDaCategoria(row.categoria) !== null &&
-                            row.custo_total == null,
-                        ).length;
-                        const semCusto = typeof resumo.saidas_sem_custo === "number"
-                            ? Number(resumo.saidas_sem_custo)
-                            : semCustoCalculado;
-
-                        return semCusto > 0 ? (
-                            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                                Atenção: existem {numberBR(semCusto)} saídas de material sem custo registrado.
-                                Esses movimentos não devem ser tratados silenciosamente como custo zero.
-                            </div>
-                        ) : null;
-                    })()}
                 </Card>
 
                 <Card className="overflow-hidden">
@@ -1168,17 +1236,40 @@ export default function BalancoPage() {
                                     </div>
                                 ) : null}
                             </div>
-                            <input
-                                type="search"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder={
-                                    areaGasto === "ATENDIMENTOS_FUNERARIOS"
-                                        ? "Buscar falecido ou convênio"
-                                        : "Buscar produto ou código de barras"
-                                }
-                                className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none ring-sky-200 focus:ring-2 dark:border-slate-700 dark:bg-slate-900 sm:max-w-sm"
-                            />
+                            <div className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row">
+                                <input
+                                    type="search"
+                                    value={query}
+                                    onChange={(e) => {
+                                        setQuery(e.target.value);
+                                        setCurrentPage(1);
+                                    }}
+                                    placeholder={
+                                        areaGasto === "ATENDIMENTOS_FUNERARIOS"
+                                            ? "Buscar falecido ou convênio"
+                                            : "Buscar produto ou código de barras"
+                                    }
+                                    className="h-10 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none ring-sky-200 focus:ring-2 dark:border-slate-700 dark:bg-slate-900"
+                                />
+
+                                <label className="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                    <span className="whitespace-nowrap">Por página</span>
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            setPageSize(Number(e.target.value));
+                                            setCurrentPage(1);
+                                        }}
+                                        className="bg-transparent text-sm font-black text-slate-900 outline-none dark:text-white"
+                                    >
+                                        {[10, 20, 50, 100].map((size) => (
+                                            <option key={size} value={size}>
+                                                {size}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -1202,12 +1293,12 @@ export default function BalancoPage() {
                                                 <th className="px-5 py-3">Falecido</th>
                                                 <th className="px-5 py-3 text-right">Custo</th>
                                                 <th className="px-5 py-3 text-right">Receita</th>
-                                                <th className="px-5 py-3 text-right">Lucro</th>
+                                                <th className="px-5 py-3 text-right">Retorno</th>
                                                 <th className="px-5 py-3 text-right">Margem</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {atendimentosFiltrados.map((row) => {
+                                            {atendimentosPaginados.map((row) => {
                                                 const lucro = Number(row.lucro_total ?? 0);
                                                 const receita = Number(row.receita_total ?? 0);
                                                 const margem = Number(row.margem_lucro_percentual ?? 0);
@@ -1280,7 +1371,7 @@ export default function BalancoPage() {
                                 </div>
 
                                 <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
-                                    {atendimentosFiltrados.map((row) => {
+                                    {atendimentosPaginados.map((row) => {
                                         const lucro = Number(row.lucro_total ?? 0);
                                         const receita = Number(row.receita_total ?? 0);
 
@@ -1323,7 +1414,7 @@ export default function BalancoPage() {
                                                         <div className="mt-1 text-xs font-black text-sky-700 dark:text-sky-300">{moneyBRL(receita)}</div>
                                                     </div>
                                                     <div className={lucro >= 0 ? "rounded-xl bg-emerald-50 p-2 dark:bg-emerald-950/30" : "rounded-xl bg-rose-50 p-2 dark:bg-rose-950/30"}>
-                                                        <div className={lucro >= 0 ? "text-[10px] font-bold uppercase text-emerald-500" : "text-[10px] font-bold uppercase text-rose-500"}>Lucro</div>
+                                                        <div className={lucro >= 0 ? "text-[10px] font-bold uppercase text-emerald-500" : "text-[10px] font-bold uppercase text-rose-500"}>Retorno</div>
                                                         <div className={lucro >= 0 ? "mt-1 text-xs font-black text-emerald-700 dark:text-emerald-300" : "mt-1 text-xs font-black text-rose-700 dark:text-rose-300"}>
                                                             {moneyBRL(lucro)}
                                                         </div>
@@ -1355,7 +1446,7 @@ export default function BalancoPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {saidasConsumoFiltradas.map((row) => (
+                                        {saidasConsumoPaginadas.map((row) => (
                                             <tr key={row.movimento_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/70">
                                                 <td className="whitespace-nowrap px-5 py-4">{dateBR(row.data_referencia)}</td>
                                                 <td className="px-5 py-4 font-bold">{safeText(row.produto_nome, "Produto")}</td>
@@ -1374,7 +1465,7 @@ export default function BalancoPage() {
                             </div>
 
                             <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
-                                {saidasConsumoFiltradas.map((row) => (
+                                {saidasConsumoPaginadas.map((row) => (
                                     <div key={row.movimento_id} className="p-4">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
@@ -1397,6 +1488,14 @@ export default function BalancoPage() {
                             </div>
                         </>
                     )}
+
+                    <PaginationControls
+                        currentPage={paginaAtual}
+                        totalPages={totalPaginas}
+                        totalItems={totalItensLista}
+                        pageSize={pageSize}
+                        onPageChange={setCurrentPage}
+                    />
                 </Card>
             </div>
 
@@ -1463,11 +1562,12 @@ export default function BalancoPage() {
                                         </div>
                                     ) : null}
 
-                                    <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_120px] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 sm:grid">
+                                    <div className="hidden grid-cols-[minmax(0,1fr)_80px_110px_120px_120px] gap-4 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 sm:grid">
                                         <div>Item</div>
                                         <div className="text-right">Qtd.</div>
                                         <div className="text-right">Custo</div>
-                                        <div className="text-right">Receita / lucro</div>
+                                        <div className="text-right">Receita</div>
+                                        <div className="text-right">Retorno</div>
                                     </div>
 
                                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1483,7 +1583,7 @@ export default function BalancoPage() {
                                                         key={`${item.tipo_custo}-${item.produto_id}-${item.codigo_barras}-${index}`}
                                                         className="px-4 py-4 sm:px-5"
                                                     >
-                                                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_100px_120px_120px] sm:items-center sm:gap-4">
+                                                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_80px_110px_120px_120px] sm:items-center sm:gap-4">
                                                             <div className="min-w-0">
                                                                 <div className="flex flex-wrap items-center gap-2">
                                                                     <div className="truncate text-sm font-black text-slate-900 dark:text-white">
@@ -1495,16 +1595,6 @@ export default function BalancoPage() {
                                                                         </span>
                                                                     ) : null}
                                                                 </div>
-                                                                <div className="mt-1 text-xs text-slate-400">
-                                                                    CB: {safeText(item.codigo_barras)}
-                                                                    {item.valor_unitario != null ? ` · Valor: ${moneyBRL(Number(item.valor_unitario))}` : ""}
-                                                                    {item.preco_custo != null ? ` · Custo unit.: ${moneyBRL(Number(item.preco_custo))}` : ""}
-                                                                </div>
-                                                                {item.descricao_calculo ? (
-                                                                    <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                                                                        {item.descricao_calculo}
-                                                                    </div>
-                                                                ) : null}
                                                             </div>
 
                                                             <div className="sm:text-right">
@@ -1527,14 +1617,20 @@ export default function BalancoPage() {
 
                                                             <div className="sm:text-right">
                                                                 <div className="text-[10px] font-bold uppercase text-slate-400 sm:hidden">
-                                                                    Receita / lucro
+                                                                    Receita
                                                                 </div>
                                                                 <div className="text-sm font-black text-sky-700 dark:text-sky-300">
                                                                     {moneyBRL(receita)}
                                                                 </div>
+                                                            </div>
+
+                                                            <div className="sm:text-right">
+                                                                <div className="text-[10px] font-bold uppercase text-slate-400 sm:hidden">
+                                                                    Retorno
+                                                                </div>
                                                                 <div
                                                                     className={[
-                                                                        "mt-0.5 text-xs font-black",
+                                                                        "text-sm font-black",
                                                                         lucro >= 0
                                                                             ? "text-emerald-700 dark:text-emerald-300"
                                                                             : "text-rose-700 dark:text-rose-300",
@@ -1559,7 +1655,7 @@ export default function BalancoPage() {
                                         <div className="grid gap-3 sm:grid-cols-3">
                                             <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
                                                 <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                                                    Custo funerário
+                                                    Custo
                                                 </div>
                                                 <div className="mt-1 text-xl font-black">
                                                     {moneyBRL(detail.atendimento.custo_total)}
@@ -1591,7 +1687,7 @@ export default function BalancoPage() {
                                                             : "text-rose-500",
                                                     ].join(" ")}
                                                 >
-                                                    Lucro · {percentBR(Number(detail.atendimento.margem_lucro_percentual ?? 0))}
+                                                    Retorno · {percentBR(Number(detail.atendimento.margem_lucro_percentual ?? 0))}
                                                 </div>
                                                 <div
                                                     className={[
