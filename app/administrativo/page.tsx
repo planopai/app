@@ -11,6 +11,7 @@ import {
     IconBook,
     IconCar,
     IconChartBar,
+    IconCurrencyDollar,
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular (padrão global do app) ========= */
@@ -18,13 +19,13 @@ function QuickIcon({ children }: { children: React.ReactNode }) {
     return (
         <span
             className="
-        grid h-11 w-11 place-items-center rounded-full
-        bg-sky-100 text-sky-700
-        transition-colors
-        group-hover:bg-sky-600 group-hover:text-white
-        dark:bg-sky-900/30 dark:text-sky-200
-        dark:group-hover:bg-sky-600
-      "
+                grid h-11 w-11 place-items-center rounded-full
+                bg-sky-100 text-sky-700
+                transition-colors
+                group-hover:bg-sky-600 group-hover:text-white
+                dark:bg-sky-900/30 dark:text-sky-200
+                dark:group-hover:bg-sky-600
+            "
         >
             {children}
         </span>
@@ -57,6 +58,11 @@ const items = [
         title: "Dashboard",
         href: "/desempenho",
         icon: IconChartBar,
+    },
+    {
+        title: "Balanço",
+        href: "/balanco",
+        icon: IconCurrencyDollar,
     },
     {
         title: "Leads",
@@ -95,18 +101,18 @@ export default function AdministrativoPage() {
                                 key={href}
                                 href={href}
                                 className="
-                  group flex flex-col items-center justify-center
-                  gap-2.5
-                  rounded-2xl
-                  border border-gray-200
-                  bg-white
-                  py-4 px-3
-                  shadow-sm
-                  transition-all
-                  hover:-translate-y-[1px]
-                  hover:shadow-md
-                  dark:border-gray-800 dark:bg-gray-900
-                "
+                                    group flex flex-col items-center justify-center
+                                    gap-2.5
+                                    rounded-2xl
+                                    border border-gray-200
+                                    bg-white
+                                    px-3 py-4
+                                    shadow-sm
+                                    transition-all
+                                    hover:-translate-y-[1px]
+                                    hover:shadow-md
+                                    dark:border-gray-800 dark:bg-gray-900
+                                "
                             >
                                 <QuickIcon>
                                     <Icon size={22} />
@@ -114,14 +120,14 @@ export default function AdministrativoPage() {
 
                                 <span
                                     className="
-                    text-[13px]
-                    font-extrabold
-                    tracking-tight
-                    leading-tight
-                    text-center
-                    text-gray-900
-                    dark:text-white
-                  "
+                                        text-center
+                                        text-[13px]
+                                        font-extrabold
+                                        leading-tight
+                                        tracking-tight
+                                        text-gray-900
+                                        dark:text-white
+                                    "
                                 >
                                     {title}
                                 </span>
