@@ -1,50 +1,32 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadCachedRegistros, saveRegistrosSnapshot } from "@/lib/offline/registros";
-import { applyPendingActionsToRegistros } from "@/lib/offline/actions";
-import { getCurrentOfflineSession } from "@/lib/offline/session";
 import { getHistoryOfflineAware } from "@/lib/offline/history";
 
-/* =========================
-   Fallback local (somente offline)
-   ========================= */
-function readLS<T>(k: string): T | null {
-    if (typeof window === "undefined") return null;
-    try {
-        const raw = localStorage.getItem(k);
-        if (!raw) return null;
-        return JSON.parse(raw) as T;
-    } catch {
-        return null;
-    }
-}
-function writeLS(k: string, v: any) {
-    if (typeof window === "undefined") return;
-    try {
-        localStorage.setItem(k, JSON.stringify(v));
-    } catch {
-        // ignore
-    }
-}
-
 /**
- * Busca sempre a fonte remota e não reutiliza resposta em memória; por isso, é
- * adequada para os dados operacionais que precisam estar atuais ao entrar
- * ou retornar para a página.
+ * Consulta sempre o servidor.
+ *
+ * Não lê IndexedDB/localStorage e adiciona um cache-buster em toda requisição
+ * para evitar resposta antiga de browser, service worker, proxy ou CDN.
  */
-async function fetchJsonFresh<T = any>(url: string, timeoutMs = 10_000): Promise<T> {
+async function fetchJsonFresh<T = any>(rawUrl: string, timeoutMs = 10_000): Promise<T> {
     const ac = new AbortController();
     const t = window.setTimeout(() => ac.abort(), timeoutMs);
 
     try {
-        const resp = await fetch(url, {
+        const url = new URL(rawUrl, window.location.origin);
+        url.searchParams.set("_ts", `${Date.now()}-${performance.now().toFixed(3)}`);
+
+        const resp = await fetch(url.toString(), {
+            method: "GET",
             cache: "no-store",
             credentials: "include",
             signal: ac.signal,
             headers: {
-                "Cache-Control": "no-cache",
+                Accept: "application/json",
+                "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
                 Pragma: "no-cache",
+                Expires: "0",
             },
         });
 
@@ -1776,94 +1758,27 @@ export default function QuadroAtendimentoPage() {
     }, []);
 
     /*
-     * Atendimentos: servidor é a fonte autoritativa quando há conexão.
-     * O snapshot local só entra como fallback offline/falha de rede. Isso evita
-     * a antiga corrida em que IndexedDB podia terminar depois e sobrescrever
-     * dados recém-carregados da API.
+     * Atendimentos: consulta exclusivamente remota.
+     *
+     * Não há IndexedDB, snapshot, fila offline ou fallback local.
      */
     useEffect(() => {
         let alive = true;
         let loading = false;
-        let hasFreshServerData = false;
         const BASE = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
 
-        async function loadCachedFallback() {
-            try {
-                const session = await getCurrentOfflineSession({ refreshIfOnline: false });
-                const cached = await loadCachedRegistros<Registro>(session?.userId);
-                if (!alive || !cached.length || hasFreshServerData) return;
-
-                const merged = session
-                    ? await applyPendingActionsToRegistros(cached, session.userId)
-                    : cached;
-
-                if (alive && !hasFreshServerData) setRegistros(merged);
-            } catch (e) {
-                console.warn("[QUADRO OFFLINE] Falha ao carregar snapshot local", e);
-            }
-        }
-
-        async function load(options?: { allowOfflineFallback?: boolean }) {
+        async function load() {
             if (!alive || loading) return;
-
-            const allowOfflineFallback = options?.allowOfflineFallback === true;
-            const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-
-            if (offline) {
-                if (allowOfflineFallback || !hasFreshServerData) await loadCachedFallback();
-                return;
-            }
 
             loading = true;
             try {
-                const url = `${BASE}&_ts=${Date.now()}`;
-                // Em conexão lenta, 10s podia abortar uma resposta válida e forçar
-                // o fallback local. A listagem operacional tolera até 30s antes de
-                // considerar a tentativa realmente indisponível.
-                const j = await fetchJsonFresh<any>(url, 30_000);
+                const j = await fetchJsonFresh<any>(BASE, 30_000);
                 if (!alive) return;
                 if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar atendimentos.");
 
-                const arr = j as Registro[];
-
-                // A resposta nova entra na tela imediatamente. A camada offline
-                // não participa do caminho crítico de renderização.
-                hasFreshServerData = true;
-                setRegistros(arr);
-
-                try {
-                    const session = await getCurrentOfflineSession({
-                        refreshIfOnline: false,
-                        allowCachedOnNetworkFailure: true,
-                    });
-
-                    if (session) {
-                        /*
-                         * ONLINE: a resposta válida da API é a fonte autoritativa.
-                         * Não reaplicamos a fila offline sobre `arr` depois que o
-                         * servidor respondeu, pois uma ação antiga/rejeitada poderia
-                         * fazer a tela regredir para um estado que o servidor já não tem.
-                         *
-                         * A fila continua sendo aplicada no fallback realmente offline
-                         * em loadCachedFallback(), preservando o funcionamento sem rede.
-                         */
-
-                        // Persistência para uso offline acontece fora do caminho
-                        // crítico: nunca segura nem substitui a atualização visual.
-                        void saveRegistrosSnapshot(arr, session.userId).catch((e) => {
-                            console.warn("[QUADRO] Falha ao atualizar snapshot local", e);
-                        });
-                    }
-                } catch (e) {
-                    // A falha da sessão/offline layer não pode impedir a exibição
-                    // da resposta nova que já veio do servidor.
-                    console.warn("[QUADRO] Falha ao consultar sessão offline", e);
-                }
+                setRegistros(j as Registro[]);
             } catch (e) {
-                console.warn("[QUADRO] Falha ao atualizar atendimentos", e);
-                if (allowOfflineFallback && !hasFreshServerData) {
-                    await loadCachedFallback();
-                }
+                console.warn("[QUADRO] Falha ao consultar atendimentos diretamente na API", e);
             } finally {
                 loading = false;
             }
@@ -1872,17 +1787,17 @@ export default function QuadroAtendimentoPage() {
         const refreshNow = () => {
             void load();
         };
+
         const onVisibilityChange = () => {
             if (document.visibilityState === "visible") refreshNow();
         };
 
-        // A primeira renderização online aguarda a fonte autoritativa; cache local
-        // aparece somente se estivermos offline ou a rede falhar.
-        void load({ allowOfflineFallback: true });
+        void load();
 
         const id = window.setInterval(refreshNow, 8000);
         window.addEventListener("focus", refreshNow);
         window.addEventListener("online", refreshNow);
+        window.addEventListener("pageshow", refreshNow);
         document.addEventListener("visibilitychange", onVisibilityChange);
 
         return () => {
@@ -1890,47 +1805,30 @@ export default function QuadroAtendimentoPage() {
             window.clearInterval(id);
             window.removeEventListener("focus", refreshNow);
             window.removeEventListener("online", refreshNow);
+            window.removeEventListener("pageshow", refreshNow);
             document.removeEventListener("visibilitychange", onVisibilityChange);
         };
     }, []);
 
-    /* Avisos seguem a mesma regra: rede primeiro; localStorage apenas fallback. */
+    /* Avisos: consulta exclusivamente remota, sem localStorage/fallback. */
+
     useEffect(() => {
         let alive = true;
         let loading = false;
-        let hasFreshServerData = false;
         const BASE = "https://api.planoassistencialintegrado.com.br/avisos.php?listar=1";
 
-        function loadCachedFallback() {
-            if (!alive || hasFreshServerData) return;
-            const cached = readLS<Aviso[]>("qa_avisos") ?? [];
-            if (cached.length) setAvisos(cached);
-        }
-
-        async function load(options?: { allowOfflineFallback?: boolean }) {
+        async function load() {
             if (!alive || loading) return;
-
-            const allowOfflineFallback = options?.allowOfflineFallback === true;
-            const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-            if (offline) {
-                if (allowOfflineFallback || !hasFreshServerData) loadCachedFallback();
-                return;
-            }
 
             loading = true;
             try {
-                const url = `${BASE}&_ts=${Date.now()}`;
-                const j = await fetchJsonFresh<any>(url, 10_000);
+                const j = await fetchJsonFresh<any>(BASE, 10_000);
                 if (!alive) return;
                 if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar avisos.");
 
-                const arr = j as Aviso[];
-                hasFreshServerData = true;
-                setAvisos(arr);
-                writeLS("qa_avisos", arr);
+                setAvisos(j as Aviso[]);
             } catch (e) {
-                console.warn("[QUADRO] Falha ao atualizar avisos", e);
-                if (allowOfflineFallback && !hasFreshServerData) loadCachedFallback();
+                console.warn("[QUADRO] Falha ao consultar avisos diretamente na API", e);
             } finally {
                 loading = false;
             }
@@ -1939,15 +1837,17 @@ export default function QuadroAtendimentoPage() {
         const refreshNow = () => {
             void load();
         };
+
         const onVisibilityChange = () => {
             if (document.visibilityState === "visible") refreshNow();
         };
 
-        void load({ allowOfflineFallback: true });
+        void load();
 
         const id = window.setInterval(refreshNow, 20000);
         window.addEventListener("focus", refreshNow);
         window.addEventListener("online", refreshNow);
+        window.addEventListener("pageshow", refreshNow);
         document.addEventListener("visibilitychange", onVisibilityChange);
 
         return () => {
@@ -1955,6 +1855,7 @@ export default function QuadroAtendimentoPage() {
             window.clearInterval(id);
             window.removeEventListener("focus", refreshNow);
             window.removeEventListener("online", refreshNow);
+            window.removeEventListener("pageshow", refreshNow);
             document.removeEventListener("visibilitychange", onVisibilityChange);
         };
     }, []);
@@ -1966,7 +1867,7 @@ export default function QuadroAtendimentoPage() {
             try {
                 // Catálogo também é buscado sem cache ao acessar a página para
                 // que nomes/categorias exibidos acompanhem o servidor atual.
-                const url = `https://api.planoassistencialintegrado.com.br/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                const url = "https://api.planoassistencialintegrado.com.br/materiais_admin.php?op=list&all=1";
                 const res = await fetchJsonFresh<any>(url, 10_000);
 
                 const tree = (res?.data ?? res) as any[];
@@ -2109,8 +2010,8 @@ export default function QuadroAtendimentoPage() {
         return () => {
             alive = false;
         };
-        // statusLogsById é lido somente para decidir se existe cache; a mudança
-        // de registros/status em ativosOrdenados é que dispara a revalidação.
+        // Mudanças nos registros/status visíveis disparam a revalidação
+        // dos históricos exibidos.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ativosOrdenados]);
 
