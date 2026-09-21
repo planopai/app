@@ -122,7 +122,8 @@ type BalancoResponse = {
     need_login?: 1;
     msg?: string;
     periodo?: Periodo;
-    filtro_convenio?: string;
+    filtro_convenio?: string | string[];
+    filtros_convenio?: string[];
     convenios_disponiveis?: ConvenioOption[];
     resumo?: Resumo;
     financeiro?: Financeiro;
@@ -343,6 +344,166 @@ function RefreshIcon() {
             <path d="M20 6v5h-5" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M19 11a7 7 0 1 0 1 4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
+    );
+}
+
+
+type ConvenioMultiSelectProps = {
+    options: ConvenioOption[];
+    value: string[];
+    onChange: (values: string[]) => void;
+    disabled?: boolean;
+};
+
+function ConvenioMultiSelect({
+    options,
+    value,
+    onChange,
+    disabled = false,
+}: ConvenioMultiSelectProps) {
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!open) return;
+
+        const onPointerDown = (event: MouseEvent | TouchEvent) => {
+            const root = rootRef.current;
+            if (!root || root.contains(event.target as Node)) return;
+            setOpen(false);
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setOpen(false);
+        };
+
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("touchstart", onPointerDown);
+        window.addEventListener("keydown", onKeyDown);
+
+        return () => {
+            document.removeEventListener("mousedown", onPointerDown);
+            document.removeEventListener("touchstart", onPointerDown);
+            window.removeEventListener("keydown", onKeyDown);
+        };
+    }, [open]);
+
+    const todos = value.length === 0;
+
+    const selectedLabels = value.map((selectedValue) => {
+        const option = options.find((item) => item.value === selectedValue);
+        return option?.label ?? selectedValue;
+    });
+
+    const buttonLabel =
+        todos
+            ? "Todos"
+            : selectedLabels.length === 1
+                ? selectedLabels[0]
+                : selectedLabels.length === 2
+                    ? selectedLabels.join(", ")
+                    : `${selectedLabels.length} convênios selecionados`;
+
+    function toggleOption(optionValue: string) {
+        if (todos) {
+            onChange([optionValue]);
+            return;
+        }
+
+        if (value.includes(optionValue)) {
+            onChange(value.filter((item) => item !== optionValue));
+            return;
+        }
+
+        onChange([...value, optionValue]);
+    }
+
+    return (
+        <div ref={rootRef} className="relative">
+            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Convênio
+            </span>
+
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setOpen((current) => !current)}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                className={[
+                    "flex h-11 w-full items-center justify-between gap-3 rounded-xl border bg-white px-3 text-left text-sm outline-none transition",
+                    "border-slate-300 ring-sky-200 hover:border-slate-400 focus:ring-2",
+                    "disabled:cursor-not-allowed disabled:opacity-60",
+                    "dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600",
+                ].join(" ")}
+            >
+                <span className="min-w-0 truncate">{buttonLabel}</span>
+                <svg
+                    viewBox="0 0 20 20"
+                    className={[
+                        "h-4 w-4 shrink-0 text-slate-400 transition-transform",
+                        open ? "rotate-180" : "",
+                    ].join(" ")}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    aria-hidden="true"
+                >
+                    <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+            </button>
+
+            {open ? (
+                <div
+                    role="listbox"
+                    aria-multiselectable="true"
+                    className="absolute left-0 right-0 z-50 mt-1 max-h-72 min-w-[260px] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-950"
+                >
+                    <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-900">
+                        <input
+                            type="checkbox"
+                            checked={todos}
+                            onChange={() => onChange([])}
+                            className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                        />
+                        <span className="font-medium">Todos</span>
+                    </label>
+
+                    {options.length > 0 ? (
+                        <>
+                            <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+                            {options.map((option) => {
+                                const checked = !todos && value.includes(option.value);
+
+                                return (
+                                    <label
+                                        key={option.value}
+                                        className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-900"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => toggleOption(option.value)}
+                                            className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                                        />
+                                        <span className="min-w-0 flex-1">{option.label}</span>
+                                    </label>
+                                );
+                            })}
+                        </>
+                    ) : (
+                        <div className="px-3 py-3 text-xs text-slate-400">
+                            Nenhum convênio disponível.
+                        </div>
+                    )}
+                </div>
+            ) : null}
+
+            <span className="mt-1 block text-[11px] text-slate-400">
+                Você pode marcar um ou vários convênios.
+            </span>
+        </div>
     );
 }
 
@@ -693,12 +854,12 @@ export default function BalancoPage() {
 
     const [inicio, setInicio] = useState(initialPeriodo.inicio);
     const [fim, setFim] = useState(initialPeriodo.fim);
-    const [convenio, setConvenio] = useState("");
+    const [conveniosFiltro, setConveniosFiltro] = useState<string[]>([]);
     const [preset, setPreset] = useState<Preset>("MES");
 
     const [draftInicio, setDraftInicio] = useState(initialPeriodo.inicio);
     const [draftFim, setDraftFim] = useState(initialPeriodo.fim);
-    const [draftConvenio, setDraftConvenio] = useState("");
+    const [draftConvenios, setDraftConvenios] = useState<string[]>([]);
     const [draftPreset, setDraftPreset] = useState<Preset>("MES");
     const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -722,7 +883,7 @@ export default function BalancoPage() {
     async function carregarBalanco(
         nextInicio = inicio,
         nextFim = fim,
-        nextConvenio = convenio,
+        nextConvenios = conveniosFiltro,
     ) {
         const seq = ++requestSeq.current;
         setLoading(true);
@@ -736,7 +897,9 @@ export default function BalancoPage() {
             url.searchParams.set("action", "resumo");
             url.searchParams.set("inicio", nextInicio);
             url.searchParams.set("fim", nextFim);
-            if (nextConvenio) url.searchParams.set("convenio", nextConvenio);
+            for (const convenioSelecionado of nextConvenios) {
+                url.searchParams.append("convenio[]", convenioSelecionado);
+            }
             url.searchParams.set("_ts", String(Date.now()));
 
             const response = await fetchFresh<BalancoResponse>(url.toString(), controller.signal);
@@ -808,7 +971,7 @@ export default function BalancoPage() {
     function abrirFiltros() {
         setDraftInicio(inicio);
         setDraftFim(fim);
-        setDraftConvenio(convenio);
+        setDraftConvenios([...conveniosFiltro]);
         setDraftPreset(preset);
         setFiltersOpen(true);
     }
@@ -833,12 +996,12 @@ export default function BalancoPage() {
 
         setInicio(draftInicio);
         setFim(draftFim);
-        setConvenio(draftConvenio);
+        setConveniosFiltro([...draftConvenios]);
         setPreset(draftPreset);
         setFiltersOpen(false);
         setCurrentPage(1);
         fecharDetalhe();
-        void carregarBalanco(draftInicio, draftFim, draftConvenio);
+        void carregarBalanco(draftInicio, draftFim, draftConvenios);
     }
 
     function limparFiltros() {
@@ -846,11 +1009,11 @@ export default function BalancoPage() {
         setDraftPreset("MES");
         setDraftInicio(periodo.inicio);
         setDraftFim(periodo.fim);
-        setDraftConvenio("");
+        setDraftConvenios([]);
     }
 
     useEffect(() => {
-        void carregarBalanco(initialPeriodo.inicio, initialPeriodo.fim, "");
+        void carregarBalanco(initialPeriodo.inicio, initialPeriodo.fim, []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -1173,7 +1336,7 @@ export default function BalancoPage() {
                             onClick={filtersOpen ? () => setFiltersOpen(false) : abrirFiltros}
                             className={[
                                 "grid h-10 w-10 place-items-center rounded-xl border shadow-sm transition",
-                                filtersOpen || convenio || preset !== "MES"
+                                filtersOpen || conveniosFiltro.length > 0 || preset !== "MES"
                                     ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
                                     : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800",
                             ].join(" ")}
@@ -1255,24 +1418,12 @@ export default function BalancoPage() {
                                 />
                             </label>
 
-                            <label className="block">
-                                <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Convênio</span>
-                                <select
-                                    value={draftConvenio}
-                                    onChange={(e) => setDraftConvenio(e.target.value)}
-                                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none ring-sky-200 focus:ring-2 dark:border-slate-700 dark:bg-slate-900"
-                                >
-                                    <option value="">Todos</option>
-                                    {convenios.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <span className="mt-1 block text-[11px] text-slate-400">
-                                    O convênio filtra apenas os atendimentos funerários.
-                                </span>
-                            </label>
+                            <ConvenioMultiSelect
+                                options={convenios}
+                                value={draftConvenios}
+                                onChange={setDraftConvenios}
+                                disabled={loading}
+                            />
                         </div>
 
                         <div className="mt-4 flex flex-wrap justify-end gap-2">
