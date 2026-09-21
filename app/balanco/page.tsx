@@ -66,6 +66,35 @@ type SaidaConsumoRow = {
     quantidade_saida: number;
     custo_unitario: number | null;
     custo_total: number | null;
+    destino_texto?: string;
+};
+
+type SaidaConsumoDestino = {
+    destino: string;
+    quantidade: number;
+};
+
+type SaidaConsumoDia = {
+    data: string;
+    quantidade: number;
+    custo_total: number | null;
+    destinos: SaidaConsumoDestino[];
+};
+
+type SaidaConsumoGrupo = {
+    chave: string;
+    produto_id: number;
+    produto_nome: string;
+    codigo_barras: string;
+    categoria: string;
+    quantidade_total: number;
+    movimentos: number;
+    custo_medio: number | null;
+    custo_total: number | null;
+    saidas_sem_custo: number;
+    destino_principal: string;
+    destino_principal_quantidade: number;
+    dias: SaidaConsumoDia[];
 };
 
 type Financeiro = {
@@ -680,6 +709,7 @@ export default function BalancoPage() {
     const [areaGasto, setAreaGasto] = useState<AreaGasto>("ATENDIMENTOS_FUNERARIOS");
     const [pageSize, setPageSize] = useState(10);
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedConsumoKey, setExpandedConsumoKey] = useState<string | null>(null);
 
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [detail, setDetail] = useState<DetalheResponse | null>(null);
@@ -848,29 +878,167 @@ export default function BalancoPage() {
         });
     }, [data?.atendimentos, query]);
 
-    const saidasConsumoFiltradas = useMemo(() => {
+    const saidasConsumoAgrupadas = useMemo<SaidaConsumoGrupo[]>(() => {
         if (areaGasto === "ATENDIMENTOS_FUNERARIOS") return [];
 
+        type GrupoInterno = {
+            chave: string;
+            produto_id: number;
+            produto_nome: string;
+            codigo_barras: string;
+            categoria: string;
+            quantidade_total: number;
+            movimentos: number;
+            custo_total_conhecido: number;
+            quantidade_com_custo: number;
+            saidas_sem_custo: number;
+            destinos: Map<string, number>;
+            dias: Map<string, {
+                quantidade: number;
+                custo_total_conhecido: number;
+                tem_custo: boolean;
+                destinos: Map<string, number>;
+            }>;
+        };
+
+        const grupos = new Map<string, GrupoInterno>();
+
+        for (const row of data?.saidas_consumo ?? []) {
+            if (normalizeKey(row.classificacao) !== "MATERIAL DE USO E CONSUMO") continue;
+            if (areaDaCategoria(row.categoria) !== areaGasto) continue;
+
+            const produtoId = Number(row.produto_id ?? 0);
+            const codigo = String(row.codigo_barras ?? "").trim();
+            const nome = String(row.produto_nome ?? "").trim();
+            const chave = produtoId > 0
+                ? `id:${produtoId}`
+                : codigo
+                    ? `cb:${codigo}`
+                    : `nome:${normalizeKey(nome)}`;
+
+            const quantidade = Math.max(0, Number(row.quantidade_saida ?? 0));
+            if (quantidade <= 0) continue;
+
+            const destinoRaw = String(row.destino_texto ?? "").trim();
+            const destino = destinoRaw || "Sem destino informado";
+            const dataKey = String(row.data_referencia ?? "").slice(0, 10) || "SEM_DATA";
+
+            let grupo = grupos.get(chave);
+            if (!grupo) {
+                grupo = {
+                    chave,
+                    produto_id: produtoId,
+                    produto_nome: nome || "Produto",
+                    codigo_barras: codigo,
+                    categoria: String(row.categoria ?? ""),
+                    quantidade_total: 0,
+                    movimentos: 0,
+                    custo_total_conhecido: 0,
+                    quantidade_com_custo: 0,
+                    saidas_sem_custo: 0,
+                    destinos: new Map<string, number>(),
+                    dias: new Map(),
+                };
+                grupos.set(chave, grupo);
+            }
+
+            grupo.quantidade_total += quantidade;
+            grupo.movimentos += 1;
+            grupo.destinos.set(destino, (grupo.destinos.get(destino) ?? 0) + quantidade);
+
+            if (row.custo_total == null) {
+                grupo.saidas_sem_custo += 1;
+            } else {
+                grupo.custo_total_conhecido += Number(row.custo_total) || 0;
+                grupo.quantidade_com_custo += quantidade;
+            }
+
+            let dia = grupo.dias.get(dataKey);
+            if (!dia) {
+                dia = {
+                    quantidade: 0,
+                    custo_total_conhecido: 0,
+                    tem_custo: false,
+                    destinos: new Map<string, number>(),
+                };
+                grupo.dias.set(dataKey, dia);
+            }
+
+            dia.quantidade += quantidade;
+            dia.destinos.set(destino, (dia.destinos.get(destino) ?? 0) + quantidade);
+            if (row.custo_total != null) {
+                dia.custo_total_conhecido += Number(row.custo_total) || 0;
+                dia.tem_custo = true;
+            }
+        }
+
         const q = query.trim().toLocaleLowerCase("pt-BR");
-        const rows = (data?.saidas_consumo ?? []).filter((row) => {
-            if (normalizeKey(row.classificacao) !== "MATERIAL DE USO E CONSUMO") return false;
-            return areaDaCategoria(row.categoria) === areaGasto;
-        });
 
-        if (!q) return rows;
+        return Array.from(grupos.values())
+            .map((grupo): SaidaConsumoGrupo => {
+                const destinosOrdenados = Array.from(grupo.destinos.entries())
+                    .map(([destino, quantidade]) => ({ destino, quantidade }))
+                    .sort((a, b) =>
+                        b.quantidade - a.quantidade ||
+                        a.destino.localeCompare(b.destino, "pt-BR"),
+                    );
 
-        return rows.filter((row) => {
-            const produto = String(row.produto_nome ?? "").toLocaleLowerCase("pt-BR");
-            const codigo = String(row.codigo_barras ?? "").toLocaleLowerCase("pt-BR");
-            const categoria = String(row.categoria ?? "").toLocaleLowerCase("pt-BR");
-            return produto.includes(q) || codigo.includes(q) || categoria.includes(q);
-        });
+                const dias = Array.from(grupo.dias.entries())
+                    .map(([data, dia]): SaidaConsumoDia => ({
+                        data,
+                        quantidade: dia.quantidade,
+                        custo_total: dia.tem_custo ? dia.custo_total_conhecido : null,
+                        destinos: Array.from(dia.destinos.entries())
+                            .map(([destino, quantidade]) => ({ destino, quantidade }))
+                            .sort((a, b) =>
+                                b.quantidade - a.quantidade ||
+                                a.destino.localeCompare(b.destino, "pt-BR"),
+                            ),
+                    }))
+                    .sort((a, b) => b.data.localeCompare(a.data));
+
+                return {
+                    chave: grupo.chave,
+                    produto_id: grupo.produto_id,
+                    produto_nome: grupo.produto_nome,
+                    codigo_barras: grupo.codigo_barras,
+                    categoria: grupo.categoria,
+                    quantidade_total: grupo.quantidade_total,
+                    movimentos: grupo.movimentos,
+                    custo_medio:
+                        grupo.quantidade_com_custo > 0
+                            ? grupo.custo_total_conhecido / grupo.quantidade_com_custo
+                            : null,
+                    custo_total:
+                        grupo.quantidade_com_custo > 0
+                            ? grupo.custo_total_conhecido
+                            : null,
+                    saidas_sem_custo: grupo.saidas_sem_custo,
+                    destino_principal: destinosOrdenados[0]?.destino ?? "Sem destino informado",
+                    destino_principal_quantidade: destinosOrdenados[0]?.quantidade ?? 0,
+                    dias,
+                };
+            })
+            .filter((grupo) => {
+                if (!q) return true;
+                return (
+                    grupo.produto_nome.toLocaleLowerCase("pt-BR").includes(q) ||
+                    grupo.codigo_barras.toLocaleLowerCase("pt-BR").includes(q) ||
+                    grupo.categoria.toLocaleLowerCase("pt-BR").includes(q) ||
+                    grupo.destino_principal.toLocaleLowerCase("pt-BR").includes(q)
+                );
+            })
+            .sort((a, b) =>
+                b.quantidade_total - a.quantidade_total ||
+                (b.custo_total ?? 0) - (a.custo_total ?? 0) ||
+                a.produto_nome.localeCompare(b.produto_nome, "pt-BR"),
+            );
     }, [areaGasto, data?.saidas_consumo, query]);
 
     const totalItensLista =
         areaGasto === "ATENDIMENTOS_FUNERARIOS"
             ? atendimentosFiltrados.length
-            : saidasConsumoFiltradas.length;
+            : saidasConsumoAgrupadas.length;
 
     const totalPaginas = Math.max(1, Math.ceil(totalItensLista / pageSize));
     const paginaAtual = Math.min(currentPage, totalPaginas);
@@ -882,8 +1050,8 @@ export default function BalancoPage() {
     );
 
     const saidasConsumoPaginadas = useMemo(
-        () => saidasConsumoFiltradas.slice(inicioPagina, inicioPagina + pageSize),
-        [saidasConsumoFiltradas, inicioPagina, pageSize],
+        () => saidasConsumoAgrupadas.slice(inicioPagina, inicioPagina + pageSize),
+        [saidasConsumoAgrupadas, inicioPagina, pageSize],
     );
 
 
@@ -989,6 +1157,7 @@ export default function BalancoPage() {
         setAreaGasto(nextArea);
         setQuery("");
         setCurrentPage(1);
+        setExpandedConsumoKey(null);
         fecharDetalhe();
     }
 
@@ -1225,11 +1394,12 @@ export default function BalancoPage() {
                                     onChange={(e) => {
                                         setQuery(e.target.value);
                                         setCurrentPage(1);
+                                        setExpandedConsumoKey(null);
                                     }}
                                     placeholder={
                                         areaGasto === "ATENDIMENTOS_FUNERARIOS"
                                             ? "Buscar falecido ou convênio"
-                                            : "Buscar produto ou código de barras"
+                                            : "Buscar produto, código ou destino"
                                     }
                                     className="h-10 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none ring-sky-200 focus:ring-2 dark:border-slate-700 dark:bg-slate-900"
                                 />
@@ -1241,6 +1411,7 @@ export default function BalancoPage() {
                                         onChange={(e) => {
                                             setPageSize(Number(e.target.value));
                                             setCurrentPage(1);
+                                            setExpandedConsumoKey(null);
                                         }}
                                         className="bg-transparent text-sm font-semibold text-slate-900 outline-none dark:text-white"
                                     >
@@ -1409,64 +1580,270 @@ export default function BalancoPage() {
                             </>
                         )
 
-                    ) : saidasConsumoFiltradas.length === 0 ? (
+                    ) : saidasConsumoAgrupadas.length === 0 ? (
                         <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
                             Nenhuma saída encontrada para {areaAtual.label.toLocaleLowerCase("pt-BR")} no período selecionado.
                         </div>
                     ) : (
                         <>
                             <div className="hidden overflow-x-auto md:block">
-                                <table className="w-full min-w-[900px] text-left text-sm">
+                                <table className="w-full min-w-[980px] text-left text-sm">
                                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
                                         <tr>
-                                            <th className="px-5 py-3">Data</th>
                                             <th className="px-5 py-3">Produto</th>
                                             <th className="px-5 py-3">Código</th>
-                                            <th className="px-5 py-3 text-right">Qtd. saída</th>
-                                            <th className="px-5 py-3 text-right">Custo unit.</th>
+                                            <th className="px-5 py-3 text-right">Qtd. total</th>
+                                            <th className="px-5 py-3">Destino principal</th>
+                                            <th className="px-5 py-3 text-right">Custo médio</th>
                                             <th className="px-5 py-3 text-right">Total</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {saidasConsumoPaginadas.map((row) => (
-                                            <tr key={row.movimento_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/70">
-                                                <td className="whitespace-nowrap px-5 py-4">{dateBR(row.data_referencia)}</td>
-                                                <td className="px-5 py-4 font-medium">{safeText(row.produto_nome, "Produto")}</td>
-                                                <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{safeText(row.codigo_barras)}</td>
-                                                <td className="px-5 py-4 text-right font-medium">{numberBR(row.quantidade_saida)}</td>
-                                                <td className="px-5 py-4 text-right">
-                                                    {row.custo_unitario == null ? "Sem custo" : moneyBRL(row.custo_unitario)}
-                                                </td>
-                                                <td className="px-5 py-4 text-right font-semibold text-emerald-700 dark:text-emerald-300">
-                                                    {row.custo_total == null ? "-" : moneyBRL(row.custo_total)}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {saidasConsumoPaginadas.map((grupo) => {
+                                            const expanded = expandedConsumoKey === grupo.chave;
+
+                                            return (
+                                                <React.Fragment key={grupo.chave}>
+                                                    <tr
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        aria-expanded={expanded}
+                                                        onClick={() =>
+                                                            setExpandedConsumoKey((current) =>
+                                                                current === grupo.chave ? null : grupo.chave,
+                                                            )
+                                                        }
+                                                        onKeyDown={(event) => {
+                                                            if (event.key === "Enter" || event.key === " ") {
+                                                                event.preventDefault();
+                                                                setExpandedConsumoKey((current) =>
+                                                                    current === grupo.chave ? null : grupo.chave,
+                                                                );
+                                                            }
+                                                        }}
+                                                        className="cursor-pointer transition hover:bg-slate-50/80 focus:bg-slate-50 focus:outline-none dark:hover:bg-slate-900/70 dark:focus:bg-slate-900/70"
+                                                    >
+                                                        <td className="px-5 py-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <span
+                                                                    className={[
+                                                                        "grid h-7 w-7 shrink-0 place-items-center rounded-full border text-xs transition",
+                                                                        expanded
+                                                                            ? "rotate-90 border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+                                                                            : "border-slate-200 bg-white text-slate-400 dark:border-slate-700 dark:bg-slate-950",
+                                                                    ].join(" ")}
+                                                                    aria-hidden="true"
+                                                                >
+                                                                    ›
+                                                                </span>
+                                                                <div className="min-w-0">
+                                                                    <div className="font-medium text-slate-900 dark:text-white">
+                                                                        {safeText(grupo.produto_nome, "Produto")}
+                                                                    </div>
+                                                                    <div className="mt-0.5 text-[11px] text-slate-400">
+                                                                        {numberBR(grupo.movimentos)} lançamento(s) · {numberBR(grupo.dias.length)} dia(s)
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
+                                                            {safeText(grupo.codigo_barras)}
+                                                        </td>
+                                                        <td className="px-5 py-4 text-right text-base font-semibold text-slate-900 dark:text-white">
+                                                            {numberBR(grupo.quantidade_total)}
+                                                        </td>
+                                                        <td className="px-5 py-4">
+                                                            <div className="max-w-[280px] truncate text-slate-700 dark:text-slate-200">
+                                                                {grupo.destino_principal}
+                                                            </div>
+                                                            <div className="mt-0.5 text-[11px] text-slate-400">
+                                                                {numberBR(grupo.destino_principal_quantidade)} unidade(s)
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-5 py-4 text-right">
+                                                            {grupo.custo_medio == null
+                                                                ? "Sem custo"
+                                                                : moneyBRL(grupo.custo_medio)}
+                                                        </td>
+                                                        <td className="px-5 py-4 text-right font-semibold text-emerald-700 dark:text-emerald-300">
+                                                            {grupo.custo_total == null
+                                                                ? "-"
+                                                                : moneyBRL(grupo.custo_total)}
+                                                        </td>
+                                                    </tr>
+
+                                                    {expanded ? (
+                                                        <tr>
+                                                            <td colSpan={6} className="bg-slate-50/70 px-5 py-4 dark:bg-slate-900/45">
+                                                                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                                                                    <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                                                                        <div>
+                                                                            <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                                                                                Histórico de saídas
+                                                                            </div>
+                                                                            <div className="mt-1 text-xs text-slate-400">
+                                                                                Quantidade consolidada por dia
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+                                                                            Maior destino: <span className="font-semibold">{grupo.destino_principal}</span>
+                                                                            {" · "}
+                                                                            {numberBR(grupo.destino_principal_quantidade)}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="overflow-x-auto">
+                                                                        <table className="w-full min-w-[680px] text-left text-xs">
+                                                                            <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                                                                                <tr>
+                                                                                    <th className="px-4 py-2.5">Data</th>
+                                                                                    <th className="px-4 py-2.5 text-right">Quantidade</th>
+                                                                                    <th className="px-4 py-2.5">Destino(s)</th>
+                                                                                    <th className="px-4 py-2.5 text-right">Custo do dia</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                                                {grupo.dias.map((dia) => (
+                                                                                    <tr key={`${grupo.chave}-${dia.data}`}>
+                                                                                        <td className="whitespace-nowrap px-4 py-3">
+                                                                                            {dia.data === "SEM_DATA" ? "-" : dateBR(dia.data)}
+                                                                                        </td>
+                                                                                        <td className="px-4 py-3 text-right font-semibold">
+                                                                                            {numberBR(dia.quantidade)}
+                                                                                        </td>
+                                                                                        <td className="px-4 py-3">
+                                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                                {dia.destinos.map((destino) => (
+                                                                                                    <span
+                                                                                                        key={`${dia.data}-${destino.destino}`}
+                                                                                                        className="rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                                                                                    >
+                                                                                                        {destino.destino} · {numberBR(destino.quantidade)}
+                                                                                                    </span>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        </td>
+                                                                                        <td className="px-4 py-3 text-right text-emerald-700 dark:text-emerald-300">
+                                                                                            {dia.custo_total == null ? "-" : moneyBRL(dia.custo_total)}
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                ))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ) : null}
+                                                </React.Fragment>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
 
                             <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
-                                {saidasConsumoPaginadas.map((row) => (
-                                    <div key={row.movimento_id} className="p-4">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <div className="text-xs text-slate-400">
-                                                    {dateBR(row.data_referencia)} · CB: {safeText(row.codigo_barras)}
+                                {saidasConsumoPaginadas.map((grupo) => {
+                                    const expanded = expandedConsumoKey === grupo.chave;
+
+                                    return (
+                                        <div key={grupo.chave}>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setExpandedConsumoKey((current) =>
+                                                        current === grupo.chave ? null : grupo.chave,
+                                                    )
+                                                }
+                                                aria-expanded={expanded}
+                                                className="block w-full p-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-900"
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span
+                                                                className={[
+                                                                    "grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs transition",
+                                                                    expanded
+                                                                        ? "rotate-90 border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+                                                                        : "border-slate-200 text-slate-400 dark:border-slate-700",
+                                                                ].join(" ")}
+                                                                aria-hidden="true"
+                                                            >
+                                                                ›
+                                                            </span>
+                                                            <div className="min-w-0">
+                                                                <div className="truncate font-semibold text-slate-900 dark:text-white">
+                                                                    {safeText(grupo.produto_nome, "Produto")}
+                                                                </div>
+                                                                <div className="mt-0.5 text-[11px] text-slate-400">
+                                                                    CB: {safeText(grupo.codigo_barras)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-3 grid grid-cols-2 gap-2">
+                                                            <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-900">
+                                                                <div className="text-[10px] uppercase text-slate-400">Qtd. total</div>
+                                                                <div className="mt-1 text-base font-semibold">
+                                                                    {numberBR(grupo.quantidade_total)}
+                                                                </div>
+                                                            </div>
+                                                            <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-900">
+                                                                <div className="text-[10px] uppercase text-slate-400">Total</div>
+                                                                <div className="mt-1 text-base font-semibold text-emerald-700 dark:text-emerald-300">
+                                                                    {grupo.custo_total == null ? "-" : moneyBRL(grupo.custo_total)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-800">
+                                                            <div className="text-[10px] uppercase text-slate-400">Destino principal</div>
+                                                            <div className="mt-1 text-xs text-slate-700 dark:text-slate-200">
+                                                                {grupo.destino_principal} · {numberBR(grupo.destino_principal_quantidade)}
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="mt-1 font-semibold text-slate-900 dark:text-white">
-                                                    {safeText(row.produto_nome, "Produto")}
+                                            </button>
+
+                                            {expanded ? (
+                                                <div className="border-t border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                                                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                        Histórico por dia
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        {grupo.dias.map((dia) => (
+                                                            <div
+                                                                key={`${grupo.chave}-${dia.data}`}
+                                                                className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"
+                                                            >
+                                                                <div className="flex items-center justify-between gap-3">
+                                                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                                                        {dia.data === "SEM_DATA" ? "-" : dateBR(dia.data)}
+                                                                    </div>
+                                                                    <div className="text-sm font-semibold">
+                                                                        {numberBR(dia.quantidade)}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                                    {dia.destinos.map((destino) => (
+                                                                        <span
+                                                                            key={`${dia.data}-${destino.destino}`}
+                                                                            className="rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                                                        >
+                                                                            {destino.destino} · {numberBR(destino.quantidade)}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                    Saída: {numberBR(row.quantidade_saida)} · Unitário: {row.custo_unitario == null ? "Sem custo" : moneyBRL(row.custo_unitario)}
-                                                </div>
-                                            </div>
-                                            <div className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">
-                                                {row.custo_total == null ? "-" : moneyBRL(row.custo_total)}
-                                            </div>
+                                            ) : null}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </>
                     )}
@@ -1476,7 +1853,10 @@ export default function BalancoPage() {
                         totalPages={totalPaginas}
                         totalItems={totalItensLista}
                         pageSize={pageSize}
-                        onPageChange={setCurrentPage}
+                        onPageChange={(page) => {
+                            setCurrentPage(page);
+                            setExpandedConsumoKey(null);
+                        }}
                     />
                 </Card>
             </div>
