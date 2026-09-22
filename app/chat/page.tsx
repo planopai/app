@@ -10,7 +10,7 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const STORAGE_KEY = "pai-chat-v3";
+const STORAGE_KEY = "pai-chat-v4";
 const VOICE_AUTO_KEY = "pai-chat-voice-auto-v1";
 const MAX_HISTORY_TO_API = 20;
 const MAX_RECORDING_SECONDS = 90;
