@@ -431,9 +431,38 @@ type QuickAction = {
   slug: string;
   icon: React.ReactNode;
   counterKey?: CounterKey;
+  alwaysVisible?: boolean;
 };
 
 const quickActions: QuickAction[] = [
+  {
+    label: "Chat PAI",
+    href: "/chat",
+    slug: "chat",
+    alwaysVisible: true,
+    icon: (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+      >
+        <path
+          d="M5 5.5h14a2 2 0 012 2v8a2 2 0 01-2 2h-7l-4.5 3v-3H5a2 2 0 01-2-2v-8a2 2 0 012-2z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M8 11h.01M12 11h.01M16 11h.01"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+
   {
     label: "Serviços Funerários",
     href: "/servicos-funerarios",
@@ -840,8 +869,10 @@ export default function HomePage() {
   const permissionsReady = perms !== null;
 
   const actions = permissionsReady
-    ? quickActions.filter((action) =>
-      has(action.slug)
+    ? quickActions.filter(
+      (action) =>
+        action.alwaysVisible ||
+        has(action.slug)
     )
     : [];
 
