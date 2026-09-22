@@ -1,6 +1,6 @@
 "use client";
 
-// v14: custo médio móvel padronizado na listagem de produtos + paginação 10/50/100/500/Tudo.
+// v15: Confecção de KIT LANCHE e COROA ARTIFICIAL com baixa FIFO no ALMOXARIFADO.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -77,7 +77,7 @@ type InitResp = {
 
 type HistoricoRow = {
     id: number;
-    tipo: "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "AJUSTE" | "CADASTRO_PRODUTO";
+    tipo: "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "CONFECCAO" | "AJUSTE" | "CADASTRO_PRODUTO";
     produto_id: ID;
     codigo_barras_snapshot: string;
     lote_id?: ID | null;
@@ -107,6 +107,8 @@ type HistoricoRow = {
     solicitante_nome?: string | null;
     deposito_origem_nome?: string | null;
     deposito_destino_nome?: string | null;
+    confeccao_id?: number | null;
+    confeccao_tipo?: "KIT_LANCHE" | "COROA_ARTIFICIAL" | string | null;
 };
 
 type HistoricoResp = {
@@ -114,6 +116,44 @@ type HistoricoResp = {
     rows: HistoricoRow[];
     msg?: string;
     need_login?: 1;
+};
+
+type ConfeccaoTipo = "KIT_LANCHE" | "COROA_ARTIFICIAL";
+
+type ConfeccaoPreviewItem = {
+    produto_id: ID;
+    nome: string;
+    codigo_barras: string;
+    quantidade_por_unidade: number;
+    quantidade_total: number;
+    saldo_disponivel: number;
+    disponivel: boolean;
+    custo_total_previsto: string | number;
+};
+
+type ConfeccaoPreviewResp = {
+    ok: boolean;
+    tipo?: ConfeccaoTipo;
+    quantidade?: number;
+    disponivel?: boolean;
+    produto_final?: { id: ID; nome: string; codigo_barras: string };
+    deposito_insumos?: Deposito;
+    deposito_destino?: Deposito;
+    itens?: ConfeccaoPreviewItem[];
+    custo_total?: string | number;
+    custo_unitario?: string | number;
+    msg?: string;
+    need_login?: 1;
+};
+
+type ConfeccaoExecutarResp = {
+    ok: boolean;
+    msg?: string;
+    confeccao_id?: number;
+    tipo?: ConfeccaoTipo;
+    quantidade?: number;
+    custo_total?: string | number;
+    custo_unitario?: string | number;
 };
 
 
@@ -441,6 +481,17 @@ const tabActions: TabAction[] = [
         ),
     },
     {
+        key: "CONFECCAO",
+        label: "Confecção",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 5h12v5H6z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M5 10h14v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-9z" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M9 14h6M12 11v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+        ),
+    },
+    {
         key: "ENTRADA",
         label: "Entrada",
         icon: (
@@ -509,7 +560,7 @@ const tabActions: TabAction[] = [
 ];
 
 
-type UiTab = "MENU" | "HOME" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "DASHBOARD" | "AVANCADO";
+type UiTab = "MENU" | "HOME" | "CONFECCAO" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "DASHBOARD" | "AVANCADO";
 
 type EntradaItem = {
     id: number;
@@ -525,6 +576,32 @@ type EntradaItem = {
 };
 type SaidaItem = { id: number; payload: any; resumo: string };
 type TrfItem = { id: number; payload: any; resumo: string };
+
+const KIT_LANCHE_CB = "678560";
+const KIT_LANCHE_RECEITA = [
+    { nome: "AÇÚCAR", codigo_barras: "123456", quantidade_por_unidade: 1 },
+    { nome: "CAFÉ", codigo_barras: "157865", quantidade_por_unidade: 2 },
+    { nome: "COPO DESCARTAVEL PARA ÁGUA", codigo_barras: "600901", quantidade_por_unidade: 1 },
+    { nome: "COPO DESCARTAVEL PARA CAFÉ", codigo_barras: "601001", quantidade_por_unidade: 1 },
+    { nome: "CHÁ", codigo_barras: "124536", quantidade_por_unidade: 2 },
+    { nome: "SEQUILHOS", codigo_barras: "12345678", quantidade_por_unidade: 2 },
+    { nome: "BISCOITO SAL", codigo_barras: "1234567", quantidade_por_unidade: 2 },
+    { nome: "BISCOITO MAISENA", codigo_barras: "12345688", quantidade_por_unidade: 1 },
+] as const;
+
+const COROA_FLORES_CETIM = [
+    { nome: "FLOR CETIM AMARELA", codigo_barras: "700501" },
+    { nome: "FLOR CETIM BRANCO", codigo_barras: "700401" },
+    { nome: "FLOR CETIM LARANJA", codigo_barras: "701001" },
+    { nome: "FLOR CETIM ROSA", codigo_barras: "700701" },
+    { nome: "FLOR CETIM ROXA", codigo_barras: "700901" },
+    { nome: "FLOR CETIM VERDE", codigo_barras: "700801" },
+    { nome: "FLOR CETIM VERMELHA", codigo_barras: "700601" },
+] as const;
+
+function nomeChave(value?: string | null) {
+    return (value || "").trim().toLocaleUpperCase("pt-BR");
+}
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
@@ -544,8 +621,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-10-DASHBOARD-FILTROS-MODAL-V02";
-const APP_BUILD_LABEL = "2026.09.10-DASHBOARD-FILTROS-MODAL-V02";
+const APP_BUILD_ID = "ESTOQUE-2026-09-22-CONFECCAO-V01";
+const APP_BUILD_LABEL = "2026.09.22-CONFECCAO-V01";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -2169,6 +2246,275 @@ export default function Page() {
         for (const s of saldos) m.set(`${s.produto_id}::${s.deposito_id}`, s);
         return m;
     }, [saldos]);
+
+    // =========================
+    // CONFECÇÃO
+    // =========================
+    const [confeccaoKitOpen, setConfeccaoKitOpen] = useState(false);
+    const [confeccaoCoroaOpen, setConfeccaoCoroaOpen] = useState(false);
+
+    const [confeccaoKitQtd, setConfeccaoKitQtd] = useState("1");
+    const [confeccaoKitObs, setConfeccaoKitObs] = useState("");
+    const [confeccaoKitPreview, setConfeccaoKitPreview] = useState<ConfeccaoPreviewResp | null>(null);
+    const [confeccaoKitPreviewLoading, setConfeccaoKitPreviewLoading] = useState(false);
+    const [confeccaoKitPreviewErr, setConfeccaoKitPreviewErr] = useState("");
+    const [confeccaoKitBusy, setConfeccaoKitBusy] = useState(false);
+
+    const [confeccaoCoroaProdutoId, setConfeccaoCoroaProdutoId] = useState<ID>(0);
+    const [confeccaoCoroaDestinoId, setConfeccaoCoroaDestinoId] = useState<ID>(0);
+    const [confeccaoCoroaQtd, setConfeccaoCoroaQtd] = useState("1");
+    const [confeccaoCoroaObs, setConfeccaoCoroaObs] = useState("");
+    const [confeccaoFlorSelecionada, setConfeccaoFlorSelecionada] = useState<Record<string, boolean>>({});
+    const [confeccaoFlorQtd, setConfeccaoFlorQtd] = useState<Record<string, string>>({});
+    const [confeccaoCoroaPreview, setConfeccaoCoroaPreview] = useState<ConfeccaoPreviewResp | null>(null);
+    const [confeccaoCoroaPreviewLoading, setConfeccaoCoroaPreviewLoading] = useState(false);
+    const [confeccaoCoroaPreviewErr, setConfeccaoCoroaPreviewErr] = useState("");
+    const [confeccaoCoroaBusy, setConfeccaoCoroaBusy] = useState(false);
+
+    const confeccaoDepositoAlmoxarifado = useMemo(
+        () => depositos.find((d) => nomeChave(d.nome) === "ALMOXARIFADO") ?? null,
+        [depositos]
+    );
+    const confeccaoDepositoMemorial = useMemo(
+        () => depositos.find((d) => nomeChave(d.nome) === "MEMORIAL") ?? null,
+        [depositos]
+    );
+    const confeccaoDepositoFuneraria = useMemo(
+        () => depositos.find((d) => nomeChave(d.nome) === "FUNERARIA") ?? null,
+        [depositos]
+    );
+
+    const confeccaoKitProduto = useMemo(
+        () => produtosAtivos.find((p) => String(p.codigo_barras).trim() === KIT_LANCHE_CB) ?? null,
+        [produtosAtivos]
+    );
+
+    const confeccaoCoroasProdutos = useMemo(() => {
+        return produtosAtivos
+            .filter((p) => {
+                const categoriaNome = p.categoria_nome || catById.get(Number(p.categoria_id || 0))?.nome || "";
+                return nomeChave(categoriaNome) === "COROAS ARTIFICIAIS";
+            })
+            .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    }, [produtosAtivos, catById]);
+
+    const confeccaoKitLinhas = useMemo(() => {
+        const depId = Number(confeccaoDepositoAlmoxarifado?.id || 0);
+        return KIT_LANCHE_RECEITA.map((def) => {
+            const produto = produtosAtivos.find(
+                (p) => String(p.codigo_barras).trim() === def.codigo_barras
+            ) ?? null;
+            const saldo = produto && depId
+                ? clampInt(saldosMap.get(`${produto.id}::${depId}`)?.quantidade ?? 0)
+                : 0;
+            return { ...def, produto, saldo };
+        });
+    }, [produtosAtivos, saldosMap, confeccaoDepositoAlmoxarifado]);
+
+    const confeccaoFloresLinhas = useMemo(() => {
+        const depId = Number(confeccaoDepositoAlmoxarifado?.id || 0);
+        return COROA_FLORES_CETIM.map((def) => {
+            const produto = produtosAtivos.find(
+                (p) => String(p.codigo_barras).trim() === def.codigo_barras
+            ) ?? null;
+            const saldo = produto && depId
+                ? clampInt(saldosMap.get(`${produto.id}::${depId}`)?.quantidade ?? 0)
+                : 0;
+            return { ...def, produto, saldo };
+        });
+    }, [produtosAtivos, saldosMap, confeccaoDepositoAlmoxarifado]);
+
+    const confeccaoCoroaInsumosPayload = useMemo(() => {
+        return confeccaoFloresLinhas.flatMap((row) => {
+            if (!confeccaoFlorSelecionada[row.codigo_barras] || !row.produto) return [];
+            const quantidade = clampInt(confeccaoFlorQtd[row.codigo_barras] || "0");
+            if (quantidade <= 0) return [];
+            return [{ produto_id: row.produto.id, quantidade_por_unidade: quantidade }];
+        });
+    }, [confeccaoFloresLinhas, confeccaoFlorSelecionada, confeccaoFlorQtd]);
+
+    useEffect(() => {
+        if (!confeccaoCoroaDestinoId && confeccaoDepositoMemorial) {
+            setConfeccaoCoroaDestinoId(confeccaoDepositoMemorial.id);
+        }
+    }, [confeccaoCoroaDestinoId, confeccaoDepositoMemorial]);
+
+    useEffect(() => {
+        if (!confeccaoKitOpen) {
+            setConfeccaoKitPreviewLoading(false);
+            return;
+        }
+        const quantidade = clampInt(confeccaoKitQtd || "0");
+        if (quantidade <= 0) {
+            setConfeccaoKitPreviewLoading(false);
+            setConfeccaoKitPreview(null);
+            setConfeccaoKitPreviewErr("Informe uma quantidade maior que zero.");
+            return;
+        }
+
+        let cancelado = false;
+        const timer = window.setTimeout(async () => {
+            setConfeccaoKitPreviewLoading(true);
+            setConfeccaoKitPreviewErr("");
+            try {
+                const resp = await apiPost<ConfeccaoPreviewResp>({
+                    action: "confeccao_preview",
+                    tipo: "KIT_LANCHE",
+                    quantidade,
+                });
+                if (cancelado) return;
+                if (!resp.ok) throw new Error(resp.msg || "Não foi possível calcular a prévia da confecção.");
+                setConfeccaoKitPreview(resp);
+            } catch (e: any) {
+                if (cancelado) return;
+                setConfeccaoKitPreview(null);
+                setConfeccaoKitPreviewErr(e?.message || "Erro ao calcular a prévia.");
+            } finally {
+                if (!cancelado) setConfeccaoKitPreviewLoading(false);
+            }
+        }, 250);
+
+        return () => {
+            cancelado = true;
+            window.clearTimeout(timer);
+        };
+    }, [confeccaoKitOpen, confeccaoKitQtd]);
+
+    useEffect(() => {
+        if (!confeccaoCoroaOpen) {
+            setConfeccaoCoroaPreviewLoading(false);
+            return;
+        }
+        const quantidade = clampInt(confeccaoCoroaQtd || "0");
+        if (!confeccaoCoroaProdutoId || !confeccaoCoroaDestinoId || quantidade <= 0 || !confeccaoCoroaInsumosPayload.length) {
+            setConfeccaoCoroaPreviewLoading(false);
+            setConfeccaoCoroaPreview(null);
+            setConfeccaoCoroaPreviewErr("");
+            return;
+        }
+
+        let cancelado = false;
+        const timer = window.setTimeout(async () => {
+            setConfeccaoCoroaPreviewLoading(true);
+            setConfeccaoCoroaPreviewErr("");
+            try {
+                const resp = await apiPost<ConfeccaoPreviewResp>({
+                    action: "confeccao_preview",
+                    tipo: "COROA_ARTIFICIAL",
+                    produto_final_id: confeccaoCoroaProdutoId,
+                    deposito_destino_id: confeccaoCoroaDestinoId,
+                    quantidade,
+                    insumos: confeccaoCoroaInsumosPayload,
+                });
+                if (cancelado) return;
+                if (!resp.ok) throw new Error(resp.msg || "Não foi possível calcular a prévia da confecção.");
+                setConfeccaoCoroaPreview(resp);
+            } catch (e: any) {
+                if (cancelado) return;
+                setConfeccaoCoroaPreview(null);
+                setConfeccaoCoroaPreviewErr(e?.message || "Erro ao calcular a prévia.");
+            } finally {
+                if (!cancelado) setConfeccaoCoroaPreviewLoading(false);
+            }
+        }, 250);
+
+        return () => {
+            cancelado = true;
+            window.clearTimeout(timer);
+        };
+    }, [
+        confeccaoCoroaOpen,
+        confeccaoCoroaProdutoId,
+        confeccaoCoroaDestinoId,
+        confeccaoCoroaQtd,
+        confeccaoCoroaInsumosPayload,
+    ]);
+
+    function abrirConfeccaoKit() {
+        setConfeccaoKitQtd("1");
+        setConfeccaoKitObs("");
+        setConfeccaoKitPreview(null);
+        setConfeccaoKitPreviewErr("");
+        setConfeccaoKitOpen(true);
+    }
+
+    function abrirConfeccaoCoroa() {
+        setConfeccaoCoroaProdutoId(0);
+        setConfeccaoCoroaDestinoId(confeccaoDepositoMemorial?.id || 0);
+        setConfeccaoCoroaQtd("1");
+        setConfeccaoCoroaObs("");
+        setConfeccaoFlorSelecionada({});
+        setConfeccaoFlorQtd({});
+        setConfeccaoCoroaPreview(null);
+        setConfeccaoCoroaPreviewErr("");
+        setConfeccaoCoroaOpen(true);
+    }
+
+    async function concluirConfeccaoKit() {
+        const quantidade = clampInt(confeccaoKitQtd || "0");
+        if (quantidade <= 0) return alert("Informe a quantidade de kits.");
+        if (!confeccaoKitPreview?.ok || !confeccaoKitPreview.disponivel) {
+            return alert("A confecção não pode ser concluída enquanto houver insumo sem estoque suficiente.");
+        }
+
+        setConfeccaoKitBusy(true);
+        try {
+            const resp = await apiPost<ConfeccaoExecutarResp>({
+                action: "confeccao",
+                tipo: "KIT_LANCHE",
+                quantidade,
+                observacao: confeccaoKitObs.trim() || undefined,
+            });
+            if (!resp.ok) throw new Error(resp.msg || "Falha ao registrar a confecção.");
+
+            setConfeccaoKitOpen(false);
+            await refreshInit();
+            setTab("ESTOQUE");
+            alert(
+                `Confecção concluída. ${quantidade} KIT LANCHE. Custo unitário: ${moneyBRL(Number(resp.custo_unitario) || 0)}.`
+            );
+        } catch (e: any) {
+            alert(e?.message || "Erro ao registrar a confecção.");
+        } finally {
+            setConfeccaoKitBusy(false);
+        }
+    }
+
+    async function concluirConfeccaoCoroa() {
+        const quantidade = clampInt(confeccaoCoroaQtd || "0");
+        if (!confeccaoCoroaProdutoId) return alert("Selecione a Coroa Artificial.");
+        if (!confeccaoCoroaDestinoId) return alert("Selecione MEMORIAL ou FUNERARIA como destino.");
+        if (quantidade <= 0) return alert("Informe a quantidade de coroas.");
+        if (!confeccaoCoroaInsumosPayload.length) return alert("Selecione pelo menos uma flor de cetim e informe a quantidade por coroa.");
+        if (!confeccaoCoroaPreview?.ok || !confeccaoCoroaPreview.disponivel) {
+            return alert("A confecção não pode ser concluída enquanto houver flor sem estoque suficiente.");
+        }
+
+        setConfeccaoCoroaBusy(true);
+        try {
+            const resp = await apiPost<ConfeccaoExecutarResp>({
+                action: "confeccao",
+                tipo: "COROA_ARTIFICIAL",
+                produto_final_id: confeccaoCoroaProdutoId,
+                deposito_destino_id: confeccaoCoroaDestinoId,
+                quantidade,
+                insumos: confeccaoCoroaInsumosPayload,
+                observacao: confeccaoCoroaObs.trim() || undefined,
+            });
+            if (!resp.ok) throw new Error(resp.msg || "Falha ao registrar a confecção.");
+
+            setConfeccaoCoroaOpen(false);
+            await refreshInit();
+            setTab("ESTOQUE");
+            alert(
+                `Confecção concluída. ${quantidade} coroa(s). Custo unitário: ${moneyBRL(Number(resp.custo_unitario) || 0)}.`
+            );
+        } catch (e: any) {
+            alert(e?.message || "Erro ao registrar a confecção.");
+        } finally {
+            setConfeccaoCoroaBusy(false);
+        }
+    }
 
     // Ao entrar em uma publicação nova, descarta caches de runtime antigos.
     // Não recarrega em loop: apenas registra o APP_BUILD_ID atual.
@@ -7933,7 +8279,7 @@ export default function Page() {
                         </div>
 
                         <Card className="hidden p-2 sm:block">
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
                                 {tabActions.map((a) => (
                                     <button
                                         key={a.key}
@@ -7980,6 +8326,32 @@ export default function Page() {
                                     label="Histórico"
                                     icon={<span className="text-lg leading-none">🕘</span>}
                                     onClick={() => abrirTela("HISTORICO")}
+                                />
+                            </div>
+                        </Card>
+                    ) : null}
+
+                    {/* CONFECÇÃO */}
+                    {tab === "CONFECCAO" ? (
+                        <Card className="p-4">
+                            <div className="mb-4">
+                                <h2 className="text-base font-semibold text-slate-900">Confecção</h2>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Os insumos saem sempre do ALMOXARIFADO e o custo do produto acabado é calculado pelo consumo FIFO real.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <HomeActionButton
+                                    label="KIT LANCHE"
+                                    icon={<span className="text-lg leading-none">🥪</span>}
+                                    onClick={abrirConfeccaoKit}
+                                />
+
+                                <HomeActionButton
+                                    label="COROA ARTIFICIAL"
+                                    icon={<span className="text-lg leading-none">🌸</span>}
+                                    onClick={abrirConfeccaoCoroa}
                                 />
                             </div>
                         </Card>
@@ -8883,6 +9255,7 @@ export default function Page() {
                                         <option value="ENTRADA">Entrada</option>
                                         <option value="SAIDA">Saída</option>
                                         <option value="TRANSFERENCIA">Transferência</option>
+                                        <option value="CONFECCAO">Confecção</option>
                                         <option value="CADASTRO_PRODUTO">Cadastro produto</option>
                                     </Select>
                                 </Field>
@@ -8930,7 +9303,9 @@ export default function Page() {
                                                 ? "bg-rose-50 text-rose-700 border-rose-200"
                                                 : ref.tipo === "TRANSFERENCIA"
                                                     ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                                    : "bg-slate-50 text-slate-700 border-slate-200";
+                                                    : ref.tipo === "CONFECCAO"
+                                                        ? "bg-amber-50 text-amber-800 border-amber-200"
+                                                        : "bg-slate-50 text-slate-700 border-slate-200";
 
                                     const origem =
                                         ref.deposito_origem_nome ||
@@ -8982,6 +9357,17 @@ export default function Page() {
                                                                     {" • "}
                                                                     <span className="text-slate-500">Destino:</span>{" "}
                                                                     <b className="text-slate-800">{destino || "—"}</b>
+                                                                </>
+                                                            ) : ref.tipo === "CONFECCAO" ? (
+                                                                <>
+                                                                    <span className="text-slate-500">Insumos:</span>{" "}
+                                                                    <b className="text-slate-800">{origem || "ALMOXARIFADO"}</b>
+                                                                    {" • "}
+                                                                    <span className="text-slate-500">Entrada:</span>{" "}
+                                                                    <b className="text-slate-800">{destino || "—"}</b>
+                                                                    {ref.confeccao_tipo ? (
+                                                                        <> {" • "}<span className="text-slate-500">Tipo:</span> <b className="text-slate-800">{ref.confeccao_tipo === "KIT_LANCHE" ? "KIT LANCHE" : "COROA ARTIFICIAL"}</b></>
+                                                                    ) : null}
                                                                 </>
                                                             ) : (
                                                                 <>—</>
@@ -10925,6 +11311,393 @@ export default function Page() {
                         </div>
                     );
                 })()}
+            </Modal>
+
+            {/* MODAL: CONFECÇÃO - KIT LANCHE */}
+            <Modal
+                open={confeccaoKitOpen}
+                title="Confecção de KIT LANCHE"
+                subtitle="Baixa automática dos insumos no ALMOXARIFADO e entrada do KIT LANCHE no MEMORIAL."
+                onClose={() => {
+                    if (!confeccaoKitBusy) setConfeccaoKitOpen(false);
+                }}
+                panelClassName="sm:max-w-5xl"
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <Field label="Produto final">
+                            <div className="min-h-[42px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 shadow-sm">
+                                <b>{confeccaoKitProduto?.nome || "KIT LANCHE"}</b>
+                                <div className="text-xs text-slate-500">CB: {KIT_LANCHE_CB}</div>
+                            </div>
+                        </Field>
+
+                        <Field label="Depósito dos insumos">
+                            <div className="min-h-[42px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+                                {confeccaoDepositoAlmoxarifado?.nome || "ALMOXARIFADO"}
+                            </div>
+                        </Field>
+
+                        <Field label="Depósito de entrada">
+                            <div className="min-h-[42px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+                                {confeccaoDepositoMemorial?.nome || "MEMORIAL"}
+                            </div>
+                        </Field>
+
+                        <Field label="Quantidade de kits">
+                            <TextInput
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={confeccaoKitQtd}
+                                onChange={(e) => setConfeccaoKitQtd(e.target.value.replace(/\D/g, ""))}
+                                placeholder="1"
+                            />
+                        </Field>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="min-w-full text-left text-sm">
+                            <thead className="bg-slate-50 text-xs text-slate-600">
+                                <tr>
+                                    <th className="px-3 py-2">Insumo</th>
+                                    <th className="px-3 py-2">CB</th>
+                                    <th className="px-3 py-2 text-right">Por kit</th>
+                                    <th className="px-3 py-2 text-right">Necessário</th>
+                                    <th className="px-3 py-2 text-right">Saldo</th>
+                                    <th className="px-3 py-2 text-right">Custo previsto</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                                {confeccaoKitLinhas.map((row) => {
+                                    const prev = confeccaoKitPreview?.itens?.find(
+                                        (x) => x.codigo_barras === row.codigo_barras
+                                    );
+                                    const qtdProduzir = clampInt(confeccaoKitQtd || "0");
+                                    const necessario = prev?.quantidade_total ?? row.quantidade_por_unidade * qtdProduzir;
+                                    const saldo = prev?.saldo_disponivel ?? row.saldo;
+                                    const disponivel = prev ? prev.disponivel : saldo >= necessario;
+
+                                    return (
+                                        <tr key={row.codigo_barras}>
+                                            <td className="px-3 py-2">
+                                                <div className="font-medium text-slate-900">{row.produto?.nome || row.nome}</div>
+                                                {!row.produto ? <div className="text-xs text-red-600">Produto não cadastrado ou inativo.</div> : null}
+                                            </td>
+                                            <td className="px-3 py-2 text-slate-600">{row.codigo_barras}</td>
+                                            <td className="px-3 py-2 text-right font-medium">{row.quantidade_por_unidade}</td>
+                                            <td className="px-3 py-2 text-right font-semibold">{necessario}</td>
+                                            <td className={[
+                                                "px-3 py-2 text-right font-semibold",
+                                                disponivel ? "text-slate-800" : "text-red-700",
+                                            ].join(" ")}>{saldo}</td>
+                                            <td className="px-3 py-2 text-right text-slate-700">
+                                                {prev ? moneyBRL(Number(prev.custo_total_previsto) || 0) : "—"}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {confeccaoKitPreviewErr ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {confeccaoKitPreviewErr}
+                        </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+                            <div className="text-xs text-slate-600">Custo total previsto</div>
+                            <div className="mt-1 text-lg font-bold text-slate-900">
+                                {confeccaoKitPreviewLoading ? "Calculando..." : moneyBRL(Number(confeccaoKitPreview?.custo_total) || 0)}
+                            </div>
+                        </div>
+                        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+                            <div className="text-xs text-slate-600">Custo por KIT LANCHE</div>
+                            <div className="mt-1 text-lg font-bold text-slate-900">
+                                {confeccaoKitPreviewLoading ? "Calculando..." : moneyBRL(Number(confeccaoKitPreview?.custo_unitario) || 0)}
+                            </div>
+                        </div>
+                        <div className={[
+                            "rounded-2xl border p-3",
+                            confeccaoKitPreview?.disponivel
+                                ? "border-emerald-200 bg-emerald-50"
+                                : "border-amber-200 bg-amber-50",
+                        ].join(" ")}>
+                            <div className="text-xs text-slate-600">Situação</div>
+                            <div className="mt-1 text-sm font-bold text-slate-900">
+                                {confeccaoKitPreviewLoading
+                                    ? "Verificando estoque..."
+                                    : confeccaoKitPreview?.disponivel
+                                        ? "Pronto para confeccionar"
+                                        : "Verifique os insumos"}
+                            </div>
+                        </div>
+                    </div>
+
+                    <Field label="Observação (opcional)" hint="Será gravada no registro da confecção.">
+                        <TextArea
+                            rows={3}
+                            value={confeccaoKitObs}
+                            onChange={(e) => setConfeccaoKitObs(e.target.value)}
+                            placeholder="Ex: produção para reposição do Memorial..."
+                        />
+                    </Field>
+
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                        <Button
+                            variant="ghost"
+                            type="button"
+                            disabled={confeccaoKitBusy}
+                            onClick={() => setConfeccaoKitOpen(false)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={
+                                confeccaoKitBusy ||
+                                confeccaoKitPreviewLoading ||
+                                !confeccaoKitProduto ||
+                                !confeccaoKitPreview?.disponivel
+                            }
+                            onClick={concluirConfeccaoKit}
+                        >
+                            {confeccaoKitBusy ? "Concluindo..." : "Concluir confecção"}
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* MODAL: CONFECÇÃO - COROA ARTIFICIAL */}
+            <Modal
+                open={confeccaoCoroaOpen}
+                title="Confecção de COROA ARTIFICIAL"
+                subtitle="As flores saem do ALMOXARIFADO. A coroa pronta entra no MEMORIAL ou na FUNERARIA."
+                onClose={() => {
+                    if (!confeccaoCoroaBusy) setConfeccaoCoroaOpen(false);
+                }}
+                panelClassName="sm:max-w-5xl"
+            >
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <Field label="Coroa Artificial a confeccionar">
+                            <Select
+                                value={confeccaoCoroaProdutoId}
+                                onChange={(e) => setConfeccaoCoroaProdutoId(Number(e.target.value))}
+                            >
+                                <option value={0}>Selecionar...</option>
+                                {confeccaoCoroasProdutos.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.nome} • CB {p.codigo_barras}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
+
+                        <Field label="Quantidade de coroas">
+                            <TextInput
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={confeccaoCoroaQtd}
+                                onChange={(e) => setConfeccaoCoroaQtd(e.target.value.replace(/\D/g, ""))}
+                                placeholder="1"
+                            />
+                        </Field>
+
+                        <Field label="Depósito dos insumos">
+                            <div className="min-h-[42px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+                                {confeccaoDepositoAlmoxarifado?.nome || "ALMOXARIFADO"}
+                            </div>
+                        </Field>
+
+                        <Field label="Depósito de entrada da coroa">
+                            <Select
+                                value={confeccaoCoroaDestinoId}
+                                onChange={(e) => setConfeccaoCoroaDestinoId(Number(e.target.value))}
+                            >
+                                <option value={0}>Selecionar...</option>
+                                {confeccaoDepositoMemorial ? (
+                                    <option value={confeccaoDepositoMemorial.id}>{confeccaoDepositoMemorial.nome}</option>
+                                ) : null}
+                                {confeccaoDepositoFuneraria ? (
+                                    <option value={confeccaoDepositoFuneraria.id}>{confeccaoDepositoFuneraria.nome}</option>
+                                ) : null}
+                            </Select>
+                        </Field>
+                    </div>
+
+                    <div>
+                        <div className="mb-2">
+                            <h3 className="text-sm font-semibold text-slate-900">Flores utilizadas</h3>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                                Marque as flores e informe quantas unidades de cada cor são usadas em uma coroa.
+                            </p>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                            <table className="min-w-full text-left text-sm">
+                                <thead className="bg-slate-50 text-xs text-slate-600">
+                                    <tr>
+                                        <th className="px-3 py-2">Usar</th>
+                                        <th className="px-3 py-2">Flor</th>
+                                        <th className="px-3 py-2">CB</th>
+                                        <th className="px-3 py-2 text-right">Saldo ALMOX.</th>
+                                        <th className="px-3 py-2 text-right">Qtd. por coroa</th>
+                                        <th className="px-3 py-2 text-right">Necessário</th>
+                                        <th className="px-3 py-2 text-right">Custo previsto</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 bg-white">
+                                    {confeccaoFloresLinhas.map((row) => {
+                                        const selecionada = !!confeccaoFlorSelecionada[row.codigo_barras];
+                                        const qtdPorCoroa = clampInt(confeccaoFlorQtd[row.codigo_barras] || "0");
+                                        const qtdCoroas = clampInt(confeccaoCoroaQtd || "0");
+                                        const prev = confeccaoCoroaPreview?.itens?.find(
+                                            (x) => x.codigo_barras === row.codigo_barras
+                                        );
+                                        const necessario = selecionada
+                                            ? (prev?.quantidade_total ?? qtdPorCoroa * qtdCoroas)
+                                            : 0;
+                                        const saldo = prev?.saldo_disponivel ?? row.saldo;
+                                        const disponivel = !selecionada || (prev ? prev.disponivel : saldo >= necessario);
+
+                                        return (
+                                            <tr key={row.codigo_barras} className={!row.produto ? "bg-red-50/50" : ""}>
+                                                <td className="px-3 py-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="h-4 w-4"
+                                                        checked={selecionada}
+                                                        disabled={!row.produto}
+                                                        onChange={(e) => {
+                                                            const checked = e.target.checked;
+                                                            setConfeccaoFlorSelecionada((prevState) => ({
+                                                                ...prevState,
+                                                                [row.codigo_barras]: checked,
+                                                            }));
+                                                            if (checked && !clampInt(confeccaoFlorQtd[row.codigo_barras] || "0")) {
+                                                                setConfeccaoFlorQtd((prevState) => ({
+                                                                    ...prevState,
+                                                                    [row.codigo_barras]: "1",
+                                                                }));
+                                                            }
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <div className="font-medium text-slate-900">{row.produto?.nome || row.nome}</div>
+                                                    {!row.produto ? <div className="text-xs text-red-600">Produto não cadastrado ou inativo.</div> : null}
+                                                    {selecionada && !disponivel ? <div className="text-xs font-medium text-red-700">Estoque insuficiente</div> : null}
+                                                </td>
+                                                <td className="px-3 py-2 text-slate-600">{row.codigo_barras}</td>
+                                                <td className={[
+                                                    "px-3 py-2 text-right font-semibold",
+                                                    selecionada && !disponivel ? "text-red-700" : "text-slate-800",
+                                                ].join(" ")}>{saldo}</td>
+                                                <td className="px-3 py-2 text-right">
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]*"
+                                                        disabled={!selecionada || !row.produto}
+                                                        value={confeccaoFlorQtd[row.codigo_barras] || ""}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value.replace(/\D/g, "");
+                                                            setConfeccaoFlorQtd((prevState) => ({
+                                                                ...prevState,
+                                                                [row.codigo_barras]: value,
+                                                            }));
+                                                        }}
+                                                        className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-100"
+                                                        placeholder="0"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2 text-right font-semibold">{necessario}</td>
+                                                <td className="px-3 py-2 text-right text-slate-700">
+                                                    {selecionada && prev ? moneyBRL(Number(prev.custo_total_previsto) || 0) : "—"}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {confeccaoCoroaPreviewErr ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {confeccaoCoroaPreviewErr}
+                        </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+                            <div className="text-xs text-slate-600">Custo total previsto</div>
+                            <div className="mt-1 text-lg font-bold text-slate-900">
+                                {confeccaoCoroaPreviewLoading ? "Calculando..." : moneyBRL(Number(confeccaoCoroaPreview?.custo_total) || 0)}
+                            </div>
+                        </div>
+                        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+                            <div className="text-xs text-slate-600">Custo por coroa</div>
+                            <div className="mt-1 text-lg font-bold text-slate-900">
+                                {confeccaoCoroaPreviewLoading ? "Calculando..." : moneyBRL(Number(confeccaoCoroaPreview?.custo_unitario) || 0)}
+                            </div>
+                        </div>
+                        <div className={[
+                            "rounded-2xl border p-3",
+                            confeccaoCoroaPreview?.disponivel
+                                ? "border-emerald-200 bg-emerald-50"
+                                : "border-amber-200 bg-amber-50",
+                        ].join(" ")}>
+                            <div className="text-xs text-slate-600">Situação</div>
+                            <div className="mt-1 text-sm font-bold text-slate-900">
+                                {confeccaoCoroaPreviewLoading
+                                    ? "Verificando estoque..."
+                                    : confeccaoCoroaPreview?.disponivel
+                                        ? "Pronto para confeccionar"
+                                        : "Selecione a coroa e as flores"}
+                            </div>
+                        </div>
+                    </div>
+
+                    <Field label="Observação (opcional)" hint="Será gravada no registro da confecção.">
+                        <TextArea
+                            rows={3}
+                            value={confeccaoCoroaObs}
+                            onChange={(e) => setConfeccaoCoroaObs(e.target.value)}
+                            placeholder="Ex: coroa preparada para reposição..."
+                        />
+                    </Field>
+
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                        <Button
+                            variant="ghost"
+                            type="button"
+                            disabled={confeccaoCoroaBusy}
+                            onClick={() => setConfeccaoCoroaOpen(false)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={
+                                confeccaoCoroaBusy ||
+                                confeccaoCoroaPreviewLoading ||
+                                !confeccaoCoroaProdutoId ||
+                                !confeccaoCoroaDestinoId ||
+                                !confeccaoCoroaInsumosPayload.length ||
+                                !confeccaoCoroaPreview?.disponivel
+                            }
+                            onClick={concluirConfeccaoCoroa}
+                        >
+                            {confeccaoCoroaBusy ? "Concluindo..." : "Concluir confecção"}
+                        </Button>
+                    </div>
+                </div>
             </Modal>
 
             {/* MODAL: ENTRADA */}

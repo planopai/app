@@ -10,7 +10,7 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const STORAGE_KEY = "pai-chat-v1";
+const STORAGE_KEY = "pai-chat-v2";
 const MAX_HISTORY_TO_API = 20;
 
 type Role = "user" | "assistant";
@@ -34,11 +34,11 @@ type ChatApiResponse = {
 };
 
 const QUICK_PROMPTS = [
-    "Quantos atendimentos temos hoje?",
+    "Quantos atendimentos estão no quadro agora?",
+    "Quem será sepultado hoje?",
     "Quantas urnas saíram hoje?",
     "O que está abaixo do estoque mínimo?",
-    "Quantas requisições estão pendentes?",
-    "Quantas coroas estão em confecção?",
+    "Quantas coroas estão em confecção agora?",
     "Qual é o balanço deste mês?",
 ];
 
@@ -107,6 +107,84 @@ function saveStoredMessages(messages: ChatMessage[]) {
 
 function toolLabel(tool: string) {
     return TOOL_LABELS[tool] || tool.replace(/^consultar_/, "").replaceAll("_", " ");
+}
+
+function renderInlineMarkdown(text: string, keyPrefix: string) {
+    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+
+    return parts.map((part, index) => {
+        const key = `${keyPrefix}-${index}`;
+
+        if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+            return (
+                <strong key={key} className="font-semibold text-slate-950">
+                    {part.slice(2, -2)}
+                </strong>
+            );
+        }
+
+        if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+            return (
+                <code
+                    key={key}
+                    className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.9em] text-slate-700"
+                >
+                    {part.slice(1, -1)}
+                </code>
+            );
+        }
+
+        return <React.Fragment key={key}>{part}</React.Fragment>;
+    });
+}
+
+function AssistantContent({ content }: { content: string }) {
+    const lines = String(content || "").replace(/\r\n/g, "\n").split("\n");
+
+    return (
+        <div className="space-y-1.5">
+            {lines.map((rawLine, index) => {
+                const line = rawLine.trimEnd();
+                const trimmed = line.trim();
+
+                if (!trimmed) {
+                    return <div key={`gap-${index}`} className="h-1" />;
+                }
+
+                const bullet = trimmed.match(/^[-•]\s+(.+)$/);
+                if (bullet) {
+                    return (
+                        <div key={`bullet-${index}`} className="flex items-start gap-2 pl-0.5">
+                            <span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                            <div className="min-w-0 flex-1">
+                                {renderInlineMarkdown(bullet[1], `bullet-text-${index}`)}
+                            </div>
+                        </div>
+                    );
+                }
+
+                const numbered = trimmed.match(/^(\d+)[.)]\s+(.+)$/);
+                if (numbered) {
+                    return (
+                        <div key={`number-${index}`} className="flex items-start gap-2">
+                            <span className="min-w-5 shrink-0 font-medium text-slate-500">
+                                {numbered[1]}.
+                            </span>
+                            <div className="min-w-0 flex-1">
+                                {renderInlineMarkdown(numbered[2], `number-text-${index}`)}
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div key={`line-${index}`}>
+                        {renderInlineMarkdown(line, `line-text-${index}`)}
+                    </div>
+                );
+            })}
+        </div>
+    );
 }
 
 function IconSparkles({ className = "h-5 w-5" }: { className?: string }) {
@@ -232,8 +310,8 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                 Chat PAI
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                Consulte atendimentos, estoque, movimentações, requisições, coroas e
-                balanço usando perguntas em linguagem natural.
+                Pergunte como você falaria com alguém da equipe: quem está no quadro,
+                onde é o velório, qual o próximo sepultamento, saídas de estoque e mais.
             </p>
 
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
@@ -407,7 +485,7 @@ export default function ChatPaiPage() {
                                 </span>
                             </div>
                             <p className="truncate text-xs text-slate-500">
-                                Assistente de consultas do sistema
+                                Assistente operacional do sistema
                             </p>
                         </div>
                     </div>
@@ -452,13 +530,17 @@ export default function ChatPaiPage() {
                                     >
                                         <div
                                             className={[
-                                                "whitespace-pre-wrap break-words px-4 py-3 text-sm leading-6 sm:text-[15px]",
+                                                "break-words px-4 py-3 text-sm leading-6 sm:text-[15px]",
                                                 isUser
                                                     ? "rounded-2xl rounded-br-md bg-slate-950 text-white shadow-sm"
                                                     : "rounded-2xl rounded-tl-md border border-slate-200 bg-white text-slate-800 shadow-sm",
                                             ].join(" ")}
                                         >
-                                            {message.content}
+                                            {isUser ? (
+                                                <div className="whitespace-pre-wrap">{message.content}</div>
+                                            ) : (
+                                                <AssistantContent content={message.content} />
+                                            )}
                                         </div>
 
                                         {!isUser && message.toolsUsed && message.toolsUsed.length > 0 ? (
@@ -521,7 +603,7 @@ export default function ChatPaiPage() {
                                 disabled={loading}
                                 rows={1}
                                 maxLength={5000}
-                                placeholder="Pergunte sobre atendimentos, estoque, coroas, balanço..."
+                                placeholder="Pergunte: quem está no quadro, onde é o velório, que horas é o sepultamento..."
                                 className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
                             />
 
