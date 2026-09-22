@@ -8334,12 +8334,7 @@ export default function Page() {
                     {/* CONFECÇÃO */}
                     {tab === "CONFECCAO" ? (
                         <Card className="p-4">
-                            <div className="mb-4">
-                                <h2 className="text-base font-semibold text-slate-900">Confecção</h2>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    Os insumos saem sempre do ALMOXARIFADO e o custo do produto acabado é calculado pelo consumo FIFO real.
-                                </p>
-                            </div>
+                            
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <HomeActionButton
@@ -11317,7 +11312,7 @@ export default function Page() {
             <Modal
                 open={confeccaoKitOpen}
                 title="Confecção de KIT LANCHE"
-                subtitle="Baixa automática dos insumos no ALMOXARIFADO e entrada do KIT LANCHE no MEMORIAL."
+                
                 onClose={() => {
                     if (!confeccaoKitBusy) setConfeccaoKitOpen(false);
                 }}
@@ -11475,7 +11470,7 @@ export default function Page() {
             <Modal
                 open={confeccaoCoroaOpen}
                 title="Confecção de COROA ARTIFICIAL"
-                subtitle="As flores saem do ALMOXARIFADO. A coroa pronta entra no MEMORIAL ou na FUNERARIA."
+                
                 onClose={() => {
                     if (!confeccaoCoroaBusy) setConfeccaoCoroaOpen(false);
                 }}
@@ -11531,12 +11526,7 @@ export default function Page() {
                     </div>
 
                     <div>
-                        <div className="mb-2">
-                            <h3 className="text-sm font-semibold text-slate-900">Flores utilizadas</h3>
-                            <p className="mt-0.5 text-xs text-slate-500">
-                                Marque as flores e informe quantas unidades de cada cor são usadas em uma coroa.
-                            </p>
-                        </div>
+                        
 
                         <div className="overflow-x-auto rounded-2xl border border-slate-200">
                             <table className="min-w-full text-left text-sm">
