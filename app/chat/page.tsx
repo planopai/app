@@ -44,7 +44,9 @@ const QUICK_PROMPTS = [
 
 const TOOL_LABELS: Record<string, string> = {
     consultar_atendimentos: "Atendimentos",
+    detalhar_atendimento: "Atendimentos",
     consultar_estoque: "Estoque",
+    consultar_produto_estoque: "Estoque",
     consultar_movimentacoes: "Movimentações",
     consultar_requisicoes: "Requisições",
     consultar_coroas: "Coroas",
