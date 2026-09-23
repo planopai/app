@@ -716,7 +716,7 @@ function VoiceEmptyState({
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
                 {active
                     ? "A sessão fica aberta. Faça perguntas em sequência, use referências como “ele”, “ela” ou “essa coroa” e interrompa a Aurora quando quiser."
-                    : "Converse com a Aurora sem apertar o microfone a cada pergunta. Ela detecta quando você terminou de falar e continua ouvindo depois da resposta."}
+                    : "Converse com a Aurora sem apertar o microfone a cada pergunta. A voz Bossa fala em português do Brasil e a sessão continua ouvindo depois da resposta."}
             </p>
             {error ? (
                 <div className="mt-5 w-full max-w-xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm leading-5 text-red-700">
@@ -776,6 +776,12 @@ export default function AuroraPage() {
     const realtimeClosingRef = useRef(false);
     const realtimeSessionReadyRef = useRef(false);
     const realtimeConnectTimeoutRef = useRef<number | null>(null);
+    const liveInputTranscriptRef = useRef("");
+    const liveCurrentUserMessageIdRef = useRef<string | null>(null);
+    const liveCurrentAssistantMessageIdRef = useRef<string | null>(null);
+    const liveDelegationsInFlightRef = useRef<Set<string>>(new Set());
+    const liveAssistantFinalizeTimerRef = useRef<number | null>(null);
+    const liveSessionIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1093,214 +1099,352 @@ export default function AuroraPage() {
         }
     }
 
-    async function callRealtimeTool(name: string, args: any) {
-        const response = await fetch(`${CHAT_API}?action=tool&_=${Date.now()}`, {
-            method: "POST",
-            credentials: "include",
-            cache: "no-store",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, args }),
-        });
-        const json = await response.json().catch(() => null);
-        if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-        if (!response.ok || !json?.ok) throw new Error(json?.msg || `Falha na consulta ${name}.`);
-        return {
-            result: json.result,
-            productCards: sanitizeProductCards(json?.product_cards),
-            productSuggestions: sanitizeProductSuggestions(json?.product_suggestions),
-        };
-    }
-
     function seedRealtimeContext(dc: RTCDataChannel) {
         const recent = messagesRef.current
             .filter((message) => message.content.trim() && !message.streaming)
             .slice(-6);
+
         if (!recent.length || dc.readyState !== "open") return;
 
         const transcript = recent
             .map((message) => `${message.role === "user" ? "Usuário" : "Aurora"}: ${message.content.trim()}`)
             .join("\n");
 
-        const text = [
-            "CONTEXTO RECENTE DO CHAT ANTES DE ENTRAR NO MODO DE VOZ.",
-            "Use apenas como memória contextual. Não responda a este item isoladamente.",
+        // GPT-Live aceita contexto silencioso pelo canal de dados.
+        // O limite de append é pequeno, por isso mantemos só o contexto recente.
+        const content = [
+            "Contexto recente do chat antes de entrar na voz. Use apenas como memória:",
             transcript,
-        ].join("\n\n");
+        ].join("\n").slice(0, 1700);
 
         dc.send(
             JSON.stringify({
-                type: "conversation.item.create",
-                item: {
-                    type: "message",
-                    role: "user",
-                    content: [{ type: "input_text", text }],
-                },
+                type: "session.thinking.append",
+                delegation_id: null,
+                content,
             }),
         );
+    }
+
+    function clearLiveAssistantFinalizeTimer() {
+        if (liveAssistantFinalizeTimerRef.current != null) {
+            window.clearTimeout(liveAssistantFinalizeTimerRef.current);
+            liveAssistantFinalizeTimerRef.current = null;
+        }
+    }
+
+    function finalizeLiveAssistantMessage() {
+        clearLiveAssistantFinalizeTimer();
+        const id = liveCurrentAssistantMessageIdRef.current;
+        if (id) {
+            updateMessage(id, (m) => ({ ...m, streaming: false }));
+        }
+        liveCurrentAssistantMessageIdRef.current = null;
+    }
+
+    function scheduleLiveAssistantFinalize() {
+        clearLiveAssistantFinalizeTimer();
+        liveAssistantFinalizeTimerRef.current = window.setTimeout(() => {
+            finalizeLiveAssistantMessage();
+            if (realtimeState !== "off" && realtimeState !== "consulting") {
+                setRealtimeState("listening");
+            }
+        }, 1200);
+    }
+
+    function finalizeLiveUserTranscript() {
+        const text = liveInputTranscriptRef.current.trim();
+        const id = liveCurrentUserMessageIdRef.current;
+
+        if (id) {
+            if (text) {
+                updateMessage(id, (m) => ({ ...m, content: text, streaming: false }));
+            } else {
+                commitMessages(messagesRef.current.filter((m) => m.id !== id));
+            }
+        } else if (text) {
+            appendMessage({
+                id: makeId("user-voice"),
+                role: "user",
+                content: text,
+                createdAt: nowIso(),
+                source: "audio",
+                streaming: false,
+            });
+        }
+
+        liveInputTranscriptRef.current = "";
+        liveCurrentUserMessageIdRef.current = null;
+        return text;
+    }
+
+    function appendLiveInputDelta(delta: string) {
+        if (!delta) return;
+
+        // Se a Aurora ainda tinha uma bolha de resposta em streaming, a nova fala
+        // do usuário marca o fim visual dessa resposta.
+        finalizeLiveAssistantMessage();
+
+        if (!liveCurrentUserMessageIdRef.current) {
+            realtimeToolsRef.current.clear();
+            realtimeProductCardsRef.current = [];
+            realtimeProductSuggestionsRef.current = [];
+
+            const id = makeId("user-voice");
+            liveCurrentUserMessageIdRef.current = id;
+            liveInputTranscriptRef.current = "";
+            appendMessage({
+                id,
+                role: "user",
+                content: "",
+                createdAt: nowIso(),
+                source: "audio",
+                streaming: true,
+            });
+        }
+
+        liveInputTranscriptRef.current += delta;
+        const id = liveCurrentUserMessageIdRef.current;
+        if (id) {
+            updateMessage(id, (m) => ({
+                ...m,
+                content: liveInputTranscriptRef.current,
+                streaming: true,
+            }));
+        }
+
+        setRealtimeState("listening");
+    }
+
+    function appendLiveOutputDelta(delta: string) {
+        if (!delta) return;
+
+        // Quando a Aurora começa a responder, o turno do usuário já pode ser
+        // consolidado no histórico.
+        finalizeLiveUserTranscript();
+
+        let id = liveCurrentAssistantMessageIdRef.current;
+        if (!id) {
+            id = makeId("assistant-voice");
+            liveCurrentAssistantMessageIdRef.current = id;
+            appendMessage({
+                id,
+                role: "assistant",
+                content: "",
+                createdAt: nowIso(),
+                toolsUsed: Array.from(realtimeToolsRef.current),
+                productCards: realtimeProductCardsRef.current,
+                productSuggestions: realtimeProductSuggestionsRef.current,
+                source: "audio",
+                streaming: true,
+            });
+        }
+
+        updateMessage(id, (m) => ({
+            ...m,
+            content: m.content + delta,
+            toolsUsed: Array.from(realtimeToolsRef.current),
+            productCards: realtimeProductCardsRef.current,
+            productSuggestions: realtimeProductSuggestionsRef.current,
+            streaming: true,
+        }));
+
+        setRealtimeState("speaking");
+        scheduleLiveAssistantFinalize();
+    }
+
+    function splitLiveCommentary(text: string, maxChars = 1500) {
+        const clean = stripMarkdownForSpeech(text);
+        if (!clean) return [];
+        if (clean.length <= maxChars) return [clean];
+
+        const out: string[] = [];
+        let rest = clean;
+        while (rest.length > maxChars && out.length < 3) {
+            const sample = rest.slice(0, maxChars + 1);
+            let cut = Math.max(
+                sample.lastIndexOf(". "),
+                sample.lastIndexOf("? "),
+                sample.lastIndexOf("! "),
+                sample.lastIndexOf("; "),
+            );
+            if (cut < Math.floor(maxChars * 0.55)) cut = sample.lastIndexOf(" ");
+            if (cut < Math.floor(maxChars * 0.35)) cut = maxChars;
+            else cut += 1;
+            out.push(rest.slice(0, cut).trim());
+            rest = rest.slice(cut).trim();
+        }
+        if (rest && out.length < 3) out.push(rest.slice(0, maxChars).trim());
+        return out.filter(Boolean);
+    }
+
+    async function runLiveDelegation(delegationId: string) {
+        if (!delegationId || liveDelegationsInFlightRef.current.has(delegationId)) return;
+        liveDelegationsInFlightRef.current.add(delegationId);
+
+        try {
+            // Os deltas de transcrição e o evento de delegação são independentes.
+            // Uma pequena espera permite receber os últimos fragmentos do turno.
+            await new Promise((resolve) => window.setTimeout(resolve, 180));
+
+            const spoken = finalizeLiveUserTranscript();
+            const recent = messagesRef.current
+                .filter((m) => m.content.trim() && !m.streaming)
+                .slice(-MAX_HISTORY_TO_API)
+                .map(({ role, content }) => ({ role, content }));
+
+            // Se, por alguma condição de rede, a transcrição ainda não tiver
+            // entrado na lista, garantimos que a fala capturada esteja presente.
+            if (
+                spoken &&
+                (!recent.length ||
+                    recent[recent.length - 1]?.role !== "user" ||
+                    recent[recent.length - 1]?.content.trim() !== spoken.trim())
+            ) {
+                recent.push({ role: "user", content: spoken });
+            }
+
+            if (!recent.length || recent[recent.length - 1]?.role !== "user") {
+                throw new Error("Não consegui identificar a pergunta falada. Tente novamente.");
+            }
+
+            setRealtimeState("consulting");
+
+            const response = await fetch(`${CHAT_API}?action=chat&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messages: recent }),
+            });
+
+            const json = (await response.json().catch(() => null)) as
+                | {
+                    ok?: boolean;
+                    reply?: string;
+                    tools_used?: string[];
+                    product_cards?: unknown;
+                    product_suggestions?: unknown;
+                    msg?: string;
+                    need_login?: 1;
+                }
+                | null;
+
+            if (response.status === 401 || json?.need_login) {
+                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            }
+            if (!response.ok || !json?.ok) {
+                throw new Error(json?.msg || `Falha ao consultar o PAI (HTTP ${response.status}).`);
+            }
+
+            const reply = String(json.reply || "").trim();
+            if (!reply) throw new Error("O backend não retornou uma resposta para a Aurora.");
+
+            realtimeToolsRef.current = new Set(
+                Array.isArray(json.tools_used) ? json.tools_used.map(String) : [],
+            );
+            realtimeProductCardsRef.current = sanitizeProductCards(json.product_cards);
+            realtimeProductSuggestionsRef.current = sanitizeProductSuggestions(json.product_suggestions);
+
+            const dc = realtimeDcRef.current;
+            if (!dc || dc.readyState !== "open") throw new Error("A conversa por voz foi desconectada.");
+
+            // GPT-Live recebe os fatos validados e escolhe como dizê-los em
+            // português brasileiro usando a voz Bossa.
+            for (const chunk of splitLiveCommentary(reply)) {
+                dc.send(
+                    JSON.stringify({
+                        type: "session.commentary.append",
+                        delegation_id: delegationId,
+                        content: chunk,
+                    }),
+                );
+            }
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Não consegui consultar os dados agora.";
+            setError(message);
+
+            const dc = realtimeDcRef.current;
+            if (dc?.readyState === "open") {
+                dc.send(
+                    JSON.stringify({
+                        type: "session.commentary.append",
+                        delegation_id: delegationId,
+                        content: "Não consegui concluir essa consulta agora. Avise ao usuário de forma curta que houve uma falha temporária e que ele pode tentar novamente.",
+                    }),
+                );
+            }
+        } finally {
+            liveDelegationsInFlightRef.current.delete(delegationId);
+        }
     }
 
     async function handleRealtimeEvent(event: any) {
         const type = String(event?.type || "");
 
-        if (type === "session.created" || type === "session.updated") {
+        if (type === "session.started") {
             if (realtimeConnectTimeoutRef.current != null) {
                 window.clearTimeout(realtimeConnectTimeoutRef.current);
                 realtimeConnectTimeoutRef.current = null;
             }
-            if (!realtimeSessionReadyRef.current) {
-                realtimeSessionReadyRef.current = true;
-                const dc = realtimeDcRef.current;
-                if (dc && dc.readyState === "open") seedRealtimeContext(dc);
-            }
+
+            realtimeSessionReadyRef.current = true;
+            const sessionId = String(event?.session?.id || "").trim();
+            if (sessionId) liveSessionIdRef.current = sessionId;
+
+            const dc = realtimeDcRef.current;
+            if (dc && dc.readyState === "open") seedRealtimeContext(dc);
+
             setRealtimeState("listening");
             return;
         }
 
-        if (type === "input_audio_buffer.speech_started") {
-            realtimeToolsRef.current.clear();
-            realtimeProductCardsRef.current = [];
-            realtimeProductSuggestionsRef.current = [];
-            setRealtimeState("listening");
+        if (type === "session.updated") {
             return;
         }
-        if (type === "input_audio_buffer.speech_stopped") {
-            setRealtimeState("thinking");
+
+        if (type === "session.input_transcript.delta") {
+            appendLiveInputDelta(String(event?.delta || ""));
             return;
         }
-        if (type === "response.output_audio.delta") {
-            setRealtimeState("speaking");
+
+        if (type === "session.output_transcript.delta") {
+            appendLiveOutputDelta(String(event?.delta || ""));
             return;
         }
-        if (type === "response.output_audio.done") {
-            setRealtimeState("listening");
-            return;
-        }
-        if (type === "conversation.item.input_audio_transcription.completed") {
-            const itemId = String(event?.item_id || makeId("voice-input"));
-            const transcript = String(event?.transcript || "").trim();
-            if (!transcript || realtimeInputSeenRef.current.has(itemId)) return;
-            realtimeInputSeenRef.current.add(itemId);
-            appendMessage({
-                id: `user-${itemId}`,
-                role: "user",
-                content: transcript,
-                createdAt: nowIso(),
-                source: "audio",
-            });
-            return;
-        }
-        if (type === "response.output_audio_transcript.delta") {
-            const key = String(event?.item_id || event?.response_id || "voice-response");
-            const delta = String(event?.delta || "");
-            if (!delta) return;
-            let messageId = realtimeAssistantIdsRef.current.get(key);
-            if (!messageId) {
-                messageId = makeId("assistant-voice");
-                realtimeAssistantIdsRef.current.set(key, messageId);
-                appendMessage({
-                    id: messageId,
-                    role: "assistant",
-                    content: "",
-                    createdAt: nowIso(),
-                    toolsUsed: Array.from(realtimeToolsRef.current),
-                    productCards: realtimeProductCardsRef.current,
-                    productSuggestions: realtimeProductSuggestionsRef.current,
-                    source: "audio",
-                    streaming: true,
-                });
-            }
-            updateMessage(messageId, (m) => ({
-                ...m,
-                content: m.content + delta,
-                toolsUsed: Array.from(realtimeToolsRef.current),
-                productCards: realtimeProductCardsRef.current,
-                productSuggestions: realtimeProductSuggestionsRef.current,
-            }));
-            return;
-        }
-        if (type === "response.output_audio_transcript.done") {
-            const key = String(event?.item_id || event?.response_id || "voice-response");
-            const messageId = realtimeAssistantIdsRef.current.get(key);
-            if (!messageId) return;
-            const transcript = String(event?.transcript || "").trim();
-            updateMessage(messageId, (m) => ({
-                ...m,
-                content: transcript || m.content,
-                toolsUsed: Array.from(realtimeToolsRef.current),
-                productCards: realtimeProductCardsRef.current,
-                productSuggestions: realtimeProductSuggestionsRef.current,
-                streaming: false,
-            }));
-            return;
-        }
-        if (type === "response.done") {
-            const output = Array.isArray(event?.response?.output) ? event.response.output : [];
-            const calls = output.filter((item: any) => item?.type === "function_call");
-            if (calls.length > 0) {
+
+        if (type === "session.delegation.created") {
+            const delegationId = String(event?.delegation?.id || "").trim();
+            if (delegationId) {
                 setRealtimeState("consulting");
-                const results = await Promise.all(
-                    calls.map(async (call: any) => {
-                        const name = String(call?.name || "");
-                        const callId = String(call?.call_id || "");
-                        let args: any = {};
-                        try {
-                            args = JSON.parse(String(call?.arguments || "{}"));
-                        } catch {
-                            args = {};
-                        }
-                        realtimeToolsRef.current.add(name);
-                        const toolResponse = await callRealtimeTool(name, args);
-                        if (toolResponse.productCards.length) {
-                            const merged = sanitizeProductCards([...realtimeProductCardsRef.current, ...toolResponse.productCards]);
-                            realtimeProductCardsRef.current = merged;
-                        }
-                        if (toolResponse.productSuggestions.length) {
-                            const mergedSuggestions = sanitizeProductSuggestions([...realtimeProductSuggestionsRef.current, ...toolResponse.productSuggestions]);
-                            realtimeProductSuggestionsRef.current = mergedSuggestions;
-                        }
-                        return { callId, result: toolResponse.result };
-                    }),
-                );
-
-                const dc = realtimeDcRef.current;
-                if (!dc || dc.readyState !== "open") throw new Error("A sessão de voz foi desconectada.");
-                for (const item of results) {
-                    dc.send(
-                        JSON.stringify({
-                            type: "conversation.item.create",
-                            item: {
-                                type: "function_call_output",
-                                call_id: item.callId,
-                                output: JSON.stringify(item.result),
-                            },
-                        }),
-                    );
-                }
-                dc.send(JSON.stringify({ type: "response.create" }));
-            } else if (realtimeState !== "off") {
-                setRealtimeState("listening");
+                void runLiveDelegation(delegationId);
             }
             return;
         }
+
+        if (type === "session.closed") {
+            finalizeLiveUserTranscript();
+            finalizeLiveAssistantMessage();
+            cleanupRealtimeRefs();
+            return;
+        }
+
+        if (type === "session.usage.updated") {
+            return;
+        }
+
         if (type === "error") {
-            const message = String(event?.error?.message || "Erro na sessão de voz em tempo real.");
+            const message = String(
+                event?.error?.message ||
+                event?.message ||
+                "Erro na sessão de voz natural.",
+            );
             setError(message);
-
-            // Erros de configuração/sessão impedem a conversa. Como a mensagem agora
-            // aparece dentro da própria tela de voz, o usuário consegue ver a causa.
-            const code = String(event?.error?.code || event?.error?.type || "").toLowerCase();
-            const fatal =
-                code.includes("session") ||
-                code.includes("invalid") ||
-                code.includes("authentication") ||
-                code.includes("permission");
-
-            if (fatal) {
-                realtimeClosingRef.current = true;
-                stopRealtimeVoice(false);
-            }
             return;
         }
+
+        // O contrato Live pode ganhar novos eventos. Eventos desconhecidos não
+        // devem derrubar a chamada.
     }
 
     function normalizeRemoteSdp(raw: string) {
@@ -1331,6 +1475,26 @@ export default function AuroraPage() {
         return `${valid.join("\r\n")}\r\n`;
     }
 
+    async function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs = 2500) {
+        if (pc.iceGatheringState === "complete") return;
+
+        await new Promise<void>((resolve) => {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                pc.removeEventListener("icegatheringstatechange", onChange);
+                window.clearTimeout(timer);
+                resolve();
+            };
+            const onChange = () => {
+                if (pc.iceGatheringState === "complete") finish();
+            };
+            const timer = window.setTimeout(finish, timeoutMs);
+            pc.addEventListener("icegatheringstatechange", onChange);
+        });
+    }
+
     async function startRealtimeVoice() {
         if (realtimeState !== "off" || loadingRef.current) return;
 
@@ -1340,10 +1504,15 @@ export default function AuroraPage() {
         setRealtimeState("connecting");
         realtimeClosingRef.current = false;
         realtimeSessionReadyRef.current = false;
+        liveSessionIdRef.current = null;
+        liveInputTranscriptRef.current = "";
+        liveCurrentUserMessageIdRef.current = null;
+        liveCurrentAssistantMessageIdRef.current = null;
+        liveDelegationsInFlightRef.current.clear();
 
         try {
             if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
-                throw new Error("Este navegador não oferece suporte ao modo de voz em tempo real.");
+                throw new Error("Este navegador não oferece suporte ao modo de voz natural.");
             }
 
             const mic = await navigator.mediaDevices.getUserMedia({
@@ -1369,11 +1538,11 @@ export default function AuroraPage() {
             }
             realtimeConnectTimeoutRef.current = window.setTimeout(() => {
                 if (!realtimeSessionReadyRef.current && !realtimeClosingRef.current) {
-                    setError("A conexão de voz demorou demais para ficar pronta. Tente novamente.");
+                    setError("A conexão com a voz brasileira da Aurora demorou demais. Tente novamente.");
                     realtimeClosingRef.current = true;
                     stopRealtimeVoice(false);
                 }
-            }, 15000);
+            }, 18000);
 
             for (const track of mic.getTracks()) pc.addTrack(track, mic);
 
@@ -1394,12 +1563,10 @@ export default function AuroraPage() {
                 try {
                     const event = JSON.parse(String(messageEvent.data || "{}"));
                     void handleRealtimeEvent(event).catch((err) => {
-                        setError(err instanceof Error ? err.message : "Falha no modo de voz.");
-                        realtimeClosingRef.current = true;
-                        stopRealtimeVoice(false);
+                        setError(err instanceof Error ? err.message : "Falha no modo de voz natural.");
                     });
                 } catch {
-                    // Evento desconhecido não interrompe a sessão.
+                    // Um evento desconhecido não encerra a conversa.
                 }
             });
 
@@ -1416,7 +1583,7 @@ export default function AuroraPage() {
 
             pc.addEventListener("connectionstatechange", () => {
                 if (pc.connectionState === "failed" && !realtimeClosingRef.current) {
-                    setError("A conexão WebRTC de voz falhou. Tente iniciar novamente.");
+                    setError("A conexão WebRTC da voz falhou. Tente iniciar novamente.");
                     realtimeClosingRef.current = true;
                     stopRealtimeVoice(false);
                 }
@@ -1424,16 +1591,12 @@ export default function AuroraPage() {
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            await waitForIceGatheringComplete(pc);
 
-            // O guia oficial usa o SDP do offer para iniciar a sessão.
-            const offerSdp = String(offer.sdp || "").trim();
+            const offerSdp = String(pc.localDescription?.sdp || offer.sdp || "").trim();
             if (!offerSdp) throw new Error("Não foi possível preparar a conexão de voz.");
 
-            // Unified interface:
-            // browser -> PHP em JSON
-            // PHP -> OpenAI /v1/realtime/calls em multipart/form-data
-            // Assim não expomos chaves e evitamos que browser/proxy altere o SDP remoto.
-            const response = await fetch(`${CHAT_API}?action=realtime-session&_=${Date.now()}`, {
+            const response = await fetch(`${CHAT_API}?action=live-session&_=${Date.now()}`, {
                 method: "POST",
                 credentials: "include",
                 cache: "no-store",
@@ -1445,7 +1608,16 @@ export default function AuroraPage() {
             });
 
             const json = (await response.json().catch(() => null)) as
-                | { ok?: boolean; sdp?: string; msg?: string; need_login?: 1 }
+                | {
+                    ok?: boolean;
+                    session_id?: string;
+                    sdp?: string;
+                    model?: string;
+                    voice?: string;
+                    language?: string;
+                    msg?: string;
+                    need_login?: 1;
+                }
                 | null;
 
             if (!response.ok || !json?.ok) {
@@ -1455,14 +1627,18 @@ export default function AuroraPage() {
                 throw new Error(json?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
             }
 
-            const answerSdp = normalizeRemoteSdp(String(json.sdp || ""));
+            const answerSdp = String(json.sdp || "").trim();
+            if (!answerSdp) throw new Error("O servidor não devolveu a resposta WebRTC.");
+
+            liveSessionIdRef.current = String(json.session_id || "").trim() || null;
+
             await pc.setRemoteDescription({
                 type: "answer",
                 sdp: answerSdp,
             });
 
-            // "Ouvindo" só aparece quando session.created/session.updated chegar
-            // pelo DataChannel, confirmando a sessão real.
+            // O GPT-Live envia session.started pelo canal de dados. Só então
+            // mostramos "Ouvindo", garantindo que a voz Bossa esteja ativa.
         } catch (err: unknown) {
             realtimeClosingRef.current = true;
             cleanupRealtimeRefs();
@@ -1472,7 +1648,7 @@ export default function AuroraPage() {
             if (name === "NotAllowedError" || name === "PermissionDeniedError") {
                 setError("Permita o acesso ao microfone para usar a conversa por voz.");
             } else {
-                setError(err instanceof Error ? err.message : "Não foi possível iniciar a voz em tempo real.");
+                setError(err instanceof Error ? err.message : "Não foi possível iniciar a voz natural.");
             }
 
             window.setTimeout(() => {
@@ -1512,6 +1688,12 @@ export default function AuroraPage() {
         realtimeToolsRef.current.clear();
         realtimeProductCardsRef.current = [];
         realtimeProductSuggestionsRef.current = [];
+        liveInputTranscriptRef.current = "";
+        liveCurrentUserMessageIdRef.current = null;
+        liveCurrentAssistantMessageIdRef.current = null;
+        liveDelegationsInFlightRef.current.clear();
+        liveSessionIdRef.current = null;
+        clearLiveAssistantFinalizeTimer();
         setRealtimeState("off");
     }
 
