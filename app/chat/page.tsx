@@ -10,6 +10,7 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
+const OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const STORAGE_KEY = "pai-aurora-v1-performance";
 const VOICE_AUTO_KEY = "pai-aurora-voice-auto-v1";
 const MAX_HISTORY_TO_API = 8;
@@ -767,6 +768,7 @@ export default function AuroraPage() {
     const realtimeProductCardsRef = useRef<ProductCard[]>([]);
     const realtimeProductSuggestionsRef = useRef<ProductSuggestion[]>([]);
     const realtimeClosingRef = useRef(false);
+    const realtimeSessionReadyRef = useRef(false);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1133,6 +1135,16 @@ export default function AuroraPage() {
     async function handleRealtimeEvent(event: any) {
         const type = String(event?.type || "");
 
+        if (type === "session.updated") {
+            if (!realtimeSessionReadyRef.current) {
+                realtimeSessionReadyRef.current = true;
+                const dc = realtimeDcRef.current;
+                if (dc && dc.readyState === "open") seedRealtimeContext(dc);
+            }
+            setRealtimeState("listening");
+            return;
+        }
+
         if (type === "input_audio_buffer.speech_started") {
             realtimeToolsRef.current.clear();
             realtimeProductCardsRef.current = [];
@@ -1264,17 +1276,81 @@ export default function AuroraPage() {
         }
     }
 
+    async function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs = 2500) {
+        if (pc.iceGatheringState === "complete") return;
+
+        await new Promise<void>((resolve) => {
+            let settled = false;
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                pc.removeEventListener("icegatheringstatechange", onChange);
+                window.clearTimeout(timer);
+                resolve();
+            };
+            const onChange = () => {
+                if (pc.iceGatheringState === "complete") finish();
+            };
+            const timer = window.setTimeout(finish, timeoutMs);
+            pc.addEventListener("icegatheringstatechange", onChange);
+        });
+    }
+
     async function startRealtimeVoice() {
         if (realtimeState !== "off" || loadingRef.current) return;
+
         setConversationMode("voice");
         setError("");
         stopCurrentSpeech();
         setRealtimeState("connecting");
         realtimeClosingRef.current = false;
+        realtimeSessionReadyRef.current = false;
 
         try {
             if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
                 throw new Error("Este navegador não oferece suporte ao modo de voz em tempo real.");
+            }
+
+            // Primeiro obtemos um segredo efêmero. A chave real da OpenAI nunca
+            // sai do PHP.
+            const tokenResponse = await fetch(`${CHAT_API}?action=realtime-token&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({}),
+            });
+
+            const tokenJson = (await tokenResponse.json().catch(() => null)) as
+                | {
+                    ok?: boolean;
+                    value?: string;
+                    expires_at?: number | string | null;
+                    model?: string;
+                    session_update?: Record<string, unknown>;
+                    msg?: string;
+                    need_login?: 1;
+                }
+                | null;
+
+            if (!tokenResponse.ok || !tokenJson?.ok) {
+                if (tokenResponse.status === 401 || tokenJson?.need_login) {
+                    throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+                }
+                throw new Error(tokenJson?.msg || `Falha ao preparar a voz (HTTP ${tokenResponse.status}).`);
+            }
+
+            const ephemeralKey = String(tokenJson.value || "").trim();
+            if (!ephemeralKey) {
+                throw new Error("O servidor não devolveu a credencial temporária de voz.");
+            }
+
+            const sessionUpdate = tokenJson.session_update;
+            if (!sessionUpdate || typeof sessionUpdate !== "object") {
+                throw new Error("O servidor não devolveu a configuração da sessão de voz.");
             }
 
             const mic = await navigator.mediaDevices.getUserMedia({
@@ -1284,6 +1360,7 @@ export default function AuroraPage() {
                     autoGainControl: true,
                 },
             });
+
             const pc = new RTCPeerConnection();
             const dc = pc.createDataChannel("oai-events");
             const remoteAudio = document.createElement("audio");
@@ -1295,8 +1372,11 @@ export default function AuroraPage() {
             realtimeAudioRef.current = remoteAudio;
 
             for (const track of mic.getTracks()) pc.addTrack(track, mic);
+
             pc.ontrack = (event) => {
-                remoteAudio.srcObject = event.streams[0];
+                const [stream] = event.streams;
+                if (!stream) return;
+                remoteAudio.srcObject = stream;
                 void remoteAudio.play().catch(() => undefined);
             };
 
@@ -1304,20 +1384,31 @@ export default function AuroraPage() {
 
             dc.addEventListener("open", () => {
                 connectionOpened = true;
-                seedRealtimeContext(dc);
-                setRealtimeState("listening");
+
+                // A sessão já existe. Agora aplicamos instruções, ferramentas,
+                // transcrição e semantic VAD. Só depois de session.updated a
+                // interface muda para "Ouvindo".
+                dc.send(
+                    JSON.stringify({
+                        type: "session.update",
+                        session: sessionUpdate,
+                    }),
+                );
             });
+
             dc.addEventListener("message", (messageEvent) => {
                 try {
                     const event = JSON.parse(String(messageEvent.data || "{}"));
                     void handleRealtimeEvent(event).catch((err) => {
                         setError(err instanceof Error ? err.message : "Falha no modo de voz.");
+                        realtimeClosingRef.current = true;
                         stopRealtimeVoice(false);
                     });
                 } catch {
                     // Evento desconhecido não interrompe a sessão.
                 }
             });
+
             dc.addEventListener("close", () => {
                 if (!realtimeClosingRef.current) {
                     setError(
@@ -1329,49 +1420,80 @@ export default function AuroraPage() {
                 cleanupRealtimeRefs();
             });
 
+            pc.addEventListener("connectionstatechange", () => {
+                const state = pc.connectionState;
+                if (state === "failed" && !realtimeClosingRef.current) {
+                    setError("A conexão WebRTC de voz falhou. Tente iniciar novamente.");
+                    realtimeClosingRef.current = true;
+                    stopRealtimeVoice(false);
+                }
+            });
+
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+
+            // Dá um pequeno prazo para o navegador concluir a coleta ICE,
+            // melhorando a estabilidade em redes móveis, Wi-Fi e NAT.
+            await waitForIceGatheringComplete(pc);
+
             const sdp = pc.localDescription?.sdp || offer.sdp;
             if (!sdp) throw new Error("Não foi possível preparar a conexão de voz.");
 
-            // O navegador envia JSON ao backend. Alguns hosts/WAFs rejeitam
-            // application/sdp com HTTP 406 antes mesmo de o PHP ser executado.
-            const response = await fetch(`${CHAT_API}?action=realtime-session&_=${Date.now()}`, {
+            // A partir daqui o navegador fala diretamente com a OpenAI usando
+            // apenas o token EFÊMERO. Isso elimina o 500 causado pelo servidor
+            // PHP no caminho crítico de /v1/realtime/calls.
+            const sdpResponse = await fetch(OPENAI_REALTIME_CALLS_URL, {
                 method: "POST",
-                credentials: "include",
-                cache: "no-store",
+                body: sdp,
                 headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
+                    Authorization: `Bearer ${ephemeralKey}`,
+                    "Content-Type": "application/sdp",
+                    Accept: "application/sdp",
                 },
-                body: JSON.stringify({ sdp }),
             });
 
-            const sessionJson = (await response.json().catch(() => null)) as
-                | { ok?: boolean; sdp?: string; msg?: string; need_login?: 1 }
-                | null;
-
-            if (!response.ok || !sessionJson?.ok) {
-                if (response.status === 401 || sessionJson?.need_login) {
-                    throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            if (!sdpResponse.ok) {
+                const body = (await sdpResponse.text().catch(() => "")).trim();
+                let message = body;
+                try {
+                    const parsed = JSON.parse(body);
+                    message = String(parsed?.error?.message || parsed?.message || body);
+                } catch {
+                    // Mantém resposta textual.
                 }
-                throw new Error(sessionJson?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
+                throw new Error(
+                    message
+                        ? `Falha ao conectar a voz: ${message}`
+                        : `Falha ao conectar a voz (HTTP ${sdpResponse.status}).`,
+                );
             }
 
-            const answerSdp = String(sessionJson.sdp || "").trim();
-            if (!answerSdp) throw new Error("O servidor não devolveu a resposta WebRTC da Aurora.");
+            const answerSdp = (await sdpResponse.text()).trim();
+            if (!answerSdp) throw new Error("A OpenAI não devolveu a resposta WebRTC.");
 
             await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
-            if (dc.readyState === "open") setRealtimeState("listening");
+
+            // Não marcamos "listening" aqui. A interface só entra em ouvindo
+            // quando receber session.updated, confirmando que VAD e tools foram
+            // aplicados.
         } catch (err: unknown) {
+            // Evita que o evento "close" sobrescreva a mensagem real do erro.
+            realtimeClosingRef.current = true;
             cleanupRealtimeRefs();
             setRealtimeState("off");
+
             const name = err instanceof DOMException ? err.name : "";
             if (name === "NotAllowedError" || name === "PermissionDeniedError") {
                 setError("Permita o acesso ao microfone para usar a conversa por voz.");
             } else {
                 setError(err instanceof Error ? err.message : "Não foi possível iniciar a voz em tempo real.");
             }
+
+            // Libera a flag depois que os eventos de fechamento já tiveram
+            // oportunidade de disparar.
+            window.setTimeout(() => {
+                realtimeClosingRef.current = false;
+            }, 0);
         }
     }
 
@@ -1394,6 +1516,7 @@ export default function AuroraPage() {
         }
         realtimePcRef.current = null;
         realtimeDcRef.current = null;
+        realtimeSessionReadyRef.current = false;
         realtimeMicRef.current = null;
         realtimeAudioRef.current = null;
         realtimeInputSeenRef.current.clear();
