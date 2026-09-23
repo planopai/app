@@ -78,6 +78,29 @@ type ExportCard = {
     expires_at?: string | null;
 };
 
+type PendingActionKind = "novo_atendimento" | "requisicao_material";
+type PendingActionStatus = "pending" | "executing" | "completed" | "cancelled" | "error";
+
+type PendingActionDetail = {
+    label: string;
+    value: string;
+};
+
+type PendingAction = {
+    id: string;
+    kind: PendingActionKind;
+    title: string;
+    description: string;
+    details: PendingActionDetail[];
+    token: string;
+    expires_at?: string | null;
+    status: PendingActionStatus;
+    confirm_label?: string | null;
+    result_label?: string | null;
+    executed_at?: string | null;
+    error?: string | null;
+};
+
 
 type ChatMessage = {
     id: string;
@@ -90,6 +113,7 @@ type ChatMessage = {
     productCards?: ProductCard[];
     productSuggestions?: ProductSuggestion[];
     exportCards?: ExportCard[];
+    pendingActions?: PendingAction[];
 };
 
 type SseEvent = {
@@ -100,6 +124,8 @@ type SseEvent = {
 const QUICK_PROMPTS = [
     "Quantos atendimentos estão no quadro agora?",
     "Quem será sepultado hoje?",
+    "Criar um novo atendimento",
+    "Requisitar materiais",
     "Quantos AÇÚCAR temos?",
     "Quantas urnas saíram hoje?",
     "Quantas coroas estão em confecção agora?",
@@ -107,6 +133,8 @@ const QUICK_PROMPTS = [
 ];
 
 const TOOL_LABELS: Record<string, string> = {
+    preparar_novo_atendimento: "Novo atendimento",
+    preparar_requisicao_material: "Requisição",
     consultar_atendimentos: "Atendimentos",
     detalhar_atendimento: "Atendimentos",
     consultar_estoque: "Estoque",
@@ -452,6 +480,248 @@ function ExportCards({ cards }: { cards?: ExportCard[] }) {
     );
 }
 
+
+function sanitizePendingActions(value: unknown): PendingAction[] {
+    if (!Array.isArray(value)) return [];
+
+    const out: PendingAction[] = [];
+    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material"]);
+    const allowedStatuses = new Set<PendingActionStatus>(["pending", "executing", "completed", "cancelled", "error"]);
+
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const id = String(item.id || "").trim();
+        const kind = String(item.kind || "") as PendingActionKind;
+        const token = String(item.token || "").trim();
+        const title = String(item.title || "").trim();
+        if (!id || !allowedKinds.has(kind) || !title) continue;
+
+        const statusRaw = String(item.status || "pending") as PendingActionStatus;
+        const status = allowedStatuses.has(statusRaw) ? statusRaw : "pending";
+
+        const details: PendingActionDetail[] = Array.isArray(item.details)
+            ? item.details
+                .map((detail: any) => ({
+                    label: String(detail?.label || "").trim(),
+                    value: String(detail?.value || "").trim(),
+                }))
+                .filter((detail: PendingActionDetail) => detail.label && detail.value)
+                .slice(0, 20)
+            : [];
+
+        out.push({
+            id,
+            kind,
+            title,
+            description: String(item.description || "").trim(),
+            details,
+            token,
+            expires_at: item.expires_at == null ? null : String(item.expires_at),
+            status,
+            confirm_label: item.confirm_label == null ? null : String(item.confirm_label),
+            result_label: item.result_label == null ? null : String(item.result_label),
+            executed_at: item.executed_at == null ? null : String(item.executed_at),
+            error: item.error == null ? null : String(item.error),
+        });
+    }
+
+    return out.slice(0, 5);
+}
+
+function normalizeCommandText(value: string) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[.!?;,]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function isExplicitConfirmCommand(value: string) {
+    const q = normalizeCommandText(value);
+    return [
+        "sim",
+        "confirmar",
+        "confirma",
+        "confirmo",
+        "pode confirmar",
+        "pode criar",
+        "pode fazer",
+        "pode executar",
+        "execute",
+        "executar",
+        "sim pode criar",
+        "sim pode fazer",
+        "sim pode confirmar",
+        "confirmado",
+    ].includes(q);
+}
+
+function isExplicitCancelCommand(value: string) {
+    const q = normalizeCommandText(value);
+    return [
+        "cancelar",
+        "cancela",
+        "cancelado",
+        "nao",
+        "não",
+        "nao confirmar",
+        "desistir",
+        "deixa pra la",
+        "deixa para la",
+    ].includes(q);
+}
+
+function PendingActionCards({
+    actions,
+    disabled,
+    onConfirm,
+    onCancel,
+}: {
+    actions?: PendingAction[];
+    disabled?: boolean;
+    onConfirm: (action: PendingAction) => void;
+    onCancel: (action: PendingAction) => void;
+}) {
+    if (!actions?.length) return null;
+
+    return (
+        <div className="mt-3 space-y-3">
+            {actions.map((action) => {
+                const expiry = action.expires_at ? new Date(action.expires_at) : null;
+                const expired = Boolean(expiry && !Number.isNaN(expiry.getTime()) && expiry.getTime() < Date.now());
+                const pending = action.status === "pending" || action.status === "error";
+                const executing = action.status === "executing";
+                const completed = action.status === "completed";
+                const cancelled = action.status === "cancelled";
+
+                return (
+                    <div
+                        key={action.id}
+                        className={[
+                            "overflow-hidden rounded-2xl border",
+                            completed
+                                ? "border-emerald-200 bg-emerald-50/70"
+                                : cancelled
+                                    ? "border-slate-200 bg-slate-50"
+                                    : action.status === "error"
+                                        ? "border-red-200 bg-red-50/70"
+                                        : "border-amber-200 bg-amber-50/70",
+                        ].join(" ")}
+                    >
+                        <div className="p-4">
+                            <div className="flex items-start gap-3">
+                                <div
+                                    className={[
+                                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold",
+                                        completed
+                                            ? "bg-emerald-100 text-emerald-700"
+                                            : cancelled
+                                                ? "bg-slate-200 text-slate-600"
+                                                : "bg-amber-100 text-amber-700",
+                                    ].join(" ")}
+                                >
+                                    {action.kind === "novo_atendimento" ? "ATD" : "REQ"}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-sm font-semibold text-slate-950">{action.title}</div>
+                                    {action.description ? (
+                                        <div className="mt-1 text-xs leading-5 text-slate-600">{action.description}</div>
+                                    ) : null}
+                                </div>
+
+                                <span
+                                    className={[
+                                        "shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold",
+                                        completed
+                                            ? "bg-emerald-100 text-emerald-700"
+                                            : cancelled
+                                                ? "bg-slate-200 text-slate-600"
+                                                : executing
+                                                    ? "bg-sky-100 text-sky-700"
+                                                    : action.status === "error"
+                                                        ? "bg-red-100 text-red-700"
+                                                        : "bg-amber-100 text-amber-700",
+                                    ].join(" ")}
+                                >
+                                    {completed
+                                        ? "Concluída"
+                                        : cancelled
+                                            ? "Cancelada"
+                                            : executing
+                                                ? "Executando"
+                                                : action.status === "error"
+                                                    ? "Falhou"
+                                                    : expired
+                                                        ? "Expirada"
+                                                        : "Aguardando confirmação"}
+                                </span>
+                            </div>
+
+                            {action.details.length ? (
+                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 p-3 ring-1 ring-inset ring-slate-200/70">
+                                    {action.details.map((detail, index) => (
+                                        <div key={`${action.id}-detail-${index}`} className="grid grid-cols-[minmax(90px,0.42fr)_1fr] gap-3 text-xs">
+                                            <span className="text-slate-500">{detail.label}</span>
+                                            <span className="break-words font-medium text-slate-800">{detail.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {action.result_label ? (
+                                <div className="mt-3 text-xs font-semibold text-emerald-700">
+                                    {action.result_label}
+                                </div>
+                            ) : null}
+
+                            {action.error ? (
+                                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                    {action.error}
+                                </div>
+                            ) : null}
+
+                            {pending && !expired ? (
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={disabled || executing}
+                                        onClick={() => onConfirm(action)}
+                                        className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {action.status === "error" ? "Tentar novamente" : (action.confirm_label || "Confirmar")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={disabled || executing}
+                                        onClick={() => onCancel(action)}
+                                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <span className="self-center text-[10px] text-slate-500">
+                                        Você também pode dizer ou digitar “confirmar”.
+                                    </span>
+                                </div>
+                            ) : null}
+
+                            {expired && pending ? (
+                                <div className="mt-3 text-xs text-amber-700">
+                                    Esta confirmação expirou. Peça à Aurora para preparar a ação novamente.
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 function loadStoredMessages(): ChatMessage[] {
     if (typeof window === "undefined") return [];
     try {
@@ -476,6 +746,7 @@ function loadStoredMessages(): ChatMessage[] {
                 productCards: sanitizeProductCards(item.productCards),
                 productSuggestions: sanitizeProductSuggestions(item.productSuggestions),
                 exportCards: sanitizeExportCards(item.exportCards),
+                pendingActions: sanitizePendingActions(item.pendingActions),
                 source: item.source === "audio" ? "audio" : "text",
                 streaming: false,
             }));
@@ -783,7 +1054,7 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Aurora</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                Assistente Administrativo do PAI. Texto em streaming, voz em tempo real e IA adaptativa para cada tipo de consulta, sempre em modo somente leitura.
+                Assistente Administrativo do PAI. Consulta dados, gera arquivos e prepara ações administrativas que só são executadas após sua confirmação.
             </p>
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 {QUICK_PROMPTS.map((prompt) => (
@@ -865,7 +1136,7 @@ function VoiceEmptyState({
                 <div className="mt-7 flex flex-wrap items-center justify-center gap-2 text-xs">
                     <span className="rounded-full bg-sky-50 px-3 py-1.5 font-medium text-sky-700 ring-1 ring-inset ring-sky-200">Microfone ativo</span>
                     <span className="rounded-full bg-violet-50 px-3 py-1.5 font-medium text-violet-700 ring-1 ring-inset ring-violet-200">Interrupção habilitada</span>
-                    <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Somente leitura</span>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Ações com confirmação</span>
                 </div>
             )}
         </div>
@@ -913,6 +1184,8 @@ export default function AuroraPage() {
     const liveAssistantFinalizeTimerRef = useRef<number | null>(null);
     const liveSessionIdRef = useRef<string | null>(null);
     const realtimeExportCardsRef = useRef<ExportCard[]>([]);
+    const realtimePendingActionsRef = useRef<PendingAction[]>([]);
+    const pendingActionBusyRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -976,6 +1249,169 @@ export default function AuroraPage() {
 
     function appendMessage(message: ChatMessage) {
         commitMessages([...messagesRef.current, message]);
+    }
+
+    function updatePendingActionEverywhere(
+        actionId: string,
+        patch: Partial<PendingAction>,
+    ) {
+        const next = messagesRef.current.map((message) => {
+            if (!message.pendingActions?.length) return message;
+            let changed = false;
+            const pendingActions = message.pendingActions.map((action) => {
+                if (action.id !== actionId) return action;
+                changed = true;
+                return { ...action, ...patch };
+            });
+            return changed ? { ...message, pendingActions } : message;
+        });
+        commitMessages(next);
+    }
+
+    function latestPendingAction() {
+        for (let i = messagesRef.current.length - 1; i >= 0; i--) {
+            const actions = messagesRef.current[i]?.pendingActions || [];
+            for (let j = actions.length - 1; j >= 0; j--) {
+                const action = actions[j];
+                if (action.status !== "pending" && action.status !== "error") continue;
+
+                const expiry = action.expires_at ? new Date(action.expires_at) : null;
+                if (expiry && !Number.isNaN(expiry.getTime()) && expiry.getTime() < Date.now()) {
+                    continue;
+                }
+                return action;
+            }
+        }
+        return null;
+    }
+
+    async function callPendingAction(
+        action: PendingAction,
+        decision: "execute" | "cancel",
+    ) {
+        if (!action.token) throw new Error("A confirmação desta ação é inválida.");
+        if (pendingActionBusyRef.current.has(action.id)) {
+            throw new Error("Esta ação já está sendo processada.");
+        }
+
+        pendingActionBusyRef.current.add(action.id);
+        updatePendingActionEverywhere(action.id, {
+            status: "executing",
+            error: null,
+        });
+
+        try {
+            const endpoint = decision === "execute" ? "execute-pending" : "cancel-pending";
+            const response = await fetch(`${CHAT_API}?action=${endpoint}&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token: action.token }),
+            });
+
+            const json = (await response.json().catch(() => null)) as
+                | {
+                    ok?: boolean;
+                    reply?: string;
+                    msg?: string;
+                    need_login?: 1;
+                    action_update?: {
+                        id?: string;
+                        status?: PendingActionStatus;
+                        result_label?: string | null;
+                        executed_at?: string | null;
+                    };
+                }
+                | null;
+
+            if (response.status === 401 || json?.need_login) {
+                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            }
+
+            if (!response.ok || !json?.ok) {
+                throw new Error(json?.msg || `Falha ao ${decision === "execute" ? "executar" : "cancelar"} a ação.`);
+            }
+
+            const update = json.action_update || {};
+            updatePendingActionEverywhere(action.id, {
+                status:
+                    update.status ||
+                    (decision === "execute" ? "completed" : "cancelled"),
+                result_label:
+                    update.result_label == null
+                        ? decision === "execute"
+                            ? "Concluída"
+                            : "Cancelada"
+                        : String(update.result_label),
+                executed_at:
+                    update.executed_at == null ? nowIso() : String(update.executed_at),
+                error: null,
+            });
+
+            return String(
+                json.reply ||
+                (decision === "execute"
+                    ? "Ação concluída com sucesso."
+                    : "Ação cancelada."),
+            ).trim();
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Falha ao processar a ação.";
+            updatePendingActionEverywhere(action.id, {
+                status: decision === "cancel" ? "pending" : "error",
+                error: message,
+            });
+            throw err;
+        } finally {
+            pendingActionBusyRef.current.delete(action.id);
+        }
+    }
+
+    async function runPendingActionFromText(
+        action: PendingAction,
+        decision: "execute" | "cancel",
+        commandText?: string,
+    ) {
+        if (loadingRef.current || realtimeState !== "off") return;
+
+        setError("");
+        setInput("");
+        stopCurrentSpeech();
+
+        if (commandText?.trim()) {
+            appendMessage({
+                id: makeId("user-action"),
+                role: "user",
+                content: commandText.trim(),
+                createdAt: nowIso(),
+                source: "text",
+                streaming: false,
+            });
+        }
+
+        loadingRef.current = true;
+        setLoading(true);
+
+        try {
+            const reply = await callPendingAction(action, decision);
+            const message: ChatMessage = {
+                id: makeId("assistant-action"),
+                role: "assistant",
+                content: reply,
+                createdAt: nowIso(),
+                toolsUsed: [],
+                source: "text",
+                streaming: false,
+            };
+            appendMessage(message);
+            if (voiceAutoRef.current) void speakMessage(message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Falha ao processar a ação.");
+        } finally {
+            loadingRef.current = false;
+            setLoading(false);
+            requestAnimationFrame(() => textareaRef.current?.focus());
+        }
     }
 
     function stopCurrentSpeech() {
@@ -1118,6 +1554,16 @@ export default function AuroraPage() {
         const text = String(rawText ?? input).trim();
         if (!text || loadingRef.current || realtimeState !== "off") return;
 
+        const pending = latestPendingAction();
+        if (pending && isExplicitConfirmCommand(text)) {
+            await runPendingActionFromText(pending, "execute", text);
+            return;
+        }
+        if (pending && isExplicitCancelCommand(text)) {
+            await runPendingActionFromText(pending, "cancel", text);
+            return;
+        }
+
         stopCurrentSpeech();
         setError("");
         setInput("");
@@ -1152,6 +1598,7 @@ export default function AuroraPage() {
         let finalProductCards: ProductCard[] = [];
         let finalProductSuggestions: ProductSuggestion[] = [];
         let finalExportCards: ExportCard[] = [];
+        let finalPendingActions: PendingAction[] = [];
         let streamError = "";
 
         try {
@@ -1189,18 +1636,21 @@ export default function AuroraPage() {
                     if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
                     if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
                     if (Array.isArray(data?.export_cards)) finalExportCards = sanitizeExportCards(data.export_cards);
+                    if (Array.isArray(data?.pending_actions)) finalPendingActions = sanitizePendingActions(data.pending_actions);
                     updateMessage(assistantId, (m) => ({
                         ...m,
                         toolsUsed: finalTools,
                         productCards: finalProductCards,
                         productSuggestions: finalProductSuggestions,
                         exportCards: finalExportCards,
+                        pendingActions: finalPendingActions,
                     }));
                 } else if (event === "done") {
                     if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
                     if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
                     if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
                     if (Array.isArray(data?.export_cards)) finalExportCards = sanitizeExportCards(data.export_cards);
+                    if (Array.isArray(data?.pending_actions)) finalPendingActions = sanitizePendingActions(data.pending_actions);
                 } else if (event === "error") {
                     streamError = String(data?.msg || "Falha na resposta em streaming.");
                     throw new Error(streamError);
@@ -1217,6 +1667,7 @@ export default function AuroraPage() {
                 productCards: finalProductCards,
                 productSuggestions: finalProductSuggestions,
                 exportCards: finalExportCards,
+                pendingActions: finalPendingActions,
                 source: "text",
                 streaming: false,
             };
@@ -1331,6 +1782,7 @@ export default function AuroraPage() {
             realtimeProductCardsRef.current = [];
             realtimeProductSuggestionsRef.current = [];
             realtimeExportCardsRef.current = [];
+            realtimePendingActionsRef.current = [];
 
             const id = makeId("user-voice");
             liveCurrentUserMessageIdRef.current = id;
@@ -1378,6 +1830,7 @@ export default function AuroraPage() {
                 productCards: realtimeProductCardsRef.current,
                 productSuggestions: realtimeProductSuggestionsRef.current,
                 exportCards: realtimeExportCardsRef.current,
+                pendingActions: realtimePendingActionsRef.current,
                 source: "audio",
                 streaming: true,
             });
@@ -1390,6 +1843,7 @@ export default function AuroraPage() {
             productCards: realtimeProductCardsRef.current,
             productSuggestions: realtimeProductSuggestionsRef.current,
             exportCards: realtimeExportCardsRef.current,
+            pendingActions: realtimePendingActionsRef.current,
             streaming: true,
         }));
 
@@ -1432,6 +1886,28 @@ export default function AuroraPage() {
             await new Promise((resolve) => window.setTimeout(resolve, 180));
 
             const spoken = finalizeLiveUserTranscript();
+
+            const pendingAction = latestPendingAction();
+            if (pendingAction && (isExplicitConfirmCommand(spoken) || isExplicitCancelCommand(spoken))) {
+                setRealtimeState("consulting");
+                const decision = isExplicitCancelCommand(spoken) ? "cancel" : "execute";
+                const reply = await callPendingAction(pendingAction, decision);
+
+                const dc = realtimeDcRef.current;
+                if (!dc || dc.readyState !== "open") {
+                    throw new Error("A conversa por voz foi desconectada.");
+                }
+
+                dc.send(
+                    JSON.stringify({
+                        type: "session.commentary.append",
+                        delegation_id: delegationId,
+                        content: reply,
+                    }),
+                );
+                return;
+            }
+
             const recent = messagesRef.current
                 .filter((m) => m.content.trim() && !m.streaming)
                 .slice(-MAX_HISTORY_TO_API)
@@ -1470,6 +1946,7 @@ export default function AuroraPage() {
                     product_cards?: unknown;
                     product_suggestions?: unknown;
                     export_cards?: unknown;
+                    pending_actions?: unknown;
                     msg?: string;
                     need_login?: 1;
                 }
@@ -1491,6 +1968,7 @@ export default function AuroraPage() {
             realtimeProductCardsRef.current = sanitizeProductCards(json.product_cards);
             realtimeProductSuggestionsRef.current = sanitizeProductSuggestions(json.product_suggestions);
             realtimeExportCardsRef.current = sanitizeExportCards(json.export_cards);
+            realtimePendingActionsRef.current = sanitizePendingActions(json.pending_actions);
 
             const dc = realtimeDcRef.current;
             if (!dc || dc.readyState !== "open") throw new Error("A conversa por voz foi desconectada.");
@@ -1867,6 +2345,7 @@ export default function AuroraPage() {
         realtimeProductCardsRef.current = [];
         realtimeProductSuggestionsRef.current = [];
         realtimeExportCardsRef.current = [];
+        realtimePendingActionsRef.current = [];
         liveInputTranscriptRef.current = "";
         liveCurrentUserMessageIdRef.current = null;
         liveCurrentAssistantMessageIdRef.current = null;
@@ -1965,7 +2444,7 @@ export default function AuroraPage() {
                             <div className="flex items-center gap-2">
                                 <h1 className="truncate text-sm font-semibold text-slate-950 sm:text-base">Aurora</h1>
                                 <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:inline-flex">
-                                    Somente leitura
+                                    Ações confirmadas
                                 </span>
                             </div>
                             <p className="truncate text-xs text-slate-500">Assistente Administrativo • IA adaptativa, texto em streaming e voz em tempo real</p>
@@ -2071,16 +2550,28 @@ export default function AuroraPage() {
                                                     <AssistantContent content={message.content} />
                                                     <ProductCards products={message.productCards} />
                                                     <ExportCards cards={message.exportCards} />
+                                                    <PendingActionCards
+                                                        actions={message.pendingActions}
+                                                        disabled={loading || realtimeState !== "off"}
+                                                        onConfirm={(action) => void runPendingActionFromText(action, "execute")}
+                                                        onCancel={(action) => void runPendingActionFromText(action, "cancel")}
+                                                    />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
                                                         disabled={loading || realtimeState !== "off"}
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
                                                 </>
-                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length) ? (
+                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length) ? (
                                                 <>
                                                     <ProductCards products={message.productCards} />
                                                     <ExportCards cards={message.exportCards} />
+                                                    <PendingActionCards
+                                                        actions={message.pendingActions}
+                                                        disabled={loading || realtimeState !== "off"}
+                                                        onConfirm={(action) => void runPendingActionFromText(action, "execute")}
+                                                        onCancel={(action) => void runPendingActionFromText(action, "cancel")}
+                                                    />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
                                                         disabled={loading || realtimeState !== "off"}
