@@ -1475,6 +1475,37 @@ export default function AuroraPage() {
         return `${valid.join("\r\n")}\r\n`;
     }
 
+    function normalizeLocalSdp(raw: string) {
+        const source = String(raw || "")
+            .replace(/^\uFEFF/, "")
+            .replace(/\u0000/g, "")
+            .replace(/\r\n/g, "\n")
+            .replace(/\r/g, "\n");
+
+        const lines = source
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        const first = lines.findIndex((line) => line === "v=0");
+        if (first < 0) throw new Error("Não foi possível gerar uma oferta SDP WebRTC válida.");
+
+        const valid: string[] = [];
+        for (const line of lines.slice(first)) {
+            if (!/^[a-z]=/i.test(line)) {
+                throw new Error("A oferta WebRTC gerada pelo navegador contém uma linha SDP inválida.");
+            }
+            valid.push(line);
+        }
+
+        if (!valid.length || valid[0] !== "v=0") {
+            throw new Error("A oferta WebRTC gerada pelo navegador é inválida.");
+        }
+
+        // A terminação CRLF é importante para parsers SDP estritos.
+        return `${valid.join("\r\n")}\r\n`;
+    }
+
     async function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs = 2500) {
         if (pc.iceGatheringState === "complete") return;
 
@@ -1593,7 +1624,8 @@ export default function AuroraPage() {
             await pc.setLocalDescription(offer);
             await waitForIceGatheringComplete(pc);
 
-            const offerSdp = String(pc.localDescription?.sdp || offer.sdp || "").trim();
+            const rawOfferSdp = String(pc.localDescription?.sdp || offer.sdp || "");
+            const offerSdp = normalizeLocalSdp(rawOfferSdp);
             if (!offerSdp) throw new Error("Não foi possível preparar a conexão de voz.");
 
             const response = await fetch(`${CHAT_API}?action=live-session&_=${Date.now()}`, {
@@ -1627,7 +1659,7 @@ export default function AuroraPage() {
                 throw new Error(json?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
             }
 
-            const answerSdp = String(json.sdp || "").trim();
+            const answerSdp = normalizeLocalSdp(String(json.sdp || ""));
             if (!answerSdp) throw new Error("O servidor não devolveu a resposta WebRTC.");
 
             liveSessionIdRef.current = String(json.session_id || "").trim() || null;
