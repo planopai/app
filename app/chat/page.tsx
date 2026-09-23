@@ -19,7 +19,8 @@ const PCM_MIN_SCHEDULE_BYTES = 9600;
 
 type Role = "user" | "assistant";
 type MessageSource = "text" | "audio";
-type RealtimeState = "off" | "connecting" | "listening" | "speaking" | "consulting";
+type ConversationMode = "text" | "voice";
+type RealtimeState = "off" | "connecting" | "listening" | "thinking" | "speaking" | "consulting";
 
 type ProductPhoto = {
     id?: number | null;
@@ -600,6 +601,24 @@ function IconSpeakerOff({ className = "h-4 w-4" }: { className?: string }) {
     );
 }
 
+function IconKeyboard({ className = "h-4 w-4" }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+            <rect x="3" y="6" width="18" height="12" rx="2" />
+            <path d="M7 10h.01M11 10h.01M15 10h.01M18 10h.01M7 14h.01M11 14h6" />
+        </svg>
+    );
+}
+
+function IconHeadphones({ className = "h-4 w-4" }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+            <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+            <path d="M4 14a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2v-3ZM20 14a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2v-3Z" />
+        </svg>
+    );
+}
+
 function AssistantAvatar() {
     return (
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white shadow-sm">
@@ -660,6 +679,62 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
     );
 }
 
+
+function VoiceEmptyState({
+    state,
+    onStart,
+}: {
+    state: RealtimeState;
+    onStart: () => void;
+}) {
+    const active = state !== "off";
+    const title =
+        state === "connecting"
+            ? "Conectando com a Aurora..."
+            : state === "speaking"
+                ? "Aurora está falando"
+                : state === "consulting"
+                    ? "Consultando o sistema"
+                    : state === "thinking"
+                        ? "Entendendo sua pergunta"
+                        : active
+                            ? "Pode falar normalmente"
+                            : "Conversa natural por voz";
+
+    return (
+        <div className="mx-auto flex min-h-[55vh] w-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
+            <div className={[
+                "relative mb-6 flex h-24 w-24 items-center justify-center rounded-full text-white shadow-xl transition",
+                active ? "bg-sky-600 shadow-sky-200" : "bg-slate-950 shadow-slate-200",
+            ].join(" ")}>
+                {active ? <span className="absolute inset-0 animate-ping rounded-full bg-sky-400/20" /> : null}
+                <IconHeadphones className="relative h-10 w-10" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
+                {active
+                    ? "A sessão fica aberta. Faça perguntas em sequência, use referências como “ele”, “ela” ou “essa coroa” e interrompa a Aurora quando quiser."
+                    : "Converse com a Aurora sem apertar o microfone a cada pergunta. Ela detecta quando você terminou de falar e continua ouvindo depois da resposta."}
+            </p>
+            {!active ? (
+                <button
+                    type="button"
+                    onClick={onStart}
+                    className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-800 active:scale-[0.99]"
+                >
+                    <IconMic className="h-5 w-5" /> Iniciar conversa natural
+                </button>
+            ) : (
+                <div className="mt-7 flex flex-wrap items-center justify-center gap-2 text-xs">
+                    <span className="rounded-full bg-sky-50 px-3 py-1.5 font-medium text-sky-700 ring-1 ring-inset ring-sky-200">Microfone ativo</span>
+                    <span className="rounded-full bg-violet-50 px-3 py-1.5 font-medium text-violet-700 ring-1 ring-inset ring-violet-200">Interrupção habilitada</span>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Somente leitura</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function AuroraPage() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
@@ -669,6 +744,7 @@ export default function AuroraPage() {
     const [voiceAuto, setVoiceAuto] = useState(false);
     const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
     const [realtimeState, setRealtimeState] = useState<RealtimeState>("off");
+    const [conversationMode, setConversationMode] = useState<ConversationMode>("text");
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -738,8 +814,8 @@ export default function AuroraPage() {
     }, []);
 
     const canSend = useMemo(
-        () => input.trim().length > 0 && !loading && realtimeState === "off",
-        [input, loading, realtimeState],
+        () => conversationMode === "text" && input.trim().length > 0 && !loading && realtimeState === "off",
+        [conversationMode, input, loading, realtimeState],
     );
 
     function commitMessages(next: ChatMessage[]) {
@@ -1026,6 +1102,34 @@ export default function AuroraPage() {
         };
     }
 
+    function seedRealtimeContext(dc: RTCDataChannel) {
+        const recent = messagesRef.current
+            .filter((message) => message.content.trim() && !message.streaming)
+            .slice(-6);
+        if (!recent.length || dc.readyState !== "open") return;
+
+        const transcript = recent
+            .map((message) => `${message.role === "user" ? "Usuário" : "Aurora"}: ${message.content.trim()}`)
+            .join("\n");
+
+        const text = [
+            "CONTEXTO RECENTE DO CHAT ANTES DE ENTRAR NO MODO DE VOZ.",
+            "Use apenas como memória contextual. Não responda a este item isoladamente.",
+            transcript,
+        ].join("\n\n");
+
+        dc.send(
+            JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                    type: "message",
+                    role: "user",
+                    content: [{ type: "input_text", text }],
+                },
+            }),
+        );
+    }
+
     async function handleRealtimeEvent(event: any) {
         const type = String(event?.type || "");
 
@@ -1034,6 +1138,10 @@ export default function AuroraPage() {
             realtimeProductCardsRef.current = [];
             realtimeProductSuggestionsRef.current = [];
             setRealtimeState("listening");
+            return;
+        }
+        if (type === "input_audio_buffer.speech_stopped") {
+            setRealtimeState("thinking");
             return;
         }
         if (type === "response.output_audio.delta") {
@@ -1158,6 +1266,7 @@ export default function AuroraPage() {
 
     async function startRealtimeVoice() {
         if (realtimeState !== "off" || loadingRef.current) return;
+        setConversationMode("voice");
         setError("");
         stopCurrentSpeech();
         setRealtimeState("connecting");
@@ -1191,7 +1300,10 @@ export default function AuroraPage() {
                 void remoteAudio.play().catch(() => undefined);
             };
 
-            dc.addEventListener("open", () => setRealtimeState("listening"));
+            dc.addEventListener("open", () => {
+                seedRealtimeContext(dc);
+                setRealtimeState("listening");
+            });
             dc.addEventListener("message", (messageEvent) => {
                 try {
                     const event = JSON.parse(String(messageEvent.data || "{}"));
@@ -1287,6 +1399,29 @@ export default function AuroraPage() {
         cleanupRealtimeRefs();
     }
 
+    async function switchConversationMode(nextMode: ConversationMode) {
+        if (nextMode === conversationMode) {
+            if (nextMode === "voice" && realtimeState === "off" && !loadingRef.current) {
+                await startRealtimeVoice();
+            }
+            return;
+        }
+
+        setError("");
+        if (nextMode === "text") {
+            stopRealtimeVoice();
+            setConversationMode("text");
+            requestAnimationFrame(() => textareaRef.current?.focus());
+            return;
+        }
+
+        if (loadingRef.current) return;
+        stopCurrentSpeech();
+        setInput("");
+        setConversationMode("voice");
+        await startRealtimeVoice();
+    }
+
     function clearChat() {
         if (loading) return;
         abortRef.current?.abort();
@@ -1322,9 +1457,11 @@ export default function AuroraPage() {
                 ? "Aurora falando"
                 : realtimeState === "consulting"
                     ? "Consultando o sistema"
-                    : realtimeState === "listening"
-                        ? "Ouvindo, fale normalmente"
-                        : "";
+                    : realtimeState === "thinking"
+                        ? "Entendendo sua pergunta"
+                        : realtimeState === "listening"
+                            ? "Ouvindo, fale normalmente"
+                            : "Conversa por voz pronta";
 
     return (
         <div className="flex min-h-[100dvh] flex-col bg-slate-50 text-slate-950">
@@ -1346,24 +1483,26 @@ export default function AuroraPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const next = !voiceAuto;
-                                setVoiceAuto(next);
-                                if (!next) stopCurrentSpeech();
-                            }}
-                            className={[
-                                "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition",
-                                voiceAuto
-                                    ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
-                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                            ].join(" ")}
-                            title="Ler automaticamente respostas de perguntas digitadas"
-                        >
-                            {voiceAuto ? <IconSpeaker /> : <IconSpeakerOff />}
-                            <span className="hidden sm:inline">Voz {voiceAuto ? "ligada" : "desligada"}</span>
-                        </button>
+                        {conversationMode === "text" ? (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = !voiceAuto;
+                                    setVoiceAuto(next);
+                                    if (!next) stopCurrentSpeech();
+                                }}
+                                className={[
+                                    "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition",
+                                    voiceAuto
+                                        ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                                ].join(" ")}
+                                title="Ler automaticamente respostas de perguntas digitadas"
+                            >
+                                {voiceAuto ? <IconSpeaker /> : <IconSpeakerOff />}
+                                <span className="hidden sm:inline">Voz {voiceAuto ? "ligada" : "desligada"}</span>
+                            </button>
+                        ) : null}
 
                         <button
                             type="button"
@@ -1377,13 +1516,47 @@ export default function AuroraPage() {
                         </button>
                     </div>
                 </div>
+                <div className="border-t border-slate-100/80 px-3 py-2 sm:px-6">
+                    <div className="mx-auto flex w-full max-w-3xl rounded-xl bg-slate-100 p-1">
+                        <button
+                            type="button"
+                            onClick={() => void switchConversationMode("text")}
+                            disabled={loading}
+                            className={[
+                                "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition sm:text-sm",
+                                conversationMode === "text"
+                                    ? "bg-white text-slate-950 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-800",
+                            ].join(" ")}
+                        >
+                            <IconKeyboard className="h-4 w-4" /> Modo texto
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => void switchConversationMode("voice")}
+                            disabled={loading}
+                            className={[
+                                "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition sm:text-sm",
+                                conversationMode === "voice"
+                                    ? "bg-white text-sky-700 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-800",
+                            ].join(" ")}
+                        >
+                            <IconHeadphones className="h-4 w-4" /> Modo voz natural
+                        </button>
+                    </div>
+                </div>
             </header>
 
             <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-3 sm:px-6">
                 {!hydrated ? (
                     <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-400">Carregando chat...</div>
                 ) : messages.length === 0 ? (
-                    <EmptyState onPrompt={(prompt) => void sendMessage(prompt)} />
+                    conversationMode === "voice" ? (
+                        <VoiceEmptyState state={realtimeState} onStart={() => void startRealtimeVoice()} />
+                    ) : (
+                        <EmptyState onPrompt={(prompt) => void sendMessage(prompt)} />
+                    )
                 ) : (
                     <div className="mx-auto w-full max-w-3xl flex-1 space-y-6 py-6 sm:py-8">
                         {messages.map((message) => {
@@ -1480,22 +1653,7 @@ export default function AuroraPage() {
 
             <div className="sticky bottom-0 z-20 border-t border-slate-200/70 bg-slate-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
-                    {realtimeState !== "off" ? (
-                        <div className="mb-2 flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
-                            <div className="flex items-center gap-2 font-semibold">
-                                <span className={[
-                                    "h-2.5 w-2.5 rounded-full",
-                                    realtimeState === "speaking" ? "animate-pulse bg-violet-500" : realtimeState === "consulting" ? "animate-pulse bg-amber-500" : "animate-pulse bg-sky-500",
-                                ].join(" ")} />
-                                {realtimeLabel}
-                            </div>
-                            <button type="button" onClick={() => stopRealtimeVoice()} className="rounded-lg px-2 py-1 font-semibold hover:bg-sky-100">
-                                Encerrar
-                            </button>
-                        </div>
-                    ) : null}
-
-                    {messages.length > 0 && !loading && realtimeState === "off" ? (
+                    {conversationMode === "text" && messages.length > 0 && !loading && realtimeState === "off" ? (
                         <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             {QUICK_PROMPTS.slice(0, 4).map((prompt) => (
                                 <button
@@ -1510,59 +1668,115 @@ export default function AuroraPage() {
                         </div>
                     ) : null}
 
-                    <form
-                        onSubmit={handleSubmit}
-                        className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/50 focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-slate-200/70"
-                    >
-                        <div className="flex items-end gap-2">
-                            <button
-                                type="button"
-                                onClick={() => (realtimeState === "off" ? void startRealtimeVoice() : stopRealtimeVoice())}
-                                disabled={loading}
-                                className={[
-                                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
-                                    realtimeState !== "off"
-                                        ? "bg-red-600 text-white hover:bg-red-700"
-                                        : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100",
-                                ].join(" ")}
-                                aria-label={realtimeState === "off" ? "Iniciar conversa por voz em tempo real" : "Encerrar conversa por voz"}
-                                title={realtimeState === "off" ? "Conversar por voz em tempo real" : "Encerrar voz"}
-                            >
-                                {realtimeState !== "off" ? <IconStop className="h-4 w-4" /> : <IconMic className="h-5 w-5" />}
-                            </button>
+                    {conversationMode === "text" ? (
+                        <form
+                            onSubmit={handleSubmit}
+                            className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/50 focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-slate-200/70"
+                        >
+                            <div className="flex items-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void switchConversationMode("voice")}
+                                    disabled={loading}
+                                    className={[
+                                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
+                                        "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100",
+                                    ].join(" ")}
+                                    aria-label="Abrir modo voz natural"
+                                    title="Abrir modo voz natural"
+                                >
+                                    <IconMic className="h-5 w-5" />
+                                </button>
 
-                            <textarea
-                                ref={textareaRef}
-                                value={input}
-                                onChange={(event) => setInput(event.target.value)}
-                                onKeyDown={handleKeyDown}
-                                disabled={loading || realtimeState !== "off"}
-                                rows={1}
-                                maxLength={5000}
-                                placeholder={
-                                    realtimeState !== "off"
-                                        ? "Conversa por voz ativa..."
-                                        : loading
-                                            ? "Recebendo resposta..."
-                                            : "Pergunte por texto ou toque no microfone para conversar..."
-                                }
-                                className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
-                            />
+                                <textarea
+                                    ref={textareaRef}
+                                    value={input}
+                                    onChange={(event) => setInput(event.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    disabled={loading || realtimeState !== "off"}
+                                    rows={1}
+                                    maxLength={5000}
+                                    placeholder={loading ? "Recebendo resposta..." : "Pergunte por texto..."}
+                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
+                                />
 
-                            <button
-                                type="submit"
-                                disabled={!canSend}
-                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-                                aria-label="Enviar mensagem"
-                            >
-                                <IconSend className="h-4.5 w-4.5" />
-                            </button>
+                                <button
+                                    type="submit"
+                                    disabled={!canSend}
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                                    aria-label="Enviar mensagem"
+                                >
+                                    <IconSend className="h-4.5 w-4.5" />
+                                </button>
+                            </div>
+                        </form>
+                    ) : (
+                        <div className="rounded-2xl border border-sky-200 bg-white p-3 shadow-lg shadow-sky-100/60">
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => (realtimeState === "off" ? void startRealtimeVoice() : stopRealtimeVoice())}
+                                    className={[
+                                        "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition active:scale-95",
+                                        realtimeState === "off"
+                                            ? "bg-slate-950 text-white hover:bg-slate-800"
+                                            : realtimeState === "speaking"
+                                                ? "bg-violet-600 text-white"
+                                                : realtimeState === "consulting" || realtimeState === "thinking"
+                                                    ? "bg-amber-500 text-white"
+                                                    : "bg-sky-600 text-white",
+                                    ].join(" ")}
+                                    aria-label={realtimeState === "off" ? "Iniciar conversa natural" : "Encerrar conversa natural"}
+                                >
+                                    {realtimeState === "off" ? <IconMic className="h-5 w-5" /> : <IconStop className="h-4 w-4" />}
+                                    {realtimeState !== "off" ? <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-sky-400/20" /> : null}
+                                </button>
+
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className={[
+                                            "h-2.5 w-2.5 shrink-0 rounded-full",
+                                            realtimeState === "off"
+                                                ? "bg-slate-300"
+                                                : realtimeState === "speaking"
+                                                    ? "animate-pulse bg-violet-500"
+                                                    : realtimeState === "consulting" || realtimeState === "thinking"
+                                                        ? "animate-pulse bg-amber-500"
+                                                        : "animate-pulse bg-sky-500",
+                                        ].join(" ")} />
+                                        <div className="truncate text-sm font-semibold text-slate-900">{realtimeLabel}</div>
+                                    </div>
+                                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                                        {realtimeState === "off"
+                                            ? "Toque em iniciar e converse sem apertar o microfone novamente."
+                                            : "A sessão continua ouvindo após cada resposta. Você pode interromper a Aurora a qualquer momento."}
+                                    </p>
+                                </div>
+
+                                {realtimeState !== "off" ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => stopRealtimeVoice()}
+                                        className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                                    >
+                                        Encerrar
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => void startRealtimeVoice()}
+                                        className="shrink-0 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                                    >
+                                        Iniciar
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                    </form>
+                    )}
 
                     <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[10px] text-slate-400 sm:text-xs">
                         <span className="inline-flex items-center gap-1.5">
-                            <IconShield className="h-3.5 w-3.5" /> A Aurora consulta dados, mas não altera registros.
+                            <IconShield className="h-3.5 w-3.5" /> A Aurora consulta dados, mas não altera registros. Texto e voz ficam no mesmo histórico.
                         </span>
                         <span className="inline-flex items-center gap-1.5">
                             <IconSpeaker className="h-3.5 w-3.5" /> A voz reproduzida é gerada por IA.
