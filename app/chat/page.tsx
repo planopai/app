@@ -1317,7 +1317,11 @@ export default function AuroraPage() {
             });
             dc.addEventListener("close", () => {
                 if (!realtimeClosingRef.current) {
-                    setError("A conversa por voz foi desconectada.");
+                    setError(
+                        realtimeState === "connecting"
+                            ? "Não foi possível concluir a conexão de voz. Tente iniciar novamente."
+                            : "A conversa por voz foi desconectada.",
+                    );
                 }
                 cleanupRealtimeRefs();
             });
@@ -1327,22 +1331,33 @@ export default function AuroraPage() {
             const sdp = pc.localDescription?.sdp || offer.sdp;
             if (!sdp) throw new Error("Não foi possível preparar a conexão de voz.");
 
+            // O navegador envia JSON ao backend. Alguns hosts/WAFs rejeitam
+            // application/sdp com HTTP 406 antes mesmo de o PHP ser executado.
             const response = await fetch(`${CHAT_API}?action=realtime-session&_=${Date.now()}`, {
                 method: "POST",
                 credentials: "include",
                 cache: "no-store",
-                headers: { "Content-Type": "application/sdp", Accept: "application/sdp" },
-                body: sdp,
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({ sdp }),
             });
-            if (!response.ok) {
-                const contentType = response.headers.get("content-type") || "";
-                if (contentType.includes("application/json")) {
-                    const json = await response.json().catch(() => null);
-                    throw new Error(json?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
+
+            const sessionJson = (await response.json().catch(() => null)) as
+                | { ok?: boolean; sdp?: string; msg?: string; need_login?: 1 }
+                | null;
+
+            if (!response.ok || !sessionJson?.ok) {
+                if (response.status === 401 || sessionJson?.need_login) {
+                    throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
                 }
-                throw new Error((await response.text()) || `Falha ao iniciar voz (HTTP ${response.status}).`);
+                throw new Error(sessionJson?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
             }
-            const answerSdp = await response.text();
+
+            const answerSdp = String(sessionJson.sdp || "").trim();
+            if (!answerSdp) throw new Error("O servidor não devolveu a resposta WebRTC da Aurora.");
+
             await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
             if (dc.readyState === "open") setRealtimeState("listening");
         } catch (err: unknown) {
