@@ -684,9 +684,11 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
 function VoiceEmptyState({
     state,
     onStart,
+    error,
 }: {
     state: RealtimeState;
     onStart: () => void;
+    error?: string;
 }) {
     const active = state !== "off";
     const title =
@@ -717,6 +719,11 @@ function VoiceEmptyState({
                     ? "A sessão fica aberta. Faça perguntas em sequência, use referências como “ele”, “ela” ou “essa coroa” e interrompa a Aurora quando quiser."
                     : "Converse com a Aurora sem apertar o microfone a cada pergunta. Ela detecta quando você terminou de falar e continua ouvindo depois da resposta."}
             </p>
+            {error ? (
+                <div className="mt-5 w-full max-w-xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm leading-5 text-red-700">
+                    {error}
+                </div>
+            ) : null}
             {!active ? (
                 <button
                     type="button"
@@ -769,6 +776,7 @@ export default function AuroraPage() {
     const realtimeProductSuggestionsRef = useRef<ProductSuggestion[]>([]);
     const realtimeClosingRef = useRef(false);
     const realtimeSessionReadyRef = useRef(false);
+    const realtimeConnectTimeoutRef = useRef<number | null>(null);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1135,7 +1143,11 @@ export default function AuroraPage() {
     async function handleRealtimeEvent(event: any) {
         const type = String(event?.type || "");
 
-        if (type === "session.updated") {
+        if (type === "session.created" || type === "session.updated") {
+            if (realtimeConnectTimeoutRef.current != null) {
+                window.clearTimeout(realtimeConnectTimeoutRef.current);
+                realtimeConnectTimeoutRef.current = null;
+            }
             if (!realtimeSessionReadyRef.current) {
                 realtimeSessionReadyRef.current = true;
                 const dc = realtimeDcRef.current;
@@ -1272,7 +1284,23 @@ export default function AuroraPage() {
             return;
         }
         if (type === "error") {
-            throw new Error(String(event?.error?.message || "Erro na sessão de voz em tempo real."));
+            const message = String(event?.error?.message || "Erro na sessão de voz em tempo real.");
+            setError(message);
+
+            // Erros de configuração/sessão impedem a conversa. Como a mensagem agora
+            // aparece dentro da própria tela de voz, o usuário consegue ver a causa.
+            const code = String(event?.error?.code || event?.error?.type || "").toLowerCase();
+            const fatal =
+                code.includes("session") ||
+                code.includes("invalid") ||
+                code.includes("authentication") ||
+                code.includes("permission");
+
+            if (fatal) {
+                realtimeClosingRef.current = true;
+                stopRealtimeVoice(false);
+            }
+            return;
         }
     }
 
@@ -1330,7 +1358,8 @@ export default function AuroraPage() {
                     value?: string;
                     expires_at?: number | string | null;
                     model?: string;
-                    session_update?: Record<string, unknown>;
+                    transcribe_model?: string;
+                    vad_eagerness?: string;
                     msg?: string;
                     need_login?: 1;
                 }
@@ -1346,11 +1375,6 @@ export default function AuroraPage() {
             const ephemeralKey = String(tokenJson.value || "").trim();
             if (!ephemeralKey) {
                 throw new Error("O servidor não devolveu a credencial temporária de voz.");
-            }
-
-            const sessionUpdate = tokenJson.session_update;
-            if (!sessionUpdate || typeof sessionUpdate !== "object") {
-                throw new Error("O servidor não devolveu a configuração da sessão de voz.");
             }
 
             const mic = await navigator.mediaDevices.getUserMedia({
@@ -1371,6 +1395,17 @@ export default function AuroraPage() {
             realtimeDcRef.current = dc;
             realtimeAudioRef.current = remoteAudio;
 
+            if (realtimeConnectTimeoutRef.current != null) {
+                window.clearTimeout(realtimeConnectTimeoutRef.current);
+            }
+            realtimeConnectTimeoutRef.current = window.setTimeout(() => {
+                if (!realtimeSessionReadyRef.current && !realtimeClosingRef.current) {
+                    setError("A conexão de voz demorou demais para ficar pronta. Tente novamente.");
+                    realtimeClosingRef.current = true;
+                    stopRealtimeVoice(false);
+                }
+            }, 15000);
+
             for (const track of mic.getTracks()) pc.addTrack(track, mic);
 
             pc.ontrack = (event) => {
@@ -1384,16 +1419,8 @@ export default function AuroraPage() {
 
             dc.addEventListener("open", () => {
                 connectionOpened = true;
-
-                // A sessão já existe. Agora aplicamos instruções, ferramentas,
-                // transcrição e semantic VAD. Só depois de session.updated a
-                // interface muda para "Ouvindo".
-                dc.send(
-                    JSON.stringify({
-                        type: "session.update",
-                        session: sessionUpdate,
-                    }),
-                );
+                // A configuração completa já foi vinculada ao segredo efêmero
+                // no backend. Aguardamos session.created antes de marcar "Ouvindo".
             });
 
             dc.addEventListener("message", (messageEvent) => {
@@ -1498,6 +1525,10 @@ export default function AuroraPage() {
     }
 
     function cleanupRealtimeRefs() {
+        if (realtimeConnectTimeoutRef.current != null) {
+            window.clearTimeout(realtimeConnectTimeoutRef.current);
+            realtimeConnectTimeoutRef.current = null;
+        }
         try {
             realtimeDcRef.current?.close();
         } catch {
@@ -1694,7 +1725,7 @@ export default function AuroraPage() {
                     <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-400">Carregando chat...</div>
                 ) : messages.length === 0 ? (
                     conversationMode === "voice" ? (
-                        <VoiceEmptyState state={realtimeState} onStart={() => void startRealtimeVoice()} />
+                        <VoiceEmptyState state={realtimeState} onStart={() => void startRealtimeVoice()} error={error} />
                     ) : (
                         <EmptyState onPrompt={(prompt) => void sendMessage(prompt)} />
                     )
