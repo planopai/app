@@ -377,7 +377,7 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Aurora</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                Assistente Administrativo do PAI. Consultas rápidas por texto e conversa por voz em tempo real, sempre em modo somente leitura.
+                Assistente Administrativo do PAI. Texto em streaming, voz em tempo real e IA adaptativa para cada tipo de consulta, sempre em modo somente leitura.
             </p>
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 {QUICK_PROMPTS.map((prompt) => (
@@ -1054,7 +1054,7 @@ export default function AuroraPage() {
                                     Somente leitura
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • Texto em streaming e voz em tempo real</p>
+                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • IA adaptativa, texto em streaming e voz em tempo real</p>
                         </div>
                     </div>
 
