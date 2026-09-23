@@ -1300,7 +1300,10 @@ export default function AuroraPage() {
                 void remoteAudio.play().catch(() => undefined);
             };
 
+            let connectionOpened = false;
+
             dc.addEventListener("open", () => {
+                connectionOpened = true;
                 seedRealtimeContext(dc);
                 setRealtimeState("listening");
             });
@@ -1318,7 +1321,7 @@ export default function AuroraPage() {
             dc.addEventListener("close", () => {
                 if (!realtimeClosingRef.current) {
                     setError(
-                        realtimeState === "connecting"
+                        !connectionOpened
                             ? "Não foi possível concluir a conexão de voz. Tente iniciar novamente."
                             : "A conversa por voz foi desconectada.",
                     );
