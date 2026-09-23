@@ -1,6 +1,6 @@
 "use client";
 
-// v15: Confecção de KIT LANCHE e COROA ARTIFICIAL com baixa FIFO no ALMOXARIFADO.
+// v16: Confecção de COROA ARTIFICIAL filtrada pelo fabricante PLANO PAI.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -621,8 +621,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-22-CONFECCAO-V01";
-const APP_BUILD_LABEL = "2026.09.22-CONFECCAO-V01";
+const APP_BUILD_ID = "ESTOQUE-2026-09-23-CONFECCAO-COROA-PLANO-PAI-V01";
+const APP_BUILD_LABEL = "2026.09.23-CONFECCAO-COROA-PLANO-PAI-V01";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -2292,11 +2292,23 @@ export default function Page() {
     const confeccaoCoroasProdutos = useMemo(() => {
         return produtosAtivos
             .filter((p) => {
-                const categoriaNome = p.categoria_nome || catById.get(Number(p.categoria_id || 0))?.nome || "";
-                return nomeChave(categoriaNome) === "COROAS ARTIFICIAIS";
+                const categoriaNome =
+                    p.categoria_nome ||
+                    catById.get(Number(p.categoria_id || 0))?.nome ||
+                    "";
+
+                const fabricanteNome =
+                    p.fabricante_nome ||
+                    fabById.get(Number(p.fabricante_id || 0))?.nome ||
+                    "";
+
+                return (
+                    nomeChave(categoriaNome) === "COROAS ARTIFICIAIS" &&
+                    nomeChave(fabricanteNome) === "PLANO PAI"
+                );
             })
             .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-    }, [produtosAtivos, catById]);
+    }, [produtosAtivos, catById, fabById]);
 
     const confeccaoKitLinhas = useMemo(() => {
         const depId = Number(confeccaoDepositoAlmoxarifado?.id || 0);
@@ -8334,7 +8346,12 @@ export default function Page() {
                     {/* CONFECÇÃO */}
                     {tab === "CONFECCAO" ? (
                         <Card className="p-4">
-                            
+                            <div className="mb-4">
+                                <h2 className="text-base font-semibold text-slate-900">Confecção</h2>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Os insumos saem sempre do ALMOXARIFADO e o custo do produto acabado é calculado pelo consumo FIFO real.
+                                </p>
+                            </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <HomeActionButton
@@ -11312,7 +11329,7 @@ export default function Page() {
             <Modal
                 open={confeccaoKitOpen}
                 title="Confecção de KIT LANCHE"
-                
+                subtitle="Baixa automática dos insumos no ALMOXARIFADO e entrada do KIT LANCHE no MEMORIAL."
                 onClose={() => {
                     if (!confeccaoKitBusy) setConfeccaoKitOpen(false);
                 }}
@@ -11470,7 +11487,7 @@ export default function Page() {
             <Modal
                 open={confeccaoCoroaOpen}
                 title="Confecção de COROA ARTIFICIAL"
-                
+                subtitle="As flores saem do ALMOXARIFADO. A coroa pronta entra no MEMORIAL ou na FUNERARIA."
                 onClose={() => {
                     if (!confeccaoCoroaBusy) setConfeccaoCoroaOpen(false);
                 }}
@@ -11526,7 +11543,12 @@ export default function Page() {
                     </div>
 
                     <div>
-                        
+                        <div className="mb-2">
+                            <h3 className="text-sm font-semibold text-slate-900">Flores utilizadas</h3>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                                Marque as flores e informe quantas unidades de cada cor são usadas em uma coroa.
+                            </p>
+                        </div>
 
                         <div className="overflow-x-auto rounded-2xl border border-slate-200">
                             <table className="min-w-full text-left text-sm">
