@@ -894,7 +894,6 @@ export default function ChatPaiPage() {
             const dc = pc.createDataChannel("oai-events");
             const remoteAudio = document.createElement("audio");
             remoteAudio.autoplay = true;
-            remoteAudio.playsInline = true;
 
             realtimeMicRef.current = mic;
             realtimePcRef.current = pc;
