@@ -10,14 +10,16 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const STORAGE_KEY = "pai-chat-v4";
-const VOICE_AUTO_KEY = "pai-chat-voice-auto-v1";
-const MAX_HISTORY_TO_API = 20;
-const MAX_RECORDING_SECONDS = 90;
-const SPEECH_CHUNK_MAX = 3200;
+const STORAGE_KEY = "pai-chat-v5-performance";
+const VOICE_AUTO_KEY = "pai-chat-voice-auto-v2";
+const MAX_HISTORY_TO_API = 8;
+const SPEECH_CHUNK_MAX = 3800;
+const PCM_SAMPLE_RATE = 24000;
+const PCM_MIN_SCHEDULE_BYTES = 9600;
 
 type Role = "user" | "assistant";
 type MessageSource = "text" | "audio";
+type RealtimeState = "off" | "connecting" | "listening" | "speaking" | "consulting";
 
 type ChatMessage = {
     id: string;
@@ -26,24 +28,12 @@ type ChatMessage = {
     createdAt: string;
     toolsUsed?: string[];
     source?: MessageSource;
+    streaming?: boolean;
 };
 
-type ChatApiResponse = {
-    ok?: boolean;
-    reply?: string;
-    msg?: string;
-    need_login?: 1;
-    tools_used?: string[];
-    model?: string;
-    read_only?: boolean;
-};
-
-type TranscriptionResponse = {
-    ok?: boolean;
-    text?: string;
-    msg?: string;
-    need_login?: 1;
-    model?: string;
+type SseEvent = {
+    event: string;
+    data: any;
 };
 
 const QUICK_PROMPTS = [
@@ -79,13 +69,11 @@ function nowIso() {
 
 function loadStoredMessages(): ChatMessage[] {
     if (typeof window === "undefined") return [];
-
     try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (!raw) return [];
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return [];
-
         return parsed
             .filter(
                 (item) =>
@@ -93,16 +81,15 @@ function loadStoredMessages(): ChatMessage[] {
                     (item.role === "user" || item.role === "assistant") &&
                     typeof item.content === "string",
             )
-            .slice(-50)
+            .slice(-40)
             .map((item) => ({
                 id: String(item.id || makeId()),
                 role: item.role as Role,
                 content: String(item.content),
                 createdAt: String(item.createdAt || nowIso()),
-                toolsUsed: Array.isArray(item.toolsUsed)
-                    ? item.toolsUsed.map(String)
-                    : undefined,
+                toolsUsed: Array.isArray(item.toolsUsed) ? item.toolsUsed.map(String) : undefined,
                 source: item.source === "audio" ? "audio" : "text",
+                streaming: false,
             }));
     } catch {
         return [];
@@ -112,12 +99,13 @@ function loadStoredMessages(): ChatMessage[] {
 function saveStoredMessages(messages: ChatMessage[]) {
     if (typeof window === "undefined") return;
     try {
-        window.localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify(messages.slice(-50)),
-        );
+        const clean = messages
+            .filter((m) => m.content.trim())
+            .slice(-40)
+            .map(({ streaming: _streaming, ...rest }) => rest);
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
     } catch {
-        // O chat continua funcionando mesmo se o navegador bloquear localStorage.
+        // localStorage é opcional.
     }
 }
 
@@ -145,10 +133,8 @@ function toolLabel(tool: string) {
 
 function renderInlineMarkdown(text: string, keyPrefix: string) {
     const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
-
     return parts.map((part, index) => {
         const key = `${keyPrefix}-${index}`;
-
         if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
             return (
                 <strong key={key} className="font-semibold text-slate-950">
@@ -156,43 +142,32 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
                 </strong>
             );
         }
-
         if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
             return (
-                <code
-                    key={key}
-                    className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.9em] text-slate-700"
-                >
+                <code key={key} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.9em] text-slate-700">
                     {part.slice(1, -1)}
                 </code>
             );
         }
-
         return <React.Fragment key={key}>{part}</React.Fragment>;
     });
 }
 
 function AssistantContent({ content }: { content: string }) {
     const lines = String(content || "").replace(/\r\n/g, "\n").split("\n");
-
     return (
         <div className="space-y-1.5">
             {lines.map((rawLine, index) => {
                 const line = rawLine.trimEnd();
                 const trimmed = line.trim();
-
-                if (!trimmed) {
-                    return <div key={`gap-${index}`} className="h-1" />;
-                }
+                if (!trimmed) return <div key={`gap-${index}`} className="h-1" />;
 
                 const bullet = trimmed.match(/^[-•]\s+(.+)$/);
                 if (bullet) {
                     return (
                         <div key={`bullet-${index}`} className="flex items-start gap-2 pl-0.5">
                             <span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-                            <div className="min-w-0 flex-1">
-                                {renderInlineMarkdown(bullet[1], `bullet-text-${index}`)}
-                            </div>
+                            <div className="min-w-0 flex-1">{renderInlineMarkdown(bullet[1], `bullet-${index}`)}</div>
                         </div>
                     );
                 }
@@ -201,21 +176,13 @@ function AssistantContent({ content }: { content: string }) {
                 if (numbered) {
                     return (
                         <div key={`number-${index}`} className="flex items-start gap-2">
-                            <span className="min-w-5 shrink-0 font-medium text-slate-500">
-                                {numbered[1]}.
-                            </span>
-                            <div className="min-w-0 flex-1">
-                                {renderInlineMarkdown(numbered[2], `number-text-${index}`)}
-                            </div>
+                            <span className="min-w-5 shrink-0 font-medium text-slate-500">{numbered[1]}.</span>
+                            <div className="min-w-0 flex-1">{renderInlineMarkdown(numbered[2], `number-${index}`)}</div>
                         </div>
                     );
                 }
 
-                return (
-                    <div key={`line-${index}`}>
-                        {renderInlineMarkdown(line, `line-text-${index}`)}
-                    </div>
-                );
+                return <div key={`line-${index}`}>{renderInlineMarkdown(line, `line-${index}`)}</div>;
             })}
         </div>
     );
@@ -239,59 +206,71 @@ function splitTextForSpeech(input: string, max = SPEECH_CHUNK_MAX) {
 
     const chunks: string[] = [];
     let rest = text;
-
     while (rest.length > max) {
-        const windowText = rest.slice(0, max + 1);
+        const sample = rest.slice(0, max + 1);
         let cut = Math.max(
-            windowText.lastIndexOf(". "),
-            windowText.lastIndexOf("? "),
-            windowText.lastIndexOf("! "),
-            windowText.lastIndexOf("; "),
-            windowText.lastIndexOf(", "),
+            sample.lastIndexOf(". "),
+            sample.lastIndexOf("? "),
+            sample.lastIndexOf("! "),
+            sample.lastIndexOf("; "),
         );
-
-        if (cut < Math.floor(max * 0.6)) {
-            cut = windowText.lastIndexOf(" ");
-        }
-        if (cut < Math.floor(max * 0.4)) {
-            cut = max;
-        } else {
-            cut += 1;
-        }
-
+        if (cut < Math.floor(max * 0.55)) cut = sample.lastIndexOf(" ");
+        if (cut < Math.floor(max * 0.35)) cut = max;
+        else cut += 1;
         chunks.push(rest.slice(0, cut).trim());
         rest = rest.slice(cut).trim();
     }
-
     if (rest) chunks.push(rest);
     return chunks.filter(Boolean);
 }
 
-function getRecorderMimeType() {
-    if (typeof MediaRecorder === "undefined") return "";
-    const candidates = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/mp4",
-        "audio/ogg;codecs=opus",
-        "audio/ogg",
-    ];
-    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+function concatBytes(a: Uint8Array, b: Uint8Array) {
+    const out = new Uint8Array(a.length + b.length);
+    out.set(a, 0);
+    out.set(b, a.length);
+    return out;
 }
 
-function extensionForMime(mime: string) {
-    const lower = String(mime || "").toLowerCase();
-    if (lower.includes("mp4")) return "m4a";
-    if (lower.includes("ogg")) return "ogg";
-    if (lower.includes("wav")) return "wav";
-    if (lower.includes("mpeg") || lower.includes("mp3")) return "mp3";
-    return "webm";
-}
+async function consumeSse(response: Response, onEvent: (event: SseEvent) => void) {
+    if (!response.body) throw new Error("O navegador não recebeu o streaming da resposta.");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
 
-function formatRecordingTime(seconds: number) {
-    const mm = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const ss = Math.floor(seconds % 60).toString().padStart(2, "0");
-    return `${mm}:${ss}`;
+    const processBlock = (block: string) => {
+        let eventName = "message";
+        const dataLines: string[] = [];
+        for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) eventName = line.slice(6).trim();
+            if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+        }
+        if (!dataLines.length) return;
+        const raw = dataLines.join("\n");
+        let data: any = raw;
+        try {
+            data = JSON.parse(raw);
+        } catch {
+            // Mantém texto bruto.
+        }
+        onEvent({ event: eventName, data });
+    };
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (value) {
+            buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+            let idx = buffer.indexOf("\n\n");
+            while (idx >= 0) {
+                const block = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                if (block.trim()) processBlock(block);
+                idx = buffer.indexOf("\n\n");
+            }
+        }
+        if (done) break;
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) processBlock(buffer.trim());
 }
 
 function IconSparkles({ className = "h-5 w-5" }: { className?: string }) {
@@ -396,13 +375,10 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
             <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200">
                 <IconSparkles className="h-7 w-7" />
             </div>
-
             <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Chat PAI</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                Digite ou toque no microfone. O Chat PAI consulta atendimentos, estoque,
-                coroas, requisições e balanço, e também pode responder em voz.
+                Consultas rápidas por texto e conversa por voz em tempo real, sempre em modo somente leitura.
             </p>
-
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 {QUICK_PROMPTS.map((prompt) => (
                     <button
@@ -415,15 +391,12 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                     </button>
                 ))}
             </div>
-
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
                 <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                    <IconShield />
-                    Somente consultas. O chat não altera dados do sistema.
+                    <IconShield /> Somente consultas
                 </div>
                 <div className="flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-200">
-                    <IconSpeaker />
-                    A voz das respostas é sintetizada por IA.
+                    <IconMic /> Voz em tempo real
                 </div>
             </div>
         </div>
@@ -436,37 +409,34 @@ export default function ChatPaiPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [hydrated, setHydrated] = useState(false);
-
-    const [recording, setRecording] = useState(false);
-    const [recordingSeconds, setRecordingSeconds] = useState(0);
-    const [transcribing, setTranscribing] = useState(false);
     const [voiceAuto, setVoiceAuto] = useState(false);
     const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+    const [realtimeState, setRealtimeState] = useState<RealtimeState>("off");
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const abortRef = useRef<AbortController | null>(null);
-
     const messagesRef = useRef<ChatMessage[]>([]);
     const loadingRef = useRef(false);
     const voiceAutoRef = useRef(false);
 
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const mediaStreamRef = useRef<MediaStream | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
-    const recordingStartedAtRef = useRef(0);
-    const recordingTimerRef = useRef<number | null>(null);
-    const recordingAutoStopRef = useRef<number | null>(null);
-
     const speechAbortRef = useRef<AbortController | null>(null);
-    const currentAudioRef = useRef<HTMLAudioElement | null>(null);
-    const speechCacheRef = useRef<Map<string, string[]>>(new Map());
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const speechSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+
+    const realtimePcRef = useRef<RTCPeerConnection | null>(null);
+    const realtimeDcRef = useRef<RTCDataChannel | null>(null);
+    const realtimeMicRef = useRef<MediaStream | null>(null);
+    const realtimeAudioRef = useRef<HTMLAudioElement | null>(null);
+    const realtimeInputSeenRef = useRef<Set<string>>(new Set());
+    const realtimeAssistantIdsRef = useRef<Map<string, string>>(new Map());
+    const realtimeToolsRef = useRef<Set<string>>(new Set());
+    const realtimeClosingRef = useRef(false);
 
     useEffect(() => {
         const stored = loadStoredMessages();
         messagesRef.current = stored;
         setMessages(stored);
-
         const auto = loadVoiceAutoPreference();
         voiceAutoRef.current = auto;
         setVoiceAuto(auto);
@@ -475,8 +445,7 @@ export default function ChatPaiPage() {
 
     useEffect(() => {
         messagesRef.current = messages;
-        if (!hydrated) return;
-        saveStoredMessages(messages);
+        if (hydrated) saveStoredMessages(messages);
     }, [messages, hydrated]);
 
     useEffect(() => {
@@ -490,7 +459,7 @@ export default function ChatPaiPage() {
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, [messages, loading, transcribing]);
+    }, [messages, loading, realtimeState]);
 
     useEffect(() => {
         const el = textareaRef.current;
@@ -502,79 +471,57 @@ export default function ChatPaiPage() {
     useEffect(() => {
         return () => {
             abortRef.current?.abort();
-            speechAbortRef.current?.abort();
-            currentAudioRef.current?.pause();
-
-            if (recordingTimerRef.current !== null) {
-                window.clearInterval(recordingTimerRef.current);
-            }
-            if (recordingAutoStopRef.current !== null) {
-                window.clearTimeout(recordingAutoStopRef.current);
-            }
-
-            const recorder = mediaRecorderRef.current;
-            if (recorder && recorder.state !== "inactive") {
-                try {
-                    recorder.onstop = null;
-                    recorder.stop();
-                } catch {
-                    // Ignora erro de desmontagem.
-                }
-            }
-            mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-
-            for (const urls of speechCacheRef.current.values()) {
-                urls.forEach((url) => URL.revokeObjectURL(url));
-            }
-            speechCacheRef.current.clear();
+            stopCurrentSpeech();
+            stopRealtimeVoice(false);
+            void audioContextRef.current?.close().catch(() => undefined);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const canSend = useMemo(
-        () => input.trim().length > 0 && !loading && !recording && !transcribing,
-        [input, loading, recording, transcribing],
+        () => input.trim().length > 0 && !loading && realtimeState === "off",
+        [input, loading, realtimeState],
     );
 
-    const micDisabled = loading || transcribing;
+    function commitMessages(next: ChatMessage[]) {
+        messagesRef.current = next;
+        setMessages(next);
+    }
+
+    function updateMessage(id: string, updater: (message: ChatMessage) => ChatMessage) {
+        const next = messagesRef.current.map((message) => (message.id === id ? updater(message) : message));
+        commitMessages(next);
+    }
+
+    function appendMessage(message: ChatMessage) {
+        commitMessages([...messagesRef.current, message]);
+    }
 
     function stopCurrentSpeech() {
         speechAbortRef.current?.abort();
         speechAbortRef.current = null;
-
-        const audio = currentAudioRef.current;
-        if (audio) {
-            audio.pause();
-            audio.currentTime = 0;
-            currentAudioRef.current = null;
+        for (const source of speechSourcesRef.current) {
+            try {
+                source.stop();
+            } catch {
+                // Já finalizado.
+            }
         }
+        speechSourcesRef.current.clear();
         setSpeakingMessageId(null);
     }
 
-    function clearSpeechCache() {
-        for (const urls of speechCacheRef.current.values()) {
-            urls.forEach((url) => URL.revokeObjectURL(url));
+    function getAudioContext() {
+        if (!audioContextRef.current) {
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioCtx) throw new Error("Este navegador não suporta reprodução de áudio em streaming.");
+            audioContextRef.current = new AudioCtx();
         }
-        speechCacheRef.current.clear();
+        return audioContextRef.current;
     }
 
-    function clearChat() {
-        if (loading || recording || transcribing) return;
-        stopCurrentSpeech();
-        clearSpeechCache();
-        messagesRef.current = [];
-        setMessages([]);
-        setInput("");
-        setError("");
-        try {
-            window.localStorage.removeItem(STORAGE_KEY);
-        } catch {
-            // Sem impacto funcional.
-        }
-        requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-
-    async function fetchSpeechChunk(text: string, signal: AbortSignal) {
-        const response = await fetch(`${CHAT_API}?action=speech&_=${Date.now()}`, {
+    async function playPcmChunkedText(text: string, signal: AbortSignal) {
+        const response = await fetch(`${CHAT_API}?action=speech-stream&_=${Date.now()}`, {
             method: "POST",
             credentials: "include",
             cache: "no-store",
@@ -586,113 +533,109 @@ export default function ChatPaiPage() {
         if (!response.ok) {
             const contentType = response.headers.get("content-type") || "";
             if (contentType.includes("application/json")) {
-                const json = (await response.json().catch(() => null)) as
-                    | { msg?: string; need_login?: 1 }
-                    | null;
-                if (response.status === 401 || json?.need_login) {
-                    throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-                }
+                const json = (await response.json().catch(() => null)) as { msg?: string; need_login?: 1 } | null;
+                if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
                 throw new Error(json?.msg || `Falha ao gerar voz (HTTP ${response.status}).`);
             }
             throw new Error(`Falha ao gerar voz (HTTP ${response.status}).`);
         }
+        if (!response.body) throw new Error("O navegador não recebeu o áudio em streaming.");
 
-        const blob = await response.blob();
-        if (!blob.size) throw new Error("O servidor retornou um áudio vazio.");
-        return URL.createObjectURL(blob);
-    }
+        const ctx = getAudioContext();
+        await ctx.resume();
+        const reader = response.body.getReader();
+        let pending = new Uint8Array(0);
+        let nextStart = Math.max(ctx.currentTime + 0.05, ctx.currentTime);
+        let lastSource: AudioBufferSourceNode | null = null;
 
-    async function playAudioUrl(url: string, signal: AbortSignal) {
-        if (signal.aborted) throw new DOMException("Abortado", "AbortError");
+        const schedule = (bytes: Uint8Array) => {
+            const usable = bytes.length - (bytes.length % 2);
+            if (usable <= 0) return;
+            const dataView = new DataView(bytes.buffer, bytes.byteOffset, usable);
+            const floats = new Float32Array(usable / 2);
+            for (let i = 0; i < floats.length; i++) {
+                floats[i] = dataView.getInt16(i * 2, true) / 32768;
+            }
+            const audioBuffer = ctx.createBuffer(1, floats.length, PCM_SAMPLE_RATE);
+            audioBuffer.copyToChannel(floats, 0);
+            const source = ctx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(ctx.destination);
+            speechSourcesRef.current.add(source);
+            source.addEventListener("ended", () => speechSourcesRef.current.delete(source), { once: true });
+            const startAt = Math.max(nextStart, ctx.currentTime + 0.025);
+            source.start(startAt);
+            nextStart = startAt + audioBuffer.duration;
+            lastSource = source;
+        };
 
-        const audio = new Audio(url);
-        currentAudioRef.current = audio;
+        while (true) {
+            if (signal.aborted) throw new DOMException("Abortado", "AbortError");
+            const { value, done } = await reader.read();
+            if (value?.length) pending = concatBytes(pending, value);
 
-        await new Promise<void>((resolve, reject) => {
-            const cleanup = () => {
-                audio.onended = null;
-                audio.onerror = null;
-                signal.removeEventListener("abort", onAbort);
-            };
+            while (pending.length >= PCM_MIN_SCHEDULE_BYTES) {
+                const evenSize = PCM_MIN_SCHEDULE_BYTES - (PCM_MIN_SCHEDULE_BYTES % 2);
+                schedule(pending.slice(0, evenSize));
+                pending = pending.slice(evenSize);
+            }
+            if (done) break;
+        }
+        if (pending.length) schedule(pending);
 
-            const onAbort = () => {
-                audio.pause();
-                cleanup();
-                reject(new DOMException("Abortado", "AbortError"));
-            };
-
-            signal.addEventListener("abort", onAbort, { once: true });
-            audio.onended = () => {
-                cleanup();
-                resolve();
-            };
-            audio.onerror = () => {
-                cleanup();
-                reject(new Error("Não foi possível reproduzir o áudio."));
-            };
-
-            audio.play().catch((err) => {
-                cleanup();
-                reject(err);
+        if (lastSource) {
+            await new Promise<void>((resolve, reject) => {
+                const source = lastSource as AudioBufferSourceNode;
+                const onAbort = () => {
+                    try {
+                        source.stop();
+                    } catch {
+                        // Ignora.
+                    }
+                    reject(new DOMException("Abortado", "AbortError"));
+                };
+                signal.addEventListener("abort", onAbort, { once: true });
+                source.addEventListener(
+                    "ended",
+                    () => {
+                        signal.removeEventListener("abort", onAbort);
+                        resolve();
+                    },
+                    { once: true },
+                );
             });
-        });
+        }
     }
 
     async function speakMessage(message: ChatMessage) {
-        if (message.role !== "assistant") return;
-
+        if (message.role !== "assistant" || !message.content.trim()) return;
         if (speakingMessageId === message.id) {
             stopCurrentSpeech();
             return;
         }
-
         stopCurrentSpeech();
         setError("");
         setSpeakingMessageId(message.id);
-
         const controller = new AbortController();
         speechAbortRef.current = controller;
 
         try {
-            let urls = speechCacheRef.current.get(message.id);
-
-            if (!urls) {
-                const chunks = splitTextForSpeech(message.content);
-                if (!chunks.length) return;
-
-                urls = [];
-                for (const chunk of chunks) {
-                    if (controller.signal.aborted) throw new DOMException("Abortado", "AbortError");
-                    urls.push(await fetchSpeechChunk(chunk, controller.signal));
-                }
-                speechCacheRef.current.set(message.id, urls);
-            }
-
-            for (const url of urls) {
-                await playAudioUrl(url, controller.signal);
+            const chunks = splitTextForSpeech(message.content);
+            for (const chunk of chunks) {
+                await playPcmChunkedText(chunk, controller.signal);
             }
         } catch (err: unknown) {
             if (err instanceof DOMException && err.name === "AbortError") return;
-            const messageText =
-                err instanceof Error ? err.message : "Não foi possível reproduzir a resposta em voz.";
-            if (/notallowed|play\(\) failed|user gesture/i.test(messageText)) {
-                setError("O navegador bloqueou a reprodução automática. Toque no ícone de alto-falante da resposta.");
-            } else {
-                setError(messageText);
-            }
+            setError(err instanceof Error ? err.message : "Não foi possível reproduzir a resposta em voz.");
         } finally {
             if (speechAbortRef.current === controller) speechAbortRef.current = null;
-            currentAudioRef.current = null;
             setSpeakingMessageId((current) => (current === message.id ? null : current));
         }
     }
 
-    async function sendMessage(
-        rawText?: string,
-        options?: { source?: MessageSource; forceVoice?: boolean },
-    ) {
+    async function sendMessage(rawText?: string) {
         const text = String(rawText ?? input).trim();
-        if (!text || loadingRef.current || recording || transcribing) return;
+        if (!text || loadingRef.current || realtimeState !== "off") return;
 
         stopCurrentSpeech();
         setError("");
@@ -703,61 +646,95 @@ export default function ChatPaiPage() {
             role: "user",
             content: text,
             createdAt: nowIso(),
-            source: options?.source || "text",
+            source: "text",
+        };
+        const assistantId = makeId("assistant");
+        const assistantPlaceholder: ChatMessage = {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            createdAt: nowIso(),
+            toolsUsed: [],
+            source: "text",
+            streaming: true,
         };
 
-        const nextMessages = [...messagesRef.current, userMessage];
-        messagesRef.current = nextMessages;
-        setMessages(nextMessages);
+        const next = [...messagesRef.current, userMessage, assistantPlaceholder];
+        commitMessages(next);
         loadingRef.current = true;
         setLoading(true);
 
         const controller = new AbortController();
         abortRef.current = controller;
+        let finalText = "";
+        let finalTools: string[] = [];
+        let streamError = "";
 
         try {
-            const payloadMessages = nextMessages
+            const payloadMessages = [...messagesRef.current]
+                .filter((m) => m.id !== assistantId && m.content.trim())
                 .slice(-MAX_HISTORY_TO_API)
                 .map(({ role, content }) => ({ role, content }));
 
-            const response = await fetch(`${CHAT_API}?action=chat&_=${Date.now()}`, {
+            const response = await fetch(`${CHAT_API}?action=chat-stream&_=${Date.now()}`, {
                 method: "POST",
                 credentials: "include",
                 cache: "no-store",
                 signal: controller.signal,
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "text/event-stream",
+                },
                 body: JSON.stringify({ messages: payloadMessages }),
             });
 
-            const json = (await response.json().catch(() => null)) as ChatApiResponse | null;
-
-            if (response.status === 401 || json?.need_login) {
-                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-            }
-
-            if (!response.ok || !json?.ok || !json.reply) {
+            if (!response.ok) {
+                const json = (await response.json().catch(() => null)) as { msg?: string; need_login?: 1 } | null;
+                if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
                 throw new Error(json?.msg || `Falha na consulta (HTTP ${response.status}).`);
             }
 
-            const assistantMessage: ChatMessage = {
-                id: makeId("assistant"),
+            await consumeSse(response, ({ event, data }) => {
+                if (event === "delta") {
+                    const delta = String(data?.text || "");
+                    if (!delta) return;
+                    finalText += delta;
+                    updateMessage(assistantId, (m) => ({ ...m, content: finalText }));
+                } else if (event === "meta") {
+                    if (Array.isArray(data?.tools_used)) {
+                        finalTools = data.tools_used.map(String);
+                        updateMessage(assistantId, (m) => ({ ...m, toolsUsed: finalTools }));
+                    }
+                } else if (event === "done") {
+                    if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
+                } else if (event === "error") {
+                    streamError = String(data?.msg || "Falha na resposta em streaming.");
+                    throw new Error(streamError);
+                }
+            });
+
+            if (!finalText.trim()) throw new Error(streamError || "O Chat PAI não retornou uma resposta.");
+            const finalMessage: ChatMessage = {
+                id: assistantId,
                 role: "assistant",
-                content: json.reply,
-                createdAt: nowIso(),
-                toolsUsed: Array.isArray(json.tools_used) ? json.tools_used : [],
+                content: finalText,
+                createdAt: assistantPlaceholder.createdAt,
+                toolsUsed: finalTools,
                 source: "text",
+                streaming: false,
             };
+            updateMessage(assistantId, () => finalMessage);
 
-            const withAssistant = [...messagesRef.current, assistantMessage];
-            messagesRef.current = withAssistant;
-            setMessages(withAssistant);
-
-            if (options?.forceVoice || voiceAutoRef.current) {
-                void speakMessage(assistantMessage);
-            }
+            if (voiceAutoRef.current) void speakMessage(finalMessage);
         } catch (err: unknown) {
             if (err instanceof DOMException && err.name === "AbortError") return;
-            setError(err instanceof Error ? err.message : "Não foi possível consultar o Chat PAI.");
+            const message = err instanceof Error ? err.message : "Não foi possível consultar o Chat PAI.";
+            setError(message);
+            if (!finalText.trim()) {
+                commitMessages(messagesRef.current.filter((m) => m.id !== assistantId));
+            } else {
+                updateMessage(assistantId, (m) => ({ ...m, streaming: false }));
+            }
         } finally {
             loadingRef.current = false;
             setLoading(false);
@@ -766,154 +743,278 @@ export default function ChatPaiPage() {
         }
     }
 
-    function clearRecordingTimers() {
-        if (recordingTimerRef.current !== null) {
-            window.clearInterval(recordingTimerRef.current);
-            recordingTimerRef.current = null;
-        }
-        if (recordingAutoStopRef.current !== null) {
-            window.clearTimeout(recordingAutoStopRef.current);
-            recordingAutoStopRef.current = null;
-        }
+    async function callRealtimeTool(name: string, args: any) {
+        const response = await fetch(`${CHAT_API}?action=tool&_=${Date.now()}`, {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, args }),
+        });
+        const json = await response.json().catch(() => null);
+        if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+        if (!response.ok || !json?.ok) throw new Error(json?.msg || `Falha na consulta ${name}.`);
+        return json.result;
     }
 
-    function releaseMicrophone() {
-        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-    }
+    async function handleRealtimeEvent(event: any) {
+        const type = String(event?.type || "");
 
-    async function transcribeAudio(blob: Blob, mimeType: string) {
-        setTranscribing(true);
-        setError("");
-
-        try {
-            const ext = extensionForMime(mimeType || blob.type);
-            const file = new File([blob], `pergunta.${ext}`, {
-                type: mimeType || blob.type || "audio/webm",
-            });
-            const form = new FormData();
-            form.append("audio", file);
-
-            const response = await fetch(`${CHAT_API}?action=transcribe&_=${Date.now()}`, {
-                method: "POST",
-                credentials: "include",
-                cache: "no-store",
-                body: form,
-            });
-
-            const json = (await response.json().catch(() => null)) as TranscriptionResponse | null;
-
-            if (response.status === 401 || json?.need_login) {
-                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-            }
-            if (!response.ok || !json?.ok || !json.text?.trim()) {
-                throw new Error(json?.msg || `Falha ao transcrever o áudio (HTTP ${response.status}).`);
-            }
-
-            const transcript = json.text.trim();
-            setTranscribing(false);
-            await sendMessage(transcript, { source: "audio", forceVoice: true });
-        } catch (err: unknown) {
-            setTranscribing(false);
-            setError(err instanceof Error ? err.message : "Não foi possível transcrever o áudio.");
-        }
-    }
-
-    async function startRecording() {
-        if (micDisabled || recording) return;
-        stopCurrentSpeech();
-        setError("");
-
-        if (
-            typeof navigator === "undefined" ||
-            !navigator.mediaDevices?.getUserMedia ||
-            typeof MediaRecorder === "undefined"
-        ) {
-            setError("Este navegador não oferece suporte à gravação de áudio necessária para o Chat PAI.");
+        if (type === "input_audio_buffer.speech_started") {
+            realtimeToolsRef.current.clear();
+            setRealtimeState("listening");
             return;
         }
+        if (type === "response.output_audio.delta") {
+            setRealtimeState("speaking");
+            return;
+        }
+        if (type === "response.output_audio.done") {
+            setRealtimeState("listening");
+            return;
+        }
+        if (type === "conversation.item.input_audio_transcription.completed") {
+            const itemId = String(event?.item_id || makeId("voice-input"));
+            const transcript = String(event?.transcript || "").trim();
+            if (!transcript || realtimeInputSeenRef.current.has(itemId)) return;
+            realtimeInputSeenRef.current.add(itemId);
+            appendMessage({
+                id: `user-${itemId}`,
+                role: "user",
+                content: transcript,
+                createdAt: nowIso(),
+                source: "audio",
+            });
+            return;
+        }
+        if (type === "response.output_audio_transcript.delta") {
+            const key = String(event?.item_id || event?.response_id || "voice-response");
+            const delta = String(event?.delta || "");
+            if (!delta) return;
+            let messageId = realtimeAssistantIdsRef.current.get(key);
+            if (!messageId) {
+                messageId = makeId("assistant-voice");
+                realtimeAssistantIdsRef.current.set(key, messageId);
+                appendMessage({
+                    id: messageId,
+                    role: "assistant",
+                    content: "",
+                    createdAt: nowIso(),
+                    toolsUsed: Array.from(realtimeToolsRef.current),
+                    source: "audio",
+                    streaming: true,
+                });
+            }
+            updateMessage(messageId, (m) => ({
+                ...m,
+                content: m.content + delta,
+                toolsUsed: Array.from(realtimeToolsRef.current),
+            }));
+            return;
+        }
+        if (type === "response.output_audio_transcript.done") {
+            const key = String(event?.item_id || event?.response_id || "voice-response");
+            const messageId = realtimeAssistantIdsRef.current.get(key);
+            if (!messageId) return;
+            const transcript = String(event?.transcript || "").trim();
+            updateMessage(messageId, (m) => ({
+                ...m,
+                content: transcript || m.content,
+                toolsUsed: Array.from(realtimeToolsRef.current),
+                streaming: false,
+            }));
+            return;
+        }
+        if (type === "response.done") {
+            const output = Array.isArray(event?.response?.output) ? event.response.output : [];
+            const calls = output.filter((item: any) => item?.type === "function_call");
+            if (calls.length > 0) {
+                setRealtimeState("consulting");
+                const results = await Promise.all(
+                    calls.map(async (call: any) => {
+                        const name = String(call?.name || "");
+                        const callId = String(call?.call_id || "");
+                        let args: any = {};
+                        try {
+                            args = JSON.parse(String(call?.arguments || "{}"));
+                        } catch {
+                            args = {};
+                        }
+                        realtimeToolsRef.current.add(name);
+                        const result = await callRealtimeTool(name, args);
+                        return { callId, result };
+                    }),
+                );
+
+                const dc = realtimeDcRef.current;
+                if (!dc || dc.readyState !== "open") throw new Error("A sessão de voz foi desconectada.");
+                for (const item of results) {
+                    dc.send(
+                        JSON.stringify({
+                            type: "conversation.item.create",
+                            item: {
+                                type: "function_call_output",
+                                call_id: item.callId,
+                                output: JSON.stringify(item.result),
+                            },
+                        }),
+                    );
+                }
+                dc.send(JSON.stringify({ type: "response.create" }));
+            } else if (realtimeState !== "off") {
+                setRealtimeState("listening");
+            }
+            return;
+        }
+        if (type === "error") {
+            throw new Error(String(event?.error?.message || "Erro na sessão de voz em tempo real."));
+        }
+    }
+
+    async function startRealtimeVoice() {
+        if (realtimeState !== "off" || loadingRef.current) return;
+        setError("");
+        stopCurrentSpeech();
+        setRealtimeState("connecting");
+        realtimeClosingRef.current = false;
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
+                throw new Error("Este navegador não oferece suporte ao modo de voz em tempo real.");
+            }
+
+            const mic = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
                 },
             });
+            const pc = new RTCPeerConnection();
+            const dc = pc.createDataChannel("oai-events");
+            const remoteAudio = document.createElement("audio");
+            remoteAudio.autoplay = true;
+            remoteAudio.playsInline = true;
 
-            const mimeType = getRecorderMimeType();
-            const recorder = mimeType
-                ? new MediaRecorder(stream, { mimeType })
-                : new MediaRecorder(stream);
+            realtimeMicRef.current = mic;
+            realtimePcRef.current = pc;
+            realtimeDcRef.current = dc;
+            realtimeAudioRef.current = remoteAudio;
 
-            mediaStreamRef.current = stream;
-            mediaRecorderRef.current = recorder;
-            audioChunksRef.current = [];
-
-            recorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
-                    audioChunksRef.current.push(event.data);
-                }
+            for (const track of mic.getTracks()) pc.addTrack(track, mic);
+            pc.ontrack = (event) => {
+                remoteAudio.srcObject = event.streams[0];
+                void remoteAudio.play().catch(() => undefined);
             };
 
-            recorder.onerror = () => {
-                clearRecordingTimers();
-                releaseMicrophone();
-                setRecording(false);
-                setError("O navegador encontrou um erro durante a gravação do áudio.");
-            };
-
-            recorder.onstop = () => {
-                clearRecordingTimers();
-                setRecording(false);
-                releaseMicrophone();
-
-                const finalMime = recorder.mimeType || mimeType || "audio/webm";
-                const blob = new Blob(audioChunksRef.current, { type: finalMime });
-                audioChunksRef.current = [];
-                mediaRecorderRef.current = null;
-
-                if (blob.size < 300) {
-                    setError("O áudio ficou muito curto. Grave a pergunta novamente.");
-                    return;
+            dc.addEventListener("open", () => setRealtimeState("listening"));
+            dc.addEventListener("message", (messageEvent) => {
+                try {
+                    const event = JSON.parse(String(messageEvent.data || "{}"));
+                    void handleRealtimeEvent(event).catch((err) => {
+                        setError(err instanceof Error ? err.message : "Falha no modo de voz.");
+                        stopRealtimeVoice(false);
+                    });
+                } catch {
+                    // Evento desconhecido não interrompe a sessão.
                 }
-
-                void transcribeAudio(blob, finalMime);
-            };
-
-            recordingStartedAtRef.current = Date.now();
-            setRecordingSeconds(0);
-            setRecording(true);
-            recorder.start(250);
-
-            recordingTimerRef.current = window.setInterval(() => {
-                const elapsed = Math.floor((Date.now() - recordingStartedAtRef.current) / 1000);
-                setRecordingSeconds(Math.min(MAX_RECORDING_SECONDS, elapsed));
-            }, 250);
-
-            recordingAutoStopRef.current = window.setTimeout(() => {
-                const active = mediaRecorderRef.current;
-                if (active && active.state !== "inactive") {
-                    active.stop();
+            });
+            dc.addEventListener("close", () => {
+                if (!realtimeClosingRef.current) {
+                    setError("A conversa por voz foi desconectada.");
                 }
-            }, MAX_RECORDING_SECONDS * 1000);
+                cleanupRealtimeRefs();
+            });
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            const sdp = pc.localDescription?.sdp || offer.sdp;
+            if (!sdp) throw new Error("Não foi possível preparar a conexão de voz.");
+
+            const response = await fetch(`${CHAT_API}?action=realtime-session&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Content-Type": "application/sdp", Accept: "application/sdp" },
+                body: sdp,
+            });
+            if (!response.ok) {
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                    const json = await response.json().catch(() => null);
+                    throw new Error(json?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
+                }
+                throw new Error((await response.text()) || `Falha ao iniciar voz (HTTP ${response.status}).`);
+            }
+            const answerSdp = await response.text();
+            await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+            if (dc.readyState === "open") setRealtimeState("listening");
         } catch (err: unknown) {
-            releaseMicrophone();
-            setRecording(false);
+            cleanupRealtimeRefs();
+            setRealtimeState("off");
             const name = err instanceof DOMException ? err.name : "";
             if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-                setError("Permita o acesso ao microfone no navegador para fazer perguntas por áudio.");
+                setError("Permita o acesso ao microfone para usar a conversa por voz.");
             } else {
-                setError(err instanceof Error ? err.message : "Não foi possível acessar o microfone.");
+                setError(err instanceof Error ? err.message : "Não foi possível iniciar a voz em tempo real.");
             }
         }
     }
 
-    function stopRecording() {
-        const recorder = mediaRecorderRef.current;
-        if (!recorder || recorder.state === "inactive") return;
-        recorder.stop();
+    function cleanupRealtimeRefs() {
+        try {
+            realtimeDcRef.current?.close();
+        } catch {
+            // Ignora.
+        }
+        try {
+            realtimePcRef.current?.close();
+        } catch {
+            // Ignora.
+        }
+        realtimeMicRef.current?.getTracks().forEach((track) => track.stop());
+        const audio = realtimeAudioRef.current;
+        if (audio) {
+            audio.pause();
+            audio.srcObject = null;
+        }
+        realtimePcRef.current = null;
+        realtimeDcRef.current = null;
+        realtimeMicRef.current = null;
+        realtimeAudioRef.current = null;
+        realtimeInputSeenRef.current.clear();
+        realtimeAssistantIdsRef.current.clear();
+        realtimeToolsRef.current.clear();
+        setRealtimeState("off");
+    }
+
+    function stopRealtimeVoice(sendClose = true) {
+        realtimeClosingRef.current = true;
+        const dc = realtimeDcRef.current;
+        if (sendClose && dc?.readyState === "open") {
+            try {
+                dc.send(JSON.stringify({ type: "session.close" }));
+            } catch {
+                // Fecha localmente abaixo.
+            }
+        }
+        cleanupRealtimeRefs();
+    }
+
+    function clearChat() {
+        if (loading) return;
+        abortRef.current?.abort();
+        stopCurrentSpeech();
+        stopRealtimeVoice();
+        commitMessages([]);
+        setInput("");
+        setError("");
+        try {
+            window.localStorage.removeItem(STORAGE_KEY);
+        } catch {
+            // Sem impacto.
+        }
+        requestAnimationFrame(() => textareaRef.current?.focus());
     }
 
     function handleSubmit(event: FormEvent) {
@@ -927,6 +1028,17 @@ export default function ChatPaiPage() {
             if (canSend) void sendMessage();
         }
     }
+
+    const realtimeLabel =
+        realtimeState === "connecting"
+            ? "Conectando voz..."
+            : realtimeState === "speaking"
+                ? "Chat PAI falando"
+                : realtimeState === "consulting"
+                    ? "Consultando o sistema"
+                    : realtimeState === "listening"
+                        ? "Ouvindo, fale normalmente"
+                        : "";
 
     return (
         <div className="flex min-h-[100dvh] flex-col bg-slate-50 text-slate-950">
@@ -943,7 +1055,7 @@ export default function ChatPaiPage() {
                                     Somente leitura
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500">Assistente operacional com texto e voz</p>
+                            <p className="truncate text-xs text-slate-500">Texto em streaming e voz em tempo real</p>
                         </div>
                     </div>
 
@@ -961,7 +1073,7 @@ export default function ChatPaiPage() {
                                     ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
                                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                             ].join(" ")}
-                            title={voiceAuto ? "Desativar respostas automáticas em voz" : "Ativar respostas automáticas em voz"}
+                            title="Ler automaticamente respostas de perguntas digitadas"
                         >
                             {voiceAuto ? <IconSpeaker /> : <IconSpeakerOff />}
                             <span className="hidden sm:inline">Voz {voiceAuto ? "ligada" : "desligada"}</span>
@@ -970,7 +1082,7 @@ export default function ChatPaiPage() {
                         <button
                             type="button"
                             onClick={clearChat}
-                            disabled={loading || recording || transcribing || messages.length === 0}
+                            disabled={loading || messages.length === 0}
                             className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                             title="Iniciar novo chat"
                         >
@@ -991,11 +1103,9 @@ export default function ChatPaiPage() {
                         {messages.map((message) => {
                             const isUser = message.role === "user";
                             const speaking = speakingMessageId === message.id;
-
                             return (
                                 <div key={message.id} className={isUser ? "flex justify-end" : "flex items-start gap-3"}>
                                     {!isUser ? <AssistantAvatar /> : null}
-
                                     <div className={["max-w-[88%] sm:max-w-[82%]", isUser ? "text-right" : "text-left"].join(" ")}>
                                         <div
                                             className={[
@@ -1007,28 +1117,31 @@ export default function ChatPaiPage() {
                                         >
                                             {isUser ? (
                                                 <div className="whitespace-pre-wrap">{message.content}</div>
-                                            ) : (
+                                            ) : message.content ? (
                                                 <AssistantContent content={message.content} />
+                                            ) : (
+                                                <div className="flex items-center gap-1.5 py-1">
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.25s]" />
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.12s]" />
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+                                                </div>
                                             )}
                                         </div>
 
                                         <div className={["mt-2 flex flex-wrap items-center gap-1.5", isUser ? "justify-end" : "justify-start"].join(" ")}>
                                             {isUser && message.source === "audio" ? (
                                                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-[10px] font-medium text-sky-600">
-                                                    <IconMic className="h-3 w-3" />
-                                                    Transcrito do áudio
+                                                    <IconMic className="h-3 w-3" /> Voz
                                                 </span>
                                             ) : null}
 
-                                            {!isUser ? (
+                                            {!isUser && message.content && !message.streaming ? (
                                                 <button
                                                     type="button"
                                                     onClick={() => void speakMessage(message)}
                                                     className={[
                                                         "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition",
-                                                        speaking
-                                                            ? "bg-sky-100 text-sky-700"
-                                                            : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+                                                        speaking ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200",
                                                     ].join(" ")}
                                                     title={speaking ? "Parar áudio" : "Ouvir resposta"}
                                                 >
@@ -1037,12 +1150,9 @@ export default function ChatPaiPage() {
                                                 </button>
                                             ) : null}
 
-                                            {!isUser && message.toolsUsed && message.toolsUsed.length > 0
+                                            {!isUser && message.toolsUsed?.length
                                                 ? message.toolsUsed.map((tool) => (
-                                                    <span
-                                                        key={`${message.id}-${tool}`}
-                                                        className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500"
-                                                    >
+                                                    <span key={`${message.id}-${tool}`} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
                                                         {toolLabel(tool)}
                                                     </span>
                                                 ))
@@ -1053,15 +1163,13 @@ export default function ChatPaiPage() {
                             );
                         })}
 
-                        {transcribing ? <TypingIndicator label="Transcrevendo sua pergunta" /> : null}
-                        {loading ? <TypingIndicator label="Consultando dados" /> : null}
+                        {loading && !messages.some((m) => m.streaming && m.role === "assistant") ? <TypingIndicator label="Consultando dados" /> : null}
 
                         {error ? (
                             <div className="ml-0 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700 sm:ml-12">
                                 {error}
                             </div>
                         ) : null}
-
                         <div ref={bottomRef} />
                     </div>
                 )}
@@ -1069,7 +1177,22 @@ export default function ChatPaiPage() {
 
             <div className="sticky bottom-0 z-20 border-t border-slate-200/70 bg-slate-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
-                    {messages.length > 0 && !loading && !recording && !transcribing ? (
+                    {realtimeState !== "off" ? (
+                        <div className="mb-2 flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                            <div className="flex items-center gap-2 font-semibold">
+                                <span className={[
+                                    "h-2.5 w-2.5 rounded-full",
+                                    realtimeState === "speaking" ? "animate-pulse bg-violet-500" : realtimeState === "consulting" ? "animate-pulse bg-amber-500" : "animate-pulse bg-sky-500",
+                                ].join(" ")} />
+                                {realtimeLabel}
+                            </div>
+                            <button type="button" onClick={() => stopRealtimeVoice()} className="rounded-lg px-2 py-1 font-semibold hover:bg-sky-100">
+                                Encerrar
+                            </button>
+                        </div>
+                    ) : null}
+
+                    {messages.length > 0 && !loading && realtimeState === "off" ? (
                         <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             {QUICK_PROMPTS.slice(0, 4).map((prompt) => (
                                 <button
@@ -1084,22 +1207,6 @@ export default function ChatPaiPage() {
                         </div>
                     ) : null}
 
-                    {recording ? (
-                        <div className="mb-2 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                            <div className="flex items-center gap-2 font-semibold">
-                                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
-                                Gravando {formatRecordingTime(recordingSeconds)}
-                            </div>
-                            <span>Toque no botão vermelho para enviar</span>
-                        </div>
-                    ) : null}
-
-                    {transcribing ? (
-                        <div className="mb-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700">
-                            Transcrevendo o áudio antes de consultar o sistema...
-                        </div>
-                    ) : null}
-
                     <form
                         onSubmit={handleSubmit}
                         className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/50 focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-slate-200/70"
@@ -1107,18 +1214,18 @@ export default function ChatPaiPage() {
                         <div className="flex items-end gap-2">
                             <button
                                 type="button"
-                                onClick={() => (recording ? stopRecording() : void startRecording())}
-                                disabled={micDisabled}
+                                onClick={() => (realtimeState === "off" ? void startRealtimeVoice() : stopRealtimeVoice())}
+                                disabled={loading}
                                 className={[
                                     "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
-                                    recording
+                                    realtimeState !== "off"
                                         ? "bg-red-600 text-white hover:bg-red-700"
                                         : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100",
                                 ].join(" ")}
-                                aria-label={recording ? "Parar gravação e enviar" : "Perguntar por áudio"}
-                                title={recording ? "Parar gravação e enviar" : "Perguntar por áudio"}
+                                aria-label={realtimeState === "off" ? "Iniciar conversa por voz em tempo real" : "Encerrar conversa por voz"}
+                                title={realtimeState === "off" ? "Conversar por voz em tempo real" : "Encerrar voz"}
                             >
-                                {recording ? <IconStop className="h-4 w-4" /> : <IconMic className="h-5 w-5" />}
+                                {realtimeState !== "off" ? <IconStop className="h-4 w-4" /> : <IconMic className="h-5 w-5" />}
                             </button>
 
                             <textarea
@@ -1126,15 +1233,15 @@ export default function ChatPaiPage() {
                                 value={input}
                                 onChange={(event) => setInput(event.target.value)}
                                 onKeyDown={handleKeyDown}
-                                disabled={loading || recording || transcribing}
+                                disabled={loading || realtimeState !== "off"}
                                 rows={1}
                                 maxLength={5000}
                                 placeholder={
-                                    recording
-                                        ? "Ouvindo sua pergunta..."
-                                        : transcribing
-                                            ? "Transcrevendo áudio..."
-                                            : "Pergunte por texto ou toque no microfone..."
+                                    realtimeState !== "off"
+                                        ? "Conversa por voz ativa..."
+                                        : loading
+                                            ? "Recebendo resposta..."
+                                            : "Pergunte por texto ou toque no microfone para conversar..."
                                 }
                                 className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
                             />
@@ -1152,12 +1259,10 @@ export default function ChatPaiPage() {
 
                     <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[10px] text-slate-400 sm:text-xs">
                         <span className="inline-flex items-center gap-1.5">
-                            <IconShield className="h-3.5 w-3.5" />
-                            O Chat PAI consulta dados, mas não altera registros.
+                            <IconShield className="h-3.5 w-3.5" /> O Chat PAI consulta dados, mas não altera registros.
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                            <IconSpeaker className="h-3.5 w-3.5" />
-                            A voz reproduzida é gerada por IA.
+                            <IconSpeaker className="h-3.5 w-3.5" /> A voz reproduzida é gerada por IA.
                         </span>
                     </div>
                 </div>
