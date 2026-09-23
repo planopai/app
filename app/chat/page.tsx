@@ -10,8 +10,8 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const STORAGE_KEY = "pai-chat-v5-performance";
-const VOICE_AUTO_KEY = "pai-chat-voice-auto-v2";
+const STORAGE_KEY = "pai-aurora-v1-performance";
+const VOICE_AUTO_KEY = "pai-aurora-voice-auto-v1";
 const MAX_HISTORY_TO_API = 8;
 const SPEECH_CHUNK_MAX = 3800;
 const PCM_SAMPLE_RATE = 24000;
@@ -375,9 +375,9 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
             <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200">
                 <IconSparkles className="h-7 w-7" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Chat PAI</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Aurora</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                Consultas rápidas por texto e conversa por voz em tempo real, sempre em modo somente leitura.
+                Assistente Administrativo do PAI. Consultas rápidas por texto e conversa por voz em tempo real, sempre em modo somente leitura.
             </p>
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 {QUICK_PROMPTS.map((prompt) => (
@@ -403,7 +403,7 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
     );
 }
 
-export default function ChatPaiPage() {
+export default function AuroraPage() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
@@ -713,7 +713,7 @@ export default function ChatPaiPage() {
                 }
             });
 
-            if (!finalText.trim()) throw new Error(streamError || "O Chat PAI não retornou uma resposta.");
+            if (!finalText.trim()) throw new Error(streamError || "A Aurora não retornou uma resposta.");
             const finalMessage: ChatMessage = {
                 id: assistantId,
                 role: "assistant",
@@ -728,7 +728,7 @@ export default function ChatPaiPage() {
             if (voiceAutoRef.current) void speakMessage(finalMessage);
         } catch (err: unknown) {
             if (err instanceof DOMException && err.name === "AbortError") return;
-            const message = err instanceof Error ? err.message : "Não foi possível consultar o Chat PAI.";
+            const message = err instanceof Error ? err.message : "Não foi possível consultar a Aurora.";
             setError(message);
             if (!finalText.trim()) {
                 commitMessages(messagesRef.current.filter((m) => m.id !== assistantId));
@@ -1032,7 +1032,7 @@ export default function ChatPaiPage() {
         realtimeState === "connecting"
             ? "Conectando voz..."
             : realtimeState === "speaking"
-                ? "Chat PAI falando"
+                ? "Aurora falando"
                 : realtimeState === "consulting"
                     ? "Consultando o sistema"
                     : realtimeState === "listening"
@@ -1049,12 +1049,12 @@ export default function ChatPaiPage() {
                         </div>
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <h1 className="truncate text-sm font-semibold text-slate-950 sm:text-base">Chat PAI</h1>
+                                <h1 className="truncate text-sm font-semibold text-slate-950 sm:text-base">Aurora</h1>
                                 <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:inline-flex">
                                     Somente leitura
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500">Texto em streaming e voz em tempo real</p>
+                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • Texto em streaming e voz em tempo real</p>
                         </div>
                     </div>
 
@@ -1258,7 +1258,7 @@ export default function ChatPaiPage() {
 
                     <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[10px] text-slate-400 sm:text-xs">
                         <span className="inline-flex items-center gap-1.5">
-                            <IconShield className="h-3.5 w-3.5" /> O Chat PAI consulta dados, mas não altera registros.
+                            <IconShield className="h-3.5 w-3.5" /> A Aurora consulta dados, mas não altera registros.
                         </span>
                         <span className="inline-flex items-center gap-1.5">
                             <IconSpeaker className="h-3.5 w-3.5" /> A voz reproduzida é gerada por IA.
