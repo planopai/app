@@ -57,6 +57,15 @@ type ProductCard = {
     depositos?: ProductDeposit[];
 };
 
+type ProductSuggestion = {
+    produto_id: number;
+    produto_nome: string;
+    categoria?: string | null;
+    fabricante?: string | null;
+    similaridade?: number | null;
+};
+
+
 type ChatMessage = {
     id: string;
     role: Role;
@@ -66,6 +75,7 @@ type ChatMessage = {
     source?: MessageSource;
     streaming?: boolean;
     productCards?: ProductCard[];
+    productSuggestions?: ProductSuggestion[];
 };
 
 type SseEvent = {
@@ -172,6 +182,30 @@ function sanitizeProductCards(value: unknown): ProductCard[] {
     return out;
 }
 
+
+function sanitizeProductSuggestions(value: unknown): ProductSuggestion[] {
+    if (!Array.isArray(value)) return [];
+    const out: ProductSuggestion[] = [];
+    const seen = new Set<number>();
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const id = Number(item.produto_id ?? item.id ?? 0);
+        const name = String(item.produto_nome ?? item.nome ?? "").trim();
+        if (!Number.isFinite(id) || id <= 0 || !name || seen.has(id)) continue;
+        seen.add(id);
+        const similarity = item.similaridade == null ? null : Number(item.similaridade);
+        out.push({
+            produto_id: id,
+            produto_nome: name,
+            categoria: item.categoria == null ? null : String(item.categoria),
+            fabricante: item.fabricante == null ? null : String(item.fabricante),
+            similaridade: similarity != null && Number.isFinite(similarity) ? similarity : null,
+        });
+    }
+    return out.slice(0, 6);
+}
+
 function moneyBRL(value?: number | null, formatted?: string | null) {
     if (formatted?.trim()) return formatted.trim();
     if (value == null || !Number.isFinite(Number(value))) return null;
@@ -251,6 +285,43 @@ function ProductCards({ products }: { products?: ProductCard[] }) {
     );
 }
 
+
+function ProductSuggestions({
+    suggestions,
+    onChoose,
+    disabled = false,
+}: {
+    suggestions?: ProductSuggestion[];
+    onChoose: (name: string) => void;
+    disabled?: boolean;
+}) {
+    if (!suggestions?.length) return null;
+    return (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sugestões próximas</div>
+            <div className="flex flex-wrap gap-2">
+                {suggestions.slice(0, 6).map((item) => (
+                    <button
+                        key={`product-suggestion-${item.produto_id}`}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onChoose(item.produto_nome)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={[item.categoria, item.fabricante].filter(Boolean).join(" • ")}
+                    >
+                        <span className="block font-semibold text-slate-900">{item.produto_nome}</span>
+                        {(item.categoria || item.fabricante) ? (
+                            <span className="mt-0.5 block text-[10px] text-slate-500">
+                                {[item.categoria, item.fabricante].filter(Boolean).join(" • ")}
+                            </span>
+                        ) : null}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function loadStoredMessages(): ChatMessage[] {
     if (typeof window === "undefined") return [];
     try {
@@ -273,6 +344,7 @@ function loadStoredMessages(): ChatMessage[] {
                 createdAt: String(item.createdAt || nowIso()),
                 toolsUsed: Array.isArray(item.toolsUsed) ? item.toolsUsed.map(String) : undefined,
                 productCards: sanitizeProductCards(item.productCards),
+                productSuggestions: sanitizeProductSuggestions(item.productSuggestions),
                 source: item.source === "audio" ? "audio" : "text",
                 streaming: false,
             }));
@@ -617,6 +689,7 @@ export default function AuroraPage() {
     const realtimeAssistantIdsRef = useRef<Map<string, string>>(new Map());
     const realtimeToolsRef = useRef<Set<string>>(new Set());
     const realtimeProductCardsRef = useRef<ProductCard[]>([]);
+    const realtimeProductSuggestionsRef = useRef<ProductSuggestion[]>([]);
     const realtimeClosingRef = useRef(false);
 
     useEffect(() => {
@@ -855,6 +928,7 @@ export default function AuroraPage() {
         let finalText = "";
         let finalTools: string[] = [];
         let finalProductCards: ProductCard[] = [];
+        let finalProductSuggestions: ProductSuggestion[] = [];
         let streamError = "";
 
         try {
@@ -890,10 +964,12 @@ export default function AuroraPage() {
                 } else if (event === "meta") {
                     if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
                     if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
-                    updateMessage(assistantId, (m) => ({ ...m, toolsUsed: finalTools, productCards: finalProductCards }));
+                    if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
+                    updateMessage(assistantId, (m) => ({ ...m, toolsUsed: finalTools, productCards: finalProductCards, productSuggestions: finalProductSuggestions }));
                 } else if (event === "done") {
                     if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
                     if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
+                    if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
                 } else if (event === "error") {
                     streamError = String(data?.msg || "Falha na resposta em streaming.");
                     throw new Error(streamError);
@@ -908,6 +984,7 @@ export default function AuroraPage() {
                 createdAt: assistantPlaceholder.createdAt,
                 toolsUsed: finalTools,
                 productCards: finalProductCards,
+                productSuggestions: finalProductSuggestions,
                 source: "text",
                 streaming: false,
             };
@@ -945,6 +1022,7 @@ export default function AuroraPage() {
         return {
             result: json.result,
             productCards: sanitizeProductCards(json?.product_cards),
+            productSuggestions: sanitizeProductSuggestions(json?.product_suggestions),
         };
     }
 
@@ -954,6 +1032,7 @@ export default function AuroraPage() {
         if (type === "input_audio_buffer.speech_started") {
             realtimeToolsRef.current.clear();
             realtimeProductCardsRef.current = [];
+            realtimeProductSuggestionsRef.current = [];
             setRealtimeState("listening");
             return;
         }
@@ -994,6 +1073,7 @@ export default function AuroraPage() {
                     createdAt: nowIso(),
                     toolsUsed: Array.from(realtimeToolsRef.current),
                     productCards: realtimeProductCardsRef.current,
+                    productSuggestions: realtimeProductSuggestionsRef.current,
                     source: "audio",
                     streaming: true,
                 });
@@ -1003,6 +1083,7 @@ export default function AuroraPage() {
                 content: m.content + delta,
                 toolsUsed: Array.from(realtimeToolsRef.current),
                 productCards: realtimeProductCardsRef.current,
+                productSuggestions: realtimeProductSuggestionsRef.current,
             }));
             return;
         }
@@ -1016,6 +1097,7 @@ export default function AuroraPage() {
                 content: transcript || m.content,
                 toolsUsed: Array.from(realtimeToolsRef.current),
                 productCards: realtimeProductCardsRef.current,
+                productSuggestions: realtimeProductSuggestionsRef.current,
                 streaming: false,
             }));
             return;
@@ -1040,6 +1122,10 @@ export default function AuroraPage() {
                         if (toolResponse.productCards.length) {
                             const merged = sanitizeProductCards([...realtimeProductCardsRef.current, ...toolResponse.productCards]);
                             realtimeProductCardsRef.current = merged;
+                        }
+                        if (toolResponse.productSuggestions.length) {
+                            const mergedSuggestions = sanitizeProductSuggestions([...realtimeProductSuggestionsRef.current, ...toolResponse.productSuggestions]);
+                            realtimeProductSuggestionsRef.current = mergedSuggestions;
                         }
                         return { callId, result: toolResponse.result };
                     }),
@@ -1183,6 +1269,8 @@ export default function AuroraPage() {
         realtimeInputSeenRef.current.clear();
         realtimeAssistantIdsRef.current.clear();
         realtimeToolsRef.current.clear();
+        realtimeProductCardsRef.current = [];
+        realtimeProductSuggestionsRef.current = [];
         setRealtimeState("off");
     }
 
@@ -1319,9 +1407,21 @@ export default function AuroraPage() {
                                                 <>
                                                     <AssistantContent content={message.content} />
                                                     <ProductCards products={message.productCards} />
+                                                    <ProductSuggestions
+                                                        suggestions={message.productSuggestions}
+                                                        disabled={loading || realtimeState !== "off"}
+                                                        onChoose={(name) => void sendMessage(name)}
+                                                    />
                                                 </>
-                                            ) : message.productCards?.length ? (
-                                                <ProductCards products={message.productCards} />
+                                            ) : (message.productCards?.length || message.productSuggestions?.length) ? (
+                                                <>
+                                                    <ProductCards products={message.productCards} />
+                                                    <ProductSuggestions
+                                                        suggestions={message.productSuggestions}
+                                                        disabled={loading || realtimeState !== "off"}
+                                                        onChoose={(name) => void sendMessage(name)}
+                                                    />
+                                                </>
                                             ) : (
                                                 <div className="flex items-center gap-1.5 py-1">
                                                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.25s]" />
