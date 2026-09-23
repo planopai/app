@@ -10,7 +10,6 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const STORAGE_KEY = "pai-aurora-v1-performance";
 const VOICE_AUTO_KEY = "pai-aurora-voice-auto-v1";
 const MAX_HISTORY_TO_API = 8;
@@ -1304,24 +1303,32 @@ export default function AuroraPage() {
         }
     }
 
-    async function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs = 2500) {
-        if (pc.iceGatheringState === "complete") return;
+    function normalizeRemoteSdp(raw: string) {
+        const source = String(raw || "")
+            .replace(/^\uFEFF/, "")
+            .replace(/\u0000/g, "")
+            .replace(/\r\n/g, "\n")
+            .replace(/\r/g, "\n");
 
-        await new Promise<void>((resolve) => {
-            let settled = false;
-            const finish = () => {
-                if (settled) return;
-                settled = true;
-                pc.removeEventListener("icegatheringstatechange", onChange);
-                window.clearTimeout(timer);
-                resolve();
-            };
-            const onChange = () => {
-                if (pc.iceGatheringState === "complete") finish();
-            };
-            const timer = window.setTimeout(finish, timeoutMs);
-            pc.addEventListener("icegatheringstatechange", onChange);
-        });
+        const lines = source
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        const first = lines.findIndex((line) => line === "v=0");
+        if (first < 0) throw new Error("O servidor não devolveu um SDP WebRTC válido.");
+
+        const valid: string[] = [];
+        for (const line of lines.slice(first)) {
+            if (!/^[a-z]=/i.test(line)) break;
+            valid.push(line);
+        }
+
+        if (!valid.length || valid[0] !== "v=0") {
+            throw new Error("A resposta WebRTC recebida é inválida.");
+        }
+
+        return `${valid.join("\r\n")}\r\n`;
     }
 
     async function startRealtimeVoice() {
@@ -1337,44 +1344,6 @@ export default function AuroraPage() {
         try {
             if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
                 throw new Error("Este navegador não oferece suporte ao modo de voz em tempo real.");
-            }
-
-            // Primeiro obtemos um segredo efêmero. A chave real da OpenAI nunca
-            // sai do PHP.
-            const tokenResponse = await fetch(`${CHAT_API}?action=realtime-token&_=${Date.now()}`, {
-                method: "POST",
-                credentials: "include",
-                cache: "no-store",
-                headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                },
-                body: JSON.stringify({}),
-            });
-
-            const tokenJson = (await tokenResponse.json().catch(() => null)) as
-                | {
-                    ok?: boolean;
-                    value?: string;
-                    expires_at?: number | string | null;
-                    model?: string;
-                    transcribe_model?: string;
-                    vad_eagerness?: string;
-                    msg?: string;
-                    need_login?: 1;
-                }
-                | null;
-
-            if (!tokenResponse.ok || !tokenJson?.ok) {
-                if (tokenResponse.status === 401 || tokenJson?.need_login) {
-                    throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-                }
-                throw new Error(tokenJson?.msg || `Falha ao preparar a voz (HTTP ${tokenResponse.status}).`);
-            }
-
-            const ephemeralKey = String(tokenJson.value || "").trim();
-            if (!ephemeralKey) {
-                throw new Error("O servidor não devolveu a credencial temporária de voz.");
             }
 
             const mic = await navigator.mediaDevices.getUserMedia({
@@ -1419,8 +1388,6 @@ export default function AuroraPage() {
 
             dc.addEventListener("open", () => {
                 connectionOpened = true;
-                // A configuração completa já foi vinculada ao segredo efêmero
-                // no backend. Aguardamos session.created antes de marcar "Ouvindo".
             });
 
             dc.addEventListener("message", (messageEvent) => {
@@ -1448,8 +1415,7 @@ export default function AuroraPage() {
             });
 
             pc.addEventListener("connectionstatechange", () => {
-                const state = pc.connectionState;
-                if (state === "failed" && !realtimeClosingRef.current) {
+                if (pc.connectionState === "failed" && !realtimeClosingRef.current) {
                     setError("A conexão WebRTC de voz falhou. Tente iniciar novamente.");
                     realtimeClosingRef.current = true;
                     stopRealtimeVoice(false);
@@ -1459,52 +1425,45 @@ export default function AuroraPage() {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            // Dá um pequeno prazo para o navegador concluir a coleta ICE,
-            // melhorando a estabilidade em redes móveis, Wi-Fi e NAT.
-            await waitForIceGatheringComplete(pc);
+            // O guia oficial usa o SDP do offer para iniciar a sessão.
+            const offerSdp = String(offer.sdp || "").trim();
+            if (!offerSdp) throw new Error("Não foi possível preparar a conexão de voz.");
 
-            const sdp = pc.localDescription?.sdp || offer.sdp;
-            if (!sdp) throw new Error("Não foi possível preparar a conexão de voz.");
-
-            // A partir daqui o navegador fala diretamente com a OpenAI usando
-            // apenas o token EFÊMERO. Isso elimina o 500 causado pelo servidor
-            // PHP no caminho crítico de /v1/realtime/calls.
-            const sdpResponse = await fetch(OPENAI_REALTIME_CALLS_URL, {
+            // Unified interface:
+            // browser -> PHP em JSON
+            // PHP -> OpenAI /v1/realtime/calls em multipart/form-data
+            // Assim não expomos chaves e evitamos que browser/proxy altere o SDP remoto.
+            const response = await fetch(`${CHAT_API}?action=realtime-session&_=${Date.now()}`, {
                 method: "POST",
-                body: sdp,
+                credentials: "include",
+                cache: "no-store",
                 headers: {
-                    Authorization: `Bearer ${ephemeralKey}`,
-                    "Content-Type": "application/sdp",
-                    Accept: "application/sdp",
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
                 },
+                body: JSON.stringify({ sdp: offerSdp }),
             });
 
-            if (!sdpResponse.ok) {
-                const body = (await sdpResponse.text().catch(() => "")).trim();
-                let message = body;
-                try {
-                    const parsed = JSON.parse(body);
-                    message = String(parsed?.error?.message || parsed?.message || body);
-                } catch {
-                    // Mantém resposta textual.
+            const json = (await response.json().catch(() => null)) as
+                | { ok?: boolean; sdp?: string; msg?: string; need_login?: 1 }
+                | null;
+
+            if (!response.ok || !json?.ok) {
+                if (response.status === 401 || json?.need_login) {
+                    throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
                 }
-                throw new Error(
-                    message
-                        ? `Falha ao conectar a voz: ${message}`
-                        : `Falha ao conectar a voz (HTTP ${sdpResponse.status}).`,
-                );
+                throw new Error(json?.msg || `Falha ao iniciar voz (HTTP ${response.status}).`);
             }
 
-            const answerSdp = (await sdpResponse.text()).trim();
-            if (!answerSdp) throw new Error("A OpenAI não devolveu a resposta WebRTC.");
+            const answerSdp = normalizeRemoteSdp(String(json.sdp || ""));
+            await pc.setRemoteDescription({
+                type: "answer",
+                sdp: answerSdp,
+            });
 
-            await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
-
-            // Não marcamos "listening" aqui. A interface só entra em ouvindo
-            // quando receber session.updated, confirmando que VAD e tools foram
-            // aplicados.
+            // "Ouvindo" só aparece quando session.created/session.updated chegar
+            // pelo DataChannel, confirmando a sessão real.
         } catch (err: unknown) {
-            // Evita que o evento "close" sobrescreva a mensagem real do erro.
             realtimeClosingRef.current = true;
             cleanupRealtimeRefs();
             setRealtimeState("off");
@@ -1516,8 +1475,6 @@ export default function AuroraPage() {
                 setError(err instanceof Error ? err.message : "Não foi possível iniciar a voz em tempo real.");
             }
 
-            // Libera a flag depois que os eventos de fechamento já tiveram
-            // oportunidade de disparar.
             window.setTimeout(() => {
                 realtimeClosingRef.current = false;
             }, 0);
