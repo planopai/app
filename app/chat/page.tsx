@@ -66,6 +66,18 @@ type ProductSuggestion = {
     similaridade?: number | null;
 };
 
+type ExportFormat = "pdf" | "xlsx" | "csv" | "txt" | "json";
+
+type ExportCard = {
+    id: string;
+    title: string;
+    filename: string;
+    format: ExportFormat;
+    format_label: string;
+    token: string;
+    expires_at?: string | null;
+};
+
 
 type ChatMessage = {
     id: string;
@@ -77,6 +89,7 @@ type ChatMessage = {
     streaming?: boolean;
     productCards?: ProductCard[];
     productSuggestions?: ProductSuggestion[];
+    exportCards?: ExportCard[];
 };
 
 type SseEvent = {
@@ -323,6 +336,122 @@ function ProductSuggestions({
     );
 }
 
+
+function sanitizeExportCards(value: unknown): ExportCard[] {
+    if (!Array.isArray(value)) return [];
+    const allowed = new Set<ExportFormat>(["pdf", "xlsx", "csv", "txt", "json"]);
+    const out: ExportCard[] = [];
+
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const format = String(item.format || "").toLowerCase() as ExportFormat;
+        const token = String(item.token || "").trim();
+        const filename = String(item.filename || "").trim();
+        const title = String(item.title || "Arquivo da Aurora").trim();
+        if (!allowed.has(format) || !token || !filename) continue;
+
+        out.push({
+            id: String(item.id || `${format}-${filename}-${out.length}`),
+            title,
+            filename,
+            format,
+            format_label: String(item.format_label || format.toUpperCase()),
+            token,
+            expires_at: item.expires_at == null ? null : String(item.expires_at),
+        });
+    }
+
+    return out.slice(0, 5);
+}
+
+function exportDownloadUrl(card: ExportCard) {
+    return `${CHAT_API}?action=export&token=${encodeURIComponent(card.token)}`;
+}
+
+function exportFormatDescription(format: ExportFormat) {
+    switch (format) {
+        case "pdf":
+            return "Documento PDF";
+        case "xlsx":
+            return "Planilha Excel";
+        case "csv":
+            return "Arquivo CSV";
+        case "txt":
+            return "Arquivo de texto";
+        case "json":
+            return "Dados JSON";
+    }
+}
+
+function IconDownload({ className = "h-4 w-4" }: { className?: string }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="M12 3v12" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M5 21h14" />
+        </svg>
+    );
+}
+
+function ExportCards({ cards }: { cards?: ExportCard[] }) {
+    if (!cards?.length) return null;
+
+    return (
+        <div className="mt-3 space-y-2">
+            {cards.map((card) => {
+                const expiry = card.expires_at ? new Date(card.expires_at) : null;
+                const validExpiry = expiry && !Number.isNaN(expiry.getTime());
+
+                return (
+                    <div
+                        key={card.id}
+                        className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+                    >
+                        <div className="flex items-center gap-3 p-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200">
+                                <span className="text-[11px] font-bold uppercase">{card.format}</span>
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold text-slate-950">
+                                    {card.title}
+                                </div>
+                                <div className="mt-0.5 truncate text-[11px] text-slate-500">
+                                    {exportFormatDescription(card.format)} • {card.filename}
+                                </div>
+                                {validExpiry ? (
+                                    <div className="mt-0.5 text-[10px] text-slate-400">
+                                        Link temporário até {expiry!.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <a
+                                href={exportDownloadUrl(card)}
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                                title={`Baixar ${card.filename}`}
+                            >
+                                <IconDownload className="h-4 w-4" />
+                                Baixar
+                            </a>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 function loadStoredMessages(): ChatMessage[] {
     if (typeof window === "undefined") return [];
     try {
@@ -346,6 +475,7 @@ function loadStoredMessages(): ChatMessage[] {
                 toolsUsed: Array.isArray(item.toolsUsed) ? item.toolsUsed.map(String) : undefined,
                 productCards: sanitizeProductCards(item.productCards),
                 productSuggestions: sanitizeProductSuggestions(item.productSuggestions),
+                exportCards: sanitizeExportCards(item.exportCards),
                 source: item.source === "audio" ? "audio" : "text",
                 streaming: false,
             }));
@@ -782,6 +912,7 @@ export default function AuroraPage() {
     const liveDelegationsInFlightRef = useRef<Set<string>>(new Set());
     const liveAssistantFinalizeTimerRef = useRef<number | null>(null);
     const liveSessionIdRef = useRef<string | null>(null);
+    const realtimeExportCardsRef = useRef<ExportCard[]>([]);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1020,6 +1151,7 @@ export default function AuroraPage() {
         let finalTools: string[] = [];
         let finalProductCards: ProductCard[] = [];
         let finalProductSuggestions: ProductSuggestion[] = [];
+        let finalExportCards: ExportCard[] = [];
         let streamError = "";
 
         try {
@@ -1056,11 +1188,19 @@ export default function AuroraPage() {
                     if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
                     if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
                     if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
-                    updateMessage(assistantId, (m) => ({ ...m, toolsUsed: finalTools, productCards: finalProductCards, productSuggestions: finalProductSuggestions }));
+                    if (Array.isArray(data?.export_cards)) finalExportCards = sanitizeExportCards(data.export_cards);
+                    updateMessage(assistantId, (m) => ({
+                        ...m,
+                        toolsUsed: finalTools,
+                        productCards: finalProductCards,
+                        productSuggestions: finalProductSuggestions,
+                        exportCards: finalExportCards,
+                    }));
                 } else if (event === "done") {
                     if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
                     if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
                     if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
+                    if (Array.isArray(data?.export_cards)) finalExportCards = sanitizeExportCards(data.export_cards);
                 } else if (event === "error") {
                     streamError = String(data?.msg || "Falha na resposta em streaming.");
                     throw new Error(streamError);
@@ -1076,6 +1216,7 @@ export default function AuroraPage() {
                 toolsUsed: finalTools,
                 productCards: finalProductCards,
                 productSuggestions: finalProductSuggestions,
+                exportCards: finalExportCards,
                 source: "text",
                 streaming: false,
             };
@@ -1189,6 +1330,7 @@ export default function AuroraPage() {
             realtimeToolsRef.current.clear();
             realtimeProductCardsRef.current = [];
             realtimeProductSuggestionsRef.current = [];
+            realtimeExportCardsRef.current = [];
 
             const id = makeId("user-voice");
             liveCurrentUserMessageIdRef.current = id;
@@ -1235,6 +1377,7 @@ export default function AuroraPage() {
                 toolsUsed: Array.from(realtimeToolsRef.current),
                 productCards: realtimeProductCardsRef.current,
                 productSuggestions: realtimeProductSuggestionsRef.current,
+                exportCards: realtimeExportCardsRef.current,
                 source: "audio",
                 streaming: true,
             });
@@ -1246,6 +1389,7 @@ export default function AuroraPage() {
             toolsUsed: Array.from(realtimeToolsRef.current),
             productCards: realtimeProductCardsRef.current,
             productSuggestions: realtimeProductSuggestionsRef.current,
+            exportCards: realtimeExportCardsRef.current,
             streaming: true,
         }));
 
@@ -1325,6 +1469,7 @@ export default function AuroraPage() {
                     tools_used?: string[];
                     product_cards?: unknown;
                     product_suggestions?: unknown;
+                    export_cards?: unknown;
                     msg?: string;
                     need_login?: 1;
                 }
@@ -1345,6 +1490,7 @@ export default function AuroraPage() {
             );
             realtimeProductCardsRef.current = sanitizeProductCards(json.product_cards);
             realtimeProductSuggestionsRef.current = sanitizeProductSuggestions(json.product_suggestions);
+            realtimeExportCardsRef.current = sanitizeExportCards(json.export_cards);
 
             const dc = realtimeDcRef.current;
             if (!dc || dc.readyState !== "open") throw new Error("A conversa por voz foi desconectada.");
@@ -1720,6 +1866,7 @@ export default function AuroraPage() {
         realtimeToolsRef.current.clear();
         realtimeProductCardsRef.current = [];
         realtimeProductSuggestionsRef.current = [];
+        realtimeExportCardsRef.current = [];
         liveInputTranscriptRef.current = "";
         liveCurrentUserMessageIdRef.current = null;
         liveCurrentAssistantMessageIdRef.current = null;
@@ -1923,15 +2070,17 @@ export default function AuroraPage() {
                                                 <>
                                                     <AssistantContent content={message.content} />
                                                     <ProductCards products={message.productCards} />
+                                                    <ExportCards cards={message.exportCards} />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
                                                         disabled={loading || realtimeState !== "off"}
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
                                                 </>
-                                            ) : (message.productCards?.length || message.productSuggestions?.length) ? (
+                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length) ? (
                                                 <>
                                                     <ProductCards products={message.productCards} />
+                                                    <ExportCards cards={message.exportCards} />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
                                                         disabled={loading || realtimeState !== "off"}
