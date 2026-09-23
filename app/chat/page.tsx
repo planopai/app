@@ -21,6 +21,42 @@ type Role = "user" | "assistant";
 type MessageSource = "text" | "audio";
 type RealtimeState = "off" | "connecting" | "listening" | "speaking" | "consulting";
 
+type ProductPhoto = {
+    id?: number | null;
+    produto_id?: number;
+    arquivo?: string | null;
+    foto_url?: string | null;
+    legenda?: string | null;
+    ordem?: number;
+    is_principal?: number;
+};
+
+type ProductDeposit = {
+    deposito_id?: number;
+    deposito?: string;
+    quantidade?: number;
+    minimo?: number;
+    maximo?: number;
+};
+
+type ProductCard = {
+    produto_id: number;
+    produto_nome: string;
+    descricao?: string | null;
+    codigo_barras?: string | null;
+    valor?: number | null;
+    valor_formatado?: string | null;
+    preco_custo?: number | null;
+    preco_custo_formatado?: string | null;
+    categoria?: string | null;
+    classificacao?: string | null;
+    fabricante?: string | null;
+    quantidade_total?: number;
+    foto_url?: string | null;
+    fotos?: ProductPhoto[];
+    depositos?: ProductDeposit[];
+};
+
 type ChatMessage = {
     id: string;
     role: Role;
@@ -29,6 +65,7 @@ type ChatMessage = {
     toolsUsed?: string[];
     source?: MessageSource;
     streaming?: boolean;
+    productCards?: ProductCard[];
 };
 
 type SseEvent = {
@@ -67,6 +104,153 @@ function nowIso() {
     return new Date().toISOString();
 }
 
+const PRODUCT_IMG_BASE = "https://api.planoassistencialintegrado.com.br/uploads/produtos/";
+
+function normalizeProductImageUrl(value?: string | null) {
+    const raw = String(value ?? "").trim();
+    if (!raw || raw === "null" || raw === "undefined") return null;
+    if (/^data:image\//i.test(raw) || /^blob:/i.test(raw) || /^https?:\/\//i.test(raw)) return raw;
+    const clean = raw.replace(/^\/+/, "");
+    if (clean.startsWith("uploads/")) return `https://api.planoassistencialintegrado.com.br/${clean}`;
+    if (clean.startsWith("uploads/produtos/")) return `https://api.planoassistencialintegrado.com.br/${clean}`;
+    if (clean.startsWith("produtos/")) return `${PRODUCT_IMG_BASE}${clean.slice("produtos/".length)}`;
+    return `${PRODUCT_IMG_BASE}${clean}`;
+}
+
+function sanitizeProductCards(value: unknown): ProductCard[] {
+    if (!Array.isArray(value)) return [];
+    const out: ProductCard[] = [];
+    const seen = new Set<number>();
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const id = Number(item.produto_id || 0);
+        const name = String(item.produto_nome || "").trim();
+        if (!Number.isFinite(id) || id <= 0 || !name || seen.has(id)) continue;
+        seen.add(id);
+        const fotos: ProductPhoto[] = Array.isArray(item.fotos)
+            ? item.fotos
+                .map((foto: any) => ({
+                    id: foto?.id == null ? null : Number(foto.id),
+                    produto_id: id,
+                    arquivo: foto?.arquivo == null ? null : String(foto.arquivo),
+                    foto_url: normalizeProductImageUrl(foto?.foto_url || foto?.arquivo || null),
+                    legenda: foto?.legenda == null ? null : String(foto.legenda),
+                    ordem: Number(foto?.ordem || 0),
+                    is_principal: Number(foto?.is_principal || 0),
+                }))
+                .filter((foto: ProductPhoto) => Boolean(foto.foto_url))
+            : [];
+        const fallback = normalizeProductImageUrl(item.foto_url || null);
+        if (fallback && !fotos.some((foto) => foto.foto_url === fallback)) {
+            fotos.unshift({ produto_id: id, foto_url: fallback, ordem: 0, is_principal: 1 });
+        }
+        fotos.sort((a, b) => {
+            const pa = Number(a.is_principal || 0) === 1 ? 0 : 1;
+            const pb = Number(b.is_principal || 0) === 1 ? 0 : 1;
+            if (pa !== pb) return pa - pb;
+            return Number(a.ordem || 0) - Number(b.ordem || 0);
+        });
+        out.push({
+            produto_id: id,
+            produto_nome: name,
+            descricao: item.descricao == null ? null : String(item.descricao),
+            codigo_barras: item.codigo_barras == null ? null : String(item.codigo_barras),
+            valor: item.valor == null || !Number.isFinite(Number(item.valor)) ? null : Number(item.valor),
+            valor_formatado: item.valor_formatado == null ? null : String(item.valor_formatado),
+            preco_custo: item.preco_custo == null || !Number.isFinite(Number(item.preco_custo)) ? null : Number(item.preco_custo),
+            preco_custo_formatado: item.preco_custo_formatado == null ? null : String(item.preco_custo_formatado),
+            categoria: item.categoria == null ? null : String(item.categoria),
+            classificacao: item.classificacao == null ? null : String(item.classificacao),
+            fabricante: item.fabricante == null ? null : String(item.fabricante),
+            quantidade_total: Number.isFinite(Number(item.quantidade_total)) ? Number(item.quantidade_total) : 0,
+            foto_url: fotos[0]?.foto_url || fallback,
+            fotos,
+            depositos: Array.isArray(item.depositos) ? item.depositos : [],
+        });
+    }
+    return out;
+}
+
+function moneyBRL(value?: number | null, formatted?: string | null) {
+    if (formatted?.trim()) return formatted.trim();
+    if (value == null || !Number.isFinite(Number(value))) return null;
+    try {
+        return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
+    } catch {
+        return `R$ ${Number(value).toFixed(2).replace(".", ",")}`;
+    }
+}
+
+function ProductCardView({ product }: { product: ProductCard }) {
+    const photos = useMemo(() => {
+        const list = Array.isArray(product.fotos) ? product.fotos.filter((f) => Boolean(f.foto_url)) : [];
+        if (!list.length && product.foto_url) return [{ produto_id: product.produto_id, foto_url: product.foto_url, is_principal: 1 } as ProductPhoto];
+        return list;
+    }, [product]);
+    const [active, setActive] = useState(0);
+    useEffect(() => setActive(0), [product.produto_id]);
+    const current = photos[Math.min(active, Math.max(0, photos.length - 1))];
+    const price = moneyBRL(product.valor, product.valor_formatado);
+    const stock = Number(product.quantidade_total || 0);
+
+    return (
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70">
+            {current?.foto_url ? (
+                <a href={current.foto_url} target="_blank" rel="noreferrer" className="block bg-white">
+                    <img
+                        src={current.foto_url}
+                        alt={current.legenda || product.produto_nome}
+                        className="max-h-[360px] w-full object-contain p-2"
+                        loading="lazy"
+                    />
+                </a>
+            ) : null}
+
+            {photos.length > 1 ? (
+                <div className="flex gap-2 overflow-x-auto border-t border-slate-200 bg-white p-2">
+                    {photos.slice(0, 8).map((photo, index) => (
+                        <button
+                            key={`${product.produto_id}-photo-${photo.id ?? index}`}
+                            type="button"
+                            onClick={() => setActive(index)}
+                            className={[
+                                "h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-white",
+                                index === active ? "border-sky-500 ring-2 ring-sky-100" : "border-slate-200",
+                            ].join(" ")}
+                            title={photo.legenda || `Foto ${index + 1}`}
+                        >
+                            <img src={photo.foto_url || ""} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        </button>
+                    ))}
+                </div>
+            ) : null}
+
+            <div className="space-y-2 p-3 text-left">
+                <div className="font-semibold text-slate-950">{product.produto_nome}</div>
+                {price ? <div className="text-base font-semibold text-emerald-700">{price}</div> : null}
+                <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600">
+                    {product.fabricante ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">{product.fabricante}</span> : null}
+                    {product.categoria ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">{product.categoria}</span> : null}
+                    {product.classificacao ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">{product.classificacao}</span> : null}
+                    <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">Estoque: {stock.toLocaleString("pt-BR")}</span>
+                </div>
+                {product.descricao ? <p className="text-xs leading-5 text-slate-600">{product.descricao}</p> : null}
+                {product.codigo_barras ? <div className="text-[11px] text-slate-500">Código: {product.codigo_barras}</div> : null}
+            </div>
+        </div>
+    );
+}
+
+function ProductCards({ products }: { products?: ProductCard[] }) {
+    if (!products?.length) return null;
+    return (
+        <div className="mt-3 space-y-3">
+            {products.map((product) => <ProductCardView key={product.produto_id} product={product} />)}
+        </div>
+    );
+}
+
 function loadStoredMessages(): ChatMessage[] {
     if (typeof window === "undefined") return [];
     try {
@@ -88,6 +272,7 @@ function loadStoredMessages(): ChatMessage[] {
                 content: String(item.content),
                 createdAt: String(item.createdAt || nowIso()),
                 toolsUsed: Array.isArray(item.toolsUsed) ? item.toolsUsed.map(String) : undefined,
+                productCards: sanitizeProductCards(item.productCards),
                 source: item.source === "audio" ? "audio" : "text",
                 streaming: false,
             }));
@@ -431,6 +616,7 @@ export default function AuroraPage() {
     const realtimeInputSeenRef = useRef<Set<string>>(new Set());
     const realtimeAssistantIdsRef = useRef<Map<string, string>>(new Map());
     const realtimeToolsRef = useRef<Set<string>>(new Set());
+    const realtimeProductCardsRef = useRef<ProductCard[]>([]);
     const realtimeClosingRef = useRef(false);
 
     useEffect(() => {
@@ -668,6 +854,7 @@ export default function AuroraPage() {
         abortRef.current = controller;
         let finalText = "";
         let finalTools: string[] = [];
+        let finalProductCards: ProductCard[] = [];
         let streamError = "";
 
         try {
@@ -701,12 +888,12 @@ export default function AuroraPage() {
                     finalText += delta;
                     updateMessage(assistantId, (m) => ({ ...m, content: finalText }));
                 } else if (event === "meta") {
-                    if (Array.isArray(data?.tools_used)) {
-                        finalTools = data.tools_used.map(String);
-                        updateMessage(assistantId, (m) => ({ ...m, toolsUsed: finalTools }));
-                    }
+                    if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
+                    if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
+                    updateMessage(assistantId, (m) => ({ ...m, toolsUsed: finalTools, productCards: finalProductCards }));
                 } else if (event === "done") {
                     if (Array.isArray(data?.tools_used)) finalTools = data.tools_used.map(String);
+                    if (Array.isArray(data?.product_cards)) finalProductCards = sanitizeProductCards(data.product_cards);
                 } else if (event === "error") {
                     streamError = String(data?.msg || "Falha na resposta em streaming.");
                     throw new Error(streamError);
@@ -720,6 +907,7 @@ export default function AuroraPage() {
                 content: finalText,
                 createdAt: assistantPlaceholder.createdAt,
                 toolsUsed: finalTools,
+                productCards: finalProductCards,
                 source: "text",
                 streaming: false,
             };
@@ -754,7 +942,10 @@ export default function AuroraPage() {
         const json = await response.json().catch(() => null);
         if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
         if (!response.ok || !json?.ok) throw new Error(json?.msg || `Falha na consulta ${name}.`);
-        return json.result;
+        return {
+            result: json.result,
+            productCards: sanitizeProductCards(json?.product_cards),
+        };
     }
 
     async function handleRealtimeEvent(event: any) {
@@ -762,6 +953,7 @@ export default function AuroraPage() {
 
         if (type === "input_audio_buffer.speech_started") {
             realtimeToolsRef.current.clear();
+            realtimeProductCardsRef.current = [];
             setRealtimeState("listening");
             return;
         }
@@ -801,6 +993,7 @@ export default function AuroraPage() {
                     content: "",
                     createdAt: nowIso(),
                     toolsUsed: Array.from(realtimeToolsRef.current),
+                    productCards: realtimeProductCardsRef.current,
                     source: "audio",
                     streaming: true,
                 });
@@ -809,6 +1002,7 @@ export default function AuroraPage() {
                 ...m,
                 content: m.content + delta,
                 toolsUsed: Array.from(realtimeToolsRef.current),
+                productCards: realtimeProductCardsRef.current,
             }));
             return;
         }
@@ -821,6 +1015,7 @@ export default function AuroraPage() {
                 ...m,
                 content: transcript || m.content,
                 toolsUsed: Array.from(realtimeToolsRef.current),
+                productCards: realtimeProductCardsRef.current,
                 streaming: false,
             }));
             return;
@@ -841,8 +1036,12 @@ export default function AuroraPage() {
                             args = {};
                         }
                         realtimeToolsRef.current.add(name);
-                        const result = await callRealtimeTool(name, args);
-                        return { callId, result };
+                        const toolResponse = await callRealtimeTool(name, args);
+                        if (toolResponse.productCards.length) {
+                            const merged = sanitizeProductCards([...realtimeProductCardsRef.current, ...toolResponse.productCards]);
+                            realtimeProductCardsRef.current = merged;
+                        }
+                        return { callId, result: toolResponse.result };
                     }),
                 );
 
@@ -1117,7 +1316,12 @@ export default function AuroraPage() {
                                             {isUser ? (
                                                 <div className="whitespace-pre-wrap">{message.content}</div>
                                             ) : message.content ? (
-                                                <AssistantContent content={message.content} />
+                                                <>
+                                                    <AssistantContent content={message.content} />
+                                                    <ProductCards products={message.productCards} />
+                                                </>
+                                            ) : message.productCards?.length ? (
+                                                <ProductCards products={message.productCards} />
                                             ) : (
                                                 <div className="flex items-center gap-1.5 py-1">
                                                     <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.25s]" />
