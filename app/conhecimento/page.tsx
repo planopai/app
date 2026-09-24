@@ -215,10 +215,23 @@ function inputDateTime(value?: string | null) {
     return normalized;
 }
 
-async function apiJson<T = any>(action: string, options?: RequestInit): Promise<T> {
-    const separator = API_URL.includes("?") ? "&" : "?";
-    const url = `${API_URL}${separator}action=${encodeURIComponent(action)}&_=${Date.now()}`;
-    const response = await fetch(url, {
+async function apiJson<T = any>(
+    action: string,
+    options?: RequestInit,
+    params?: Record<string, string | number | boolean | null | undefined>,
+): Promise<T> {
+    const search = new URLSearchParams({
+        action,
+        _: String(Date.now()),
+    });
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") {
+            search.set(key, String(value));
+        }
+    });
+
+    const response = await fetch(`${API_URL}?${search.toString()}`, {
         credentials: "include",
         cache: "no-store",
         ...options,
@@ -227,13 +240,21 @@ async function apiJson<T = any>(action: string, options?: RequestInit): Promise<
             ...(options?.headers || {}),
         },
     });
+
     const data = await response.json().catch(() => null);
+
     if (response.status === 401 || data?.need_login) {
         throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
     }
+
     if (!response.ok || !data?.ok) {
-        throw new Error(data?.msg || `Falha na Base de Conhecimento (HTTP ${response.status}).`);
+        const suffix = data?.error_id ? ` (código ${data.error_id})` : "";
+        const debug = data?.debug ? ` — ${String(data.debug)}` : "";
+        throw new Error(
+            `${data?.msg || `Falha na Base de Conhecimento (HTTP ${response.status}).`}${suffix}${debug}`,
+        );
     }
+
     return data as T;
 }
 
@@ -390,10 +411,13 @@ export default function KnowledgeBasePage() {
         if (departmentFilter) params.set("departamento_id", departmentFilter);
         if (natureFilter) params.set("natureza_id", natureFilter);
         if (statusFilter) params.set("status", statusFilter);
-        const response = await fetch(`${API_URL}?${params.toString()}`, { credentials: "include", cache: "no-store" });
-        const data = await response.json().catch(() => null);
-        if (response.status === 401 || data?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-        if (!response.ok || !data?.ok) throw new Error(data?.msg || "Não foi possível carregar os conhecimentos.");
+        const data = await apiJson<any>("documentos", undefined, {
+            limite: 100,
+            q: search.trim() || undefined,
+            departamento_id: departmentFilter || undefined,
+            natureza_id: natureFilter || undefined,
+            status: statusFilter || undefined,
+        });
         setDocuments(Array.isArray(data.items) ? data.items : []);
         setDocumentsTotal(numberValue(data.total));
     }, [search, departmentFilter, natureFilter, statusFilter]);
@@ -448,7 +472,7 @@ export default function KnowledgeBasePage() {
         setSelectedAlerts([]);
         setSelectedHistory([]);
         try {
-            const data = await apiJson<any>(`documento&id=${id}`);
+            const data = await apiJson<any>("documento", undefined, { id });
             setSelectedDocument(data.documento || null);
             setSelectedChunks(Array.isArray(data.trechos) ? data.trechos : []);
             setSelectedAlerts(Array.isArray(data.alertas) ? data.alertas : []);
