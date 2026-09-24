@@ -1655,24 +1655,38 @@ export default function AuroraPage() {
     }
 
 
-    async function prepareVehicleAction(flow: OperationalFlowCard, vehicle: VehicleOption) {
+    async function prepareOperationalAction(
+        flow: OperationalFlowCard,
+        vehicle?: VehicleOption,
+    ) {
         if (loadingRef.current) return;
+
         const attendance = flow.attendance;
         const action = flow.action;
-        if (!attendance || !action?.phase || !vehicle.id) return;
+        if (!attendance || !action?.phase) return;
 
-        const active = readTelemetrySnapshot();
-        if (active) {
-            const activeId = String(active.id ?? active.sepultamento_id ?? "");
-            if (activeId && activeId !== String(attendance.id)) {
-                setError(`Já existe um deslocamento em andamento para outro atendimento (${active.falecido || activeId}). Finalize-o antes de iniciar outro.`);
-                return;
+        if (action.vehicle_required && !vehicle?.id) {
+            setError("Selecione o veículo antes de continuar.");
+            return;
+        }
+
+        if (action.vehicle_required) {
+            const active = readTelemetrySnapshot();
+            if (active) {
+                const activeId = String(active.id ?? active.sepultamento_id ?? "");
+                if (activeId && activeId !== String(attendance.id)) {
+                    setError(
+                        `Já existe um deslocamento em andamento para outro atendimento (${active.falecido || activeId}). Finalize-o antes de iniciar outro.`,
+                    );
+                    return;
+                }
             }
         }
 
         setError("");
         loadingRef.current = true;
         setLoading(true);
+
         try {
             const response = await fetch(`${CHAT_API}?action=prepare-operational&_=${Date.now()}`, {
                 method: "POST",
@@ -1682,21 +1696,37 @@ export default function AuroraPage() {
                 body: JSON.stringify({
                     attendance_id: attendance.id,
                     phase: action.phase,
-                    vehicle_id: vehicle.id,
+                    ...(vehicle?.id ? { vehicle_id: vehicle.id } : {}),
                 }),
             });
+
             const json = (await response.json().catch(() => null)) as
-                | { ok?: boolean; msg?: string; reply?: string; need_login?: 1; pending_actions?: unknown }
+                | {
+                    ok?: boolean;
+                    msg?: string;
+                    reply?: string;
+                    need_login?: 1;
+                    pending_actions?: unknown;
+                }
                 | null;
-            if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
-            if (!response.ok || !json?.ok) throw new Error(json?.msg || "Não foi possível preparar esta ação.");
+
+            if (response.status === 401 || json?.need_login) {
+                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            }
+            if (!response.ok || !json?.ok) {
+                throw new Error(json?.msg || "Não foi possível preparar esta ação.");
+            }
 
             const pendingActions = sanitizePendingActions(json.pending_actions);
-            if (!pendingActions.length) throw new Error("O servidor não devolveu a confirmação da ação.");
+            if (!pendingActions.length) {
+                throw new Error("O servidor não devolveu a confirmação da ação.");
+            }
 
+            // Remove o card antigo para não duplicar a mesma próxima ação.
             removeOperationalFlowEverywhere(flow.id);
+
             appendMessage({
-                id: makeId("assistant-vehicle"),
+                id: makeId("assistant-operational"),
                 role: "assistant",
                 content: json.reply || "Confirme a ação.",
                 createdAt: nowIso(),
@@ -2095,11 +2125,8 @@ export default function AuroraPage() {
                                                         flows={message.operationalFlows}
                                                         disabled={loading || transcribing || recording}
                                                         onChooseAttendance={(choice) => void sendMessage(`Quero realizar uma ação no atendimento #${choice.id} - ${choice.falecido}`)}
-                                                        onChooseAction={(flow) => {
-                                                            const command = flow.action?.command;
-                                                            if (command) void sendMessage(command);
-                                                        }}
-                                                        onChooseVehicleAction={(flow, vehicle) => prepareVehicleAction(flow, vehicle)}
+                                                        onChooseAction={(flow) => void prepareOperationalAction(flow)}
+                                                        onChooseVehicleAction={(flow, vehicle) => prepareOperationalAction(flow, vehicle)}
                                                     />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
@@ -2121,11 +2148,8 @@ export default function AuroraPage() {
                                                         flows={message.operationalFlows}
                                                         disabled={loading || transcribing || recording}
                                                         onChooseAttendance={(choice) => void sendMessage(`Quero realizar uma ação no atendimento #${choice.id} - ${choice.falecido}`)}
-                                                        onChooseAction={(flow) => {
-                                                            const command = flow.action?.command;
-                                                            if (command) void sendMessage(command);
-                                                        }}
-                                                        onChooseVehicleAction={(flow, vehicle) => prepareVehicleAction(flow, vehicle)}
+                                                        onChooseAction={(flow) => void prepareOperationalAction(flow)}
+                                                        onChooseVehicleAction={(flow, vehicle) => prepareOperationalAction(flow, vehicle)}
                                                     />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
