@@ -87,7 +87,7 @@ export const steps = [
         ],
     },
     {
-        label: "Local do Velório",
+        label: "Local da Cerimônia",
         id: "local_velorio",
         type: "datalist",
         placeholder: "Digite ou escolha",

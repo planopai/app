@@ -2665,7 +2665,7 @@ export default function Wizard({
                         return (
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">
-                                    Velório Online {obrigatoriedadeAtiva && <span className="text-red-600">*</span>}
+                                    {step.label} {obrigatoriedadeAtiva && <span className="text-red-600">*</span>}
                                 </label>
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
