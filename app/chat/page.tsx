@@ -1603,9 +1603,13 @@ export default function AuroraPage() {
     const [recording, setRecording] = useState(false);
     const [transcribing, setTranscribing] = useState(false);
     const [recordingSeconds, setRecordingSeconds] = useState(0);
+    const [keyboardOpen, setKeyboardOpen] = useState(false);
+    const [keyboardInset, setKeyboardInset] = useState(0);
+    const [composerHeight, setComposerHeight] = useState(96);
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const composerRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
     const messagesRef = useRef<ChatMessage[]>([]);
     const loadingRef = useRef(false);
@@ -1636,6 +1640,54 @@ export default function AuroraPage() {
     useEffect(() => {
         loadingRef.current = loading;
     }, [loading]);
+
+    // Mantém o compositor preso à base da tela, como em apps de mensagem.
+    // O deslocamento só muda quando o teclado virtual realmente ocupa a tela.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const vv = window.visualViewport;
+        if (!vv) return;
+
+        let raf = 0;
+        const updateKeyboardInset = () => {
+            window.cancelAnimationFrame(raf);
+            raf = window.requestAnimationFrame(() => {
+                const layoutHeight = window.innerHeight;
+                const occluded = Math.max(0, Math.round(layoutHeight - vv.height));
+                const isKeyboard = occluded >= 120;
+                setKeyboardOpen(isKeyboard);
+                setKeyboardInset(isKeyboard ? occluded : 0);
+            });
+        };
+
+        updateKeyboardInset();
+        vv.addEventListener("resize", updateKeyboardInset);
+        window.addEventListener("orientationchange", updateKeyboardInset);
+
+        return () => {
+            window.cancelAnimationFrame(raf);
+            vv.removeEventListener("resize", updateKeyboardInset);
+            window.removeEventListener("orientationchange", updateKeyboardInset);
+        };
+    }, []);
+
+    // Reserva espaço para que a última mensagem nunca fique escondida atrás
+    // do compositor fixo. ResizeObserver acompanha textarea e sugestões.
+    useEffect(() => {
+        const el = composerRef.current;
+        if (!el) return;
+
+        const updateComposerHeight = () => {
+            const next = Math.max(72, Math.ceil(el.getBoundingClientRect().height));
+            setComposerHeight(next);
+        };
+
+        updateComposerHeight();
+        if (typeof ResizeObserver === "undefined") return;
+        const observer = new ResizeObserver(updateComposerHeight);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -2329,7 +2381,10 @@ export default function AuroraPage() {
                 </div>
             </header>
 
-            <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-3 sm:px-6">
+            <main
+                className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-3 sm:px-6"
+                style={{ paddingBottom: `${composerHeight + 12}px`, scrollPaddingBottom: `${composerHeight + 20}px` }}
+            >
                 {!hydrated ? (
                     <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-400">Carregando chat...</div>
                 ) : messages.length === 0 ? (
@@ -2448,9 +2503,13 @@ export default function AuroraPage() {
                 )}
             </main>
 
-            <div className="sticky bottom-0 z-20 border-t border-slate-200/70 bg-slate-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+            <div
+                ref={composerRef}
+                className="fixed inset-x-0 z-40 border-t border-slate-200/70 bg-slate-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl"
+                style={{ bottom: `${keyboardInset}px` }}
+            >
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
-                    {messages.length > 0 && !loading ? (
+                    {messages.length > 0 && !loading && !keyboardOpen ? (
                         <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             {QUICK_PROMPTS.slice(0, 4).map((prompt) => (
                                 <button
@@ -2486,7 +2545,7 @@ export default function AuroraPage() {
                                     rows={1}
                                     maxLength={5000}
                                     placeholder={transcribing ? "Entendendo o áudio..." : loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
-                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
+                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60"
                                 />
                             )}
 
@@ -2532,10 +2591,6 @@ export default function AuroraPage() {
                             )}
                         </div>
                     </form>
-
-                    <div className="mt-2 text-center text-[10px] text-slate-400 sm:text-xs">
-                        Segure o microfone para falar e solte para enviar. A Aurora entende o áudio e responde apenas em texto. Ações de escrita continuam exigindo confirmação explícita.
-                    </div>
                 </div>
             </div>
         </div>
