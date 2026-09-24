@@ -1605,6 +1605,8 @@ type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: St
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
 const STATUS_STEP_DEFS: StatusStepInfo[] = [
+    // Resposta ao chamado: do cadastro até "Indo Retirar o Óbito" (fase01). Conta como tempo ocioso.
+    { key: "aguardando", label: "Aguardando Remoção", shortLabel: "Aguard.", icon: "hourglass" },
     { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
     { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "timer" },
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
@@ -1682,12 +1684,13 @@ function formatDurationMs(msRaw: number): string {
 }
 
 const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
-const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase12", "fase07"]);
+const STATUS_IDLE_KEYS = new Set(["aguardando", "fase02", "fase04", "fase06", "fase12", "fase07"]);
 
 // Ordem operacional real. A fase12 (Corpo Pronto) acontece antes da fase07.
 // Este ranking é usado somente para impedir regressões visuais causadas por
 // resposta antiga, cache intermediário ou indisponibilidade temporária dos logs.
 const STATUS_FLOW_ORDER = [
+    "aguardando",
     "fase01",
     "fase02",
     "fase03",
@@ -1788,11 +1791,12 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
         .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
         .sort((a, b) => a.ts - b.ts);
 
-    const unique: { key: string; ts: number }[] = [{ key: "fase01", ts: createdTs }];
+    // O atendimento nasce em "aguardando" (resposta ao chamado). Esse intervalo, até a
+    // fase01 "Indo Retirar o Óbito", é tempo ocioso e não entra no tempo de Remoção.
+    const unique: { key: string; ts: number }[] = [{ key: "aguardando", ts: createdTs }];
 
     for (const ev of statusEvents) {
         if (ev.ts < createdTs) continue;
-        if (ev.key === "fase01") continue;
 
         const last = unique[unique.length - 1];
         if (last?.key === ev.key) continue;
@@ -1817,7 +1821,7 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
     const effectiveCurrentKey =
         currentKey && currentRank >= lastKnownRank
             ? currentKey
-            : lastKnown?.key || currentKey || "fase01";
+            : lastKnown?.key || currentKey || "aguardando";
 
     if (effectiveCurrentKey && lastKnown?.key !== effectiveCurrentKey) {
         const explicitStatusTs = getRegistroStatusUpdatedTs(registro, createdTs, nowMs);
@@ -4279,6 +4283,10 @@ function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
     // Velório explicitamente marcado como "Não".
     // Campo vazio/NULL continua preservando a compatibilidade dos registros legados.
     if (stepKey === "fase08") return isNao(registro.realiza_velorio);
+
+    // Sepultamento explicitamente marcado como "Não".
+    // Campo vazio/NULL continua preservando a compatibilidade dos registros legados.
+    if (stepKey === "fase09") return isNao(registro.realiza_sepultamento);
 
     // Assistência (materiais) explicitamente marcada como "Não":
     // a etapa visual de Material Recolhido não se aplica.
