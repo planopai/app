@@ -11,7 +11,7 @@ import React, {
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
 const TELEMETRIA_URL = "https://api.planoassistencialintegrado.com.br/telemetria.php";
-const STORAGE_KEY = "pai-aurora-v3-vehicle-flow";
+const STORAGE_KEY = "pai-aurora-v4-editing";
 const MAX_HISTORY_TO_API = 8;
 
 type Role = "user" | "assistant";
@@ -72,7 +72,7 @@ type ExportCard = {
     expires_at?: string | null;
 };
 
-type PendingActionKind = "novo_atendimento" | "requisicao_material" | "atendimento_fase";
+type PendingActionKind = "novo_atendimento" | "requisicao_material" | "atendimento_fase" | "editar_atendimento";
 type PendingActionStatus = "pending" | "executing" | "completed" | "cancelled" | "error";
 
 type PendingActionDetail = {
@@ -150,6 +150,31 @@ type OperationalExecutionResult = {
     fase?: string | null;
 };
 
+type AttendanceEditField = {
+    key: string;
+    label: string;
+    type: "text" | "textarea" | "date" | "time" | "select";
+    required: boolean;
+    value?: string;
+    options?: string[];
+};
+
+type AttendanceEditSummary = {
+    key: string;
+    label: string;
+    value: string;
+};
+
+type AttendanceEditForm = {
+    id: string;
+    attendance_id: number;
+    falecido: string;
+    title: string;
+    summary: AttendanceEditSummary[];
+    fields: AttendanceEditField[];
+    base_changes: Record<string, unknown>;
+};
+
 type ChatMessage = {
     id: string;
     role: Role;
@@ -162,6 +187,7 @@ type ChatMessage = {
     exportCards?: ExportCard[];
     pendingActions?: PendingAction[];
     operationalFlows?: OperationalFlowCard[];
+    editForms?: AttendanceEditForm[];
 };
 
 type SseEvent = {
@@ -183,6 +209,7 @@ const QUICK_PROMPTS = [
 const TOOL_LABELS: Record<string, string> = {
     gerenciar_acao_atendimento: "Ação em atendimento",
     preparar_novo_atendimento: "Novo atendimento",
+    preparar_edicao_atendimento: "Editar atendimento",
     preparar_requisicao_material: "Requisição",
     consultar_atendimentos: "Atendimentos",
     detalhar_atendimento: "Atendimentos",
@@ -534,7 +561,7 @@ function sanitizePendingActions(value: unknown): PendingAction[] {
     if (!Array.isArray(value)) return [];
 
     const out: PendingAction[] = [];
-    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material", "atendimento_fase"]);
+    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material", "atendimento_fase", "editar_atendimento"]);
     const allowedStatuses = new Set<PendingActionStatus>(["pending", "executing", "completed", "cancelled", "error"]);
 
     for (const raw of value) {
@@ -673,7 +700,7 @@ function PendingActionCards({
                                                 : "bg-amber-100 text-amber-700",
                                     ].join(" ")}
                                 >
-                                    {action.kind === "novo_atendimento" ? "ATD" : action.kind === "atendimento_fase" ? "AÇÃO" : "REQ"}
+                                    {action.kind === "novo_atendimento" ? "ATD" : action.kind === "atendimento_fase" ? "AÇÃO" : action.kind === "editar_atendimento" ? "EDIT" : "REQ"}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
@@ -771,6 +798,164 @@ function PendingActionCards({
     );
 }
 
+
+function sanitizeEditForms(value: unknown): AttendanceEditForm[] {
+    if (!Array.isArray(value)) return [];
+    const out: AttendanceEditForm[] = [];
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const id = String(item.id || "").trim();
+        const attendanceId = Number(item.attendance_id || 0);
+        if (!id || attendanceId <= 0) continue;
+        const fields: AttendanceEditField[] = Array.isArray(item.fields)
+            ? item.fields.map((field: any) => ({
+                key: String(field?.key || "").trim(),
+                label: String(field?.label || field?.key || "").trim(),
+                type: (["text", "textarea", "date", "time", "select"].includes(String(field?.type)) ? String(field.type) : "text") as AttendanceEditField["type"],
+                required: Boolean(field?.required),
+                value: field?.value == null ? "" : String(field.value),
+                options: Array.isArray(field?.options) ? field.options.map(String).filter(Boolean) : [],
+            })).filter((field: AttendanceEditField) => field.key && field.label)
+            : [];
+        const summary: AttendanceEditSummary[] = Array.isArray(item.summary)
+            ? item.summary.map((s: any) => ({ key: String(s?.key || ""), label: String(s?.label || ""), value: String(s?.value ?? "") })).filter((s: AttendanceEditSummary) => s.key && s.label)
+            : [];
+        out.push({
+            id,
+            attendance_id: attendanceId,
+            falecido: String(item.falecido || "").trim(),
+            title: String(item.title || "Completar dados da alteração").trim(),
+            summary,
+            fields,
+            base_changes: item.base_changes && typeof item.base_changes === "object" ? item.base_changes : {},
+        });
+    }
+    return out.slice(0, 3);
+}
+
+function AttendanceEditFormCard({
+    form,
+    disabled,
+    onSubmit,
+}: {
+    form: AttendanceEditForm;
+    disabled?: boolean;
+    onSubmit: (form: AttendanceEditForm, values: Record<string, unknown>) => Promise<void> | void;
+}) {
+    const initial = useMemo(() => {
+        const base: Record<string, string> = {};
+        for (const field of form.fields) base[field.key] = field.value || "";
+        return base;
+    }, [form.id, form.fields]);
+    const [values, setValues] = useState<Record<string, string>>(initial);
+    const [busy, setBusy] = useState(false);
+    const [localError, setLocalError] = useState("");
+
+    useEffect(() => {
+        setValues(initial);
+        setLocalError("");
+        setBusy(false);
+    }, [form.id, initial]);
+
+    async function submit() {
+        if (busy || disabled) return;
+        for (const field of form.fields) {
+            if (field.required && !String(values[field.key] || "").trim()) {
+                setLocalError(`Informe ${field.label.toLowerCase()}.`);
+                return;
+            }
+        }
+        setLocalError("");
+        setBusy(true);
+        try {
+            await onSubmit(form, { ...form.base_changes, ...values });
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <div className="mt-3 overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/50">
+            <div className="p-4">
+                <div className="text-sm font-semibold text-slate-950">{form.title}</div>
+                <div className="mt-0.5 text-xs text-slate-500">{form.falecido || `Atendimento #${form.attendance_id}`}</div>
+
+                {form.summary.length ? (
+                    <div className="mt-3 grid gap-1.5 rounded-xl bg-white p-3 ring-1 ring-slate-200">
+                        {form.summary.map((item) => (
+                            <div key={`${form.id}-summary-${item.key}`} className="grid grid-cols-[minmax(110px,0.45fr)_1fr] gap-3 text-xs">
+                                <span className="text-slate-500">{item.label}</span>
+                                <span className="font-medium text-slate-800">{item.value || "Não informado"}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : null}
+
+                <div className="mt-3 grid gap-3">
+                    {form.fields.map((field) => (
+                        <label key={`${form.id}-${field.key}`} className="block">
+                            <span className="mb-1 block text-xs font-medium text-slate-700">
+                                {field.label}{field.required ? " *" : ""}
+                            </span>
+                            {field.type === "textarea" ? (
+                                <textarea
+                                    value={values[field.key] || ""}
+                                    onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                                    disabled={disabled || busy}
+                                    rows={3}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60 sm:text-sm"
+                                />
+                            ) : field.type === "select" ? (
+                                <select
+                                    value={values[field.key] || ""}
+                                    onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                                    disabled={disabled || busy}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60 sm:text-sm"
+                                >
+                                    <option value="">Selecione</option>
+                                    {(field.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                            ) : (
+                                <input
+                                    type={field.type}
+                                    value={values[field.key] || ""}
+                                    onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                                    disabled={disabled || busy}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60 sm:text-sm"
+                                />
+                            )}
+                        </label>
+                    ))}
+                </div>
+
+                {localError ? <div className="mt-3 text-xs font-medium text-red-600">{localError}</div> : null}
+
+                <button
+                    type="button"
+                    onClick={() => void submit()}
+                    disabled={disabled || busy}
+                    className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {busy ? "Preparando..." : "Revisar alterações"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function AttendanceEditForms({
+    forms,
+    disabled,
+    onSubmit,
+}: {
+    forms?: AttendanceEditForm[];
+    disabled?: boolean;
+    onSubmit: (form: AttendanceEditForm, values: Record<string, unknown>) => Promise<void> | void;
+}) {
+    if (!forms?.length) return null;
+    return <div className="mt-3 space-y-3">{forms.map((form) => <AttendanceEditFormCard key={form.id} form={form} disabled={disabled} onSubmit={onSubmit} />)}</div>;
+}
 
 function sanitizeOperationalFlows(value: unknown): OperationalFlowCard[] {
     if (!Array.isArray(value)) return [];
@@ -1171,6 +1356,7 @@ function loadStoredMessages(): ChatMessage[] {
                 exportCards: sanitizeExportCards(item.exportCards),
                 pendingActions: sanitizePendingActions(item.pendingActions),
                 operationalFlows: sanitizeOperationalFlows(item.operationalFlows),
+                editForms: sanitizeEditForms(item.editForms),
                 streaming: false,
             }));
     } catch {
@@ -1741,6 +1927,59 @@ export default function AuroraPage() {
         }
     }
 
+    function removeEditFormEverywhere(formId: string) {
+        const next = messagesRef.current.map((message) => {
+            if (!message.editForms?.length) return message;
+            const editForms = message.editForms.filter((form) => form.id !== formId);
+            return editForms.length === message.editForms.length ? message : { ...message, editForms };
+        });
+        commitMessages(next);
+    }
+
+    async function prepareAttendanceEdit(form: AttendanceEditForm, values: Record<string, unknown>) {
+        if (loadingRef.current) return;
+        setError("");
+        loadingRef.current = true;
+        setLoading(true);
+        try {
+            const response = await fetch(`${CHAT_API}?action=prepare-edit&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ attendance_id: form.attendance_id, changes: values }),
+            });
+            const json = (await response.json().catch(() => null)) as {
+                ok?: boolean;
+                msg?: string;
+                reply?: string;
+                need_login?: 1;
+                pending_actions?: unknown;
+                edit_forms?: unknown;
+            } | null;
+            if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            if (!response.ok || !json?.ok) throw new Error(json?.msg || "Não foi possível preparar a alteração.");
+
+            const pendingActions = sanitizePendingActions(json.pending_actions);
+            const editForms = sanitizeEditForms(json.edit_forms);
+            removeEditFormEverywhere(form.id);
+            appendMessage({
+                id: makeId("assistant-edit"),
+                role: "assistant",
+                content: json.reply || (pendingActions.length ? "Revise e confirme as alterações." : "Complete os dados abaixo."),
+                createdAt: nowIso(),
+                pendingActions,
+                editForms,
+                streaming: false,
+            });
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Não foi possível preparar a alteração.");
+        } finally {
+            loadingRef.current = false;
+            setLoading(false);
+        }
+    }
+
     function preferredAudioMimeType() {
         if (typeof MediaRecorder === "undefined") return "";
         const candidates = [
@@ -1934,6 +2173,7 @@ export default function AuroraPage() {
         let finalExportCards: ExportCard[] = [];
         let finalPendingActions: PendingAction[] = [];
         let finalOperationalFlows: OperationalFlowCard[] = [];
+        let finalEditForms: AttendanceEditForm[] = [];
         let streamError = "";
 
         try {
@@ -1978,6 +2218,7 @@ export default function AuroraPage() {
                     if (Array.isArray(data?.export_cards)) finalExportCards = sanitizeExportCards(data.export_cards);
                     if (Array.isArray(data?.pending_actions)) finalPendingActions = sanitizePendingActions(data.pending_actions);
                     if (Array.isArray(data?.operational_flows)) finalOperationalFlows = sanitizeOperationalFlows(data.operational_flows);
+                    if (Array.isArray(data?.edit_forms)) finalEditForms = sanitizeEditForms(data.edit_forms);
 
                     updateMessage(assistantId, (m) => ({
                         ...m,
@@ -1987,6 +2228,7 @@ export default function AuroraPage() {
                         exportCards: finalExportCards,
                         pendingActions: finalPendingActions,
                         operationalFlows: finalOperationalFlows,
+                        editForms: finalEditForms,
                     }));
                     return;
                 }
@@ -2121,6 +2363,11 @@ export default function AuroraPage() {
                                                         onConfirm={(action) => void runPendingActionFromText(action, "execute")}
                                                         onCancel={(action) => void runPendingActionFromText(action, "cancel")}
                                                     />
+                                                    <AttendanceEditForms
+                                                        forms={message.editForms}
+                                                        disabled={loading || transcribing || recording}
+                                                        onSubmit={(form, values) => prepareAttendanceEdit(form, values)}
+                                                    />
                                                     <OperationalFlowCards
                                                         flows={message.operationalFlows}
                                                         disabled={loading || transcribing || recording}
@@ -2134,7 +2381,7 @@ export default function AuroraPage() {
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
                                                 </>
-                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length) ? (
+                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length || message.editForms?.length) ? (
                                                 <>
                                                     <ProductCards products={message.productCards} />
                                                     <ExportCards cards={message.exportCards} />
@@ -2143,6 +2390,11 @@ export default function AuroraPage() {
                                                         disabled={loading || transcribing || recording}
                                                         onConfirm={(action) => void runPendingActionFromText(action, "execute")}
                                                         onCancel={(action) => void runPendingActionFromText(action, "cancel")}
+                                                    />
+                                                    <AttendanceEditForms
+                                                        forms={message.editForms}
+                                                        disabled={loading || transcribing || recording}
+                                                        onSubmit={(form, values) => prepareAttendanceEdit(form, values)}
                                                     />
                                                     <OperationalFlowCards
                                                         flows={message.operationalFlows}
@@ -2234,7 +2486,7 @@ export default function AuroraPage() {
                                     rows={1}
                                     maxLength={5000}
                                     placeholder={transcribing ? "Entendendo o áudio..." : loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
-                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
+                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
                                 />
                             )}
 
