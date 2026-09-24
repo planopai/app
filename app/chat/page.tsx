@@ -10,7 +10,8 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const STORAGE_KEY = "pai-aurora-v2-actions-ptt";
+const TELEMETRIA_URL = "https://api.planoassistencialintegrado.com.br/telemetria.php";
+const STORAGE_KEY = "pai-aurora-v3-vehicle-flow";
 const MAX_HISTORY_TO_API = 8;
 
 type Role = "user" | "assistant";
@@ -103,6 +104,14 @@ type OperationalAttendanceChoice = {
     next_label?: string | null;
 };
 
+type VehicleOption = {
+    id: string;
+    nome: string;
+    placa?: string | null;
+    label: string;
+    rastreado?: boolean;
+};
+
 type OperationalFlowCard = {
     id: string;
     kind: "attendance_list" | "next_action";
@@ -116,9 +125,29 @@ type OperationalFlowCard = {
         description?: string | null;
         executable: boolean;
         requires?: string[];
+        vehicle_required?: boolean;
+        vehicles?: VehicleOption[];
         command?: string | null;
         external_url?: string | null;
     } | null;
+};
+
+type TelemetryStart = {
+    attendance_id: number;
+    falecido?: string | null;
+    phase: string;
+    type: "remocao" | "para_velorio" | "para_sepultamento";
+    vehicle_id: string;
+    vehicle_name: string;
+    vehicle_plate?: string | null;
+    vehicle_label: string;
+    started_at?: string | null;
+};
+
+type OperationalExecutionResult = {
+    kind?: string;
+    id?: number | null;
+    fase?: string | null;
 };
 
 type ChatMessage = {
@@ -790,6 +819,18 @@ function sanitizeOperationalFlows(value: unknown): OperationalFlowCard[] {
                 description: actionRaw.description == null ? null : String(actionRaw.description),
                 executable: Boolean(actionRaw.executable),
                 requires: Array.isArray(actionRaw.requires) ? actionRaw.requires.map(String).filter(Boolean) : [],
+                vehicle_required: Boolean(actionRaw.vehicle_required),
+                vehicles: Array.isArray(actionRaw.vehicles)
+                    ? actionRaw.vehicles
+                        .map((vehicle: any) => ({
+                            id: String(vehicle?.id || "").trim(),
+                            nome: String(vehicle?.nome || "").trim(),
+                            placa: vehicle?.placa == null ? null : String(vehicle.placa).trim(),
+                            label: String(vehicle?.label || vehicle?.nome || "").trim(),
+                            rastreado: Boolean(vehicle?.rastreado),
+                        }))
+                        .filter((vehicle: VehicleOption) => vehicle.id && vehicle.nome && vehicle.label)
+                    : [],
                 command: actionRaw.command == null ? null : String(actionRaw.command),
                 external_url: actionRaw.external_url == null ? null : String(actionRaw.external_url),
             }
@@ -814,100 +855,294 @@ function OperationalFlowCards({
     disabled,
     onChooseAttendance,
     onChooseAction,
+    onChooseVehicleAction,
 }: {
     flows?: OperationalFlowCard[];
     disabled?: boolean;
     onChooseAttendance: (choice: OperationalAttendanceChoice) => void;
     onChooseAction: (flow: OperationalFlowCard) => void;
+    onChooseVehicleAction: (flow: OperationalFlowCard, vehicle: VehicleOption) => Promise<void> | void;
 }) {
+    const [vehicleFlowId, setVehicleFlowId] = useState<string | null>(null);
+    const [vehicleBusyId, setVehicleBusyId] = useState<string | null>(null);
+
     if (!flows?.length) return null;
 
     return (
         <div className="mt-3 space-y-3">
-            {flows.map((flow) => (
-                <div key={flow.id} className="overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/60">
-                    <div className="p-3.5">
-                        <div className="text-sm font-semibold text-slate-950">{flow.title}</div>
-                        {flow.description ? (
-                            <div className="mt-1 text-xs leading-5 text-slate-600">{flow.description}</div>
-                        ) : null}
-
-                        {flow.kind === "attendance_list" ? (
-                            <div className="mt-3 grid gap-2">
-                                {(flow.attendances || []).map((choice) => (
-                                    <button
-                                        key={`${flow.id}-${choice.id}`}
-                                        type="button"
-                                        disabled={disabled}
-                                        onClick={() => onChooseAttendance(choice)}
-                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        <div className="text-sm font-semibold text-slate-900">{choice.falecido}</div>
-                                        <div className="mt-0.5 text-[11px] text-slate-500">
-                                            {choice.status_label || "Aguardando"}
-                                            {choice.next_label ? ` • Próxima: ${choice.next_label}` : ""}
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : null}
-
-                        {flow.kind === "next_action" && flow.attendance ? (
-                            <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-inset ring-slate-200">
-                                <div className="text-xs text-slate-500">Atendimento</div>
-                                <div className="mt-0.5 text-sm font-semibold text-slate-900">{flow.attendance.falecido}</div>
-                                <div className="mt-2 text-xs text-slate-500">
-                                    Situação atual: <b className="text-slate-700">{flow.attendance.status_label}</b>
+            {flows.map((flow) => {
+                if (flow.kind === "attendance_list") {
+                    return (
+                        <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                            <div className="p-3.5">
+                                <div className="text-sm font-semibold text-slate-950">{flow.title || "Escolha o atendimento"}</div>
+                                <div className="mt-3 grid gap-2">
+                                    {(flow.attendances || []).map((choice) => (
+                                        <button
+                                            key={`${flow.id}-${choice.id}`}
+                                            type="button"
+                                            disabled={disabled}
+                                            onClick={() => onChooseAttendance(choice)}
+                                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <div className="text-sm font-semibold text-slate-900">{choice.falecido}</div>
+                                            <div className="mt-0.5 text-[11px] text-slate-500">{choice.status_label || "Aguardando"}</div>
+                                        </button>
+                                    ))}
+                                    {!(flow.attendances || []).length ? (
+                                        <div className="text-xs text-slate-500">Nenhum atendimento ativo.</div>
+                                    ) : null}
                                 </div>
-
-                                {flow.action ? (
-                                    <div className="mt-3">
-                                        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                            Única próxima ação disponível
-                                        </div>
-                                        {flow.action.executable && flow.action.command ? (
-                                            <button
-                                                type="button"
-                                                disabled={disabled}
-                                                onClick={() => onChooseAction(flow)}
-                                                className="w-full rounded-xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                {flow.action.label}
-                                            </button>
-                                        ) : flow.action.external_url ? (
-                                            <a
-                                                href={flow.action.external_url}
-                                                className="block w-full rounded-xl bg-amber-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700"
-                                            >
-                                                {flow.action.label}
-                                            </a>
-                                        ) : (
-                                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-                                                {flow.action.label}
-                                            </div>
-                                        )}
-
-                                        {flow.action.requires?.length ? (
-                                            <div className="mt-2 text-[11px] leading-5 text-amber-700">
-                                                Esta etapa exige: {flow.action.requires.join(", ")}.
-                                            </div>
-                                        ) : null}
-                                        {flow.action.description ? (
-                                            <div className="mt-2 text-[11px] leading-5 text-slate-500">{flow.action.description}</div>
-                                        ) : null}
-                                    </div>
-                                ) : (
-                                    <div className="mt-3 text-xs font-medium text-emerald-700">
-                                        O fluxo deste atendimento já foi concluído.
-                                    </div>
-                                )}
                             </div>
-                        ) : null}
+                        </div>
+                    );
+                }
+
+                if (!flow.attendance) return null;
+                const action = flow.action;
+                const vehicleOpen = vehicleFlowId === flow.id;
+
+                return (
+                    <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="p-3.5">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-slate-950">{flow.attendance.falecido}</div>
+                                    <div className="mt-0.5 text-xs text-slate-500">{flow.attendance.status_label || "Aguardando"}</div>
+                                </div>
+                            </div>
+
+                            {action ? (
+                                <div className="mt-3">
+                                    {action.vehicle_required ? (
+                                        <button
+                                            type="button"
+                                            disabled={disabled}
+                                            onClick={() => setVehicleFlowId(vehicleOpen ? null : flow.id)}
+                                            className="w-full rounded-xl bg-amber-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {action.label}
+                                        </button>
+                                    ) : action.executable && action.command ? (
+                                        <button
+                                            type="button"
+                                            disabled={disabled}
+                                            onClick={() => onChooseAction(flow)}
+                                            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {action.label}
+                                        </button>
+                                    ) : action.external_url ? (
+                                        <a
+                                            href={action.external_url}
+                                            className="block w-full rounded-xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                                        >
+                                            {action.label}
+                                        </a>
+                                    ) : (
+                                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                                            {action.label}
+                                        </div>
+                                    )}
+
+                                    {action.vehicle_required && vehicleOpen ? (
+                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                            <div className="mb-2 text-xs font-semibold text-slate-700">Escolha o veículo</div>
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                {(action.vehicles || []).map((vehicle) => (
+                                                    <button
+                                                        key={`${flow.id}-${vehicle.id}`}
+                                                        type="button"
+                                                        disabled={disabled || vehicleBusyId !== null}
+                                                        onClick={async () => {
+                                                            setVehicleBusyId(vehicle.id);
+                                                            try {
+                                                                await onChooseVehicleAction(flow, vehicle);
+                                                                setVehicleFlowId(null);
+                                                            } finally {
+                                                                setVehicleBusyId(null);
+                                                            }
+                                                        }}
+                                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-slate-800 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        {vehicleBusyId === vehicle.id ? "Preparando..." : vehicle.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <div className="mt-3 text-xs font-medium text-emerald-700">Fluxo concluído.</div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
+}
+
+type TelemetryQueueItem = { when: number; url: string; body: any };
+
+const TELEMETRY_ACTIVE_KEY = "tele_active_snapshot";
+const TELEMETRY_QUEUE_KEY = "telemetria_offline_queue";
+const TELEMETRY_STOP_BY_START: Record<string, string> = {
+    fase01: "fase02",
+    fase07: "fase08",
+    fase09: "fase10",
+};
+
+function normalizePlate(value?: string | null) {
+    return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7);
+}
+
+function toMysqlDateTime(date: Date) {
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function readTelemetrySnapshot(): any | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = window.localStorage.getItem(TELEMETRY_ACTIVE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+function saveTelemetrySnapshot(start: TelemetryStart) {
+    if (typeof window === "undefined") return;
+    const plate = normalizePlate(start.vehicle_plate || "");
+    const parsedStart = start.started_at ? Date.parse(start.started_at) : NaN;
+    const startTs = Number.isFinite(parsedStart) ? parsedStart : Date.now();
+    window.localStorage.setItem(TELEMETRY_ACTIVE_KEY, JSON.stringify({
+        id: String(start.attendance_id),
+        sepultamento_id: String(start.attendance_id),
+        fase: start.phase,
+        tipo: start.type,
+        veiculo: start.vehicle_label,
+        veiculo_nome: start.vehicle_name,
+        falecido: start.falecido || null,
+        placa: plate || null,
+        startTs,
+        origem_dados: plate ? "itrack" : "manual_sem_rota",
+        source_device: plate ? "rastreador" : "sem_rastreador",
+    }));
+}
+
+function clearTelemetrySnapshot() {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.removeItem(TELEMETRY_ACTIVE_KEY); } catch { }
+}
+
+function readTelemetryQueue(): TelemetryQueueItem[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = window.localStorage.getItem(TELEMETRY_QUEUE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeTelemetryQueue(items: TelemetryQueueItem[]) {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(TELEMETRY_QUEUE_KEY, JSON.stringify(items)); } catch { }
+}
+
+function enqueueTelemetry(body: any) {
+    const queue = readTelemetryQueue();
+    queue.push({ when: Date.now(), url: TELEMETRIA_URL, body });
+    writeTelemetryQueue(queue);
+}
+
+async function postTelemetry(body: any) {
+    const response = await fetch(TELEMETRIA_URL, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    const json = await response.json().catch(() => null);
+    if (!response.ok || !json?.sucesso) {
+        throw new Error(String(json?.msg || json?.erro || "Falha ao salvar telemetria."));
+    }
+    return json;
+}
+
+async function flushTelemetryQueue() {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const queue = readTelemetryQueue();
+    if (!queue.length) return;
+    const remaining: TelemetryQueueItem[] = [];
+    for (const item of queue) {
+        try {
+            await postTelemetry(item.body);
+        } catch {
+            remaining.push(item);
+        }
+    }
+    writeTelemetryQueue(remaining);
+}
+
+async function finishTelemetryIfNeeded(result?: OperationalExecutionResult | null) {
+    if (!result || result.kind !== "atendimento_fase" || !result.id || !result.fase) return false;
+    const snapshot = readTelemetrySnapshot();
+    if (!snapshot) return false;
+
+    const snapshotId = String(snapshot.id ?? snapshot.sepultamento_id ?? "");
+    if (snapshotId !== String(result.id)) return false;
+    const expectedStop = TELEMETRY_STOP_BY_START[String(snapshot.fase || "")];
+    if (!expectedStop || expectedStop !== String(result.fase)) return false;
+
+    const startTs = Number(snapshot.startTs || 0) || Date.now();
+    const endTs = Date.now();
+    const duration = Math.max(1, Math.round((endTs - startTs) / 1000));
+    const plate = normalizePlate(snapshot.placa || "");
+    const base = {
+        sepultamento_id: String(result.id),
+        tipo: snapshot.tipo || null,
+        falecido: snapshot.falecido || null,
+        veiculo_nome: snapshot.veiculo_nome || snapshot.veiculo || null,
+        placa: plate || null,
+        veiculo_obs: plate ? null : "OUTRA EMPRESA / sem rastreador",
+        inicio_ts: toMysqlDateTime(new Date(startTs)),
+        fim_ts: toMysqlDateTime(new Date(endTs)),
+        duracao_seg: duration,
+        encerrado: 1,
+    };
+    const body = plate
+        ? { acao: "inserir_itrack", ...base, source_device: "rastreador", origem_dados: "itrack" }
+        : {
+            acao: "inserir",
+            ...base,
+            distancia_km: 0,
+            vel_media_kmh: 0,
+            vel_max_kmh: 0,
+            velocidade_media: 0,
+            velocidade_max: 0,
+            amostras: 0,
+            pontos_json: [],
+            source_device: "sem_rastreador",
+            origem_dados: "manual_sem_rota",
+            observacao: "Veículo de outra empresa ou sem placa/rastreador. Registro salvo sem rota.",
+        };
+
+    try {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
+        await postTelemetry(body);
+    } catch {
+        enqueueTelemetry(body);
+    } finally {
+        clearTelemetrySnapshot();
+    }
+    return true;
 }
 
 function loadStoredMessages(): ChatMessage[] {
@@ -1201,6 +1436,10 @@ export default function AuroraPage() {
         messagesRef.current = stored;
         setMessages(stored);
         setHydrated(true);
+        void flushTelemetryQueue();
+        const onOnline = () => { void flushTelemetryQueue(); };
+        window.addEventListener("online", onOnline);
+        return () => window.removeEventListener("online", onOnline);
     }, []);
 
     useEffect(() => {
@@ -1269,6 +1508,15 @@ export default function AuroraPage() {
         commitMessages(next);
     }
 
+    function removeOperationalFlowEverywhere(flowId: string) {
+        const next = messagesRef.current.map((message) => {
+            if (!message.operationalFlows?.length) return message;
+            const operationalFlows = message.operationalFlows.filter((flow) => flow.id !== flowId);
+            return operationalFlows.length === message.operationalFlows.length ? message : { ...message, operationalFlows };
+        });
+        commitMessages(next);
+    }
+
     function latestPendingAction() {
         for (let i = messagesRef.current.length - 1; i >= 0; i--) {
             const actions = messagesRef.current[i]?.pendingActions || [];
@@ -1314,6 +1562,8 @@ export default function AuroraPage() {
                         result_label?: string | null;
                         executed_at?: string | null;
                     };
+                    result?: OperationalExecutionResult | null;
+                    telemetry_start?: TelemetryStart | null;
                 }
                 | null;
 
@@ -1337,9 +1587,19 @@ export default function AuroraPage() {
                 error: null,
             });
 
-            return String(
-                json.reply || (decision === "execute" ? "Ação concluída com sucesso." : "Ação cancelada."),
-            ).trim();
+            if (decision === "execute") {
+                if (json.telemetry_start) {
+                    saveTelemetrySnapshot(json.telemetry_start);
+                } else if (json.result) {
+                    await finishTelemetryIfNeeded(json.result);
+                }
+            }
+
+            return {
+                reply: String(json.reply || (decision === "execute" ? "Ação concluída com sucesso." : "Ação cancelada.")).trim(),
+                result: json.result || null,
+                telemetryStart: json.telemetry_start || null,
+            };
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Falha ao processar a ação.";
             updatePendingActionEverywhere(action.id, {
@@ -1376,11 +1636,11 @@ export default function AuroraPage() {
         setLoading(true);
 
         try {
-            const reply = await callPendingAction(action, decision);
+            const outcome = await callPendingAction(action, decision);
             appendMessage({
                 id: makeId("assistant-action"),
                 role: "assistant",
-                content: reply,
+                content: outcome.reply,
                 createdAt: nowIso(),
                 toolsUsed: [],
                 streaming: false,
@@ -1394,6 +1654,62 @@ export default function AuroraPage() {
         }
     }
 
+
+    async function prepareVehicleAction(flow: OperationalFlowCard, vehicle: VehicleOption) {
+        if (loadingRef.current) return;
+        const attendance = flow.attendance;
+        const action = flow.action;
+        if (!attendance || !action?.phase || !vehicle.id) return;
+
+        const active = readTelemetrySnapshot();
+        if (active) {
+            const activeId = String(active.id ?? active.sepultamento_id ?? "");
+            if (activeId && activeId !== String(attendance.id)) {
+                setError(`Já existe um deslocamento em andamento para outro atendimento (${active.falecido || activeId}). Finalize-o antes de iniciar outro.`);
+                return;
+            }
+        }
+
+        setError("");
+        loadingRef.current = true;
+        setLoading(true);
+        try {
+            const response = await fetch(`${CHAT_API}?action=prepare-operational&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    attendance_id: attendance.id,
+                    phase: action.phase,
+                    vehicle_id: vehicle.id,
+                }),
+            });
+            const json = (await response.json().catch(() => null)) as
+                | { ok?: boolean; msg?: string; reply?: string; need_login?: 1; pending_actions?: unknown }
+                | null;
+            if (response.status === 401 || json?.need_login) throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            if (!response.ok || !json?.ok) throw new Error(json?.msg || "Não foi possível preparar esta ação.");
+
+            const pendingActions = sanitizePendingActions(json.pending_actions);
+            if (!pendingActions.length) throw new Error("O servidor não devolveu a confirmação da ação.");
+
+            removeOperationalFlowEverywhere(flow.id);
+            appendMessage({
+                id: makeId("assistant-vehicle"),
+                role: "assistant",
+                content: json.reply || "Confirme a ação.",
+                createdAt: nowIso(),
+                pendingActions,
+                streaming: false,
+            });
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Não foi possível preparar esta ação.");
+        } finally {
+            loadingRef.current = false;
+            setLoading(false);
+        }
+    }
 
     function preferredAudioMimeType() {
         if (typeof MediaRecorder === "undefined") return "";
@@ -1783,6 +2099,7 @@ export default function AuroraPage() {
                                                             const command = flow.action?.command;
                                                             if (command) void sendMessage(command);
                                                         }}
+                                                        onChooseVehicleAction={(flow, vehicle) => prepareVehicleAction(flow, vehicle)}
                                                     />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
@@ -1808,6 +2125,7 @@ export default function AuroraPage() {
                                                             const command = flow.action?.command;
                                                             if (command) void sendMessage(command);
                                                         }}
+                                                        onChooseVehicleAction={(flow, vehicle) => prepareVehicleAction(flow, vehicle)}
                                                     />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
