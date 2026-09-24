@@ -1624,6 +1624,7 @@ export default function AuroraPage() {
     const autoFollowRef = useRef(true);
     const scrollRafRef = useRef<number | null>(null);
     const programmaticScrollUntilRef = useRef(0);
+    const keyboardBaselineRef = useRef(0);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1645,33 +1646,175 @@ export default function AuroraPage() {
         loadingRef.current = loading;
     }, [loading]);
 
-    // Mantém o compositor preso à base da tela, como em apps de mensagem.
-    // O deslocamento só muda quando o teclado virtual realmente ocupa a tela.
+    // iOS/Safari:
+    // - a barra permanece no rodapé quando o teclado está fechado;
+    // - barras do Safari, scroll do VisualViewport e zoom da página NÃO são tratados como teclado;
+    // - só elevamos o compositor quando existe um campo editável focado e a redução
+    //   real do viewport é compatível com a abertura do teclado.
     useEffect(() => {
         if (typeof window === "undefined") return;
+
         const vv = window.visualViewport;
-        if (!vv) return;
+        if (!vv) {
+            setKeyboardOpen(false);
+            setKeyboardInset(0);
+            return;
+        }
 
         let raf = 0;
+        let blurTimer: number | null = null;
+        let orientationTimer: number | null = null;
+
+        const hasEditableFocus = () => {
+            const active = document.activeElement as HTMLElement | null;
+            if (!active) return false;
+
+            const tag = active.tagName;
+            if (tag === "TEXTAREA" || tag === "SELECT") return true;
+
+            if (tag === "INPUT") {
+                const input = active as HTMLInputElement;
+                const type = String(input.type || "text").toLowerCase();
+                return ![
+                    "button",
+                    "checkbox",
+                    "radio",
+                    "submit",
+                    "reset",
+                    "file",
+                    "image",
+                    "range",
+                    "color",
+                    "hidden",
+                ].includes(type);
+            }
+
+            return active.isContentEditable;
+        };
+
+        const visualBottom = () =>
+            Math.max(1, Math.round(vv.height + Math.max(0, vv.offsetTop || 0)));
+
+        const calibrateBaseline = () => {
+            const current = Math.max(
+                Math.round(window.innerHeight || 0),
+                visualBottom(),
+            );
+            keyboardBaselineRef.current = current;
+        };
+
         const updateKeyboardInset = () => {
             window.cancelAnimationFrame(raf);
+
             raf = window.requestAnimationFrame(() => {
-                const layoutHeight = window.innerHeight;
-                const occluded = Math.max(0, Math.round(layoutHeight - vv.height));
-                const isKeyboard = occluded >= 120;
-                setKeyboardOpen(isKeyboard);
-                setKeyboardInset(isKeyboard ? occluded : 0);
+                const focused = hasEditableFocus();
+                const scale = Number(vv.scale || 1);
+
+                // Sem um campo editável focado não existe motivo para levantar a barra.
+                // Isso elimina o falso positivo causado pelas barras do Safari no iPhone.
+                if (!focused || scale > 1.08) {
+                    setKeyboardOpen(false);
+                    setKeyboardInset(0);
+                    calibrateBaseline();
+                    return;
+                }
+
+                const visibleBottom = visualBottom();
+
+                // Mantém a maior altura estável conhecida. Em algumas versões do iOS,
+                // window.innerHeight também encolhe quando o teclado abre.
+                const baseline = Math.max(
+                    keyboardBaselineRef.current || 0,
+                    Math.round(window.innerHeight || 0),
+                    visibleBottom,
+                );
+
+                if (!keyboardBaselineRef.current) {
+                    keyboardBaselineRef.current = baseline;
+                }
+
+                const occluded = Math.max(0, Math.round(baseline - visibleBottom));
+
+                // 140px evita interpretar a barra de endereço/rodapé do Safari
+                // como teclado virtual em aparelhos com viewport menor.
+                const isKeyboard =
+                    occluded >= 140 &&
+                    vv.height <= baseline - 120;
+
+                if (!isKeyboard) {
+                    setKeyboardOpen(false);
+                    setKeyboardInset(0);
+                    return;
+                }
+
+                // Limite defensivo para nunca posicionar o compositor no meio da tela
+                // por causa de uma leitura anômala do VisualViewport.
+                const safeInset = Math.min(
+                    occluded,
+                    Math.max(0, Math.floor(baseline * 0.58)),
+                );
+
+                setKeyboardOpen(true);
+                setKeyboardInset(safeInset);
             });
         };
 
+        const onFocusIn = () => {
+            if (blurTimer != null) {
+                window.clearTimeout(blurTimer);
+                blurTimer = null;
+            }
+            updateKeyboardInset();
+            window.setTimeout(updateKeyboardInset, 60);
+            window.setTimeout(updateKeyboardInset, 220);
+        };
+
+        const onFocusOut = () => {
+            if (blurTimer != null) window.clearTimeout(blurTimer);
+            blurTimer = window.setTimeout(() => {
+                if (!hasEditableFocus()) {
+                    setKeyboardOpen(false);
+                    setKeyboardInset(0);
+                    calibrateBaseline();
+                } else {
+                    updateKeyboardInset();
+                }
+            }, 90);
+        };
+
+        const onOrientationChange = () => {
+            keyboardBaselineRef.current = 0;
+            setKeyboardOpen(false);
+            setKeyboardInset(0);
+
+            if (orientationTimer != null) window.clearTimeout(orientationTimer);
+            orientationTimer = window.setTimeout(() => {
+                calibrateBaseline();
+                updateKeyboardInset();
+            }, 320);
+        };
+
+        calibrateBaseline();
         updateKeyboardInset();
+
         vv.addEventListener("resize", updateKeyboardInset);
-        window.addEventListener("orientationchange", updateKeyboardInset);
+        vv.addEventListener("scroll", updateKeyboardInset);
+        window.addEventListener("resize", updateKeyboardInset);
+        window.addEventListener("orientationchange", onOrientationChange);
+        document.addEventListener("focusin", onFocusIn);
+        document.addEventListener("focusout", onFocusOut);
 
         return () => {
             window.cancelAnimationFrame(raf);
+            if (blurTimer != null) window.clearTimeout(blurTimer);
+            if (orientationTimer != null) window.clearTimeout(orientationTimer);
+
             vv.removeEventListener("resize", updateKeyboardInset);
-            window.removeEventListener("orientationchange", updateKeyboardInset);
+            vv.removeEventListener("scroll", updateKeyboardInset);
+            window.removeEventListener("resize", updateKeyboardInset);
+            window.removeEventListener("orientationchange", onOrientationChange);
+            document.removeEventListener("focusin", onFocusIn);
+            document.removeEventListener("focusout", onFocusOut);
         };
     }, []);
 
@@ -2586,7 +2729,7 @@ export default function AuroraPage() {
             <div
                 ref={composerRef}
                 className="fixed inset-x-0 z-40 border-t border-slate-200/70 bg-slate-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl"
-                style={{ bottom: `${keyboardInset}px` }}
+                style={{ bottom: keyboardOpen ? `${keyboardInset}px` : "0px" }}
             >
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
                     {messages.length > 0 && !loading && !keyboardOpen ? (
