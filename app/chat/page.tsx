@@ -10,7 +10,7 @@ import React, {
 } from "react";
 
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
-const STORAGE_KEY = "pai-aurora-v1-performance";
+const STORAGE_KEY = "pai-aurora-v2-actions-ptt";
 const MAX_HISTORY_TO_API = 8;
 
 type Role = "user" | "assistant";
@@ -71,7 +71,7 @@ type ExportCard = {
     expires_at?: string | null;
 };
 
-type PendingActionKind = "novo_atendimento" | "requisicao_material";
+type PendingActionKind = "novo_atendimento" | "requisicao_material" | "atendimento_fase";
 type PendingActionStatus = "pending" | "executing" | "completed" | "cancelled" | "error";
 
 type PendingActionDetail = {
@@ -94,6 +94,32 @@ type PendingAction = {
     error?: string | null;
 };
 
+type OperationalAttendanceChoice = {
+    id: number;
+    falecido: string;
+    status: string;
+    status_label: string;
+    next_phase?: string | null;
+    next_label?: string | null;
+};
+
+type OperationalFlowCard = {
+    id: string;
+    kind: "attendance_list" | "next_action";
+    title: string;
+    description?: string | null;
+    attendances?: OperationalAttendanceChoice[];
+    attendance?: OperationalAttendanceChoice | null;
+    action?: {
+        phase: string;
+        label: string;
+        description?: string | null;
+        executable: boolean;
+        requires?: string[];
+        command?: string | null;
+        external_url?: string | null;
+    } | null;
+};
 
 type ChatMessage = {
     id: string;
@@ -106,6 +132,7 @@ type ChatMessage = {
     productSuggestions?: ProductSuggestion[];
     exportCards?: ExportCard[];
     pendingActions?: PendingAction[];
+    operationalFlows?: OperationalFlowCard[];
 };
 
 type SseEvent = {
@@ -114,17 +141,18 @@ type SseEvent = {
 };
 
 const QUICK_PROMPTS = [
-    "Quantos atendimentos estão no quadro agora?",
-    "Quem será sepultado hoje?",
-    "Criar um novo atendimento",
-    "Requisitar materiais",
-    "Quantos AÇÚCAR temos?",
-    "Quantas urnas saíram hoje?",
-    "Quantas coroas estão em confecção agora?",
-    "Qual é o balanço deste mês?",
+    "Quero realizar uma ação em um atendimento",
+    "Quantos atendimentos estamos tendo agora?",
+    "Quais são os horários dos sepultamentos de hoje?",
+    "Onde estão sendo realizados os velórios de hoje?",
+    "Quero criar um novo atendimento",
+    "Quero solicitar materiais",
+    "Quero consultar um produto no estoque",
+    "Quantas coroas de flores estão sendo confeccionadas?",
 ];
 
 const TOOL_LABELS: Record<string, string> = {
+    gerenciar_acao_atendimento: "Ação em atendimento",
     preparar_novo_atendimento: "Novo atendimento",
     preparar_requisicao_material: "Requisição",
     consultar_atendimentos: "Atendimentos",
@@ -477,7 +505,7 @@ function sanitizePendingActions(value: unknown): PendingAction[] {
     if (!Array.isArray(value)) return [];
 
     const out: PendingAction[] = [];
-    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material"]);
+    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material", "atendimento_fase"]);
     const allowedStatuses = new Set<PendingActionStatus>(["pending", "executing", "completed", "cancelled", "error"]);
 
     for (const raw of value) {
@@ -616,7 +644,7 @@ function PendingActionCards({
                                                 : "bg-amber-100 text-amber-700",
                                     ].join(" ")}
                                 >
-                                    {action.kind === "novo_atendimento" ? "ATD" : "REQ"}
+                                    {action.kind === "novo_atendimento" ? "ATD" : action.kind === "atendimento_fase" ? "AÇÃO" : "REQ"}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
@@ -714,6 +742,174 @@ function PendingActionCards({
     );
 }
 
+
+function sanitizeOperationalFlows(value: unknown): OperationalFlowCard[] {
+    if (!Array.isArray(value)) return [];
+    const out: OperationalFlowCard[] = [];
+
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const kind = String(item.kind || "");
+        if (kind !== "attendance_list" && kind !== "next_action") continue;
+
+        const title = String(item.title || "").trim();
+        if (!title) continue;
+
+        const attendances: OperationalAttendanceChoice[] = Array.isArray(item.attendances)
+            ? item.attendances
+                .map((row: any) => ({
+                    id: Number(row?.id || 0),
+                    falecido: String(row?.falecido || "").trim(),
+                    status: String(row?.status || "").trim(),
+                    status_label: String(row?.status_label || row?.status || "").trim(),
+                    next_phase: row?.next_phase == null ? null : String(row.next_phase),
+                    next_label: row?.next_label == null ? null : String(row.next_label),
+                }))
+                .filter((row: OperationalAttendanceChoice) => row.id > 0 && row.falecido)
+                .slice(0, 40)
+            : [];
+
+        const attendanceRaw = item.attendance && typeof item.attendance === "object" ? item.attendance : null;
+        const attendance: OperationalAttendanceChoice | null = attendanceRaw
+            ? {
+                id: Number(attendanceRaw.id || 0),
+                falecido: String(attendanceRaw.falecido || "").trim(),
+                status: String(attendanceRaw.status || "").trim(),
+                status_label: String(attendanceRaw.status_label || attendanceRaw.status || "").trim(),
+                next_phase: attendanceRaw.next_phase == null ? null : String(attendanceRaw.next_phase),
+                next_label: attendanceRaw.next_label == null ? null : String(attendanceRaw.next_label),
+            }
+            : null;
+
+        const actionRaw = item.action && typeof item.action === "object" ? item.action : null;
+        const action = actionRaw
+            ? {
+                phase: String(actionRaw.phase || "").trim(),
+                label: String(actionRaw.label || "").trim(),
+                description: actionRaw.description == null ? null : String(actionRaw.description),
+                executable: Boolean(actionRaw.executable),
+                requires: Array.isArray(actionRaw.requires) ? actionRaw.requires.map(String).filter(Boolean) : [],
+                command: actionRaw.command == null ? null : String(actionRaw.command),
+                external_url: actionRaw.external_url == null ? null : String(actionRaw.external_url),
+            }
+            : null;
+
+        out.push({
+            id: String(item.id || `op-${kind}-${out.length}`),
+            kind,
+            title,
+            description: item.description == null ? null : String(item.description),
+            attendances,
+            attendance: attendance && attendance.id > 0 ? attendance : null,
+            action,
+        });
+    }
+
+    return out.slice(0, 4);
+}
+
+function OperationalFlowCards({
+    flows,
+    disabled,
+    onChooseAttendance,
+    onChooseAction,
+}: {
+    flows?: OperationalFlowCard[];
+    disabled?: boolean;
+    onChooseAttendance: (choice: OperationalAttendanceChoice) => void;
+    onChooseAction: (flow: OperationalFlowCard) => void;
+}) {
+    if (!flows?.length) return null;
+
+    return (
+        <div className="mt-3 space-y-3">
+            {flows.map((flow) => (
+                <div key={flow.id} className="overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/60">
+                    <div className="p-3.5">
+                        <div className="text-sm font-semibold text-slate-950">{flow.title}</div>
+                        {flow.description ? (
+                            <div className="mt-1 text-xs leading-5 text-slate-600">{flow.description}</div>
+                        ) : null}
+
+                        {flow.kind === "attendance_list" ? (
+                            <div className="mt-3 grid gap-2">
+                                {(flow.attendances || []).map((choice) => (
+                                    <button
+                                        key={`${flow.id}-${choice.id}`}
+                                        type="button"
+                                        disabled={disabled}
+                                        onClick={() => onChooseAttendance(choice)}
+                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <div className="text-sm font-semibold text-slate-900">{choice.falecido}</div>
+                                        <div className="mt-0.5 text-[11px] text-slate-500">
+                                            {choice.status_label || "Aguardando"}
+                                            {choice.next_label ? ` • Próxima: ${choice.next_label}` : ""}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
+
+                        {flow.kind === "next_action" && flow.attendance ? (
+                            <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-inset ring-slate-200">
+                                <div className="text-xs text-slate-500">Atendimento</div>
+                                <div className="mt-0.5 text-sm font-semibold text-slate-900">{flow.attendance.falecido}</div>
+                                <div className="mt-2 text-xs text-slate-500">
+                                    Situação atual: <b className="text-slate-700">{flow.attendance.status_label}</b>
+                                </div>
+
+                                {flow.action ? (
+                                    <div className="mt-3">
+                                        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                            Única próxima ação disponível
+                                        </div>
+                                        {flow.action.executable && flow.action.command ? (
+                                            <button
+                                                type="button"
+                                                disabled={disabled}
+                                                onClick={() => onChooseAction(flow)}
+                                                className="w-full rounded-xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {flow.action.label}
+                                            </button>
+                                        ) : flow.action.external_url ? (
+                                            <a
+                                                href={flow.action.external_url}
+                                                className="block w-full rounded-xl bg-amber-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700"
+                                            >
+                                                {flow.action.label}
+                                            </a>
+                                        ) : (
+                                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                                                {flow.action.label}
+                                            </div>
+                                        )}
+
+                                        {flow.action.requires?.length ? (
+                                            <div className="mt-2 text-[11px] leading-5 text-amber-700">
+                                                Esta etapa exige: {flow.action.requires.join(", ")}.
+                                            </div>
+                                        ) : null}
+                                        {flow.action.description ? (
+                                            <div className="mt-2 text-[11px] leading-5 text-slate-500">{flow.action.description}</div>
+                                        ) : null}
+                                    </div>
+                                ) : (
+                                    <div className="mt-3 text-xs font-medium text-emerald-700">
+                                        O fluxo deste atendimento já foi concluído.
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
 function loadStoredMessages(): ChatMessage[] {
     if (typeof window === "undefined") return [];
     try {
@@ -739,6 +935,7 @@ function loadStoredMessages(): ChatMessage[] {
                 productSuggestions: sanitizeProductSuggestions(item.productSuggestions),
                 exportCards: sanitizeExportCards(item.exportCards),
                 pendingActions: sanitizePendingActions(item.pendingActions),
+                operationalFlows: sanitizeOperationalFlows(item.operationalFlows),
                 streaming: false,
             }));
     } catch {
@@ -881,6 +1078,17 @@ function IconSend({ className = "h-5 w-5" }: { className?: string }) {
     );
 }
 
+function IconMic({ className = "h-5 w-5" }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10a7 7 0 0 0 14 0" />
+            <path d="M12 17v5" />
+            <path d="M8 22h8" />
+        </svg>
+    );
+}
+
 function IconPlus({ className = "h-5 w-5" }: { className?: string }) {
     return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className={className} aria-hidden="true">
@@ -936,12 +1144,17 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                 Assistente Administrativo do PAI. Consulta dados, gera arquivos e prepara ações administrativas que só são executadas após sua confirmação.
             </p>
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                {QUICK_PROMPTS.map((prompt) => (
+                {QUICK_PROMPTS.map((prompt, index) => (
                     <button
                         key={prompt}
                         type="button"
                         onClick={() => onPrompt(prompt)}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99]"
+                        className={[
+                            "rounded-2xl border px-4 py-3 text-left text-sm font-medium shadow-sm transition active:scale-[0.99]",
+                            index === 0
+                                ? "border-sky-300 bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-100 hover:bg-sky-100"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                        ].join(" ")}
                     >
                         {prompt}
                     </button>
@@ -966,6 +1179,9 @@ export default function AuroraPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [hydrated, setHydrated] = useState(false);
+    const [recording, setRecording] = useState(false);
+    const [transcribing, setTranscribing] = useState(false);
+    const [recordingSeconds, setRecordingSeconds] = useState(0);
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -973,6 +1189,12 @@ export default function AuroraPage() {
     const messagesRef = useRef<ChatMessage[]>([]);
     const loadingRef = useRef(false);
     const pendingActionBusyRef = useRef<Set<string>>(new Set());
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const mediaStreamRef = useRef<MediaStream | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const recordingStartedAtRef = useRef(0);
+    const recordingTimerRef = useRef<number | null>(null);
+    const micPressedRef = useRef(false);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1004,12 +1226,19 @@ export default function AuroraPage() {
     useEffect(() => {
         return () => {
             abortRef.current?.abort();
+            if (recordingTimerRef.current != null) window.clearInterval(recordingTimerRef.current);
+            try {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+                    mediaRecorderRef.current.stop();
+                }
+            } catch { }
+            mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         };
     }, []);
 
     const canSend = useMemo(
-        () => input.trim().length > 0 && !loading,
-        [input, loading],
+        () => input.trim().length > 0 && !loading && !transcribing && !recording,
+        [input, loading, transcribing, recording],
     );
 
     function commitMessages(next: ChatMessage[]) {
@@ -1165,9 +1394,156 @@ export default function AuroraPage() {
         }
     }
 
+
+    function preferredAudioMimeType() {
+        if (typeof MediaRecorder === "undefined") return "";
+        const candidates = [
+            "audio/webm;codecs=opus",
+            "audio/webm",
+            "audio/ogg;codecs=opus",
+            "audio/ogg",
+            "audio/mp4",
+        ];
+        return candidates.find((type) => {
+            try {
+                return MediaRecorder.isTypeSupported(type);
+            } catch {
+                return false;
+            }
+        }) || "";
+    }
+
+    async function transcribeAndSend(blob: Blob, mimeType: string) {
+        if (!blob.size) return;
+        setTranscribing(true);
+        setError("");
+
+        try {
+            const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "m4a" : "webm";
+            const form = new FormData();
+            form.append("audio", blob, `aurora-${Date.now()}.${ext}`);
+
+            const response = await fetch(`${CHAT_API}?action=transcribe&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                body: form,
+            });
+
+            const json = (await response.json().catch(() => null)) as
+                | { ok?: boolean; text?: string; msg?: string; need_login?: 1 }
+                | null;
+
+            if (response.status === 401 || json?.need_login) {
+                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            }
+            if (!response.ok || !json?.ok) {
+                throw new Error(json?.msg || "Não foi possível entender o áudio.");
+            }
+
+            const text = String(json.text || "").trim();
+            if (!text) throw new Error("Não foi possível identificar fala no áudio.");
+            await sendMessage(text);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Não foi possível entender o áudio.");
+        } finally {
+            setTranscribing(false);
+        }
+    }
+
+    async function startRecording() {
+        if (loadingRef.current || transcribing || recording) return;
+        if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+            setError("Este navegador não oferece gravação de áudio para a Aurora.");
+            return;
+        }
+
+        try {
+            setError("");
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                },
+            });
+            if (!micPressedRef.current) {
+                stream.getTracks().forEach((track) => track.stop());
+                return;
+            }
+            mediaStreamRef.current = stream;
+            audioChunksRef.current = [];
+
+            const mimeType = preferredAudioMimeType();
+            const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+            mediaRecorderRef.current = recorder;
+            recordingStartedAtRef.current = Date.now();
+            setRecordingSeconds(0);
+
+            recorder.ondataavailable = (event) => {
+                if (event.data?.size) audioChunksRef.current.push(event.data);
+            };
+
+            recorder.onerror = () => {
+                setError("A gravação foi interrompida. Tente novamente.");
+            };
+
+            recorder.onstop = () => {
+                if (recordingTimerRef.current != null) {
+                    window.clearInterval(recordingTimerRef.current);
+                    recordingTimerRef.current = null;
+                }
+                const chunks = [...audioChunksRef.current];
+                audioChunksRef.current = [];
+                const type = recorder.mimeType || mimeType || "audio/webm";
+                const elapsed = Date.now() - recordingStartedAtRef.current;
+                mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+                mediaStreamRef.current = null;
+                mediaRecorderRef.current = null;
+                setRecording(false);
+                setRecordingSeconds(0);
+
+                // Toques acidentais muito curtos não são enviados.
+                if (elapsed < 350 || !chunks.length) return;
+                const blob = new Blob(chunks, { type });
+                void transcribeAndSend(blob, type);
+            };
+
+            recorder.start(200);
+            setRecording(true);
+            recordingTimerRef.current = window.setInterval(() => {
+                const seconds = Math.floor((Date.now() - recordingStartedAtRef.current) / 1000);
+                setRecordingSeconds(seconds);
+                if (seconds >= 90) {
+                    micPressedRef.current = false;
+                    stopRecording();
+                }
+            }, 250);
+        } catch (err: unknown) {
+            mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+            mediaStreamRef.current = null;
+            const name = err instanceof DOMException ? err.name : "";
+            if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+                setError("Permita o acesso ao microfone para enviar mensagens de áudio.");
+            } else {
+                setError(err instanceof Error ? err.message : "Não foi possível iniciar o microfone.");
+            }
+        }
+    }
+
+    function stopRecording() {
+        const recorder = mediaRecorderRef.current;
+        if (!recorder || recorder.state === "inactive") return;
+        try {
+            recorder.stop();
+        } catch {
+            setRecording(false);
+        }
+    }
+
     async function sendMessage(rawText?: string) {
         const text = String(rawText ?? input).trim();
-        if (!text || loadingRef.current) return;
+        if (!text || loadingRef.current || transcribing || recording) return;
 
         const pending = latestPendingAction();
         if (pending && isExplicitConfirmCommand(text)) {
@@ -1211,6 +1587,7 @@ export default function AuroraPage() {
         let finalProductSuggestions: ProductSuggestion[] = [];
         let finalExportCards: ExportCard[] = [];
         let finalPendingActions: PendingAction[] = [];
+        let finalOperationalFlows: OperationalFlowCard[] = [];
         let streamError = "";
 
         try {
@@ -1254,6 +1631,7 @@ export default function AuroraPage() {
                     if (Array.isArray(data?.product_suggestions)) finalProductSuggestions = sanitizeProductSuggestions(data.product_suggestions);
                     if (Array.isArray(data?.export_cards)) finalExportCards = sanitizeExportCards(data.export_cards);
                     if (Array.isArray(data?.pending_actions)) finalPendingActions = sanitizePendingActions(data.pending_actions);
+                    if (Array.isArray(data?.operational_flows)) finalOperationalFlows = sanitizeOperationalFlows(data.operational_flows);
 
                     updateMessage(assistantId, (m) => ({
                         ...m,
@@ -1262,6 +1640,7 @@ export default function AuroraPage() {
                         productSuggestions: finalProductSuggestions,
                         exportCards: finalExportCards,
                         pendingActions: finalPendingActions,
+                        operationalFlows: finalOperationalFlows,
                     }));
                     return;
                 }
@@ -1284,6 +1663,7 @@ export default function AuroraPage() {
                 productSuggestions: finalProductSuggestions,
                 exportCards: finalExportCards,
                 pendingActions: finalPendingActions,
+                operationalFlows: finalOperationalFlows,
                 streaming: false,
             }));
         } catch (err: unknown) {
@@ -1304,7 +1684,7 @@ export default function AuroraPage() {
     }
 
     function clearChat() {
-        if (loading) return;
+        if (loading || recording || transcribing) return;
         abortRef.current?.abort();
         commitMessages([]);
         setInput("");
@@ -1344,14 +1724,14 @@ export default function AuroraPage() {
                                     Ações confirmadas
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • texto em streaming</p>
+                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • texto + áudio para transcrição</p>
                         </div>
                     </div>
 
                     <button
                         type="button"
                         onClick={clearChat}
-                        disabled={loading || messages.length === 0}
+                        disabled={loading || recording || transcribing || messages.length === 0}
                         className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                         title="Iniciar novo chat"
                     >
@@ -1391,9 +1771,18 @@ export default function AuroraPage() {
                                                     <ExportCards cards={message.exportCards} />
                                                     <PendingActionCards
                                                         actions={message.pendingActions}
-                                                        disabled={loading}
+                                                        disabled={loading || transcribing || recording}
                                                         onConfirm={(action) => void runPendingActionFromText(action, "execute")}
                                                         onCancel={(action) => void runPendingActionFromText(action, "cancel")}
+                                                    />
+                                                    <OperationalFlowCards
+                                                        flows={message.operationalFlows}
+                                                        disabled={loading || transcribing || recording}
+                                                        onChooseAttendance={(choice) => void sendMessage(`Quero realizar uma ação no atendimento #${choice.id} - ${choice.falecido}`)}
+                                                        onChooseAction={(flow) => {
+                                                            const command = flow.action?.command;
+                                                            if (command) void sendMessage(command);
+                                                        }}
                                                     />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
@@ -1401,15 +1790,24 @@ export default function AuroraPage() {
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
                                                 </>
-                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length) ? (
+                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length) ? (
                                                 <>
                                                     <ProductCards products={message.productCards} />
                                                     <ExportCards cards={message.exportCards} />
                                                     <PendingActionCards
                                                         actions={message.pendingActions}
-                                                        disabled={loading}
+                                                        disabled={loading || transcribing || recording}
                                                         onConfirm={(action) => void runPendingActionFromText(action, "execute")}
                                                         onCancel={(action) => void runPendingActionFromText(action, "cancel")}
+                                                    />
+                                                    <OperationalFlowCards
+                                                        flows={message.operationalFlows}
+                                                        disabled={loading || transcribing || recording}
+                                                        onChooseAttendance={(choice) => void sendMessage(`Quero realizar uma ação no atendimento #${choice.id} - ${choice.falecido}`)}
+                                                        onChooseAction={(flow) => {
+                                                            const command = flow.action?.command;
+                                                            if (command) void sendMessage(command);
+                                                        }}
                                                     />
                                                     <ProductSuggestions
                                                         suggestions={message.productSuggestions}
@@ -1440,7 +1838,9 @@ export default function AuroraPage() {
                             );
                         })}
 
-                        {loading && !messages.some((m) => m.streaming && m.role === "assistant") ? (
+                        {transcribing ? (
+                            <TypingIndicator label="Entendendo o áudio" />
+                        ) : loading && !messages.some((m) => m.streaming && m.role === "assistant") ? (
                             <TypingIndicator label="Consultando dados" />
                         ) : null}
 
@@ -1476,31 +1876,71 @@ export default function AuroraPage() {
                         className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/50 focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-slate-200/70"
                     >
                         <div className="flex items-end gap-2">
-                            <textarea
-                                ref={textareaRef}
-                                value={input}
-                                onChange={(event) => setInput(event.target.value)}
-                                onKeyDown={handleKeyDown}
-                                disabled={loading}
-                                rows={1}
-                                maxLength={5000}
-                                placeholder={loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
-                                className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
-                            />
+                            {recording ? (
+                                <div className="flex min-h-[44px] flex-1 items-center gap-3 px-3 py-2 text-sm text-red-700">
+                                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                                    <span className="font-semibold">Gravando {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}</span>
+                                    <span className="text-xs text-slate-500">Solte para enviar</span>
+                                </div>
+                            ) : (
+                                <textarea
+                                    ref={textareaRef}
+                                    value={input}
+                                    onChange={(event) => setInput(event.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    disabled={loading || transcribing}
+                                    rows={1}
+                                    maxLength={5000}
+                                    placeholder={transcribing ? "Entendendo o áudio..." : loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
+                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 sm:text-[15px]"
+                                />
+                            )}
 
-                            <button
-                                type="submit"
-                                disabled={!canSend}
-                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-                                aria-label="Enviar mensagem"
-                            >
-                                <IconSend className="h-4.5 w-4.5" />
-                            </button>
+                            {input.trim() && !recording ? (
+                                <button
+                                    type="submit"
+                                    disabled={!canSend}
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                                    aria-label="Enviar mensagem"
+                                >
+                                    <IconSend className="h-4.5 w-4.5" />
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    disabled={loading || transcribing}
+                                    onPointerDown={(event) => {
+                                        if (event.pointerType === "mouse" && event.button !== 0) return;
+                                        event.preventDefault();
+                                        micPressedRef.current = true;
+                                        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { }
+                                        void startRecording();
+                                    }}
+                                    onPointerUp={(event) => {
+                                        event.preventDefault();
+                                        micPressedRef.current = false;
+                                        stopRecording();
+                                    }}
+                                    onPointerCancel={() => {
+                                        micPressedRef.current = false;
+                                        stopRecording();
+                                    }}
+                                    onContextMenu={(event) => event.preventDefault()}
+                                    className={[
+                                        "flex h-10 w-10 shrink-0 touch-none select-none items-center justify-center rounded-xl text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400",
+                                        recording ? "bg-red-600 hover:bg-red-700" : "bg-slate-950 hover:bg-slate-800",
+                                    ].join(" ")}
+                                    aria-label={recording ? "Solte para enviar o áudio" : "Segure para gravar uma mensagem"}
+                                    title={recording ? "Solte para enviar" : "Segure para falar"}
+                                >
+                                    <IconMic className="h-5 w-5" />
+                                </button>
+                            )}
                         </div>
                     </form>
 
                     <div className="mt-2 text-center text-[10px] text-slate-400 sm:text-xs">
-                        Ações de escrita só são executadas após confirmação explícita. Consultas e arquivos permanecem controlados pelo backend.
+                        Segure o microfone para falar e solte para enviar. A Aurora entende o áudio e responde apenas em texto. Ações de escrita continuam exigindo confirmação explícita.
                     </div>
                 </div>
             </div>
