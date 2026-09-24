@@ -1620,6 +1620,10 @@ export default function AuroraPage() {
     const recordingStartedAtRef = useRef(0);
     const recordingTimerRef = useRef<number | null>(null);
     const micPressedRef = useRef(false);
+    const conversationRef = useRef<HTMLDivElement>(null);
+    const autoFollowRef = useRef(true);
+    const scrollRafRef = useRef<number | null>(null);
+    const programmaticScrollUntilRef = useRef(0);
 
     useEffect(() => {
         const stored = loadStoredMessages();
@@ -1689,9 +1693,81 @@ export default function AuroraPage() {
         return () => observer.disconnect();
     }, []);
 
+    function scrollToLatest(behavior: ScrollBehavior = "auto", force = false) {
+        if (typeof window === "undefined") return;
+        if (!force && !autoFollowRef.current) return;
+
+        if (scrollRafRef.current != null) {
+            window.cancelAnimationFrame(scrollRafRef.current);
+        }
+
+        programmaticScrollUntilRef.current = Date.now() + (behavior === "smooth" ? 900 : 180);
+        scrollRafRef.current = window.requestAnimationFrame(() => {
+            const target = bottomRef.current;
+            if (target) {
+                target.scrollIntoView({ behavior, block: "end" });
+            } else {
+                window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
+            }
+
+            // Um segundo frame cobre alterações de altura causadas por streaming/cards
+            // no mesmo ciclo de renderização. Durante streaming usamos movimento imediato
+            // para não acumular várias animações suaves concorrentes.
+            window.requestAnimationFrame(() => {
+                if (!autoFollowRef.current && !force) return;
+                bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+            });
+        });
+    }
+
+    // Comportamento semelhante a apps de mensagem:
+    // - enquanto o usuário está acompanhando o final, novas respostas permanecem visíveis;
+    // - se ele rolar manualmente para mensagens antigas, não é puxado de volta;
+    // - ao enviar nova mensagem, o acompanhamento é reativado.
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, [messages, loading]);
+        if (typeof window === "undefined") return;
+
+        const updateAutoFollow = () => {
+            if (Date.now() < programmaticScrollUntilRef.current) return;
+            const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+            const viewportBottom = window.scrollY + viewportHeight;
+            const documentBottom = Math.max(
+                document.documentElement.scrollHeight,
+                document.body?.scrollHeight || 0,
+            );
+            const distance = Math.max(0, documentBottom - viewportBottom);
+            autoFollowRef.current = distance <= Math.max(220, composerHeight + 96);
+        };
+
+        updateAutoFollow();
+        window.addEventListener("scroll", updateAutoFollow, { passive: true });
+        return () => window.removeEventListener("scroll", updateAutoFollow);
+    }, [composerHeight]);
+
+    // Cada delta da Aurora pode aumentar a altura do balão. Se estamos no final do
+    // chat, acompanha imediatamente a resposta para o usuário não precisar arrastar.
+    useEffect(() => {
+        if (!messages.length) return;
+        const hasStreamingAssistant = messages.some((message) => message.role === "assistant" && message.streaming);
+        scrollToLatest(hasStreamingAssistant || loading ? "auto" : "smooth");
+    }, [messages, loading, composerHeight, keyboardInset]);
+
+    // Cards, formulários e imagens podem crescer depois do texto terminar. O observer
+    // mantém o rodapé visível enquanto a resposta está chegando ou acabou de renderizar.
+    useEffect(() => {
+        const el = conversationRef.current;
+        if (!el || typeof ResizeObserver === "undefined") return;
+
+        let lastHeight = Math.ceil(el.getBoundingClientRect().height);
+        const observer = new ResizeObserver(() => {
+            const nextHeight = Math.ceil(el.getBoundingClientRect().height);
+            if (nextHeight === lastHeight) return;
+            lastHeight = nextHeight;
+            if (autoFollowRef.current) scrollToLatest(loadingRef.current ? "auto" : "smooth");
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [hydrated]);
 
     useEffect(() => {
         const el = textareaRef.current;
@@ -1703,6 +1779,7 @@ export default function AuroraPage() {
     useEffect(() => {
         return () => {
             abortRef.current?.abort();
+            if (scrollRafRef.current != null) window.cancelAnimationFrame(scrollRafRef.current);
             if (recordingTimerRef.current != null) window.clearInterval(recordingTimerRef.current);
             try {
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -2211,8 +2288,10 @@ export default function AuroraPage() {
             streaming: true,
         };
 
+        autoFollowRef.current = true;
         const next = [...messagesRef.current, userMessage, assistantPlaceholder];
         commitMessages(next);
+        window.requestAnimationFrame(() => scrollToLatest("auto", true));
         loadingRef.current = true;
         setLoading(true);
 
@@ -2326,6 +2405,7 @@ export default function AuroraPage() {
     function clearChat() {
         if (loading || recording || transcribing) return;
         abortRef.current?.abort();
+        autoFollowRef.current = true;
         commitMessages([]);
         setInput("");
         setError("");
@@ -2390,7 +2470,7 @@ export default function AuroraPage() {
                 ) : messages.length === 0 ? (
                     <EmptyState onPrompt={(prompt) => void sendMessage(prompt)} />
                 ) : (
-                    <div className="mx-auto w-full max-w-3xl flex-1 space-y-6 py-6 sm:py-8">
+                    <div ref={conversationRef} className="mx-auto w-full max-w-3xl flex-1 space-y-6 py-6 sm:py-8">
                         {messages.map((message) => {
                             const isUser = message.role === "user";
                             return (
@@ -2498,7 +2578,7 @@ export default function AuroraPage() {
                                 {error}
                             </div>
                         ) : null}
-                        <div ref={bottomRef} />
+                        <div ref={bottomRef} style={{ scrollMarginBottom: `${composerHeight + 20}px` }} />
                     </div>
                 )}
             </main>
