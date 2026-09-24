@@ -14,6 +14,7 @@ const nunito = Nunito({
 
 const INFORMATICO_URL = "/api/php/informativo.php?listar=1";
 const TELEMETRIA_URL = "/api/php/telemetria.php";
+const BALANCO_URL = "https://api.planoassistencialintegrado.com.br/balanco.php";
 
 const COLORS = {
     bg: "var(--dash-bg)",
@@ -68,6 +69,7 @@ type Registro = {
     tanato_por?: string;
 
     data?: string;
+    data_referencia?: string;
     created_at?: string;
     datahora?: string;
     ultima_datahora?: string;
@@ -90,6 +92,31 @@ type Registro = {
     local_velorio?: string;
     materiais_json?: any;
 
+    [key: string]: any;
+};
+
+type BalancoAtendimentoRow = {
+    atendimento_id: number;
+    falecido: string;
+    convenio: string;
+    data_referencia: string;
+    custo_total?: number;
+    receita_total?: number;
+    lucro_total?: number;
+    margem_lucro_percentual?: number;
+    assistencia_ativa?: boolean;
+    tanatopraxia_ativa?: boolean;
+};
+
+type BalancoResp = {
+    ok: boolean;
+    need_login?: 1;
+    msg?: string;
+    resumo?: {
+        atendimentos?: number;
+        [key: string]: any;
+    };
+    atendimentos?: BalancoAtendimentoRow[];
     [key: string]: any;
 };
 
@@ -394,6 +421,7 @@ function rangeTo14(range: PeriodRange) {
 
 function getRegistroDates(r: Registro): Date[] {
     const candidates = [
+        r.data_referencia,
         r.data,
         r.created_at,
         r.datahora,
@@ -424,6 +452,14 @@ function getRegistroDate(r: Registro): Date | null {
 }
 
 function registroDentroDoPeriodo(r: Registro, start: Date, end: Date): boolean {
+    // Quando data_referencia existe, ela é autoritativa e segue a mesma regra
+    // usada pelo balanco.php: primeira criação no histórico e, como fallback,
+    // primeira saída de estoque vinculada ao atendimento.
+    const referencia = parseDateFlex(r.data_referencia);
+    if (referencia) return referencia >= start && referencia <= end;
+
+    // Fallback apenas para registros antigos/auxiliares que não possuam
+    // data_referencia. O total oficial de atendimentos não depende deste fallback.
     const dates = getRegistroDates(r);
     if (!dates.length) return false;
     return dates.some((d) => d >= start && d <= end);
@@ -1727,6 +1763,8 @@ export default function Page() {
     const [modalAberto, setModalAberto] = useState(false);
 
     const [registros, setRegistros] = useState<Registro[]>([]);
+    const [atendimentosBalanco, setAtendimentosBalanco] = useState<BalancoAtendimentoRow[]>([]);
+    const [totalAtendimentosBalanco, setTotalAtendimentosBalanco] = useState<number | null>(null);
     const [motoristas, setMotoristas] = useState<MotoristaRow[]>([]);
     const [veiculos, setVeiculos] = useState<VeiculoRow[]>([]);
 
@@ -1746,22 +1784,33 @@ export default function Page() {
         try {
             const r14 = rangeTo14(periodo);
 
-            const urlInformativo = `${INFORMATICO_URL}&_ts=${Date.now()}`;
+            const requestTs = Date.now();
+            const urlInformativo = `${INFORMATICO_URL}&_ts=${requestTs}`;
+
+            const urlBalanco =
+                `${BALANCO_URL}?inicio=${encodeURIComponent(periodo.inicio)}` +
+                `&fim=${encodeURIComponent(periodo.fim)}` +
+                `&_ts=${requestTs}`;
+
             const urlMotoristas =
                 `${TELEMETRIA_URL}?itrack=motoristas` +
                 `&inicio=${encodeURIComponent(r14.inicio)}` +
                 `&fim=${encodeURIComponent(r14.fim)}` +
-                `&_ts=${Date.now()}`;
+                `&_ts=${requestTs}`;
 
             const urlVeiculos =
                 `${TELEMETRIA_URL}?itrack=historico_veicular` +
                 `&inicio=${encodeURIComponent(r14.inicio)}` +
                 `&fim=${encodeURIComponent(r14.fim)}` +
-                `&_ts=${Date.now()}`;
+                `&_ts=${requestTs}`;
 
-            const [infoJson, motJson, veiJson] = await Promise.all([
+            const [infoJson, balancoJson, motJson, veiJson] = await Promise.all([
                 fetchJson<ApiResp<Registro>>(urlInformativo, {
                     cacheKey: `informativo-geral`,
+                }),
+                fetchJson<BalancoResp>(urlBalanco, {
+                    ttlMs: 5000,
+                    cacheKey: `balanco-atendimentos-${periodo.inicio}-${periodo.fim}`,
                 }),
                 fetchJson<ApiResp<MotoristaRow>>(urlMotoristas, {
                     cacheKey: `motoristas-${periodo.inicio}-${periodo.fim}`,
@@ -1771,7 +1820,21 @@ export default function Page() {
                 }),
             ]);
 
+            if (!balancoJson?.ok) {
+                throw new Error(balancoJson?.msg || "Falha ao carregar os atendimentos do período.");
+            }
+
+            const atendimentosDoPeriodo = Array.isArray(balancoJson.atendimentos)
+                ? balancoJson.atendimentos
+                : [];
+
             setRegistros(extractArray(infoJson));
+            setAtendimentosBalanco(atendimentosDoPeriodo);
+            setTotalAtendimentosBalanco(
+                typeof balancoJson?.resumo?.atendimentos === "number"
+                    ? Number(balancoJson.resumo.atendimentos)
+                    : atendimentosDoPeriodo.length
+            );
             setMotoristas(extractArray(motJson));
             setVeiculos(extractArray(veiJson));
         } catch (e: any) {
@@ -1786,18 +1849,50 @@ export default function Page() {
     }, [carregar]);
 
     const dadosPeriodo = useMemo(() => {
-        const { start, end } = rangeToDates(periodo);
-        return (registros || []).filter((r) => registroDentroDoPeriodo(r, start, end));
-    }, [registros, periodo]);
+        // A lista do balanco.php já vem filtrada pelo período usando a regra oficial:
+        // COALESCE(MIN(historico_sepultamentos.datahora), MIN(est_movimento.criado_em)).
+        //
+        // Aqui apenas enriquecemos cada atendimento com os campos do informativo.php
+        // quando o mesmo ID ainda estiver presente na listagem operacional.
+        const porId = new Map<string, Registro>();
+
+        for (const r of registros || []) {
+            for (const id of getIdsParaTentar(r)) {
+                if (!porId.has(id)) porId.set(id, r);
+            }
+        }
+
+        return (atendimentosBalanco || []).map((a) => {
+            const id = String(a.atendimento_id ?? "").trim();
+            const base = porId.get(id);
+
+            return {
+                ...(base || {}),
+                id: base?.id ?? a.atendimento_id,
+                atendimento_id: a.atendimento_id,
+                sepultamento_id: base?.sepultamento_id ?? a.atendimento_id,
+                falecido: a.falecido || base?.falecido || "",
+                convenio: a.convenio ?? base?.convenio ?? "",
+                data_referencia: a.data_referencia,
+            } as Registro;
+        });
+    }, [registros, atendimentosBalanco]);
 
     const dadosPeriodoUnicos = useMemo(() => dedupeRegistros(dadosPeriodo), [dadosPeriodo]);
 
+    const totalAtendimentosCorreto = useMemo(() => {
+        if (typeof totalAtendimentosBalanco === "number" && Number.isFinite(totalAtendimentosBalanco)) {
+            return totalAtendimentosBalanco;
+        }
+        return dadosPeriodoUnicos.length;
+    }, [totalAtendimentosBalanco, dadosPeriodoUnicos.length]);
+
     const registrosComLogs = useMemo(() => {
-        // Para produção por colaborador, a data válida é a data do comando no log.
-        // Mantemos todos os registros disponíveis, mas priorizamos os do período atual
-        // para a página abrir já mostrando os dados de hoje sem esperar todos os históricos.
-        return dedupeRegistros(registros || []);
-    }, [registros]);
+        // Une a listagem operacional aos atendimentos oficiais do período.
+        // Isso garante que atendimentos já recolhidos/finalizados, ausentes do
+        // informativo.php operacional, ainda tenham seus logs consultados pelo ID.
+        return dedupeRegistros([...(registros || []), ...dadosPeriodoUnicos]);
+    }, [registros, dadosPeriodoUnicos]);
 
     const logEntities = useMemo(() => {
         const { start, end } = rangeToDates(periodo);
@@ -2095,7 +2190,7 @@ export default function Page() {
                     <div className="min-w-0">
                         <SummaryMobile
                             periodo={periodo}
-                            totalAtendimentos={dadosPeriodoUnicos.length}
+                            totalAtendimentos={totalAtendimentosCorreto}
                             tempoMedioGeral={tempoMedioGeral}
                             metricasGerais={metricasGerais}
                             matrizColaboradores={matrizColaboradores}
@@ -2104,7 +2199,7 @@ export default function Page() {
 
                         <SummaryDesktop
                             periodo={periodo}
-                            totalAtendimentos={dadosPeriodoUnicos.length}
+                            totalAtendimentos={totalAtendimentosCorreto}
                             tempoMedioGeral={tempoMedioGeral}
                             metricasGerais={metricasGerais}
                             matrizColaboradores={matrizColaboradores}
