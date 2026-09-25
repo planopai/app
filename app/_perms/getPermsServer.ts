@@ -2,29 +2,45 @@
 import "server-only";
 import { headers } from "next/headers";
 
+const API_URL =
+    "https://api.planoassistencialintegrado.com.br/pai_api.php";
+
 export async function getInitialPerms(): Promise<string[]> {
     try {
         const hdrs = await headers();
         const cookie = hdrs.get("cookie") || "";
 
-        const r = await fetch(`/api/php/pai_api.php?action=my_permissions`, {
-            headers: { cookie, "x-requested-with": "XMLHttpRequest" },
-            cache: "no-store",
-            // @ts-ignore – Next 15 permite caminho relativo no servidor
-            next: { revalidate: 0 },
-        });
-
-        const txt = await r.text();
-        let perms: any = [];
-        try {
-            perms = JSON.parse(txt.replace(/^\uFEFF/, "").trim());
-        } catch {
-            perms = [];
-        }
+        const r = await fetch(
+            `${API_URL}?action=my_permissions&_=${Date.now()}`,
+            {
+                headers: {
+                    cookie,
+                    "x-requested-with": "XMLHttpRequest",
+                },
+                cache: "no-store",
+                // @ts-ignore
+                next: { revalidate: 0 },
+            },
+        );
 
         if (!r.ok) return [];
-        return Array.isArray(perms)
-            ? perms.filter((item) => typeof item === "string")
+
+        const text = await r.text();
+
+        let data: unknown = [];
+        try {
+            data = JSON.parse(
+                text.replace(/^\uFEFF/, "").trim(),
+            );
+        } catch {
+            data = [];
+        }
+
+        return Array.isArray(data)
+            ? data.filter(
+                  (item): item is string =>
+                      typeof item === "string",
+              )
             : [];
     } catch {
         return [];
