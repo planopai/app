@@ -2,12 +2,22 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
-type Usuario = { id: number; nome: string; usuario: string };
-type Pagina = { key: string; label: string };
+type Cargo = {
+    id: number;
+    nome: string;
+    slug: string;
+    descricao?: string | null;
+    ativo: number;
+};
+
+type Pagina = {
+    key: string;
+    label: string;
+};
 
 const API_URL = 'https://api.planoassistencialintegrado.com.br/pai_api.php';
 
-/* ---------------- parser robusto (tolera BOM/HTML/HTML) ---------------- */
+/* ---------------- parser robusto (tolera BOM/HTML) ---------------- */
 async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     const r = await fetch(input, { cache: 'no-store', ...init });
     const txt = await r.text();
@@ -15,126 +25,253 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     let json: any = null;
 
     if (!cleaned.startsWith('<')) {
-        try { json = JSON.parse(cleaned); } catch {
+        try {
+            json = JSON.parse(cleaned);
+        } catch {
             const m = cleaned.match(/\{[\s\S]*\}$/m);
             if (m) json = JSON.parse(m[0]);
         }
     }
-    if (json == null) throw new Error(`Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? '…' : ''}`);
-    if (!r.ok || json?.erro) throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+
+    if (json == null) {
+        throw new Error(
+            `Resposta não-JSON do backend:\n${cleaned.slice(0, 300)}${cleaned.length > 300 ? '…' : ''}`
+        );
+    }
+
+    if (!r.ok || json?.erro) {
+        throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+    }
+
     return json;
 }
 
 export default function PermissoesPage() {
-    const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+    const [cargos, setCargos] = useState<Cargo[]>([]);
     const [pages, setPages] = useState<Pagina[]>([]);
-    const [userId, setUserId] = useState<number | null>(null);
+    const [cargoId, setCargoId] = useState<number | null>(null);
     const [allowed, setAllowed] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(false);
+    const [loadingBase, setLoadingBase] = useState(true);
     const [msg, setMsg] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     /* ---------------- fetchers ---------------- */
-    const fetchUsuarios = async () => {
-        setLoading(true); setError(null);
+    const fetchCargos = async () => {
         try {
-            const j = await safeJsonFetch(`${API_URL}?action=list_users&_=${Date.now()}`);
-            setUsuarios(j as Usuario[]);
+            const j = await safeJsonFetch(`${API_URL}?action=list_cargos&_=${Date.now()}`);
+            setCargos(Array.isArray(j) ? (j as Cargo[]) : []);
         } catch (e: any) {
-            setError(e.message || 'Erro ao carregar usuários.');
-        } finally { setLoading(false); }
+            setCargos([]);
+            throw new Error(e?.message || 'Erro ao carregar cargos.');
+        }
     };
 
     const fetchPages = async () => {
         try {
             const j = await safeJsonFetch(`${API_URL}?action=list_pages&_=${Date.now()}`);
-            setPages(j as Pagina[]);
-        } catch {
+            setPages(Array.isArray(j) ? (j as Pagina[]) : []);
+        } catch (e: any) {
             setPages([]);
+            throw new Error(e?.message || 'Erro ao carregar páginas.');
         }
     };
 
-    const fetchPerms = async (uid: number) => {
-        setLoading(true); setError(null); setMsg(null);
+    const fetchPerms = async (cid: number) => {
+        setLoading(true);
+        setError(null);
+        setMsg(null);
+
         try {
-            const j = await safeJsonFetch(`${API_URL}?action=list_permissions&user_id=${uid}&_=${Date.now()}`);
-            const set: Record<string, boolean> = {};
-            (j as string[]).forEach((k) => (set[k] = true));
-            setAllowed(set);
+            const j = await safeJsonFetch(
+                `${API_URL}?action=list_cargo_permissions&cargo_id=${cid}&_=${Date.now()}`
+            );
+
+            const next: Record<string, boolean> = {};
+
+            (Array.isArray(j) ? (j as string[]) : []).forEach((key) => {
+                next[key] = true;
+            });
+
+            setAllowed(next);
         } catch (e: any) {
-            setError(e.message || 'Erro ao carregar permissões.');
             setAllowed({});
-        } finally { setLoading(false); }
+            setError(e?.message || 'Erro ao carregar permissões do cargo.');
+        } finally {
+            setLoading(false);
+        }
     };
 
-    useEffect(() => { fetchUsuarios(); fetchPages(); }, []);
-    useEffect(() => { if (userId != null) fetchPerms(userId); }, [userId]);
+    useEffect(() => {
+        let alive = true;
+
+        (async () => {
+            setLoadingBase(true);
+            setError(null);
+
+            try {
+                await Promise.all([fetchCargos(), fetchPages()]);
+            } catch (e: any) {
+                if (alive) {
+                    setError(e?.message || 'Erro ao carregar dados.');
+                }
+            } finally {
+                if (alive) setLoadingBase(false);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (cargoId != null) {
+            fetchPerms(cargoId);
+        } else {
+            setAllowed({});
+            setMsg(null);
+        }
+    }, [cargoId]);
 
     /* ---------------- ações ---------------- */
-    const toggle = (key: string) => setAllowed((prev) => ({ ...prev, [key]: !prev[key] }));
+    const toggle = (key: string) => {
+        setMsg(null);
+        setAllowed((prev) => ({
+            ...prev,
+            [key]: !prev[key],
+        }));
+    };
 
     const marcarTudo = () => {
+        setMsg(null);
+
         setAllowed((prev) => {
             const next: Record<string, boolean> = { ...prev };
-            for (const p of pages) next[p.key] = true;
+
+            for (const p of pages) {
+                next[p.key] = true;
+            }
+
             return next;
         });
     };
 
     const desmarcarTudo = () => {
+        setMsg(null);
+
         setAllowed((prev) => {
             const next: Record<string, boolean> = { ...prev };
-            for (const p of pages) next[p.key] = false;
+
+            for (const p of pages) {
+                next[p.key] = false;
+            }
+
             return next;
         });
     };
 
     const save = async () => {
-        if (userId == null) return;
-        setLoading(true); setMsg(null); setError(null);
+        if (cargoId == null) return;
+
+        setLoading(true);
+        setMsg(null);
+        setError(null);
+
         try {
-            const selecionadas = Object.entries(allowed).filter(([, v]) => v).map(([k]) => k);
-            await safeJsonFetch(`${API_URL}?action=save_permissions`, {
+            const selecionadas = pages
+                .filter((p) => !!allowed[p.key])
+                .map((p) => p.key);
+
+            await safeJsonFetch(`${API_URL}?action=save_cargo_permissions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId, permissions: selecionadas }),
+                body: JSON.stringify({
+                    cargo_id: cargoId,
+                    permissions: selecionadas,
+                }),
             });
-            setMsg('Permissões salvas!');
+
+            setMsg('Permissões do cargo salvas!');
         } catch (e: any) {
-            setError(e.message || 'Erro ao salvar permissões.');
-        } finally { setLoading(false); }
+            setError(e?.message || 'Erro ao salvar permissões do cargo.');
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const currentUser = useMemo(() => usuarios.find((u) => u.id === userId), [userId, usuarios]);
+    const currentCargo = useMemo(
+        () => cargos.find((c) => c.id === cargoId) ?? null,
+        [cargoId, cargos]
+    );
+
+    const totalSelecionadas = useMemo(
+        () => pages.filter((p) => !!allowed[p.key]).length,
+        [allowed, pages]
+    );
 
     /* ---------------- render ---------------- */
     return (
         <div className="w-full px-3 sm:px-6 lg:px-10 pt-10 pb-14 md:pt-12 md:pb-16 lg:pt-16 lg:pb-24 font-[var(--font-nunito,_inherit)]">
-            <h1 className="text-2xl md:text-3xl font-semibold mb-6 md:mb-8">Permissões por usuário</h1>
+            <div className="mb-6 md:mb-8">
+                <h1 className="text-2xl md:text-3xl font-semibold">
+                    Permissões por cargo
+                </h1>
+
+                <p className="mt-1 text-sm text-gray-500">
+                    Defina quais páginas do sistema ficam disponíveis para cada cargo.
+                </p>
+            </div>
+
+            {error && !cargoId && (
+                <p className="text-red-600 mb-4">{error}</p>
+            )}
 
             <div className="rounded-2xl shadow p-4 mb-6">
-                <label className="block text-sm mb-1">Usuário</label>
+                <label className="block text-sm mb-1">Cargo</label>
+
                 <select
-                    className="border rounded-lg px-3 py-2 w-full sm:w-96"
-                    value={userId ?? ''}
-                    onChange={(e) => setUserId(e.target.value ? parseInt(e.target.value) : null)}
+                    className="border rounded-lg px-3 py-2 w-full sm:w-96 bg-white"
+                    value={cargoId ?? ''}
+                    onChange={(e) =>
+                        setCargoId(
+                            e.target.value ? Number(e.target.value) : null
+                        )
+                    }
+                    disabled={loadingBase}
                 >
-                    <option value="">Selecione...</option>
-                    {usuarios.map((u) => (
-                        <option key={u.id} value={u.id}>
-                            #{u.id} – {u.nome} ({u.usuario})
+                    <option value="">
+                        {loadingBase ? 'Carregando cargos...' : 'Selecione...'}
+                    </option>
+
+                    {cargos.map((cargo) => (
+                        <option key={cargo.id} value={cargo.id}>
+                            {cargo.nome}
                         </option>
                     ))}
                 </select>
+
+                {cargos.length === 0 && !loadingBase && (
+                    <p className="mt-2 text-sm text-gray-500">
+                        Nenhum cargo ativo encontrado.
+                    </p>
+                )}
             </div>
 
-            {userId != null && (
+            {cargoId != null && (
                 <div className="rounded-2xl shadow p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                        <h2 className="text-lg font-medium">
-                            Páginas liberadas para {currentUser?.nome} ({currentUser?.usuario})
-                        </h2>
-                        <div className="flex gap-2">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <h2 className="text-lg font-medium">
+                                Páginas liberadas para {currentCargo?.nome ?? 'cargo'}
+                            </h2>
+
+                            <p className="mt-1 text-sm text-gray-500">
+                                {totalSelecionadas} de {pages.length} páginas selecionadas
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
                             <button
                                 onClick={marcarTudo}
                                 className="px-3 py-2 rounded-xl border text-sm"
@@ -143,6 +280,7 @@ export default function PermissoesPage() {
                             >
                                 Marcar tudo
                             </button>
+
                             <button
                                 onClick={desmarcarTudo}
                                 className="px-3 py-2 rounded-xl border text-sm"
@@ -154,35 +292,57 @@ export default function PermissoesPage() {
                         </div>
                     </div>
 
-                    {msg && <p className="text-green-700 mt-2">{msg}</p>}
-                    {error && <p className="text-red-600 mt-2">{error}</p>}
+                    {msg && (
+                        <p className="text-green-700 mt-3">{msg}</p>
+                    )}
+
+                    {error && (
+                        <p className="text-red-600 mt-3">{error}</p>
+                    )}
+
+                    {loading && pages.length > 0 && (
+                        <p className="text-sm text-gray-500 mt-3">
+                            Carregando...
+                        </p>
+                    )}
 
                     <ul className="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {pages.map((p) => (
-                            <li key={p.key} className="flex items-center gap-2">
+                            <li
+                                key={p.key}
+                                className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50"
+                            >
                                 <input
                                     id={`pg-${p.key}`}
                                     type="checkbox"
                                     checked={!!allowed[p.key]}
                                     onChange={() => toggle(p.key)}
+                                    disabled={loading}
                                 />
-                                <label htmlFor={`pg-${p.key}`}>{p.label}</label>
+
+                                <label
+                                    htmlFor={`pg-${p.key}`}
+                                    className="cursor-pointer select-none"
+                                >
+                                    {p.label}
+                                </label>
                             </li>
                         ))}
-                        {pages.length === 0 && (
+
+                        {pages.length === 0 && !loadingBase && (
                             <li className="text-sm text-muted-foreground col-span-full">
                                 Nenhuma página disponível.
                             </li>
                         )}
                     </ul>
 
-                    <div className="mt-5">
+                    <div className="mt-5 flex items-center gap-3">
                         <button
                             onClick={save}
-                            disabled={loading}
+                            disabled={loading || cargoId == null}
                             className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
                         >
-                            Salvar permissões
+                            {loading ? 'Salvando...' : 'Salvar permissões'}
                         </button>
                     </div>
                 </div>
