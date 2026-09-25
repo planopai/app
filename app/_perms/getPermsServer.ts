@@ -2,46 +2,50 @@
 import "server-only";
 import { headers } from "next/headers";
 
-const API_URL =
-    "https://api.planoassistencialintegrado.com.br/pai_api.php";
-
 export async function getInitialPerms(): Promise<string[]> {
     try {
         const hdrs = await headers();
         const cookie = hdrs.get("cookie") || "";
 
-        const r = await fetch(
-            `${API_URL}?action=my_permissions&_=${Date.now()}`,
+        // whoami com os cookies da requisição
+        const r1 = await fetch(`/api/php/pai_api.php?action=whoami`, {
+            headers: { cookie, "x-requested-with": "XMLHttpRequest" },
+            cache: "no-store",
+            // @ts-ignore – Next 15 permite caminho relativo no servidor
+            next: { revalidate: 0 },
+        });
+
+        const t1 = await r1.text();
+        let who: any = {};
+
+        try {
+            who = JSON.parse(t1.replace(/^\uFEFF/, "").trim());
+        } catch { }
+
+        const uid = Number(who?.id || 0);
+        if (!uid) return []; // não logado → nada
+
+        // lista permissões
+        const r2 = await fetch(
+            `/api/php/pai_api.php?action=list_permissions&user_id=${uid}`,
             {
-                headers: {
-                    cookie,
-                    "x-requested-with": "XMLHttpRequest",
-                },
+                headers: { cookie, "x-requested-with": "XMLHttpRequest" },
                 cache: "no-store",
                 // @ts-ignore
                 next: { revalidate: 0 },
             },
         );
 
-        if (!r.ok) return [];
+        const t2 = await r2.text();
+        let perms: any = [];
 
-        const text = await r.text();
-
-        let data: unknown = [];
         try {
-            data = JSON.parse(
-                text.replace(/^\uFEFF/, "").trim(),
-            );
+            perms = JSON.parse(t2.replace(/^\uFEFF/, "").trim());
         } catch {
-            data = [];
+            perms = [];
         }
 
-        return Array.isArray(data)
-            ? data.filter(
-                  (item): item is string =>
-                      typeof item === "string",
-              )
-            : [];
+        return Array.isArray(perms) ? perms : [];
     } catch {
         return [];
     }
