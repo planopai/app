@@ -72,7 +72,7 @@ type ExportCard = {
     expires_at?: string | null;
 };
 
-type PendingActionKind = "novo_atendimento" | "requisicao_material" | "atendimento_fase" | "editar_atendimento";
+type PendingActionKind = "novo_atendimento" | "requisicao_material" | "atendimento_fase" | "editar_atendimento" | "module_action";
 type PendingActionStatus = "pending" | "executing" | "completed" | "cancelled" | "error";
 
 type PendingActionDetail = {
@@ -601,7 +601,7 @@ function sanitizePendingActions(value: unknown): PendingAction[] {
     if (!Array.isArray(value)) return [];
 
     const out: PendingAction[] = [];
-    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material", "atendimento_fase", "editar_atendimento"]);
+    const allowedKinds = new Set<PendingActionKind>(["novo_atendimento", "requisicao_material", "atendimento_fase", "editar_atendimento", "module_action"]);
     const allowedStatuses = new Set<PendingActionStatus>(["pending", "executing", "completed", "cancelled", "error"]);
 
     for (const raw of value) {
@@ -740,7 +740,15 @@ function PendingActionCards({
                                                 : "bg-amber-100 text-amber-700",
                                     ].join(" ")}
                                 >
-                                    {action.kind === "novo_atendimento" ? "ATD" : action.kind === "atendimento_fase" ? "AÇÃO" : action.kind === "editar_atendimento" ? "EDIT" : "REQ"}
+                                    {action.kind === "novo_atendimento"
+                                        ? "ATD"
+                                        : action.kind === "atendimento_fase"
+                                            ? "AÇÃO"
+                                            : action.kind === "editar_atendimento"
+                                                ? "EDIT"
+                                                : action.kind === "module_action"
+                                                    ? "MOD"
+                                                    : "REQ"}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
@@ -1423,9 +1431,30 @@ function toolLabel(tool: string) {
 }
 
 function renderInlineMarkdown(text: string, keyPrefix: string) {
-    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s<]+)/g).filter(Boolean);
+
     return parts.map((part, index) => {
         const key = `${keyPrefix}-${index}`;
+
+        if (/^https?:\/\//i.test(part)) {
+            const cleanUrl = part.replace(/[),.;!?]+$/, "");
+            const suffix = part.slice(cleanUrl.length);
+
+            return (
+                <React.Fragment key={key}>
+                    <a
+                        href={cleanUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="break-all font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
+                    >
+                        Abrir link de pagamento
+                    </a>
+                    {suffix}
+                </React.Fragment>
+            );
+        }
+
         if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
             return (
                 <strong key={key} className="font-semibold text-slate-950">
@@ -1433,6 +1462,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
                 </strong>
             );
         }
+
         if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
             return (
                 <code key={key} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.9em] text-slate-700">
@@ -1440,6 +1470,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
                 </code>
             );
         }
+
         return <React.Fragment key={key}>{part}</React.Fragment>;
     });
 }
