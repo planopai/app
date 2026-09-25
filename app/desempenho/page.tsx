@@ -3,22 +3,22 @@
 /*
  * PAINEL DE ATENDIMENTOS — restrito à gerência
  *
- * Dados: https://api.planoassistencialintegrado.com.br/painel_atendimentos.php (cálculos feitos no servidor).
- * Histórico da ficha: https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=...
+ * Usa só os PHPs que o app já tem (mesmas chamadas do Dashboard de desempenho e do Quadro):
+ *   balanco.php?inicio&fim         → atendimentos oficiais do período e do período anterior
+ *   informativo.php?listar=1       → registros completos
+ *   historico_sepultamentos.php    → fases, responsáveis e horários (6 consultas por vez)
+ * Os cálculos são feitos no navegador.
  * Visual: mesmas variáveis --dash-* e fonte Nunito do Dashboard de desempenho.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Nunito } from "next/font/google";
 
 const nunito = Nunito({ subsets: ["latin"], weight: ["400", "600", "700", "800", "900"] });
 
-const API_BASE_URL = "https://api.planoassistencialintegrado.com.br";
-const PAINEL_URL = `${API_BASE_URL}/painel_atendimentos.php`;
-const HISTORICO_URL = `${API_BASE_URL}/historico_sepultamentos.php?log=1&id=`;
 
 /* =========================================================
-   TIPOS (resposta do painel_atendimentos.php)
+   TIPOS (estrutura montada pelo cálculo do painel)
 ========================================================= */
 
 type Contagem = { nome: string; total: number };
@@ -117,6 +117,409 @@ const STATUS_COR: Record<string, string> = {
     fase05: "bg-rose-600", fase06: "bg-fuchsia-700", fase12: "bg-emerald-600", fase07: "bg-cyan-600", fase08: "bg-violet-600",
     fase09: "bg-orange-600", fase10: "bg-green-700", fase11: "bg-slate-700",
 };
+
+/* =========================================================
+   FONTES DE DADOS (os mesmos PHPs que o app já usa)
+   - balanco.php?inicio&fim  → atendimentos oficiais do período
+   - informativo.php?listar=1 → registros completos dos atendimentos
+   - historico_sepultamentos.php?log=1&id= → fases, responsáveis e horários
+========================================================= */
+
+const INFORMATIVO_URL = "/api/php/informativo.php?listar=1";
+const BALANCO_URL = "https://api.planoassistencialintegrado.com.br/balanco.php";
+const HISTORICO_URL = "/api/php/historico_sepultamentos.php?log=1&id=";
+
+type Registro = { [k: string]: any };
+type LogItem = { id?: number | string; datahora?: string; acao?: string; status_anterior?: string | null; status_novo?: string | null; detalhes?: any; usuario?: string };
+type BalancoRow = { atendimento_id: number | string; falecido?: string; convenio?: string; data_referencia?: string;[k: string]: any };
+type BalancoResp = { ok?: boolean; need_login?: any; msg?: string; resumo?: { atendimentos?: number }; atendimentos?: BalancoRow[] };
+
+class LoginError extends Error { }
+
+async function getJson<T>(url: string, timeoutMs = 20000): Promise<T> {
+    const ac = new AbortController();
+    const t = window.setTimeout(() => ac.abort(), timeoutMs);
+    try {
+        const sep = url.includes("?") ? "&" : "?";
+        const res = await fetch(`${url}${sep}_ts=${Date.now()}`, { method: "GET", credentials: "include", cache: "no-store", signal: ac.signal });
+        if (res.status === 401) throw new LoginError("Sessão expirada. Faça login novamente.");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as any;
+        if (json && typeof json === "object" && !Array.isArray(json) && json.need_login) throw new LoginError(json.msg || "Sessão expirada. Faça login novamente.");
+        return json as T;
+    } finally {
+        window.clearTimeout(t);
+    }
+}
+
+function extrairArray<T>(json: any): T[] {
+    if (Array.isArray(json)) return json;
+    if (json && Array.isArray(json.dados)) return json.dados;
+    if (json && Array.isArray(json.data)) return json.data;
+    return [];
+}
+
+/* Cache do histórico em memória: atendimentos encerrados mudam pouco. */
+const HIST_CACHE = new Map<string, { exp: number; logs: LogItem[] }>();
+async function carregarHistorico(id: string, encerrado: boolean): Promise<LogItem[]> {
+    const hit = HIST_CACHE.get(id);
+    if (hit && hit.exp > Date.now()) return hit.logs;
+    const json = await getJson<any>(`${HISTORICO_URL}${encodeURIComponent(id)}`, 15000);
+    const logs = extrairArray<LogItem>(json).slice().sort((a, b) => tsOf(a.datahora) - tsOf(b.datahora));
+    HIST_CACHE.set(id, { exp: Date.now() + (encerrado ? 30 : 2) * 60_000, logs });
+    return logs;
+}
+
+/* =========================================================
+   NORMALIZAÇÃO E REGRAS
+========================================================= */
+
+const norm = (v: any) => String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const nomeProprio = (v: any) => norm(v).replace(/(^|\s)\S/g, (m) => m.toUpperCase());
+const ehSim = (v: any) => ["sim", "s"].includes(norm(v));
+const ehNao = (v: any) => ["nao", "n"].includes(norm(v));
+const dataValida = (s: any) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}/.test(s) && !s.startsWith("0000");
+function tsOf(s: any): number {
+    const m = String(s ?? "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m || m[1] === "0000") return NaN;
+    return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)).getTime();
+}
+const isoDe = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function parseDet(d: any): any { if (d == null) return null; if (typeof d === "object") return d; try { return JSON.parse(String(d)); } catch { return null; } }
+function faseKey(s: any): string {
+    const n = norm(s);
+    const m = n.match(/^fase\s?(\d+)$/);
+    return m ? `fase${m[1].padStart(2, "0")}` : n;
+}
+const mediana = (v: number[]) => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const media = (v: number[]) => (v.length ? v.reduce((a, x) => a + x, 0) / v.length : null);
+const quantil = (v: number[], q: number) => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); return s[Math.round(q * (s.length - 1))]; };
+const r2 = (v: number | null, d = 2) => (v == null ? null : Math.round(v * 10 ** d) / 10 ** d);
+const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+function conta<T>(itens: T[], f: (x: T) => string | null | undefined): { nome: string; total: number }[] {
+    const m = new Map<string, number>();
+    itens.forEach((x) => { const k = f(x); if (k) m.set(k, (m.get(k) ?? 0) + 1); });
+    return [...m.entries()].map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
+}
+
+const FASE_ROTULO_APP: Record<string, string> = {
+    aguardando: "Aguardando", fase01: "Removendo", fase02: "Aguardando procedimento", fase03: "Preparando", fase04: "Aguardando ornamentação",
+    fase05: "Ornamentando", fase06: "Aguardando corpo pronto", fase12: "Corpo pronto", fase07: "Transportando p/ velório", fase08: "Velando",
+    fase09: "Transportando p/ sepultamento", fase10: "Sepultamento concluído", fase11: "Material recolhido",
+};
+
+/** Mesma regra do atendimentoDeveFicarNoQuadro() do Quadro. */
+function noQuadro(r: Registro): boolean {
+    const st = faseKey(r.status);
+    if (!st || !FASE_ROTULO_APP[st]) return true;
+    if (st === "fase11") return false;
+    const tipo = norm(r.tipo_atendimento);
+    const terceiro = tipo === "terceiro" || (tipo !== "funerario" && ehNao(r.assistencia) && ehNao(r.tanato) && ehNao(r.ornamentacao));
+    if (!terceiro && ehSim(r.assistencia)) return true;
+    if (!ehNao(r.realiza_sepultamento)) return st !== "fase10";
+    if (!ehNao(r.realiza_velorio)) return !["fase08", "fase09", "fase10"].includes(st);
+    return !["fase12", "fase07", "fase08", "fase09", "fase10"].includes(st);
+}
+
+function grupoVelorio(r: Registro): string {
+    if (ehNao(r.realiza_velorio)) return "Sem velório";
+    const n = norm(r.local_velorio);
+    if (!n || n === "nao informado") return "Não informado";
+    if (/sem velorio|nao vai ter|nao tem|nao havera/.test(n)) return "Sem velório";
+    if (n.includes("bonfim") || (n.includes("memorial") && !n.includes("cuid"))) { const m = n.match(/sala\s*0?(\d)/); return m ? `Memorial · Sala 0${m[1]}` : "Memorial"; }
+    if (n.includes("cuid")) return "Rede Cuidar";
+    if (/capela|igreja|missao mundial/.test(n)) return "Igreja / capela";
+    return "Residência / endereço";
+}
+function chaveCemiterio(s: any): string {
+    let n = norm(s).replace(/^cemiterio[:\s-]*/, "").replace(/^(de|do|da|dos)\s+/, "").replace(/[.(].*$/, "").trim();
+    if (!n || n === "nao informado") return "Não informado";
+    if (n.startsWith("a def")) return "A definir";
+    return n;
+}
+function chaveUrna(s: any): string {
+    const n = norm(s);
+    if (!n) return "Não informada";
+    if (n.includes("anjo")) return "Urna Anjo (infantil)";
+    const m = n.match(/(\d{1,3})/);
+    return m ? `Urna ${m[1].padStart(3, "0")}` : nomeProprio(n);
+}
+function religiao(s: any): string {
+    const n = norm(s);
+    if (!n || n === "nao informado") return "Não informado";
+    if (n.includes("catol")) return "Católico";
+    if (n.includes("evang")) return "Evangélico";
+    if (n.includes("espir")) return "Espírita";
+    return "Outras";
+}
+function idadeDe(r: Registro, criadoTs: number): number | null {
+    if (!dataValida(r.data_nascimento)) return null;
+    const ref = dataValida(r.data_falecimento) ? tsOf(String(r.data_falecimento).slice(0, 10)) : criadoTs;
+    const nasc = tsOf(String(r.data_nascimento).slice(0, 10));
+    if (Number.isNaN(ref) || Number.isNaN(nasc)) return null;
+    const a = new Date(ref), b = new Date(nasc);
+    let anos = a.getFullYear() - b.getFullYear();
+    if (a.getMonth() < b.getMonth() || (a.getMonth() === b.getMonth() && a.getDate() < b.getDate())) anos--;
+    return anos >= 0 && anos <= 115 ? anos : null;
+}
+
+/**
+ * Registro a partir do histórico, para atendimentos que já saíram do informativo.php:
+ * o log "criou" traz o cadastro completo e cada "editou" traz os campos alterados.
+ */
+function registroDoHistorico(logs: LogItem[]): Registro {
+    const r: Registro = {};
+    for (const l of logs) {
+        const acao = norm(l.acao);
+        const det = parseDet(l.detalhes);
+        if (det && typeof det === "object" && !Array.isArray(det) && !det.sem_alteracoes && (acao === "criou" || acao.startsWith("edit"))) {
+            for (const [k, v] of Object.entries(det)) if (v !== undefined && typeof v !== "object") r[k] = v;
+        }
+        if (acao.includes("foto") && acao.includes("ornament")) { r.foto_fim_ornamentacao_em = l.datahora; r.foto_fim_ornamentacao_usuario = l.usuario; }
+        if (acao.includes("foto") && acao.includes("entrega")) { r.foto_entrega_corpo_em = l.datahora; r.foto_entrega_corpo_usuario = l.usuario; }
+        if (acao.startsWith("assinou")) r.__assinatura = true;
+        if (l.status_novo) r.status = l.status_novo;
+    }
+    return r;
+}
+
+/* ---------------- Etapas (manual de procedimentos) ---------------- */
+
+type EtapaDef = { chave: string; rotulo: string; inicio: string; fim: string; credito: string; tipo: "execucao" | "espera"; max: number };
+const ETAPAS: EtapaDef[] = [
+    { chave: "resposta", rotulo: "Resposta ao chamado", inicio: "criado", fim: "fase01", credito: "fase01", tipo: "espera", max: 48 },
+    { chave: "remocao", rotulo: "Remoção", inicio: "fase01", fim: "fase02", credito: "fase01", tipo: "execucao", max: 24 },
+    { chave: "esp_conserv", rotulo: "Espera p/ conservação", inicio: "fase02", fim: "fase03", credito: "fase03", tipo: "espera", max: 72 },
+    { chave: "conservacao", rotulo: "Conservação", inicio: "fase03", fim: "fase04", credito: "fase03", tipo: "execucao", max: 24 },
+    { chave: "esp_ornam", rotulo: "Espera p/ ornamentação", inicio: "fase04", fim: "fase05", credito: "fase05", tipo: "espera", max: 72 },
+    { chave: "ornamentacao", rotulo: "Ornamentação", inicio: "fase05", fim: "fase06", credito: "fase05", tipo: "execucao", max: 24 },
+    { chave: "esp_pronto", rotulo: "Espera p/ corpo pronto", inicio: "fase06", fim: "fase12", credito: "fase12", tipo: "espera", max: 72 },
+    { chave: "esp_saida", rotulo: "Espera p/ saída ao velório", inicio: "fase12", fim: "fase07", credito: "fase07", tipo: "espera", max: 72 },
+    { chave: "transporte", rotulo: "Transporte ao velório", inicio: "fase07", fim: "fase08", credito: "fase07", tipo: "execucao", max: 24 },
+    { chave: "velorio", rotulo: "Velório", inicio: "fase08", fim: "fase09", credito: "fase08", tipo: "execucao", max: 96 },
+    { chave: "sepultamento", rotulo: "Sepultamento", inicio: "fase09", fim: "fase10", credito: "fase09", tipo: "execucao", max: 24 },
+    { chave: "recolhimento", rotulo: "Recolhimento do material", inicio: "fase10", fim: "fase11", credito: "fase11", tipo: "execucao", max: 240 },
+];
+
+function marcos(criadoTs: number, agente: string, logs: LogItem[]) {
+    const T: Record<string, number> = {}, U: Record<string, string> = {};
+    if (!Number.isNaN(criadoTs)) T.criado = criadoTs;
+    U.criado = agente;
+    const trocas: [number, string][] = [];
+    for (const l of logs) {
+        const ts = tsOf(l.datahora);
+        if (Number.isNaN(ts)) continue;
+        const acao = norm(l.acao);
+        if (acao === "criou") { T.criado = Math.min(T.criado ?? ts, ts); if (l.usuario) U.criado = nomeProprio(l.usuario); continue; }
+        const novo = faseKey(l.status_novo), ant = faseKey(l.status_anterior);
+        if (!novo || novo === ant || !FASE_ROTULO_APP[novo]) continue;
+        trocas.push([ts, nomeProprio(l.usuario)]);
+        if (T[novo] === undefined) { T[novo] = ts; U[novo] = nomeProprio(l.usuario); }
+    }
+    return { T, U, trocas };
+}
+function etapasDe(T: Record<string, number>, U: Record<string, string>) {
+    const out: Record<string, { h: number; quem: string; tipo: "execucao" | "espera"; ini: number }> = {};
+    for (const e of ETAPAS) {
+        if (T[e.inicio] === undefined || T[e.fim] === undefined) continue;
+        const h = (T[e.fim] - T[e.inicio]) / 36e5;
+        if (h < 0 || h > e.max) continue;
+        out[e.chave] = { h, quem: U[e.credito] ?? "", tipo: e.tipo, ini: T[e.inicio] };
+    }
+    return out;
+}
+
+/* =========================================================
+   CÁLCULO DO PAINEL (no navegador)
+========================================================= */
+
+type Base = { id: string; r: Registro; logs: LogItem[] | null; criadoTs: number; dataRef: string; convenio: string; agente: string };
+
+function calcularPainel(base: Base[], p: { inicio: string; fim: string; dias: number; anterior: number; antInicio: string; antFim: string }): Omit<Painel, "em_andamento" | "opcoes" | "ok" | "gerado_em"> {
+    const n = base.length;
+    const DOW = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+    // nome exibido do cemitério = forma mais digitada de cada chave
+    const formas = new Map<string, Map<string, number>>();
+    base.forEach((b) => { const k = chaveCemiterio(b.r.local); const o = String(b.r.local ?? "").trim().replace(/\s+/g, " "); const m = formas.get(k) ?? new Map(); m.set(o, (m.get(o) ?? 0) + 1); formas.set(k, m); });
+    const nomeCem = (k: string) => {
+        if (k === "Não informado" || k === "A definir") return k;
+        const top = [...(formas.get(k) ?? new Map()).entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? k;
+        const s = top.replace(/^cemit[eé]rio\b[:\s]*/i, "Cemitério ");
+        return /^cemit/i.test(s) ? s.trim() : `Cemitério ${s}`.trim();
+    };
+
+    const itens = base.map((b) => {
+        const { T, U, trocas } = marcos(b.criadoTs, b.agente, b.logs ?? []);
+        const et = etapasDe(T, U);
+        let ciclo = T.fase10 !== undefined && T.criado !== undefined ? (T.fase10 - T.criado) / 36e5 : null;
+        if (ciclo !== null && (ciclo <= 0 || ciclo > 168)) ciclo = null;
+        const esperas = Object.values(et).filter((e) => e.tipo === "espera");
+        return {
+            b, r: b.r, T, U, trocas, et, ciclo, ocioso: esperas.length ? esperas.reduce((a, e) => a + e.h, 0) : null,
+            idade: idadeDe(b.r, b.criadoTs), velorio: grupoVelorio(b.r), cemiterio: nomeCem(chaveCemiterio(b.r.local)),
+            urna: chaveUrna(b.r.urna), religiao: religiao(b.r.religiao), status: faseKey(b.r.status), temHist: !!(b.logs && b.logs.length),
+        };
+    });
+    type It = (typeof itens)[number];
+
+    /* ---- resumo ---- */
+    const porDia = conta(itens, (x) => x.b.dataRef);
+    const idades = itens.map((x) => x.idade).filter((v): v is number => v != null);
+    const ciclos = itens.map((x) => x.ciclo).filter((v): v is number => v != null);
+    const resumo = {
+        total: n, anterior: p.anterior, variacao_pct: p.anterior ? r2(((n - p.anterior) / p.anterior) * 100, 1) : null,
+        media_dia: r2(n / Math.max(1, p.dias))!, pico: porDia[0] ? { data: porDia[0].nome, total: porDia[0].total } : null,
+        idade_media: r2(media(idades), 0), idade_n: idades.length,
+        ciclo_mediana_h: r2(mediana(ciclos)), ciclo_p90_h: r2(quantil(ciclos, 0.9)), ciclo_n: ciclos.length,
+        em_andamento_periodo: itens.filter((x) => x.b.r.status && noQuadro(x.r)).length,
+        com_historico: itens.filter((x) => x.temHist).length,
+    };
+
+    /* ---- série por convênio ---- */
+    const gran: "dia" | "semana" | "mes" = p.dias <= 62 ? "dia" : p.dias <= 210 ? "semana" : "mes";
+    const chaveDe = (d: string) => {
+        if (gran === "dia") return d;
+        if (gran === "mes") return d.slice(0, 7);
+        const t = tsOf(d); const dt = new Date(t); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); return isoDe(dt.getTime());
+    };
+    const pontos = new Map<string, { chave: string; rotulo: string; total: number; por_convenio: Record<string, number> }>();
+    {
+        let c = chaveDe(p.inicio); const fimK = chaveDe(p.fim); let g = 0;
+        while (c <= fimK && g++ < 2000) {
+            let rot: string, prox: string;
+            if (gran === "mes") { rot = `${MES[+c.slice(5, 7) - 1]}/${c.slice(2, 4)}`; const [y, m] = c.split("-").map(Number); prox = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`; }
+            else { rot = `${c.slice(8, 10)}/${c.slice(5, 7)}`; const d = new Date(tsOf(c)); d.setDate(d.getDate() + (gran === "dia" ? 1 : 7)); prox = isoDe(d.getTime()); }
+            pontos.set(c, { chave: c, rotulo: rot, total: 0, por_convenio: {} }); c = prox;
+        }
+    }
+    itens.forEach((x) => { const pt = pontos.get(chaveDe(x.b.dataRef)); if (!pt) return; pt.total++; pt.por_convenio[x.b.convenio] = (pt.por_convenio[x.b.convenio] ?? 0) + 1; });
+
+    /* ---- demanda ---- */
+    const heat = Array.from({ length: 7 }, () => Array(24).fill(0) as number[]);
+    itens.forEach((x) => { const t = x.T.criado; if (t !== undefined) { const d = new Date(t); heat[d.getDay()][d.getHours()]++; } });
+    const nDias = Array(7).fill(0), nAt = Array(7).fill(0);
+    for (let t = tsOf(p.inicio), g = 0; t <= tsOf(p.fim) && g < 5000; g++) { nDias[new Date(t).getDay()]++; const d = new Date(t); d.setDate(d.getDate() + 1); t = d.getTime(); }
+    itens.forEach((x) => { const t = tsOf(x.b.dataRef); if (!Number.isNaN(t)) nAt[new Date(t).getDay()]++; });
+    const dia_semana = [1, 2, 3, 4, 5, 6, 0].map((d) => ({ dia: DOW[d], total: nAt[d], dias: nDias[d], media: nDias[d] ? r2(nAt[d] / nDias[d])! : 0 }));
+
+    /* ---- equipe ---- */
+    const matriz: Record<string, Record<string, number[]>> = {}, mensal: Record<string, Record<string, number>> = {}, mesesSet = new Set<string>();
+    const etapas = ETAPAS.map((e) => {
+        const hs: number[] = [];
+        itens.forEach((x) => {
+            const s = x.et[e.chave]; if (!s) return;
+            hs.push(s.h);
+            if (e.tipo === "execucao" && s.quem) {
+                ((matriz[s.quem] ??= {})[e.chave] ??= []).push(s.h);
+                const m = isoDe(s.ini).slice(0, 7); mesesSet.add(m);
+                (mensal[s.quem] ??= {})[m] = ((mensal[s.quem] ??= {})[m] ?? 0) + 1;
+            }
+        });
+        return { chave: e.chave, rotulo: e.rotulo, tipo: e.tipo, n: hs.length, mediana_h: r2(mediana(hs)), media_h: r2(media(hs)), p90_h: r2(quantil(hs, 0.9)) };
+    });
+    const matrizOut = Object.entries(matriz).map(([agente, pe]) => {
+        const et: Record<string, { n: number; horas: number; mediana_h: number | null }> = {};
+        let tn = 0, th = 0;
+        Object.entries(pe).forEach(([k, hs]) => { const s = hs.reduce((a, v) => a + v, 0); et[k] = { n: hs.length, horas: r2(s, 1)!, mediana_h: r2(mediana(hs)) }; tn += hs.length; th += s; });
+        return { agente, etapas: et, total_n: tn, total_h: r2(th, 1)! };
+    }).sort((a, b) => b.total_n - a.total_n);
+    const meses = [...mesesSet].sort();
+    const mensalOut = Object.entries(mensal).map(([agente, pm]) => ({ agente, meses: Object.fromEntries(meses.map((m) => [m, pm[m] ?? 0])) }))
+        .sort((a, b) => Object.values(b.meses).reduce((s, v) => s + v, 0) - Object.values(a.meses).reduce((s, v) => s + v, 0));
+
+    const pontual = (fase: string, campoData: string, campoHora: string, faseAutor: string) => {
+        const geral: number[] = [], porAg: Record<string, number[]> = {};
+        itens.forEach((x) => {
+            const real = x.T[fase], d = x.r[campoData], h = x.r[campoHora];
+            if (real === undefined || !dataValida(d) || !h || h === "00:00:00" || h === "00:00") return;
+            const comb = tsOf(`${String(d).slice(0, 10)} ${h}`);
+            if (Number.isNaN(comb)) return;
+            const min = (real - comb) / 60000;
+            if (Math.abs(min) > 1440) return;
+            geral.push(min);
+            const ag = x.U[faseAutor]; if (ag) (porAg[ag] ??= []).push(min);
+        });
+        const f = (v: number[]) => ({ n: v.length, no_horario_pct: pct(v.filter((m) => m <= 15).length, v.length), atraso_mediana_min: r2(mediana(v), 0) });
+        return { ...f(geral), por_agente: Object.entries(porAg).map(([agente, v]) => ({ agente, ...f(v) })).sort((a, b) => b.n - a.n) };
+    };
+
+    const lote: Record<string, { trocas: number; em_lote: number }> = {};
+    itens.forEach((x) => {
+        const tr = [...x.trocas].sort((a, b) => a[0] - b[0]);
+        tr.forEach(([t, ag], i) => { if (!ag) return; const l = (lote[ag] ??= { trocas: 0, em_lote: 0 }); l.trocas++; if (i > 0 && t - tr[i - 1][0] < 60_000) l.em_lote++; });
+    });
+    const ev: Record<string, { on: number; ook: number; en: number; eok: number }> = {};
+    itens.forEach((x) => {
+        if (x.T.fase06 !== undefined) { const ag = x.U.fase05 || x.U.fase06; if (ag) { const e = (ev[ag] ??= { on: 0, ook: 0, en: 0, eok: 0 }); e.on++; if (x.r.foto_fim_ornamentacao_em) e.ook++; } }
+        if (x.T.fase08 !== undefined) { const ag = x.U.fase07 || x.U.fase08; if (ag) { const e = (ev[ag] ??= { on: 0, ook: 0, en: 0, eok: 0 }); e.en++; if (x.r.foto_entrega_corpo_em) e.eok++; } }
+    });
+    const ociosos = itens.map((x) => x.ocioso).filter((v): v is number => v != null);
+
+    /* ---- perfil ---- */
+    const servicosDef: [string, (r: Registro) => boolean][] = [
+        ["Tanatopraxia", (r) => ehSim(r.tanato)], ["Ornamentação", (r) => ehSim(r.ornamentacao)],
+        ["· flores naturais", (r) => ehSim(r.ornamentacao) && norm(r.ornamentacao_tipo) === "natural"],
+        ["· flores artificiais", (r) => ehSim(r.ornamentacao) && norm(r.ornamentacao_tipo) === "artificial"],
+        ["Assistência (materiais)", (r) => ehSim(r.assistencia)], ["Véu", (r) => ehSim(r.veu)], ["Cordão", (r) => ehSim(r.cordao)],
+        ["Invol", (r) => ehSim(r.invol)], ["Coroa de flores", (r) => ehSim(r.coroa_flores)], ["Velório online", (r) => ehSim(r.velorio_online)], ["Kit lanche", (r) => ehSim(r.kit_lanche)],
+    ];
+    const camposDef: [string, (x: It) => boolean][] = [
+        ["Data de falecimento", (x) => dataValida(x.r.data_falecimento)], ["Data de nascimento", (x) => dataValida(x.r.data_nascimento)],
+        ["Foto do falecido", (x) => !!x.r.foto_falecido], ["Religião", (x) => x.religiao !== "Não informado"],
+        ["Local do velório", (x) => x.velorio !== "Não informado"],
+        ["Horário do velório", (x) => { const h = String(x.r.hora_inicio_velorio ?? ""); return !!h && !h.startsWith("00:00"); }],
+        ["Cemitério", (x) => !["Não informado", "A definir"].includes(x.cemiterio)], ["Urna", (x) => x.urna !== "Não informada"],
+        ["CPF do responsável (opcional)", (x) => !!x.r.cpf_responsavel],
+        ["Assinatura (opcional)", (x) => !!(x.r.assinatura_responsavel || x.r.assinatura_requerente || x.r.__assinatura)],
+        ["Tipo de atendimento", (x) => !!String(x.r.tipo_atendimento ?? "").trim()],
+    ];
+    const essenciais = ["Data de nascimento", "Foto do falecido", "Religião", "Horário do velório", "Cemitério", "Urna"];
+    const qa: Record<string, number[]> = {};
+    itens.forEach((x) => { const ok = camposDef.filter(([l, f]) => essenciais.includes(l) && f(x)).length; (qa[x.b.agente] ??= []).push((ok / essenciais.length) * 100); });
+    const faixas: [string, number, number][] = [["0–17", 0, 17], ["18–39", 18, 39], ["40–59", 40, 59], ["60–69", 60, 69], ["70–79", 70, 79], ["80–89", 80, 89], ["90+", 90, 200]];
+
+    return {
+        periodo: { inicio: p.inicio, fim: p.fim, ref: "criacao", dias: p.dias, anterior: { inicio: p.antInicio, fim: p.antFim, total: p.anterior } },
+        resumo,
+        serie: { granularidade: gran, pontos: [...pontos.values()] },
+        convenios: conta(itens, (x) => x.b.convenio),
+        heatmap: heat, dia_semana,
+        velorio: conta(itens, (x) => x.velorio), cemiterio: conta(itens, (x) => x.cemiterio),
+        equipe: {
+            etapas, ocioso: { n: ociosos.length, mediana_h: r2(mediana(ociosos)), p90_h: r2(quantil(ociosos, 0.9)) },
+            matriz: matrizOut, meses, mensal: mensalOut,
+            pontualidade: { velorio: pontual("fase08", "data_inicio_velorio", "hora_inicio_velorio", "fase07"), sepultamento: pontual("fase10", "data_fim_velorio", "hora_fim_velorio", "fase09") },
+            registro_lote: Object.entries(lote).map(([agente, v]) => ({ agente, ...v, pct: pct(v.em_lote, v.trocas) })).sort((a, b) => b.trocas - a.trocas),
+            evidencias: Object.entries(ev).map(([agente, v]) => ({ agente, ornamentacao: { n: v.on, com_foto: v.ook, pct: pct(v.ook, v.on) }, entrega: { n: v.en, com_foto: v.eok, pct: pct(v.eok, v.en) } }))
+                .sort((a, b) => b.ornamentacao.n + b.entrega.n - (a.ornamentacao.n + a.entrega.n)),
+            titulares: conta(itens, (x) => x.b.agente),
+        },
+        perfil: {
+            servicos: servicosDef.map(([nome, f]) => { const c = itens.filter((x) => f(x.r)).length; return { nome, total: c, pct: pct(c, n) }; }),
+            urnas: conta(itens, (x) => x.urna),
+            roupas: conta(itens, (x) => { const v = String(x.r.roupa ?? "").trim(); return v ? v.toUpperCase() : "Não informada"; }),
+            religiao: conta(itens, (x) => x.religiao),
+            faixas_etarias: faixas.map(([nome, a, b]) => ({ nome, total: idades.filter((v) => v >= a && v <= b).length })),
+            qualidade: camposDef.map(([campo, f]) => { const c = itens.filter(f).length; return { campo, total: c, pct: pct(c, n) }; }),
+            qualidade_agente: Object.entries(qa).map(([agente, v]) => ({ agente, pct: Math.round(media(v) ?? 0), n: v.length })).sort((a, b) => b.pct - a.pct),
+            status: conta(itens, (x) => x.status || null).map((s) => ({ status: s.nome, rotulo: FASE_ROTULO_APP[s.nome] ?? s.nome, total: s.total })),
+        },
+        lista: itens.map((x) => ({
+            id: Number(x.b.id), falecido: String(x.r.falecido ?? "").trim() || "(sem nome)",
+            criado_em: x.T.criado !== undefined ? `${isoDe(x.T.criado)} ${new Date(x.T.criado).toTimeString().slice(0, 8)}` : x.b.dataRef,
+            data_falecimento: dataValida(x.r.data_falecimento) ? String(x.r.data_falecimento).slice(0, 10) : null,
+            data_sepultamento: dataValida(x.r.data) ? String(x.r.data).slice(0, 10) : null,
+            idade: x.idade, convenio: x.b.convenio, agente: x.b.agente, velorio: x.velorio, local_velorio: x.r.local_velorio ?? null,
+            cemiterio: x.cemiterio, urna: x.urna, roupa: x.r.roupa ?? null, religiao: x.religiao,
+            status: x.status, status_rotulo: FASE_ROTULO_APP[x.status] ?? (x.r.status || "—"), no_quadro: x.r.status ? noQuadro(x.r) : false,
+            ciclo_h: r2(x.ciclo), ocioso_h: r2(x.ocioso),
+            etapas: Object.fromEntries(Object.entries(x.et).map(([k, e]) => [k, { h: r2(e.h)!, quem: e.quem }])),
+        })),
+        etapas_definicao: ETAPAS.map(({ chave, rotulo, inicio, fim, credito, tipo }) => ({ chave, rotulo, inicio, fim, credito, tipo })),
+    };
+}
 
 /* =========================================================
    COMPONENTES BASE
@@ -575,9 +978,8 @@ function Ficha({ item, etapasDef, fechar }: { item: ListaItem; etapasDef: { chav
     useEffect(() => {
         let vivo = true;
         setHist(null); setErro(null);
-        fetch(`${HISTORICO_URL}${item.id}&_ts=${Date.now()}`, { credentials: "include", cache: "no-store" })
-            .then((r) => r.json())
-            .then((j) => { if (!vivo) return; const arr = Array.isArray(j) ? j : j?.dados ?? j?.data ?? []; setHist(arr); })
+        carregarHistorico(String(item.id), !item.no_quadro)
+            .then((arr) => { if (vivo) setHist(arr); })
             .catch(() => vivo && setErro("Não foi possível carregar o histórico."));
         return () => { vivo = false; };
     }, [item.id]);
@@ -638,55 +1040,136 @@ function Ficha({ item, etapasDef, fechar }: { item: ListaItem; etapasDef: { chav
 
 type Aba = "geral" | "equipe" | "perfil" | "lista";
 
+function diasEntre(a: string, b: string) { return Math.round((tsOf(b) - tsOf(a)) / 864e5) + 1; }
+function somaDias(s: string, n: number) { const d = new Date(tsOf(s)); d.setDate(d.getDate() + n); return iso(d); }
+function idDe(r: Registro): string {
+    for (const k of ["id", "sepultamento_id", "atendimento_id", "id_sepultamento"]) { const v = r?.[k]; if (v !== undefined && v !== null && String(v).trim()) return String(v).trim(); }
+    return "";
+}
+
 export default function PainelAtendimentosPage() {
     const [preset, setPreset] = useState<Preset>("30d");
     const [range, setRange] = useState(() => rangeDe("30d"));
-    const [ref, setRef] = useState<"criacao" | "falecimento" | "sepultamento">("criacao");
     const [convenio, setConvenio] = useState("");
     const [agente, setAgente] = useState("");
     const [aba, setAba] = useState<Aba>("geral");
-    const [dados, setDados] = useState<Painel | null>(null);
-    const [carregando, setCarregando] = useState(false);
-    const [erro, setErro] = useState<{ tipo: "login" | "permissao" | "falha"; msg: string } | null>(null);
     const [fichaId, setFichaId] = useState<number | null>(null);
+    const [recarga, setRecarga] = useState(0);
 
-    const carregar = useCallback(async () => {
-        setCarregando(true); setErro(null);
-        const qs = new URLSearchParams({ inicio: range.inicio, fim: range.fim, ref, _ts: String(Date.now()) });
-        if (convenio) qs.set("convenio", convenio);
-        if (agente) qs.set("agente", agente);
-        const ac = new AbortController();
-        const t = window.setTimeout(() => ac.abort(), 30000);
-        try {
-            const res = await fetch(`${PAINEL_URL}?${qs}`, { credentials: "include", cache: "no-store", signal: ac.signal });
-            const json = (await res.json().catch(() => null)) as Painel | null;
-            if (res.status === 401 || json?.need_login) { setErro({ tipo: "login", msg: json?.msg || "Faça login para ver o painel." }); return; }
-            if (res.status === 403 || json?.sem_permissao) { setErro({ tipo: "permissao", msg: json?.msg || "O painel de atendimentos é restrito à gerência." }); return; }
-            if (!res.ok || !json?.ok) throw new Error(json?.msg || `HTTP ${res.status}`);
-            setDados(json);
-        } catch (e: any) {
-            setErro({ tipo: "falha", msg: e?.name === "AbortError" ? "O servidor demorou a responder. Tente de novo." : e?.message || "Falha ao carregar o painel." });
-        } finally {
-            window.clearTimeout(t);
-            setCarregando(false);
-        }
-    }, [range, ref, convenio, agente]);
+    const [balanco, setBalanco] = useState<BalancoRow[] | null>(null);
+    const [anterior, setAnterior] = useState(0);
+    const [informativo, setInformativo] = useState<Registro[]>([]);
+    const [logs, setLogs] = useState<Record<string, LogItem[]>>({});
+    const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
+    const [carregando, setCarregando] = useState(false);
+    const [geradoEm, setGeradoEm] = useState<string>("");
+    const [erro, setErro] = useState<{ tipo: "login" | "falha"; msg: string } | null>(null);
 
-    useEffect(() => { carregar(); }, [carregar]);
+    /* 1) Atendimentos do período (balanco.php), período anterior e registros completos (informativo.php) */
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            setCarregando(true); setErro(null);
+            const dias = diasEntre(range.inicio, range.fim);
+            const antFim = somaDias(range.inicio, -1), antIni = somaDias(range.inicio, -dias);
+            try {
+                const [bal, balAnt, info] = await Promise.all([
+                    getJson<BalancoResp>(`${BALANCO_URL}?inicio=${range.inicio}&fim=${range.fim}`, 30000),
+                    getJson<BalancoResp>(`${BALANCO_URL}?inicio=${antIni}&fim=${antFim}`, 30000).catch(() => null),
+                    getJson<any>(INFORMATIVO_URL, 30000).catch(() => []),
+                ]);
+                if (!vivo) return;
+                if (!bal?.ok) throw new Error(bal?.msg || "Falha ao carregar os atendimentos do período.");
+                setBalanco(Array.isArray(bal.atendimentos) ? bal.atendimentos : []);
+                setAnterior(typeof balAnt?.resumo?.atendimentos === "number" ? balAnt.resumo.atendimentos : (balAnt?.atendimentos?.length ?? 0));
+                setInformativo(extrairArray<Registro>(info));
+                const agora = new Date();
+                setGeradoEm(`${iso(agora)} ${agora.toTimeString().slice(0, 8)}`);
+            } catch (e: any) {
+                if (!vivo) return;
+                if (e instanceof LoginError) setErro({ tipo: "login", msg: e.message });
+                else setErro({ tipo: "falha", msg: e?.name === "AbortError" ? "O servidor demorou a responder. Tente de novo." : e?.message || "Falha ao carregar o painel." });
+            } finally {
+                if (vivo) setCarregando(false);
+            }
+        })();
+        return () => { vivo = false; };
+    }, [range, recarga]);
+
+    const infoPorId = useMemo(() => { const m = new Map<string, Registro>(); informativo.forEach((r) => { const id = idDe(r); if (id) m.set(id, r); }); return m; }, [informativo]);
+
+    /* 2) Histórico de cada atendimento (historico_sepultamentos.php), 6 por vez, com atualização progressiva */
+    useEffect(() => {
+        if (!balanco) return;
+        let cancelado = false;
+        const ids = balanco.map((b) => String(b.atendimento_id ?? "").trim()).filter(Boolean);
+        const faltam = ids.filter((id) => !logs[id]);
+        if (!faltam.length) { setProgresso(null); return; }
+        setProgresso({ feitos: 0, total: faltam.length });
+        const lote: Record<string, LogItem[]> = {};
+        let feitos = 0, i = 0, ultimo = 0;
+        const descarregar = () => { if (Object.keys(lote).length) { const copia = { ...lote }; for (const k in lote) delete lote[k]; setLogs((l) => ({ ...l, ...copia })); } };
+        const worker = async () => {
+            while (i < faltam.length && !cancelado) {
+                const id = faltam[i++];
+                const info = infoPorId.get(id);
+                try { lote[id] = await carregarHistorico(id, !!info && !noQuadro(info)); }
+                catch (e) { if (e instanceof LoginError) { cancelado = true; setErro({ tipo: "login", msg: e.message }); } else lote[id] = []; }
+                feitos++;
+                if (!cancelado && Date.now() - ultimo > 700) { ultimo = Date.now(); descarregar(); setProgresso({ feitos, total: faltam.length }); }
+            }
+        };
+        Promise.all(Array.from({ length: Math.min(6, faltam.length) }, worker)).then(() => { if (!cancelado) { descarregar(); setProgresso(null); } });
+        return () => { cancelado = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [balanco, infoPorId]);
+
+    /* 3) Base unificada: balanço (oficial) + informativo (registro completo) + histórico (fases e campos) */
+    const base = useMemo<Base[]>(() => (balanco ?? []).map((b) => {
+        const id = String(b.atendimento_id ?? "").trim();
+        const lg = logs[id] ?? null;
+        const info = infoPorId.get(id);
+        const r: Registro = { ...(lg ? registroDoHistorico(lg) : {}), ...(info ?? {}) };
+        if (!r.falecido && b.falecido) r.falecido = b.falecido;
+        const criou = lg?.find((l) => norm(l.acao) === "criou") ?? lg?.[0];
+        let criadoTs = tsOf(criou?.datahora);
+        if (Number.isNaN(criadoTs)) criadoTs = tsOf(b.data_referencia);
+        const dataRef = Number.isNaN(criadoTs) ? String(b.data_referencia ?? "").slice(0, 10) : iso(new Date(criadoTs));
+        const conv = String(b.convenio ?? r.convenio ?? "").trim() || "Não informado";
+        const ag = nomeProprio(info?.agente ?? r.agente) || (criou?.usuario ? nomeProprio(criou.usuario) : "") || "Não informado";
+        return { id, r, logs: lg, criadoTs, dataRef, convenio: conv, agente: ag };
+    }), [balanco, logs, infoPorId]);
+
+    const dados = useMemo<Painel | null>(() => {
+        if (!balanco) return null;
+        const filtrada = base.filter((b) => (!convenio || b.convenio === convenio) && (!agente || b.agente === agente));
+        const dias = diasEntre(range.inicio, range.fim);
+        const calc = calcularPainel(filtrada, { inicio: range.inicio, fim: range.fim, dias, anterior, antInicio: somaDias(range.inicio, -dias), antFim: somaDias(range.inicio, -1) });
+        const agora = Date.now();
+        const em_andamento = informativo.filter((r) => r.status && noQuadro(r)).map((r) => {
+            const id = idDe(r);
+            const lg = logs[id] ?? HIST_CACHE.get(id)?.logs;
+            const t = tsOf((lg?.find((l) => norm(l.acao) === "criou") ?? lg?.[0])?.datahora ?? r.criado_em ?? r.created_at ?? r.datahora_criacao);
+            return { id: Number(id), falecido: String(r.falecido ?? ""), status: faseKey(r.status), status_rotulo: FASE_ROTULO_APP[faseKey(r.status)] ?? String(r.status), convenio: String(r.convenio ?? ""), velorio: grupoVelorio(r), horas_desde_cadastro: Number.isNaN(t) ? null : r2((agora - t) / 36e5, 1) };
+        });
+        return {
+            ...calc, ok: true, gerado_em: geradoEm, em_andamento,
+            opcoes: { convenios: [...new Set(base.map((b) => b.convenio))].sort(), agentes: [...new Set(base.map((b) => b.agente))].sort((a, b) => a.localeCompare(b, "pt-BR")) },
+        };
+    }, [base, balanco, convenio, agente, range, anterior, informativo, logs, geradoEm]);
 
     const escolherPreset = (p: Preset) => { setPreset(p); setRange(rangeDe(p)); };
     const filtrar = (campo: "convenio", v: string) => { if (campo === "convenio") setConvenio((c) => (c === v ? "" : v)); };
     const ficha = fichaId != null ? dados?.lista.find((x) => x.id === fichaId) ?? null : null;
-    const refNome = { criacao: "cadastro", falecimento: "falecimento", sepultamento: "sepultamento" }[ref];
     const campo = "rounded-lg border px-2 py-1.5 text-sm";
     const campoEstilo = { background: "var(--dash-card)", borderColor: "var(--dash-border-light)", color: "var(--dash-text)" } as const;
 
-    if (erro?.tipo === "login" || erro?.tipo === "permissao") {
+    if (erro?.tipo === "login") {
         return (
             <main className={`${nunito.className} flex min-h-screen items-center justify-center p-6`} style={{ background: "var(--dash-bg)" }}>
                 <ThemeStyles />
                 <div className="max-w-md rounded-2xl border p-6 text-center" style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)", color: "var(--dash-text)" }}>
-                    <h1 className="text-lg font-black">{erro.tipo === "login" ? "Sessão expirada" : "Acesso restrito"}</h1>
+                    <h1 className="text-lg font-black">Sessão expirada</h1>
                     <p className="mt-2 text-sm" style={{ color: "var(--dash-text-soft)" }}>{erro.msg}</p>
                 </div>
             </main>
@@ -700,9 +1183,9 @@ export default function PainelAtendimentosPage() {
                 <header className="mb-3 flex flex-wrap items-end justify-between gap-3">
                     <div>
                         <h1 className="text-2xl font-black">Painel de Atendimentos</h1>
-                        <p className="text-sm" style={{ color: "var(--dash-text-soft)" }}>{dataBR(range.inicio)} a {dataBR(range.fim)} · por data de {refNome}{dados ? ` · atualizado ${dataHoraBR(dados.gerado_em)}` : ""}</p>
+                        <p className="text-sm" style={{ color: "var(--dash-text-soft)" }}>{dataBR(range.inicio)} a {dataBR(range.fim)} · por data de cadastro{geradoEm ? ` · atualizado ${dataHoraBR(geradoEm)}` : ""}</p>
                     </div>
-                    <button type="button" onClick={carregar} disabled={carregando} className="rounded-lg border px-3 py-1.5 text-sm font-bold disabled:opacity-50" style={campoEstilo}>{carregando ? "Carregando…" : "↻ Atualizar"}</button>
+                    <button type="button" onClick={() => { HIST_CACHE.clear(); setLogs({}); setRecarga((n) => n + 1); }} disabled={carregando} className="rounded-lg border px-3 py-1.5 text-sm font-bold disabled:opacity-50" style={campoEstilo}>{carregando ? "Carregando…" : "↻ Atualizar"}</button>
                 </header>
 
                 <div className="sticky top-0 z-20 -mx-1 mb-4 flex flex-col gap-2 px-1 py-2 backdrop-blur" style={{ background: "color-mix(in srgb, var(--dash-bg) 90%, transparent)" }}>
@@ -714,9 +1197,6 @@ export default function PainelAtendimentosPage() {
                         </div>
                         <input type="date" className={campo} style={campoEstilo} value={range.inicio} onChange={(e) => { if (!e.target.value) return; setPreset("custom"); setRange((r) => ({ inicio: e.target.value, fim: r.fim < e.target.value ? e.target.value : r.fim })); }} aria-label="Data inicial" />
                         <input type="date" className={campo} style={campoEstilo} value={range.fim} onChange={(e) => { if (!e.target.value) return; setPreset("custom"); setRange((r) => ({ inicio: r.inicio > e.target.value ? e.target.value : r.inicio, fim: e.target.value })); }} aria-label="Data final" />
-                        <select className={campo} style={campoEstilo} value={ref} onChange={(e) => setRef(e.target.value as any)} aria-label="Data de referência">
-                            <option value="criacao">Data de cadastro</option><option value="falecimento">Data de falecimento</option><option value="sepultamento">Data de sepultamento</option>
-                        </select>
                         <select className={campo} style={campoEstilo} value={convenio} onChange={(e) => setConvenio(e.target.value)} aria-label="Convênio">
                             <option value="">Todos os convênios</option>{(dados?.opcoes.convenios ?? []).map((c) => <option key={c}>{c}</option>)}
                         </select>
@@ -725,6 +1205,12 @@ export default function PainelAtendimentosPage() {
                         </select>
                         {(convenio || agente) && <button type="button" onClick={() => { setConvenio(""); setAgente(""); }} className="text-xs font-bold underline" style={{ color: "var(--dash-blue-dark)" }}>Limpar filtros</button>}
                     </div>
+                    {progresso && (
+                        <div className="flex items-center gap-3 text-xs" style={{ color: "var(--dash-text-soft)" }}>
+                            <span className="whitespace-nowrap">Carregando histórico das fases: {progresso.feitos} de {progresso.total}</span>
+                            <span className="h-1.5 flex-1 overflow-hidden rounded" style={{ background: "var(--dash-empty)" }}><span className="block h-full rounded" style={{ width: `${(progresso.feitos / Math.max(1, progresso.total)) * 100}%`, background: "var(--dash-blue)" }} /></span>
+                        </div>
+                    )}
                     <nav className="flex gap-1 overflow-x-auto border-b" style={{ borderColor: "var(--dash-border-light)" }} role="tablist">
                         {([["geral", "Visão geral"], ["equipe", "Desempenho da equipe"], ["perfil", "Perfil dos atendimentos"], ["lista", `Lista analítica${dados ? ` · ${dados.lista.length}` : ""}`]] as [Aba, string][]).map(([k, l]) => (
                             <button key={k} role="tab" aria-selected={aba === k} type="button" onClick={() => setAba(k)} className="-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-bold"
@@ -734,7 +1220,7 @@ export default function PainelAtendimentosPage() {
 
                 {erro?.tipo === "falha" && (
                     <div className="mb-4 rounded-xl border px-4 py-3 text-sm" style={{ background: "var(--dash-danger-bg)", borderColor: "var(--dash-danger-border)", color: "var(--dash-danger-text)" }}>
-                        {erro.msg} <button type="button" onClick={carregar} className="ml-2 font-bold underline">Tentar de novo</button>
+                        {erro.msg} <button type="button" onClick={() => setRecarga((n) => n + 1)} className="ml-2 font-bold underline">Tentar de novo</button>
                     </div>
                 )}
                 {!dados && carregando && <Vazio texto="Carregando o painel…" />}
