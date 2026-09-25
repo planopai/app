@@ -251,7 +251,7 @@ async function apiJson<T = any>(
         const suffix = data?.error_id ? ` (código ${data.error_id})` : "";
         const debug = data?.debug ? ` — ${String(data.debug)}` : "";
         throw new Error(
-            `${data?.msg || `Falha na Base de Conhecimento (HTTP ${response.status}).`}${suffix}${debug}`,
+            `[${action}] ${data?.msg || `Falha na Base de Conhecimento (HTTP ${response.status}).`}${suffix}${debug}`,
         );
     }
 
@@ -368,6 +368,7 @@ export default function KnowledgeBasePage() {
     const [documentForm, setDocumentForm] = useState<DocumentForm>(EMPTY_DOCUMENT_FORM);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const fileRef = useRef<HTMLInputElement | null>(null);
+    const filtersReadyRef = useRef(false);
 
     const [detailModal, setDetailModal] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
@@ -429,7 +430,8 @@ export default function KnowledgeBasePage() {
 
     const refreshAll = useCallback(async () => {
         setError("");
-        await Promise.all([loadBootstrap(), loadDocuments()]);
+        await loadBootstrap();
+        await loadDocuments();
     }, [loadBootstrap, loadDocuments]);
 
     useEffect(() => {
@@ -437,7 +439,11 @@ export default function KnowledgeBasePage() {
         (async () => {
             setLoading(true);
             try {
-                await Promise.all([loadBootstrap(), loadDocuments()]);
+                // Carregamento sequencial: evita abrir conexões simultâneas
+                // desnecessárias no backend/MySQL.
+                await loadBootstrap();
+                await loadDocuments();
+                filtersReadyRef.current = true;
             } catch (err) {
                 if (mounted) setError(err instanceof Error ? err.message : "Falha ao carregar a Base de Conhecimento.");
             } finally {
@@ -448,6 +454,10 @@ export default function KnowledgeBasePage() {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
+        // O primeiro carregamento de documentos já é feito no efeito inicial.
+        // Só pesquisamos novamente quando algum filtro realmente mudar depois disso.
+        if (!filtersReadyRef.current) return;
+
         const timer = window.setTimeout(() => {
             loadDocuments().catch((err) => setError(err instanceof Error ? err.message : "Falha na consulta."));
         }, 300);
@@ -593,7 +603,9 @@ export default function KnowledgeBasePage() {
         try {
             const data = await postJson<any>("analisar-conflitos", { id });
             flash(`${numberValue(data.resultado?.alertas_criados)} alerta(s) identificado(s) na análise atual.`);
-            await Promise.all([refreshAll(), loadAlerts(), openDocument(id)]);
+            await refreshAll();
+            await loadAlerts();
+            await openDocument(id);
         } catch (err) {
             flash(err instanceof Error ? err.message : "Não foi possível analisar os conflitos.", "error");
         } finally {
@@ -607,7 +619,9 @@ export default function KnowledgeBasePage() {
         try {
             await postJson("resolver-alerta", { id: alert.id, status, decisao: decision });
             flash(status === "RESOLVIDO" ? "Alerta resolvido." : "Alerta ignorado.");
-            await Promise.all([loadBootstrap(), loadAlerts(), loadDocuments()]);
+            await loadBootstrap();
+            await loadAlerts();
+            await loadDocuments();
             if (selectedDocument) await openDocument(selectedDocument.id);
         } catch (err) {
             flash(err instanceof Error ? err.message : "Não foi possível atualizar o alerta.", "error");
