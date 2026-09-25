@@ -7,7 +7,7 @@ type Ctx = {
     perms: string[] | null;
     /** true se tem '*' ou o slug */
     has: (slug: string) => boolean;
-    /** força recarregar permissões do cargo do usuário atual */
+    /** força recarregar permissões do usuário atual */
     reload: () => Promise<void>;
 };
 
@@ -22,9 +22,7 @@ type Props = {
 };
 
 const API = "/api/php/pai_api.php";
-
-// V2 para não reaproveitar cache antigo baseado em permissões individuais.
-const CACHE_PREFIX = "pai_permissions_v2_cargo:";
+const CACHE_PREFIX = "pai_permissions_v1:";
 
 type CachedPerms = {
     perms: string[];
@@ -48,7 +46,7 @@ function readCachedPerms(userKey?: string | null): string[] | null {
 
         const parsed = JSON.parse(raw) as CachedPerms | string[];
 
-        // Compatibilidade defensiva caso alguma versão salve apenas o array.
+        // Compatibilidade caso alguma versão tenha salvo apenas o array.
         if (Array.isArray(parsed)) {
             return parsed.filter((item) => typeof item === "string");
         }
@@ -61,10 +59,7 @@ function readCachedPerms(userKey?: string | null): string[] | null {
     }
 }
 
-function writeCachedPerms(
-    userKey: string | null | undefined,
-    perms: string[],
-) {
+function writeCachedPerms(userKey: string | null | undefined, perms: string[]) {
     if (typeof window === "undefined") return;
 
     const key = cacheKey(userKey);
@@ -84,66 +79,54 @@ function writeCachedPerms(
 
 /**
  * Retornos:
- * - string[]: servidor respondeu e estas são as permissões atuais do cargo;
- * - []: usuário não autenticado, sem cargo válido ou cargo sem permissões;
+ * - string[]: servidor respondeu e estas são as permissões atuais;
+ * - []: servidor respondeu, mas o usuário não está autenticado/sem permissões;
  * - null: não foi possível confirmar por falha de rede/servidor.
  *
  * Importante: null NÃO significa "sem permissão".
  */
 async function fetchPermsClient(): Promise<string[] | null> {
     try {
-        const r1 = await fetch(`${API}?action=whoami&_=${Date.now()}`, {
+        const r1 = await fetch(`${API}?action=whoami`, {
             cache: "no-store",
             credentials: "include",
-            headers: {
-                "x-requested-with": "XMLHttpRequest",
-            },
+            headers: { "x-requested-with": "XMLHttpRequest" },
         });
 
         if (!r1.ok) {
+            // 401/403 são respostas reais do servidor: sessão não autorizada.
             if (r1.status === 401 || r1.status === 403) return [];
             throw new Error(`whoami HTTP ${r1.status}`);
         }
 
         const who = await r1.json().catch(() => null as any);
-
         const uid = Number(who?.id || 0);
-        const cargoId = Number(who?.cargo_id || 0);
 
-        if (!uid || !cargoId) return [];
+        if (!uid) return [];
 
         const r2 = await fetch(
-            `${API}?action=list_cargo_permissions&cargo_id=${cargoId}&_=${Date.now()}`,
+            `${API}?action=list_permissions&user_id=${uid}&_=${Date.now()}`,
             {
                 cache: "no-store",
                 credentials: "include",
-                headers: {
-                    "x-requested-with": "XMLHttpRequest",
-                },
+                headers: { "x-requested-with": "XMLHttpRequest" },
             },
         );
 
         if (!r2.ok) {
             if (r2.status === 401 || r2.status === 403) return [];
-            throw new Error(`cargo permissions HTTP ${r2.status}`);
+            throw new Error(`permissions HTTP ${r2.status}`);
         }
 
         const j = await r2.json().catch(() => null as any);
-
-        return Array.isArray(j)
-            ? j.filter((item) => typeof item === "string")
-            : [];
+        return Array.isArray(j) ? j.filter((item) => typeof item === "string") : [];
     } catch {
         // Falha de rede/servidor: preservar estado/cache local.
         return null;
     }
 }
 
-export function PermsProvider({
-    children,
-    userKey,
-    initialPerms,
-}: Props) {
+export function PermsProvider({ children, userKey, initialPerms }: Props) {
     // Mantém o SSR como primeira fonte para não criar divergência de hidratação.
     const [perms, setPerms] = React.useState<string[] | null>(
         initialPerms === undefined ? null : (initialPerms ?? []),
@@ -162,7 +145,6 @@ export function PermsProvider({
 
                 return current;
             });
-
             return;
         }
 
@@ -170,24 +152,18 @@ export function PermsProvider({
         writeCachedPerms(userKey, onlinePerms);
     }, [userKey]);
 
-    // Se o SSR entregou permissões válidas, guarda cópia para abertura offline.
+    // Se o SSR entregou permissões válidas, já guarda uma cópia para a próxima abertura offline.
     React.useEffect(() => {
         if (Array.isArray(initialPerms) && initialPerms.length > 0) {
             writeCachedPerms(userKey, initialPerms);
         }
     }, [initialPerms, userKey]);
 
-    // Quando já iniciamos sem rede, restaura a última fotografia antes de revalidar.
+    // Quando já iniciamos sem rede, restaura a última fotografia antes de tentar revalidar.
     React.useEffect(() => {
-        if (
-            typeof navigator === "undefined" ||
-            navigator.onLine !== false
-        ) {
-            return;
-        }
+        if (typeof navigator === "undefined" || navigator.onLine !== false) return;
 
         const cached = readCachedPerms(userKey);
-
         if (cached) {
             setPerms(cached);
         }
@@ -205,10 +181,7 @@ export function PermsProvider({
         };
 
         window.addEventListener("online", handleOnline);
-
-        return () => {
-            window.removeEventListener("online", handleOnline);
-        };
+        return () => window.removeEventListener("online", handleOnline);
     }, [load]);
 
     const has = React.useCallback(
@@ -226,21 +199,13 @@ export function PermsProvider({
         reload: load,
     };
 
-    return (
-        <PermsContext.Provider value={ctx}>
-            {children}
-        </PermsContext.Provider>
-    );
+    return <PermsContext.Provider value={ctx}>{children}</PermsContext.Provider>;
 }
 
 export function usePerms(): Ctx {
     const ctx = React.useContext(PermsContext);
-
     if (!ctx) {
-        throw new Error(
-            "usePerms deve ser usado dentro de <PermsProvider>",
-        );
+        throw new Error("usePerms deve ser usado dentro de <PermsProvider>");
     }
-
     return ctx;
 }

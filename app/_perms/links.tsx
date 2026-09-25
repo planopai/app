@@ -44,6 +44,7 @@ export const LINK_GROUPS: LinkGroup[] = [
             { slug: "avisos", title: "Avisos", href: "/avisos", Icon: IconBell },
         ],
     },
+
     {
         category: "Plano",
         items: [
@@ -55,6 +56,7 @@ export const LINK_GROUPS: LinkGroup[] = [
             { slug: "sorteios", title: "Sorteios", href: "/sorteios", Icon: IconGift },
         ],
     },
+
     {
         category: "Administrativo",
         items: [
@@ -65,6 +67,7 @@ export const LINK_GROUPS: LinkGroup[] = [
             { slug: "leads", title: "Leads", href: "/leads", Icon: IconUsersGroup },
         ],
     },
+
     {
         category: "Estoque",
         items: [
