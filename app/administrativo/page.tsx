@@ -12,6 +12,7 @@ import {
     IconCar,
     IconChartBar,
     IconCurrencyDollar,
+    IconBrain,
 } from "@tabler/icons-react";
 
 /* ========= Ícone circular (padrão global do app) ========= */
@@ -43,6 +44,11 @@ const items = [
         title: "Permissões",
         href: "/permissoes",
         icon: IconShieldLock,
+    },
+    {
+        title: "Conhecimento IA",
+        href: "/conhecimento",
+        icon: IconBrain,
     },
     {
         title: "Configurações do Catálogo",

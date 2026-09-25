@@ -175,6 +175,17 @@ type AttendanceEditForm = {
     base_changes: Record<string, unknown>;
 };
 
+type KnowledgeSource = {
+    documento_id: number;
+    titulo: string;
+    departamento?: string | null;
+    natureza?: string | null;
+    versao?: number | null;
+    alerta_pendente?: boolean;
+    paginas?: string | null;
+    trechos?: number | null;
+};
+
 type ChatMessage = {
     id: string;
     role: Role;
@@ -188,6 +199,7 @@ type ChatMessage = {
     pendingActions?: PendingAction[];
     operationalFlows?: OperationalFlowCard[];
     editForms?: AttendanceEditForm[];
+    knowledgeSources?: KnowledgeSource[];
 };
 
 type SseEvent = {
@@ -230,6 +242,34 @@ function makeId(prefix = "msg") {
 
 function nowIso() {
     return new Date().toISOString();
+}
+
+function sanitizeKnowledgeSources(value: unknown): KnowledgeSource[] {
+    if (!Array.isArray(value)) return [];
+    const out: KnowledgeSource[] = [];
+    const seen = new Set<number>();
+
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as any;
+        const id = Number(item.documento_id || item.id || 0);
+        const title = String(item.titulo || "").trim();
+        if (!Number.isFinite(id) || id <= 0 || !title || seen.has(id)) continue;
+        seen.add(id);
+
+        out.push({
+            documento_id: id,
+            titulo: title,
+            departamento: item.departamento == null ? null : String(item.departamento),
+            natureza: item.natureza == null ? null : String(item.natureza),
+            versao: item.versao == null ? null : Number(item.versao),
+            alerta_pendente: Boolean(item.alerta_pendente),
+            paginas: item.paginas == null ? null : String(item.paginas),
+            trechos: item.trechos == null ? null : Number(item.trechos),
+        });
+    }
+
+    return out;
 }
 
 const PRODUCT_IMG_BASE = "https://api.planoassistencialintegrado.com.br/uploads/produtos/";
@@ -1357,6 +1397,7 @@ function loadStoredMessages(): ChatMessage[] {
                 pendingActions: sanitizePendingActions(item.pendingActions),
                 operationalFlows: sanitizeOperationalFlows(item.operationalFlows),
                 editForms: sanitizeEditForms(item.editForms),
+                knowledgeSources: sanitizeKnowledgeSources(item.knowledgeSources),
                 streaming: false,
             }));
     } catch {
@@ -1553,6 +1594,51 @@ function TypingIndicator({ label = "Consultando dados" }: { label?: string }) {
     );
 }
 
+
+function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
+    const items = Array.isArray(sources) ? sources : [];
+    if (!items.length) return null;
+
+    return (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-indigo-50 text-indigo-600">K</span>
+                Base de Conhecimento • {items.length} {items.length === 1 ? "fonte" : "fontes"}
+            </div>
+            <div className="space-y-2">
+                {items.map((source) => {
+                    const meta = [
+                        source.departamento || "",
+                        source.natureza || "",
+                        source.versao ? `v${source.versao}` : "",
+                        source.paginas ? `p. ${source.paginas}` : "",
+                    ].filter(Boolean);
+
+                    return (
+                        <div
+                            key={`kb-${source.documento_id}`}
+                            className="rounded-xl border border-indigo-100 bg-indigo-50/45 px-3 py-2.5"
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="truncate text-xs font-semibold text-slate-800">{source.titulo}</div>
+                                    {meta.length ? (
+                                        <div className="mt-0.5 text-[10px] text-slate-500">{meta.join(" • ")}</div>
+                                    ) : null}
+                                </div>
+                                {source.alerta_pendente ? (
+                                    <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
+                                        Conflito pendente
+                                    </span>
+                                ) : null}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
 
 function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
     return (
@@ -2448,6 +2534,7 @@ export default function AuroraPage() {
         let finalPendingActions: PendingAction[] = [];
         let finalOperationalFlows: OperationalFlowCard[] = [];
         let finalEditForms: AttendanceEditForm[] = [];
+        let finalKnowledgeSources: KnowledgeSource[] = [];
         let streamError = "";
 
         try {
@@ -2493,6 +2580,7 @@ export default function AuroraPage() {
                     if (Array.isArray(data?.pending_actions)) finalPendingActions = sanitizePendingActions(data.pending_actions);
                     if (Array.isArray(data?.operational_flows)) finalOperationalFlows = sanitizeOperationalFlows(data.operational_flows);
                     if (Array.isArray(data?.edit_forms)) finalEditForms = sanitizeEditForms(data.edit_forms);
+                    if (Array.isArray(data?.knowledge_sources)) finalKnowledgeSources = sanitizeKnowledgeSources(data.knowledge_sources);
 
                     updateMessage(assistantId, (m) => ({
                         ...m,
@@ -2503,6 +2591,7 @@ export default function AuroraPage() {
                         pendingActions: finalPendingActions,
                         operationalFlows: finalOperationalFlows,
                         editForms: finalEditForms,
+                        knowledgeSources: finalKnowledgeSources,
                     }));
                     return;
                 }
@@ -2526,6 +2615,8 @@ export default function AuroraPage() {
                 exportCards: finalExportCards,
                 pendingActions: finalPendingActions,
                 operationalFlows: finalOperationalFlows,
+                editForms: finalEditForms,
+                knowledgeSources: finalKnowledgeSources,
                 streaming: false,
             }));
         } catch (err: unknown) {
@@ -2586,8 +2677,11 @@ export default function AuroraPage() {
                                 <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:inline-flex">
                                     Ações confirmadas
                                 </span>
+                                <span className="hidden rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 ring-1 ring-inset ring-indigo-200 md:inline-flex">
+                                    Base de conhecimento
+                                </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • texto + áudio para transcrição</p>
+                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • dados operacionais + Base de Conhecimento</p>
                         </div>
                     </div>
 
@@ -2658,8 +2752,9 @@ export default function AuroraPage() {
                                                         disabled={loading}
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
+                                                    <KnowledgeSources sources={message.knowledgeSources} />
                                                 </>
-                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length || message.editForms?.length) ? (
+                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length || message.editForms?.length || message.knowledgeSources?.length) ? (
                                                 <>
                                                     <ProductCards products={message.productCards} />
                                                     <ExportCards cards={message.exportCards} />
@@ -2686,6 +2781,7 @@ export default function AuroraPage() {
                                                         disabled={loading}
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
+                                                    <KnowledgeSources sources={message.knowledgeSources} />
                                                 </>
                                             ) : (
                                                 <div className="flex items-center gap-1.5 py-1">

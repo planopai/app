@@ -27,11 +27,6 @@ type Nature = {
     documentos_ativos?: number;
 };
 
-type Tag = {
-    id?: number;
-    nome: string;
-    slug?: string;
-};
 
 type DocumentStatus = "RASCUNHO" | "PROCESSANDO" | "EM_ANALISE" | "ATIVO" | "SUBSTITUIDO" | "ARQUIVADO";
 type ProcessingStatus = "NAO_NECESSARIO" | "PENDENTE" | "PROCESSANDO" | "CONCLUIDO" | "ERRO";
@@ -56,13 +51,9 @@ type KnowledgeDocument = {
     total_paginas?: number | null;
     processamento_status: ProcessingStatus;
     processamento_mensagem?: string | null;
-    prioridade: number;
-    sempre_considerar: number;
     grupo_versao?: string | null;
     versao_numero: number;
     substitui_documento_id?: number | null;
-    vigencia_inicio?: string | null;
-    vigencia_fim?: string | null;
     status: DocumentStatus;
     aprovado_por?: number | null;
     aprovado_em?: string | null;
@@ -72,7 +63,6 @@ type KnowledgeDocument = {
     updated_at: string;
     trechos_total?: number;
     alertas_pendentes?: number;
-    tags?: Tag[];
 };
 
 type KnowledgeChunk = {
@@ -165,11 +155,6 @@ type DocumentForm = {
     natureza_id: string;
     tipo_origem: OriginType;
     conteudo: string;
-    tags: string;
-    prioridade: string;
-    sempre_considerar: boolean;
-    vigencia_inicio: string;
-    vigencia_fim: string;
 };
 
 const EMPTY_DOCUMENT_FORM: DocumentForm = {
@@ -179,11 +164,6 @@ const EMPTY_DOCUMENT_FORM: DocumentForm = {
     natureza_id: "",
     tipo_origem: "ARQUIVO",
     conteudo: "",
-    tags: "",
-    prioridade: "100",
-    sempre_considerar: false,
-    vigencia_inicio: "",
-    vigencia_fim: "",
 };
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -212,11 +192,6 @@ function formatDate(value?: string | null, withTime = false) {
         : { dateStyle: "short" });
 }
 
-function inputDateTime(value?: string | null) {
-    if (!value) return "";
-    const normalized = value.replace(" ", "T").slice(0, 16);
-    return normalized;
-}
 
 function documentReadyToPublish(doc: KnowledgeDocument) {
     if (doc.tipo_origem === "ARQUIVO") {
@@ -525,11 +500,6 @@ export default function KnowledgeBasePage() {
             natureza_id: String(selectedDocument.natureza_id),
             tipo_origem: selectedDocument.tipo_origem,
             conteudo: selectedDocument.conteudo || "",
-            tags: (selectedDocument.tags || []).map((x) => x.nome).join(", "),
-            prioridade: String(selectedDocument.prioridade ?? 100),
-            sempre_considerar: Number(selectedDocument.sempre_considerar) === 1,
-            vigencia_inicio: inputDateTime(selectedDocument.vigencia_inicio),
-            vigencia_fim: inputDateTime(selectedDocument.vigencia_fim),
         });
         setSelectedFile(null);
         setDetailModal(false);
@@ -552,11 +522,6 @@ export default function KnowledgeBasePage() {
                 descricao: documentForm.descricao.trim(),
                 departamento_id: Number(documentForm.departamento_id),
                 natureza_id: Number(documentForm.natureza_id),
-                prioridade: Number(documentForm.prioridade || 100),
-                sempre_considerar: documentForm.sempre_considerar,
-                tags: documentForm.tags.split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean),
-                vigencia_inicio: documentForm.vigencia_inicio || null,
-                vigencia_fim: documentForm.vigencia_fim || null,
             };
             if (!documentForm.id) payload.tipo_origem = documentForm.tipo_origem;
             if (documentForm.tipo_origem === "TEXTO") payload.conteudo = documentForm.conteudo;
@@ -797,7 +762,6 @@ export default function KnowledgeBasePage() {
                                                 </div>
                                                 {doc.descricao ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{doc.descricao}</p> : null}
                                                 <div className="mt-2 flex flex-wrap gap-1.5">
-                                                    {(doc.tags || []).slice(0, 6).map((tag) => <span key={`${doc.id}-${tag.nome}`} className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] text-slate-600">#{tag.nome}</span>)}
                                                 </div>
                                             </div>
                                             <div className="hidden shrink-0 text-right text-[11px] text-slate-400 sm:block"><div>{doc.trechos_total || 0} trechos</div><div className="mt-1">{formatDate(doc.updated_at)}</div></div>
@@ -895,11 +859,6 @@ export default function KnowledgeBasePage() {
                     )}
 
                     <div className="grid gap-4 md:grid-cols-2">
-                        <label className="block md:col-span-2"><span className="mb-1.5 block text-xs font-semibold text-slate-700">Tags</span><input value={documentForm.tags} onChange={(e) => setDocumentForm((v) => ({ ...v, tags: e.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400" placeholder="atendimento, remoção, veículo, confirmação" /><span className="mt-1 block text-[11px] text-slate-400">Separe por vírgulas. Elas ajudam na organização e recuperação futura.</span></label>
-                        <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">Prioridade</span><input type="number" min={0} max={10000} value={documentForm.prioridade} onChange={(e) => setDocumentForm((v) => ({ ...v, prioridade: e.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400" /></label>
-                        <label className="flex items-center gap-3 self-end rounded-xl border border-slate-200 px-3 py-3"><input type="checkbox" checked={documentForm.sempre_considerar} onChange={(e) => setDocumentForm((v) => ({ ...v, sempre_considerar: e.target.checked }))} className="h-4 w-4 rounded border-slate-300" /><span><span className="block text-xs font-semibold text-slate-700">Sempre considerar</span><span className="block text-[10px] text-slate-400">Use apenas para conhecimento realmente global.</span></span></label>
-                        <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">Vigência inicial</span><input type="datetime-local" value={documentForm.vigencia_inicio} onChange={(e) => setDocumentForm((v) => ({ ...v, vigencia_inicio: e.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400" /></label>
-                        <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">Vigência final</span><input type="datetime-local" value={documentForm.vigencia_fim} onChange={(e) => setDocumentForm((v) => ({ ...v, vigencia_fim: e.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-sky-400" /></label>
                     </div>
 
                     <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end"><button type="button" disabled={working} onClick={() => setDocumentModal(false)} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button><button type="submit" disabled={working} className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-50">{working ? "Salvando..." : documentForm.id ? "Salvar alterações" : "Criar conhecimento"}</button></div>
@@ -910,7 +869,7 @@ export default function KnowledgeBasePage() {
                 {detailLoading ? <div className="py-16 text-center text-sm text-slate-500">Carregando conhecimento...</div> : selectedDocument ? (
                     <div className="space-y-5">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-bold text-slate-950">{selectedDocument.titulo}</h3><Badge tone={statusTone(selectedDocument.status)}>{selectedDocument.status.replaceAll("_", " ")}</Badge>{selectedDocument.alertas_pendentes ? <Badge tone="red">{selectedDocument.alertas_pendentes} alerta(s)</Badge> : null}</div><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{selectedDocument.departamento_nome}</span><span>•</span><span>{selectedDocument.natureza_nome}</span><span>•</span><span>Versão {selectedDocument.versao_numero}</span><span>•</span><span>Prioridade {selectedDocument.prioridade}</span></div>{selectedDocument.descricao ? <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">{selectedDocument.descricao}</p> : null}</div>
+                            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-xl font-bold text-slate-950">{selectedDocument.titulo}</h3><Badge tone={statusTone(selectedDocument.status)}>{selectedDocument.status.replaceAll("_", " ")}</Badge>{selectedDocument.alertas_pendentes ? <Badge tone="red">{selectedDocument.alertas_pendentes} alerta(s)</Badge> : null}</div><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{selectedDocument.departamento_nome}</span><span>•</span><span>{selectedDocument.natureza_nome}</span><span>•</span><span>Versão {selectedDocument.versao_numero}</span></div>{selectedDocument.descricao ? <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-600">{selectedDocument.descricao}</p> : null}</div>
                             <div className="flex flex-wrap gap-2"><button type="button" onClick={editSelectedDocument} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"><Icon name="edit" className="h-4 w-4" />Editar</button><button type="button" disabled={working} onClick={() => analyzeConflicts(selectedDocument.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 disabled:opacity-50"><Icon name="alert" className="h-4 w-4" />Analisar conflitos</button></div>
                         </div>
 
@@ -922,8 +881,6 @@ export default function KnowledgeBasePage() {
                         </div>
 
                         {selectedDocument.tipo_origem === "ARQUIVO" ? <div className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><Icon name="file" /></div><div className="min-w-0 flex-1"><div className="font-semibold text-slate-900">{selectedDocument.arquivo_nome_original || "Arquivo enviado"}</div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500"><span>{formatBytes(selectedDocument.arquivo_tamanho)}</span>{selectedDocument.total_paginas ? <span>{selectedDocument.total_paginas} páginas</span> : null}{selectedDocument.arquivo_extensao ? <span>{selectedDocument.arquivo_extensao.toUpperCase()}</span> : null}</div>{selectedDocument.processamento_mensagem ? <div className="mt-2 text-xs text-amber-700">{selectedDocument.processamento_mensagem}</div> : null}{!documentReadyToPublish(selectedDocument) ? <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">Publicação bloqueada: {publishBlockedReason(selectedDocument)}</div> : null}</div>{selectedDocument.processamento_status === "ERRO" || selectedDocument.processamento_status === "PENDENTE" ? <button type="button" disabled={working} onClick={() => documentAction("reprocessar", selectedDocument.id, "Documento reprocessado.")} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold">Reprocessar</button> : null}</div></div> : null}
-
-                        {(selectedDocument.tags || []).length ? <div className="flex flex-wrap gap-2">{selectedDocument.tags!.map((tag) => <span key={tag.nome} className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs text-slate-600">#{tag.nome}</span>)}</div> : null}
 
                         {selectedDocument.tipo_origem === "TEXTO" && selectedDocument.conteudo ? <div><div className="mb-2 text-sm font-semibold text-slate-900">Conteúdo</div><div className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">{selectedDocument.conteudo}</div></div> : null}
 
