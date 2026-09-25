@@ -150,6 +150,9 @@ type BootstrapResponse = {
         max_mb: number;
         extensoes: string[];
         pdf_extractor: boolean;
+        pdf_extractor_local?: boolean;
+        pdf_extractor_openai?: boolean;
+        pdf_openai_model?: string | null;
         docx_extractor: boolean;
     };
 };
@@ -213,6 +216,23 @@ function inputDateTime(value?: string | null) {
     if (!value) return "";
     const normalized = value.replace(" ", "T").slice(0, 16);
     return normalized;
+}
+
+function documentReadyToPublish(doc: KnowledgeDocument) {
+    if (doc.tipo_origem === "ARQUIVO") {
+        return doc.processamento_status === "CONCLUIDO" && Number(doc.trechos_total || 0) > 0;
+    }
+    return Boolean(String(doc.conteudo || "").trim());
+}
+
+function publishBlockedReason(doc: KnowledgeDocument) {
+    if (documentReadyToPublish(doc)) return "";
+    if (doc.tipo_origem === "ARQUIVO") {
+        if (doc.processamento_status === "ERRO") return "Corrija o erro de processamento e reprocesse o arquivo antes de publicar.";
+        if (doc.processamento_status !== "CONCLUIDO") return "Aguarde o processamento do arquivo antes de publicar.";
+        if (Number(doc.trechos_total || 0) <= 0) return "O arquivo ainda não possui trechos extraídos. Reprocesse antes de publicar.";
+    }
+    return "O conhecimento ainda não possui conteúdo processado para publicação.";
 }
 
 async function apiJson<T = any>(
@@ -862,6 +882,13 @@ export default function KnowledgeBasePage() {
                             <div className="mb-1.5 text-xs font-semibold text-slate-700">Arquivo {documentForm.id ? "(opcional para substituir/reprocessar)" : "*"}</div>
                             <input ref={fileRef} type="file" accept=".pdf,.txt,.md,.docx,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                             <button type="button" onClick={() => fileRef.current?.click()} className="flex min-h-28 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-sky-400 hover:bg-sky-50/50"><Icon name="upload" className="h-6 w-6 text-slate-500" /><div className="mt-2 text-sm font-semibold text-slate-800">{selectedFile ? selectedFile.name : "Clique para selecionar o arquivo"}</div><div className="mt-1 text-xs text-slate-500">{selectedFile ? `${formatBytes(selectedFile.size)} · ${selectedFile.type || "arquivo"}` : `Até ${uploadInfo?.max_mb ?? 25} MB · ${(uploadInfo?.extensoes || ["pdf", "txt", "md", "docx"]).join(", ").toUpperCase()}`}</div></button>
+                            <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-500">
+                                PDF: {uploadInfo?.pdf_extractor_local
+                                    ? "extração local disponível"
+                                    : uploadInfo?.pdf_extractor_openai
+                                        ? `fallback pela OpenAI disponível${uploadInfo?.pdf_openai_model ? ` (${uploadInfo.pdf_openai_model})` : ""}`
+                                        : "nenhum extrator disponível no servidor"}.
+                            </div>
                         </div>
                     ) : (
                         <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">Conteúdo *</span><textarea value={documentForm.conteudo} onChange={(e) => setDocumentForm((v) => ({ ...v, conteudo: e.target.value }))} rows={12} className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm leading-6 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" placeholder="Digite aqui o conhecimento, regra ou procedimento que a Aurora deverá considerar..." /></label>
@@ -894,14 +921,14 @@ export default function KnowledgeBasePage() {
                             <div className="rounded-2xl bg-slate-50 p-3"><div className="text-[10px] uppercase tracking-wide text-slate-400">Atualizado</div><div className="mt-1 text-sm font-semibold text-slate-900">{formatDate(selectedDocument.updated_at, true)}</div></div>
                         </div>
 
-                        {selectedDocument.tipo_origem === "ARQUIVO" ? <div className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><Icon name="file" /></div><div className="min-w-0 flex-1"><div className="font-semibold text-slate-900">{selectedDocument.arquivo_nome_original || "Arquivo enviado"}</div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500"><span>{formatBytes(selectedDocument.arquivo_tamanho)}</span>{selectedDocument.total_paginas ? <span>{selectedDocument.total_paginas} páginas</span> : null}{selectedDocument.arquivo_extensao ? <span>{selectedDocument.arquivo_extensao.toUpperCase()}</span> : null}</div>{selectedDocument.processamento_mensagem ? <div className="mt-2 text-xs text-amber-700">{selectedDocument.processamento_mensagem}</div> : null}</div>{selectedDocument.processamento_status === "ERRO" || selectedDocument.processamento_status === "PENDENTE" ? <button type="button" disabled={working} onClick={() => documentAction("reprocessar", selectedDocument.id, "Documento reprocessado.")} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold">Reprocessar</button> : null}</div></div> : null}
+                        {selectedDocument.tipo_origem === "ARQUIVO" ? <div className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><Icon name="file" /></div><div className="min-w-0 flex-1"><div className="font-semibold text-slate-900">{selectedDocument.arquivo_nome_original || "Arquivo enviado"}</div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500"><span>{formatBytes(selectedDocument.arquivo_tamanho)}</span>{selectedDocument.total_paginas ? <span>{selectedDocument.total_paginas} páginas</span> : null}{selectedDocument.arquivo_extensao ? <span>{selectedDocument.arquivo_extensao.toUpperCase()}</span> : null}</div>{selectedDocument.processamento_mensagem ? <div className="mt-2 text-xs text-amber-700">{selectedDocument.processamento_mensagem}</div> : null}{!documentReadyToPublish(selectedDocument) ? <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">Publicação bloqueada: {publishBlockedReason(selectedDocument)}</div> : null}</div>{selectedDocument.processamento_status === "ERRO" || selectedDocument.processamento_status === "PENDENTE" ? <button type="button" disabled={working} onClick={() => documentAction("reprocessar", selectedDocument.id, "Documento reprocessado.")} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold">Reprocessar</button> : null}</div></div> : null}
 
                         {(selectedDocument.tags || []).length ? <div className="flex flex-wrap gap-2">{selectedDocument.tags!.map((tag) => <span key={tag.nome} className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs text-slate-600">#{tag.nome}</span>)}</div> : null}
 
                         {selectedDocument.tipo_origem === "TEXTO" && selectedDocument.conteudo ? <div><div className="mb-2 text-sm font-semibold text-slate-900">Conteúdo</div><div className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">{selectedDocument.conteudo}</div></div> : null}
 
                         <div className="flex flex-wrap gap-2 border-y border-slate-100 py-4">
-                            {selectedDocument.status !== "ATIVO" && selectedDocument.status !== "ARQUIVADO" ? <button type="button" disabled={working} onClick={() => documentAction("publicar", selectedDocument.id, "Conhecimento publicado.")} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2.5 text-xs font-semibold text-white disabled:opacity-50"><Icon name="check" className="h-4 w-4" />Publicar</button> : null}
+                            {selectedDocument.status !== "ATIVO" && selectedDocument.status !== "ARQUIVADO" ? <button type="button" disabled={working || !documentReadyToPublish(selectedDocument)} title={publishBlockedReason(selectedDocument) || "Publicar conhecimento"} onClick={() => documentAction("publicar", selectedDocument.id, "Conhecimento publicado.")} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:opacity-100"><Icon name="check" className="h-4 w-4" />Publicar</button> : null}
                             {selectedDocument.status === "ARQUIVADO" ? <button type="button" disabled={working} onClick={() => documentAction("reativar", selectedDocument.id, "Conhecimento reativado.")} className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2.5 text-xs font-semibold text-white disabled:opacity-50"><Icon name="refresh" className="h-4 w-4" />Reativar</button> : null}
                             {selectedDocument.status !== "ARQUIVADO" ? <button type="button" disabled={working} onClick={() => documentAction("arquivar", selectedDocument.id, "Conhecimento arquivado.")} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-semibold text-slate-700 disabled:opacity-50"><Icon name="archive" className="h-4 w-4" />Arquivar</button> : null}
                             <button type="button" disabled={working} onClick={() => createNewVersion(selectedDocument.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-semibold text-slate-700 disabled:opacity-50"><Icon name="copy" className="h-4 w-4" />Nova versão</button>
