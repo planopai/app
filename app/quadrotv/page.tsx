@@ -1,7 +1,17 @@
 "use client";
 
 /*
- * QUADRO TV — versão preservada
+ * QUADRO TV — novo visual para TV (a partir de 1024 px de largura)
+ * - tela desenhada em 1920×1080 e reduzida por igual; botão de tela cheia;
+ * - por atendimento: situação atual em destaque, tempo nela, responsável,
+ *   linha do tempo das etapas (atual piscando em verde), ocioso e total;
+ * - alertas: vermelho quando está há 24 h+ na mesma situação; âmbar quando
+ *   passou do horário marcado do velório/sepultamento;
+ * - coroas: linha discreta (0), faixa inferior (1–4 pedidos) ou coluna lateral (5+),
+ *   com paginação automática; atendimentos compactam e paginam quando não cabem;
+ * - celular/tablet estreito continua com os cartões atuais.
+ *
+ * Base preservada:
  * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
  * - Coroas: modelo + solicitante, Falecido, Entrega, Pagamento e timeline Ampulheta/Flor/Faixa/Concluída;
  * - Coroas finalizadas permanecem no quadro até a confirmação do status Entregue;
@@ -1887,10 +1897,9 @@ function compararCoroasPorOrdemDeChegada(a: CoroaTvPedido, b: CoroaTvPedido): nu
    ========================= */
 const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
-const ATENDIMENTOS_POR_PAGINA = 6;
+// Atendimentos e coroas por página: definidos por calcularLayoutTv() conforme o volume.
 const INTERVALO_PAGINACAO_ATENDIMENTOS_MS = 15_000;
 
-const COROAS_POR_PAGINA = 3;
 const INTERVALO_PAGINACAO_COROAS_MS = 15_000;
 
 export default function QuadroAtendimentoPage() {
@@ -2208,6 +2217,14 @@ export default function QuadroAtendimentoPage() {
         return withTs.map((x) => x.r);
     }, [registros]);
 
+    /* Layout da TV: define quantos atendimentos e coroas cabem por página */
+    const layoutTv = useMemo(
+        () => calcularLayoutTv(ativosOrdenados.length, coroasTv.length),
+        [ativosOrdenados.length, coroasTv.length]
+    );
+    const atendimentosPorPagina = layoutTv.atendimentosPorPagina;
+    const coroasPorPagina = layoutTv.coroasPorPagina;
+
     /*
      * Paginação do quadro:
      * - no máximo 6 atendimentos por página;
@@ -2218,7 +2235,7 @@ export default function QuadroAtendimentoPage() {
      */
     const totalPaginasAtendimentos = Math.max(
         1,
-        Math.ceil(ativosOrdenados.length / ATENDIMENTOS_POR_PAGINA)
+        Math.ceil(ativosOrdenados.length / atendimentosPorPagina)
     );
 
     const paginaAtualAtendimentos = Math.min(
@@ -2227,12 +2244,12 @@ export default function QuadroAtendimentoPage() {
     );
 
     const ativosPagina = useMemo(() => {
-        const inicio = paginaAtualAtendimentos * ATENDIMENTOS_POR_PAGINA;
+        const inicio = paginaAtualAtendimentos * atendimentosPorPagina;
         return ativosOrdenados.slice(
             inicio,
-            inicio + ATENDIMENTOS_POR_PAGINA
+            inicio + atendimentosPorPagina
         );
-    }, [ativosOrdenados, paginaAtualAtendimentos]);
+    }, [ativosOrdenados, paginaAtualAtendimentos, atendimentosPorPagina]);
 
     const paginationSignature = useMemo(
         () =>
@@ -2291,7 +2308,7 @@ export default function QuadroAtendimentoPage() {
 
     const totalPaginasCoroas = Math.max(
         1,
-        Math.ceil(coroasOrdenadas.length / COROAS_POR_PAGINA)
+        Math.ceil(coroasOrdenadas.length / coroasPorPagina)
     );
 
     const paginaAtualCoroas = Math.min(
@@ -2300,12 +2317,12 @@ export default function QuadroAtendimentoPage() {
     );
 
     const coroasPagina = useMemo(() => {
-        const inicio = paginaAtualCoroas * COROAS_POR_PAGINA;
+        const inicio = paginaAtualCoroas * coroasPorPagina;
         return coroasOrdenadas.slice(
             inicio,
-            inicio + COROAS_POR_PAGINA
+            inicio + coroasPorPagina
         );
-    }, [coroasOrdenadas, paginaAtualCoroas]);
+    }, [coroasOrdenadas, paginaAtualCoroas, coroasPorPagina]);
 
     const coroasPaginationSignature = useMemo(
         () => coroasOrdenadas.map((pedido) => String(pedido.id)).join("|"),
@@ -3243,63 +3260,88 @@ export default function QuadroAtendimentoPage() {
             `}</style>
 
             <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
-                <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                        <div className="min-w-0">
-                            <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
-                                Quadro de Atendimentos
-                            </h1>
-                            <p className="mt-0.5 text-[11px] font-medium qa-text-muted">
-                                Atualizado em tempo real
-                                {totalPaginasAtendimentos > 1
-                                    ? ` • Atendimentos ${paginaAtualAtendimentos + 1}/${totalPaginasAtendimentos} • troca a cada 15s`
-                                    : ""}
-                            </p>
+                {/* Celular e telas estreitas: layout anterior (cartões) */}
+                <div className="flex min-h-0 flex-1 flex-col gap-4 lg:hidden">
+                    <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
+                                    Quadro de Atendimentos
+                                </h1>
+                                <p className="mt-0.5 text-[11px] font-medium qa-text-muted">
+                                    Atualizado em tempo real
+                                    {totalPaginasAtendimentos > 1
+                                        ? ` • Atendimentos ${paginaAtualAtendimentos + 1}/${totalPaginasAtendimentos} • troca a cada 15s`
+                                        : ""}
+                                </p>
+                            </div>
+
+                            <div className="shrink-0 text-right leading-tight">
+                                <div className="text-lg font-bold tabular-nums text-slate-100 sm:text-xl">{clockTime}</div>
+                                <div className="mt-0.5 text-[10px] font-medium qa-text-muted sm:text-[11px]">{clockDate}</div>
+                            </div>
                         </div>
 
-                        <div className="shrink-0 text-right leading-tight">
-                            <div className="text-lg font-bold tabular-nums text-slate-100 sm:text-xl">{clockTime}</div>
-                            <div className="mt-0.5 text-[10px] font-medium qa-text-muted sm:text-[11px]">{clockDate}</div>
+                        <div className="mt-2 h-px bg-slate-700/50" />
+                        <div className="mt-1.5 h-6 overflow-hidden">
+                            <AvisosTicker avisos={avisosParaExibir} />
                         </div>
-                    </div>
+                    </header>
 
-                    <div className="mt-2 h-px bg-slate-700/50" />
-                    <div className="mt-1.5 h-6 overflow-hidden">
-                        <AvisosTicker avisos={avisosParaExibir} />
-                    </div>
-                </header>
+                    <main
+                        ref={dashboardContentRef}
+                        data-qa-density={qaDensity}
+                        className="qa-dashboard-content min-h-0 flex-1 overflow-hidden flex flex-col gap-3"
+                    >
+                        <div className="qa-atendimentos-shell shrink-0">
+                            <DesktopTable
+                                ativos={desktopAtivos}
+                                hiddenCount={desktopHiddenCount}
+                                onSelect={showDetail}
+                                statusLogsById={statusLogsById}
+                                nowMs={nowMs}
+                            />
+                            <MobileCards
+                                ativos={mobileAtivos}
+                                hiddenCount={mobileHiddenCount}
+                                onSelect={showDetail}
+                                statusLogsById={statusLogsById}
+                                nowMs={nowMs}
+                            />
+                        </div>
 
-                <main
-                    ref={dashboardContentRef}
-                    data-qa-density={qaDensity}
-                    className="qa-dashboard-content min-h-0 flex-1 overflow-hidden flex flex-col gap-3"
-                >
-                    <div className="qa-atendimentos-shell shrink-0">
-                        <DesktopTable
-                            ativos={desktopAtivos}
-                            hiddenCount={desktopHiddenCount}
-                            onSelect={showDetail}
-                            statusLogsById={statusLogsById}
+                        <CoroasTvBoard
+                            pedidos={coroasPagina}
+                            totalPedidos={coroasTv.length}
+                            paginaAtual={paginaAtualCoroas}
+                            totalPaginas={totalPaginasCoroas}
+                            error={coroasTvError}
                             nowMs={nowMs}
                         />
-                        <MobileCards
-                            ativos={mobileAtivos}
-                            hiddenCount={mobileHiddenCount}
-                            onSelect={showDetail}
-                            statusLogsById={statusLogsById}
-                            nowMs={nowMs}
-                        />
-                    </div>
+                    </main>
+                </div>
 
-                    <CoroasTvBoard
-                        pedidos={coroasPagina}
-                        totalPedidos={coroasTv.length}
-                        paginaAtual={paginaAtualCoroas}
-                        totalPaginas={totalPaginasCoroas}
-                        error={coroasTvError}
+                {/* TV e telas largas: novo quadro */}
+                <div className="hidden min-h-0 flex-1 lg:flex">
+                    <QuadroTv
+                        layout={layoutTv}
+                        ativos={ativosPagina}
+                        todosAtivos={ativosOrdenados}
+                        paginaAtendimentos={paginaAtualAtendimentos}
+                        totalPaginasAtendimentos={totalPaginasAtendimentos}
+                        coroas={coroasPagina}
+                        todasCoroas={coroasOrdenadas}
+                        paginaCoroas={paginaAtualCoroas}
+                        totalPaginasCoroas={totalPaginasCoroas}
+                        coroasError={coroasTvError}
+                        statusLogsById={statusLogsById}
                         nowMs={nowMs}
+                        clockTime={clockTime}
+                        clockDate={clockDate}
+                        avisos={avisosParaExibir}
+                        onSelect={showDetail}
                     />
-                </main>
+                </div>
 
                 {open && detail && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-3 sm:p-6" aria-modal role="dialog">
@@ -4181,6 +4223,569 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
         </section>
     );
 });
+
+/* =========================================================
+   QUADRO TV — novo visual (tela 1920×1080 reduzida por igual)
+   Usa os mesmos dados, histórico e regras do quadro:
+   buildStatusSegments, getStatusDisplayData, isStatusStepSkipped,
+   atendimentoDeveFicarNoQuadro, buildCoroaTimeline.
+   ========================================================= */
+
+/** Limites dos alertas visuais — ajuste aqui. */
+const TV_LIMITE_PARADO_MS = 24 * 60 * 60 * 1000; // vermelho: mesma situação há 24 h ou mais
+const TV_TOLERANCIA_HORARIO_MS = 0; // âmbar: passou do horário marcado (velório/sepultamento)
+
+type TvLayout = {
+    coroasModo: "nenhuma" | "faixa" | "lado";
+    compacto: boolean;
+    atendimentosPorPagina: number;
+    coroasPorPagina: number;
+};
+
+/**
+ * Distribuição da tela conforme o volume:
+ * - sem coroas: linha discreta; até 4 pedidos: faixa embaixo; 5+: coluna à direita;
+ * - atendimentos ficam compactos quando não cabem no tamanho normal;
+ * - o que não couber vai para a próxima página (troca automática).
+ */
+function calcularLayoutTv(totalAtendimentos: number, totalPedidosCoroa: number): TvLayout {
+    const coroasModo: TvLayout["coroasModo"] =
+        totalPedidosCoroa === 0 ? "nenhuma" : totalPedidosCoroa <= 4 ? "faixa" : "lado";
+    const limiteNormal = coroasModo === "faixa" ? 3 : 4;
+    const compacto = coroasModo === "lado" || totalAtendimentos > limiteNormal;
+    const atendimentosPorPagina = compacto ? (coroasModo === "faixa" ? 4 : 6) : limiteNormal;
+    const coroasPorPagina = coroasModo === "lado" ? 5 : 4;
+    return { coroasModo, compacto, atendimentosPorPagina, coroasPorPagina };
+}
+
+const TV_ETAPAS = STATUS_STEPS.filter((s) => s.key !== "idle");
+const TV_ETAPA_CURTA: Record<string, string> = {
+    fase01: "Remoção",
+    fase03: "Preparo",
+    fase05: "Ornament.",
+    fase08: "Velório",
+    fase09: "Sepult.",
+    fase10: "Material",
+};
+
+function tvDataHora(ts: number): string {
+    if (!ts || !Number.isFinite(ts)) return "";
+    const d = new Date(ts);
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function tvDuracaoTexto(ms: number): string {
+    const min = Math.max(0, Math.floor(ms / 60000));
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return h ? `${h} h ${String(m).padStart(2, "0")} min` : `${m} min`;
+}
+
+function tvHorarioMarcado(data?: string, hora?: string): number {
+    const d = String(data ?? "").trim();
+    const h = String(hora ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}/.test(d) || d.startsWith("0000")) return 0;
+    if (!h || h.startsWith("00:00")) return 0;
+    return parseLogTs(`${d.slice(0, 10)} ${h.length === 5 ? `${h}:00` : h}`);
+}
+
+type TvResumo = {
+    registro: Registro;
+    trackingId: string;
+    durations: Map<string, number>;
+    activeKey?: string;
+    atualKey: string;
+    atualLabel: string;
+    atualDesdeMs: number;
+    atualResponsavel: string;
+    totalMs: number;
+    criadoTs: number;
+    alerta?: { nivel: "crit" | "warn"; texto: string };
+};
+
+function resumirAtendimentoTv(r: Registro, logs: LogItem[] | undefined, nowMs: number): TvResumo {
+    const segments = buildStatusSegments(r, logs, nowMs);
+    const { durations, activeKey } = getStatusDisplayData(segments);
+    const atual = segments[segments.length - 1];
+    const atualKey = atual?.key ?? normalizarStatus(r.status) ?? "aguardando";
+    const atualDesdeMs = atual ? Math.max(0, nowMs - atual.start) : 0;
+    const totalMs = Math.max(0, nowMs - (segments[0]?.start ?? nowMs));
+
+    let atualResponsavel = "";
+    for (const log of [...(logs ?? [])].reverse()) {
+        if (getStatusFromLog(log) === atualKey && log.usuario) {
+            atualResponsavel = shown(log.usuario, "");
+            break;
+        }
+    }
+
+    let alerta: TvResumo["alerta"];
+    if (atualDesdeMs >= TV_LIMITE_PARADO_MS) {
+        alerta = { nivel: "crit", texto: "Na mesma situação há mais de 24 h" };
+    } else {
+        const rank = statusFlowRank(atualKey);
+        const sepMarcado = tvHorarioMarcado(r.data_fim_velorio, r.hora_fim_velorio);
+        const velMarcado = tvHorarioMarcado(r.data_inicio_velorio, r.hora_inicio_velorio);
+        if (rotaAtivaLegado(r.realiza_sepultamento) && sepMarcado && rank < statusFlowRank("fase10") && nowMs > sepMarcado + TV_TOLERANCIA_HORARIO_MS) {
+            alerta = { nivel: "warn", texto: `${tvDuracaoTexto(nowMs - sepMarcado)} após o horário do sepultamento (${timeOr(r.hora_fim_velorio)})` };
+        } else if (rotaAtivaLegado(r.realiza_velorio) && velMarcado && rank < statusFlowRank("fase08") && nowMs > velMarcado + TV_TOLERANCIA_HORARIO_MS) {
+            alerta = { nivel: "warn", texto: `Velório marcado para ${timeOr(r.hora_inicio_velorio)}` };
+        }
+    }
+
+    return {
+        registro: r,
+        trackingId: getRegistroTrackingId(r),
+        durations,
+        activeKey,
+        atualKey,
+        atualLabel: getStatusStepInfo(atualKey).label,
+        atualDesdeMs,
+        atualResponsavel,
+        totalMs,
+        criadoTs: getRegistroCreatedTs(r, logs, nowMs),
+        alerta,
+    };
+}
+
+function tvConvenioClasse(convenio?: string): string {
+    const kind = normalizeConvenio(convenio);
+    if (kind === "Prefeitura") return "tv-chip tv-chip-pref";
+    if (kind === "Particular") return "tv-chip tv-chip-part";
+    if (kind === "Associado") return "tv-chip tv-chip-assoc";
+    return "tv-chip tv-chip-adef";
+}
+
+function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: (r: Registro) => void }) {
+    const r = resumo.registro;
+    const rankAtual = statusFlowRank(resumo.atualKey);
+    const ocioso = resumo.durations.get("idle") ?? 0;
+    const semVelorio = !rotaAtivaLegado(r.realiza_velorio);
+    const semSepultamento = !rotaAtivaLegado(r.realiza_sepultamento);
+    const sepultamentoTxt = semSepultamento
+        ? "Sem sepultamento pelo PAI"
+        : `${shown(r.local_sepultamento || r.local)} · ${dateDayMonthOr(r.data_fim_velorio)} ${timeOr(r.hora_fim_velorio)}`;
+
+    return (
+        <article
+            className={`tv-row ${resumo.alerta ? `tv-row-${resumo.alerta.nivel}` : ""}`}
+            onClick={() => onSelect(r)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => (e.key === "Enter" ? onSelect(r) : undefined)}
+            title="Ver detalhes do atendimento"
+        >
+            <div className="tv-who">
+                <div className="tv-name">{shown(r.falecido)}</div>
+                <div className="tv-meta">
+                    <span className={tvConvenioClasse(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+                </div>
+                <div className="tv-place">
+                    <span className="tv-place-vel">{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</span>
+                    <span className="tv-place-sep">→ {sepultamentoTxt}</span>
+                </div>
+            </div>
+
+            <div className="tv-now">
+                <div className="tv-state"><span className="tv-pulse" />{resumo.atualLabel}</div>
+                <div className="tv-since">
+                    há <b>{tvDuracaoTexto(resumo.atualDesdeMs)}</b>
+                    {resumo.atualResponsavel ? ` · ${resumo.atualResponsavel}` : ""}
+                </div>
+                {resumo.alerta && (
+                    <div className={`tv-flag tv-flag-${resumo.alerta.nivel}`}>{resumo.alerta.nivel === "crit" ? "⚠" : "⏱"} {resumo.alerta.texto}</div>
+                )}
+            </div>
+
+            <div className="tv-track">
+                {TV_ETAPAS.map((step) => {
+                    const skipped = isStatusStepSkipped(r, step.key);
+                    const duracao = resumo.durations.get(step.key) ?? 0;
+                    const ativo = !skipped && resumo.activeKey === step.key;
+                    const feito = !skipped && !ativo && (duracao > 0 || rankAtual > statusFlowRank(step.key));
+                    const cls = skipped ? "tv-step tv-step-na" : ativo ? "tv-step tv-step-live" : feito ? "tv-step tv-step-done" : "tv-step";
+                    return (
+                        <div key={step.key} className={cls} title={`${step.label} • ${skipped ? "Não se aplica" : formatDurationMs(duracao)}`}>
+                            <div className={`tv-node ${ativo ? "qa-status-active-ring" : ""}`}>
+                                <span className={`tv-node-icon ${ativo ? "qa-status-blink" : ""}`}><StatusIcon type={step.icon} /></span>
+                            </div>
+                            <div className="tv-t">{skipped ? "não se aplica" : ativo || feito ? formatDurationMs(duracao) : "—"}</div>
+                        </div>
+                    );
+                })}
+                <div className="tv-tot">
+                    <div className={`tv-box tv-box-ocioso ${resumo.activeKey === "idle" ? "tv-box-live qa-status-active-ring" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "tv-box-crit" : ""}`}>
+                        <small><span className="tv-mini-icon"><StatusIcon type="hourglass" /></span>Ocioso</small>
+                        <b>{formatDurationMs(ocioso)}</b>
+                    </div>
+                    <div className="tv-box">
+                        <small><span className="tv-mini-icon"><StatusIcon type="timer" /></span>Total</small>
+                        <b>{formatDurationMs(resumo.totalMs)}</b>
+                    </div>
+                </div>
+            </div>
+        </article>
+    );
+}
+
+function TvCartaoCoroa({ pedido, nowMs }: { pedido: CoroaTvPedido; nowMs: number }) {
+    const t = buildCoroaTimeline(pedido, nowMs);
+    const etapas = [
+        { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
+        { key: "coroa", icon: "flower" as CoroaTvIconKey, label: "Coroa", ms: t.coroaMs, ativo: t.coroaActive, pulado: t.coroaSkipped },
+        { key: "faixa", icon: "ribbon" as CoroaTvIconKey, label: "Faixa", ms: t.faixaMs, ativo: t.faixaActive, pulado: false },
+        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Concluída, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
+    ];
+    const ativas = etapas.filter((e) => e.ativo);
+    const qtd = coroaQuantidade(pedido);
+    const pago = coroaPagamentoLabel(pedido) === "Pago";
+    const agora = ativas.length
+        ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
+        : coroaStatusLabel(pedido.status);
+    const hora = coroaCriadoHora(pedido.criado_em);
+
+    return (
+        <div className="tv-cr">
+            <div className="tv-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="tv-cr-f">
+                {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
+                {hora ? ` · pedido ${hora}` : ""}
+            </div>
+            <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+            <div className="tv-cr-e">{agora}</div>
+            <div className="tv-mini">
+                {etapas.map((e) => (
+                    <i key={e.key} title={`${e.label} • ${e.pulado ? "Não se aplica" : formatDurationMs(e.ms)}`}
+                        className={e.pulado ? "tv-mini-na" : e.ativo ? "tv-mini-live qa-status-active-ring" : e.ms > 0 ? "tv-mini-done" : ""}>
+                        <span className={e.ativo ? "qa-status-blink" : ""}><CoroaTvIcon type={e.icon} /></span>
+                    </i>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function TvPaginador({ atual, total, segundos }: { atual: number; total: number; segundos: number }) {
+    if (total <= 1) return null;
+    return (
+        <div className="tv-pager">
+            Página {atual + 1} de {total}
+            {Array.from({ length: total }, (_, k) => <i key={k} className={k === atual ? "on" : ""} />)}
+            <span className="tv-bar"><span key={atual} style={{ animationDuration: `${segundos}s` }} /></span>
+        </div>
+    );
+}
+
+function QuadroTv({
+    layout,
+    ativos,
+    todosAtivos,
+    paginaAtendimentos,
+    totalPaginasAtendimentos,
+    coroas,
+    todasCoroas,
+    paginaCoroas,
+    totalPaginasCoroas,
+    coroasError,
+    statusLogsById,
+    nowMs,
+    clockTime,
+    clockDate,
+    avisos,
+    onSelect,
+}: {
+    layout: TvLayout;
+    ativos: Registro[];
+    todosAtivos: Registro[];
+    paginaAtendimentos: number;
+    totalPaginasAtendimentos: number;
+    coroas: CoroaTvPedido[];
+    todasCoroas: CoroaTvPedido[];
+    paginaCoroas: number;
+    totalPaginasCoroas: number;
+    coroasError?: string | null;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+    clockTime: string;
+    clockDate: string;
+    avisos: Aviso[];
+    onSelect: (r: Registro) => void;
+}) {
+    const hostRef = useRef<HTMLDivElement | null>(null);
+    const [escala, setEscala] = useState(0.5);
+    const [topo, setTopo] = useState(0);
+    const [telaCheia, setTelaCheia] = useState(false);
+
+    // A tela é sempre desenhada em 1920×1080 e reduzida por igual para caber no espaço disponível.
+    useLayoutEffect(() => {
+        const host = hostRef.current;
+        if (!host) return;
+        const calc = () => {
+            const w = host.clientWidth, h = host.clientHeight;
+            if (w > 0 && h > 0) {
+                const s = Math.min(w / 1920, h / 1080);
+                setEscala(s);
+                setTopo(Math.max(0, (h - 1080 * s) / 2));
+            }
+        };
+        calc();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(calc) : null;
+        ro?.observe(host);
+        window.addEventListener("resize", calc);
+        const onFs = () => setTelaCheia(document.fullscreenElement === host);
+        document.addEventListener("fullscreenchange", onFs);
+        return () => { ro?.disconnect(); window.removeEventListener("resize", calc); document.removeEventListener("fullscreenchange", onFs); };
+    }, []);
+
+    const alternarTelaCheia = useCallback(() => {
+        const host = hostRef.current;
+        if (!host) return;
+        if (document.fullscreenElement) void document.exitFullscreen?.();
+        else void host.requestFullscreen?.().catch(() => undefined);
+    }, []);
+
+    const resumos = useMemo(
+        () => ativos.map((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs)),
+        [ativos, statusLogsById, nowMs]
+    );
+    const parados = useMemo(
+        () => todosAtivos.filter((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs).alerta?.nivel === "crit").length,
+        [todosAtivos, statusLogsById, nowMs]
+    );
+    const totalCoroas = todasCoroas.reduce((s, p) => s + coroaQuantidade(p), 0);
+    const pagamentosPendentes = todasCoroas.filter((p) => coroaPagamentoLabel(p) !== "Pago").length;
+
+    const blocoCoroas = (
+        <>
+            <h2 className="tv-cor-title">
+                Coroas em confecção <span className="tv-n">{totalCoroas}</span>
+                {coroasError ? <span className="tv-cor-stale">últimos dados mantidos</span> : null}
+            </h2>
+            <div className="tv-sum">{pagamentosPendentes} aguardando pagamento · ordem de chegada</div>
+            <div className="tv-clist">{coroas.map((p) => <TvCartaoCoroa key={p.id} pedido={p} nowMs={nowMs} />)}</div>
+            <TvPaginador atual={paginaCoroas} total={totalPaginasCoroas} segundos={INTERVALO_PAGINACAO_COROAS_MS / 1000} />
+        </>
+    );
+
+    return (
+        <div ref={hostRef} className={`tv-host ${telaCheia ? "tv-host-fs" : ""}`}>
+            <div className="tv" style={{ top: topo, transform: `translateX(-50%) scale(${escala})` }}>
+                <header className="tv-top">
+                    <div className="tv-brand">
+                        <h1>Quadro de Atendimentos</h1>
+                        <div className="tv-sub"><span className="tv-dot-live" />Atualizado em tempo real</div>
+                    </div>
+                    <div className="tv-counters">
+                        <div className="tv-ctr"><b>{todosAtivos.length}</b><span>em andamento</span></div>
+                        <div className={`tv-ctr ${parados ? "tv-ctr-alert" : ""}`}><b>{parados}</b><span>parados há mais de 24 h</span></div>
+                        <div className="tv-ctr"><b>{totalCoroas}</b><span>coroas em confecção</span></div>
+                    </div>
+                    <div className="tv-clock">
+                        <div className="tv-h">{clockTime}</div>
+                        <div className="tv-d">{clockDate}</div>
+                    </div>
+                </header>
+
+                <section className="tv-body">
+                    <div className={`tv-main ${layout.compacto ? "tv-compact" : ""} ${layout.coroasModo === "lado" ? "tv-narrow" : ""}`}>
+                        <div className="tv-head">
+                            <span>Atendimento</span>
+                            <span>Agora</span>
+                            <div className="tv-steps-h">
+                                {TV_ETAPAS.map((s) => <span key={s.key}>{TV_ETAPA_CURTA[s.key] ?? s.shortLabel}</span>)}
+                                <span className="tv-steps-h-tot">{layout.coroasModo === "lado" ? "Total" : "Ocioso · Total"}</span>
+                            </div>
+                        </div>
+                        <main className="tv-rows">
+                            {resumos.length === 0 ? (
+                                <div className="tv-empty">Nenhum atendimento em andamento.</div>
+                            ) : (
+                                resumos.map((res, i) => <TvLinhaAtendimento key={res.trackingId || i} resumo={res} onSelect={onSelect} />)
+                            )}
+                        </main>
+                        <TvPaginador atual={paginaAtendimentos} total={totalPaginasAtendimentos} segundos={INTERVALO_PAGINACAO_ATENDIMENTOS_MS / 1000} />
+                    </div>
+                    {layout.coroasModo === "lado" && <aside className="tv-side">{blocoCoroas}</aside>}
+                </section>
+
+                {layout.coroasModo === "faixa" && <section className="tv-band">{blocoCoroas}</section>}
+                {layout.coroasModo === "nenhuma" && (
+                    <div className="tv-coroas-line">Coroas de flores em confecção <span className="tv-n">0</span><span className="tv-muted">· nenhuma no momento</span></div>
+                )}
+
+                <footer className="tv-ticker">
+                    <div className="tv-tag">Avisos</div>
+                    <div className="tv-lane"><AvisosTicker avisos={avisos} /></div>
+                </footer>
+            </div>
+
+            <button type="button" className="tv-fs-btn" onClick={alternarTelaCheia} title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}>
+                {telaCheia ? "Sair da tela cheia" : "⛶ Tela cheia"}
+            </button>
+
+            <TvStyles />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function TvStyles() {
+    return (
+        <style jsx global>{`
+            .tv-host { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; overflow: hidden; border-radius: 14px; background: #050d1a; }
+            .tv-host-fs { border-radius: 0; }
+            .tv { position: absolute; top: 0; left: 50%; width: 1920px; height: 1080px; transform-origin: top center;
+                background: radial-gradient(120% 90% at 50% -10%, #10264a 0%, #081427 55%, #060f1f 100%);
+                display: flex; flex-direction: column; gap: 20px; padding: 32px 44px 0; overflow: hidden; color: #f2f6fc; font-variant-numeric: tabular-nums; }
+            .tv-fs-btn { position: absolute; right: 10px; bottom: 10px; z-index: 5; font-size: 12px; font-weight: 700; color: #cfe0ff; background: rgba(11,24,48,.85);
+                border: 1px solid #29497d; border-radius: 8px; padding: 4px 10px; opacity: .35; transition: opacity .2s; }
+            .tv-host:hover .tv-fs-btn { opacity: 1; }
+
+            .tv-top { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+            .tv-brand h1 { margin: 0; font-size: 40px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; }
+            .tv-sub { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 20px; color: #a9bddb; font-weight: 700; }
+            .tv-dot-live { width: 12px; height: 12px; border-radius: 50%; background: #35e08a; animation: tv-ping 1.6s infinite; }
+            @keyframes tv-ping { 0% { box-shadow: 0 0 0 0 rgba(53,224,138,.55); } 70% { box-shadow: 0 0 0 12px rgba(53,224,138,0); } 100% { box-shadow: 0 0 0 0 rgba(53,224,138,0); } }
+            .tv-counters { display: flex; gap: 14px; }
+            .tv-ctr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 20px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+            .tv-ctr b { font-size: 36px; font-weight: 900; }
+            .tv-ctr span { font-size: 18px; color: #a9bddb; font-weight: 700; }
+            .tv-ctr-alert b { color: #ff5a5f; }
+            .tv-clock { text-align: right; }
+            .tv-h { font-size: 64px; font-weight: 900; line-height: 1; letter-spacing: -.02em; }
+            .tv-d { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 4px; }
+
+            .tv-body { flex: 1; display: flex; gap: 20px; min-height: 0; }
+            .tv-main { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+            .tv-head, .tv-row { display: grid; grid-template-columns: 520px 420px 1fr; gap: 28px; }
+            .tv-head { padding: 0 28px; color: #6f88ad; font-size: 16px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+            .tv-steps-h, .tv-track { display: grid; grid-template-columns: repeat(6, 1fr) 250px; align-items: center; }
+            .tv-steps-h span { text-align: center; font-size: 14px; letter-spacing: .04em; }
+            .tv-steps-h .tv-steps-h-tot { text-align: right; padding-right: 10px; }
+            .tv-rows { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+            .tv-empty { font-size: 26px; color: #6f88ad; text-align: center; padding: 60px 0; }
+            .tv-row { flex: 1; max-height: 230px; min-height: 0; align-items: center; cursor: pointer;
+                background: linear-gradient(180deg, #132a52, #0f2344); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 28px; }
+            .tv-row:hover { border-color: #4b9bff; }
+            .tv-row-crit { border-color: rgba(255,90,95,.55); box-shadow: inset 6px 0 0 #ff5a5f; }
+            .tv-row-warn { border-color: rgba(255,176,32,.5); box-shadow: inset 6px 0 0 #ffb020; }
+
+            .tv-who { min-width: 0; }
+            .tv-name { font-size: 34px; font-weight: 900; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-meta { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 19px; color: #a9bddb; font-weight: 700; white-space: nowrap; overflow: hidden; }
+            .tv-chip { font-size: 17px; font-weight: 900; padding: 3px 12px; border-radius: 999px; color: #081427; flex: none; }
+            .tv-chip-pref { background: #3fa7ff; } .tv-chip-part { background: #ffc53d; } .tv-chip-assoc { background: #2ed3c6; }
+            .tv-chip-adef { background: transparent; color: #8aa0c2; border: 2px dashed #8aa0c2; }
+            .tv-place { margin-top: 8px; font-size: 19px; font-weight: 700; line-height: 1.35; }
+            .tv-place span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-place-sep { color: #a9bddb; }
+            .tv-place a { color: #4b9bff; }
+
+            .tv-now { min-width: 0; }
+            .tv-state { display: flex; align-items: center; gap: 12px; font-size: 27px; font-weight: 900; line-height: 1.1; }
+            .tv-pulse { width: 16px; height: 16px; border-radius: 50%; background: #35e08a; flex: none; animation: tv-ping 1.6s infinite; }
+            .tv-since { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-since b { color: #f2f6fc; font-weight: 900; }
+            .tv-flag { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 17px; font-weight: 900; padding: 5px 12px; border-radius: 10px; }
+            .tv-flag-crit { background: rgba(255,90,95,.15); color: #ff5a5f; }
+            .tv-flag-warn { background: rgba(255,176,32,.14); color: #ffb020; }
+
+            .tv-step { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; z-index: 0; }
+            .tv-step::before { content: ""; position: absolute; top: 32px; left: -50%; width: 100%; height: 4px; background: #29497d; z-index: -1; }
+            .tv-step:first-child::before { display: none; }
+            .tv-step-done::before, .tv-step-live::before { background: #3b82f6; }
+            .tv-node { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid #29497d; background: #0c1d38; color: #6f88ad; }
+            .tv-node-icon { display: inline-flex; width: 32px; height: 32px; }
+            .tv-node-icon svg, .tv-mini-icon svg, .tv-mini i svg { width: 100%; height: 100%; }
+            .tv-t { font-size: 21px; font-weight: 900; color: #6f88ad; white-space: nowrap; }
+            .tv-step-done .tv-node { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+            .tv-step-done .tv-t { color: #f2f6fc; }
+            .tv-step-live .tv-node { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,.14); }
+            .tv-step-live .tv-t { color: #35e08a; }
+            .tv-step-na .tv-node { border-style: dashed; border-color: #233c63; background: transparent; color: #2b4670; }
+            .tv-step-na .tv-t { font-size: 13px; color: #3d5a85; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; text-align: center; white-space: normal; line-height: 1.1; }
+
+            .tv-tot { display: flex; gap: 10px; justify-content: flex-end; padding-left: 18px; }
+            .tv-box { border-radius: 14px; padding: 8px 14px; text-align: center; border: 2px solid #29497d; min-width: 118px; }
+            .tv-box small { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 900; color: #6f88ad; text-transform: uppercase; letter-spacing: .08em; }
+            .tv-mini-icon { display: inline-flex; width: 18px; height: 18px; }
+            .tv-box b { display: block; font-size: 30px; font-weight: 900; margin-top: 2px; }
+            .tv-box-live { border-color: #22c55e !important; background: rgba(34,197,94,.14); }
+            .tv-box-live b, .tv-box-live small { color: #35e08a; }
+            .tv-box-crit b { color: #ff5a5f; }
+
+            /* compacto */
+            .tv-compact .tv-row { padding: 10px 22px; border-radius: 16px; }
+            .tv-compact .tv-name { font-size: 28px; }
+            .tv-compact .tv-place, .tv-compact .tv-since { display: none; }
+            .tv-compact .tv-meta { margin-top: 4px; font-size: 17px; }
+            .tv-compact .tv-state { font-size: 23px; }
+            .tv-compact .tv-flag { margin-top: 4px; font-size: 15px; padding: 3px 10px; }
+            .tv-compact .tv-node { width: 48px; height: 48px; } .tv-compact .tv-node-icon { width: 24px; height: 24px; }
+            .tv-compact .tv-step::before { top: 24px; }
+            .tv-compact .tv-t { font-size: 18px; }
+            .tv-compact .tv-step-na .tv-t { visibility: hidden; }
+            .tv-compact .tv-box { padding: 4px 10px; min-width: 92px; } .tv-compact .tv-box b { font-size: 24px; }
+
+            /* com coluna de coroas ao lado */
+            .tv-narrow .tv-row, .tv-narrow .tv-head { grid-template-columns: 370px 280px 1fr; gap: 18px; }
+            .tv-narrow .tv-name { font-size: 26px; }
+            .tv-narrow .tv-state { font-size: 21px; }
+            .tv-narrow .tv-tot { padding-left: 8px; }
+            .tv-narrow .tv-box-ocioso { display: none; }
+            .tv-narrow .tv-track, .tv-narrow .tv-steps-h { grid-template-columns: repeat(6, 1fr) 104px; }
+            .tv-narrow .tv-steps-h span { font-size: 11px; letter-spacing: 0; }
+            .tv-narrow .tv-node { width: 44px; height: 44px; } .tv-narrow .tv-node-icon { width: 22px; height: 22px; }
+            .tv-narrow .tv-step::before { top: 22px; }
+            .tv-narrow .tv-t { font-size: 16px; }
+
+            /* coroas */
+            .tv-side { width: 500px; flex: none; display: flex; flex-direction: column; gap: 10px; background: rgba(10,24,48,.7); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 18px 14px; min-height: 0; }
+            .tv-band { background: rgba(10,24,48,.7); border: 1px solid #1f3a66; border-radius: 22px; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+            .tv-cor-title { margin: 0; font-size: 24px; font-weight: 900; display: flex; align-items: center; gap: 10px; }
+            .tv-cor-stale { font-size: 15px; color: #ffb020; font-weight: 800; }
+            .tv-n { background: #2d6fd6; border-radius: 999px; padding: 0 12px; font-size: 20px; font-weight: 900; color: #fff; }
+            .tv-sum { font-size: 17px; color: #a9bddb; font-weight: 700; }
+            .tv-clist { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
+            .tv-side .tv-pager { flex: none; }
+            .tv-band .tv-clist { flex-direction: row; }
+            .tv-band .tv-cr { flex: 1; }
+            .tv-cr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; min-width: 0; }
+            .tv-cr-m { grid-column: 1 / -1; font-size: 20px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-cr-f { font-size: 17px; color: #a9bddb; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-cr-e { font-size: 17px; font-weight: 800; color: #35e08a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-pay { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; align-self: start; justify-self: end; white-space: nowrap; }
+            .tv-pay-ok { background: rgba(53,224,138,.16); color: #35e08a; }
+            .tv-pay-pend { background: rgba(255,176,32,.14); color: #ffb020; }
+            .tv-mini { display: flex; gap: 6px; align-items: center; justify-self: end; }
+            .tv-mini i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #29497d; color: #6f88ad; font-style: normal; }
+            .tv-mini i span { display: inline-flex; width: 17px; height: 17px; }
+            .tv-mini .tv-mini-done { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+            .tv-mini .tv-mini-live { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,.14); }
+            .tv-mini .tv-mini-na { border-style: dashed; opacity: .35; }
+            .tv-coroas-line { display: flex; align-items: center; gap: 12px; font-size: 20px; color: #a9bddb; font-weight: 700; padding: 0 6px; }
+            .tv-muted { color: #6f88ad; }
+
+            .tv-pager { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 800; color: #6f88ad; }
+            .tv-pager i { width: 10px; height: 10px; border-radius: 50%; background: #29497d; }
+            .tv-pager i.on { background: #4b9bff; }
+            .tv-bar { height: 4px; width: 80px; background: #29497d; border-radius: 2px; overflow: hidden; }
+            .tv-bar span { display: block; height: 100%; background: #4b9bff; animation: tv-fill linear forwards; }
+            @keyframes tv-fill { from { width: 0; } to { width: 100%; } }
+
+            .tv-ticker { margin: 0 -44px; height: 64px; flex: none; background: #061024; border-top: 1px solid #1f3a66; display: flex; align-items: center; overflow: hidden; }
+            .tv-tag { flex: none; height: 100%; display: flex; align-items: center; padding: 0 22px; background: #2d6fd6; font-size: 20px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; position: relative; z-index: 1; }
+            .tv-lane { flex: 1; min-width: 0; overflow: hidden; height: 100%; display: flex; align-items: center; }
+            .tv-lane [class*="text-["] { font-size: 24px !important; }
+
+            @media (prefers-reduced-motion: reduce) {
+                .tv-dot-live, .tv-pulse, .tv-bar span { animation: none !important; }
+            }
+        `}</style>
+    );
+}
+
 
 /* ===== Componentes auxiliares ===== */
 function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
