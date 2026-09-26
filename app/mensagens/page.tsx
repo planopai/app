@@ -27,6 +27,14 @@ type MessageItem = {
     status?: MessageStatus | string;
     criado_em?: string | null;
     arquivo_mime?: string | null;
+    aprovado_por?: string | null;
+    aprovado_em?: string | null;
+    moderacao_decisao?: string | null;
+    moderacao_confianca?: number | null;
+    moderacao_categoria?: string | null;
+    moderacao_motivo?: string | null;
+    moderacao_modelo?: string | null;
+    moderado_em?: string | null;
 };
 
 type AtendimentoItem = {
@@ -340,6 +348,16 @@ function normalizeMessage(raw: any): MessageItem {
         status: raw?.status,
         criado_em: raw?.criado_em ?? null,
         arquivo_mime: raw?.arquivo_mime ?? null,
+        aprovado_por: raw?.aprovado_por == null ? null : String(raw.aprovado_por),
+        aprovado_em: raw?.aprovado_em ?? null,
+        moderacao_decisao: raw?.moderacao_decisao == null ? null : String(raw.moderacao_decisao),
+        moderacao_confianca: raw?.moderacao_confianca == null || !Number.isFinite(Number(raw.moderacao_confianca))
+            ? null
+            : Number(raw.moderacao_confianca),
+        moderacao_categoria: raw?.moderacao_categoria == null ? null : String(raw.moderacao_categoria),
+        moderacao_motivo: raw?.moderacao_motivo == null ? null : String(raw.moderacao_motivo),
+        moderacao_modelo: raw?.moderacao_modelo == null ? null : String(raw.moderacao_modelo),
+        moderado_em: raw?.moderado_em ?? null,
     };
 }
 
@@ -579,6 +597,26 @@ function MessageCard({
                         {item.tipo ? (
                             <span className="rounded-full border bg-muted/20 px-2 py-0.5 text-[11px] font-bold uppercase text-muted-foreground">
                                 {item.tipo}
+                            </span>
+                        ) : null}
+
+                        {String(item.aprovado_por || "").trim().toLowerCase() === "aurora" ? (
+                            <span
+                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
+                                title={[
+                                    "Aprovado automaticamente pela Aurora",
+                                    item.moderacao_categoria ? `Categoria: ${item.moderacao_categoria}` : "",
+                                    item.moderacao_confianca != null
+                                        ? `Confiança: ${Math.round(item.moderacao_confianca * 100)}%`
+                                        : "",
+                                    item.moderacao_motivo ? `Motivo: ${item.moderacao_motivo}` : "",
+                                ].filter(Boolean).join(" • ")}
+                            >
+                                <IconCheck className="size-3" />
+                                Aprovado pela Aurora
+                                {item.moderacao_confianca != null
+                                    ? ` · ${Math.round(item.moderacao_confianca * 100)}%`
+                                    : ""}
                             </span>
                         ) : null}
                     </div>
