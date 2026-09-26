@@ -1,37 +1,111 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getHistoryOfflineAware } from "@/lib/offline/history";
-
-/**
- * Consulta sempre o servidor.
+/*
+ * QUADRO TV — novo visual para TV (a partir de 1024 px de largura)
+ * - tela desenhada em 1920×1080 e reduzida por igual; botão de tela cheia;
+ * - por atendimento: situação atual em destaque, tempo nela, responsável,
+ *   linha do tempo das etapas (atual piscando em verde), ocioso e total;
+ * - alertas: vermelho quando está há 24 h+ na mesma situação; âmbar quando passou do
+ *   horário marcado e o velório (fase08) ou o sepultamento (fase09) ainda não começou;
+ * - coroas: âmbar quando passou do prazo de produção desde o pedido e a coroa ainda
+ *   não ficou pronta (natural 2 h, artificial 1 h — COROA_PRAZO_*);
+ * - coroas: linha discreta (0), faixa inferior (1–4 pedidos) ou coluna lateral (5+),
+ *   com paginação automática; atendimentos compactam e paginam quando não cabem;
  *
- * Não lê IndexedDB/localStorage e adiciona um cache-buster em toda requisição
- * para evitar resposta antiga de browser, service worker, proxy ou CDN.
+ * QUADRO NO CELULAR/TABLET (abaixo de 1024 px)
+ * - abas Atendimentos / Coroas / Avisos com contagem; aviso mais recente no topo da lista;
+ * - em pé: cartão com bloco "Agora" (status, há quanto tempo, quem), alertas da TV,
+ *   etapas com nome (vazia = ainda não aconteceu; tracejada = não se aplica), ocioso e total;
+ * - deitado: uma linha por atendimento, como na TV; a troca segue o giro da tela;
+ * - tema claro/escuro acompanha o fundo do app; botão de tela cheia onde o navegador permite.
+ *
+ * Base preservada:
+ * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
+ * - Coroas: modelo + solicitante, Falecido, Entrega, Pagamento e timeline Ampulheta/Flor/Faixa/Concluída;
+ * - Coroas finalizadas permanecem no quadro até a confirmação do status Entregue;
+ * - atualização da fila de Coroas a cada 3 segundos, sem cache atrasando novos pedidos online;
+ * - FIX STATUS PERSISTENTE: falha/timeout no histórico nunca apaga etapas já carregadas;
+ * - FIX STATUS PERSISTENTE: histórico dos atendimentos é preservado no localStorage;
+ * - FIX STATUS PERSISTENTE: status atual do atendimento nunca volta visualmente para fase01 por ausência temporária de logs;
+ * - FIX STATUS PERSISTENTE: atualização imediata ao voltar para a aba, recuperar foco ou reconectar a internet;
  */
-async function fetchJsonFresh<T = any>(rawUrl: string, timeoutMs = 10_000): Promise<T> {
-    const ac = new AbortController();
-    const t = window.setTimeout(() => ac.abort(), timeoutMs);
 
-    try {
-        const url = new URL(rawUrl, window.location.origin);
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-        // Cache-buster pela URL. Não envia headers customizados, evitando
-        // preflight CORS em APIs que não liberam Cache-Control/Pragma.
-        url.searchParams.set("_ts", `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+/* =========================
+   Cache rápido (memória + localStorage)
+   ========================= */
+type CacheEntry = { exp: number; data: any };
+const MEM_CACHE = new Map<string, CacheEntry>();
+const INFLIGHT = new Map<string, Promise<any>>();
 
-        const resp = await fetch(url.toString(), {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-            signal: ac.signal,
-        });
-
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        return (await resp.json()) as T;
-    } finally {
-        window.clearTimeout(t);
+function getMem<T>(k: string): T | null {
+    const hit = MEM_CACHE.get(k);
+    if (!hit) return null;
+    if (Date.now() > hit.exp) {
+        MEM_CACHE.delete(k);
+        return null;
     }
+    return hit.data as T;
+}
+function setMem(k: string, data: any, ttlMs: number) {
+    MEM_CACHE.set(k, { exp: Date.now() + ttlMs, data });
+}
+
+function readLS<T>(k: string): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = localStorage.getItem(k);
+        if (!raw) return null;
+        return JSON.parse(raw) as T;
+    } catch {
+        return null;
+    }
+}
+function writeLS(k: string, v: any) {
+    if (typeof window === "undefined") return;
+    try {
+        localStorage.setItem(k, JSON.stringify(v));
+    } catch {
+        // ignore
+    }
+}
+
+async function fetchJsonFast<T = any>(
+    url: string,
+    opts?: { ttlMs?: number; timeoutMs?: number; cacheKey?: string }
+): Promise<T> {
+    const ttlMs = opts?.ttlMs ?? 8_000;
+    const timeoutMs = opts?.timeoutMs ?? 12_000;
+    const cacheKey = opts?.cacheKey ?? url;
+
+    const cached = getMem<T>(cacheKey);
+    if (cached) return cached;
+
+    const inF = INFLIGHT.get(cacheKey);
+    if (inF) return (await inF) as T;
+
+    const p = (async () => {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), timeoutMs);
+        try {
+            const resp = await fetch(url, {
+                cache: "no-store",
+                credentials: "include",
+                signal: ac.signal,
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = (await resp.json()) as T;
+            setMem(cacheKey, data, ttlMs);
+            return data;
+        } finally {
+            clearTimeout(t);
+            INFLIGHT.delete(cacheKey);
+        }
+    })();
+
+    INFLIGHT.set(cacheKey, p);
+    return (await p) as T;
 }
 
 /* =========================
@@ -39,15 +113,6 @@ async function fetchJsonFresh<T = any>(rawUrl: string, timeoutMs = 10_000): Prom
    ========================= */
 type Registro = {
     data?: string;
-    criado_em?: string;
-    created_at?: string;
-    data_criacao?: string;
-    datahora_criacao?: string;
-    data_hora_criacao?: string;
-    foto_falecido?: string;
-    foto_url?: string;
-    foto?: string;
-    imagem?: string;
     falecido?: string;
     local_velorio?: string;
     data_inicio_velorio?: string;
@@ -75,12 +140,7 @@ type Registro = {
     realiza_velorio?: string | null;
     realiza_sepultamento?: string | null;
 
-    // ✅ novo campo (Invol)
     invol?: any;
-    // ✅ novo campo (Cordão / Véu)
-    cordao?: any; // "Sim"/"Não" ou 1/0 etc
-    veu?: any;    // "Não" ou nome do véu
-
 
     ornamentacao?: string;
     ornamentacao_tipo?: string;
@@ -88,11 +148,9 @@ type Registro = {
     local?: string;
     local_sepultamento?: string;
 
-    // campos antigos
     materiais?: string;
     material?: string;
 
-    // possíveis campos do backend/relatórios
     materiais_json?: any;
     material_json?: any;
 
@@ -101,7 +159,7 @@ type Registro = {
     [key: string]: any;
 };
 
-type Aviso = { usuario?: string; mensagem?: string; criado_em?: string };
+type Aviso = { usuario?: string; mensagem?: string };
 
 type LogItem = {
     id?: number | string;
@@ -112,26 +170,83 @@ type LogItem = {
     usuario?: string;
 };
 
+// Histórico visual persistente dos atendimentos.
+// A lista principal já era preservada em qa_registros; agora os logs também são.
+const STATUS_LOGS_STORAGE_KEY = "qa_status_logs_v2";
+const STATUS_LOGS_STORAGE_MAX_ENTRIES = 250;
+
+/* =========================
+   Coroas de Flores — quadro TV
+   ========================= */
+type CoroaTvItem = {
+    id?: number;
+    ordem?: number;
+    tipo_coroa?: "natural" | "artificial" | null;
+    modelo_coroa?: string | null;
+    frase?: string | null;
+};
+
+type CoroaTvPedido = {
+    id: number;
+    solicitante?: string | null;
+    telefone?: string | null;
+    local_entrega?: string | null;
+    observacoes?: string | null;
+    quantidade_coroas?: number | null;
+    modelo_coroa?: string | null;
+    frase?: string | null;
+    falecido?: string | null;
+    status_pagamento?: string | null;
+    origem?: string | null;
+    status?: string | null;
+    comprovante_url?: string | null;
+    criado_por?: string | null;
+    criado_em?: string | null;
+    atualizado_em?: string | null;
+    coroa_inicio_em?: string | null;
+    coroa_inicio_por?: string | null;
+    faixa_inicio_em?: string | null;
+    faixa_inicio_por?: string | null;
+    finalizada_em?: string | null;
+    finalizada_por?: string | null;
+    entregue_em?: string | null;
+    entregue_por?: string | null;
+    itens?: CoroaTvItem[] | null;
+};
+
+type CoroasTvResponse = {
+    sucesso?: boolean;
+    dados?: CoroaTvPedido[];
+    meta?: {
+        page?: number;
+        per_page?: number;
+        total?: number;
+        total_pages?: number;
+    };
+    msg?: string;
+    erro?: string | boolean;
+};
+
+type QaDensity = "normal" | "compact" | "dense" | "ultra" | "micro";
+
+const COROAS_TV_LOCAL =
+    "/api/php/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
+
+const COROAS_TV_REMOTA =
+    "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
+
 /* =========================
    Helpers comuns
    ========================= */
-
-/**
- * React já escapa strings.
- * O seu problema real era o backend mandar entidades HTML (&quot; etc).
- * Então aqui a gente DECODIFICA entidades para exibir bonito.
- */
 function decodeHtmlEntitiesOnce(input: string): string {
     if (!input) return input;
 
-    // Browser (client): usa textarea pra decodificar corretamente
     if (typeof window !== "undefined" && typeof document !== "undefined") {
         const ta = document.createElement("textarea");
         ta.innerHTML = input;
         return ta.value;
     }
 
-    // Fallback (caso raríssimo)
     return input
         .replace(/&quot;/g, '"')
         .replace(/&apos;/g, "'")
@@ -139,11 +254,14 @@ function decodeHtmlEntitiesOnce(input: string): string {
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&amp;/g, "&")
-        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-        .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)));
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+            String.fromCharCode(parseInt(hex, 16))
+        )
+        .replace(/&#(\d+);/g, (_, num) =>
+            String.fromCharCode(parseInt(num, 10))
+        );
 }
 
-/** algumas vezes vem “duplamente escapado” (ex: &amp;quot;) */
 function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
     let s = String(input ?? "");
     for (let i = 0; i < maxPasses; i++) {
@@ -154,7 +272,6 @@ function decodeHtmlEntitiesDeep(input: string, maxPasses = 3): string {
     return s;
 }
 
-// antes era "sanitize" (escapava tudo e causava &quot; na tela)
 const sanitize = (t?: any) => decodeHtmlEntitiesDeep(String(t ?? ""));
 
 const shown = (v?: any, fallback = "a definir") => {
@@ -174,7 +291,6 @@ type MatLookupInfo = {
 
 type MatLine = { text: string; itemKey?: string };
 
-/** ✅ NOVO: formata quantidade sempre ANTES do nome (ex: "2x Luvas", "1x Extensão") */
 function qtyPrefixFromAny(qtdRaw: any): string {
     const qtdStr = decodeHtmlEntitiesDeep(String(qtdRaw ?? "")).trim();
     if (!qtdStr) return "1x";
@@ -188,20 +304,18 @@ function qtyPrefixFromAny(qtdRaw: any): string {
         return `${val}x`;
     }
 
-    // tenta pegar número no começo (ex: "2 un", "3,5kg")
     const m = normalized.match(/^(\d+(?:\.\d+)?)/);
     if (m?.[1]) return `${m[1]}x`;
 
-    // fallback: ainda assim coloca algo como "Xx"
     return `${normalized}x`;
 }
 
-/** ✅ NOVO: garante "QTDx Nome" mesmo quando veio "Nome (QTD)" ou só "Nome" */
 function normalizeMatTextToQtyPrefix(text: string): string {
-    const s = decodeHtmlEntitiesDeep(String(text ?? "")).replace(/\s+/g, " ").trim();
+    const s = decodeHtmlEntitiesDeep(String(text ?? ""))
+        .replace(/\s+/g, " ")
+        .trim();
     if (!s) return s;
 
-    // já está com "2x Nome"
     let m = s.match(/^(\d+(?:[.,]\d+)?)\s*[xX]\s*(.+)$/);
     if (m) {
         const qtd = m[1].replace(",", ".");
@@ -209,7 +323,6 @@ function normalizeMatTextToQtyPrefix(text: string): string {
         return `${qtd}x ${nome}`;
     }
 
-    // está como "Nome (2)" -> vira "2x Nome"
     m = s.match(/^(.+?)\s*\(\s*(\d+(?:[.,]\d+)?)\s*\)\s*$/);
     if (m) {
         const nome = m[1].trim();
@@ -217,11 +330,9 @@ function normalizeMatTextToQtyPrefix(text: string): string {
         return `${qtd}x ${nome}`;
     }
 
-    // caso padrão: sem qtd -> 1x
     return `1x ${s}`;
 }
 
-/* ✅ NOVO (copy-safe): decide se um item é “material real” (evita "1x Sim"/"1x Item" e afins) */
 function isRealMaterialForClipboard(item: string): boolean {
     const s = decodeHtmlEntitiesDeep(String(item ?? "")).trim();
     if (!s) return false;
@@ -236,14 +347,11 @@ function isRealMaterialForClipboard(item: string): boolean {
     return true;
 }
 
-/** ✅ detecta lixo do tipo "Json: {...}" mesmo com prefixo "1x " */
 function isJsonNoiseLine(raw: any): boolean {
     const s = decodeHtmlEntitiesDeep(String(raw ?? "")).trim();
     if (!s) return false;
 
     const low = s.toLowerCase().replace(/\s+/g, " ").trim();
-
-    // "json: {...}" OU "1x json: {...}" OU "2x Json: {}"
     return /^(\d+(?:[.,]\d+)?\s*[xX]\s*)?json\s*:/.test(low);
 }
 
@@ -258,20 +366,16 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
         const low = s.toLowerCase().trim();
 
-        // ✅ NOVO: mata também "1x Json: {}" (e variações)
         if (isJsonNoiseLine(s)) return;
 
-        // continua protegendo JSON puro
         if (low.startsWith("{") || low.startsWith("[")) return;
         if (looksLikeMateriaisJson(s)) return;
 
         if (["selecionar...", "selecione...", "a definir"].includes(low)) return;
 
-        // ✅ aqui garante "QTDx Nome" SEMPRE
         const withQtd = normalizeMatTextToQtyPrefix(s);
         if (!withQtd) return;
 
-        // ✅ NOVO: se após normalizar virar algo como "1x Json: {}", corta também
         if (isJsonNoiseLine(withQtd)) return;
 
         if (seen.has(withQtd)) return;
@@ -283,18 +387,10 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
         const nome = decodeHtmlEntitiesDeep(String(nomeRaw ?? "")).trim();
         if (!nome) return;
 
-        // ✅ sempre prefixa quantidade (mesmo 1)
         const prefix = qtyPrefixFromAny(qtdRaw);
         pushItem(`${prefix} ${nome}`);
     };
 
-    /**
-     * Extrai materiais de JSON padrão:
-     * {
-     *   "item3": { "checked": true, "qtd": 1, "nome": "Extensão", ... },
-     * }
-     * ou array de objetos com {nome, checked, qtd}
-     */
     const extractFromStructured = (raw: unknown): boolean => {
         const items: { nome: any; qtd?: any }[] = [];
 
@@ -316,13 +412,23 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
 
                 const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
                 const checkedVal = (node as any).checked;
-                const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
+                const qtdVal =
+                    (node as any).qtd ??
+                    (node as any).quantidade ??
+                    (node as any).qtd_item;
 
                 if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
                     items.push({ nome: maybeNome, qtd: qtdVal });
                 }
 
-                const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
+                const containerKeys = [
+                    "itens",
+                    "items",
+                    "materiais",
+                    "materiais_json",
+                    "material_json",
+                    "data",
+                ];
                 for (const k of containerKeys) {
                     if ((node as any)[k] != null) walk((node as any)[k]);
                 }
@@ -354,7 +460,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     };
 
     const addFromMixedObject = (obj: Record<string, unknown>) => {
-        // 1) pega materiais_<nome>_qtd primeiro
         for (const [key, value] of Object.entries(obj)) {
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (!m) continue;
@@ -369,7 +474,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             pushItem(`${qtyPrefixFromAny(valStr)} ${nome}`);
         }
 
-        // 2) booleans/números em materiais_<nome>
         for (const [key, value] of Object.entries(obj)) {
             if (/^materiais_.+?_qtd$/i.test(key)) continue;
 
@@ -393,11 +497,9 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                 continue;
             }
 
-            // se não for número, mantém como texto (mas ainda prefixa 1x no nome “principal”)
             pushItem(`1x ${nome}: ${valStr}`);
         }
 
-        // 3) se o objeto for um "mapa" comum de { item: qtd }
         for (const [k, v] of Object.entries(obj)) {
             if (k === "materiais_json" || k === "material_json") continue;
             if (/^materiais_.+/i.test(k)) continue;
@@ -414,7 +516,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             } else if (asBool(valStr)) {
                 pushItem(`1x ${nome}`);
             } else {
-                // sem número: vira 1x "Nome: valor"
                 pushItem(`1x ${nome}: ${valStr}`);
             }
         }
@@ -423,14 +524,12 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     const addFromUnknown = ((raw: unknown) => {
         if (raw == null || raw === "") return;
 
-        // Array
         if (Array.isArray(raw)) {
             if (extractFromStructured(raw)) return;
             for (const it of raw) pushItem(it);
             return;
         }
 
-        // Objeto
         if (isPlainObject(raw)) {
             if (extractFromStructured(raw)) return;
 
@@ -440,34 +539,27 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             return;
         }
 
-        // String
         if (typeof raw === "string") {
             let s = decodeHtmlEntitiesDeep(raw).trim();
             if (!s) return;
 
             const original = s;
-
-            // remove prefixos comuns tipo "Json:"
             s = s.replace(/^\s*json\s*:\s*/i, "").trim();
 
-            // 1) tenta parsear JSON
             const parsed = tryParseJsonFromStringMaybeEmbedded(s);
             if (parsed != null) {
                 if (extractFromStructured(parsed)) return;
                 return;
             }
 
-            // 2) tenta extrair por regex (nome/qtd)
             const extracted = extractMateriaisByRegex(s);
             if (extracted.length) {
                 extracted.forEach((it) => pushNomeQtd(it.nome, it.qtd));
                 return;
             }
 
-            // 3) se parece JSON de materiais, ignora
             if (/^\s*json\s*:/i.test(original) || looksLikeMateriaisJson(s)) return;
 
-            // 4) listas normais
             if (s.includes("\n")) {
                 s.split("\n")
                     .map((x) => x.trim())
@@ -483,11 +575,17 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
                 return;
             }
             if (s.includes(";")) {
-                s.split(";").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s.split(";")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
             if (s.includes(",")) {
-                s.split(",").map((x) => x.trim()).filter(Boolean).forEach(pushItem);
+                s.split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                    .forEach(pushItem);
                 return;
             }
 
@@ -495,20 +593,17 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
             return;
         }
 
-        // ✅ ALTERAÇÃO: se vier number/boolean (ruído), NÃO gera material nenhum
         if (typeof raw === "number") return;
         if (typeof raw === "boolean") return;
 
         pushItem(String(raw));
     }) as (raw: unknown) => void;
 
-    // 1) fontes diretas
     addFromUnknown((registro as any).materiais_json);
     addFromUnknown((registro as any).material_json);
     addFromUnknown((registro as any).materiais);
     addFromUnknown((registro as any).material);
 
-    // 2) varredura por chaves materiais_* no próprio registro
     if (isPlainObject(registro)) {
         const obj = registro as Record<string, unknown>;
         const picked: Record<string, unknown> = {};
@@ -528,7 +623,6 @@ function normalizeMateriaisFromRegistro(registro: Registro): string[] {
     return out;
 }
 
-/* ✅ extrai materiais estruturados preservando a key "itemXX" para agrupar por categoria */
 function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
     const out: MatLine[] = [];
     const seen = new Set<string>();
@@ -540,7 +634,6 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
 
         const low = s.toLowerCase().trim();
 
-        // ✅ NOVO: mata também "1x Json: {}"
         if (isJsonNoiseLine(s)) return;
 
         if (low.startsWith("{") || low.startsWith("[")) return;
@@ -550,7 +643,6 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
         const withQtd = normalizeMatTextToQtyPrefix(s);
         if (!withQtd) return;
 
-        // ✅ NOVO: se normalizado virar "1x Json: {}", corta também
         if (isJsonNoiseLine(withQtd)) return;
 
         if (seen.has(withQtd)) return;
@@ -593,20 +685,32 @@ function extractMateriaisStructuredWithKey(registro: Registro): MatLine[] {
 
             const hasChecked = Object.prototype.hasOwnProperty.call(node, "checked");
             const checkedVal = (node as any).checked;
-            const qtdVal = (node as any).qtd ?? (node as any).quantidade ?? (node as any).qtd_item;
+            const qtdVal =
+                (node as any).qtd ??
+                (node as any).quantidade ??
+                (node as any).qtd_item;
 
             const inferredKey =
                 normalizeItemKeyFromAny((node as any).item_id) ??
                 normalizeItemKeyFromAny((node as any).itemId) ??
                 normalizeItemKeyFromAny((node as any).item_key) ??
                 normalizeItemKeyFromAny((node as any).id) ??
-                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey) ? parentKey : undefined);
+                (typeof parentKey === "string" && /^item\d+$/i.test(parentKey)
+                    ? parentKey
+                    : undefined);
 
             if (maybeNome != null && (hasChecked ? asBool(checkedVal) : true)) {
                 pushNomeQtd(maybeNome, qtdVal, inferredKey);
             }
 
-            const containerKeys = ["itens", "items", "materiais", "materiais_json", "material_json", "data"];
+            const containerKeys = [
+                "itens",
+                "items",
+                "materiais",
+                "materiais_json",
+                "material_json",
+                "data",
+            ];
             for (const k of containerKeys) {
                 if ((node as any)[k] != null) walk((node as any)[k], k);
             }
@@ -657,7 +761,9 @@ function MateriaisValue({
         return [...structured, ...extras];
     })();
 
-    const filteredLines = (lines ?? []).filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
+    const filteredLines = (lines ?? []).filter(
+        (l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text)
+    );
 
     if (!filteredLines || filteredLines.length === 0) return <span>{fallback}</span>;
 
@@ -717,7 +823,9 @@ function ensureHttpsUrl(raw: string): string {
     }
 
     if (/^(www\.)/i.test(s)) return `https://${s}`;
-    if (/^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s))
+    if (
+        /^(google\.com|maps\.google\.com|www\.google\.com|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)
+    )
         return `https://${s}`;
 
     return s;
@@ -770,7 +878,7 @@ function dateOr(d?: string) {
     return f;
 }
 
-/** Mostra só dia/mês para a coluna Sepultamento, mantendo "a definir" para vazio ou zero. */
+/** ✅ mostra só dia/mês (17/12) para a coluna "Sepultamento" */
 function dateDayMonthOr(d?: string) {
     const raw = (d ?? "").trim();
     if (!raw || raw === "0000-00-00" || raw === "00/00/0000") return "a definir";
@@ -785,11 +893,11 @@ function dateDayMonthOr(d?: string) {
         return `${dd}/${mm}`;
     }
 
-    const br = raw.match(/(\d{2})\/(\d{2})/);
-    if (br) return `${br[1]}/${br[2]}`;
+    const m2 = raw.match(/(\d{2})\/(\d{2})/);
+    if (m2) return `${m2[1]}/${m2[2]}`;
 
-    const iso = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (iso) return `${iso[3]}/${iso[2]}`;
+    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}`;
 
     return raw;
 }
@@ -800,27 +908,6 @@ function timeOr(t?: string) {
     const hhmm = raw.slice(0, 5);
     if (hhmm === "00:00") return "a definir";
     return hhmm;
-}
-
-function avisoDateTimeOr(v?: string) {
-    const raw = String(v ?? "").trim();
-    if (!raw) return "";
-
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return raw;
-
-    try {
-        return new Intl.DateTimeFormat("pt-BR", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-        }).format(d);
-    } catch {
-        return raw;
-    }
 }
 
 /* ----------- Normalização de status (texto → faseNN) ----------- */
@@ -951,7 +1038,7 @@ function ConvenioBadge({
 
     return (
         <span
-            className={`inline-flex items-center rounded-full font-semibold text-white ${convenioClass(
+            className={`qa-convenio-badge inline-flex items-center rounded-full font-semibold leading-none text-white ${convenioClass(
                 kind
             )} ${sizeClass}`}
             title="Convênio"
@@ -980,9 +1067,6 @@ const LABELS: Record<string, string> = {
     assistencia: "Assistência",
     tanato: "Tanatopraxia",
     invol: "Invol",
-    cordao: "Cordão São Francisco",
-    veu: "Véu",
-
     local_velorio: "Local do Velório",
     data_inicio_velorio: "Data Início Velório",
     data_fim_velorio: "Data Fim Velório",
@@ -1035,22 +1119,13 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
     const involRaw = r?.invol;
     const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
     const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
-    const cordaoRaw = decodeHtmlEntitiesDeep(String((r as any)?.cordao ?? "")).trim().toLowerCase();
-    const cordaoYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(cordaoRaw) ? "SIM" : "NÃO";
-
-    const veuTxt = getVeuText(r).toUpperCase();
-
-
-
 
     const localVelRaw = v("local_velorio") || "A DEFINIR";
     const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
 
-    // ====== ✅ NOVO: Materiais agrupados por categoria (ex: "Básico 01") ======
     const structured = extractMateriaisStructuredWithKey(r);
     const flat = normalizeMateriaisFromRegistro(r);
 
-    // Une structured + extras do flat (sem duplicar)
     const linesAll: MatLine[] = (() => {
         if (structured.length === 0) return flat.map((t) => ({ text: t }));
         const have = new Set(structured.map((x) => x.text));
@@ -1058,11 +1133,8 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
         return [...structured, ...extras];
     })();
 
-    const filtered = linesAll.filter(
-        (l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text)
-    );
+    const filtered = linesAll.filter((l) => isRealMaterialForClipboard(l.text) && !isJsonNoiseLine(l.text));
 
-    // Agrupa por categoria (catNome)
     const groups = new Map<string, { ordem: number; items: { text: string; itemOrdem: number }[] }>();
 
     for (const it of filtered) {
@@ -1088,7 +1160,6 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
                     const items = [...g.items]
                         .sort((a, b) => a.itemOrdem - b.itemOrdem || a.text.localeCompare(b.text))
                         .map((x) => x.text);
-                    // Ex: "*Básico 01:* 1x Bebedouro, 2x Cavalete"
                     return `*${cat}:* ${items.join(", ")}`;
                 }),
             ];
@@ -1102,8 +1173,6 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
         `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
-        `*Cordão São Francisco:* ${cordaoYN}`,
-        `*Véu:* ${veuTxt}`,
         `*Invol:* ${involYN}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
         ...materiaisClipboardLines,
@@ -1116,14 +1185,262 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
 }
 
 /* =========================
+   Coroas — helpers visuais
+   ========================= */
+function normalizarTextoCoroa(v?: any): string {
+    return decodeHtmlEntitiesDeep(String(v ?? ""))
+        .trim()
+        .toLocaleLowerCase("pt-BR")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ");
+}
+
+function coroaStatusLabel(v?: any): string {
+    const s = normalizarTextoCoroa(v);
+    if (s === "novo") return "Novo Pedido";
+    if (s === "coroa") return "Confeccionando Coroa";
+    if (s === "faixa") return "Confeccionando Faixa";
+    if (s === "finalizada") return "Coroa Finalizada";
+    if (s === "entregue") return "Entregue";
+    return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "Em Confecção";
+}
+
+function coroaStatusClass(v?: any): string {
+    const s = normalizarTextoCoroa(v);
+    if (s === "novo") return "border-slate-600/70 bg-slate-700/65 text-slate-100";
+    if (s === "coroa") return "border-sky-500/35 bg-sky-500/15 text-sky-200";
+    if (s === "faixa") return "border-violet-500/35 bg-violet-500/15 text-violet-200";
+    if (s === "finalizada") return "border-emerald-500/35 bg-emerald-500/15 text-emerald-200";
+    if (s === "entregue") return "border-green-500/35 bg-green-500/15 text-green-200";
+    return "border-slate-600/70 bg-slate-800/60 text-slate-200";
+}
+
+function coroaStatusIconType(v?: any): CoroaTvIconKey {
+    const s = normalizarTextoCoroa(v);
+    if (s === "coroa") return "flower";
+    if (s === "faixa") return "ribbon";
+    if (s === "finalizada" || s === "entregue") return "check";
+    return "clipboard";
+}
+
+function coroaOrigemLabel(v?: any): string {
+    const s = normalizarTextoCoroa(v).replace(/\s+/g, "_");
+
+    if (s === "ordem_de_servico" || s === "ordem_servico") return "Ordem de Serviço";
+    if (
+        s === "venda_direta" ||
+        s === "venda_direta_colaborador" ||
+        s === "venda_direta_escritorio" ||
+        s === "venda_direta_memorial"
+    ) {
+        return "Venda Direta";
+    }
+
+    if (s === "online" || s === "loja-online" || s === "loja_online" || s === "lojaonline") {
+        return "Pedido Online";
+    }
+
+    return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "a definir";
+}
+
+function coroaQuantidade(order?: CoroaTvPedido | null): number {
+    if (!order) return 0;
+
+    const q = Number(order.quantidade_coroas ?? 0);
+    if (Number.isFinite(q) && q > 0) return Math.floor(q);
+
+    if (Array.isArray(order.itens) && order.itens.length > 0) {
+        return order.itens.length;
+    }
+
+    return 1;
+}
+
+function coroaModelos(order?: CoroaTvPedido | null): string {
+    if (!order) return "a definir";
+
+    const itens = Array.isArray(order.itens) ? order.itens : [];
+    const modelos = itens
+        .map((it) => decodeHtmlEntitiesDeep(String(it?.modelo_coroa ?? "")).trim())
+        .filter(Boolean);
+
+    if (modelos.length === 1) return modelos[0];
+    if (modelos.length > 1) return `${modelos[0]} +${modelos.length - 1}`;
+
+    const principal = decodeHtmlEntitiesDeep(String(order.modelo_coroa ?? "")).trim();
+    return principal || "a definir";
+}
+
+function coroaPagamentoLabel(order?: CoroaTvPedido | null): string {
+    if (!order) return "Aguardando";
+
+    if (String(order.comprovante_url ?? "").trim()) return "Pago";
+
+    const status = normalizarTextoCoroa(order.status_pagamento);
+    if (status === "pago") return "Pago";
+
+    return "Aguardando";
+}
+
+function coroaPagamentoClass(order?: CoroaTvPedido | null): string {
+    return coroaPagamentoLabel(order) === "Pago"
+        ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-200"
+        : "border-amber-500/35 bg-amber-500/15 text-amber-200";
+}
+
+function coroaCriadoHora(v?: string | null): string {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+
+    const d = new Date(raw.replace(" ", "T"));
+    if (Number.isNaN(d.getTime())) return "";
+
+    return d.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function coroaSomenteArtificial(order?: CoroaTvPedido | null): boolean {
+    if (!order) return false;
+
+    const itens = Array.isArray(order.itens) ? order.itens : [];
+    if (itens.length === 0) return false;
+
+    return itens.every(
+        (item) =>
+            String(item?.tipo_coroa || "")
+                .trim()
+                .toLowerCase() === "artificial",
+    );
+}
+
+type CoroaTimelineData = {
+    aguardandoMs: number;
+    coroaMs: number;
+    faixaMs: number;
+    concluidaMs: number;
+
+    aguardandoActive: boolean;
+    coroaActive: boolean;
+    faixaActive: boolean;
+    concluidaActive: boolean;
+
+    coroaSkipped: boolean;
+};
+
+function buildCoroaTimeline(
+    order: CoroaTvPedido,
+    nowMs: number,
+): CoroaTimelineData {
+    const coroaTs = parseLogTs(order.coroa_inicio_em || undefined);
+    const faixaTs = parseLogTs(order.faixa_inicio_em || undefined);
+    const finalizadaTs = parseLogTs(order.finalizada_em || undefined);
+    const entregueTs = parseLogTs(order.entregue_em || undefined);
+
+    const inicios = [coroaTs, faixaTs].filter((ts) => ts > 0);
+    const primeiroInicio = inicios.length > 0 ? Math.min(...inicios) : 0;
+
+    // Se criado_em não estiver disponível em algum registro legado,
+    // usa o primeiro início conhecido para não inventar tempo anterior.
+    const criadoOriginal = parseLogTs(order.criado_em || undefined);
+    const criadoTs =
+        criadoOriginal > 0
+            ? criadoOriginal
+            : primeiroInicio > 0
+                ? primeiroInicio
+                : finalizadaTs > 0
+                    ? finalizadaTs
+                    : nowMs;
+
+    // Ampulheta: conta desde a chegada do pedido até a PRIMEIRA ação,
+    // seja Coroa ou Faixa. Portanto a ordem pode mudar livremente.
+    const fimAguardando =
+        primeiroInicio > 0
+            ? primeiroInicio
+            : finalizadaTs > 0
+                ? finalizadaTs
+                : nowMs;
+
+    const aguardandoMs = Math.max(0, fimAguardando - criadoTs);
+
+    // Coroa e Faixa são cronômetros independentes.
+    // Se Faixa começar antes, Faixa conta primeiro.
+    // Se depois a Coroa começar, os dois passam a contar simultaneamente
+    // até a finalização do pedido.
+    const fimProducao = finalizadaTs > 0 ? finalizadaTs : nowMs;
+
+    const coroaMs =
+        coroaTs > 0
+            ? Math.max(0, fimProducao - coroaTs)
+            : 0;
+
+    const faixaMs =
+        faixaTs > 0
+            ? Math.max(0, fimProducao - faixaTs)
+            : 0;
+
+    // Depois de finalizada, a coroa continua visível no quadro aguardando
+    // a confirmação de entrega. O tempo abaixo mede exatamente esse período.
+    // O pedido só deixa o quadro quando o status passa para "entregue".
+    const concluidaMs =
+        finalizadaTs > 0
+            ? Math.max(0, (entregueTs > 0 ? entregueTs : nowMs) - finalizadaTs)
+            : 0;
+
+    const coroaSkipped = coroaSomenteArtificial(order);
+
+    return {
+        aguardandoMs,
+        coroaMs,
+        faixaMs,
+        concluidaMs,
+
+        aguardandoActive:
+            primeiroInicio <= 0 &&
+            finalizadaTs <= 0,
+
+        coroaActive:
+            !coroaSkipped &&
+            coroaTs > 0 &&
+            finalizadaTs <= 0,
+
+        faixaActive:
+            faixaTs > 0 &&
+            finalizadaTs <= 0,
+
+        concluidaActive:
+            finalizadaTs > 0 &&
+            entregueTs <= 0,
+
+        coroaSkipped,
+    };
+}
+
+function coroaEmConfeccao(order: CoroaTvPedido): boolean {
+    const status = normalizarTextoCoroa(order.status);
+
+    // Regra operacional do quadro:
+    // novo, coroa, faixa e finalizada permanecem visíveis.
+    // Somente depois da confirmação de entrega o pedido sai do quadro.
+    return (
+        status === "novo" ||
+        status === "coroa" ||
+        status === "faixa" ||
+        status === "finalizada"
+    );
+}
+
+/* =========================
    Regras do painel
    ========================= */
-function isNao(v?: string) {
-    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
+function isNao(v: unknown): boolean {
+    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
     return s === "não" || s === "nao" || s === "n";
 }
-function isSim(v?: string) {
-    const s = decodeHtmlEntitiesDeep((v || "").toString()).trim().toLowerCase();
+function isSim(v: unknown): boolean {
+    const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
     return s === "sim" || s === "s";
 }
 function isTerceiroRegistro(r: Registro) {
@@ -1205,71 +1522,6 @@ function involSimNao(value: any): string {
     return "Não";
 }
 
-function getVeuText(r: Registro): string {
-    // 1) tenta achar um nome em campos alternativos
-    const pick = (...keys: string[]) => {
-        for (const k of keys) {
-            const val = decodeHtmlEntitiesDeep(String((r as any)?.[k] ?? "")).trim();
-            if (val) return val;
-        }
-        return "";
-    };
-
-    const nome =
-        pick(
-            "veu_item",          // ✅ adiciona isso primeiro
-            "veu_nome",
-            "nome_veu",
-            "veuTipo",
-            "veu_tipo",
-            "tipo_veu",
-            "veu_descricao",
-            "descricao_veu"
-        ) || "";
-
-
-    // 2) pega o campo principal "veu"
-    const rawAny = (r as any)?.veu;
-
-    // 2a) se veio objeto (ex: {nome:"Véu Branco", checked:true})
-    if (rawAny && typeof rawAny === "object" && !Array.isArray(rawAny)) {
-        const obj: any = rawAny;
-        const n =
-            decodeHtmlEntitiesDeep(String(obj?.nome ?? obj?.name ?? obj?.descricao ?? obj?.descrição ?? "")).trim();
-        if (n) return n;
-
-        // se objeto só tiver flag
-        const checked = decodeHtmlEntitiesDeep(String(obj?.checked ?? "")).trim().toLowerCase();
-        if (["1", "true", "t", "sim", "s", "yes", "y"].includes(checked)) return nome || "Sim";
-        return "Não";
-    }
-
-    // 2b) se veio string
-    const raw = decodeHtmlEntitiesDeep(String(rawAny ?? "")).trim();
-    const low = raw.toLowerCase();
-
-    // sem nada: não
-    if (!raw) return nome ? nome : "Não";
-
-    // se for "não"
-    if (["nao", "não", "n", "0", "false"].includes(low)) return "Não";
-
-    // se for "sim"
-    if (["sim", "s", "1", "true"].includes(low)) return nome ? nome : "Sim";
-
-    // 2c) se veio "Sim: Nome" / "Sim - Nome" / "Sim | Nome" etc
-    // pega tudo depois de separador, se existir
-    const m = raw.match(/^(sim)\s*[:\-|]\s*(.+)$/i);
-    if (m?.[2]) {
-        const after = m[2].trim();
-        return after ? after : (nome ? nome : "Sim");
-    }
-
-    // 2d) se veio já como nome direto
-    return raw;
-}
-
-
 /* ===== Helpers Linha do Tempo ===== */
 function parseRegistroDateTime(r: Registro) {
     const d = (r.data || "").trim();
@@ -1304,166 +1556,6 @@ function parseLogTs(value?: string): number {
     if (!value) return 0;
     const ts = Date.parse(String(value).replace(" ", "T"));
     return Number.isNaN(ts) ? 0 : ts;
-}
-
-/**
- * Data/hora real de criação do atendimento.
- * Prioridade:
- * 1) campo explícito de criação vindo do banco, quando existir;
- * 2) primeiro registro cronológico do histórico.
- *
- * Não usa data/hora de velório ou sepultamento como fallback, porque esses
- * campos não representam a criação do atendimento.
- */
-function getRegistroCreationTs(registro: Registro, logs?: LogItem[]): number {
-    const candidatosDiretos = [
-        registro.criado_em,
-        registro.created_at,
-        registro.data_criacao,
-        registro.datahora_criacao,
-        registro.data_hora_criacao,
-    ];
-
-    for (const raw of candidatosDiretos) {
-        const ts = parseLogTs(raw);
-        if (ts > 0) return ts;
-    }
-
-    const logTimes = (logs ?? [])
-        .map((log) => parseLogTs(log.datahora))
-        .filter((ts) => ts > 0)
-        .sort((a, b) => a - b);
-
-    return logTimes[0] ?? 0;
-}
-
-function formatCreationDate(ts: number): string {
-    if (!ts) return "a definir";
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "a definir";
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-}
-
-function formatCreationTime(ts: number): string {
-    if (!ts) return "a definir";
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "a definir";
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mi}`;
-}
-
-function getSepultamentoIdFromRegistro(r: Registro): string {
-    const sepId =
-        (r as any).sepultamento_id ??
-        (r as any).sepultamentoId ??
-        (r as any).id ??
-        (r as any).id_atendimento ??
-        (r as any).codigo;
-
-    return String(sepId ?? "").trim();
-}
-
-async function buscarLogsDoRegistro(r: Registro): Promise<LogItem[]> {
-    const sepId = getSepultamentoIdFromRegistro(r);
-    if (!sepId) return [];
-    const logs = await getHistoryOfflineAware(sepId);
-    return [...(logs as LogItem[])].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
-}
-
-function getFotoFalecidoTimeline(r?: Registro | null): TimelineFoto | null {
-    if (!r) return null;
-
-    const candidatos = [
-        (r as any).foto_falecido,
-        (r as any).foto_url,
-        (r as any).foto,
-        (r as any).imagem,
-    ];
-
-    for (const c of candidatos) {
-        const raw = decodeHtmlEntitiesDeep(String(c ?? "")).trim();
-        if (!raw) continue;
-        if (!pareceUrlImagem(raw)) continue;
-
-        return {
-            label: "Foto do Falecido(a)",
-            url: normalizarUrlImagemTimeline(raw),
-        };
-    }
-
-    return null;
-}
-
-function extrairFotosDeQualquerValorTimeline(raw: unknown, labelBase = "Foto"): TimelineFoto[] {
-    const fotos: TimelineFoto[] = [];
-
-    const walk = (value: unknown, key = labelBase) => {
-        if (value === null || value === undefined || value === "") return;
-
-        if (typeof value === "string") {
-            const val = decodeHtmlEntitiesDeep(value).trim();
-            if (!val) return;
-
-            if (pareceUrlImagem(val)) {
-                fotos.push({
-                    label: labelImagemTimeline(key),
-                    url: normalizarUrlImagemTimeline(val),
-                });
-                return;
-            }
-
-            const parsed = tryParseJsonFromStringMaybeEmbedded(val);
-            if (parsed != null) walk(parsed, key);
-            return;
-        }
-
-        if (Array.isArray(value)) {
-            value.forEach((item, idx) => walk(item, `${key}_${idx + 1}`));
-            return;
-        }
-
-        if (isPlainObject(value)) {
-            for (const [k, v] of Object.entries(value)) {
-                walk(v, k);
-            }
-        }
-    };
-
-    walk(raw, labelBase);
-    return fotos;
-}
-
-function montarFotosAnexadasDetalhe(registro: Registro | null, logs: LogItem[]): TimelineFoto[] {
-    const fotos: TimelineFoto[] = [];
-    const seen = new Set<string>();
-
-    const add = (foto: TimelineFoto | null | undefined) => {
-        if (!foto?.url) return;
-        if (seen.has(foto.url)) return;
-        seen.add(foto.url);
-        fotos.push(foto);
-    };
-
-    add(getFotoFalecidoTimeline(registro));
-
-    if (registro) {
-        extrairFotosDeQualquerValorTimeline(registro, "Foto do Atendimento").forEach(add);
-    }
-
-    for (const log of logs || []) {
-        const { fotos: fotosDoLog } = extrairDetalhesTimeline(log?.detalhes);
-        fotosDoLog.forEach(add);
-
-        if ((log as any)?.detalhes_array) {
-            extrairFotosDeQualquerValorTimeline((log as any).detalhes_array, tituloLogTimeline(log)).forEach(add);
-        }
-    }
-
-    return fotos;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1523,11 +1615,13 @@ function iconForAction(acao?: string, status?: string): string {
 }
 
 /* ===== Status visual com tempo por etapa ===== */
-type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "dot";
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "clock" | "clockPause" | "dot";
 type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
 const STATUS_STEP_DEFS: StatusStepInfo[] = [
+    // Resposta ao chamado: do cadastro até "Indo Retirar o Óbito" (fase01). Conta como tempo ocioso.
+    { key: "aguardando", label: "Aguardando Remoção", shortLabel: "Aguard.", icon: "hourglass" },
     { key: "fase01", label: "Removendo", shortLabel: "Remov.", icon: "hospital" },
     { key: "fase02", label: "Aguardando Procedimento", shortLabel: "Aguard.", icon: "timer" },
     { key: "fase03", label: "Preparando", shortLabel: "Prep.", icon: "testTube" },
@@ -1548,8 +1642,11 @@ const STATUS_STEPS: StatusStepInfo[] = [
     { key: "fase05", label: "Ornamentando", shortLabel: "Ornam.", icon: "flower" },
     { key: "fase08", label: "Velando", shortLabel: "Velando", icon: "coffin" },
     { key: "fase09", label: "Sepultando", shortLabel: "Sepult.", icon: "car" },
+    // Conta do comando "Sepultamento Concluído" até "Material Recolhido".
     { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
-    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
+    // Soma os intervalos entre as etapas principais: aguardando procedimento,
+    // aguardando ornamentação, aguardando Corpo Pronto, Corpo Pronto e transportando para velório.
+    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "clockPause" },
 ];
 
 const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
@@ -1557,17 +1654,9 @@ const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>(
     return acc;
 }, {});
 
-const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
-const STATUS_IDLE_KEYS = new Set(["fase02", "fase04", "fase06", "fase12", "fase07"]);
-
 function getStatusStepInfo(status?: string): StatusStepInfo {
     const key = normalizarStatus(status) || "";
-    return STATUS_STEP_MAP[key] ?? {
-        key: key || "indefinido",
-        label: capStatus(status) || "a definir",
-        shortLabel: "Status",
-        icon: "dot",
-    };
+    return STATUS_STEP_MAP[key] ?? { key: key || "indefinido", label: capStatus(status) || "a definir", shortLabel: "Status", icon: "dot" };
 }
 
 function getRegistroBackendId(r: Registro): string | undefined {
@@ -1587,22 +1676,6 @@ function getRegistroTrackingId(r: Registro): string {
         getRegistroBackendId(r) ??
         `${decodeHtmlEntitiesDeep(String(r.falecido ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.data ?? "")).trim()}|${decodeHtmlEntitiesDeep(String(r.hora_fim_velorio ?? "")).trim()}`
     );
-}
-
-/**
- * Identifica mudanças relevantes que exigem revalidar o histórico usado no
- * quadro. Status é o principal sinal; campos de atualização são aproveitados
- * quando o backend os disponibiliza.
- */
-function getRegistroLogFingerprint(r: Registro): string {
-    const updatedAt =
-        (r as any).atualizado_em ??
-        (r as any).updated_at ??
-        (r as any).data_atualizacao ??
-        (r as any).datahora_atualizacao ??
-        "";
-
-    return `${normalizarStatus(r.status) ?? ""}|${String(updatedAt ?? "").trim()}`;
 }
 
 function getStatusFromLog(log: LogItem): string | undefined {
@@ -1625,7 +1698,48 @@ function formatDurationMs(msRaw: number): string {
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+const STATUS_MAIN_KEYS = new Set(["fase01", "fase03", "fase05", "fase08", "fase09", "fase10"]);
+const STATUS_IDLE_KEYS = new Set(["aguardando", "fase02", "fase04", "fase06", "fase12", "fase07"]);
+
+// Ordem operacional real. A fase12 (Corpo Pronto) acontece antes da fase07.
+// Este ranking é usado somente para impedir regressões visuais causadas por
+// resposta antiga, cache intermediário ou indisponibilidade temporária dos logs.
+const STATUS_FLOW_ORDER = [
+    "aguardando",
+    "fase01",
+    "fase02",
+    "fase03",
+    "fase04",
+    "fase05",
+    "fase06",
+    "fase12",
+    "fase07",
+    "fase08",
+    "fase09",
+    "fase10",
+    "fase11",
+] as const;
+
+const STATUS_FLOW_RANK = new Map<string, number>(
+    STATUS_FLOW_ORDER.map((key, index) => [key, index])
+);
+
+function statusFlowRank(status?: string): number {
+    const key = normalizarStatus(status);
+    if (!key) return -1;
+    return STATUS_FLOW_RANK.get(key) ?? -1;
+}
+
+function parseRegistroTimestampCandidate(value: unknown): number {
+    const raw = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
+    if (!raw) return 0;
+
+    const ts = Date.parse(raw.replace(" ", "T"));
+    return Number.isNaN(ts) ? 0 : ts;
+}
+
 function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, nowMs: number): number {
+    // A primeira evidência do histórico é a melhor fonte para o início real.
     const logTimes = (logs ?? [])
         .map((log) => parseLogTs(log.datahora))
         .filter((ts) => ts > 0)
@@ -1633,12 +1747,58 @@ function getRegistroCreatedTs(registro: Registro, logs: LogItem[] | undefined, n
 
     if (logTimes.length > 0) return logTimes[0];
 
-    const registroTs = parseRegistroDateTime(registro);
-    return registroTs > 0 ? registroTs : nowMs;
+    // Registros de APIs diferentes podem usar nomes diferentes para criação.
+    // Preferimos um timestamp explícito em vez de hora de início/fim do velório.
+    const explicitCandidates = [
+        (registro as any).criado_em,
+        (registro as any).criadoEm,
+        (registro as any).created_at,
+        (registro as any).createdAt,
+        (registro as any).data_criacao,
+        (registro as any).datahora_criacao,
+        (registro as any).data_hora_criacao,
+        (registro as any).aberto_em,
+        (registro as any).inicio_em,
+    ];
+
+    for (const value of explicitCandidates) {
+        const ts = parseRegistroTimestampCandidate(value);
+        if (ts > 0 && ts <= nowMs + 5 * 60_000) return ts;
+    }
+
+    // Fallback estável para registros legados: usa apenas a DATA.
+    // A implementação anterior usava hora_fim_velorio/hora_inicio_velorio,
+    // que não representam a criação do atendimento e podiam zerar/distorcer tempos.
+    const rawDate = decodeHtmlEntitiesDeep(String(registro.data ?? "")).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        const ts = Date.parse(`${rawDate}T00:00:00`);
+        if (!Number.isNaN(ts) && ts > 0 && ts <= nowMs + 5 * 60_000) return ts;
+    }
+
+    return nowMs;
+}
+
+function getRegistroStatusUpdatedTs(registro: Registro, createdTs: number, nowMs: number): number {
+    const candidates = [
+        (registro as any).status_atualizado_em,
+        (registro as any).status_alterado_em,
+        (registro as any).status_updated_at,
+        (registro as any).atualizado_em,
+        (registro as any).updated_at,
+        (registro as any).updatedAt,
+    ];
+
+    for (const value of candidates) {
+        const ts = parseRegistroTimestampCandidate(value);
+        if (ts >= createdTs && ts <= nowMs + 5 * 60_000) return ts;
+    }
+
+    return 0;
 }
 
 function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, nowMs: number): StatusSegment[] {
-    const currentKey = normalizarStatus(registro.status);
+    const currentKeyRaw = normalizarStatus(registro.status);
+    const currentKey = currentKeyRaw?.startsWith("fase") ? currentKeyRaw : undefined;
     const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
 
     const statusEvents = (logs ?? [])
@@ -1646,29 +1806,55 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
         .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
         .sort((a, b) => a.ts - b.ts);
 
-    const unique: { key: string; ts: number }[] = [{ key: "fase01", ts: createdTs }];
+    // O atendimento nasce em "aguardando" (resposta ao chamado). Esse intervalo, até a
+    // fase01 "Indo Retirar o Óbito", é tempo ocioso e não entra no tempo de Remoção.
+    const unique: { key: string; ts: number }[] = [{ key: "aguardando", ts: createdTs }];
 
     for (const ev of statusEvents) {
         if (ev.ts < createdTs) continue;
 
-        if (ev.key === "fase01") continue;
+        const last = unique[unique.length - 1];
+        if (last?.key === ev.key) continue;
 
-        if (unique.length === 0 || unique[unique.length - 1].key !== ev.key) {
-            unique.push(ev);
-        }
+        // Nunca deixa um log antigo/tardio fazer a TV voltar para uma fase anterior.
+        // Ex.: já vimos fase08; uma resposta atrasada contendo fase05 não regride a tela.
+        const lastRank = statusFlowRank(last?.key);
+        const nextRank = statusFlowRank(ev.key);
+        if (lastRank >= 0 && nextRank >= 0 && nextRank < lastRank) continue;
+
+        unique.push(ev);
     }
 
-    const hasAdvancedByLog = unique.some((ev) => ev.key !== "fase01");
-    const effectiveCurrentKey = hasAdvancedByLog ? currentKey : "fase01";
+    const lastKnown = unique[unique.length - 1];
+    const lastKnownRank = statusFlowRank(lastKnown?.key);
+    const currentRank = statusFlowRank(currentKey);
 
-    if (hasAdvancedByLog && currentKey && unique[unique.length - 1]?.key !== currentKey) {
-        unique.push({ key: currentKey, ts: nowMs });
+    // Fonte de verdade visual:
+    // - se o registro atual está mais avançado, usa o registro;
+    // - se o histórico persistido está mais avançado, mantém o histórico;
+    // - assim uma falha/atraso nunca devolve o atendimento para o começo.
+    const effectiveCurrentKey =
+        currentKey && currentRank >= lastKnownRank
+            ? currentKey
+            : lastKnown?.key || currentKey || "aguardando";
+
+    if (effectiveCurrentKey && lastKnown?.key !== effectiveCurrentKey) {
+        const explicitStatusTs = getRegistroStatusUpdatedTs(registro, createdTs, nowMs);
+        const inferredStart = explicitStatusTs > 0
+            ? explicitStatusTs
+            : Math.max(createdTs, lastKnown?.ts || createdTs);
+
+        unique.push({
+            key: effectiveCurrentKey,
+            ts: Math.min(nowMs, inferredStart),
+        });
     }
 
     return unique.map((ev, idx) => {
         const info = getStatusStepInfo(ev.key);
         const isLast = idx === unique.length - 1;
-        const end = isLast ? nowMs : unique[idx + 1].ts;
+        const nextStart = unique[idx + 1]?.ts ?? nowMs;
+        const end = isLast ? nowMs : Math.max(ev.ts, nextStart);
 
         return {
             key: info.key,
@@ -1688,12 +1874,7 @@ function getStatusDisplayData(segments: StatusSegment[]) {
 
     for (const seg of segments) {
         const duration = Math.max(0, seg.end - seg.start);
-        const displayKey = STATUS_IDLE_KEYS.has(seg.key)
-            ? "idle"
-            : STATUS_MAIN_KEYS.has(seg.key)
-                ? seg.key
-                : undefined;
-
+        const displayKey = STATUS_IDLE_KEYS.has(seg.key) ? "idle" : STATUS_MAIN_KEYS.has(seg.key) ? seg.key : undefined;
         if (!displayKey) continue;
 
         durations.set(displayKey, (durations.get(displayKey) ?? 0) + duration);
@@ -1703,18 +1884,36 @@ function getStatusDisplayData(segments: StatusSegment[]) {
     return { durations, activeKey };
 }
 
+function compararCoroasPorOrdemDeChegada(a: CoroaTvPedido, b: CoroaTvPedido): number {
+    const ta = parseLogTs(a.criado_em || undefined);
+    const tb = parseLogTs(b.criado_em || undefined);
+
+    // Quando ambos possuem data válida, a ordem cronológica real é soberana.
+    if (ta > 0 && tb > 0 && ta !== tb) {
+        return ta - tb;
+    }
+
+    // Fallback para registros legados: IDs menores chegaram primeiro.
+    return Number(a.id || 0) - Number(b.id || 0);
+}
+
 /* =========================
    Página
    ========================= */
 const DIAS = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
+// Atendimentos e coroas por página: definidos por calcularLayoutTv() conforme o volume.
+const INTERVALO_PAGINACAO_ATENDIMENTOS_MS = 15_000;
+
+const INTERVALO_PAGINACAO_COROAS_MS = 15_000;
+
 export default function QuadroAtendimentoPage() {
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
-    const [nowMs, setNowMs] = useState(0);
+    const [nowMs, setNowMs] = useState(() => Date.now());
 
-    const [registros, setRegistros] = useState<Registro[]>([]);
-    const [avisos, setAvisos] = useState<Aviso[]>([]);
+    const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
+    const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
 
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
@@ -1723,17 +1922,30 @@ export default function QuadroAtendimentoPage() {
     const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
-    const [detailLogsLoaded, setDetailLogsLoaded] = useState(false);
     const [detailLogsError, setDetailLogsError] = useState<string | null>(null);
 
-    const [detailFotoAberta, setDetailFotoAberta] = useState<TimelineFoto | null>(null);
-    const [detailGaleriaAberta, setDetailGaleriaAberta] = useState(false);
-    const [detailGaleriaIndex, setDetailGaleriaIndex] = useState(0);
-    const [detailGaleriaFotos, setDetailGaleriaFotos] = useState<TimelineFoto[]>([]);
-
     const [matLookup, setMatLookup] = useState<Record<string, MatLookupInfo>>({});
-    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>({});
-    const statusLogFingerprintRef = useRef<Record<string, string>>({});
+    const [statusLogsById, setStatusLogsById] = useState<Record<string, LogItem[]>>(
+        () => readLS<Record<string, LogItem[]>>(STATUS_LOGS_STORAGE_KEY) ?? {}
+    );
+
+    /* Paginação automática dos atendimentos */
+    const [paginaAtendimentos, setPaginaAtendimentos] = useState(0);
+    const paginationSignatureRef = useRef("");
+
+    /* Coroas de Flores — painel inferior */
+    const [coroasTv, setCoroasTv] = useState<CoroaTvPedido[]>(
+        () => [...(readLS<CoroaTvPedido[]>("qa_coroas_tv") ?? [])].sort(compararCoroasPorOrdemDeChegada)
+    );
+    const [coroasTvError, setCoroasTvError] = useState<string | null>(null);
+
+    /* Paginação automática das coroas */
+    const [paginaCoroas, setPaginaCoroas] = useState(0);
+    const coroasPaginationSignatureRef = useRef("");
+
+    /* Ajuste automático de densidade da TV */
+    const [qaDensity, setQaDensity] = useState<QaDensity>("normal");
+    const dashboardContentRef = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
         const update = () => {
@@ -1754,106 +1966,179 @@ export default function QuadroAtendimentoPage() {
         return () => clearInterval(id);
     }, []);
 
-    /*
-     * Atendimentos: consulta exclusivamente remota.
-     *
-     * Não há IndexedDB, snapshot, fila offline ou fallback local.
-     */
     useEffect(() => {
         let alive = true;
-        let loading = false;
-        const BASE = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
+        const BASE_INFO = "/api/php/informativo.php?listar=1";
 
         async function load() {
-            if (!alive || loading) return;
-
-            loading = true;
             try {
-                const j = await fetchJsonFresh<any>(BASE, 30_000);
-                if (!alive) return;
-                if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar atendimentos.");
+                const url = `${BASE_INFO}&_ts=${Date.now()}`;
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 0,
+                    timeoutMs: 12_000,
+                    cacheKey: "informativo_listar",
+                });
 
-                setRegistros(j as Registro[]);
-            } catch (e) {
-                console.warn("[QUADRO] Falha ao consultar atendimentos diretamente na API", e);
-            } finally {
-                loading = false;
+                if (!alive) return;
+
+                // Não transforma erro de sessão/resposta inválida em lista vazia.
+                // Uma resposta inválida mantém o último quadro conhecido.
+                if (!Array.isArray(j)) {
+                    throw new Error("Resposta inválida ao consultar atendimentos.");
+                }
+
+                const arr = j as Registro[];
+                setRegistros(arr);
+                writeLS("qa_registros", arr);
+            } catch (err) {
+                // Mantém o que já tem. A TV não deve apagar nem reiniciar o quadro
+                // por timeout, perda de rede, suspensão do navegador ou erro momentâneo.
+                console.warn("Não foi possível atualizar os atendimentos; mantendo último estado conhecido.", err);
             }
         }
 
-        const refreshNow = () => {
-            void load();
-        };
-
-        const onVisibilityChange = () => {
-            if (document.visibilityState === "visible") refreshNow();
-        };
-
         void load();
 
-        const id = window.setInterval(refreshNow, 8000);
-        window.addEventListener("focus", refreshNow);
-        window.addEventListener("online", refreshNow);
-        window.addEventListener("pageshow", refreshNow);
-        document.addEventListener("visibilitychange", onVisibilityChange);
+        const id = window.setInterval(() => {
+            if (!document.hidden) void load();
+        }, 8000);
+
+        const refreshWhenActive = () => {
+            if (!document.hidden) void load();
+        };
+
+        document.addEventListener("visibilitychange", refreshWhenActive);
+        window.addEventListener("focus", refreshWhenActive);
+        window.addEventListener("online", refreshWhenActive);
 
         return () => {
             alive = false;
             window.clearInterval(id);
-            window.removeEventListener("focus", refreshNow);
-            window.removeEventListener("online", refreshNow);
-            window.removeEventListener("pageshow", refreshNow);
-            document.removeEventListener("visibilitychange", onVisibilityChange);
+            document.removeEventListener("visibilitychange", refreshWhenActive);
+            window.removeEventListener("focus", refreshWhenActive);
+            window.removeEventListener("online", refreshWhenActive);
         };
     }, []);
 
-    /* Avisos: consulta exclusivamente remota, sem localStorage/fallback. */
-
     useEffect(() => {
         let alive = true;
-        let loading = false;
-        const BASE = "https://api.planoassistencialintegrado.com.br/avisos.php?listar=1";
 
-        async function load() {
-            if (!alive || loading) return;
+        async function loadCoroas() {
+            const urls = [COROAS_TV_LOCAL, COROAS_TV_REMOTA];
+            let lastError: unknown = null;
 
-            loading = true;
-            try {
-                const j = await fetchJsonFresh<any>(BASE, 10_000);
-                if (!alive) return;
-                if (!Array.isArray(j)) throw new Error("Resposta inválida ao listar avisos.");
+            for (const url of urls) {
+                try {
+                    // Força uma leitura nova da fila de Confecção.
+                    // O _ts evita reaproveitamento por navegador/proxy e ttlMs 0
+                    // impede que o cache em memória atrase a entrada de pedidos online.
+                    const freshUrl = `${url}${url.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
+                    const j = await fetchJsonFast<CoroasTvResponse>(freshUrl, {
+                        ttlMs: 0,
+                        timeoutMs: 10_000,
+                        cacheKey: url === COROAS_TV_LOCAL ? "qa_coroas_tv_local" : "qa_coroas_tv_remota",
+                    });
 
-                setAvisos(j as Aviso[]);
-            } catch (e) {
-                console.warn("[QUADRO] Falha ao consultar avisos diretamente na API", e);
-            } finally {
-                loading = false;
+                    if (!alive) return;
+
+                    if (!j?.sucesso || !Array.isArray(j.dados)) {
+                        throw new Error(j?.msg || "Resposta inválida ao consultar coroas.");
+                    }
+
+                    const arr = j.dados
+                        .filter(coroaEmConfeccao)
+                        .sort(compararCoroasPorOrdemDeChegada);
+
+                    setCoroasTv(arr);
+                    writeLS("qa_coroas_tv", arr);
+                    setCoroasTvError(null);
+                    return;
+                } catch (err) {
+                    lastError = err;
+                }
             }
+
+            if (!alive) return;
+
+            // Não apaga o quadro em caso de oscilação.
+            setCoroasTvError(
+                lastError instanceof Error
+                    ? lastError.message
+                    : "Não foi possível atualizar as coroas."
+            );
         }
 
-        const refreshNow = () => {
-            void load();
+        void loadCoroas();
+
+        const id = window.setInterval(() => {
+            if (!document.hidden) {
+                void loadCoroas();
+            }
+        }, 30_000);
+
+        const onVisibility = () => {
+            if (!document.hidden) {
+                void loadCoroas();
+            }
         };
 
-        const onVisibilityChange = () => {
-            if (document.visibilityState === "visible") refreshNow();
+        const onFocus = () => {
+            if (!document.hidden) {
+                void loadCoroas();
+            }
         };
 
-        void load();
-
-        const id = window.setInterval(refreshNow, 20000);
-        window.addEventListener("focus", refreshNow);
-        window.addEventListener("online", refreshNow);
-        window.addEventListener("pageshow", refreshNow);
-        document.addEventListener("visibilitychange", onVisibilityChange);
+        document.addEventListener("visibilitychange", onVisibility);
+        window.addEventListener("focus", onFocus);
 
         return () => {
             alive = false;
             window.clearInterval(id);
-            window.removeEventListener("focus", refreshNow);
-            window.removeEventListener("online", refreshNow);
-            window.removeEventListener("pageshow", refreshNow);
-            document.removeEventListener("visibilitychange", onVisibilityChange);
+            document.removeEventListener("visibilitychange", onVisibility);
+            window.removeEventListener("focus", onFocus);
+        };
+    }, []);
+
+    useEffect(() => {
+        let alive = true;
+        const BASE_AVISOS = "/api/php/avisos.php?listar=1";
+
+        async function load() {
+            if (!alive) return;
+
+            try {
+                const url = `${BASE_AVISOS}&_ts=${Date.now()}`;
+                const j = await fetchJsonFast<any>(url, {
+                    ttlMs: 5_000,
+                    cacheKey: "avisos_listar",
+                });
+
+                if (!alive) return;
+
+                const arr: Aviso[] = Array.isArray(j) ? j : [];
+
+                setAvisos(arr);
+                writeLS("qa_avisos", arr);
+            } catch (err) {
+                console.error("Erro ao carregar avisos:", err);
+
+                if (!alive) return;
+
+                // mantém a UI estável e limpa o cache persistido
+                setAvisos([]);
+                writeLS("qa_avisos", []);
+            }
+        }
+
+        load();
+
+        const id = window.setInterval(() => {
+            void load();
+        }, 10000);
+
+        return () => {
+            alive = false;
+            window.clearInterval(id);
         };
     }, []);
 
@@ -1862,10 +2147,8 @@ export default function QuadroAtendimentoPage() {
 
         async function loadMateriaisCatalog() {
             try {
-                // Catálogo também é buscado sem cache ao acessar a página para
-                // que nomes/categorias exibidos acompanhem o servidor atual.
-                const url = "https://api.planoassistencialintegrado.com.br/materiais_admin.php?op=list&all=1";
-                const res = await fetchJsonFresh<any>(url, 10_000);
+                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
 
                 const tree = (res?.data ?? res) as any[];
                 const map: Record<string, MatLookupInfo> = {};
@@ -1903,12 +2186,7 @@ export default function QuadroAtendimentoPage() {
         setDetailTimelineOpen(false);
         setDetailLogs([]);
         setDetailLogsLoading(false);
-        setDetailLogsLoaded(false);
         setDetailLogsError(null);
-        setDetailFotoAberta(null);
-        setDetailGaleriaAberta(false);
-        setDetailGaleriaIndex(0);
-        setDetailGaleriaFotos([]);
     }, []);
 
     const showDetail = useCallback(
@@ -1928,16 +2206,6 @@ export default function QuadroAtendimentoPage() {
         resetDetailTimeline();
     }, [resetDetailTimeline]);
 
-    // Mantém o modal aberto apontando para a versão mais recente do mesmo
-    // atendimento sempre que a listagem for atualizada pelo servidor.
-    useEffect(() => {
-        if (!open || !detail) return;
-
-        const trackingId = getRegistroTrackingId(detail);
-        const latest = registros.find((r) => getRegistroTrackingId(r) === trackingId);
-        if (latest && latest !== detail) setDetail(latest);
-    }, [open, detail, registros]);
-
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") closeDetail();
@@ -1954,65 +2222,300 @@ export default function QuadroAtendimentoPage() {
         return withTs.map((x) => x.r);
     }, [registros]);
 
+    /* Layout da TV: define quantos atendimentos e coroas cabem por página */
+    const layoutTv = useMemo(
+        () => calcularLayoutTv(ativosOrdenados.length, coroasTv.length),
+        [ativosOrdenados.length, coroasTv.length]
+    );
+    // Se o texto de uma página não couber na TV, o quadro tira um item por página (volta ao padrão quando a quantidade muda).
+    const [reducaoTv, setReducaoTv] = useState({ at: 0, cr: 0 });
     useEffect(() => {
-        let alive = true;
+        setReducaoTv({ at: 0, cr: 0 });
+    }, [ativosOrdenados.length, coroasTv.length]);
+    const tvNaoCoube = useCallback(
+        (area: "at" | "cr") =>
+            setReducaoTv((r) => {
+                const base = area === "at" ? layoutTv.atendimentosPorPagina : layoutTv.coroasPorPagina;
+                return base - r[area] <= 1 ? r : { ...r, [area]: r[area] + 1 };
+            }),
+        [layoutTv]
+    );
+    const atendimentosPorPagina = Math.max(1, layoutTv.atendimentosPorPagina - reducaoTv.at);
+    const coroasPorPagina = Math.max(1, layoutTv.coroasPorPagina - reducaoTv.cr);
 
-        async function carregarLogsDaLista() {
-            const registrosVisiveis = ativosOrdenados.slice(0, 60);
+    /*
+     * Paginação do quadro:
+     * - no máximo 6 atendimentos por página;
+     * - acima de 6, cria páginas adicionais;
+     * - troca automaticamente a cada 15 segundos;
+     * - quando entra/sai um atendimento, volta para a primeira página para
+     *   mostrar imediatamente a composição mais recente do quadro.
+     */
+    const totalPaginasAtendimentos = Math.max(
+        1,
+        Math.ceil(ativosOrdenados.length / atendimentosPorPagina)
+    );
 
-            const pendentes = registrosVisiveis.filter((r) => {
-                const trackingId = getRegistroTrackingId(r);
-                if (!trackingId) return false;
+    const paginaAtualAtendimentos = Math.min(
+        paginaAtendimentos,
+        totalPaginasAtendimentos - 1
+    );
 
-                const fingerprint = getRegistroLogFingerprint(r);
-                return (
-                    !statusLogsById[trackingId] ||
-                    statusLogFingerprintRef.current[trackingId] !== fingerprint
-                );
-            });
+    const ativosPagina = useMemo(() => {
+        const inicio = paginaAtualAtendimentos * atendimentosPorPagina;
+        return ativosOrdenados.slice(
+            inicio,
+            inicio + atendimentosPorPagina
+        );
+    }, [ativosOrdenados, paginaAtualAtendimentos, atendimentosPorPagina]);
 
-            if (pendentes.length === 0) return;
+    const paginationSignature = useMemo(
+        () =>
+            ativosOrdenados
+                .map((r, index) => getRegistroTrackingId(r) || `idx:${index}`)
+                .join("|"),
+        [ativosOrdenados]
+    );
 
-            const pares = await Promise.all(
-                pendentes.map(async (r) => {
-                    const trackingId = getRegistroTrackingId(r);
-                    const fingerprint = getRegistroLogFingerprint(r);
+    useEffect(() => {
+        const anterior = paginationSignatureRef.current;
 
-                    try {
-                        const logs = await buscarLogsDoRegistro(r);
-                        return { trackingId, fingerprint, logs, ok: true } as const;
-                    } catch {
-                        return { trackingId, fingerprint, logs: [] as LogItem[], ok: false } as const;
-                    }
-                })
-            );
-
-            if (!alive) return;
-
-            setStatusLogsById((prev) => {
-                const next = { ...prev };
-
-                for (const item of pares) {
-                    if (!item.ok) continue;
-                    next[item.trackingId] = item.logs;
-                    statusLogFingerprintRef.current[item.trackingId] = item.fingerprint;
-                }
-
-                return next;
-            });
+        if (anterior && anterior !== paginationSignature) {
+            setPaginaAtendimentos(0);
         }
 
-        void carregarLogsDaLista();
+        paginationSignatureRef.current = paginationSignature;
+    }, [paginationSignature]);
+
+    useEffect(() => {
+        setPaginaAtendimentos((pagina) =>
+            Math.min(pagina, totalPaginasAtendimentos - 1)
+        );
+    }, [totalPaginasAtendimentos]);
+
+    useEffect(() => {
+        if (totalPaginasAtendimentos <= 1) {
+            setPaginaAtendimentos(0);
+            return;
+        }
+
+        const id = window.setInterval(() => {
+            if (document.hidden) return;
+
+            setPaginaAtendimentos(
+                (pagina) => (pagina + 1) % totalPaginasAtendimentos
+            );
+        }, INTERVALO_PAGINACAO_ATENDIMENTOS_MS);
+
+        return () => window.clearInterval(id);
+    }, [totalPaginasAtendimentos]);
+
+    /*
+     * Paginação das coroas:
+     * - no máximo 3 pedidos por página;
+     * - ordem sempre do pedido mais antigo para o mais novo;
+     * - acima de 3, cria páginas adicionais;
+     * - troca automaticamente a cada 15 segundos;
+     * - quando entra/sai um pedido, volta para a primeira página para manter
+     *   o pedido mais antigo imediatamente visível no início da fila.
+     */
+    const coroasOrdenadas = useMemo(
+        () => [...coroasTv].sort(compararCoroasPorOrdemDeChegada),
+        [coroasTv]
+    );
+
+    const totalPaginasCoroas = Math.max(
+        1,
+        Math.ceil(coroasOrdenadas.length / coroasPorPagina)
+    );
+
+    const paginaAtualCoroas = Math.min(
+        paginaCoroas,
+        totalPaginasCoroas - 1
+    );
+
+    const coroasPagina = useMemo(() => {
+        const inicio = paginaAtualCoroas * coroasPorPagina;
+        return coroasOrdenadas.slice(
+            inicio,
+            inicio + coroasPorPagina
+        );
+    }, [coroasOrdenadas, paginaAtualCoroas, coroasPorPagina]);
+
+    const coroasPaginationSignature = useMemo(
+        () => coroasOrdenadas.map((pedido) => String(pedido.id)).join("|"),
+        [coroasOrdenadas]
+    );
+
+    useEffect(() => {
+        const anterior = coroasPaginationSignatureRef.current;
+
+        if (anterior && anterior !== coroasPaginationSignature) {
+            setPaginaCoroas(0);
+        }
+
+        coroasPaginationSignatureRef.current = coroasPaginationSignature;
+    }, [coroasPaginationSignature]);
+
+    useEffect(() => {
+        setPaginaCoroas((pagina) =>
+            Math.min(pagina, totalPaginasCoroas - 1)
+        );
+    }, [totalPaginasCoroas]);
+
+    useEffect(() => {
+        if (totalPaginasCoroas <= 1) {
+            setPaginaCoroas(0);
+            return;
+        }
+
+        const id = window.setInterval(() => {
+            if (document.hidden) return;
+
+            setPaginaCoroas(
+                (pagina) => (pagina + 1) % totalPaginasCoroas
+            );
+        }, INTERVALO_PAGINACAO_COROAS_MS);
+
+        return () => window.clearInterval(id);
+    }, [totalPaginasCoroas]);
+
+    // Identidade estável dos atendimentos acompanhados pelo histórico.
+    // A lista de registros é atualizada a cada 8s, mas o timer dos logs só precisa
+    // ser recriado quando os IDs realmente mudarem.
+    const statusTrackingTargets = ativosOrdenados
+        .map((r) => ({
+            id: getRegistroBackendId(r),
+            trackingId: getRegistroTrackingId(r),
+        }))
+        .filter((x): x is { id: string; trackingId: string } => !!x.id);
+
+    const statusTrackingSignature = statusTrackingTargets
+        .map((x) => `${x.id}:${x.trackingId}`)
+        .sort()
+        .join("|");
+
+    useEffect(() => {
+        let alive = true;
+        let loading = false;
+
+        // A assinatura é a dependência do efeito. Se ela não mudou, os alvos
+        // capturados aqui representam os mesmos IDs e não reiniciamos o timer.
+        const targets = statusTrackingTargets;
+
+        async function loadStatusLogs() {
+            if (loading || !alive) return;
+            loading = true;
+
+            try {
+                const updates: Record<string, LogItem[]> = {};
+
+                await Promise.all(
+                    targets.map(async ({ id, trackingId }) => {
+                        try {
+                            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
+                            const url = `${BASE}&_ts=${Date.now()}`;
+
+                            // ttl 0: o histórico é pequeno e deve refletir a etapa real.
+                            const json: any = await fetchJsonFast<any>(url, {
+                                ttlMs: 0,
+                                timeoutMs: 12_000,
+                                cacheKey: `hist_${id}`,
+                            });
+
+                            let logs: LogItem[] | null = null;
+                            if (Array.isArray(json)) {
+                                logs = json as LogItem[];
+                            } else if (json?.sucesso && Array.isArray(json.dados)) {
+                                logs = json.dados as LogItem[];
+                            } else {
+                                throw new Error("Resposta inválida do histórico.");
+                            }
+
+                            updates[trackingId] = [...logs].sort(
+                                (a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora)
+                            );
+                        } catch (err) {
+                            // REGRA CRÍTICA: nunca escrevemos [] em caso de erro.
+                            // O último histórico válido continua em memória/localStorage.
+                            console.warn(`Falha ao atualizar histórico do atendimento ${id}; mantendo histórico anterior.`, err);
+                        }
+                    })
+                );
+
+                if (!alive) return;
+
+                // Se nenhuma consulta teve resposta válida, não toca no estado persistido.
+                if (Object.keys(updates).length === 0) return;
+
+                setStatusLogsById((prev) => {
+                    const merged: Record<string, LogItem[]> = { ...prev };
+
+                    for (const [trackingId, logs] of Object.entries(updates)) {
+                        // Uma resposta vazia não apaga um histórico válido já conhecido.
+                        // Isso protege contra respostas intermediárias/replicação atrasada.
+                        if (logs.length === 0 && (prev[trackingId]?.length ?? 0) > 0) {
+                            continue;
+                        }
+
+                        // Move o atendimento atualizado para o fim do objeto. Assim,
+                        // quando houver compactação, os históricos mais recentes ficam.
+                        delete merged[trackingId];
+                        merged[trackingId] = logs;
+                    }
+
+                    // Mantém um histórico razoável de atendimentos anteriores e, ao mesmo
+                    // tempo, impede crescimento ilimitado do localStorage ao longo dos meses.
+                    // Os ativos são atualizados periodicamente e naturalmente ficam entre
+                    // as entradas mais recentes.
+                    const entries = Object.entries(merged);
+                    const compactEntries = entries.slice(-STATUS_LOGS_STORAGE_MAX_ENTRIES);
+                    const compact = Object.fromEntries(compactEntries) as Record<string, LogItem[]>;
+
+                    writeLS(STATUS_LOGS_STORAGE_KEY, compact);
+                    return compact;
+                });
+            } finally {
+                loading = false;
+            }
+        }
+
+        void loadStatusLogs();
+
+        const id = window.setInterval(() => {
+            if (!document.hidden) void loadStatusLogs();
+        }, 30000);
+
+        const refreshWhenActive = () => {
+            if (!document.hidden) void loadStatusLogs();
+        };
+
+        document.addEventListener("visibilitychange", refreshWhenActive);
+        window.addEventListener("focus", refreshWhenActive);
+        window.addEventListener("online", refreshWhenActive);
 
         return () => {
             alive = false;
+            window.clearInterval(id);
+            document.removeEventListener("visibilitychange", refreshWhenActive);
+            window.removeEventListener("focus", refreshWhenActive);
+            window.removeEventListener("online", refreshWhenActive);
         };
-        // Mudanças nos registros/status visíveis disparam a revalidação
-        // dos históricos exibidos.
+        // A lista completa muda a cada polling de 8s; a assinatura evita reiniciar
+        // este efeito sem necessidade.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ativosOrdenados]);
+    }, [statusTrackingSignature]);
 
     const TAG_SERVICO = "Atendimento:";
+
+    function normNome(s?: string) {
+        return String(s ?? "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
 
     function isServicoMsg(msg?: any) {
         const s = String(msg ?? "");
@@ -2022,35 +2525,34 @@ export default function QuadroAtendimentoPage() {
     function extractServicoNome(msg?: string) {
         const s = String(msg ?? "");
         if (!s.startsWith(TAG_SERVICO)) return "";
-        const rest = s.slice(TAG_SERVICO.length).trim(); // "NOME: obs"
-        const idx = rest.indexOf(":");
-        return (idx >= 0 ? rest.slice(0, idx) : rest).trim();
-    }
 
-    function normNome(v?: string) {
-        return String(v ?? "")
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .toLowerCase();
+        const rest = s.slice(TAG_SERVICO.length).trim();
+        const idx = rest.indexOf(":");
+
+        return (idx >= 0 ? rest.slice(0, idx) : rest).trim();
     }
 
     const nomesAtivos = useMemo(() => {
         const set = new Set<string>();
-        for (const r of ativosOrdenados as any[]) {
+
+        for (const r of ativosOrdenados as Registro[]) {
             const nome = String(r?.falecido ?? "").trim();
             if (nome) set.add(normNome(nome));
         }
+
         return set;
     }, [ativosOrdenados]);
 
     const avisosParaExibir = useMemo(() => {
         const arr = Array.isArray(avisos) ? avisos : [];
+
         return arr.filter((a) => {
-            const msg = String((a as any)?.mensagem ?? "");
+            const msg = String(a?.mensagem ?? "");
+
+            // aviso comum: sempre exibe
             if (!isServicoMsg(msg)) return true;
 
+            // aviso de serviço: só exibe se o nome ainda estiver entre os ativos
             const nome = extractServicoNome(msg);
             if (!nome) return true;
 
@@ -2060,7 +2562,7 @@ export default function QuadroAtendimentoPage() {
 
     const handleCopy = useCallback(async () => {
         if (!detail) return;
-        const text = buildClipboardText(detail, matLookup); // 👈 passa o lookup aqui
+        const text = buildClipboardText(detail, matLookup);
         try {
             await navigator.clipboard.writeText(text);
             setCopied(true);
@@ -2083,102 +2585,56 @@ export default function QuadroAtendimentoPage() {
         }
     }, [detail, matLookup]);
 
-    const carregarHistoricoDoDetalhe = useCallback(
-        async (r: Registro, options?: { preserveExisting?: boolean }): Promise<LogItem[]> => {
-            if (!options?.preserveExisting) setDetailLogs([]);
-            setDetailLogsError(null);
-            setDetailLogsLoading(true);
-            setDetailLogsLoaded(false);
+    const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
+        setDetailLogs([]);
+        setDetailLogsError(null);
+        setDetailLogsLoading(true);
 
-            try {
-                const logs = await buscarLogsDoRegistro(r);
-                setDetailLogs(logs);
+        try {
+            const sepId =
+                (r as any).sepultamento_id ??
+                (r as any).sepultamentoId ??
+                (r as any).id ??
+                (r as any).id_atendimento ??
+                (r as any).codigo;
 
-                const trackingId = getRegistroTrackingId(r);
-                if (trackingId) {
-                    statusLogFingerprintRef.current[trackingId] = getRegistroLogFingerprint(r);
-                    setStatusLogsById((prev) => ({ ...prev, [trackingId]: logs }));
-                }
-
-                return logs;
-            } catch (e) {
-                console.error(e);
-                setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
-                return [];
-            } finally {
-                setDetailLogsLoading(false);
-                setDetailLogsLoaded(true);
+            if (!sepId) {
+                console.warn("Registro sem sepultamento_id para histórico:", r);
+                setDetailLogs([]);
+                return;
             }
-        },
-        []
-    );
 
-    // Ao abrir os detalhes, usa o histórico já conhecido apenas para resposta
-    // visual imediata, mas sempre revalida a fonte em seguida.
-    useEffect(() => {
-        if (!open || !detail || detailLogsLoading || detailLogsLoaded) return;
+            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
+            const url = `${BASE}&_ts=${Date.now()}`;
 
-        const trackingId = getRegistroTrackingId(detail);
-        const logsEmCache = trackingId ? statusLogsById[trackingId] : undefined;
+            const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
 
-        if (logsEmCache) setDetailLogs(logsEmCache);
-        void carregarHistoricoDoDetalhe(detail, { preserveExisting: !!logsEmCache });
-    }, [open, detail, detailLogsLoading, detailLogsLoaded, statusLogsById, carregarHistoricoDoDetalhe]);
+            let logs: LogItem[] = [];
+            if (Array.isArray(json)) logs = json as LogItem[];
+            else if (json?.sucesso && Array.isArray(json.dados)) logs = json.dados as LogItem[];
 
-    // Se a listagem detectar mudança de status e atualizar o histórico enquanto
-    // o modal estiver aberto, reflete o novo histórico no detalhe imediatamente.
-    useEffect(() => {
-        if (!open || !detail) return;
-        const trackingId = getRegistroTrackingId(detail);
-        const logs = trackingId ? statusLogsById[trackingId] : undefined;
-        if (logs) setDetailLogs(logs);
-    }, [open, detail, statusLogsById]);
+            logs = [...logs].sort((a, b) => parseLogTs(a.datahora) - parseLogTs(b.datahora));
+            setDetailLogs(logs);
+        } catch (e) {
+            console.error(e);
+            setDetailLogsError("Não foi possível carregar o histórico deste atendimento.");
+        } finally {
+            setDetailLogsLoading(false);
+        }
+    }, []);
 
     const toggleTimelineDetalhe = useCallback(async () => {
         if (!detail) return;
         const next = !detailTimelineOpen;
         setDetailTimelineOpen(next);
 
-        if (next && !detailLogsLoading && !detailLogsLoaded && !detailLogsError) {
+        if (next && !detailLogsLoading && detailLogs.length === 0 && !detailLogsError) {
             await carregarHistoricoDoDetalhe(detail);
         }
-    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogsLoaded, detailLogsError, carregarHistoricoDoDetalhe]);
-
-    const fotoFalecidoDetalhe = useMemo(() => getFotoFalecidoTimeline(detail), [detail]);
-
-    const fotosAnexadasDetalhe = useMemo(() => {
-        return montarFotosAnexadasDetalhe(detail, detailLogs);
-    }, [detail, detailLogs]);
-
-    const detailCriacaoTs = useMemo(() => {
-        if (!detail) return 0;
-
-        const trackingId = getRegistroTrackingId(detail);
-        const logsDaLista = trackingId ? statusLogsById[trackingId] : undefined;
-        const logsDisponiveis = detailLogs.length > 0 ? detailLogs : logsDaLista;
-
-        return getRegistroCreationTs(detail, logsDisponiveis);
-    }, [detail, detailLogs, statusLogsById]);
-
-    const abrirGaleriaFotosDetalhe = useCallback(async (initialIndex = 0) => {
-        if (!detail) return;
-
-        let logs = detailLogs;
-        if (!detailLogsLoaded && !detailLogsLoading && !detailLogsError) {
-            logs = await carregarHistoricoDoDetalhe(detail);
-        }
-
-        const fotos = montarFotosAnexadasDetalhe(detail, logs);
-        if (fotos.length === 0) return;
-
-        setDetailGaleriaFotos(fotos);
-        setDetailGaleriaIndex(Math.max(0, Math.min(initialIndex, fotos.length - 1)));
-        setDetailGaleriaAberta(true);
-    }, [detail, detailLogs, detailLogsLoading, detailLogsLoaded, detailLogsError, carregarHistoricoDoDetalhe]);
+    }, [detail, detailTimelineOpen, detailLogsLoading, detailLogs.length, detailLogsError, carregarHistoricoDoDetalhe]);
 
     const obsList = useCallback(
-        (missing: string[]) =>
-            missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo.",
+        (missing: string[]) => (missing.length ? `Pendências: ${missing.map((k) => LABELS[k] ?? k).join(", ")}.` : "Completo."),
         []
     );
 
@@ -2200,341 +2656,871 @@ export default function QuadroAtendimentoPage() {
         return "Pendências de horário.";
     }, []);
 
+
+    const recalcularDensidadeTv = useCallback(() => {
+        const el = dashboardContentRef.current;
+        if (!el || typeof window === "undefined") return;
+
+        const niveis: QaDensity[] = ["normal", "compact", "dense", "ultra", "micro"];
+
+        let escolhido: QaDensity = "micro";
+
+        for (const nivel of niveis) {
+            el.dataset.qaDensity = nivel;
+
+            // Pequena tolerância evita ficar alternando níveis por 1px.
+            const cabe = el.scrollHeight <= el.clientHeight + 3;
+
+            if (cabe) {
+                escolhido = nivel;
+                break;
+            }
+        }
+
+        el.dataset.qaDensity = escolhido;
+        setQaDensity((atual) => (atual === escolhido ? atual : escolhido));
+    }, []);
+
+    useLayoutEffect(() => {
+        let raf = 0;
+
+        const schedule = () => {
+            window.cancelAnimationFrame(raf);
+            raf = window.requestAnimationFrame(recalcularDensidadeTv);
+        };
+
+        schedule();
+
+        const observer =
+            typeof ResizeObserver !== "undefined"
+                ? new ResizeObserver(schedule)
+                : null;
+
+        if (dashboardContentRef.current) {
+            observer?.observe(dashboardContentRef.current);
+        }
+
+        window.addEventListener("resize", schedule);
+
+        return () => {
+            window.cancelAnimationFrame(raf);
+            observer?.disconnect();
+            window.removeEventListener("resize", schedule);
+        };
+    }, [
+        recalcularDensidadeTv,
+        ativosPagina.length,
+        paginaAtualAtendimentos,
+        totalPaginasAtendimentos,
+        coroasPagina.length,
+        paginaAtualCoroas,
+        totalPaginasCoroas,
+        coroasTv.length,
+        clockDate,
+    ]);
+
     return (
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6 overflow-x-hidden">
-            <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Quadro de Atendimentos</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Atualizado em tempo real - <span className="font-medium">{clockTime}</span> • {clockDate}
-                        </p>
-                    </div>
+        <>
+            <style jsx global>{`
+                html,
+                body,
+                #__next,
+                body > div {
+                    max-width: 100vw !important;
+                    overflow: hidden !important;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                .qa-page-root {
+                    width: min(calc(100dvw - 132px), 1420px) !important;
+                    max-width: min(calc(100dvw - 132px), 1420px) !important;
+                    margin-left: auto !important;
+                    margin-right: auto !important;
+                    min-width: 0 !important;
+                    overflow: hidden !important;
+                }
+                @media (max-width: 900px) {
+                    .qa-page-root {
+                        width: calc(100dvw - 18px) !important;
+                        max-width: calc(100dvw - 18px) !important;
+                        margin-left: auto !important;
+                        margin-right: auto !important;
+                    }
+                }
+                .qa-panel-premium {
+                    background:
+                        radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 34%),
+                        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.9));
+                    border-color: rgba(148, 163, 184, 0.18);
+                    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+                }
+                .qa-card-soft {
+                    background: rgba(15, 23, 42, 0.72);
+                    border-color: rgba(148, 163, 184, 0.14);
+                }
+                .qa-text-muted {
+                    color: rgba(203, 213, 225, 0.68);
+                }
+                .qa-no-scrollbar,
+                .qa-no-scrollbar * {
+                    scrollbar-width: none !important;
+                }
+                .qa-no-scrollbar::-webkit-scrollbar,
+                .qa-no-scrollbar *::-webkit-scrollbar {
+                    display: none !important;
+                }
+                .qa-truncate-2 {
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                }
+
+                /*
+                 * COLUNA DATA — alinhamento protegido.
+                 * Evita bolinhas, data e convênio invadirem a linha seguinte.
+                 */
+                .qa-data-cell {
+                    display: flex !important;
+                    height: 100%;
+                    min-height: 0;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 3px;
+                    overflow: hidden;
+                    line-height: 1;
+                }
+                .qa-data-dots,
+                .qa-data-date,
+                .qa-data-convenio {
+                    flex: 0 0 auto;
+                    min-height: 0;
+                    margin: 0 !important;
+                }
+                .qa-etapas-dots {
+                    gap: 4px !important;
+                    line-height: 1;
+                }
+                .qa-convenio-badge {
+                    white-space: nowrap;
+                    line-height: 1 !important;
+                }
+
+                /*
+                 * COROAS — alinhamento compacto padrão.
+                 */
+                .qa-coroa-field {
+                    height: 100%;
+                    align-items: center;
+                    line-height: 1;
+                }
+                .qa-coroa-field-icon,
+                .qa-coroa-badge-icon {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex: 0 0 auto;
+                }
+                .qa-coroa-field-text {
+                    display: flex;
+                    min-height: 0;
+                    align-items: center;
+                }
+                .qa-coroa-row > div {
+                    min-width: 0;
+                    align-self: center;
+                }
+                .qa-coroa-row .qa-coroa-sub {
+                    line-height: 1 !important;
+                }
+
+                .qa-coroa-timeline {
+                    min-width: 0;
+                    white-space: nowrap;
+                }
+
+                .qa-coroa-stage-pill {
+                    flex: 0 0 auto;
+                }
+
+                .qa-coroa-stage-ring,
+                .qa-coroa-stage-icon {
+                    flex: 0 0 auto;
+                }
+
+                /*
+                 * AUTO-FIT DA TV
+                 *
+                 * O visual de Atendimentos permanece normal até faltar espaço.
+                 * A coluna Data recebe redução própria para nunca se sobrepor.
+                 */
+                [data-qa-density="compact"] .qa-atendimento-head {
+                    height: 29px !important;
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-atendimento-row {
+                    height: 50px !important;
+                    min-height: 50px !important;
+                    font-size: 11px !important;
+                }
+                [data-qa-density="compact"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 11px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill {
+                    height: 31px !important;
+                    width: 29px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill-ring {
+                    height: 20px !important;
+                    width: 20px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill-icon {
+                    height: 15px !important;
+                    width: 15px !important;
+                }
+                [data-qa-density="compact"] .qa-status-pill-time {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="compact"] .qa-dashboard-content {
+                    gap: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-head {
+                    height: 29px !important;
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-row {
+                    height: 38px !important;
+                    min-height: 38px !important;
+                    padding-top: 3px !important;
+                    padding-bottom: 3px !important;
+                    font-size: 9.5px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-sub {
+                    font-size: 9.5px !important;
+                }
+
+                [data-qa-density="dense"] .qa-atendimento-head {
+                    height: 26px !important;
+                    font-size: 9.5px !important;
+                }
+                [data-qa-density="dense"] .qa-atendimento-row {
+                    height: 46px !important;
+                    min-height: 46px !important;
+                    font-size: 10px !important;
+                }
+                [data-qa-density="dense"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="dense"] .qa-atendimento-row .text-\[11px\] {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill {
+                    height: 27px !important;
+                    width: 26px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill-ring {
+                    height: 18px !important;
+                    width: 18px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill-icon {
+                    height: 13px !important;
+                    width: 13px !important;
+                }
+                [data-qa-density="dense"] .qa-status-pill-time {
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="dense"] .qa-dashboard-content {
+                    gap: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-titlebar {
+                    padding-top: 5px !important;
+                    padding-bottom: 5px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-head {
+                    height: 26px !important;
+                    font-size: 9.5px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-row {
+                    height: 34px !important;
+                    min-height: 34px !important;
+                    padding-top: 2px !important;
+                    padding-bottom: 2px !important;
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-sub {
+                    margin-top: 0 !important;
+                    font-size: 9px !important;
+                }
+
+                [data-qa-density="ultra"] .qa-atendimento-head {
+                    height: 23px !important;
+                    font-size: 8.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-atendimento-row {
+                    height: 42px !important;
+                    min-height: 42px !important;
+                    font-size: 9px !important;
+                }
+                [data-qa-density="ultra"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="ultra"] .qa-atendimento-row .text-\[11px\] {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill {
+                    height: 24px !important;
+                    width: 23px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill-ring {
+                    height: 16px !important;
+                    width: 16px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill-icon {
+                    height: 12px !important;
+                    width: 12px !important;
+                }
+                [data-qa-density="ultra"] .qa-status-pill-time {
+                    margin-top: 1px !important;
+                    font-size: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-dashboard-content {
+                    gap: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-titlebar {
+                    padding-top: 4px !important;
+                    padding-bottom: 4px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-head {
+                    height: 23px !important;
+                    font-size: 8.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-row {
+                    height: 30px !important;
+                    min-height: 30px !important;
+                    padding-top: 1px !important;
+                    padding-bottom: 1px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-iconbox {
+                    height: 24px !important;
+                    width: 24px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-sub {
+                    margin-top: 0 !important;
+                    font-size: 8px !important;
+                }
+
+                [data-qa-density="micro"] .qa-atendimento-head {
+                    height: 21px !important;
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-atendimento-row {
+                    height: 38px !important;
+                    min-height: 38px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="micro"] .qa-atendimento-row .text-\[12px\] {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="micro"] .qa-atendimento-row .text-\[11px\] {
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill {
+                    height: 21px !important;
+                    width: 20px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill-ring {
+                    height: 14px !important;
+                    width: 14px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill-icon {
+                    height: 10px !important;
+                    width: 10px !important;
+                }
+                [data-qa-density="micro"] .qa-status-pill-time {
+                    margin-top: 0 !important;
+                    font-size: 6.5px !important;
+                }
+                [data-qa-density="micro"] .qa-dashboard-content {
+                    gap: 4px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-titlebar {
+                    padding-top: 3px !important;
+                    padding-bottom: 3px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-title {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-head {
+                    height: 20px !important;
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-row {
+                    height: 27px !important;
+                    min-height: 27px !important;
+                    padding-top: 1px !important;
+                    padding-bottom: 1px !important;
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-iconbox {
+                    height: 20px !important;
+                    width: 20px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-sub {
+                    margin-top: 0 !important;
+                    font-size: 7px !important;
+                }
+
+                /* DATA: redução interna proporcional, sem colisão. */
+                [data-qa-density="compact"] .qa-data-cell {
+                    gap: 2px !important;
+                }
+                [data-qa-density="compact"] .qa-data-date {
+                    font-size: 10px !important;
+                }
+                [data-qa-density="compact"] .qa-convenio-badge {
+                    padding: 2px 5px !important;
+                    font-size: 8px !important;
+                }
+                [data-qa-density="compact"] .qa-etapa-dot {
+                    width: 5px !important;
+                    height: 5px !important;
+                }
+
+                [data-qa-density="dense"] .qa-data-cell {
+                    gap: 1.5px !important;
+                }
+                [data-qa-density="dense"] .qa-data-date {
+                    font-size: 9px !important;
+                }
+                [data-qa-density="dense"] .qa-convenio-badge {
+                    padding: 1.5px 4px !important;
+                    font-size: 7px !important;
+                }
+                [data-qa-density="dense"] .qa-etapas-dots {
+                    gap: 3px !important;
+                }
+                [data-qa-density="dense"] .qa-etapa-dot {
+                    width: 4px !important;
+                    height: 4px !important;
+                }
+
+                [data-qa-density="ultra"] .qa-data-cell {
+                    gap: 1px !important;
+                }
+                [data-qa-density="ultra"] .qa-data-date {
+                    font-size: 8px !important;
+                }
+                [data-qa-density="ultra"] .qa-convenio-badge {
+                    padding: 1px 4px !important;
+                    font-size: 6.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-etapas-dots {
+                    gap: 2.5px !important;
+                }
+                [data-qa-density="ultra"] .qa-etapa-dot {
+                    width: 3.5px !important;
+                    height: 3.5px !important;
+                }
+
+                [data-qa-density="micro"] .qa-data-cell {
+                    gap: 0.5px !important;
+                }
+                [data-qa-density="micro"] .qa-data-date {
+                    font-size: 7px !important;
+                }
+                [data-qa-density="micro"] .qa-convenio-badge {
+                    padding: 1px 3px !important;
+                    font-size: 6px !important;
+                }
+                [data-qa-density="micro"] .qa-etapas-dots {
+                    gap: 2px !important;
+                }
+                [data-qa-density="micro"] .qa-etapa-dot {
+                    width: 3px !important;
+                    height: 3px !important;
+                }
+
+                /* COROAS: ícones diminuem junto com a densidade. */
+                [data-qa-density="compact"] .qa-coroa-field-icon {
+                    width: 12px !important;
+                    height: 12px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-badge-icon {
+                    width: 9px !important;
+                    height: 9px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-pill {
+                    width: 31px !important;
+                    height: 31px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-ring {
+                    width: 19px !important;
+                    height: 19px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-icon {
+                    width: 14px !important;
+                    height: 14px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-stage-time {
+                    font-size: 7.5px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-field-icon {
+                    width: 11px !important;
+                    height: 11px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-badge-icon {
+                    width: 8px !important;
+                    height: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-pill {
+                    width: 28px !important;
+                    height: 28px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-ring {
+                    width: 17px !important;
+                    height: 17px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-icon {
+                    width: 12px !important;
+                    height: 12px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-stage-time {
+                    font-size: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-field-icon,
+                [data-qa-density="micro"] .qa-coroa-field-icon {
+                    width: 10px !important;
+                    height: 10px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-badge-icon,
+                [data-qa-density="micro"] .qa-coroa-badge-icon {
+                    width: 7px !important;
+                    height: 7px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-pill {
+                    width: 25px !important;
+                    height: 25px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-ring {
+                    width: 15px !important;
+                    height: 15px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-icon {
+                    width: 11px !important;
+                    height: 11px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-stage-time {
+                    font-size: 6.5px !important;
+                }
+
+                [data-qa-density="micro"] .qa-coroa-stage-pill {
+                    width: 22px !important;
+                    height: 22px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-ring {
+                    width: 13px !important;
+                    height: 13px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-icon {
+                    width: 9px !important;
+                    height: 9px !important;
+                }
+                [data-qa-density="micro"] .qa-coroa-stage-time {
+                    margin-top: 1px !important;
+                    font-size: 6px !important;
+                }
+
+                /* Mobile: só compacta os cartões quando realmente faltar altura. */
+                [data-qa-density="compact"] .qa-mobile-card {
+                    padding: 10px !important;
+                }
+                [data-qa-density="dense"] .qa-mobile-card {
+                    padding: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-mobile-cards {
+                    gap: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-mobile-card,
+                [data-qa-density="micro"] .qa-mobile-card {
+                    padding: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-mobile-cards,
+                [data-qa-density="micro"] .qa-mobile-cards {
+                    gap: 4px !important;
+                }
+                [data-qa-density="compact"] .qa-coroa-mobile-card {
+                    padding: 8px !important;
+                }
+                [data-qa-density="dense"] .qa-coroa-mobile-card {
+                    padding: 6px !important;
+                }
+                [data-qa-density="ultra"] .qa-coroa-mobile-card,
+                [data-qa-density="micro"] .qa-coroa-mobile-card {
+                    padding: 5px !important;
+                    font-size: 9px !important;
+                }
+
+                @media (max-width: 640px) {
+                    html,
+                    body,
+                    #__next,
+                    body > div {
+                        overflow: hidden !important;
+                    }
+                }
+            `}</style>
+
+            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
+                {/* Celular e tablet: quadro em abas; muda sozinho entre em pé e deitado */}
+                <div className="flex min-h-0 flex-1 flex-col lg:hidden">
+                    <QuadroMobile
+                        ativos={ativosOrdenados}
+                        coroas={coroasOrdenadas}
+                        coroasError={coroasTvError}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                        clockTime={clockTime}
+                        clockDate={clockDate}
+                        avisos={avisosParaExibir}
+                        onSelect={showDetail}
+                    />
                 </div>
-            </div>
 
-            <DesktopTable
-                ativos={ativosOrdenados}
-                onSelect={showDetail}
-                statusLogsById={statusLogsById}
-                nowMs={nowMs}
-            />
-            <MobileCards
-                ativos={ativosOrdenados}
-                onSelect={showDetail}
-                statusLogsById={statusLogsById}
-                nowMs={nowMs}
-            />
+                {/* TV e telas largas: novo quadro */}
+                <div className="hidden min-h-0 flex-1 lg:flex">
+                    <QuadroTv
+                        layout={layoutTv}
+                        ativos={ativosPagina}
+                        todosAtivos={ativosOrdenados}
+                        paginaAtendimentos={paginaAtualAtendimentos}
+                        totalPaginasAtendimentos={totalPaginasAtendimentos}
+                        coroas={coroasPagina}
+                        todasCoroas={coroasOrdenadas}
+                        paginaCoroas={paginaAtualCoroas}
+                        totalPaginasCoroas={totalPaginasCoroas}
+                        coroasError={coroasTvError}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                        clockTime={clockTime}
+                        clockDate={clockDate}
+                        avisos={avisosParaExibir}
+                        onSelect={showDetail}
+                        onNaoCoube={tvNaoCoube}
+                    />
+                </div>
 
-            <div className="rounded-2xl border bg-card/60 p-5 sm:p-6 shadow-sm">
-                <h2 className="text-lg font-semibold">Avisos</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Mensagens importantes do sistema</p>
-                <div className="mt-4 space-y-3">
-                    {avisosParaExibir.length === 0 ? (
-                        <p className="text-muted-foreground">Nenhum aviso no momento.</p>
-                    ) : (
-                        avisosParaExibir.map((a, i) => (
-                            <div
-                                key={i}
-                                className="rounded-xl border bg-background/70 px-4 py-3 shadow-sm"
-                            >
-                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="text-sm font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
-                                        {shown(a.usuario, "Sistema")}
+                {open && detail && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-3 sm:p-6" aria-modal role="dialog">
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDetail} aria-hidden />
+
+                        <div className="qa-panel-premium relative z-10 flex max-h-[86dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
+                            <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 backdrop-blur sm:px-5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] qa-text-muted">Detalhes do atendimento</div>
+                                        <h3 className="mt-1 truncate text-lg font-bold leading-tight text-slate-100 sm:text-xl">
+                                            {shown(detail.falecido)}
+                                        </h3>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs qa-text-muted">
+                                            <span>Data: <b className="text-slate-200">{dateOr(detail.data)}</b></span>
+                                            <span>Hora: <b className="text-slate-200">{timeOr(detail.hora_fim_velorio)}</b></span>
+                                            <span>Agente: <b className="text-slate-200">{shown(detail.agente)}</b></span>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-white ${badgeClass(detail.status)}`}>
+                                                {capStatus(detail.status)}
+                                            </span>
+                                            <ConvenioBadge convenio={detail.convenio} size="xs" />
+                                        </div>
                                     </div>
 
-                                    {a.criado_em ? (
-                                        <div className="text-xs text-slate-500">
-                                            {avisoDateTimeOr(a.criado_em)}
-                                        </div>
-                                    ) : null}
-                                </div>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <button
+                                            onClick={toggleTimelineDetalhe}
+                                            className={`rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 ${detailTimelineOpen ? "bg-slate-800" : "bg-slate-900/50"}`}
+                                            aria-label="Linha do tempo"
+                                            title="Ver linha do tempo deste atendimento"
+                                        >
+                                            Linha do tempo
+                                        </button>
 
-                                <div className="mt-1 text-sm leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
-                                    {shown(a.mensagem, "")}
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
+                                        <button
+                                            onClick={handleCopy}
+                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                            aria-label="Copiar"
+                                            title="Copiar informações"
+                                        >
+                                            {copied ? "Copiado!" : "Copiar"}
+                                        </button>
 
-            {open && detail && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6" aria-modal role="dialog">
-                    <div className="absolute inset-0 bg-black/40" onClick={closeDetail} aria-hidden />
-
-                    <div className="relative z-10 w-full max-w-4xl rounded-xl border bg-card shadow-2xl max-h-[88vh] overflow-y-auto overflow-x-hidden overscroll-contain">
-                        <div className="sticky top-0 z-[1] border-b bg-card/95 backdrop-blur px-3 py-2 sm:px-4 sm:py-3 overflow-x-hidden">
-                            <div className="w-full flex items-center justify-center gap-2 sm:gap-3">
-                                <button
-                                    onClick={toggleTimelineDetalhe}
-                                    className={`rounded-md border px-3 py-1.5 text-sm hover:bg-muted ${detailTimelineOpen ? "bg-muted" : ""}`}
-                                    aria-label="Linha do tempo"
-                                    title="Ver linha do tempo deste atendimento"
-                                >
-                                    Linha do tempo
-                                </button>
-
-                                <button
-                                    onClick={() => abrirGaleriaFotosDetalhe(0)}
-                                    className="inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-                                    aria-label="Ver fotos anexadas"
-                                    title="Ver todas as fotos anexadas"
-                                >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        className="h-5 w-5"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        aria-hidden="true"
-                                    >
-                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                        <circle cx="8.5" cy="8.5" r="1.5" />
-                                        <path d="M21 15l-5-5L5 21" />
-                                    </svg>
-                                </button>
-
-                                <button
-                                    onClick={handleCopy}
-                                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-                                    aria-label="Copiar"
-                                    title="Copiar informações"
-                                >
-                                    {copied ? "Copiado!" : "Copiar"}
-                                </button>
-
-                                <button onClick={closeDetail} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted" aria-label="Fechar">
-                                    Fechar
-                                </button>
-                            </div>
-
-                            <div className="mt-3">
-                                <div className="text-[12px] text-muted-foreground leading-tight">Detalhes do atendimento</div>
-                                <h3 className="text-base sm:text-lg font-bold leading-tight break-words [overflow-wrap:anywhere]">
-                                    {shown(detail.falecido)}
-                                </h3>
-
-                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[12px] sm:text-sm">
-                                    <span className="text-muted-foreground">
-                                        Data: <b>{formatCreationDate(detailCriacaoTs)}</b>
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                        • Hora: <b>{formatCreationTime(detailCriacaoTs)}</b>
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                        • Agente: <b>{shown(detail.agente)}</b>
-                                    </span>
-                                </div>
-
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-white ${badgeClass(detail.status)}`}>
-                                        {capStatus(detail.status)}
-                                    </span>
-                                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                                        ATEND. {shown(detail.convenio, "A DEFINIR").toUpperCase()}
-                                    </span>
+                                        <button
+                                            onClick={closeDetail}
+                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                                            aria-label="Fechar"
+                                        >
+                                            Fechar
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {detailTimelineOpen && (
-                                    <div className="mt-3 rounded-xl border bg-background p-3 overflow-x-hidden">
-                                        <div className="flex items-start justify-between gap-2 min-w-0">
+                                    <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-950/55 p-3">
+                                        <div className="mb-2 flex items-start justify-between gap-2">
                                             <div className="min-w-0">
-                                                <div className="text-xs font-semibold text-slate-700">Linha do Tempo</div>
-                                                <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                    Logs deste atendimento: <b className="font-semibold">{shown(detail.falecido)}</b>
-                                                </div>
+                                                <div className="text-xs font-bold text-slate-200">Linha do Tempo</div>
+                                                <div className="truncate text-[11px] qa-text-muted">Logs deste atendimento: {shown(detail.falecido)}</div>
                                             </div>
                                             <button
                                                 onClick={() => setDetailTimelineOpen(false)}
-                                                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] hover:bg-muted"
+                                                className="shrink-0 rounded-full border border-slate-700/70 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
                                                 aria-label="Ocultar linha do tempo"
                                             >
                                                 Ocultar
                                             </button>
                                         </div>
 
-                                        {detailLogsLoading && <p className="mt-2 text-sm text-muted-foreground">Carregando histórico…</p>}
-                                        {detailLogsError && <p className="mt-2 text-sm text-red-600 break-words [overflow-wrap:anywhere]">{detailLogsError}</p>}
-
+                                        {detailLogsLoading && <p className="text-sm qa-text-muted">Carregando histórico…</p>}
+                                        {detailLogsError && <p className="text-sm text-red-400">{detailLogsError}</p>}
                                         {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="mt-2 text-sm text-muted-foreground">Nenhum log encontrado para este atendimento.</p>
+                                            <p className="text-sm qa-text-muted">Nenhum log encontrado para este atendimento.</p>
                                         )}
-
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && (
-                                            <div className="mt-2">
-                                                <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />
-                                            </div>
-                                        )}
+                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />}
                                     </div>
                                 )}
                             </div>
-                        </div>
 
-                        <div className="px-3 py-3 sm:px-4 sm:py-4 space-y-6">
-                            <Topic title="FOTO DO FALECIDO" note={fotoFalecidoDetalhe ? "Clique para visualizar." : "Nenhuma foto cadastrada."}>
-                                {fotoFalecidoDetalhe ? (
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                                        <button
-                                            type="button"
-                                            onClick={() => setDetailFotoAberta(fotoFalecidoDetalhe)}
-                                            className="group relative h-36 w-36 overflow-hidden rounded-2xl border bg-muted shadow-sm"
-                                            title="Visualizar Foto do Falecido(a)"
-                                        >
-                                            <img
-                                                src={fotoFalecidoDetalhe.url}
-                                                alt={fotoFalecidoDetalhe.label}
-                                                className="h-full w-full object-cover transition group-hover:scale-105"
-                                            />
-                                            <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100">
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    className="h-7 w-7"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    aria-hidden="true"
-                                                >
-                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                                    <circle cx="8.5" cy="8.5" r="1.5" />
-                                                    <path d="M21 15l-5-5L5 21" />
-                                                </svg>
-                                            </span>
-                                        </button>
-
-                                        <div className="min-w-0">
-                                            <div className="text-sm font-semibold text-slate-800">Foto do Falecido(a)</div>
-                                            <div className="mt-1 text-xs text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                                {shown(detail.falecido)}
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => abrirGaleriaFotosDetalhe(0)}
-                                                className="mt-3 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                                            >
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    className="h-5 w-5"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    aria-hidden="true"
-                                                >
-                                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                                    <circle cx="8.5" cy="8.5" r="1.5" />
-                                                    <path d="M21 15l-5-5L5 21" />
-                                                </svg>
-                                                Ver fotos anexadas
-                                            </button>
+                            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                                <div className="grid gap-3">
+                                    <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                            <Field label="Falecido" value={shown(detail.falecido)} />
+                                            <Field label="Religião" value={shown(detail.religiao)} />
+                                            <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
+                                            <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
+                                            <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
                                         </div>
+                                    </Topic>
+
+                                    <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                            <Field label="Urna" value={shown(detail.urna)} />
+                                            <Field label="Roupa" value={shown(detail.roupa)} />
+                                            <Field label="Assistência" value={shown(detail.assistencia)} />
+                                            <Field label="Tanatopraxia" value={shown(detail.tanato)} />
+                                            <Field label="Invol" value={involSimNao(detail.invol)} />
+                                            <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
+                                            {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
+                                                <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
+                                            )}
+                                            <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+                                            <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
+                                            <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
+                                            <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
+                                            <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-3" />
+                                        </div>
+                                    </Topic>
+
+                                    <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
+                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
+                                            <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
+                                            <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
+                                            <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
+                                            <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-3" />
+                                        </div>
+                                    </Topic>
+
+                                    <div className="rounded-xl border border-slate-700/60 bg-slate-950/45 p-3">
+                                        <div className="mb-2 text-xs font-semibold qa-text-muted">Etapas preenchidas</div>
+                                        <EtapasRow registro={detail} />
                                     </div>
-                                ) : (
-                                    <div className="rounded-xl border border-dashed bg-background p-4 text-sm text-muted-foreground">
-                                        Nenhuma foto do falecido cadastrada neste atendimento.
-                                    </div>
-                                )}
-                            </Topic>
-
-                            <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field label="Falecido" value={shown(detail.falecido)} />
-                                    <Field label="Religião" value={shown(detail.religiao)} />
-                                    <Field label="Nome do Responsável" value={shown(detail.nome_responsavel)} className="sm:col-span-2" />
-                                    <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
-                                    <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                    <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
                                 </div>
-                            </Topic>
-
-                            <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field label="Urna" value={shown(detail.urna)} />
-                                    <Field label="Roupa" value={shown(detail.roupa)} />
-                                    <Field label="Assistência" value={shown(detail.assistencia)} />
-                                    <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                    <Field
-                                        label="Cordão São Francisco"
-                                        value={isSim(String((detail as any).cordao ?? "")) ? "Sim" : "Não"}
-                                    />
-
-                                    <Field
-                                        label="Véu"
-                                        value={getVeuText(detail)}
-                                    />
-
-
-
-                                    <Field label="Invol" value={involSimNao(detail.invol)} />
-
-                                    <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
-
-                                    {/* ✅ Materiais agora sempre mostra "QTDx Nome" */}
-                                    {normalizeMateriaisFromRegistro(detail)
-                                        .filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
-                                            <Field
-                                                label="Materiais"
-                                                value={<MateriaisValue registro={detail} lookup={matLookup} />}
-                                                className="sm:col-span-2"
-                                            />
-                                        )}
-
-                                    <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
-
-                            <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
-                                    <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                </div>
-                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-2">
-                                    <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                    <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
-
-                            <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-10 gap-y-2">
-                                    <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
-                                    <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
-                                    <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                    <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-2" />
-                                </div>
-                            </Topic>
-
-                            <div className="rounded-xl border bg-background p-3">
-                                <div className="text-[12px] sm:text-sm text-muted-foreground mb-2">Etapas preenchidas</div>
-                                <EtapasRow registro={detail} />
                             </div>
                         </div>
                     </div>
+                )}
+            </div>
+        </>
+    );
+}
+
+/* ===== ✅ Avisos em ticker (uma linha, rolando direita -> esquerda) ===== */
+function AvisosTicker({ avisos }: { avisos: Aviso[] }) {
+    const items = useMemo(() => {
+        return (avisos ?? [])
+            .map((a) => ({
+                usuario: shown(a?.usuario, "").trim(),
+                mensagem: shown(a?.mensagem, "").trim(),
+            }))
+            .filter((x) => x.usuario || x.mensagem);
+    }, [avisos]);
+
+    const durationSec = useMemo(() => {
+        const totalChars = items.reduce((acc, it) => acc + it.usuario.length + it.mensagem.length + 10, 0);
+        const sec = Math.round(totalChars / 10);
+        return Math.max(18, Math.min(60, sec));
+    }, [items]);
+
+    if (items.length === 0) {
+        return <p className="text-[11px] text-muted-foreground">Nenhum aviso no momento.</p>;
+    }
+
+    const RenderItems = ({ ariaHidden = false }: { ariaHidden?: boolean }) => (
+        <div className="flex items-center gap-7 px-2 py-1 whitespace-nowrap" aria-hidden={ariaHidden ? true : undefined}>
+            {items.map((x, i) => (
+                <div key={i} className="flex items-center gap-2 text-[12px] font-semibold text-slate-200">
+                    {x.usuario ? <strong className="font-bold text-slate-100">{x.usuario}</strong> : null}
+                    {x.mensagem ? <span className="text-slate-200">{x.mensagem}</span> : null}
+                    <span className="text-slate-500">•</span>
                 </div>
-            )}
+            ))}
+        </div>
+    );
 
-            <ModalFotoTimeline
-                foto={detailFotoAberta}
-                onClose={() => setDetailFotoAberta(null)}
-            />
+    return (
+        <div className="relative w-full overflow-hidden">
+            <div className="qa-avisos-track flex w-max" style={{ animationDuration: `${durationSec}s` }}>
+                <RenderItems />
+                <RenderItems ariaHidden />
+            </div>
 
-            <ModalGaleriaFotosTimeline
-                open={detailGaleriaAberta}
-                fotos={detailGaleriaFotos}
-                index={detailGaleriaIndex}
-                onIndexChange={setDetailGaleriaIndex}
-                onClose={() => setDetailGaleriaAberta(false)}
-            />
+            <style jsx global>{`
+                @keyframes qa-avisos-marquee {
+                    0% {
+                        transform: translateX(0);
+                    }
+                    100% {
+                        transform: translateX(-50%);
+                    }
+                }
+                .qa-avisos-track {
+                    will-change: transform;
+                    animation-name: qa-avisos-marquee;
+                    animation-timing-function: linear;
+                    animation-iteration-count: infinite;
+                }
+                .qa-avisos-track:hover {
+                    animation-play-state: paused;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .qa-avisos-track {
+                        animation: none !important;
+                        transform: none !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
 
 /* ===== Listas Memoizadas ===== */
-
 const DesktopTable = React.memo(function DesktopTable({
     ativos,
     hiddenCount = 0,
@@ -2549,8 +3535,8 @@ const DesktopTable = React.memo(function DesktopTable({
     nowMs: number;
 }) {
     return (
-        <section className="hidden min-h-0 w-full max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90 sm:flex sm:flex-col">
-            <div className="grid h-9 shrink-0 grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 text-[12px] font-bold text-slate-600 dark:border-slate-700/50 dark:bg-slate-800/70 dark:text-slate-300">
+        <section className="qa-atendimentos-table hidden min-h-0 w-full max-w-full overflow-hidden rounded-xl border qa-panel-premium sm:flex sm:flex-col">
+            <div className="qa-atendimento-head grid h-8 shrink-0 grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/50 bg-slate-800/45 px-3 text-[11px] font-bold text-slate-300">
                 <div>Data</div>
                 <div>Falecido(a)</div>
                 <div>Local</div>
@@ -2561,45 +3547,46 @@ const DesktopTable = React.memo(function DesktopTable({
 
             <div className="min-h-0 overflow-hidden">
                 {ativos.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center text-sm text-slate-500 dark:text-slate-400">Nenhum atendimento encontrado.</div>
+                    <div className="flex h-40 items-center justify-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
                 ) : (
                     ativos.map((r, i) => {
                         const preenchidas = etapasPreenchidas(r);
                         const trackingId = getRegistroTrackingId(r);
-
                         return (
                             <div
                                 key={trackingId || i}
-                                className="grid h-[64px] grid-cols-[88px_minmax(210px,1.15fr)_minmax(220px,1.05fr)_112px_108px_330px] items-center gap-2 border-b border-slate-200/80 px-4 text-[12px] text-slate-700 last:border-b-0 dark:border-slate-700/45 dark:text-slate-100"
+                                className="qa-atendimento-row grid h-[58px] grid-cols-[88px_220px_260px_106px_108px_320px] items-center gap-2 border-b border-slate-700/45 px-3 text-[12px] text-slate-100 last:border-b-0"
                             >
-                                <div className="min-w-0">
-                                    <div className="mb-1 flex justify-center">
+                                <div className="qa-data-cell min-w-0">
+                                    <div className="qa-data-dots flex justify-center">
                                         <EtapasInlineDots filled={preenchidas} />
                                     </div>
-                                    <div className="text-center text-[13px] font-bold leading-none tabular-nums text-slate-900 dark:text-slate-100">{dateOr(r.data)}</div>
-                                    <div className="mt-1 flex justify-center">
+                                    <div className="qa-data-date text-center text-[12px] font-semibold leading-none tabular-nums text-slate-100">
+                                        {dateOr(r.data)}
+                                    </div>
+                                    <div className="qa-data-convenio flex justify-center">
                                         <ConvenioBadge convenio={r.convenio} size="xs" />
                                     </div>
                                 </div>
 
                                 <button
-                                    className="min-w-0 text-left text-[13px] font-bold leading-tight text-slate-900 underline-offset-2 hover:underline dark:text-slate-100"
+                                    className="min-w-0 text-left text-[12px] font-bold leading-tight text-slate-100 underline-offset-2 hover:underline"
                                     onClick={() => onSelect(r)}
                                     title={shown(r.falecido)}
                                 >
                                     <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
 
-                                <div className="min-w-0 text-[13px] font-medium leading-tight text-slate-700 dark:text-slate-200" title={shown(r.local_velorio)}>
-                                    <div className="truncate"><LocalVelorioValue value={r.local_velorio} /></div>
+                                <div className="min-w-0 text-[12px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
+                                    <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
 
                                 <div className="min-w-0 leading-tight">
-                                    <div className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
-                                    <div className="mt-0.5 truncate text-[13px] font-bold tabular-nums text-slate-900 dark:text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
+                                    <div className="text-[11px] font-semibold text-slate-400">{dateDayMonthOr(r.data_fim_velorio)}</div>
+                                    <div className="mt-0.5 truncate text-[12px] font-semibold tabular-nums text-slate-100">{timeOr(r.hora_fim_velorio)}</div>
                                 </div>
 
-                                <div className="min-w-0 truncate text-[13px] font-semibold text-slate-700 dark:text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
+                                <div className="min-w-0 truncate text-[12px] font-semibold text-slate-200" title={shown(r.agente)}>{shown(r.agente)}</div>
 
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} />
                             </div>
@@ -2608,11 +3595,6 @@ const DesktopTable = React.memo(function DesktopTable({
                 )}
             </div>
 
-            {hiddenCount > 0 && (
-                <div className="border-t border-slate-200 px-3 py-2 text-center text-xs font-semibold text-slate-500 dark:border-slate-700/50 dark:text-slate-400">
-                    + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
-                </div>
-            )}
         </section>
     );
 });
@@ -2631,60 +3613,46 @@ const MobileCards = React.memo(function MobileCards({
     nowMs: number;
 }) {
     return (
-        <section className="flex flex-col gap-3 sm:hidden">
+        <section className="qa-mobile-cards flex h-full min-h-0 flex-col gap-2 overflow-hidden sm:hidden">
             {ativos.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500 shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90 dark:text-slate-400">
-                    Nenhum atendimento encontrado.
-                </div>
+                <div className="qa-panel-premium rounded-2xl border p-4 text-center text-sm qa-text-muted">Nenhum atendimento encontrado.</div>
             ) : (
                 ativos.map((r, i) => {
                     const preenchidas = etapasPreenchidas(r);
                     const trackingId = getRegistroTrackingId(r);
-
                     return (
-                        <article
-                            key={trackingId || i}
-                            className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90"
-                        >
-                            <div>
+                        <article key={trackingId || i} className="qa-mobile-card qa-panel-premium overflow-hidden rounded-2xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
                                 <button
-                                    className="block w-full min-w-0 text-left text-base font-bold leading-snug text-slate-900 underline-offset-2 hover:underline dark:text-slate-100"
+                                    className="min-w-0 text-left text-base font-bold leading-snug text-slate-100"
                                     onClick={() => onSelect(r)}
                                     title={shown(r.falecido)}
                                 >
                                     <span className="block truncate">{shown(r.falecido)}</span>
                                 </button>
-
-                                <div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden">
-                                    <ConvenioBadge convenio={r.convenio} size="xs" />
+                                <div className="shrink-0 text-right">
                                     <EtapasInlineDots filled={preenchidas} />
-                                    <span className="shrink-0 text-xs font-bold tabular-nums text-slate-700 dark:text-slate-200">
-                                        {dateOr(r.data)}
-                                    </span>
+                                    <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
+                                    <div className="mt-1"><ConvenioBadge convenio={r.convenio} size="xs" /></div>
                                 </div>
                             </div>
 
                             <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-700/50 dark:bg-slate-950/35">
-                                    <div className="text-slate-500 dark:text-slate-400">Local</div>
-                                    <div className="mt-1 truncate font-semibold text-slate-900 dark:text-slate-100">
-                                        <LocalVelorioValue value={r.local_velorio} />
-                                    </div>
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="qa-text-muted">Local</div>
+                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
                                 </div>
-
-                                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-700/50 dark:bg-slate-950/35">
-                                    <div className="text-slate-500 dark:text-slate-400">Sepultamento</div>
-                                    <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
-                                        {dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}
-                                    </div>
+                                <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
+                                    <div className="qa-text-muted">Sepultamento</div>
+                                    <div className="mt-1 font-semibold text-slate-100">{dateDayMonthOr(r.data_fim_velorio)} • {timeOr(r.hora_fim_velorio)}</div>
                                 </div>
                             </div>
 
-                            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                Agente: <b className="text-slate-800 dark:text-slate-200">{shown(r.agente)}</b>
+                            <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                                <div className="min-w-0 truncate qa-text-muted">Agente: <b className="text-slate-200">{shown(r.agente)}</b></div>
                             </div>
 
-                            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-700/50 dark:bg-slate-950/35">
+                            <div className="mt-2 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
                                 <StatusTimelineCell registro={r} logs={statusLogsById[trackingId]} nowMs={nowMs} variant="mobile" />
                             </div>
                         </article>
@@ -2693,7 +3661,7 @@ const MobileCards = React.memo(function MobileCards({
             )}
 
             {hiddenCount > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold text-slate-500 shadow-sm dark:border-slate-700/60 dark:bg-[#0f172a]/90 dark:text-slate-400">
+                <div className="qa-panel-premium rounded-xl border px-3 py-2 text-center text-xs font-semibold qa-text-muted">
                     + {hiddenCount} atendimento{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
                 </div>
             )}
@@ -2701,13 +3669,1701 @@ const MobileCards = React.memo(function MobileCards({
     );
 });
 
-/* ===== Componentes auxiliares ===== */
 
+/* ===== Coroas de Flores — painel inferior da TV ===== */
+type CoroaTvIconKey =
+    | "flower"
+    | "ribbon"
+    | "hourglass"
+    | "check"
+    | "clipboard"
+    | "coffin"
+    | "person"
+    | "pin"
+    | "wallet"
+    | "package";
+
+function CoroaTvIcon({ type }: { type: CoroaTvIconKey }) {
+    const common = {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+        className: "h-full w-full",
+    };
+
+    switch (type) {
+        case "flower":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M12 4.5c1.7 1.7 1.7 3.3 0 5-1.7-1.7-1.7-3.3 0-5Z" />
+                    <path d="M12 19.5c-1.7-1.7-1.7-3.3 0-5 1.7 1.7 1.7 3.3 0 5Z" />
+                    <path d="M4.5 12c1.7-1.7 3.3-1.7 5 0-1.7 1.7-3.3 1.7-5 0Z" />
+                    <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
+                </svg>
+            );
+
+        case "ribbon":
+            return (
+                <svg {...common}>
+                    <path d="M8 3h8v8l-4 3-4-3V3Z" />
+                    <path d="m8 10-3 11 7-4 7 4-3-11" />
+                </svg>
+            );
+
+        case "hourglass":
+            return (
+                <svg {...common}>
+                    <path d="M6 3h12" />
+                    <path d="M6 21h12" />
+                    <path d="M8 3c0 5 8 5 8 9s-8 4-8 9" />
+                    <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
+                    <path d="M10 8h4" />
+                    <path d="M10 16h4" />
+                </svg>
+            );
+
+        case "check":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="m8 12 2.5 2.5L16.5 9" />
+                </svg>
+            );
+
+        case "clipboard":
+            return (
+                <svg {...common}>
+                    <rect x="5" y="4" width="14" height="17" rx="2" />
+                    <path d="M9 4.5V3h6v1.5" />
+                    <path d="M8.5 9h7" />
+                    <path d="M8.5 13h7" />
+                    <path d="M8.5 17h4" />
+                </svg>
+            );
+
+        case "coffin":
+            return (
+                <svg {...common}>
+                    <path d="M9 3h6l3 5-1.5 13h-9L6 8l3-5Z" />
+                    <path d="M12 7v8" />
+                    <path d="M9.8 10h4.4" />
+                </svg>
+            );
+
+        case "person":
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="8" r="3" />
+                    <path d="M5.5 21a6.5 6.5 0 0 1 13 0" />
+                </svg>
+            );
+
+        case "pin":
+            return (
+                <svg {...common}>
+                    <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+                    <circle cx="12" cy="10" r="2.5" />
+                </svg>
+            );
+
+        case "wallet":
+            return (
+                <svg {...common}>
+                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 17.5v-10Z" />
+                    <path d="M4 9h16" />
+                    <path d="M15 14h3" />
+                </svg>
+            );
+
+        case "package":
+        default:
+            return (
+                <svg {...common}>
+                    <path d="M4 8.5 12 4l8 4.5-8 4.5L4 8.5Z" />
+                    <path d="M4 8.5V16l8 4 8-4V8.5" />
+                    <path d="M12 13v7" />
+                </svg>
+            );
+    }
+}
+
+function CoroaIconField({
+    icon,
+    children,
+    title,
+}: {
+    icon: CoroaTvIconKey;
+    children: React.ReactNode;
+    title?: string;
+}) {
+    return (
+        <div className="qa-coroa-field flex min-w-0 items-center gap-1.5" title={title}>
+            <span className="qa-coroa-field-icon flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[#00AEEC]">
+                <CoroaTvIcon type={icon} />
+            </span>
+            <div className="qa-coroa-field-text min-w-0 truncate leading-none">{children}</div>
+        </div>
+    );
+}
+
+function CoroaTimelinePill({
+    icon,
+    label,
+    time,
+    active = false,
+    muted = false,
+    skipped = false,
+}: {
+    icon: CoroaTvIconKey;
+    label: string;
+    time: string;
+    active?: boolean;
+    muted?: boolean;
+    skipped?: boolean;
+}) {
+    return (
+        <div
+            className="qa-coroa-stage-pill relative flex h-[34px] w-[34px] shrink-0 flex-col items-center justify-center text-center leading-none"
+            title={`${label} • ${skipped ? "Não se aplica" : time}`}
+        >
+            <div
+                className={`qa-coroa-stage-ring relative flex h-[21px] w-[21px] items-center justify-center rounded-full ${active
+                    ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]"
+                    : "border border-transparent"
+                    }`}
+            >
+                <div
+                    className={`qa-coroa-stage-icon relative flex h-[16px] w-[16px] items-center justify-center ${active
+                        ? "qa-status-blink text-[#22C55E]"
+                        : "text-[#00AEEC]"
+                        } ${muted ? "opacity-[0.14]" : ""}`}
+                    aria-hidden="true"
+                >
+                    <CoroaTvIcon type={icon} />
+                </div>
+            </div>
+
+            <div
+                className={`qa-coroa-stage-time mt-[2px] w-full truncate text-[8px] font-black leading-none tabular-nums ${muted
+                    ? "text-slate-500/35"
+                    : active
+                        ? "text-[#22C55E]"
+                        : "text-slate-100"
+                    }`}
+            >
+                {time}
+            </div>
+
+            {skipped && (
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[36px] font-semibold leading-none text-[#00AEEC]">
+                    ×
+                </span>
+            )}
+        </div>
+    );
+}
+
+function CoroaTimelineCell({
+    pedido,
+    nowMs,
+    variant = "desktop",
+}: {
+    pedido: CoroaTvPedido;
+    nowMs: number;
+    variant?: "desktop" | "mobile";
+}) {
+    const data = buildCoroaTimeline(pedido, nowMs);
+
+    const etapas = [
+        {
+            key: "aguardando",
+            icon: "hourglass" as CoroaTvIconKey,
+            label: "Aguardando",
+            ms: data.aguardandoMs,
+            active: data.aguardandoActive,
+            skipped: false,
+        },
+        {
+            key: "coroa",
+            icon: "flower" as CoroaTvIconKey,
+            label: "Confecção da Coroa",
+            ms: data.coroaMs,
+            active: data.coroaActive,
+            skipped: data.coroaSkipped,
+        },
+        {
+            key: "faixa",
+            icon: "ribbon" as CoroaTvIconKey,
+            label: "Confecção da Faixa",
+            ms: data.faixaMs,
+            active: data.faixaActive,
+            skipped: false,
+        },
+        {
+            key: "concluida",
+            icon: "check" as CoroaTvIconKey,
+            label: "Concluída",
+            ms: data.concluidaMs,
+            active: data.concluidaActive,
+            skipped: false,
+        },
+    ];
+
+    if (variant === "mobile") {
+        return (
+            <div className="qa-coroa-timeline flex min-w-0 items-center justify-end gap-1 overflow-hidden">
+                {etapas.map((etapa) => {
+                    const temTempo = etapa.ms > 0;
+                    return (
+                        <CoroaTimelinePill
+                            key={etapa.key}
+                            icon={etapa.icon}
+                            label={etapa.label}
+                            time={
+                                etapa.skipped
+                                    ? "00:00"
+                                    : temTempo
+                                        ? formatDurationMs(etapa.ms)
+                                        : "00:00"
+                            }
+                            active={etapa.active}
+                            muted={!etapa.active && !temTempo}
+                            skipped={etapa.skipped}
+                        />
+                    );
+                })}
+                <StatusBlinkStyle />
+            </div>
+        );
+    }
+
+    return (
+        <div className="qa-coroa-timeline flex min-w-0 items-center justify-start gap-1 overflow-visible">
+            {etapas.map((etapa) => {
+                const temTempo = etapa.ms > 0;
+
+                return (
+                    <CoroaTimelinePill
+                        key={etapa.key}
+                        icon={etapa.icon}
+                        label={etapa.label}
+                        time={
+                            etapa.skipped
+                                ? "00:00"
+                                : temTempo
+                                    ? formatDurationMs(etapa.ms)
+                                    : "00:00"
+                        }
+                        active={etapa.active}
+                        muted={!etapa.active && !temTempo}
+                        skipped={etapa.skipped}
+                    />
+                );
+            })}
+
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+const CoroasTvBoard = React.memo(function CoroasTvBoard({
+    pedidos,
+    totalPedidos,
+    paginaAtual,
+    totalPaginas,
+    error,
+    nowMs,
+}: {
+    pedidos: CoroaTvPedido[];
+    totalPedidos: number;
+    paginaAtual: number;
+    totalPaginas: number;
+    error?: string | null;
+    nowMs: number;
+}) {
+    return (
+        <section className="qa-coroas-board shrink-0 overflow-hidden rounded-xl border qa-panel-premium">
+            <div className="qa-coroa-titlebar flex h-8 items-center justify-between gap-3 border-b border-slate-700/50 bg-slate-800/45 px-3">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="qa-coroa-iconbox flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#00AEEC]/35 bg-[#00AEEC]/10 p-0.5 text-[#00AEEC]">
+                        <CoroaTvIcon type="flower" />
+                    </span>
+
+                    <div className="min-w-0">
+                        <div className="qa-coroa-title truncate text-[12px] font-bold text-slate-100">
+                            Coroas de Flores em Confecção
+                        </div>
+                    </div>
+
+                    <span className="inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-slate-700 px-1.5 py-0.5 text-[9px] font-black text-slate-200">
+                        {totalPedidos}
+                    </span>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2 text-[9px] qa-text-muted">
+                    {totalPaginas > 1 && (
+                        <span className="hidden sm:inline whitespace-nowrap">
+                            Página {paginaAtual + 1}/{totalPaginas} • troca a cada 15s
+                        </span>
+                    )}
+
+                    {error ? (
+                        <>
+                            <span className="h-2 w-2 rounded-full bg-amber-400" />
+                            <span className="hidden sm:inline">Últimos dados mantidos</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                            <span className="hidden sm:inline">Atualizado</span>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Desktop/TV — modelo, falecido, entrega, pagamento e timeline */}
+            <div className="hidden sm:block">
+                <div className="qa-coroa-head grid h-7 grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 border-b border-slate-700/50 bg-slate-900/35 px-4 text-[9px] font-bold leading-none text-slate-400">
+                    <div>Coroa(s)</div>
+                    <div>Falecido(a)</div>
+                    <div>Entrega</div>
+                    <div>Pagamento</div>
+                    <div>Status</div>
+                </div>
+
+                {pedidos.length === 0 ? (
+                    <div className="flex h-14 items-center justify-center text-[11px] qa-text-muted">
+                        Nenhuma coroa em confecção no momento.
+                    </div>
+                ) : (
+                    <div>
+                        {pedidos.map((pedido) => {
+                            const modelo = coroaModelos(pedido);
+                            const solicitante = shown(pedido.solicitante, "a definir");
+
+                            return (
+                                <div
+                                    key={pedido.id}
+                                    className="qa-coroa-row grid h-[42px] min-h-[42px] grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 overflow-hidden border-b border-slate-700/45 px-4 py-1 text-[10px] leading-none text-slate-100 last:border-b-0"
+                                >
+                                    {/* Coroa: nome do modelo + solicitante abaixo */}
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField icon="flower" title={modelo}>
+                                            <span className="block truncate font-semibold text-slate-100">
+                                                {modelo}
+                                            </span>
+                                        </CoroaIconField>
+
+                                        <div
+                                            className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted"
+                                            title={`Solicitante: ${solicitante}`}
+                                        >
+                                            {solicitante}
+                                        </div>
+                                    </div>
+
+                                    {/* Falecido antes de Entrega */}
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="coffin"
+                                            title={shown(pedido.falecido, "a definir")}
+                                        >
+                                            <span className="block truncate font-medium text-slate-200">
+                                                {shown(pedido.falecido, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="pin"
+                                            title={shown(pedido.local_entrega, "a definir")}
+                                        >
+                                            <span className="block truncate font-medium text-slate-200">
+                                                {shown(pedido.local_entrega, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-hidden">
+                                        <span
+                                            className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
+                                                pedido
+                                            )}`}
+                                        >
+                                            <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
+                                                <CoroaTvIcon type="wallet" />
+                                            </span>
+                                            <span>{coroaPagamentoLabel(pedido)}</span>
+                                        </span>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-visible">
+                                        <CoroaTimelineCell
+                                            pedido={pedido}
+                                            nowMs={nowMs}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Mobile — mesmas informações essenciais e timeline */}
+            <div className="grid gap-2 p-2 sm:hidden">
+                {pedidos.length === 0 ? (
+                    <div className="rounded-xl border border-slate-700/50 bg-slate-950/35 p-3 text-center text-xs qa-text-muted">
+                        Nenhuma coroa em confecção.
+                    </div>
+                ) : (
+                    pedidos.map((pedido) => {
+                        const modelo = coroaModelos(pedido);
+                        const solicitante = shown(pedido.solicitante, "a definir");
+
+                        return (
+                            <article
+                                key={pedido.id}
+                                className="qa-coroa-mobile-card overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/35 p-2.5"
+                            >
+                                <div className="min-w-0">
+                                    <CoroaIconField icon="flower" title={modelo}>
+                                        <span className="block truncate font-semibold text-slate-100">
+                                            {modelo}
+                                        </span>
+                                    </CoroaIconField>
+                                    <div className="qa-coroa-sub mt-1 truncate pl-5 text-[8px] leading-none qa-text-muted">
+                                        {solicitante}
+                                    </div>
+                                </div>
+
+                                <div className="mt-2 grid min-w-0 grid-cols-2 gap-2 text-[10px]">
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="coffin"
+                                            title={shown(pedido.falecido, "a definir")}
+                                        >
+                                            <span className="block truncate">
+                                                {shown(pedido.falecido, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+
+                                    <div className="min-w-0 overflow-hidden">
+                                        <CoroaIconField
+                                            icon="pin"
+                                            title={shown(pedido.local_entrega, "a definir")}
+                                        >
+                                            <span className="block truncate">
+                                                {shown(pedido.local_entrega, "a definir")}
+                                            </span>
+                                        </CoroaIconField>
+                                    </div>
+                                </div>
+
+                                <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
+                                    <span
+                                        className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[8.5px] font-bold leading-none ${coroaPagamentoClass(
+                                            pedido
+                                        )}`}
+                                    >
+                                        <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
+                                            <CoroaTvIcon type="wallet" />
+                                        </span>
+                                        {coroaPagamentoLabel(pedido)}
+                                    </span>
+
+                                    <CoroaTimelineCell
+                                        pedido={pedido}
+                                        nowMs={nowMs}
+                                        variant="mobile"
+                                    />
+                                </div>
+                            </article>
+                        );
+                    })
+                )}
+            </div>
+        </section>
+    );
+});
+
+/* =========================================================
+   QUADRO TV — novo visual (tela 1920×1080 reduzida por igual)
+   Usa os mesmos dados, histórico e regras do quadro:
+   buildStatusSegments, getStatusDisplayData, isStatusStepSkipped,
+   atendimentoDeveFicarNoQuadro, buildCoroaTimeline.
+   ========================================================= */
+
+/** Limites dos alertas visuais — ajuste aqui. */
+const TV_LIMITE_PARADO_MS = 24 * 60 * 60 * 1000; // vermelho: mesma situação há 24 h ou mais
+const TV_TOLERANCIA_HORARIO_MS = 0; // âmbar: passou do horário marcado para INICIAR o velório/sepultamento sem a fase de início
+
+type TvLayout = {
+    coroasModo: "nenhuma" | "faixa" | "lado";
+    compacto: boolean;
+    atendimentosPorPagina: number;
+    coroasPorPagina: number;
+};
+
+/**
+ * Distribuição da tela conforme o volume:
+ * - sem coroas: linha discreta; até 4 pedidos: faixa embaixo; 5+: coluna à direita;
+ * - atendimentos ficam compactos quando não cabem no tamanho normal;
+ * - o que não couber vai para a próxima página (troca automática).
+ */
+function calcularLayoutTv(totalAtendimentos: number, totalPedidosCoroa: number): TvLayout {
+    const coroasModo: TvLayout["coroasModo"] =
+        totalPedidosCoroa === 0 ? "nenhuma" : totalPedidosCoroa <= 4 ? "faixa" : "lado";
+    const limiteNormal = coroasModo === "faixa" ? 3 : 4;
+    const compacto = coroasModo === "lado" || totalAtendimentos > limiteNormal;
+    // Compacto: 5 por página (4 com a faixa de coroas), para caber o local do velório e do sepultamento.
+    const atendimentosPorPagina = compacto ? (coroasModo === "faixa" ? 4 : 5) : limiteNormal;
+    // Coluna lateral: 4 pedidos por página, com espaço para a linha de atraso.
+    const coroasPorPagina = 4;
+    return { coroasModo, compacto, atendimentosPorPagina, coroasPorPagina };
+}
+
+const TV_ETAPAS = STATUS_STEPS.filter((s) => s.key !== "idle");
+function tvDataHora(ts: number): string {
+    if (!ts || !Number.isFinite(ts)) return "";
+    const d = new Date(ts);
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function tvDuracaoTexto(ms: number): string {
+    const min = Math.max(0, Math.floor(ms / 60000));
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return h ? `${h} h ${String(m).padStart(2, "0")} min` : `${m} min`;
+}
+
+function tvHorarioMarcado(data?: string, hora?: string): number {
+    const d = String(data ?? "").trim();
+    const h = String(hora ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}/.test(d) || d.startsWith("0000")) return 0;
+    if (!h || h.startsWith("00:00")) return 0;
+    return parseLogTs(`${d.slice(0, 10)} ${h.length === 5 ? `${h}:00` : h}`);
+}
+
+type TvResumo = {
+    registro: Registro;
+    trackingId: string;
+    durations: Map<string, number>;
+    activeKey?: string;
+    atualKey: string;
+    atualLabel: string;
+    atualDesdeMs: number;
+    atualResponsavel: string;
+    totalMs: number;
+    criadoTs: number;
+    alerta?: { nivel: "crit" | "warn"; texto: string };
+};
+
+function resumirAtendimentoTv(r: Registro, logs: LogItem[] | undefined, nowMs: number): TvResumo {
+    const segments = buildStatusSegments(r, logs, nowMs);
+    const { durations, activeKey } = getStatusDisplayData(segments);
+    const atual = segments[segments.length - 1];
+    const atualKey = atual?.key ?? normalizarStatus(r.status) ?? "aguardando";
+    const atualDesdeMs = atual ? Math.max(0, nowMs - atual.start) : 0;
+    const totalMs = Math.max(0, nowMs - (segments[0]?.start ?? nowMs));
+
+    let atualResponsavel = "";
+    for (const log of [...(logs ?? [])].reverse()) {
+        if (getStatusFromLog(log) === atualKey && log.usuario) {
+            atualResponsavel = shown(log.usuario, "");
+            break;
+        }
+    }
+
+    let alerta: TvResumo["alerta"];
+    if (atualDesdeMs >= TV_LIMITE_PARADO_MS) {
+        alerta = { nivel: "crit", texto: "Na mesma situação há mais de 24 h" };
+    } else {
+        // Atraso conta para o INÍCIO da ação: o velório começa na Entrega de corpo (fase08)
+        // e o sepultamento no Transportando p/ sepultamento (fase09). Depois de iniciado,
+        // a demora (por opção da família, por exemplo) não conta como atraso da empresa.
+        const rank = statusFlowRank(atualKey);
+        const sepMarcado = tvHorarioMarcado(r.data_fim_velorio, r.hora_fim_velorio);
+        const velMarcado = tvHorarioMarcado(r.data_inicio_velorio, r.hora_inicio_velorio);
+        if (rotaAtivaLegado(r.realiza_sepultamento) && sepMarcado && rank < statusFlowRank("fase09") && nowMs > sepMarcado + TV_TOLERANCIA_HORARIO_MS) {
+            alerta = { nivel: "warn", texto: `${tvDuracaoTexto(nowMs - sepMarcado)} de atraso para iniciar o sepultamento (${timeOr(r.hora_fim_velorio)})` };
+        } else if (rotaAtivaLegado(r.realiza_velorio) && velMarcado && rank < statusFlowRank("fase08") && nowMs > velMarcado + TV_TOLERANCIA_HORARIO_MS) {
+            alerta = { nivel: "warn", texto: `${tvDuracaoTexto(nowMs - velMarcado)} de atraso para iniciar o velório (${timeOr(r.hora_inicio_velorio)})` };
+        }
+    }
+
+    return {
+        registro: r,
+        trackingId: getRegistroTrackingId(r),
+        durations,
+        activeKey,
+        atualKey,
+        atualLabel: getStatusStepInfo(atualKey).label,
+        atualDesdeMs,
+        atualResponsavel,
+        totalMs,
+        criadoTs: getRegistroCreatedTs(r, logs, nowMs),
+        alerta,
+    };
+}
+
+/* Prazo de produção das coroas: conta do pedido até a coroa ficar pronta (finalizada).
+ * Natural: 2 h. Artificial (pedido só com coroas artificiais): 1 h. */
+const COROA_PRAZO_NATURAL_MS = 120 * 60 * 1000;
+const COROA_PRAZO_ARTIFICIAL_MS = 60 * 60 * 1000;
+
+type CoroaAtraso = { longo: string };
+
+
+/** Coroa atrasada: passou do prazo de produção desde o pedido e ainda não ficou pronta. */
+function coroaAtrasoTv(pedido: CoroaTvPedido, nowMs: number): CoroaAtraso | undefined {
+    if (parseLogTs(pedido.finalizada_em || undefined) > 0 || parseLogTs(pedido.entregue_em || undefined) > 0) return undefined;
+    const st = normalizarTextoCoroa(pedido.status);
+    if (st === "finalizada" || st === "entregue") return undefined;
+    const criadoTs = parseLogTs(pedido.criado_em || undefined);
+    if (!criadoTs) return undefined;
+    const artificial = coroaSomenteArtificial(pedido);
+    const prazo = artificial ? COROA_PRAZO_ARTIFICIAL_MS : COROA_PRAZO_NATURAL_MS;
+    const decorrido = nowMs - criadoTs;
+    if (decorrido <= prazo) return undefined;
+    return { longo: `Atrasada: ${tvDuracaoTexto(decorrido)} do pedido (prazo ${artificial ? "1 h" : "2 h"})` };
+}
+
+function tvConvenioClasse(convenio?: string): string {
+    const kind = normalizeConvenio(convenio);
+    if (kind === "Prefeitura") return "tv-chip tv-chip-pref";
+    if (kind === "Particular") return "tv-chip tv-chip-part";
+    if (kind === "Associado") return "tv-chip tv-chip-assoc";
+    return "tv-chip tv-chip-adef";
+}
+
+function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: (r: Registro) => void }) {
+    const r = resumo.registro;
+    const rankAtual = statusFlowRank(resumo.atualKey);
+    const ocioso = resumo.durations.get("idle") ?? 0;
+    const semVelorio = !rotaAtivaLegado(r.realiza_velorio);
+    const semSepultamento = !rotaAtivaLegado(r.realiza_sepultamento);
+    const sepultamentoTxt = semSepultamento
+        ? "Sem sepultamento pelo PAI"
+        : `${shown(r.local_sepultamento || r.local)} · ${dateDayMonthOr(r.data_fim_velorio)} ${timeOr(r.hora_fim_velorio)}`;
+
+    return (
+        <article
+            className={`tv-row ${resumo.alerta ? `tv-row-${resumo.alerta.nivel}` : ""}`}
+            onClick={() => onSelect(r)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => (e.key === "Enter" ? onSelect(r) : undefined)}
+            title="Ver detalhes do atendimento"
+        >
+            <div className="tv-who">
+                <div className="tv-name">{shown(r.falecido)}</div>
+                <div className="tv-meta">
+                    <span className={tvConvenioClasse(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+                </div>
+                <div className="tv-place">
+                    <span className="tv-place-vel">{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</span>
+                    <span className="tv-place-sep">→ {sepultamentoTxt}</span>
+                </div>
+            </div>
+
+            <div className="tv-now">
+                <div className="tv-state"><span className="tv-pulse" />{resumo.atualLabel}</div>
+                <div className="tv-since">
+                    há <b>{tvDuracaoTexto(resumo.atualDesdeMs)}</b>
+                    {resumo.atualResponsavel ? ` · ${resumo.atualResponsavel}` : ""}
+                </div>
+                {resumo.alerta && (
+                    <div className={`tv-flag tv-flag-${resumo.alerta.nivel}`}>{resumo.alerta.nivel === "crit" ? "⚠" : "⏱"} {resumo.alerta.texto}</div>
+                )}
+            </div>
+
+            <div className="tv-track">
+                {TV_ETAPAS.map((step) => {
+                    const skipped = isStatusStepSkipped(r, step.key);
+                    const duracao = resumo.durations.get(step.key) ?? 0;
+                    const ativo = !skipped && resumo.activeKey === step.key;
+                    const feito = !skipped && !ativo && (duracao > 0 || rankAtual > statusFlowRank(step.key));
+                    const cls = skipped ? "tv-step tv-step-na" : ativo ? "tv-step tv-step-live" : feito ? "tv-step tv-step-done" : "tv-step";
+                    return (
+                        <div key={step.key} className={cls} title={`${step.label} • ${skipped ? "Não se aplica" : formatDurationMs(duracao)}`}>
+                            <div className={`tv-node ${ativo ? "qa-status-active-ring" : ""}`}>
+                                <span className={`tv-node-icon ${ativo ? "qa-status-blink" : ""}`}><StatusIcon type={step.icon} /></span>
+                            </div>
+                            <div className="tv-t">{skipped ? "não se aplica" : ativo || feito ? formatDurationMs(duracao) : "—"}</div>
+                        </div>
+                    );
+                })}
+                <div className="tv-tot">
+                    <div
+                        className={`tv-box tv-box-ocioso ${resumo.activeKey === "idle" ? "tv-box-live qa-status-active-ring" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "tv-box-crit" : ""}`}
+                        title="Tempo ocioso"
+                    >
+                        <span className={`tv-box-ic ${resumo.activeKey === "idle" ? "qa-status-blink" : ""}`} aria-label="Ocioso"><StatusIcon type="clockPause" /></span>
+                        <b>{formatDurationMs(ocioso)}</b>
+                    </div>
+                    <div className="tv-box" title="Tempo total">
+                        <span className="tv-box-ic" aria-label="Total"><StatusIcon type="clock" /></span>
+                        <b>{formatDurationMs(resumo.totalMs)}</b>
+                    </div>
+                </div>
+            </div>
+        </article>
+    );
+}
+
+function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso }) {
+    const t = buildCoroaTimeline(pedido, nowMs);
+    const etapas = [
+        { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
+        { key: "coroa", icon: "flower" as CoroaTvIconKey, label: "Coroa", ms: t.coroaMs, ativo: t.coroaActive, pulado: t.coroaSkipped },
+        { key: "faixa", icon: "ribbon" as CoroaTvIconKey, label: "Faixa", ms: t.faixaMs, ativo: t.faixaActive, pulado: false },
+        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Concluída, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
+    ];
+    const ativas = etapas.filter((e) => e.ativo);
+    const qtd = coroaQuantidade(pedido);
+    const pago = coroaPagamentoLabel(pedido) === "Pago";
+    const agora = ativas.length
+        ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
+        : coroaStatusLabel(pedido.status);
+    const hora = coroaCriadoHora(pedido.criado_em);
+
+    return (
+        <div className={`tv-cr ${atraso ? "tv-cr-late" : ""}`}>
+            <div className="tv-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="tv-cr-f">
+                {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
+                {hora ? ` · pedido ${hora}` : ""}
+            </div>
+            <div className="tv-cr-foot">
+                <span className="tv-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
+                <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
+            </div>
+            <div className="tv-cr-e">{agora}</div>
+            <div className="tv-mini">
+                {etapas.map((e) => (
+                    <i key={e.key} title={`${e.label} • ${e.pulado ? "Não se aplica" : formatDurationMs(e.ms)}`}
+                        className={e.pulado ? "tv-mini-na" : e.ativo ? "tv-mini-live qa-status-active-ring" : e.ms > 0 ? "tv-mini-done" : ""}>
+                        <span className={e.ativo ? "qa-status-blink" : ""}><CoroaTvIcon type={e.icon} /></span>
+                    </i>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function TvPaginador({ atual, total, segundos }: { atual: number; total: number; segundos: number }) {
+    if (total <= 1) return null;
+    return (
+        <div className="tv-pager">
+            Página {atual + 1} de {total}
+            {Array.from({ length: total }, (_, k) => <i key={k} className={k === atual ? "on" : ""} />)}
+            <span className="tv-bar"><span key={atual} style={{ animationDuration: `${segundos}s` }} /></span>
+        </div>
+    );
+}
+
+function QuadroTv({
+    layout,
+    ativos,
+    todosAtivos,
+    paginaAtendimentos,
+    totalPaginasAtendimentos,
+    coroas,
+    todasCoroas,
+    paginaCoroas,
+    totalPaginasCoroas,
+    coroasError,
+    statusLogsById,
+    nowMs,
+    clockTime,
+    clockDate,
+    avisos,
+    onSelect,
+    onNaoCoube,
+}: {
+    layout: TvLayout;
+    ativos: Registro[];
+    todosAtivos: Registro[];
+    paginaAtendimentos: number;
+    totalPaginasAtendimentos: number;
+    coroas: CoroaTvPedido[];
+    todasCoroas: CoroaTvPedido[];
+    paginaCoroas: number;
+    totalPaginasCoroas: number;
+    coroasError?: string | null;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+    clockTime: string;
+    clockDate: string;
+    avisos: Aviso[];
+    onSelect: (r: Registro) => void;
+    onNaoCoube?: (area: "at" | "cr") => void;
+}) {
+    const hostRef = useRef<HTMLDivElement | null>(null);
+    const linhasRef = useRef<HTMLElement | null>(null);
+    const coroasListaRef = useRef<HTMLDivElement | null>(null);
+
+    // Nada é cortado: se o texto de uma página não couber na tela, a página passa a ter um item a menos.
+    useLayoutEffect(() => {
+        if (!onNaoCoube) return;
+        const l = linhasRef.current;
+        if (l && l.clientHeight > 0 && l.scrollHeight > l.clientHeight + 2 && ativos.length > 1) onNaoCoube("at");
+        const c = coroasListaRef.current;
+        if (c && c.clientHeight > 0 && c.scrollHeight > c.clientHeight + 2 && coroas.length > 1) onNaoCoube("cr");
+    });
+    const [escala, setEscala] = useState(0.5);
+    const [topo, setTopo] = useState(0);
+    const [telaCheia, setTelaCheia] = useState(false);
+
+    // A tela é sempre desenhada em 1920×1080 e reduzida por igual para caber no espaço disponível.
+    useLayoutEffect(() => {
+        const host = hostRef.current;
+        if (!host) return;
+        const calc = () => {
+            const w = host.clientWidth, h = host.clientHeight;
+            if (w > 0 && h > 0) {
+                const s = Math.min(w / 1920, h / 1080);
+                setEscala(s);
+                setTopo(Math.max(0, (h - 1080 * s) / 2));
+            }
+        };
+        calc();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(calc) : null;
+        ro?.observe(host);
+        window.addEventListener("resize", calc);
+        const onFs = () => setTelaCheia(document.fullscreenElement === host);
+        document.addEventListener("fullscreenchange", onFs);
+        return () => { ro?.disconnect(); window.removeEventListener("resize", calc); document.removeEventListener("fullscreenchange", onFs); };
+    }, []);
+
+    const alternarTelaCheia = useCallback(() => {
+        const host = hostRef.current;
+        if (!host) return;
+        if (document.fullscreenElement) void document.exitFullscreen?.();
+        else void host.requestFullscreen?.().catch(() => undefined);
+    }, []);
+
+    // A janela de detalhes fica fora do quadro; sai da tela cheia antes para ela aparecer.
+    const abrirDetalhe = useCallback((r: Registro) => {
+        if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+        onSelect(r);
+    }, [onSelect]);
+
+    const resumos = useMemo(
+        () => ativos.map((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs)),
+        [ativos, statusLogsById, nowMs]
+    );
+    const parados = useMemo(
+        () => todosAtivos.filter((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs).alerta?.nivel === "crit").length,
+        [todosAtivos, statusLogsById, nowMs]
+    );
+    const totalCoroas = todasCoroas.reduce((s, p) => s + coroaQuantidade(p), 0);
+    const pagamentosPendentes = todasCoroas.filter((p) => coroaPagamentoLabel(p) !== "Pago").length;
+
+    const coroasAtrasadas = todasCoroas.filter((p) => coroaAtrasoTv(p, nowMs)).length;
+
+    const blocoCoroas = (
+        <>
+            <h2 className="tv-cor-title">
+                Coroas em confecção <span className="tv-n">{totalCoroas}</span>
+                {coroasError ? <span className="tv-cor-stale">últimos dados mantidos</span> : null}
+            </h2>
+            <div className="tv-sum">
+                {coroasAtrasadas > 0 ? <b className="tv-sum-late">{coroasAtrasadas} {coroasAtrasadas === 1 ? "atrasada" : "atrasadas"} · </b> : null}
+                {pagamentosPendentes} aguardando pagamento · ordem de chegada
+            </div>
+            <div className="tv-clist" ref={coroasListaRef}>
+                {coroas.map((p) => (
+                    <TvCartaoCoroa key={p.id} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} />
+                ))}
+            </div>
+            <TvPaginador atual={paginaCoroas} total={totalPaginasCoroas} segundos={INTERVALO_PAGINACAO_COROAS_MS / 1000} />
+        </>
+    );
+
+    return (
+        <div ref={hostRef} className={`tv-host ${telaCheia ? "tv-host-fs" : ""}`}>
+            <div className="tv" style={{ top: topo, transform: `translateX(-50%) scale(${escala})` }}>
+                <header className="tv-top">
+                    <div className="tv-brand">
+                        <h1>Quadro de Atendimentos</h1>
+                        <div className="tv-sub"><span className="tv-dot-live" />Atualizado em tempo real</div>
+                    </div>
+                    <div className="tv-counters">
+                        <div className="tv-ctr"><b>{todosAtivos.length}</b><span>em andamento</span></div>
+                        <div className={`tv-ctr ${parados ? "tv-ctr-alert" : ""}`}><b>{parados}</b><span>parados há mais de 24 h</span></div>
+                        <div className="tv-ctr"><b>{totalCoroas}</b><span>coroas em confecção</span></div>
+                    </div>
+                    <div className="tv-clock">
+                        <div className="tv-h">{clockTime}</div>
+                        <div className="tv-d">{clockDate}</div>
+                    </div>
+                </header>
+
+                <section className="tv-body">
+                    <div className={`tv-main ${layout.compacto ? "tv-compact" : ""} ${layout.coroasModo === "lado" ? "tv-narrow" : ""}`}>
+                        <div className="tv-head">
+                            <span>Atendimento</span>
+                            <span>Agora</span>
+                            <div className="tv-steps-h">
+                                {/* etapas identificadas só pelos ícones */}
+                            </div>
+                        </div>
+                        <main className="tv-rows" ref={linhasRef}>
+                            {resumos.length === 0 ? (
+                                <div className="tv-empty">Nenhum atendimento em andamento.</div>
+                            ) : (
+                                resumos.map((res, i) => <TvLinhaAtendimento key={res.trackingId || i} resumo={res} onSelect={abrirDetalhe} />)
+                            )}
+                        </main>
+                        <TvPaginador atual={paginaAtendimentos} total={totalPaginasAtendimentos} segundos={INTERVALO_PAGINACAO_ATENDIMENTOS_MS / 1000} />
+                    </div>
+                    {layout.coroasModo === "lado" && <aside className="tv-side">{blocoCoroas}</aside>}
+                </section>
+
+                {layout.coroasModo === "faixa" && <section className="tv-band">{blocoCoroas}</section>}
+                {layout.coroasModo === "nenhuma" && (
+                    <div className="tv-coroas-line">Coroas de flores em confecção <span className="tv-n">0</span><span className="tv-muted">· nenhuma no momento</span></div>
+                )}
+
+                <footer className="tv-ticker">
+                    <div className="tv-tag">Avisos</div>
+                    <div className="tv-lane"><AvisosTicker avisos={avisos} /></div>
+                </footer>
+            </div>
+
+            <button type="button" className="tv-fs-btn" onClick={alternarTelaCheia} title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}>
+                {telaCheia ? "Sair da tela cheia" : "⛶ Tela cheia"}
+            </button>
+
+            <TvStyles />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function TvStyles() {
+    return (
+        <style jsx global>{`
+            .tv-host { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; overflow: hidden; border-radius: 14px; background: #050d1a; }
+            .tv-host-fs { border-radius: 0; }
+            .tv { position: absolute; top: 0; left: 50%; width: 1920px; height: 1080px; transform-origin: top center;
+                background: radial-gradient(120% 90% at 50% -10%, #10264a 0%, #081427 55%, #060f1f 100%);
+                display: flex; flex-direction: column; gap: 20px; padding: 32px 44px 0; overflow: hidden; color: #f2f6fc; font-variant-numeric: tabular-nums; }
+            .tv-fs-btn { position: absolute; right: 10px; bottom: 10px; z-index: 5; font-size: 12px; font-weight: 700; color: #cfe0ff; background: rgba(11,24,48,.85);
+                border: 1px solid #29497d; border-radius: 8px; padding: 4px 10px; opacity: .35; transition: opacity .2s; }
+            .tv-host:hover .tv-fs-btn { opacity: 1; }
+
+            .tv-top { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+            .tv-brand h1 { margin: 0; font-size: 40px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; }
+            .tv-sub { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 20px; color: #a9bddb; font-weight: 700; }
+            .tv-dot-live { width: 12px; height: 12px; border-radius: 50%; background: #35e08a; animation: tv-ping 1.6s infinite; }
+            @keyframes tv-ping { 0% { box-shadow: 0 0 0 0 rgba(53,224,138,.55); } 70% { box-shadow: 0 0 0 12px rgba(53,224,138,0); } 100% { box-shadow: 0 0 0 0 rgba(53,224,138,0); } }
+            .tv-counters { display: flex; gap: 14px; }
+            .tv-ctr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 20px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+            .tv-ctr b { font-size: 36px; font-weight: 900; }
+            .tv-ctr span { font-size: 18px; color: #a9bddb; font-weight: 700; }
+            .tv-ctr-alert b { color: #ff5a5f; }
+            .tv-clock { text-align: right; }
+            .tv-h { font-size: 64px; font-weight: 900; line-height: 1; letter-spacing: -.02em; }
+            .tv-d { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 4px; }
+
+            .tv-body { flex: 1; display: flex; gap: 20px; min-height: 0; }
+            .tv-main { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+            .tv-head, .tv-row { display: grid; grid-template-columns: 480px 390px 1fr; gap: 24px; }
+            .tv-head { padding: 0 28px; color: #6f88ad; font-size: 16px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+            .tv-steps-h, .tv-track { display: grid; grid-template-columns: repeat(6, 1fr) 316px; align-items: center; }
+            .tv-steps-h span { text-align: center; font-size: 13px; letter-spacing: 0; white-space: nowrap; }
+            .tv-steps-h .tv-steps-h-tot { text-align: right; padding-right: 10px; }
+            .tv-rows { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: hidden; }
+            .tv-empty { font-size: 26px; color: #6f88ad; text-align: center; padding: 60px 0; }
+            .tv-row { flex: 0 0 auto; min-height: 150px; align-items: center; cursor: pointer;
+                background: linear-gradient(180deg, #132a52, #0f2344); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 28px; }
+            .tv-row:hover { border-color: #4b9bff; }
+            .tv-row-crit { border-color: rgba(255,90,95,.55); box-shadow: inset 6px 0 0 #ff5a5f; }
+            .tv-row-warn { border-color: rgba(255,176,32,.5); box-shadow: inset 6px 0 0 #ffb020; }
+
+            .tv-who { min-width: 0; }
+            .tv-name { font-size: 34px; font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
+            .tv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 8px; font-size: 19px; color: #a9bddb; font-weight: 700; overflow-wrap: anywhere; }
+            .tv-chip { font-size: 17px; font-weight: 900; padding: 3px 12px; border-radius: 999px; color: #081427; flex: none; }
+            .tv-chip-pref { background: #3fa7ff; } .tv-chip-part { background: #ffc53d; } .tv-chip-assoc { background: #2ed3c6; }
+            .tv-chip-adef { background: transparent; color: #8aa0c2; border: 2px dashed #8aa0c2; }
+            .tv-place { margin-top: 8px; font-size: 19px; font-weight: 700; line-height: 1.35; }
+            .tv-place span { display: block; overflow-wrap: anywhere; }
+            .tv-place-sep { color: #a9bddb; }
+            .tv-place a { color: #4b9bff; }
+
+            .tv-now { min-width: 0; }
+            .tv-state { display: flex; align-items: center; gap: 12px; font-size: 27px; font-weight: 900; line-height: 1.1; }
+            .tv-pulse { width: 16px; height: 16px; border-radius: 50%; background: #35e08a; flex: none; animation: tv-ping 1.6s infinite; }
+            .tv-since { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 6px; overflow-wrap: anywhere; }
+            .tv-since b { color: #f2f6fc; font-weight: 900; }
+            .tv-flag { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 17px; font-weight: 900; padding: 5px 12px; border-radius: 10px; }
+            .tv-flag-crit { background: rgba(255,90,95,.15); color: #ff5a5f; }
+            .tv-flag-warn { background: rgba(255,176,32,.14); color: #ffb020; }
+
+            .tv-step { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; }
+            .tv-step::before { content: ""; position: absolute; top: 30px; left: -50%; width: 100%; height: 4px; background: #29497d; z-index: 0; }
+            .tv-step:first-child::before { display: none; }
+            .tv-step-done::before, .tv-step-live::before { background: #3b82f6; }
+            .tv-node { position: relative; z-index: 1; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid #29497d; background: #0c1d38; color: #6f88ad; }
+            .tv-t { position: relative; z-index: 1; }
+            .tv-node-icon { display: inline-flex; width: 32px; height: 32px; }
+            .tv-node-icon svg, .tv-mini-icon svg, .tv-mini i svg { width: 100%; height: 100%; }
+            .tv-t { font-size: 21px; font-weight: 900; color: #6f88ad; white-space: nowrap; }
+            .tv-step-done .tv-node { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+            .tv-step-done .tv-t { color: #f2f6fc; }
+            .tv-step-live .tv-node { border-color: #22c55e; color: #22c55e; background: #10373a; }
+            .tv-step-live .tv-t { color: #35e08a; }
+            .tv-step-na .tv-node { border-style: dashed; border-color: #2b4670; background: #0c1d38; color: #2b4670; }
+            .tv-step-na .tv-t { font-size: 13px; color: #3d5a85; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; text-align: center; white-space: normal; line-height: 1.1; }
+
+            .tv-tot { display: flex; gap: 10px; justify-content: flex-end; padding-left: 18px; }
+            .tv-box { border-radius: 14px; padding: 8px 12px; border: 2px solid #29497d; flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; gap: 8px; }
+            .tv-box-ic { display: inline-flex; flex: none; width: 28px; height: 28px; color: inherit; }
+            .tv-box-ic svg { width: 100%; height: 100%; }
+            .tv-box-live .tv-box-ic { color: #35e08a; }
+            .tv-box small { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 900; color: #6f88ad; text-transform: uppercase; letter-spacing: .08em; }
+            .tv-mini-icon { display: inline-flex; width: 18px; height: 18px; }
+            .tv-box b { display: block; font-size: 30px; font-weight: 900; }
+            .tv-box-crit .tv-box-ic { color: #ff5a5f; }
+            .tv-box-live { border-color: #22c55e !important; background: rgba(34,197,94,.14); }
+            .tv-box-live b, .tv-box-live small { color: #35e08a; }
+            .tv-box-crit b { color: #ff5a5f; }
+
+            /* compacto */
+            .tv-compact .tv-row { padding: 6px 22px; border-radius: 16px; min-height: 96px; }
+            .tv-compact .tv-name { font-size: 26px; }
+            .tv-compact .tv-since { margin-top: 2px; font-size: 17px; }
+            .tv-compact .tv-rows { gap: 10px; }
+            .tv-compact .tv-name { line-height: 1.15; }
+            .tv-compact .tv-place { margin-top: 3px; font-size: 16px; line-height: 1.25; }
+            .tv-compact .tv-meta { margin-top: 2px; font-size: 16px; }
+            .tv-compact .tv-state { font-size: 23px; }
+            .tv-compact .tv-flag { margin-top: 4px; font-size: 15px; padding: 3px 10px; }
+            .tv-compact .tv-node { width: 48px; height: 48px; } .tv-compact .tv-node-icon { width: 24px; height: 24px; }
+            .tv-compact .tv-step::before { top: 22px; }
+            .tv-compact .tv-t { font-size: 18px; }
+            .tv-compact .tv-step-na .tv-t { visibility: hidden; }
+            .tv-compact .tv-box { padding: 4px 10px; } .tv-compact .tv-box-ic { width: 24px; height: 24px; } .tv-compact .tv-box b { font-size: 24px; }
+
+            /* com coluna de coroas ao lado */
+            .tv-narrow .tv-row, .tv-narrow .tv-head { grid-template-columns: 370px 280px 1fr; gap: 18px; }
+            .tv-narrow .tv-name { font-size: 26px; }
+            .tv-narrow .tv-state { font-size: 21px; }
+            .tv-narrow .tv-tot { padding-left: 8px; }
+            .tv-narrow .tv-tot { flex-direction: column; gap: 6px; align-items: stretch; }
+            .tv-narrow .tv-box { padding: 3px 8px; flex: none; justify-content: flex-start; } .tv-narrow .tv-box-ic { width: 21px; height: 21px; } .tv-narrow .tv-box b { font-size: 22px; } .tv-narrow .tv-box small { font-size: 12px; }
+            .tv-narrow .tv-track, .tv-narrow .tv-steps-h { grid-template-columns: repeat(6, 1fr) 132px; }
+            .tv-narrow .tv-steps-h span { font-size: 11px; letter-spacing: 0; }
+            .tv-narrow .tv-node { width: 44px; height: 44px; } .tv-narrow .tv-node-icon { width: 22px; height: 22px; }
+            .tv-narrow .tv-step::before { top: 20px; }
+            .tv-narrow .tv-t { font-size: 16px; }
+
+            /* coroas */
+            .tv-side { width: 500px; flex: none; display: flex; flex-direction: column; gap: 10px; background: rgba(10,24,48,.7); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 18px 14px; min-height: 0; }
+            .tv-band { background: rgba(10,24,48,.7); border: 1px solid #1f3a66; border-radius: 22px; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+            .tv-cor-title { margin: 0; font-size: 24px; font-weight: 900; display: flex; align-items: center; gap: 10px; }
+            .tv-cor-stale { font-size: 15px; color: #ffb020; font-weight: 800; }
+            .tv-n { background: #2d6fd6; border-radius: 999px; padding: 0 12px; font-size: 20px; font-weight: 900; color: #fff; }
+            .tv-sum { font-size: 17px; color: #a9bddb; font-weight: 700; }
+            .tv-clist { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
+            .tv-side .tv-pager { flex: none; }
+            .tv-band .tv-clist { flex-direction: row; }
+            .tv-band .tv-cr { flex: 1; }
+            .tv-cr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; min-width: 0; }
+            .tv-cr-m { grid-column: 1 / -1; font-size: 20px; font-weight: 900; overflow-wrap: anywhere; }
+            .tv-cr-f { grid-column: 1 / -1; font-size: 17px; color: #a9bddb; font-weight: 700; overflow-wrap: anywhere; }
+            .tv-cr-e { font-size: 17px; font-weight: 800; color: #35e08a; overflow-wrap: anywhere; }
+            .tv-cr-late { box-shadow: inset 5px 0 0 #ffb020; border-color: rgba(255,176,32,.55); }
+            .tv-origem { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: rgba(75,155,255,.14); color: #8fc2ff; white-space: nowrap; }
+            .tv-cr-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+            .tv-cr-late-t { font-size: 16px; font-weight: 900; color: #ffb020; background: rgba(255,176,32,.12); border-radius: 8px; padding: 2px 8px; justify-self: start; overflow-wrap: anywhere; max-width: 100%; }
+            .tv-sum-late { color: #ffb020; font-weight: 900; }
+            .tv-pay { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; align-self: start; justify-self: end; white-space: nowrap; }
+            .tv-pay-ok { background: rgba(53,224,138,.16); color: #35e08a; }
+            .tv-pay-pend { background: rgba(255,176,32,.14); color: #ffb020; }
+            .tv-mini { display: flex; gap: 6px; align-items: center; justify-self: end; }
+            .tv-mini i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #29497d; color: #6f88ad; font-style: normal; }
+            .tv-mini i span { display: inline-flex; width: 17px; height: 17px; }
+            .tv-mini .tv-mini-done { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+            .tv-mini .tv-mini-live { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,.14); }
+            .tv-mini .tv-mini-na { border-style: dashed; opacity: .35; }
+            .tv-coroas-line { display: flex; align-items: center; gap: 12px; font-size: 20px; color: #a9bddb; font-weight: 700; padding: 0 6px; }
+            .tv-muted { color: #6f88ad; }
+
+            .tv-pager { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 800; color: #6f88ad; }
+            .tv-pager i { width: 10px; height: 10px; border-radius: 50%; background: #29497d; }
+            .tv-pager i.on { background: #4b9bff; }
+            .tv-bar { height: 4px; width: 80px; background: #29497d; border-radius: 2px; overflow: hidden; }
+            .tv-bar span { display: block; height: 100%; background: #4b9bff; animation: tv-fill linear forwards; }
+            @keyframes tv-fill { from { width: 0; } to { width: 100%; } }
+
+            .tv-ticker { margin: 0 -44px; height: 64px; flex: none; background: #061024; border-top: 1px solid #1f3a66; display: flex; align-items: center; overflow: hidden; }
+            .tv-tag { flex: none; height: 100%; display: flex; align-items: center; padding: 0 22px; background: #2d6fd6; font-size: 20px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; position: relative; z-index: 1; }
+            .tv-lane { flex: 1; min-width: 0; overflow: hidden; height: 100%; display: flex; align-items: center; }
+            .tv-lane [class*="text-["] { font-size: 24px !important; }
+
+            @media (prefers-reduced-motion: reduce) {
+                .tv-dot-live, .tv-pulse, .tv-bar span { animation: none !important; }
+            }
+        `}</style>
+    );
+}
+
+
+/* ===== Quadro no celular e tablet (telas abaixo de 1024 px) =====
+ * Em pé: cartões com abas Atendimentos / Coroas / Avisos.
+ * Deitado: uma linha por atendimento, como na TV. A troca é automática pela orientação da tela.
+ * O tema (claro/escuro) acompanha o fundo do app: a cor é lida da página e observada quando muda.
+ */
+type MobAba = "at" | "cr" | "av";
+
+function mobCorEhEscura(cor: string): boolean | null {
+    const m = cor.match(/rgba?\(([^)]+)\)/i);
+    if (!m) return null;
+    const p = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+    if (p.length >= 4 && p[3] === 0) return null; // transparente
+    const [r, g, b] = p;
+    if (![r, g, b].every(Number.isFinite)) return null;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.45;
+}
+
+function useTemaEscuroApp(ref: React.RefObject<HTMLElement | null>): boolean {
+    const [escuro, setEscuro] = useState(false);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+        const calc = () => {
+            let el: HTMLElement | null = ref.current?.parentElement ?? document.body;
+            while (el) {
+                const r = mobCorEhEscura(getComputedStyle(el).backgroundColor);
+                if (r !== null) { setEscuro(r); return; }
+                el = el.parentElement;
+            }
+            setEscuro(!!mq?.matches);
+        };
+        calc();
+        // Rechecagem com atraso: o fundo pode mudar com transição de cor depois da troca de tema.
+        let t = 0;
+        const agendar = () => { calc(); window.clearTimeout(t); t = window.setTimeout(calc, 400); };
+        const intervalo = window.setInterval(calc, 5000);
+        const obs = new MutationObserver(agendar);
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-mode"] });
+        obs.observe(document.body, { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-mode"] });
+        mq?.addEventListener?.("change", agendar);
+        return () => { obs.disconnect(); window.clearTimeout(t); window.clearInterval(intervalo); mq?.removeEventListener?.("change", agendar); };
+    }, [ref]);
+    return escuro;
+}
+
+function mobChipConvenio(convenio?: string): string {
+    const kind = normalizeConvenio(convenio);
+    if (kind === "Prefeitura") return "qm-chip qm-chip-pref";
+    if (kind === "Particular") return "qm-chip qm-chip-part";
+    if (kind === "Associado") return "qm-chip qm-chip-assoc";
+    return "qm-chip qm-chip-adef";
+}
+
+function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: (r: Registro) => void }) {
+    const r = resumo.registro;
+    const rankAtual = statusFlowRank(resumo.atualKey);
+    const ocioso = resumo.durations.get("idle") ?? 0;
+    const ociosoAtivo = resumo.activeKey === "idle";
+    const semVelorio = !rotaAtivaLegado(r.realiza_velorio);
+    const semSepultamento = !rotaAtivaLegado(r.realiza_sepultamento);
+    const sepultamentoTxt = semSepultamento
+        ? "Sem sepultamento pelo PAI"
+        : `${shown(r.local_sepultamento || r.local)} · ${dateDayMonthOr(r.data_fim_velorio)} ${timeOr(r.hora_fim_velorio)}`;
+    const nivel = resumo.alerta?.nivel;
+
+    return (
+        <article
+            className={`qm-card ${nivel ? `qm-card-${nivel}` : ""}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(r)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? onSelect(r) : undefined)}
+            aria-label={`${shown(r.falecido)}: ${resumo.atualLabel}. Toque para ver os detalhes.`}
+        >
+            <h3 className="qm-name">{shown(r.falecido)}</h3>
+
+            <div className="qm-tot">
+                <b title="Tempo total"><span className="qm-tot-ic" aria-label="Total"><StatusIcon type="clock" /></span>{formatDurationMs(resumo.totalMs)}</b>
+                <span
+                    className={`qm-oc ${ociosoAtivo ? "qm-oc-live" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "qm-oc-crit" : ""}`}
+                    title="Tempo ocioso"
+                >
+                    <span className={`qm-oc-ic ${ociosoAtivo ? "qa-status-blink" : ""}`} aria-label="Ocioso"><StatusIcon type="clockPause" /></span>
+                    {formatDurationMs(ocioso)}
+                </span>
+            </div>
+
+            <div className="qm-meta">
+                <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                <span className="qm-meta-t">Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+            </div>
+
+            <div className="qm-now">
+                <span className="qm-dot qa-status-blink" aria-hidden />
+                <div className="qm-now-t">
+                    <b>{resumo.atualLabel}</b>
+                    <span>
+                        há {tvDuracaoTexto(resumo.atualDesdeMs)}
+                        {resumo.atualResponsavel ? ` · ${resumo.atualResponsavel}` : ""}
+                    </span>
+                </div>
+            </div>
+
+            {resumo.alerta && (
+                <div className={`qm-flag qm-flag-${resumo.alerta.nivel}`}>
+                    {resumo.alerta.nivel === "crit" ? "⚠" : "⏱"} {resumo.alerta.texto}
+                </div>
+            )}
+
+            <ol className="qm-steps">
+                {TV_ETAPAS.map((step) => {
+                    const pulada = isStatusStepSkipped(r, step.key);
+                    const duracao = resumo.durations.get(step.key) ?? 0;
+                    const ativa = !pulada && resumo.activeKey === step.key;
+                    const feita = !pulada && !ativa && (duracao > 0 || rankAtual > statusFlowRank(step.key));
+                    const estado = pulada ? "na" : ativa ? "live" : feita ? "done" : "pend";
+                    const texto = pulada ? "sem" : ativa || feita ? formatDurationMs(duracao) : "—";
+                    return (
+                        <li
+                            key={step.key}
+                            className={`qm-s qm-s-${estado}`}
+                            title={`${step.label} • ${pulada ? "Não se aplica" : ativa || feita ? formatDurationMs(duracao) : "Ainda não aconteceu"}`}
+                        >
+                            <span className={`qm-ic ${ativa ? "qa-status-active-ring" : ""}`}>
+                                <span className={`qm-ic-svg ${ativa ? "qa-status-blink" : ""}`}><StatusIcon type={step.icon} /></span>
+                            </span>
+                            <b>{texto}</b>
+                        </li>
+                    );
+                })}
+            </ol>
+
+            <dl className="qm-where">
+                <div>
+                    <dt>Velório</dt>
+                    <dd>{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</dd>
+                </div>
+                <div>
+                    <dt>Sepult.</dt>
+                    <dd>{sepultamentoTxt}</dd>
+                </div>
+            </dl>
+        </article>
+    );
+}
+
+function MobCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso }) {
+    const t = buildCoroaTimeline(pedido, nowMs);
+    const etapas = [
+        { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
+        { key: "coroa", icon: "flower" as CoroaTvIconKey, label: "Coroa", ms: t.coroaMs, ativo: t.coroaActive, pulado: t.coroaSkipped },
+        { key: "faixa", icon: "ribbon" as CoroaTvIconKey, label: "Faixa", ms: t.faixaMs, ativo: t.faixaActive, pulado: false },
+        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Concluída, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
+    ];
+    const ativas = etapas.filter((e) => e.ativo);
+    const qtd = coroaQuantidade(pedido);
+    const pago = coroaPagamentoLabel(pedido) === "Pago";
+    const agora = ativas.length
+        ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
+        : coroaStatusLabel(pedido.status);
+    const hora = coroaCriadoHora(pedido.criado_em);
+
+    return (
+        <div className={`qm-cr ${atraso ? "qm-cr-late" : ""}`}>
+            {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}
+            <div className="qm-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="qm-cr-f">
+                {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
+                {hora ? ` · pedido ${hora}` : ""}
+            </div>
+            <div className="qm-cr-r">
+                <span className="qm-cr-e">{agora}</span>
+                <span className="qm-mini">
+                    {etapas.map((e) => (
+                        <i
+                            key={e.key}
+                            title={`${e.label} • ${e.pulado ? "Não se aplica" : formatDurationMs(e.ms)}`}
+                            className={e.pulado ? "qm-mini-na" : e.ativo ? "qm-mini-live qa-status-active-ring" : e.ms > 0 ? "qm-mini-done" : ""}
+                        >
+                            <span className={e.ativo ? "qa-status-blink" : ""}><CoroaTvIcon type={e.icon} /></span>
+                        </i>
+                    ))}
+                </span>
+            </div>
+            <div className="qm-cr-foot">
+                <span className="qm-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
+                <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+            </div>
+        </div>
+    );
+}
+
+function QuadroMobile({
+    ativos,
+    coroas,
+    coroasError,
+    statusLogsById,
+    nowMs,
+    clockTime,
+    clockDate,
+    avisos,
+    onSelect,
+}: {
+    ativos: Registro[];
+    coroas: CoroaTvPedido[];
+    coroasError?: string | null;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+    clockTime: string;
+    clockDate: string;
+    avisos: Aviso[];
+    onSelect: (r: Registro) => void;
+}) {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const escuro = useTemaEscuroApp(rootRef);
+    const [aba, setAba] = useState<MobAba>("at");
+    const [podeTelaCheia, setPodeTelaCheia] = useState(false);
+    const [telaCheia, setTelaCheia] = useState(false);
+
+    useEffect(() => {
+        setPodeTelaCheia(!!document.fullscreenEnabled);
+        const onFs = () => setTelaCheia(!!document.fullscreenElement);
+        document.addEventListener("fullscreenchange", onFs);
+        return () => document.removeEventListener("fullscreenchange", onFs);
+    }, []);
+
+    // Tela cheia na página inteira (não só no quadro) para a janela de detalhes continuar aparecendo.
+    const alternarTelaCheia = useCallback(() => {
+        if (document.fullscreenElement) void document.exitFullscreen?.();
+        else void document.documentElement.requestFullscreen?.().catch(() => undefined);
+    }, []);
+
+    const resumos = useMemo(
+        () => ativos.map((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs)),
+        [ativos, statusLogsById, nowMs]
+    );
+    const parados = resumos.filter((x) => x.alerta?.nivel === "crit").length;
+    const totalCoroas = coroas.reduce((s, p) => s + coroaQuantidade(p), 0);
+    const pagamentosPendentes = coroas.filter((p) => coroaPagamentoLabel(p) !== "Pago").length;
+    const coroasAtrasadas = coroas.filter((p) => coroaAtrasoTv(p, nowMs)).length;
+    const listaAvisos = useMemo(
+        () =>
+            (avisos ?? [])
+                .map((a) => ({ usuario: shown(a?.usuario, "").trim(), mensagem: shown(a?.mensagem, "").trim() }))
+                .filter((x) => x.usuario || x.mensagem),
+        [avisos]
+    );
+
+    const aba_ = (id: MobAba, rotulo: string, n: number) => (
+        <button type="button" role="tab" aria-selected={aba === id} className="qm-tab" onClick={() => setAba(id)}>
+            {rotulo}
+            <span>{n}</span>
+        </button>
+    );
+
+    return (
+        <div ref={rootRef} className="qm-root" data-tema={escuro ? "escuro" : "claro"}>
+            <header className="qm-top">
+                <div className="qm-tit">
+                    <h1>Quadro de Atendimentos</h1>
+                    <div className="qm-live"><i />Atualizado em tempo real</div>
+                </div>
+                <div className="qm-clk">
+                    <b>{clockTime}</b>
+                    <small>{clockDate}</small>
+                </div>
+                <div className="qm-kpis">
+                    <span className="qm-kpi"><b>{ativos.length}</b>em andamento</span>
+                    {parados > 0 && <span className="qm-kpi qm-kpi-crit"><b>{parados}</b>parados +24 h</span>}
+                    {podeTelaCheia && (
+                        <button
+                            type="button"
+                            className="qm-fs"
+                            onClick={alternarTelaCheia}
+                            aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+                            title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                                {telaCheia
+                                    ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+                                    : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
+                            </svg>
+                        </button>
+                    )}
+                </div>
+                <div className="qm-tabs" role="tablist">
+                    {aba_("at", "Atendimentos", ativos.length)}
+                    {aba_("cr", "Coroas", coroas.length)}
+                    {aba_("av", "Avisos", listaAvisos.length)}
+                </div>
+            </header>
+
+            <div className="qm-body">
+                {aba === "at" && (
+                    <>
+                        {listaAvisos.length > 0 && (
+                            <button type="button" className="qm-aviso" onClick={() => setAba("av")}>
+                                <b>Aviso</b>
+                                <span>{listaAvisos[0].usuario ? `${listaAvisos[0].usuario}: ` : ""}{listaAvisos[0].mensagem}</span>
+                            </button>
+                        )}
+                        {resumos.length > 0 && (
+                            <div className="qm-colhd" aria-hidden>
+                                <span>Atendimento</span>
+                                <span>Agora</span>
+                                <span />
+                                <span />
+                            </div>
+                        )}
+                        <div className="qm-list">
+                            {resumos.length === 0 && <p className="qm-empty">Nenhum atendimento em andamento.</p>}
+                            {resumos.map((resumo, i) => (
+                                <MobCartaoAtendimento key={resumo.trackingId || i} resumo={resumo} onSelect={onSelect} />
+                            ))}
+                        </div>
+                    </>
+                )}
+
+                {aba === "cr" && (
+                    <>
+                        {coroasError && <p className="qm-note qm-note-warn">Dados das coroas podem estar desatualizados.</p>}
+                        {coroas.length > 0 ? (
+                            <>
+                                <p className="qm-note">
+                                    {totalCoroas} {totalCoroas === 1 ? "coroa" : "coroas"} em {coroas.length} {coroas.length === 1 ? "pedido" : "pedidos"}
+                                    {pagamentosPendentes ? ` · ${pagamentosPendentes} aguardando pagamento` : ""}
+                                    {coroasAtrasadas ? ` · ${coroasAtrasadas} ${coroasAtrasadas === 1 ? "atrasada" : "atrasadas"}` : ""} · ordem de chegada
+                                </p>
+                                <div className="qm-grid">
+                                    {coroas.map((p, i) => (
+                                        <MobCartaoCoroa
+                                            key={String(p.id ?? i)}
+                                            pedido={p}
+                                            nowMs={nowMs}
+                                            atraso={coroaAtrasoTv(p, nowMs)}
+                                        />
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            <p className="qm-empty">Nenhuma coroa em confecção.</p>
+                        )}
+                    </>
+                )}
+
+                {aba === "av" && (
+                    <div className="qm-grid">
+                        {listaAvisos.length === 0 && <p className="qm-empty">Nenhum aviso no momento.</p>}
+                        {listaAvisos.map((a, i) => (
+                            <article key={i} className="qm-av">
+                                {a.usuario && <b>{a.usuario}</b>}
+                                <p>{a.mensagem}</p>
+                            </article>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <MobStyles />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function MobStyles() {
+    return (
+        <style jsx global>{`
+            .qm-root {
+                --qm-surface: #ffffff; --qm-s2: #f5f8fc; --qm-line: #dbe4ef; --qm-text: #0f1b2d; --qm-muted: #667891;
+                --qm-acc: #0e9be0; --qm-accbg: #e3f3fc;
+                --qm-ok: #16a34a; --qm-okbg: #e6f8ee; --qm-warn: #b45309; --qm-warnbg: #fff4e0; --qm-crit: #dc2626; --qm-critbg: #fdecec;
+                --qm-shadow: 0 1px 2px rgba(15, 27, 45, .06), 0 6px 18px rgba(15, 27, 45, .06);
+                flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; color: var(--qm-text);
+            }
+            .qm-root[data-tema="escuro"] {
+                --qm-surface: #0f1f36; --qm-s2: #0c1a2e; --qm-line: #20385e; --qm-text: #eaf2ff; --qm-muted: #8ca2c4;
+                --qm-acc: #3b9bff; --qm-accbg: #12294a;
+                --qm-ok: #35e08a; --qm-okbg: rgba(34, 197, 94, .14); --qm-warn: #ffb020; --qm-warnbg: rgba(255, 176, 32, .12); --qm-crit: #ff5a5f; --qm-critbg: rgba(255, 90, 95, .13);
+                --qm-shadow: none;
+            }
+            .qm-root button { font: inherit; color: inherit; }
+
+            .qm-top { flex: none; background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 18px; box-shadow: var(--qm-shadow);
+                padding: 12px 14px 10px; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "tit clk" "kpi kpi" "tab tab"; }
+            .qm-tit { grid-area: tit; min-width: 0; }
+            .qm-tit h1 { margin: 0; font-size: 16px; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
+            .qm-live { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; color: var(--qm-ok); overflow-wrap: anywhere; }
+            .qm-live i { flex: none; }
+            .qm-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--qm-ok); }
+            .qm-clk { grid-area: clk; text-align: right; line-height: 1.1; }
+            .qm-clk b { display: block; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
+            .qm-clk small { font-size: 11px; font-weight: 800; color: var(--qm-muted); }
+            .qm-kpis { grid-area: kpi; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+            .qm-kpi { white-space: nowrap; display: flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--qm-s2); border: 1px solid var(--qm-line); font-size: 12px; font-weight: 800; color: var(--qm-muted); }
+            .qm-kpi b { font-size: 15px; color: var(--qm-text); font-variant-numeric: tabular-nums; }
+            .qm-kpi-crit { background: var(--qm-critbg); border-color: transparent; color: var(--qm-crit); }
+            .qm-kpi-crit b { color: var(--qm-crit); }
+            .qm-fs { margin-left: auto; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--qm-line); background: transparent; border-radius: 999px; padding: 0; color: var(--qm-muted) !important; cursor: pointer; }
+            .qm-fs svg { width: 16px; height: 16px; }
+            .qm-tabs { grid-area: tab; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; background: var(--qm-s2); border: 1px solid var(--qm-line); border-radius: 12px; }
+            .qm-tab { min-width: 0; border: 0; background: transparent; border-radius: 9px; padding: 7px 2px; font-size: 12px !important; font-weight: 800; color: var(--qm-muted) !important; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+            .qm-tab span { flex: none; background: var(--qm-line); color: var(--qm-text); border-radius: 999px; padding: 0 7px; font-size: 11px; font-variant-numeric: tabular-nums; }
+            .qm-tab[aria-selected="true"] { background: var(--qm-surface); color: var(--qm-text) !important; box-shadow: var(--qm-shadow); }
+            .qm-tab[aria-selected="true"] span { background: var(--qm-acc); color: #fff; }
+            .qm-tab:focus-visible, .qm-card:focus-visible, .qm-aviso:focus-visible, .qm-fs:focus-visible { outline: 2px solid var(--qm-acc); outline-offset: 2px; }
+
+            .qm-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+            .qm-body > * { flex: none; }
+            .qm-aviso { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 0; cursor: pointer; background: var(--qm-accbg); border-radius: 14px; padding: 9px 12px; font-size: 13px !important; font-weight: 700; }
+            .qm-aviso b { flex: none; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-acc); }
+            .qm-aviso span { min-width: 0; overflow-wrap: anywhere; }
+            .qm-colhd { display: none; }
+            .qm-list, .qm-grid { display: grid; gap: 10px; }
+            .qm-empty { margin: 0; padding: 20px 12px; text-align: center; font-size: 14px; font-weight: 700; color: var(--qm-muted); background: var(--qm-surface); border: 1px dashed var(--qm-line); border-radius: 16px; }
+            .qm-note { margin: 0; text-align: center; font-size: 12px; font-weight: 800; color: var(--qm-muted); }
+            .qm-note-warn { color: var(--qm-warn); }
+
+            .qm-card { position: relative; overflow: hidden; cursor: pointer; background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 18px; box-shadow: var(--qm-shadow);
+                padding: 12px 12px 12px 14px; display: grid; gap: 6px 10px; grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-areas: "name tot" "meta tot" "now now" "flag flag" "steps steps" "where where"; }
+            .qm-card-crit { box-shadow: inset 4px 0 0 var(--qm-crit), var(--qm-shadow); }
+            .qm-card-warn { box-shadow: inset 4px 0 0 var(--qm-warn), var(--qm-shadow); }
+            .qm-name { grid-area: name; margin: 0; align-self: end; font-size: 17px; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
+            .qm-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--qm-muted); }
+            .qm-meta-t { overflow-wrap: anywhere; }
+            .qm-chip { flex: none; font-size: 11px; font-weight: 900; line-height: 1.5; color: #fff; border-radius: 999px; padding: 0 8px; }
+            .qm-chip-pref { background: #0e9be0; }
+            .qm-chip-part { background: #f59e0b; color: #1d1405; }
+            .qm-chip-assoc { background: #14b8a6; }
+            .qm-chip-adef { background: transparent; color: var(--qm-muted); border: 1px dashed var(--qm-muted); }
+            .qm-tot { grid-area: tot; align-self: start; text-align: right; display: grid; gap: 2px; justify-items: end; }
+            .qm-tot small { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-muted); }
+            .qm-tot b { display: inline-flex; align-items: center; gap: 4px; font-size: 18px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+            .qm-tot-ic { display: inline-flex; width: 18px; height: 18px; color: inherit; }
+            .qm-tot-ic svg, .qm-oc-ic svg { width: 100%; height: 100%; }
+            .qm-oc { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; color: var(--qm-muted); font-variant-numeric: tabular-nums; }
+            .qm-oc-ic { width: 13px; height: 13px; display: inline-flex; }
+            .qm-oc-live { color: var(--qm-ok); }
+            .qm-oc-crit { color: var(--qm-crit); }
+            .qm-now { grid-area: now; display: flex; align-items: center; gap: 10px; min-width: 0; background: var(--qm-okbg); border-radius: 12px; padding: 7px 10px; }
+            .qm-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--qm-ok); }
+            .qm-now-t { min-width: 0; }
+            .qm-now-t b { display: block; font-size: 15px; font-weight: 900; line-height: 1.2; }
+            .qm-now-t span { display: block; font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
+            .qm-flag { grid-area: flag; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 5px 10px; }
+            .qm-flag-crit { background: var(--qm-critbg); color: var(--qm-crit); }
+            .qm-flag-warn { background: var(--qm-warnbg); color: var(--qm-warn); }
+            .qm-steps { grid-area: steps; list-style: none; margin: 2px 0 0; padding: 8px 2px 6px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--qm-s2); border: 1px solid var(--qm-line); border-radius: 14px; }
+            .qm-s { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+            .qm-s:not(:first-child)::before { content: ""; position: absolute; top: 16px; right: 50%; width: 100%; height: 2px; background: var(--qm-line); }
+            .qm-s-done::before, .qm-s-live::before { background: var(--qm-acc) !important; }
+            .qm-ic { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--qm-line); background: var(--qm-surface); color: var(--qm-muted); }
+            .qm-ic-svg { width: 16px; height: 16px; display: inline-block; }
+            .qm-s-done .qm-ic { background: var(--qm-acc); border-color: var(--qm-acc); color: #fff; }
+            .qm-s-live .qm-ic { border-color: var(--qm-ok); background: linear-gradient(var(--qm-okbg), var(--qm-okbg)), var(--qm-surface); color: var(--qm-ok); }
+            .qm-s-na .qm-ic { border-style: dashed; background: var(--qm-surface); }
+            .qm-s-na .qm-ic-svg { opacity: .45; }
+            .qm-s em { font-style: normal; margin-top: 2px; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; color: var(--qm-muted); white-space: nowrap; }
+            .qm-s b { font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums; }
+            .qm-s-pend b, .qm-s-na b { color: var(--qm-muted); font-weight: 700; }
+            .qm-s-live b, .qm-s-live em { color: var(--qm-ok); }
+            .qm-where { grid-area: where; margin: 0; display: grid; gap: 3px; font-size: 12px; }
+            .qm-where div { display: flex; gap: 6px; min-width: 0; }
+            .qm-where dt { flex: none; width: 58px; font-weight: 800; color: var(--qm-muted); }
+            .qm-where dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+
+            .qm-cr, .qm-av { background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 16px; box-shadow: var(--qm-shadow); padding: 10px 12px; display: grid; gap: 5px; min-width: 0; }
+            .qm-cr-late { box-shadow: inset 4px 0 0 var(--qm-warn), var(--qm-shadow); }
+            .qm-cr .qm-flag { grid-area: auto; justify-self: start; }
+            .qm-cr-m { font-size: 14px; font-weight: 900; overflow-wrap: anywhere; }
+            .qm-cr-f { font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
+            .qm-cr-r { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+            .qm-cr-e { min-width: 0; overflow-wrap: normal; font-size: 12px; font-weight: 800; color: var(--qm-ok); overflow-wrap: anywhere; }
+            .qm-mini { flex: none; display: flex; gap: 4px; }
+            .qm-mini i { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--qm-line); color: var(--qm-muted); display: grid; place-items: center; }
+            .qm-mini i > span { width: 12px; height: 12px; display: inline-block; }
+            .qm-mini-done { background: var(--qm-acc); border-color: var(--qm-acc) !important; color: #fff !important; }
+            .qm-mini-live { background: var(--qm-okbg); border-color: var(--qm-ok) !important; color: var(--qm-ok) !important; }
+            .qm-mini-na { border-style: dashed !important; opacity: .5; }
+            .qm-cr-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+            .qm-origem { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: var(--qm-accbg); color: var(--qm-acc); }
+            .qm-pay { justify-self: start; font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; }
+            .qm-pay-ok { background: var(--qm-okbg); color: var(--qm-ok); }
+            .qm-pay-pend { background: var(--qm-warnbg); color: var(--qm-warn); }
+            .qm-av b { font-size: 14px; font-weight: 900; }
+            .qm-av p { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.45; }
+
+            /* Tablet em pé: duas colunas de cartões */
+            @media (min-width: 640px) and (orientation: portrait) {
+                .qm-list, .qm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+
+            /* Deitado: uma linha por atendimento, como na TV */
+            @media (orientation: landscape) {
+                .qm-root { gap: 6px; }
+                .qm-top { grid-template-columns: minmax(0, 1fr) auto minmax(250px, 300px) auto; grid-template-areas: "tit kpi tab clk"; align-items: center; padding: 6px 12px; gap: 12px; border-radius: 14px; }
+                .qm-tit h1 { font-size: 15px; }
+                .qm-live { display: none; }
+                .qm-clk b { font-size: 18px; }
+                .qm-clk small { display: none; }
+                .qm-kpis { flex-wrap: nowrap; justify-content: flex-end; }
+                .qm-kpi:not(.qm-kpi-crit) { display: none; }
+                .qm-fs { margin-left: 0; }
+                .qm-tab { padding: 5px 4px; font-size: 12px !important; }
+                .qm-body { gap: 6px; }
+                .qm-aviso { padding: 6px 10px; }
+                .qm-list { gap: 6px; }
+                .qm-colhd, .qm-card { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 264px 82px; }
+                .qm-colhd { display: grid; gap: 10px; position: sticky; top: 0; z-index: 3; padding: 4px 12px 2px 16px; font-size: 8.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; white-space: nowrap; color: var(--qm-muted); background: var(--qm-s2); border-radius: 8px; }
+                .qm-colhd-st { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); text-align: center; }
+                .qm-colhd > span:last-child { text-align: right; }
+                .qm-card { grid-template-areas: "name now steps tot" "meta flag steps tot" "where where where where"; align-items: center; gap: 4px 10px; padding: 8px 12px 8px 16px; border-radius: 14px; }
+                .qm-name { font-size: 14px; line-height: 1.2; }
+                .qm-meta { font-size: 11px; }
+                .qm-now { grid-row: 1 / span 2; align-self: center; background: transparent; padding: 0; gap: 8px; }
+                .qm-card:has(.qm-flag) .qm-now { grid-row: 1; align-self: end; }
+                .qm-now-t b { font-size: 13px; }
+                .qm-now-t span { font-size: 11px; }
+                .qm-flag { align-self: start; font-size: 10.5px; padding: 2px 8px; overflow-wrap: anywhere; }
+                .qm-steps { background: transparent; border: 0; padding: 0; margin: 0; }
+                .qm-s em { display: none; }
+                .qm-ic { width: 28px; height: 28px; }
+                .qm-ic-svg { width: 14px; height: 14px; }
+                .qm-s:not(:first-child)::before { top: 14px; }
+                .qm-s b { font-size: 11px; }
+                .qm-tot { align-self: center; }
+                .qm-tot b { font-size: 16px; }
+                .qm-where { display: flex; gap: 18px; font-size: 11px; border-top: 1px dashed var(--qm-line); padding-top: 5px; margin-top: 2px; }
+                .qm-where div { flex: 1 1 0; }
+                .qm-where dt { width: auto; }
+                .qm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+        `}</style>
+    );
+}
+
+/* ===== Componentes auxiliares ===== */
 function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
     return (
-        <section className="rounded-xl border bg-background p-3 sm:p-4">
+        <section className="rounded-xl border border-slate-700/60 bg-slate-950/35 p-3">
             <div className="flex items-start justify-between gap-2">
-                <h4 className="text-xs sm:text-sm font-semibold tracking-wide text-slate-600 mb-3">{title}</h4>
+                <h4 className="mb-3 text-xs font-bold tracking-wide text-slate-300">{title}</h4>
                 {note && <div className="text-[11px] sm:text-xs text-muted-foreground italic">{note}</div>}
             </div>
             {children}
@@ -2718,17 +5374,21 @@ function Topic({ title, children, note }: { title: string; children: React.React
 function Field({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
     return (
         <div className={`flex items-baseline gap-2 ${className}`}>
-            <span className="min-w-[140px] text-[13px] sm:text-sm font-semibold text-slate-700">{label}:</span>
-            <span className="text-[13px] sm:text-sm text-slate-900 break-words [overflow-wrap:anywhere]">{value}</span>
+            <span className="min-w-[120px] shrink-0 text-xs font-bold text-slate-400">{label}:</span>
+            <span className="min-w-0 text-xs font-semibold text-slate-100 break-words [overflow-wrap:anywhere]">{value}</span>
         </div>
     );
 }
 
 function EtapasInlineDots({ filled }: { filled: boolean[] }) {
     return (
-        <div className="flex items-center gap-1" title="Etapas preenchidas">
+        <div className="qa-etapas-dots flex items-center gap-1" title="Etapas preenchidas">
             {[0, 1, 2, 3].map((k) => (
-                <span key={k} className={`h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY}`} />
+                <span
+                    key={k}
+                    className={`qa-etapa-dot h-1.5 w-1.5 rounded-full border ${filled[k] ? STAGE_DOT_FILLED[k] : STAGE_DOT_EMPTY
+                        }`}
+                />
             ))}
         </div>
     );
@@ -2745,93 +5405,69 @@ function StatusTimelineCell({
     nowMs: number;
     variant?: "desktop" | "mobile";
 }) {
-    if (nowMs <= 0) {
+    const segments = buildStatusSegments(registro, logs, nowMs);
+    const firstStart = segments[0]?.start ?? nowMs;
+    const totalMs = Math.max(0, nowMs - firstStart);
+    const current = segments[segments.length - 1];
+
+    const { durations, activeKey } = getStatusDisplayData(segments);
+
+    if (variant === "mobile") {
+        const activeStep = STATUS_STEPS.find((step) => step.key === activeKey) ?? STATUS_STEPS[0];
+        const activeDuration = durations.get(activeStep.key) ?? 0;
         return (
-            <div
-                className={
-                    variant === "mobile"
-                        ? "grid w-full min-w-0 grid-cols-8 items-center justify-items-center gap-0 px-1 py-0.5"
-                        : "-ml-5 flex w-full min-w-0 items-center justify-start gap-1 px-0 pr-1"
-                }
-                aria-label="Carregando tempos do atendimento"
-            >
-                {STATUS_STEPS.map((step) => (
-                    <StatusPill
-                        key={step.key}
-                        icon={step.icon}
-                        label={step.shortLabel}
-                        time="00:00"
-                        muted
-                        variant={variant}
-                        title={`${step.label} • 00:00`}
-                    />
-                ))}
-                <StatusPill
-                    icon="timer"
-                    label="Total"
-                    time="00:00"
-                    total
-                    variant={variant}
-                    title="Tempo total em atendimento"
-                />
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                <StatusPill icon={activeStep.icon} label={activeStep.shortLabel} time={formatDurationMs(activeDuration)} active={!!activeKey} />
+                <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total />
+                <StatusBlinkStyle />
             </div>
         );
     }
 
-    const segments = buildStatusSegments(registro, logs, nowMs);
-    const firstStart = segments[0]?.start ?? nowMs;
-    const totalMs = Math.max(0, nowMs - firstStart);
-
-    const { durations, activeKey } = getStatusDisplayData(segments);
-    const isMobile = variant === "mobile";
-
     return (
-        <>
-            <div
-                className={
-                    isMobile
-                        ? "grid w-full min-w-0 grid-cols-8 items-center justify-items-center gap-0 overflow-visible px-1 py-0.5"
-                        : "-ml-5 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1"
-                }
-            >
-                {STATUS_STEPS.map((step) => {
-                    const duration = durations.get(step.key) ?? 0;
-                    const skipped = isStatusStepSkipped(registro, step.key);
-                    const isActive = !skipped && activeKey === step.key;
-
-                    return (
-                        <StatusPill
-                            key={step.key}
-                            icon={step.icon}
-                            label={step.shortLabel}
-                            time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
-                            active={isActive}
-                            muted={!isActive && (duration <= 0 || skipped)}
-                            skipped={skipped}
-                            variant={variant}
-                            title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
-                        />
-                    );
-                })}
-
-                <StatusPill
-                    icon="timer"
-                    label="Total"
-                    time={formatDurationMs(totalMs)}
-                    total
-                    variant={variant}
-                    title="Tempo total em atendimento"
-                />
-            </div>
-
+        <div className="-ml-6 flex w-full min-w-0 items-center justify-start gap-1 overflow-visible px-0 pr-1">
+            {STATUS_STEPS.map((step) => {
+                const duration = durations.get(step.key) ?? 0;
+                const skipped = isStatusStepSkipped(registro, step.key);
+                const isActive = !skipped && activeKey === step.key;
+                return (
+                    <StatusPill
+                        key={step.key}
+                        icon={step.icon}
+                        label={step.shortLabel}
+                        time={skipped ? "00:00" : duration > 0 ? formatDurationMs(duration) : "00:00"}
+                        active={isActive}
+                        muted={!isActive && (duration <= 0 || skipped)}
+                        skipped={skipped}
+                        title={`${step.label} • ${skipped ? "Não realizado neste atendimento" : duration > 0 ? formatDurationMs(duration) : "00:00"}`}
+                    />
+                );
+            })}
+            <StatusPill icon="timer" label="Total" time={formatDurationMs(totalMs)} total title="Tempo total em atendimento" />
             <StatusBlinkStyle />
-        </>
+        </div>
     );
 }
 
 function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
+    // Tanatopraxia explicitamente marcada como "Não".
     if (stepKey === "fase03") return isNao(registro.tanato);
+
+    // Ornamentação explicitamente marcada como "Não".
     if (stepKey === "fase05") return isNao(registro.ornamentacao);
+
+    // Velório explicitamente marcado como "Não".
+    // Campo vazio/NULL continua preservando a compatibilidade dos registros legados.
+    if (stepKey === "fase08") return isNao(registro.realiza_velorio);
+
+    // Sepultamento explicitamente marcado como "Não".
+    // Campo vazio/NULL continua preservando a compatibilidade dos registros legados.
+    if (stepKey === "fase09") return isNao(registro.realiza_sepultamento);
+
+    // Assistência (materiais) explicitamente marcada como "Não":
+    // a etapa visual de Material Recolhido não se aplica.
+    if (stepKey === "fase10") return isNao(registro.assistencia);
+
     return false;
 }
 
@@ -2843,7 +5479,6 @@ function StatusPill({
     muted = false,
     total = false,
     skipped = false,
-    variant = "desktop",
     title,
 }: {
     icon: StatusIconKey;
@@ -2853,42 +5488,24 @@ function StatusPill({
     muted?: boolean;
     total?: boolean;
     skipped?: boolean;
-    variant?: "desktop" | "mobile";
     title?: string;
 }) {
-    const isMobile = variant === "mobile";
-
-    const boxClass = isMobile
-        ? `relative flex h-[40px] w-[34px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "" : ""}`
-        : `relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`;
-
-    const circleClass = isMobile
-        ? `relative flex h-[25px] w-[25px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_9px_rgba(34,197,94,.48)]" : "border border-transparent"}`
-        : `relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`;
-
-    const iconClass = isMobile
-        ? `relative flex h-[19px] w-[19px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`
-        : `relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`;
-
-    const timeClass = isMobile
-        ? `mt-[3px] w-full truncate text-[9px] font-black leading-none tabular-nums ${muted ? "text-slate-400/60 dark:text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-800 dark:text-slate-100"}`
-        : `mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-400/60 dark:text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-800 dark:text-slate-100"}`;
-
     return (
         <div
-            className={boxClass}
+            className={`qa-status-pill relative flex h-[35px] w-[32px] shrink-0 flex-col items-center justify-center px-0 text-center leading-none transition ${total ? "ml-0.5 mr-1" : ""}`}
             title={title ?? `${label} • ${time}`}
         >
-            <div className={circleClass}>
-                <div className={iconClass} aria-hidden="true">
+            <div className={`qa-status-pill-ring relative flex h-[22px] w-[22px] items-center justify-center rounded-full ${active ? "qa-status-active-ring border border-[#22C55E]/90 shadow-[0_0_8px_rgba(34,197,94,.45)]" : "border border-transparent"}`}>
+                <div
+                    className={`qa-status-pill-icon relative flex h-[17px] w-[17px] items-center justify-center ${active ? "qa-status-blink text-[#22C55E]" : "text-[#00AEEC]"} ${muted ? "opacity-[0.12]" : ""}`}
+                    aria-hidden="true"
+                >
                     <StatusIcon type={icon} />
                 </div>
             </div>
-
-            <div className={timeClass}>{time}</div>
-
+            <div className={`qa-status-pill-time mt-[3px] w-full truncate text-[8.5px] font-black leading-none tabular-nums ${muted ? "text-slate-500/35" : active ? "text-[#22C55E]" : "text-slate-100"}`}>{time}</div>
             {skipped && (
-                <span className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center font-semibold leading-none text-[#00AEEC] ${isMobile ? "text-[46px]" : "text-[43px]"}`}>
+                <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-[43px] font-semibold leading-none text-[#00AEEC]">
                     ×
                 </span>
             )}
@@ -2918,7 +5535,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M6.5 21h11" />
                 </svg>
             );
-
         case "testTube":
             return (
                 <svg {...common}>
@@ -2927,7 +5543,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M8.2 15h7.6" />
                 </svg>
             );
-
         case "flower":
             return (
                 <svg {...common}>
@@ -2938,7 +5553,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M19.5 12c-1.7 1.7-3.3 1.7-5 0 1.7-1.7 3.3-1.7 5 0Z" />
                 </svg>
             );
-
         case "coffin":
             return (
                 <svg {...common}>
@@ -2947,7 +5561,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M9.8 10h4.4" />
                 </svg>
             );
-
         case "car":
             return (
                 <svg {...common}>
@@ -2958,7 +5571,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M9 12h6" />
                 </svg>
             );
-
         case "box":
             return (
                 <svg {...common}>
@@ -2968,7 +5580,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M8.2 6.2 16 10.6" />
                 </svg>
             );
-
         case "hourglass":
             return (
                 <svg {...common}>
@@ -2980,7 +5591,23 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M10 16h4" />
                 </svg>
             );
-
+        case "clock":
+            // Tempo total: relógio comum
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                </svg>
+            );
+        case "clockPause":
+            // Tempo ocioso: relógio em pausa
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M10 9v6" />
+                    <path d="M14 9v6" />
+                </svg>
+            );
         case "timer":
             return (
                 <svg {...common}>
@@ -2991,7 +5618,6 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M12 2v3" />
                 </svg>
             );
-
         default:
             return (
                 <svg {...common}>
@@ -3005,52 +5631,27 @@ function StatusBlinkStyle() {
     return (
         <style jsx global>{`
             @keyframes qa-status-pulse {
-                0%, 100% {
-                    opacity: 1;
-                    transform: scale(1);
-                    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.95));
-                }
-                50% {
-                    opacity: 0.55;
-                    transform: scale(1.1);
-                    filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.9));
-                }
+                0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.95)); }
+                50% { opacity: 0.55; transform: scale(1.1); filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.9)); }
             }
-
             @keyframes qa-status-ring-pulse {
-                0%, 100% {
-                    opacity: 1;
-                    transform: scale(1);
-                    box-shadow: 0 0 6px rgba(34, 197, 94, 0.42);
-                    border-color: rgba(34, 197, 94, 0.92);
-                }
-                50% {
-                    opacity: 0.72;
-                    transform: scale(1.07);
-                    box-shadow: 0 0 9px rgba(34, 197, 94, 0.68);
-                    border-color: rgba(34, 197, 94, 1);
-                }
+                0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px rgba(34, 197, 94, 0.42); border-color: rgba(34, 197, 94, 0.92); }
+                50% { opacity: 0.72; transform: scale(1.07); box-shadow: 0 0 9px rgba(34, 197, 94, 0.68); border-color: rgba(34, 197, 94, 1); }
             }
-
             .qa-status-blink {
                 display: inline-block;
                 animation: qa-status-pulse 1.05s ease-in-out infinite;
             }
-
             .qa-status-active-ring {
                 animation: qa-status-ring-pulse 1.05s ease-in-out infinite;
             }
-
             @media (prefers-reduced-motion: reduce) {
                 .qa-status-blink,
-                .qa-status-active-ring {
-                    animation: none !important;
-                }
+                .qa-status-active-ring { animation: none !important; }
             }
         `}</style>
     );
 }
-
 
 function EtapasRow({ registro }: { registro: Registro }) {
     const preenchidas = etapasPreenchidas(registro);
@@ -3068,48 +5669,34 @@ function EtapasRow({ registro }: { registro: Registro }) {
 }
 
 /* ===== Linha do Tempo (Logs) ===== */
-
 function isLikelyBooleanMap(obj: Record<string, unknown>) {
     const entries = Object.entries(obj);
     if (entries.length === 0) return false;
-
     let boolish = 0;
-
     for (const [, v] of entries) {
         const s = decodeHtmlEntitiesDeep(String(v ?? "")).trim().toLowerCase();
-        if (
-            typeof v === "boolean" ||
-            ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)
-        ) {
-            boolish++;
-        }
+        if (typeof v === "boolean" || ["true", "false", "1", "0", "sim", "nao", "não"].includes(s)) boolish++;
     }
-
     return boolish / entries.length >= 0.8;
 }
 
-/* ✅ detecta se a string “parece” ser JSON de materiais */
 function looksLikeMateriaisJson(s: string) {
     const t = (s || "").toLowerCase();
     return (t.includes('"nome"') && t.includes('"checked"')) || t.includes('"item');
 }
 
-/* ✅ extrai nome/qtd mesmo se o JSON estiver “quebrado” e não der JSON.parse */
 function extractMateriaisByRegex(text: string): Array<{ nome: string; qtd?: string }> {
-    const s = decodeHtmlEntitiesDeep(text)
-        .replace(/[“”]/g, '"')
-        .replace(/[‘’]/g, "'");
+    const s = decodeHtmlEntitiesDeep(text).replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
 
     const out: Array<{ nome: string; qtd?: string }> = [];
-    const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
 
+    const reNome = /(?:^|[,{]\s*)"?nome"?\s*:\s*["']([^"']+)["']/gi;
     let m: RegExpExecArray | null;
 
     while ((m = reNome.exec(s))) {
         const nome = (m[1] || "").trim();
         const near = s.slice(m.index, m.index + 260);
         const qtd = near.match(/"?qtd"?\s*:\s*["']?([0-9]+(?:[.,][0-9]+)?)["']?/i)?.[1];
-
         if (nome) out.push({ nome, qtd });
     }
 
@@ -3120,449 +5707,81 @@ function tryParseJsonFromStringMaybeEmbedded(raw: string): unknown | null {
     const decoded = decodeHtmlEntitiesDeep(raw);
     const trimmed = decoded.trim().replace(/^\s*json\s*:\s*/i, "").trim();
 
-    if (
-        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-        (trimmed.startsWith("[") && trimmed.endsWith("]"))
-    ) {
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
         try {
             return JSON.parse(trimmed);
         } catch {
-            // ignore
+            /* ignore */
         }
     }
 
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
-
     if (start >= 0 && end > start) {
         const slice = trimmed.slice(start, end + 1);
         try {
             return JSON.parse(slice);
         } catch {
-            // ignore
+            /* ignore */
         }
     }
-
     return null;
 }
 
-/* =========================
-   Linha do tempo - padrão relatório
-   ========================= */
-
-const FASES_NOMES_QA: Record<string, string> = {
-    fase01: "Indo Retirar o Óbito",
-    fase02: "Corpo na Clínica",
-    fase03: "Início de Conservação",
-    fase04: "Fim da Conservação",
-    fase05: "Início da Ornamentação",
-    fase06: "Fim da Ornamentação",
-    fase12: "Corpo Pronto",
-    fase07: "Transportando Óbito P/ Velório",
-    fase08: "Entrega de Corpo",
-    fase09: "Transportando P/ Sepultamento",
-    fase10: "Sepultamento Concluído",
-    fase11: "Material Recolhido",
-};
-
-const FASES_ICONES_QA: Record<string, string> = {
-    fase01: "🚑",
-    fase02: "🏥",
-    fase03: "🧪",
-    fase04: "✅",
-    fase05: "🌸",
-    fase06: "🌸",
-    fase12: "✅",
-    fase07: "🚐",
-    fase08: "⚰️",
-    fase09: "🚐",
-    fase10: "✅",
-    fase11: "📦",
-};
-
-function normalizarFaseTimeline(fase?: string) {
-    const raw = String(fase || "").trim();
-    if (!raw) return "";
-
-    const low = raw.toLowerCase();
-
-    if (low.startsWith("fase")) {
-        const n = low.replace(/\D+/g, "");
-        if (!n) return low;
-        return `fase${n.padStart(2, "0")}`;
-    }
-
-    const semAcento = low
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
-
-    const map: Record<string, string> = {
-        removendo: "fase01",
-        "indo retirar o obito": "fase01",
-
-        "corpo na clinica": "fase02",
-        "aguardando procedimento": "fase02",
-
-        preparando: "fase03",
-        "inicio de conservacao": "fase03",
-
-        "fim da conservacao": "fase04",
-        "aguardando ornamentacao": "fase04",
-
-        ornamentando: "fase05",
-        "inicio da ornamentacao": "fase05",
-
-        "fim da ornamentacao": "fase06",
-        "aguardando corpo pronto": "fase06",
-        "corpo pronto": "fase12",
-
-        transportando: "fase07",
-        "transportando obito p/velorio": "fase07",
-        "transportando obito para velorio": "fase07",
-        "transportando p/ velorio": "fase07",
-        "transportando para velorio": "fase07",
-
-        velando: "fase08",
-        "entrega de corpo": "fase08",
-
-        sepultando: "fase09",
-        "transportando p/ sepultamento": "fase09",
-        "transportando para sepultamento": "fase09",
-
-        "sepultamento concluido": "fase10",
-        "material recolhido": "fase11",
-        concluido: "fase11",
-    };
-
-    return map[semAcento] || raw;
-}
-
-function traduzirFaseTimeline(fase?: string) {
-    const f = normalizarFaseTimeline(fase);
-    return f ? FASES_NOMES_QA[f] || fase || "" : "";
-}
-
-function iconeAcaoTimeline(acao?: string, statusNovo?: string) {
-    const fase = normalizarFaseTimeline(statusNovo);
-
-    if (fase && FASES_ICONES_QA[fase]) {
-        return FASES_ICONES_QA[fase];
-    }
-
-    const a = String(acao || "").toLowerCase();
-
-    if (a.includes("criou")) return "🟢";
-    if (a.includes("editou") || a.includes("atualizou") || a.includes("alterou")) return "✏️";
-    if (a.includes("assinou")) return "🖊️";
-    if (a.includes("foto")) return "🖼️";
-    if (a.includes("material")) return "📦";
-
-    return "📝";
-}
-
-function humanizarAcaoTimeline(acao?: string) {
-    const a = String(acao || "").trim();
-    const low = a.toLowerCase();
-
-    const map: Record<string, string> = {
-        criou: "Registro criado",
-        editou: "Registro editado",
-        "editou registro": "Registro editado",
-        "atualizou status": "Status alterado",
-        material_recolhido: "Material recolhido",
-    };
-
-    if (map[low]) return map[low];
-
-    if (low.includes("assinou") && low.includes("assinatura_responsavel")) {
-        return "Assinou o Termo de Recebimento de Material";
-    }
-
-    if (low.includes("assinou") && low.includes("assinatura_requerente")) {
-        return "Assinou o Termo de Requisição de Veículo";
-    }
-
-    if (low.includes("salvou foto")) {
-        return a
-            .replace(/_/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
-            .replace(/^./, (c) => c.toUpperCase());
-    }
-
-    return a
-        .replace(/_/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .replace(/^./, (c) => c.toUpperCase());
-}
-
-function tituloLogTimeline(log: LogItem) {
-    const status = traduzirFaseTimeline(log.status_novo);
-
-    if (status) return status;
-
-    const acaoHumana = String((log as any)?.acao_humana || "").trim();
-    if (acaoHumana) return substituirRotuloVisual(acaoHumana);
-
-    return substituirRotuloVisual(humanizarAcaoTimeline(log.acao));
-}
-
-function pareceUrlImagem(valor: string) {
-    const v = String(valor || "").trim().toLowerCase();
-
-    if (!v) return false;
-    if (v.startsWith("data:image/")) return true;
-
-    return (
-        v.includes(".jpg") ||
-        v.includes(".jpeg") ||
-        v.includes(".png") ||
-        v.includes(".webp") ||
-        v.includes(".gif") ||
-        v.includes(".bmp") ||
-        v.includes(".svg") ||
-        v.includes("/uploads/falecidos/") ||
-        v.includes("/uploads/acoes_fotos/") ||
-        v.includes("/uploads/fotos/")
-    );
-}
-
-function chaveEhImagem(key: string) {
-    const k = String(key || "").toLowerCase();
-
-    return (
-        k.includes("foto") ||
-        k.includes("imagem") ||
-        k.includes("img") ||
-        k.includes("arquivo")
-    );
-}
-
-function normalizarUrlImagemTimeline(raw: string) {
-    const v = decodeHtmlEntitiesDeep(String(raw || "")).trim();
-
-    if (!v) return "";
-
-    if (
-        v.startsWith("http://") ||
-        v.startsWith("https://") ||
-        v.startsWith("data:image/")
-    ) {
-        return v;
-    }
-
-    if (v.startsWith("/uploads/")) {
-        return `https://api.planoassistencialintegrado.com.br${v}`;
-    }
-
-    if (v.startsWith("uploads/")) {
-        return `https://api.planoassistencialintegrado.com.br/${v}`;
-    }
-
-    if (v.startsWith("/")) {
-        return v;
-    }
-
-    return `/${v}`;
-}
-
-function labelImagemTimeline(key: string) {
-    const k = String(key || "").toLowerCase();
-
-    if (k.includes("falecido")) return "Foto do Falecido(a)";
-    if (k.includes("ornament")) return "Foto da Ornamentação";
-    if (k.includes("conserv")) return "Foto da Conservação";
-    if (k.includes("tanato")) return "Foto da Conservação";
-    if (k.includes("velorio")) return "Foto do Velório";
-    if (k.includes("sepult")) return "Foto do Sepultamento";
-    if (k.includes("acao")) return "Foto da Ação";
-    if (k.includes("foto")) return "Foto";
-
-    return overrideCampoNome(key, titleCaseFromSnake(key));
-}
-
-function isLogSemAlteracoes(log: LogItem) {
-    const raw = log?.detalhes;
-
-    if (raw == null || raw === "") return false;
-
-    let obj: any = raw;
-
-    if (typeof raw === "string") {
-        const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
-        if (parsed == null || !isPlainObject(parsed)) return false;
-        obj = parsed;
-    }
-
-    if (!isPlainObject(obj)) return false;
-
-    const semAlteracoes = obj.sem_alteracoes ?? obj.semAlteracoes ?? obj["Sem Alteracoes"] ?? obj["Sem Alterações"];
-    return asBool(semAlteracoes);
-}
-
-function deveIgnorarCampoTimeline(key: string, value: unknown) {
-    const k = String(key || "").toLowerCase();
-
-    if (value === null || value === undefined || value === "") return true;
-
-    if (k === "id") return true;
-    if (k === "sepultamento_id") return true;
-    if (k === "acao") return true;
-    if (k === "acao_humana") return true;
-    if (k === "usuario") return true;
-    if (k === "status_anterior") return true;
-    if (k === "status_novo") return true;
-    if (k === "datahora") return true;
-    if (k === "data_hora") return true;
-    if (k === "sem_alteracoes" || k === "semalteracoes") return true;
-    if (k === "sem alteracoes" || k === "sem alterações") return true;
-    if (k.includes("assinatura")) return true;
-    if (k.includes("pdf")) return true;
-
-    return false;
-}
-
-function formatarValorTimeline(key: string, value: unknown) {
-    if (value === null || value === undefined) return "";
-
-    if (typeof value === "boolean") return value ? "Sim" : "Não";
-
-    const txt = decodeHtmlEntitiesDeep(String(value)).trim();
-    if (!txt) return "";
-
-    if (txt.toLowerCase().startsWith("fase")) {
-        return traduzirFaseTimeline(txt);
-    }
-
-    return substituirRotuloVisual(formataSeDataIso(txt));
-}
-
-type TimelineFoto = {
-    label: string;
-    url: string;
-};
-
-type TimelineRow = {
-    label: string;
-    value: string;
-};
-
-function extrairDetalhesTimeline(raw: unknown): {
-    rows: TimelineRow[];
-    fotos: TimelineFoto[];
-    arrumacao: string[];
-    textoLivre: string;
-} {
-    const rows: TimelineRow[] = [];
-    const fotos: TimelineFoto[] = [];
-    const arrumacao: string[] = [];
-    let textoLivre = "";
-
-    if (raw == null || raw === "") {
-        return { rows, fotos, arrumacao, textoLivre };
-    }
+function buildDetalhesNodes(raw: unknown): React.ReactNode {
+    if (raw == null || raw === "") return null;
 
     let obj: unknown = raw;
 
     if (typeof raw === "string") {
         const parsed = tryParseJsonFromStringMaybeEmbedded(raw);
-
-        if (parsed != null) {
-            obj = parsed;
-        } else {
+        if (parsed != null) obj = parsed;
+        else {
             const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(raw).trim());
-
-            if (pareceUrlImagem(text)) {
-                fotos.push({
-                    label: "Foto",
-                    url: normalizarUrlImagemTimeline(text),
-                });
-                return { rows, fotos, arrumacao, textoLivre };
-            }
-
-            textoLivre = text;
-            return { rows, fotos, arrumacao, textoLivre };
+            return text ? (
+                <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
+            ) : null;
         }
-    }
-
-    function pushFoto(key: string, value: unknown) {
-        const val = decodeHtmlEntitiesDeep(String(value ?? "")).trim();
-        if (!val || !pareceUrlImagem(val)) return false;
-
-        fotos.push({
-            label: labelImagemTimeline(key),
-            url: normalizarUrlImagemTimeline(val),
-        });
-
-        return true;
-    }
-
-    function pushRow(key: string, value: unknown) {
-        if (deveIgnorarCampoTimeline(key, value)) return;
-
-        const val = formatarValorTimeline(key, value);
-        if (!val) return;
-
-        if ((chaveEhImagem(key) || pareceUrlImagem(val)) && pareceUrlImagem(val)) {
-            pushFoto(key, val);
-            return;
-        }
-
-        const label = substituirRotuloVisual(
-            overrideCampoNome(key, titleCaseFromSnake(key.replace(/:/g, "_")))
-        );
-
-        rows.push({ label, value: val });
-    }
-
-    function walk(prefix: string, value: unknown) {
-        if (value === null || value === undefined || value === "") return;
-
-        if (Array.isArray(value)) {
-            if (value.length === 0) return;
-
-            if (value.every((v) => typeof v !== "object")) {
-                pushRow(prefix, value.map((v) => formatarValorTimeline(prefix, v)).join(", "));
-                return;
-            }
-
-            value.forEach((v, idx) => walk(`${prefix}_${idx + 1}`, v));
-            return;
-        }
-
-        if (isPlainObject(value)) {
-            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(prefix) || isLikelyBooleanMap(value)) {
-                for (const [k, v] of Object.entries(value)) {
-                    if (asBool(v)) arrumacao.push(titleCaseFromSnake(k));
-                }
-                return;
-            }
-
-            for (const [k, v] of Object.entries(value)) {
-                const nextKey = prefix ? `${prefix}_${k}` : k;
-
-                if (/^arrum[aã]cao(\s*json|_json)?$/i.test(k) && isPlainObject(v)) {
-                    for (const [ak, av] of Object.entries(v)) {
-                        if (asBool(av)) arrumacao.push(titleCaseFromSnake(ak));
-                    }
-                    continue;
-                }
-
-                walk(nextKey, v);
-            }
-
-            return;
-        }
-
-        pushRow(prefix, value);
     }
 
     if (isPlainObject(obj)) {
-        for (const [key, value] of Object.entries(obj)) {
-            if (["materiais_json", "material_json"].includes(key)) continue;
-            if (deveIgnorarCampoTimeline(key, value)) continue;
+        const plainObj = obj as Record<string, unknown>;
+
+        if (isLikelyBooleanMap(plainObj)) {
+            const arrItems = Object.entries(plainObj)
+                .filter(([, v]) => asBool(v))
+                .map(([k]) => titleCaseFromSnake(k));
+
+            return arrItems.length ? (
+                <div className="mt-3 w-full min-w-0">
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
+                        <div className="font-semibold mb-1">Arrumação:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {arrItems.map((t, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {t}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            ) : null;
+        }
+
+        const arrItems: string[] = [];
+        const rows: { id: string; label: string; value: string }[] = [];
+
+        for (const key of Object.keys(plainObj)) {
+            if (["materiais_json", "id", "acao"].includes(key)) continue;
+
+            const value = plainObj[key];
+
+            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key) && value && isPlainObject(value)) {
+                for (const [k, v] of Object.entries(value)) {
+                    if (asBool(v)) arrItems.push(titleCaseFromSnake(k));
+                }
+                continue;
+            }
 
             const m = key.match(/^materiais_(.+?)_qtd$/i);
             if (m) {
@@ -3570,337 +5789,118 @@ function extrairDetalhesTimeline(raw: unknown): {
                 if (valRaw != null && String(valRaw).trim() !== "") {
                     const nomeBase = titleCaseFromSnake(m[1]);
                     const nome = overrideCampoNome(m[1], nomeBase);
-                    rows.push({
-                        label: nome,
-                        value: formataSeDataIso(String(valRaw)),
-                    });
+                    const valFmt = formataSeDataIso(String(valRaw));
+                    rows.push({ id: key, label: nome, value: valFmt });
                 }
                 continue;
             }
 
-            if (/^arrum[aã]cao(\s*json|_json)?$/i.test(key)) {
-                if (typeof value === "string") {
-                    const parsedArrumacao = tryParseJsonFromStringMaybeEmbedded(value);
-                    if (isPlainObject(parsedArrumacao)) {
-                        for (const [k, v] of Object.entries(parsedArrumacao)) {
-                            if (asBool(v)) arrumacao.push(titleCaseFromSnake(k));
-                        }
-                    }
-                    continue;
-                }
+            if (value == null) continue;
+            if (typeof value === "object") continue;
 
-                if (isPlainObject(value)) {
-                    for (const [k, v] of Object.entries(value)) {
-                        if (asBool(v)) arrumacao.push(titleCaseFromSnake(k));
-                    }
-                    continue;
-                }
+            const valStr = decodeHtmlEntitiesDeep(String(value)).trim();
+            if (!valStr) continue;
+
+            let nome = key.replace(/_/g, " ");
+            nome = overrideCampoNome(key, titleCaseFromSnake(nome));
+            let valFmt = valStr;
+
+            const maybeEmbedded = tryParseJsonFromStringMaybeEmbedded(valFmt);
+            if (maybeEmbedded && isPlainObject(maybeEmbedded) && isLikelyBooleanMap(maybeEmbedded as Record<string, unknown>)) {
+                const map = maybeEmbedded as Record<string, unknown>;
+                const items = Object.entries(map)
+                    .filter(([, v]) => asBool(v))
+                    .map(([k]) => titleCaseFromSnake(k));
+                if (items.length) arrItems.push(...items);
+                continue;
             }
 
-            walk(key, value);
+            if (valFmt.toLowerCase().startsWith("fase")) valFmt = traduzirFase(valFmt);
+            valFmt = formataSeDataIso(valFmt);
+
+            nome = substituirRotuloVisual(nome);
+            valFmt = substituirRotuloVisual(valFmt);
+
+            rows.push({ id: key, label: nome, value: valFmt });
         }
-    } else {
-        const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
-        if (pareceUrlImagem(text)) {
-            fotos.push({
-                label: "Foto",
-                url: normalizarUrlImagemTimeline(text),
-            });
-        } else {
-            textoLivre = text;
-        }
-    }
 
-    return {
-        rows,
-        fotos,
-        arrumacao: [...new Set(arrumacao)],
-        textoLivre,
-    };
-}
+        if (rows.length === 0 && arrItems.length === 0) return null;
 
-function BotaoVerFotoTimeline({
-    foto,
-    onClick,
-}: {
-    foto: TimelineFoto;
-    onClick: (foto: TimelineFoto) => void;
-}) {
-    return (
-        <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground">{foto.label}:</span>
-
-            <button
-                type="button"
-                onClick={() => onClick(foto)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
-                title={`Visualizar ${foto.label}`}
-                aria-label={`Visualizar ${foto.label}`}
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                >
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <path d="M21 15l-5-5L5 21" />
-                </svg>
-            </button>
-        </div>
-    );
-}
-
-function ModalFotoTimeline({
-    foto,
-    onClose,
-}: {
-    foto: TimelineFoto | null;
-    onClose: () => void;
-}) {
-    if (!foto) return null;
-
-    return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-3 sm:p-6">
-            <div className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl overflow-hidden">
-                <div className="flex items-center justify-between border-b px-4 py-3">
-                    <div className="font-semibold text-slate-800">{foto.label}</div>
-
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border hover:bg-slate-100"
-                        aria-label="Fechar imagem"
-                        title="Fechar"
-                    >
-                        ×
-                    </button>
-                </div>
-
-                <div className="bg-slate-950 p-3">
-                    <img
-                        src={foto.url}
-                        alt={foto.label}
-                        className="max-h-[78vh] w-full rounded-xl object-contain"
-                    />
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function ModalGaleriaFotosTimeline({
-    open,
-    fotos,
-    index,
-    onIndexChange,
-    onClose,
-}: {
-    open: boolean;
-    fotos: TimelineFoto[];
-    index: number;
-    onIndexChange: (index: number) => void;
-    onClose: () => void;
-}) {
-    if (!open || fotos.length === 0) return null;
-
-    const safeIndex = Math.max(0, Math.min(index, fotos.length - 1));
-    const foto = fotos[safeIndex];
-
-    const prev = () => onIndexChange(safeIndex <= 0 ? fotos.length - 1 : safeIndex - 1);
-    const next = () => onIndexChange(safeIndex >= fotos.length - 1 ? 0 : safeIndex + 1);
-
-    return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-3 sm:p-6">
-            <div className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl overflow-hidden">
-                <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-                    <div className="min-w-0">
-                        <div className="truncate font-semibold text-slate-800">{foto.label}</div>
-                        <div className="text-xs text-slate-500">
-                            {safeIndex + 1} de {fotos.length}
-                        </div>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border hover:bg-slate-100"
-                        aria-label="Fechar galeria"
-                        title="Fechar"
-                    >
-                        ×
-                    </button>
-                </div>
-
-                <div className="relative bg-slate-950 p-3">
-                    <img
-                        src={foto.url}
-                        alt={foto.label}
-                        className="max-h-[72vh] w-full rounded-xl object-contain"
-                    />
-
-                    {fotos.length > 1 && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={prev}
-                                className="absolute left-5 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75"
-                                aria-label="Foto anterior"
-                            >
-                                ‹
-                            </button>
-                            <button
-                                type="button"
-                                onClick={next}
-                                className="absolute right-5 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75"
-                                aria-label="Próxima foto"
-                            >
-                                ›
-                            </button>
-                        </>
-                    )}
-                </div>
-
-                {fotos.length > 1 && (
-                    <div className="flex gap-2 overflow-x-auto border-t bg-white p-3">
-                        {fotos.map((f, i) => (
-                            <button
-                                key={`${f.url}-${i}`}
-                                type="button"
-                                onClick={() => onIndexChange(i)}
-                                className={`h-16 w-16 shrink-0 overflow-hidden rounded-lg border ${i === safeIndex ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"}`}
-                                title={f.label}
-                            >
-                                <img src={f.url} alt={f.label} className="h-full w-full object-cover" />
-                            </button>
-                        ))}
+        return (
+            <div className="mt-3 space-y-2 w-full min-w-0">
+                {arrItems.length > 0 && (
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs">
+                        <div className="font-semibold mb-1">Arrumação:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                            {[...new Set(arrItems)].map((t, idx) => (
+                                <li key={idx} className="break-words [overflow-wrap:anywhere]">
+                                    {t}
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 )}
-            </div>
-        </div>
-    );
-}
 
-function LinhaDoTempoLogs({
-    logs,
-    usuarioVisivel = true,
-}: {
-    logs: LogItem[];
-    usuarioVisivel?: boolean;
-}) {
-    const [fotoAberta, setFotoAberta] = useState<TimelineFoto | null>(null);
-
-    const logsFiltrados = useMemo(
-        () => (logs || []).filter((log) => !isLogSemAlteracoes(log)),
-        [logs]
-    );
-
-    if (!logsFiltrados || logsFiltrados.length === 0) {
-        return (
-            <div className="p-4 text-center text-muted-foreground">
-                Nenhum log encontrado.
+                {rows.map((row) => (
+                    <div
+                        key={row.id}
+                        className="rounded-lg border bg-background px-3 py-2 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0"
+                    >
+                        <span className="font-semibold">{row.label}: </span>
+                        <span className="break-words [overflow-wrap:anywhere]">{row.value}</span>
+                    </div>
+                ))}
             </div>
         );
     }
 
+    const text = substituirRotuloVisual(decodeHtmlEntitiesDeep(String(obj)));
+    return text.trim() ? (
+        <div className="mt-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{text}</div>
+    ) : null;
+}
+
+function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
+    if (!logs || logs.length === 0) {
+        return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
+    }
+
     return (
-        <>
-            <div className="space-y-3 w-full min-w-0 overflow-x-hidden">
-                {logsFiltrados.map((ent, i) => {
-                    const titulo = tituloLogTimeline(ent);
-                    const emoji = iconeAcaoTimeline(ent.acao, ent.status_novo);
-                    const { rows, fotos, arrumacao, textoLivre } = extrairDetalhesTimeline(ent.detalhes);
+        <div className="space-y-2 w-full min-w-0 overflow-x-hidden">
+            {logs.map((ent, i) => {
+                const acao = ent.acao ? capitalize(ent.acao) : "";
+                const statusLabel = ent.status_novo ? traduzirFase(ent.status_novo) : "";
+                const detalhes = buildDetalhesNodes(ent.detalhes);
 
-                    return (
-                        <div
-                            key={`${ent.id ?? i}-${ent.datahora ?? "sem-data"}`}
-                            className="rounded-2xl border bg-background/70 p-3 sm:p-4 shadow-sm overflow-hidden min-w-0"
-                        >
-                            <div className="flex gap-3 min-w-0">
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xl">
-                                    <span aria-hidden>{emoji}</span>
-                                </div>
+                return (
+                    <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
+                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
 
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-xs text-muted-foreground">
-                                        {formatLogDateTime(ent.datahora)}
-                                    </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>
 
-                                    <div className="mt-0.5 text-sm sm:text-base font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
-                                        {titulo}
-                                    </div>
-
-                                    {usuarioVisivel && ent.usuario && (
-                                        <div className="mt-0.5 text-xs font-medium text-muted-foreground break-words [overflow-wrap:anywhere]">
-                                            {ent.usuario}
-                                        </div>
-                                    )}
-
-                                    {rows.length > 0 && (
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            {rows.map((row, idx) => (
-                                                <div
-                                                    key={`${row.label}-${idx}`}
-                                                    className="rounded-lg border bg-white/70 px-3 py-2 text-xs sm:text-sm text-slate-700 shadow-sm"
-                                                >
-                                                    <span className="font-semibold text-slate-800">
-                                                        {row.label}:
-                                                    </span>{" "}
-                                                    <span>{row.value}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {arrumacao.length > 0 && (
-                                        <div className="mt-3 rounded-xl border bg-white/70 px-3 py-2 text-xs sm:text-sm">
-                                            <div className="font-semibold mb-1">Arrumação:</div>
-                                            <ul className="list-disc pl-4 space-y-0.5">
-                                                {arrumacao.map((item, idx) => (
-                                                    <li
-                                                        key={`${item}-${idx}`}
-                                                        className="break-words [overflow-wrap:anywhere]"
-                                                    >
-                                                        {item}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-
-                                    {textoLivre && (
-                                        <div className="mt-3 rounded-xl border bg-white/70 p-3 text-xs sm:text-sm text-slate-700 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                                            {textoLivre}
-                                        </div>
-                                    )}
-
-                                    {fotos.length > 0 && (
-                                        <div className="mt-3 flex flex-col gap-2">
-                                            {fotos.map((foto, idx) => (
-                                                <BotaoVerFotoTimeline
-                                                    key={`${foto.url}-${idx}`}
-                                                    foto={foto}
-                                                    onClick={setFotoAberta}
-                                                />
-                                            ))}
-                                        </div>
+                                <div className="text-sm flex flex-wrap items-center gap-1 min-w-0">
+                                    <span className="break-words [overflow-wrap:anywhere]">{acao}</span>
+                                    {statusLabel && (
+                                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary break-words [overflow-wrap:anywhere]">
+                                            {statusLabel}
+                                        </span>
                                     )}
                                 </div>
+
+                                {usuarioVisivel && (
+                                    <div className="text-[11px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                        Usuário: {ent.usuario ?? ""}
+                                    </div>
+                                )}
+
+                                {detalhes}
                             </div>
                         </div>
-                    );
-                })}
-            </div>
-
-            <ModalFotoTimeline
-                foto={fotoAberta}
-                onClose={() => setFotoAberta(null)}
-            />
-        </>
+                    </div>
+                );
+            })}
+        </div>
     );
 }
