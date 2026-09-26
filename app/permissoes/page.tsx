@@ -29,14 +29,16 @@ type FerramentaIA = {
     tipo?: "consulta" | "acao" | string;
 };
 
+type Aba = "paginas" | "conhecimento" | "ferramentas";
+
 const API_URL =
     "https://api.planoassistencialintegrado.com.br/pai_api.php";
 
-/* ---------------- parser robusto (tolera BOM/HTML) ---------------- */
-async function safeJsonFetch(
-    input: RequestInfo,
-    init?: RequestInit,
-) {
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                     */
+/* -------------------------------------------------------------------------- */
+
+async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     const r = await fetch(input, {
         cache: "no-store",
         credentials: "include",
@@ -71,133 +73,180 @@ async function safeJsonFetch(
     }
 
     if (!r.ok || json?.erro) {
-        throw new Error(
-            json?.erro ||
-            json?.msg ||
-            `HTTP ${r.status}`,
-        );
+        throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
     }
 
     return json;
 }
 
+function SectionHeader({
+    title,
+    description,
+    selected,
+    total,
+    onMarkAll,
+    onClearAll,
+    disabled,
+}: {
+    title: string;
+    description: string;
+    selected: number;
+    total: number;
+    onMarkAll: () => void;
+    onClearAll: () => void;
+    disabled?: boolean;
+}) {
+    return (
+        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-semibold text-slate-950">
+                        {title}
+                    </h2>
+
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        {selected} de {total}
+                    </span>
+                </div>
+
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                    {description}
+                </p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap gap-2">
+                <button
+                    type="button"
+                    onClick={onMarkAll}
+                    disabled={disabled || total === 0}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    Marcar tudo
+                </button>
+
+                <button
+                    type="button"
+                    onClick={onClearAll}
+                    disabled={disabled || total === 0}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    Desmarcar tudo
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function PermissionCard({
+    id,
+    checked,
+    onChange,
+    title,
+    description,
+    badge,
+}: {
+    id: string;
+    checked: boolean;
+    onChange: () => void;
+    title: string;
+    description?: string | null;
+    badge?: string | null;
+}) {
+    return (
+        <label
+            htmlFor={id}
+            className={[
+                "group flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition",
+                checked
+                    ? "border-slate-900 bg-slate-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60",
+            ].join(" ")}
+        >
+            <input
+                id={id}
+                type="checkbox"
+                checked={checked}
+                onChange={onChange}
+                className="mt-1 h-4 w-4 shrink-0 accent-black"
+            />
+
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-slate-900">{title}</span>
+
+                    {badge ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                            {badge}
+                        </span>
+                    ) : null}
+                </div>
+
+                {description ? (
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {description}
+                    </p>
+                ) : null}
+            </div>
+        </label>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Página                                                                      */
+/* -------------------------------------------------------------------------- */
+
 export default function PermissoesPage() {
     const [usuarios, setUsuarios] = useState<Usuario[]>([]);
     const [pages, setPages] = useState<Pagina[]>([]);
+    const [departamentos, setDepartamentos] = useState<DepartamentoIA[]>([]);
+    const [ferramentas, setFerramentas] = useState<FerramentaIA[]>([]);
 
-    const [departamentos, setDepartamentos] = useState<
-        DepartamentoIA[]
-    >([]);
+    const [userId, setUserId] = useState<number | null>(null);
+    const [aba, setAba] = useState<Aba>("paginas");
 
-    const [ferramentas, setFerramentas] = useState<
-        FerramentaIA[]
-    >([]);
-
-    const [userId, setUserId] = useState<number | null>(
-        null,
-    );
-
-    /* páginas normais */
-    const [allowed, setAllowed] = useState<
+    const [allowed, setAllowed] = useState<Record<string, boolean>>({});
+    const [allowedDepartamentos, setAllowedDepartamentos] = useState<
+        Record<number, boolean>
+    >({});
+    const [allowedFerramentas, setAllowedFerramentas] = useState<
         Record<string, boolean>
     >({});
 
-    /* departamentos da base de conhecimento */
-    const [
-        allowedDepartamentos,
-        setAllowedDepartamentos,
-    ] = useState<Record<number, boolean>>({});
-
-    /* ferramentas / funções da Aurora */
-    const [
-        allowedFerramentas,
-        setAllowedFerramentas,
-    ] = useState<Record<string, boolean>>({});
-
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(
-        null,
-    );
+    const [error, setError] = useState<string | null>(null);
 
-    /* ============================================================
-       CARREGAMENTO INICIAL
-       ============================================================ */
+    /* ---------------------------------------------------------------------- */
+    /* Carregamento inicial                                                   */
+    /* ---------------------------------------------------------------------- */
 
     const fetchUsuarios = async () => {
-        try {
-            const j = await safeJsonFetch(
-                `${API_URL}?action=list_users&_=${Date.now()}`,
-            );
-
-            setUsuarios(
-                Array.isArray(j) ? (j as Usuario[]) : [],
-            );
-        } catch (e: any) {
-            setError(
-                e?.message ||
-                "Erro ao carregar usuários.",
-            );
-        }
+        const j = await safeJsonFetch(
+            `${API_URL}?action=list_users&_=${Date.now()}`,
+        );
+        setUsuarios(Array.isArray(j) ? (j as Usuario[]) : []);
     };
 
     const fetchPages = async () => {
-        try {
-            const j = await safeJsonFetch(
-                `${API_URL}?action=list_pages&_=${Date.now()}`,
-            );
-
-            setPages(
-                Array.isArray(j) ? (j as Pagina[]) : [],
-            );
-        } catch {
-            setPages([]);
-        }
+        const j = await safeJsonFetch(
+            `${API_URL}?action=list_pages&_=${Date.now()}`,
+        );
+        setPages(Array.isArray(j) ? (j as Pagina[]) : []);
     };
 
     const fetchDepartamentos = async () => {
-        try {
-            const j = await safeJsonFetch(
-                `${API_URL}?action=list_ia_departamentos&_=${Date.now()}`,
-            );
-
-            setDepartamentos(
-                Array.isArray(j)
-                    ? (j as DepartamentoIA[])
-                    : [],
-            );
-        } catch (e: any) {
-            setDepartamentos([]);
-            setError(
-                e?.message ||
-                "Erro ao carregar departamentos da IA.",
-            );
-        }
+        const j = await safeJsonFetch(
+            `${API_URL}?action=list_ia_departamentos&_=${Date.now()}`,
+        );
+        setDepartamentos(Array.isArray(j) ? (j as DepartamentoIA[]) : []);
     };
 
     const fetchFerramentas = async () => {
-        try {
-            const j = await safeJsonFetch(
-                `${API_URL}?action=list_ia_ferramentas&_=${Date.now()}`,
-            );
-
-            setFerramentas(
-                Array.isArray(j)
-                    ? (j as FerramentaIA[])
-                    : [],
-            );
-        } catch (e: any) {
-            setFerramentas([]);
-            setError(
-                e?.message ||
-                "Erro ao carregar funções da Aurora.",
-            );
-        }
+        const j = await safeJsonFetch(
+            `${API_URL}?action=list_ia_ferramentas&_=${Date.now()}`,
+        );
+        setFerramentas(Array.isArray(j) ? (j as FerramentaIA[]) : []);
     };
-
-    /* ============================================================
-       PERMISSÕES DO USUÁRIO SELECIONADO
-       ============================================================ */
 
     const fetchPermsUsuario = async (uid: number) => {
         setLoading(true);
@@ -205,77 +254,53 @@ export default function PermissoesPage() {
         setMsg(null);
 
         try {
-            const [
-                paginasJson,
-                departamentosJson,
-                ferramentasJson,
-            ] = await Promise.all([
-                safeJsonFetch(
-                    `${API_URL}?action=list_permissions&user_id=${uid}&_=${Date.now()}`,
-                ),
-                safeJsonFetch(
-                    `${API_URL}?action=list_user_ia_departamentos&user_id=${uid}&_=${Date.now()}`,
-                ),
-                safeJsonFetch(
-                    `${API_URL}?action=list_user_ia_ferramentas&user_id=${uid}&_=${Date.now()}`,
-                ),
-            ]);
+            const [paginasJson, departamentosJson, ferramentasJson] =
+                await Promise.all([
+                    safeJsonFetch(
+                        `${API_URL}?action=list_permissions&user_id=${uid}&_=${Date.now()}`,
+                    ),
+                    safeJsonFetch(
+                        `${API_URL}?action=list_user_ia_departamentos&user_id=${uid}&_=${Date.now()}`,
+                    ),
+                    safeJsonFetch(
+                        `${API_URL}?action=list_user_ia_ferramentas&user_id=${uid}&_=${Date.now()}`,
+                    ),
+                ]);
 
-            const paginasSet: Record<string, boolean> =
-                {};
+            const paginasSet: Record<string, boolean> = {};
             if (Array.isArray(paginasJson)) {
                 paginasJson.forEach((key: unknown) => {
-                    if (typeof key === "string") {
-                        paginasSet[key] = true;
+                    if (typeof key === "string") paginasSet[key] = true;
+                });
+            }
+
+            const departamentosSet: Record<number, boolean> = {};
+            if (Array.isArray(departamentosJson)) {
+                departamentosJson.forEach((id: unknown) => {
+                    const n = Number(id);
+                    if (Number.isFinite(n) && n > 0) {
+                        departamentosSet[n] = true;
                     }
                 });
             }
-            setAllowed(paginasSet);
 
-            const departamentosSet: Record<
-                number,
-                boolean
-            > = {};
-            if (Array.isArray(departamentosJson)) {
-                departamentosJson.forEach(
-                    (id: unknown) => {
-                        const n = Number(id);
-                        if (
-                            Number.isFinite(n) &&
-                            n > 0
-                        ) {
-                            departamentosSet[n] = true;
-                        }
-                    },
-                );
-            }
-            setAllowedDepartamentos(
-                departamentosSet,
-            );
-
-            const ferramentasSet: Record<
-                string,
-                boolean
-            > = {};
+            const ferramentasSet: Record<string, boolean> = {};
             if (Array.isArray(ferramentasJson)) {
-                ferramentasJson.forEach(
-                    (key: unknown) => {
-                        if (typeof key === "string") {
-                            ferramentasSet[key] = true;
-                        }
-                    },
-                );
+                ferramentasJson.forEach((key: unknown) => {
+                    if (typeof key === "string") ferramentasSet[key] = true;
+                });
             }
+
+            setAllowed(paginasSet);
+            setAllowedDepartamentos(departamentosSet);
             setAllowedFerramentas(ferramentasSet);
         } catch (e: any) {
-            setError(
-                e?.message ||
-                "Erro ao carregar permissões do usuário.",
-            );
-
             setAllowed({});
             setAllowedDepartamentos({});
             setAllowedFerramentas({});
+            setError(
+                e?.message || "Erro ao carregar permissões do usuário.",
+            );
         } finally {
             setLoading(false);
         }
@@ -290,7 +315,13 @@ export default function PermissoesPage() {
             fetchPages(),
             fetchDepartamentos(),
             fetchFerramentas(),
-        ]).finally(() => setLoading(false));
+        ])
+            .catch((e: any) => {
+                setError(
+                    e?.message || "Erro ao carregar dados de permissões.",
+                );
+            })
+            .finally(() => setLoading(false));
     }, []);
 
     useEffect(() => {
@@ -301,47 +332,17 @@ export default function PermissoesPage() {
             setAllowedDepartamentos({});
             setAllowedFerramentas({});
             setMsg(null);
+            setError(null);
         }
     }, [userId]);
 
-    /* ============================================================
-       AÇÕES - PÁGINAS
-       ============================================================ */
+    /* ---------------------------------------------------------------------- */
+    /* Ações                                                                   */
+    /* ---------------------------------------------------------------------- */
 
     const togglePagina = (key: string) => {
-        setAllowed((prev) => ({
-            ...prev,
-            [key]: !prev[key],
-        }));
+        setAllowed((prev) => ({ ...prev, [key]: !prev[key] }));
     };
-
-    const marcarTodasPaginas = () => {
-        setAllowed((prev) => {
-            const next = { ...prev };
-
-            for (const p of pages) {
-                next[p.key] = true;
-            }
-
-            return next;
-        });
-    };
-
-    const desmarcarTodasPaginas = () => {
-        setAllowed((prev) => {
-            const next = { ...prev };
-
-            for (const p of pages) {
-                next[p.key] = false;
-            }
-
-            return next;
-        });
-    };
-
-    /* ============================================================
-       AÇÕES - DEPARTAMENTOS IA
-       ============================================================ */
 
     const toggleDepartamento = (id: number) => {
         setAllowedDepartamentos((prev) => ({
@@ -350,34 +351,6 @@ export default function PermissoesPage() {
         }));
     };
 
-    const marcarTodosDepartamentos = () => {
-        setAllowedDepartamentos((prev) => {
-            const next = { ...prev };
-
-            for (const dep of departamentos) {
-                next[dep.id] = true;
-            }
-
-            return next;
-        });
-    };
-
-    const desmarcarTodosDepartamentos = () => {
-        setAllowedDepartamentos((prev) => {
-            const next = { ...prev };
-
-            for (const dep of departamentos) {
-                next[dep.id] = false;
-            }
-
-            return next;
-        });
-    };
-
-    /* ============================================================
-       AÇÕES - FERRAMENTAS IA
-       ============================================================ */
-
     const toggleFerramenta = (key: string) => {
         setAllowedFerramentas((prev) => ({
             ...prev,
@@ -385,33 +358,42 @@ export default function PermissoesPage() {
         }));
     };
 
+    const marcarTodasPaginas = () => {
+        setAllowed(
+            Object.fromEntries(pages.map((p) => [p.key, true])) as Record<
+                string,
+                boolean
+            >,
+        );
+    };
+
+    const desmarcarTodasPaginas = () => {
+        setAllowed({});
+    };
+
+    const marcarTodosDepartamentos = () => {
+        setAllowedDepartamentos(
+            Object.fromEntries(
+                departamentos.map((dep) => [dep.id, true]),
+            ) as Record<number, boolean>,
+        );
+    };
+
+    const desmarcarTodosDepartamentos = () => {
+        setAllowedDepartamentos({});
+    };
+
     const marcarTodasFerramentas = () => {
-        setAllowedFerramentas((prev) => {
-            const next = { ...prev };
-
-            for (const tool of ferramentas) {
-                next[tool.key] = true;
-            }
-
-            return next;
-        });
+        setAllowedFerramentas(
+            Object.fromEntries(
+                ferramentas.map((tool) => [tool.key, true]),
+            ) as Record<string, boolean>,
+        );
     };
 
     const desmarcarTodasFerramentas = () => {
-        setAllowedFerramentas((prev) => {
-            const next = { ...prev };
-
-            for (const tool of ferramentas) {
-                next[tool.key] = false;
-            }
-
-            return next;
-        });
+        setAllowedFerramentas({});
     };
-
-    /* ============================================================
-       SALVAR TUDO
-       ============================================================ */
 
     const save = async () => {
         if (userId == null) return;
@@ -421,59 +403,38 @@ export default function PermissoesPage() {
         setError(null);
 
         try {
-            const paginasSelecionadas =
-                Object.entries(allowed)
-                    .filter(([, value]) => value)
-                    .map(([key]) => key);
+            const paginasSelecionadas = Object.entries(allowed)
+                .filter(([, value]) => value)
+                .map(([key]) => key);
 
-            const departamentosSelecionados =
-                Object.entries(allowedDepartamentos)
-                    .filter(([, value]) => value)
-                    .map(([id]) => Number(id))
-                    .filter(
-                        (id) =>
-                            Number.isFinite(id) &&
-                            id > 0,
-                    );
+            const departamentosSelecionados = Object.entries(
+                allowedDepartamentos,
+            )
+                .filter(([, value]) => value)
+                .map(([id]) => Number(id))
+                .filter((id) => Number.isFinite(id) && id > 0);
 
-            const ferramentasSelecionadas =
-                Object.entries(allowedFerramentas)
-                    .filter(([, value]) => value)
-                    .map(([key]) => key);
+            const ferramentasSelecionadas = Object.entries(allowedFerramentas)
+                .filter(([, value]) => value)
+                .map(([key]) => key);
 
-            /*
-             * Mantemos os três salvamentos independentes.
-             * Se um deles falhar, o erro aparece e o usuário
-             * pode tentar novamente.
-             */
-            await safeJsonFetch(
-                `${API_URL}?action=save_permissions`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        permissions:
-                            paginasSelecionadas,
-                    }),
-                },
-            );
+            await safeJsonFetch(`${API_URL}?action=save_permissions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    user_id: userId,
+                    permissions: paginasSelecionadas,
+                }),
+            });
 
             await safeJsonFetch(
                 `${API_URL}?action=save_user_ia_departamentos`,
                 {
                     method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         user_id: userId,
-                        departamentos:
-                            departamentosSelecionados,
+                        departamentos: departamentosSelecionados,
                     }),
                 },
             );
@@ -482,473 +443,359 @@ export default function PermissoesPage() {
                 `${API_URL}?action=save_user_ia_ferramentas`,
                 {
                     method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         user_id: userId,
-                        ferramentas:
-                            ferramentasSelecionadas,
+                        ferramentas: ferramentasSelecionadas,
                     }),
                 },
             );
 
-            setMsg(
-                "Permissões do sistema e da Aurora salvas!",
-            );
+            setMsg("Permissões salvas com sucesso.");
         } catch (e: any) {
-            setError(
-                e?.message ||
-                "Erro ao salvar permissões.",
-            );
+            setError(e?.message || "Erro ao salvar permissões.");
         } finally {
             setLoading(false);
         }
     };
 
+    /* ---------------------------------------------------------------------- */
+    /* Dados derivados                                                         */
+    /* ---------------------------------------------------------------------- */
+
     const currentUser = useMemo(
-        () =>
-            usuarios.find(
-                (u) => u.id === userId,
-            ),
+        () => usuarios.find((u) => u.id === userId),
         [userId, usuarios],
     );
 
     const ferramentasPorGrupo = useMemo(() => {
-        const groups: Record<
-            string,
-            FerramentaIA[]
-        > = {};
+        const groups: Record<string, FerramentaIA[]> = {};
 
         for (const tool of ferramentas) {
-            const group =
-                String(tool.grupo || "Outros").trim() ||
-                "Outros";
-
-            if (!groups[group]) {
-                groups[group] = [];
-            }
-
+            const group = String(tool.grupo || "Outros").trim() || "Outros";
+            if (!groups[group]) groups[group] = [];
             groups[group].push(tool);
         }
 
         return groups;
     }, [ferramentas]);
 
-    /* ============================================================
-       RENDER
-       ============================================================ */
+    const paginasMarcadas = useMemo(
+        () => Object.values(allowed).filter(Boolean).length,
+        [allowed],
+    );
+
+    const departamentosMarcados = useMemo(
+        () => Object.values(allowedDepartamentos).filter(Boolean).length,
+        [allowedDepartamentos],
+    );
+
+    const ferramentasMarcadas = useMemo(
+        () => Object.values(allowedFerramentas).filter(Boolean).length,
+        [allowedFerramentas],
+    );
+
+    const abas: Array<{
+        key: Aba;
+        label: string;
+        count: number;
+        total: number;
+    }> = [
+            {
+                key: "paginas",
+                label: "Páginas",
+                count: paginasMarcadas,
+                total: pages.length,
+            },
+            {
+                key: "conhecimento",
+                label: "Conhecimento IA",
+                count: departamentosMarcados,
+                total: departamentos.length,
+            },
+            {
+                key: "ferramentas",
+                label: "Funções Aurora",
+                count: ferramentasMarcadas,
+                total: ferramentas.length,
+            },
+        ];
+
+    /* ---------------------------------------------------------------------- */
+    /* Render                                                                  */
+    /* ---------------------------------------------------------------------- */
 
     return (
-        <div className="w-full px-3 sm:px-6 lg:px-10 pt-10 pb-14 md:pt-12 md:pb-16 lg:pt-16 lg:pb-24 font-[var(--font-nunito,_inherit)]">
-            <h1 className="text-2xl md:text-3xl font-semibold mb-6 md:mb-8">
-                Permissões por usuário
-            </h1>
+        <div className="min-h-screen bg-slate-50">
+            <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+                {/* Cabeçalho */}
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
+                        Permissões por usuário
+                    </h1>
 
-            <div className="rounded-2xl shadow p-4 mb-6">
-                <label className="block text-sm mb-1">
-                    Usuário
-                </label>
+                    <p className="mt-1 text-sm text-slate-500">
+                        Controle o acesso ao sistema, ao conhecimento da Aurora e
+                        às funções disponíveis no chat.
+                    </p>
+                </div>
 
-                <select
-                    className="border rounded-lg px-3 py-2 w-full sm:w-96"
-                    value={userId ?? ""}
-                    onChange={(e) =>
-                        setUserId(
-                            e.target.value
-                                ? parseInt(
-                                    e.target.value,
-                                    10,
-                                )
-                                : null,
-                        )
-                    }
-                >
-                    <option value="">
-                        Selecione...
-                    </option>
+                {/* Usuário */}
+                <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                        <div className="w-full max-w-xl">
+                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                                Usuário
+                            </label>
 
-                    {usuarios.map((u) => (
-                        <option
-                            key={u.id}
-                            value={u.id}
-                        >
-                            #{u.id} – {u.nome} (
-                            {u.usuario})
-                        </option>
-                    ))}
-                </select>
-            </div>
+                            <select
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                                value={userId ?? ""}
+                                onChange={(e) =>
+                                    setUserId(
+                                        e.target.value
+                                            ? parseInt(e.target.value, 10)
+                                            : null,
+                                    )
+                                }
+                            >
+                                <option value="">Selecione um usuário...</option>
 
-            {userId != null && (
-                <div className="space-y-6">
-                    {msg && (
-                        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-green-800">
-                            {msg}
+                                {usuarios.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                        #{u.id} — {u.nome} ({u.usuario})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
-                    )}
 
-                    {error && (
-                        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-                            {error}
-                        </div>
-                    )}
-
-                    {/* ====================================================
-                        PÁGINAS DO SISTEMA
-                        ==================================================== */}
-                    <section className="rounded-2xl shadow p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                            <div>
-                                <h2 className="text-lg font-medium">
-                                    Páginas liberadas
-                                </h2>
-
-                                <p className="text-sm text-muted-foreground">
-                                    {currentUser?.nome} (
-                                    {currentUser?.usuario})
-                                </p>
+                        {currentUser ? (
+                            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
+                                <div className="font-semibold text-slate-900">
+                                    {currentUser.nome}
+                                </div>
+                                <div className="text-slate-500">
+                                    @{currentUser.usuario} · ID #{currentUser.id}
+                                </div>
                             </div>
+                        ) : null}
+                    </div>
+                </div>
 
-                            <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={
-                                        marcarTodasPaginas
-                                    }
-                                    className="px-3 py-2 rounded-xl border text-sm"
-                                    disabled={
-                                        loading ||
-                                        pages.length === 0
-                                    }
-                                >
-                                    Marcar tudo
-                                </button>
+                {/* Alertas */}
+                {msg ? (
+                    <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                        {msg}
+                    </div>
+                ) : null}
 
-                                <button
-                                    type="button"
-                                    onClick={
-                                        desmarcarTodasPaginas
-                                    }
-                                    className="px-3 py-2 rounded-xl border text-sm"
-                                    disabled={
-                                        loading ||
-                                        pages.length === 0
-                                    }
-                                >
-                                    Desmarcar tudo
-                                </button>
+                {error ? (
+                    <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {error}
+                    </div>
+                ) : null}
+
+                {!userId ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+                        <div className="text-base font-semibold text-slate-800">
+                            Selecione um usuário
+                        </div>
+                        <p className="mt-1 text-sm text-slate-500">
+                            As permissões serão exibidas aqui.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        {/* Navegação */}
+                        <div className="mb-4 overflow-x-auto">
+                            <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm md:min-w-0">
+                                {abas.map((item) => {
+                                    const active = aba === item.key;
+
+                                    return (
+                                        <button
+                                            key={item.key}
+                                            type="button"
+                                            onClick={() => setAba(item.key)}
+                                            className={[
+                                                "flex min-w-max items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition",
+                                                active
+                                                    ? "bg-slate-950 text-white shadow-sm"
+                                                    : "text-slate-600 hover:bg-slate-100",
+                                            ].join(" ")}
+                                        >
+                                            {item.label}
+
+                                            <span
+                                                className={[
+                                                    "rounded-full px-2 py-0.5 text-[11px]",
+                                                    active
+                                                        ? "bg-white/15 text-white"
+                                                        : "bg-slate-100 text-slate-500",
+                                                ].join(" ")}
+                                            >
+                                                {item.count}/{item.total}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
-                        <ul className="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {pages.map((p) => (
-                                <li
-                                    key={p.key}
-                                    className="flex items-center gap-2"
-                                >
-                                    <input
-                                        id={`pg-${p.key}`}
-                                        type="checkbox"
-                                        checked={
-                                            !!allowed[
-                                            p.key
-                                            ]
-                                        }
-                                        onChange={() =>
-                                            togglePagina(
-                                                p.key,
-                                            )
-                                        }
+                        {/* Conteúdo */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+                            {aba === "paginas" ? (
+                                <>
+                                    <SectionHeader
+                                        title="Páginas do sistema"
+                                        description="Defina quais páginas este usuário poderá acessar no painel."
+                                        selected={paginasMarcadas}
+                                        total={pages.length}
+                                        onMarkAll={marcarTodasPaginas}
+                                        onClearAll={desmarcarTodasPaginas}
+                                        disabled={loading}
                                     />
 
-                                    <label
-                                        htmlFor={`pg-${p.key}`}
-                                    >
-                                        {p.label}
-                                    </label>
-                                </li>
-                            ))}
+                                    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        {pages.map((p) => (
+                                            <PermissionCard
+                                                key={p.key}
+                                                id={`pg-${p.key}`}
+                                                checked={!!allowed[p.key]}
+                                                onChange={() =>
+                                                    togglePagina(p.key)
+                                                }
+                                                title={p.label}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                            ) : null}
 
-                            {pages.length === 0 && (
-                                <li className="text-sm text-muted-foreground col-span-full">
-                                    Nenhuma página
-                                    disponível.
-                                </li>
-                            )}
-                        </ul>
-                    </section>
+                            {aba === "conhecimento" ? (
+                                <>
+                                    <SectionHeader
+                                        title="Conhecimento da Aurora"
+                                        description="Selecione quais departamentos da Base de Conhecimento podem ser utilizados nas respostas deste usuário."
+                                        selected={departamentosMarcados}
+                                        total={departamentos.length}
+                                        onMarkAll={marcarTodosDepartamentos}
+                                        onClearAll={
+                                            desmarcarTodosDepartamentos
+                                        }
+                                        disabled={loading}
+                                    />
 
-                    {/* ====================================================
-                        CONHECIMENTO DA IA
-                        ==================================================== */}
-                    <section className="rounded-2xl shadow p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                            <div>
-                                <h2 className="text-lg font-medium">
-                                    Conhecimento da Aurora
-                                </h2>
-
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    Marque os
-                                    departamentos da Base
-                                    de Conhecimento que a
-                                    Aurora poderá consultar
-                                    para este usuário.
-                                </p>
-                            </div>
-
-                            <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={
-                                        marcarTodosDepartamentos
-                                    }
-                                    className="px-3 py-2 rounded-xl border text-sm"
-                                    disabled={
-                                        loading ||
-                                        departamentos.length ===
-                                        0
-                                    }
-                                >
-                                    Marcar tudo
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={
-                                        desmarcarTodosDepartamentos
-                                    }
-                                    className="px-3 py-2 rounded-xl border text-sm"
-                                    disabled={
-                                        loading ||
-                                        departamentos.length ===
-                                        0
-                                    }
-                                >
-                                    Desmarcar tudo
-                                </button>
-                            </div>
-                        </div>
-
-                        <ul className="mt-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {departamentos.map(
-                                (dep) => (
-                                    <li
-                                        key={dep.id}
-                                        className="rounded-xl border p-3"
-                                    >
-                                        <div className="flex items-start gap-2">
-                                            <input
+                                    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        {departamentos.map((dep) => (
+                                            <PermissionCard
+                                                key={dep.id}
                                                 id={`dep-${dep.id}`}
-                                                type="checkbox"
-                                                className="mt-1"
                                                 checked={
                                                     !!allowedDepartamentos[
                                                     dep.id
                                                     ]
                                                 }
                                                 onChange={() =>
-                                                    toggleDepartamento(
-                                                        dep.id,
-                                                    )
+                                                    toggleDepartamento(dep.id)
                                                 }
+                                                title={dep.nome}
+                                                description={dep.descricao}
+                                                badge="Conhecimento"
                                             />
-
-                                            <label
-                                                htmlFor={`dep-${dep.id}`}
-                                                className="cursor-pointer"
-                                            >
-                                                <span className="block font-medium">
-                                                    {
-                                                        dep.nome
-                                                    }
-                                                </span>
-
-                                                {dep.descricao && (
-                                                    <span className="block mt-1 text-xs text-muted-foreground">
-                                                        {
-                                                            dep.descricao
-                                                        }
-                                                    </span>
-                                                )}
-                                            </label>
-                                        </div>
-                                    </li>
-                                ),
-                            )}
-
-                            {departamentos.length ===
-                                0 && (
-                                    <li className="text-sm text-muted-foreground col-span-full">
-                                        Nenhum departamento da
-                                        IA disponível.
-                                    </li>
-                                )}
-                        </ul>
-                    </section>
-
-                    {/* ====================================================
-                        FUNÇÕES / FERRAMENTAS DA AURORA
-                        ==================================================== */}
-                    <section className="rounded-2xl shadow p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                            <div>
-                                <h2 className="text-lg font-medium">
-                                    Funções da Aurora
-                                </h2>
-
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    Controle quais
-                                    consultas e ações a
-                                    Aurora poderá executar
-                                    para este usuário.
-                                </p>
-                            </div>
-
-                            <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={
-                                        marcarTodasFerramentas
-                                    }
-                                    className="px-3 py-2 rounded-xl border text-sm"
-                                    disabled={
-                                        loading ||
-                                        ferramentas.length ===
-                                        0
-                                    }
-                                >
-                                    Marcar tudo
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={
-                                        desmarcarTodasFerramentas
-                                    }
-                                    className="px-3 py-2 rounded-xl border text-sm"
-                                    disabled={
-                                        loading ||
-                                        ferramentas.length ===
-                                        0
-                                    }
-                                >
-                                    Desmarcar tudo
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="mt-4 space-y-5">
-                            {Object.entries(
-                                ferramentasPorGrupo,
-                            ).map(
-                                ([
-                                    grupo,
-                                    tools,
-                                ]) => (
-                                    <div key={grupo}>
-                                        <h3 className="text-sm font-semibold mb-2">
-                                            {grupo}
-                                        </h3>
-
-                                        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                            {tools.map(
-                                                (
-                                                    tool,
-                                                ) => (
-                                                    <li
-                                                        key={
-                                                            tool.key
-                                                        }
-                                                        className="rounded-xl border p-3"
-                                                    >
-                                                        <div className="flex items-start gap-2">
-                                                            <input
-                                                                id={`tool-${tool.key}`}
-                                                                type="checkbox"
-                                                                className="mt-1"
-                                                                checked={
-                                                                    !!allowedFerramentas[
-                                                                    tool
-                                                                        .key
-                                                                    ]
-                                                                }
-                                                                onChange={() =>
-                                                                    toggleFerramenta(
-                                                                        tool.key,
-                                                                    )
-                                                                }
-                                                            />
-
-                                                            <label
-                                                                htmlFor={`tool-${tool.key}`}
-                                                                className="cursor-pointer"
-                                                            >
-                                                                <span className="block font-medium">
-                                                                    {
-                                                                        tool.label
-                                                                    }
-                                                                </span>
-
-                                                                <span className="mt-1 inline-block rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
-                                                                    {tool.tipo ===
-                                                                        "acao"
-                                                                        ? "Ação"
-                                                                        : "Consulta"}
-                                                                </span>
-                                                            </label>
-                                                        </div>
-                                                    </li>
-                                                ),
-                                            )}
-                                        </ul>
+                                        ))}
                                     </div>
-                                ),
-                            )}
+                                </>
+                            ) : null}
 
-                            {ferramentas.length === 0 && (
-                                <p className="text-sm text-muted-foreground">
-                                    Nenhuma função da
-                                    Aurora disponível.
-                                </p>
-                            )}
+                            {aba === "ferramentas" ? (
+                                <>
+                                    <SectionHeader
+                                        title="Funções da Aurora"
+                                        description="Defina quais consultas e ações a Aurora poderá executar para este usuário."
+                                        selected={ferramentasMarcadas}
+                                        total={ferramentas.length}
+                                        onMarkAll={marcarTodasFerramentas}
+                                        onClearAll={
+                                            desmarcarTodasFerramentas
+                                        }
+                                        disabled={loading}
+                                    />
+
+                                    <div className="mt-5 space-y-6">
+                                        {Object.entries(
+                                            ferramentasPorGrupo,
+                                        ).map(([grupo, tools]) => (
+                                            <div key={grupo}>
+                                                <div className="mb-3 flex items-center gap-2">
+                                                    <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                                                        {grupo}
+                                                    </h3>
+                                                    <div className="h-px flex-1 bg-slate-200" />
+                                                </div>
+
+                                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                                    {tools.map((tool) => (
+                                                        <PermissionCard
+                                                            key={tool.key}
+                                                            id={`tool-${tool.key}`}
+                                                            checked={
+                                                                !!allowedFerramentas[
+                                                                tool.key
+                                                                ]
+                                                            }
+                                                            onChange={() =>
+                                                                toggleFerramenta(
+                                                                    tool.key,
+                                                                )
+                                                            }
+                                                            title={tool.label}
+                                                            badge={
+                                                                tool.tipo ===
+                                                                    "acao"
+                                                                    ? "Ação"
+                                                                    : "Consulta"
+                                                            }
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : null}
                         </div>
-                    </section>
 
-                    {/* ====================================================
-                        SALVAR
-                        ==================================================== */}
-                    <div className="sticky bottom-3 rounded-2xl border bg-background/95 p-4 shadow-lg backdrop-blur">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <div className="font-medium">
-                                    Salvar permissões de{" "}
-                                    {currentUser?.nome}
+                        {/* Rodapé fixo */}
+                        <div className="sticky bottom-3 z-20 mt-5">
+                            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0">
+                                    <div className="font-semibold text-slate-900">
+                                        {currentUser?.nome}
+                                    </div>
+
+                                    <div className="mt-0.5 text-xs text-slate-500">
+                                        {paginasMarcadas} páginas ·{" "}
+                                        {departamentosMarcados} departamentos IA ·{" "}
+                                        {ferramentasMarcadas} funções Aurora
+                                    </div>
                                 </div>
 
-                                <div className="text-xs text-muted-foreground">
-                                    Páginas, conhecimento
-                                    da IA e funções da
-                                    Aurora.
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={save}
+                                    disabled={loading}
+                                    className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {loading
+                                        ? "Salvando..."
+                                        : "Salvar permissões"}
+                                </button>
                             </div>
-
-                            <button
-                                type="button"
-                                onClick={save}
-                                disabled={loading}
-                                className="px-5 py-2.5 rounded-xl bg-black text-white disabled:opacity-50"
-                            >
-                                {loading
-                                    ? "Salvando..."
-                                    : "Salvar permissões"}
-                            </button>
                         </div>
-                    </div>
-                </div>
-            )}
+                    </>
+                )}
+            </div>
         </div>
     );
 }
