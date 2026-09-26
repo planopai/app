@@ -27,6 +27,7 @@ type AuditEvent =
     | "analise_ia"
     | "aprovacao_automatica"
     | "reprovacao_automatica"
+    | "exclusao_automatica"
     | "aprovacao_manual"
     | "reprovacao_manual"
     | "exclusao_manual"
@@ -84,6 +85,7 @@ const EVENT_OPTIONS: Array<{ value: EventFilter; label: string }> = [
     { value: "analise_ia", label: "Análises da Aurora" },
     { value: "aprovacao_automatica", label: "Aprovações da Aurora" },
     { value: "reprovacao_automatica", label: "Reprovações da Aurora" },
+    { value: "exclusao_automatica", label: "Exclusões automáticas" },
     { value: "aprovacao_manual", label: "Aprovações manuais" },
     { value: "reprovacao_manual", label: "Reprovações manuais" },
     { value: "exclusao_manual", label: "Exclusões manuais" },
@@ -108,7 +110,7 @@ function toDateInput(date: Date) {
 function defaultPeriod() {
     const end = new Date();
     const start = new Date();
-    start.setDate(start.getDate() - 7);
+    start.setDate(start.getDate() - 30);
     return { start: toDateInput(start), end: toDateInput(end) };
 }
 
@@ -198,6 +200,14 @@ function eventMeta(event: AuditEvent) {
                 badge: "border-red-200 bg-red-50 text-red-700",
                 dot: "bg-red-500",
             };
+        case "exclusao_automatica":
+            return {
+                label: "Excluído automaticamente",
+                icon: IconTrash,
+                badge: "border-rose-200 bg-rose-50 text-rose-700",
+                dot: "bg-rose-500",
+            };
+
         case "aprovacao_manual":
             return {
                 label: "Aprovação manual",
@@ -533,7 +543,7 @@ export default function AuditoriaHomenagensPage() {
         for (const log of logs) {
             if (normalizeOrigin(log.origem) === "aurora" || log.evento === "analise_ia") aurora += 1;
             if (log.evento === "aprovacao_automatica" || log.evento === "aprovacao_manual") approved += 1;
-            if (log.evento === "reprovacao_automatica" || log.evento === "reprovacao_manual") rejected += 1;
+            if (["reprovacao_automatica", "reprovacao_manual", "exclusao_automatica"].includes(String(log.evento))) rejected += 1;
             if (log.evento === "analise_ia" && String(log.decisao_ia || "").toLowerCase() === "revisar") review += 1;
         }
 
@@ -693,7 +703,7 @@ export default function AuditoriaHomenagensPage() {
                                 <div className="font-bold">Não foi possível carregar a auditoria.</div>
                                 <div className="mt-1">{error}</div>
                                 <div className="mt-2 text-xs text-red-600">
-                                    Esta página espera a ação <code className="rounded bg-red-100 px-1 py-0.5">admin_listar_logs_moderacao</code> no homenagens.php.
+                                    O endpoint <code className="rounded bg-red-100 px-1 py-0.5">admin_listar_logs_moderacao</code> precisa estar disponível no homenagens.php.
                                 </div>
                             </div>
                         </div>
@@ -706,7 +716,7 @@ export default function AuditoriaHomenagensPage() {
                             <h2 className="text-lg font-bold text-slate-950">Linha do tempo</h2>
                             <div className="text-xs text-slate-500">
                                 {total.toLocaleString("pt-BR")} evento{total === 1 ? "" : "s"} encontrado{total === 1 ? "" : "s"}
-                                {stats.review > 0 ? ` · ${stats.review} enviados para revisão humana nesta página` : ""}
+
                             </div>
                         </div>
                         {totalPages > 1 ? (
