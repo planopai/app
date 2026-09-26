@@ -5,11 +5,19 @@
  * - tela desenhada em 1920×1080 e reduzida por igual; botão de tela cheia;
  * - por atendimento: situação atual em destaque, tempo nela, responsável,
  *   linha do tempo das etapas (atual piscando em verde), ocioso e total;
- * - alertas: vermelho quando está há 24 h+ na mesma situação; âmbar quando
- *   passou do horário marcado do velório/sepultamento;
+ * - alertas: vermelho quando está há 24 h+ na mesma situação; âmbar quando passou do
+ *   horário marcado e o velório (fase08) ou o sepultamento (fase09) ainda não começou;
+ * - coroas: âmbar quando passou do prazo de produção desde o pedido e a coroa ainda
+ *   não ficou pronta (natural 2 h, artificial 1 h — COROA_PRAZO_*);
  * - coroas: linha discreta (0), faixa inferior (1–4 pedidos) ou coluna lateral (5+),
  *   com paginação automática; atendimentos compactam e paginam quando não cabem;
- * - celular/tablet estreito continua com os cartões atuais.
+ *
+ * QUADRO NO CELULAR/TABLET (abaixo de 1024 px)
+ * - abas Atendimentos / Coroas / Avisos com contagem; aviso mais recente no topo da lista;
+ * - em pé: cartão com bloco "Agora" (status, há quanto tempo, quem), alertas da TV,
+ *   etapas com nome (vazia = ainda não aconteceu; tracejada = não se aplica), ocioso e total;
+ * - deitado: uma linha por atendimento, como na TV; a troca segue o giro da tela;
+ * - tema claro/escuro acompanha o fundo do app; botão de tela cheia onde o navegador permite.
  *
  * Base preservada:
  * - mantém relógio, ticker, modais, etapas, ícones, logs e tempos originais;
@@ -20,9 +28,6 @@
  * - FIX STATUS PERSISTENTE: histórico dos atendimentos é preservado no localStorage;
  * - FIX STATUS PERSISTENTE: status atual do atendimento nunca volta visualmente para fase01 por ausência temporária de logs;
  * - FIX STATUS PERSISTENTE: atualização imediata ao voltar para a aba, recuperar foco ou reconectar a internet;
- * - tamanho original permanece no modo NORMAL;
- * - só reduz fonte/espaçamento automaticamente quando todo o conteúdo
- *   não cabe na altura disponível da TV.
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -1610,7 +1615,7 @@ function iconForAction(acao?: string, status?: string): string {
 }
 
 /* ===== Status visual com tempo por etapa ===== */
-type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "dot";
+type StatusIconKey = "hospital" | "testTube" | "flower" | "coffin" | "car" | "box" | "timer" | "hourglass" | "clock" | "clockPause" | "dot";
 type StatusStepInfo = { key: string; label: string; shortLabel: string; icon: StatusIconKey };
 type StatusSegment = { key: string; label: string; shortLabel: string; icon: StatusIconKey; start: number; end: number; active: boolean };
 
@@ -1641,7 +1646,7 @@ const STATUS_STEPS: StatusStepInfo[] = [
     { key: "fase10", label: "Material Recolhido", shortLabel: "Mat. Rec.", icon: "box" },
     // Soma os intervalos entre as etapas principais: aguardando procedimento,
     // aguardando ornamentação, aguardando Corpo Pronto, Corpo Pronto e transportando para velório.
-    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "hourglass" },
+    { key: "idle", label: "Tempo Ocioso", shortLabel: "Ocioso", icon: "clockPause" },
 ];
 
 const STATUS_STEP_MAP = STATUS_STEP_DEFS.reduce<Record<string, StatusStepInfo>>((acc, step) => {
@@ -2222,8 +2227,21 @@ export default function QuadroAtendimentoPage() {
         () => calcularLayoutTv(ativosOrdenados.length, coroasTv.length),
         [ativosOrdenados.length, coroasTv.length]
     );
-    const atendimentosPorPagina = layoutTv.atendimentosPorPagina;
-    const coroasPorPagina = layoutTv.coroasPorPagina;
+    // Se o texto de uma página não couber na TV, o quadro tira um item por página (volta ao padrão quando a quantidade muda).
+    const [reducaoTv, setReducaoTv] = useState({ at: 0, cr: 0 });
+    useEffect(() => {
+        setReducaoTv({ at: 0, cr: 0 });
+    }, [ativosOrdenados.length, coroasTv.length]);
+    const tvNaoCoube = useCallback(
+        (area: "at" | "cr") =>
+            setReducaoTv((r) => {
+                const base = area === "at" ? layoutTv.atendimentosPorPagina : layoutTv.coroasPorPagina;
+                return base - r[area] <= 1 ? r : { ...r, [area]: r[area] + 1 };
+            }),
+        [layoutTv]
+    );
+    const atendimentosPorPagina = Math.max(1, layoutTv.atendimentosPorPagina - reducaoTv.at);
+    const coroasPorPagina = Math.max(1, layoutTv.coroasPorPagina - reducaoTv.cr);
 
     /*
      * Paginação do quadro:
@@ -2638,10 +2656,6 @@ export default function QuadroAtendimentoPage() {
         return "Pendências de horário.";
     }, []);
 
-    const desktopAtivos = ativosPagina;
-    const mobileAtivos = ativosPagina;
-    const desktopHiddenCount = Math.max(0, ativosOrdenados.length - desktopAtivos.length);
-    const mobileHiddenCount = Math.max(0, ativosOrdenados.length - mobileAtivos.length);
 
     const recalcularDensidadeTv = useCallback(() => {
         const el = dashboardContentRef.current;
@@ -3260,65 +3274,19 @@ export default function QuadroAtendimentoPage() {
             `}</style>
 
             <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
-                {/* Celular e telas estreitas: layout anterior (cartões) */}
-                <div className="flex min-h-0 flex-1 flex-col gap-4 lg:hidden">
-                    <header className="qa-panel-premium shrink-0 overflow-hidden rounded-xl border px-3 py-2 sm:px-3">
-                        <div className="flex min-w-0 items-start justify-between gap-3">
-                            <div className="min-w-0">
-                                <h1 className="truncate text-[19px] font-bold leading-tight tracking-tight text-slate-100 sm:text-[21px]">
-                                    Quadro de Atendimentos
-                                </h1>
-                                <p className="mt-0.5 text-[11px] font-medium qa-text-muted">
-                                    Atualizado em tempo real
-                                    {totalPaginasAtendimentos > 1
-                                        ? ` • Atendimentos ${paginaAtualAtendimentos + 1}/${totalPaginasAtendimentos} • troca a cada 15s`
-                                        : ""}
-                                </p>
-                            </div>
-
-                            <div className="shrink-0 text-right leading-tight">
-                                <div className="text-lg font-bold tabular-nums text-slate-100 sm:text-xl">{clockTime}</div>
-                                <div className="mt-0.5 text-[10px] font-medium qa-text-muted sm:text-[11px]">{clockDate}</div>
-                            </div>
-                        </div>
-
-                        <div className="mt-2 h-px bg-slate-700/50" />
-                        <div className="mt-1.5 h-6 overflow-hidden">
-                            <AvisosTicker avisos={avisosParaExibir} />
-                        </div>
-                    </header>
-
-                    <main
-                        ref={dashboardContentRef}
-                        data-qa-density={qaDensity}
-                        className="qa-dashboard-content min-h-0 flex-1 overflow-hidden flex flex-col gap-3"
-                    >
-                        <div className="qa-atendimentos-shell shrink-0">
-                            <DesktopTable
-                                ativos={desktopAtivos}
-                                hiddenCount={desktopHiddenCount}
-                                onSelect={showDetail}
-                                statusLogsById={statusLogsById}
-                                nowMs={nowMs}
-                            />
-                            <MobileCards
-                                ativos={mobileAtivos}
-                                hiddenCount={mobileHiddenCount}
-                                onSelect={showDetail}
-                                statusLogsById={statusLogsById}
-                                nowMs={nowMs}
-                            />
-                        </div>
-
-                        <CoroasTvBoard
-                            pedidos={coroasPagina}
-                            totalPedidos={coroasTv.length}
-                            paginaAtual={paginaAtualCoroas}
-                            totalPaginas={totalPaginasCoroas}
-                            error={coroasTvError}
-                            nowMs={nowMs}
-                        />
-                    </main>
+                {/* Celular e tablet: quadro em abas; muda sozinho entre em pé e deitado */}
+                <div className="flex min-h-0 flex-1 flex-col lg:hidden">
+                    <QuadroMobile
+                        ativos={ativosOrdenados}
+                        coroas={coroasOrdenadas}
+                        coroasError={coroasTvError}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                        clockTime={clockTime}
+                        clockDate={clockDate}
+                        avisos={avisosParaExibir}
+                        onSelect={showDetail}
+                    />
                 </div>
 
                 {/* TV e telas largas: novo quadro */}
@@ -3340,6 +3308,7 @@ export default function QuadroAtendimentoPage() {
                         clockDate={clockDate}
                         avisos={avisosParaExibir}
                         onSelect={showDetail}
+                        onNaoCoube={tvNaoCoube}
                     />
                 </div>
 
@@ -4233,7 +4202,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 
 /** Limites dos alertas visuais — ajuste aqui. */
 const TV_LIMITE_PARADO_MS = 24 * 60 * 60 * 1000; // vermelho: mesma situação há 24 h ou mais
-const TV_TOLERANCIA_HORARIO_MS = 0; // âmbar: passou do horário marcado (velório/sepultamento)
+const TV_TOLERANCIA_HORARIO_MS = 0; // âmbar: passou do horário marcado para INICIAR o velório/sepultamento sem a fase de início
 
 type TvLayout = {
     coroasModo: "nenhuma" | "faixa" | "lado";
@@ -4253,21 +4222,14 @@ function calcularLayoutTv(totalAtendimentos: number, totalPedidosCoroa: number):
         totalPedidosCoroa === 0 ? "nenhuma" : totalPedidosCoroa <= 4 ? "faixa" : "lado";
     const limiteNormal = coroasModo === "faixa" ? 3 : 4;
     const compacto = coroasModo === "lado" || totalAtendimentos > limiteNormal;
-    const atendimentosPorPagina = compacto ? (coroasModo === "faixa" ? 4 : 6) : limiteNormal;
-    const coroasPorPagina = coroasModo === "lado" ? 5 : 4;
+    // Compacto: 5 por página (4 com a faixa de coroas), para caber o local do velório e do sepultamento.
+    const atendimentosPorPagina = compacto ? (coroasModo === "faixa" ? 4 : 5) : limiteNormal;
+    // Coluna lateral: 4 pedidos por página, com espaço para a linha de atraso.
+    const coroasPorPagina = 4;
     return { coroasModo, compacto, atendimentosPorPagina, coroasPorPagina };
 }
 
 const TV_ETAPAS = STATUS_STEPS.filter((s) => s.key !== "idle");
-const TV_ETAPA_CURTA: Record<string, string> = {
-    fase01: "Remoção",
-    fase03: "Preparo",
-    fase05: "Ornament.",
-    fase08: "Velório",
-    fase09: "Sepult.",
-    fase10: "Material",
-};
-
 function tvDataHora(ts: number): string {
     if (!ts || !Number.isFinite(ts)) return "";
     const d = new Date(ts);
@@ -4323,13 +4285,16 @@ function resumirAtendimentoTv(r: Registro, logs: LogItem[] | undefined, nowMs: n
     if (atualDesdeMs >= TV_LIMITE_PARADO_MS) {
         alerta = { nivel: "crit", texto: "Na mesma situação há mais de 24 h" };
     } else {
+        // Atraso conta para o INÍCIO da ação: o velório começa na Entrega de corpo (fase08)
+        // e o sepultamento no Transportando p/ sepultamento (fase09). Depois de iniciado,
+        // a demora (por opção da família, por exemplo) não conta como atraso da empresa.
         const rank = statusFlowRank(atualKey);
         const sepMarcado = tvHorarioMarcado(r.data_fim_velorio, r.hora_fim_velorio);
         const velMarcado = tvHorarioMarcado(r.data_inicio_velorio, r.hora_inicio_velorio);
-        if (rotaAtivaLegado(r.realiza_sepultamento) && sepMarcado && rank < statusFlowRank("fase10") && nowMs > sepMarcado + TV_TOLERANCIA_HORARIO_MS) {
-            alerta = { nivel: "warn", texto: `${tvDuracaoTexto(nowMs - sepMarcado)} após o horário do sepultamento (${timeOr(r.hora_fim_velorio)})` };
+        if (rotaAtivaLegado(r.realiza_sepultamento) && sepMarcado && rank < statusFlowRank("fase09") && nowMs > sepMarcado + TV_TOLERANCIA_HORARIO_MS) {
+            alerta = { nivel: "warn", texto: `${tvDuracaoTexto(nowMs - sepMarcado)} de atraso para iniciar o sepultamento (${timeOr(r.hora_fim_velorio)})` };
         } else if (rotaAtivaLegado(r.realiza_velorio) && velMarcado && rank < statusFlowRank("fase08") && nowMs > velMarcado + TV_TOLERANCIA_HORARIO_MS) {
-            alerta = { nivel: "warn", texto: `Velório marcado para ${timeOr(r.hora_inicio_velorio)}` };
+            alerta = { nivel: "warn", texto: `${tvDuracaoTexto(nowMs - velMarcado)} de atraso para iniciar o velório (${timeOr(r.hora_inicio_velorio)})` };
         }
     }
 
@@ -4346,6 +4311,28 @@ function resumirAtendimentoTv(r: Registro, logs: LogItem[] | undefined, nowMs: n
         criadoTs: getRegistroCreatedTs(r, logs, nowMs),
         alerta,
     };
+}
+
+/* Prazo de produção das coroas: conta do pedido até a coroa ficar pronta (finalizada).
+ * Natural: 2 h. Artificial (pedido só com coroas artificiais): 1 h. */
+const COROA_PRAZO_NATURAL_MS = 120 * 60 * 1000;
+const COROA_PRAZO_ARTIFICIAL_MS = 60 * 60 * 1000;
+
+type CoroaAtraso = { longo: string };
+
+
+/** Coroa atrasada: passou do prazo de produção desde o pedido e ainda não ficou pronta. */
+function coroaAtrasoTv(pedido: CoroaTvPedido, nowMs: number): CoroaAtraso | undefined {
+    if (parseLogTs(pedido.finalizada_em || undefined) > 0 || parseLogTs(pedido.entregue_em || undefined) > 0) return undefined;
+    const st = normalizarTextoCoroa(pedido.status);
+    if (st === "finalizada" || st === "entregue") return undefined;
+    const criadoTs = parseLogTs(pedido.criado_em || undefined);
+    if (!criadoTs) return undefined;
+    const artificial = coroaSomenteArtificial(pedido);
+    const prazo = artificial ? COROA_PRAZO_ARTIFICIAL_MS : COROA_PRAZO_NATURAL_MS;
+    const decorrido = nowMs - criadoTs;
+    if (decorrido <= prazo) return undefined;
+    return { longo: `Atrasada: ${tvDuracaoTexto(decorrido)} do pedido (prazo ${artificial ? "1 h" : "2 h"})` };
 }
 
 function tvConvenioClasse(convenio?: string): string {
@@ -4415,12 +4402,15 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
                     );
                 })}
                 <div className="tv-tot">
-                    <div className={`tv-box tv-box-ocioso ${resumo.activeKey === "idle" ? "tv-box-live qa-status-active-ring" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "tv-box-crit" : ""}`}>
-                        <small><span className="tv-mini-icon"><StatusIcon type="hourglass" /></span>Ocioso</small>
+                    <div
+                        className={`tv-box tv-box-ocioso ${resumo.activeKey === "idle" ? "tv-box-live qa-status-active-ring" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "tv-box-crit" : ""}`}
+                        title="Tempo ocioso"
+                    >
+                        <span className={`tv-box-ic ${resumo.activeKey === "idle" ? "qa-status-blink" : ""}`} aria-label="Ocioso"><StatusIcon type="clockPause" /></span>
                         <b>{formatDurationMs(ocioso)}</b>
                     </div>
-                    <div className="tv-box">
-                        <small><span className="tv-mini-icon"><StatusIcon type="timer" /></span>Total</small>
+                    <div className="tv-box" title="Tempo total">
+                        <span className="tv-box-ic" aria-label="Total"><StatusIcon type="clock" /></span>
                         <b>{formatDurationMs(resumo.totalMs)}</b>
                     </div>
                 </div>
@@ -4429,7 +4419,7 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
     );
 }
 
-function TvCartaoCoroa({ pedido, nowMs }: { pedido: CoroaTvPedido; nowMs: number }) {
+function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso }) {
     const t = buildCoroaTimeline(pedido, nowMs);
     const etapas = [
         { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
@@ -4446,13 +4436,17 @@ function TvCartaoCoroa({ pedido, nowMs }: { pedido: CoroaTvPedido; nowMs: number
     const hora = coroaCriadoHora(pedido.criado_em);
 
     return (
-        <div className="tv-cr">
+        <div className={`tv-cr ${atraso ? "tv-cr-late" : ""}`}>
             <div className="tv-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
             <div className="tv-cr-f">
                 {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
                 {hora ? ` · pedido ${hora}` : ""}
             </div>
-            <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+            <div className="tv-cr-foot">
+                <span className="tv-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
+                <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
+            </div>
             <div className="tv-cr-e">{agora}</div>
             <div className="tv-mini">
                 {etapas.map((e) => (
@@ -4494,6 +4488,7 @@ function QuadroTv({
     clockDate,
     avisos,
     onSelect,
+    onNaoCoube,
 }: {
     layout: TvLayout;
     ativos: Registro[];
@@ -4511,8 +4506,20 @@ function QuadroTv({
     clockDate: string;
     avisos: Aviso[];
     onSelect: (r: Registro) => void;
+    onNaoCoube?: (area: "at" | "cr") => void;
 }) {
     const hostRef = useRef<HTMLDivElement | null>(null);
+    const linhasRef = useRef<HTMLElement | null>(null);
+    const coroasListaRef = useRef<HTMLDivElement | null>(null);
+
+    // Nada é cortado: se o texto de uma página não couber na tela, a página passa a ter um item a menos.
+    useLayoutEffect(() => {
+        if (!onNaoCoube) return;
+        const l = linhasRef.current;
+        if (l && l.clientHeight > 0 && l.scrollHeight > l.clientHeight + 2 && ativos.length > 1) onNaoCoube("at");
+        const c = coroasListaRef.current;
+        if (c && c.clientHeight > 0 && c.scrollHeight > c.clientHeight + 2 && coroas.length > 1) onNaoCoube("cr");
+    });
     const [escala, setEscala] = useState(0.5);
     const [topo, setTopo] = useState(0);
     const [telaCheia, setTelaCheia] = useState(false);
@@ -4545,6 +4552,12 @@ function QuadroTv({
         else void host.requestFullscreen?.().catch(() => undefined);
     }, []);
 
+    // A janela de detalhes fica fora do quadro; sai da tela cheia antes para ela aparecer.
+    const abrirDetalhe = useCallback((r: Registro) => {
+        if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+        onSelect(r);
+    }, [onSelect]);
+
     const resumos = useMemo(
         () => ativos.map((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs)),
         [ativos, statusLogsById, nowMs]
@@ -4556,14 +4569,23 @@ function QuadroTv({
     const totalCoroas = todasCoroas.reduce((s, p) => s + coroaQuantidade(p), 0);
     const pagamentosPendentes = todasCoroas.filter((p) => coroaPagamentoLabel(p) !== "Pago").length;
 
+    const coroasAtrasadas = todasCoroas.filter((p) => coroaAtrasoTv(p, nowMs)).length;
+
     const blocoCoroas = (
         <>
             <h2 className="tv-cor-title">
                 Coroas em confecção <span className="tv-n">{totalCoroas}</span>
                 {coroasError ? <span className="tv-cor-stale">últimos dados mantidos</span> : null}
             </h2>
-            <div className="tv-sum">{pagamentosPendentes} aguardando pagamento · ordem de chegada</div>
-            <div className="tv-clist">{coroas.map((p) => <TvCartaoCoroa key={p.id} pedido={p} nowMs={nowMs} />)}</div>
+            <div className="tv-sum">
+                {coroasAtrasadas > 0 ? <b className="tv-sum-late">{coroasAtrasadas} {coroasAtrasadas === 1 ? "atrasada" : "atrasadas"} · </b> : null}
+                {pagamentosPendentes} aguardando pagamento · ordem de chegada
+            </div>
+            <div className="tv-clist" ref={coroasListaRef}>
+                {coroas.map((p) => (
+                    <TvCartaoCoroa key={p.id} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} />
+                ))}
+            </div>
             <TvPaginador atual={paginaCoroas} total={totalPaginasCoroas} segundos={INTERVALO_PAGINACAO_COROAS_MS / 1000} />
         </>
     );
@@ -4593,15 +4615,14 @@ function QuadroTv({
                             <span>Atendimento</span>
                             <span>Agora</span>
                             <div className="tv-steps-h">
-                                {TV_ETAPAS.map((s) => <span key={s.key}>{TV_ETAPA_CURTA[s.key] ?? s.shortLabel}</span>)}
-                                <span className="tv-steps-h-tot">{layout.coroasModo === "lado" ? "Total" : "Ocioso · Total"}</span>
+                                {/* etapas identificadas só pelos ícones */}
                             </div>
                         </div>
-                        <main className="tv-rows">
+                        <main className="tv-rows" ref={linhasRef}>
                             {resumos.length === 0 ? (
                                 <div className="tv-empty">Nenhum atendimento em andamento.</div>
                             ) : (
-                                resumos.map((res, i) => <TvLinhaAtendimento key={res.trackingId || i} resumo={res} onSelect={onSelect} />)
+                                resumos.map((res, i) => <TvLinhaAtendimento key={res.trackingId || i} resumo={res} onSelect={abrirDetalhe} />)
                             )}
                         </main>
                         <TvPaginador atual={paginaAtendimentos} total={totalPaginasAtendimentos} segundos={INTERVALO_PAGINACAO_ATENDIMENTOS_MS / 1000} />
@@ -4658,86 +4679,95 @@ function TvStyles() {
 
             .tv-body { flex: 1; display: flex; gap: 20px; min-height: 0; }
             .tv-main { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
-            .tv-head, .tv-row { display: grid; grid-template-columns: 520px 420px 1fr; gap: 28px; }
+            .tv-head, .tv-row { display: grid; grid-template-columns: 480px 390px 1fr; gap: 24px; }
             .tv-head { padding: 0 28px; color: #6f88ad; font-size: 16px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-            .tv-steps-h, .tv-track { display: grid; grid-template-columns: repeat(6, 1fr) 250px; align-items: center; }
-            .tv-steps-h span { text-align: center; font-size: 14px; letter-spacing: .04em; }
+            .tv-steps-h, .tv-track { display: grid; grid-template-columns: repeat(6, 1fr) 316px; align-items: center; }
+            .tv-steps-h span { text-align: center; font-size: 13px; letter-spacing: 0; white-space: nowrap; }
             .tv-steps-h .tv-steps-h-tot { text-align: right; padding-right: 10px; }
-            .tv-rows { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+            .tv-rows { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: hidden; }
             .tv-empty { font-size: 26px; color: #6f88ad; text-align: center; padding: 60px 0; }
-            .tv-row { flex: 1; max-height: 230px; min-height: 0; align-items: center; cursor: pointer;
+            .tv-row { flex: 0 0 auto; min-height: 150px; align-items: center; cursor: pointer;
                 background: linear-gradient(180deg, #132a52, #0f2344); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 28px; }
             .tv-row:hover { border-color: #4b9bff; }
             .tv-row-crit { border-color: rgba(255,90,95,.55); box-shadow: inset 6px 0 0 #ff5a5f; }
             .tv-row-warn { border-color: rgba(255,176,32,.5); box-shadow: inset 6px 0 0 #ffb020; }
 
             .tv-who { min-width: 0; }
-            .tv-name { font-size: 34px; font-weight: 900; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .tv-meta { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 19px; color: #a9bddb; font-weight: 700; white-space: nowrap; overflow: hidden; }
+            .tv-name { font-size: 34px; font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
+            .tv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 8px; font-size: 19px; color: #a9bddb; font-weight: 700; overflow-wrap: anywhere; }
             .tv-chip { font-size: 17px; font-weight: 900; padding: 3px 12px; border-radius: 999px; color: #081427; flex: none; }
             .tv-chip-pref { background: #3fa7ff; } .tv-chip-part { background: #ffc53d; } .tv-chip-assoc { background: #2ed3c6; }
             .tv-chip-adef { background: transparent; color: #8aa0c2; border: 2px dashed #8aa0c2; }
             .tv-place { margin-top: 8px; font-size: 19px; font-weight: 700; line-height: 1.35; }
-            .tv-place span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-place span { display: block; overflow-wrap: anywhere; }
             .tv-place-sep { color: #a9bddb; }
             .tv-place a { color: #4b9bff; }
 
             .tv-now { min-width: 0; }
             .tv-state { display: flex; align-items: center; gap: 12px; font-size: 27px; font-weight: 900; line-height: 1.1; }
             .tv-pulse { width: 16px; height: 16px; border-radius: 50%; background: #35e08a; flex: none; animation: tv-ping 1.6s infinite; }
-            .tv-since { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-since { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 6px; overflow-wrap: anywhere; }
             .tv-since b { color: #f2f6fc; font-weight: 900; }
             .tv-flag { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 17px; font-weight: 900; padding: 5px 12px; border-radius: 10px; }
             .tv-flag-crit { background: rgba(255,90,95,.15); color: #ff5a5f; }
             .tv-flag-warn { background: rgba(255,176,32,.14); color: #ffb020; }
 
-            .tv-step { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; z-index: 0; }
-            .tv-step::before { content: ""; position: absolute; top: 32px; left: -50%; width: 100%; height: 4px; background: #29497d; z-index: -1; }
+            .tv-step { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; }
+            .tv-step::before { content: ""; position: absolute; top: 30px; left: -50%; width: 100%; height: 4px; background: #29497d; z-index: 0; }
             .tv-step:first-child::before { display: none; }
             .tv-step-done::before, .tv-step-live::before { background: #3b82f6; }
-            .tv-node { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid #29497d; background: #0c1d38; color: #6f88ad; }
+            .tv-node { position: relative; z-index: 1; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid #29497d; background: #0c1d38; color: #6f88ad; }
+            .tv-t { position: relative; z-index: 1; }
             .tv-node-icon { display: inline-flex; width: 32px; height: 32px; }
             .tv-node-icon svg, .tv-mini-icon svg, .tv-mini i svg { width: 100%; height: 100%; }
             .tv-t { font-size: 21px; font-weight: 900; color: #6f88ad; white-space: nowrap; }
             .tv-step-done .tv-node { background: #3b82f6; border-color: #3b82f6; color: #fff; }
             .tv-step-done .tv-t { color: #f2f6fc; }
-            .tv-step-live .tv-node { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,.14); }
+            .tv-step-live .tv-node { border-color: #22c55e; color: #22c55e; background: #10373a; }
             .tv-step-live .tv-t { color: #35e08a; }
-            .tv-step-na .tv-node { border-style: dashed; border-color: #233c63; background: transparent; color: #2b4670; }
+            .tv-step-na .tv-node { border-style: dashed; border-color: #2b4670; background: #0c1d38; color: #2b4670; }
             .tv-step-na .tv-t { font-size: 13px; color: #3d5a85; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; text-align: center; white-space: normal; line-height: 1.1; }
 
             .tv-tot { display: flex; gap: 10px; justify-content: flex-end; padding-left: 18px; }
-            .tv-box { border-radius: 14px; padding: 8px 14px; text-align: center; border: 2px solid #29497d; min-width: 118px; }
+            .tv-box { border-radius: 14px; padding: 8px 12px; border: 2px solid #29497d; flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; gap: 8px; }
+            .tv-box-ic { display: inline-flex; flex: none; width: 28px; height: 28px; color: inherit; }
+            .tv-box-ic svg { width: 100%; height: 100%; }
+            .tv-box-live .tv-box-ic { color: #35e08a; }
             .tv-box small { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 900; color: #6f88ad; text-transform: uppercase; letter-spacing: .08em; }
             .tv-mini-icon { display: inline-flex; width: 18px; height: 18px; }
-            .tv-box b { display: block; font-size: 30px; font-weight: 900; margin-top: 2px; }
+            .tv-box b { display: block; font-size: 30px; font-weight: 900; }
+            .tv-box-crit .tv-box-ic { color: #ff5a5f; }
             .tv-box-live { border-color: #22c55e !important; background: rgba(34,197,94,.14); }
             .tv-box-live b, .tv-box-live small { color: #35e08a; }
             .tv-box-crit b { color: #ff5a5f; }
 
             /* compacto */
-            .tv-compact .tv-row { padding: 10px 22px; border-radius: 16px; }
-            .tv-compact .tv-name { font-size: 28px; }
-            .tv-compact .tv-place, .tv-compact .tv-since { display: none; }
-            .tv-compact .tv-meta { margin-top: 4px; font-size: 17px; }
+            .tv-compact .tv-row { padding: 6px 22px; border-radius: 16px; min-height: 96px; }
+            .tv-compact .tv-name { font-size: 26px; }
+            .tv-compact .tv-since { margin-top: 2px; font-size: 17px; }
+            .tv-compact .tv-rows { gap: 10px; }
+            .tv-compact .tv-name { line-height: 1.15; }
+            .tv-compact .tv-place { margin-top: 3px; font-size: 16px; line-height: 1.25; }
+            .tv-compact .tv-meta { margin-top: 2px; font-size: 16px; }
             .tv-compact .tv-state { font-size: 23px; }
             .tv-compact .tv-flag { margin-top: 4px; font-size: 15px; padding: 3px 10px; }
             .tv-compact .tv-node { width: 48px; height: 48px; } .tv-compact .tv-node-icon { width: 24px; height: 24px; }
-            .tv-compact .tv-step::before { top: 24px; }
+            .tv-compact .tv-step::before { top: 22px; }
             .tv-compact .tv-t { font-size: 18px; }
             .tv-compact .tv-step-na .tv-t { visibility: hidden; }
-            .tv-compact .tv-box { padding: 4px 10px; min-width: 92px; } .tv-compact .tv-box b { font-size: 24px; }
+            .tv-compact .tv-box { padding: 4px 10px; } .tv-compact .tv-box-ic { width: 24px; height: 24px; } .tv-compact .tv-box b { font-size: 24px; }
 
             /* com coluna de coroas ao lado */
             .tv-narrow .tv-row, .tv-narrow .tv-head { grid-template-columns: 370px 280px 1fr; gap: 18px; }
             .tv-narrow .tv-name { font-size: 26px; }
             .tv-narrow .tv-state { font-size: 21px; }
             .tv-narrow .tv-tot { padding-left: 8px; }
-            .tv-narrow .tv-box-ocioso { display: none; }
-            .tv-narrow .tv-track, .tv-narrow .tv-steps-h { grid-template-columns: repeat(6, 1fr) 104px; }
+            .tv-narrow .tv-tot { flex-direction: column; gap: 6px; align-items: stretch; }
+            .tv-narrow .tv-box { padding: 3px 8px; flex: none; justify-content: flex-start; } .tv-narrow .tv-box-ic { width: 21px; height: 21px; } .tv-narrow .tv-box b { font-size: 22px; } .tv-narrow .tv-box small { font-size: 12px; }
+            .tv-narrow .tv-track, .tv-narrow .tv-steps-h { grid-template-columns: repeat(6, 1fr) 132px; }
             .tv-narrow .tv-steps-h span { font-size: 11px; letter-spacing: 0; }
             .tv-narrow .tv-node { width: 44px; height: 44px; } .tv-narrow .tv-node-icon { width: 22px; height: 22px; }
-            .tv-narrow .tv-step::before { top: 22px; }
+            .tv-narrow .tv-step::before { top: 20px; }
             .tv-narrow .tv-t { font-size: 16px; }
 
             /* coroas */
@@ -4752,9 +4782,14 @@ function TvStyles() {
             .tv-band .tv-clist { flex-direction: row; }
             .tv-band .tv-cr { flex: 1; }
             .tv-cr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; min-width: 0; }
-            .tv-cr-m { grid-column: 1 / -1; font-size: 20px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .tv-cr-f { font-size: 17px; color: #a9bddb; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .tv-cr-e { font-size: 17px; font-weight: 800; color: #35e08a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .tv-cr-m { grid-column: 1 / -1; font-size: 20px; font-weight: 900; overflow-wrap: anywhere; }
+            .tv-cr-f { grid-column: 1 / -1; font-size: 17px; color: #a9bddb; font-weight: 700; overflow-wrap: anywhere; }
+            .tv-cr-e { font-size: 17px; font-weight: 800; color: #35e08a; overflow-wrap: anywhere; }
+            .tv-cr-late { box-shadow: inset 5px 0 0 #ffb020; border-color: rgba(255,176,32,.55); }
+            .tv-origem { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: rgba(75,155,255,.14); color: #8fc2ff; white-space: nowrap; }
+            .tv-cr-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+            .tv-cr-late-t { font-size: 16px; font-weight: 900; color: #ffb020; background: rgba(255,176,32,.12); border-radius: 8px; padding: 2px 8px; justify-self: start; overflow-wrap: anywhere; max-width: 100%; }
+            .tv-sum-late { color: #ffb020; font-weight: 900; }
             .tv-pay { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; align-self: start; justify-self: end; white-space: nowrap; }
             .tv-pay-ok { background: rgba(53,224,138,.16); color: #35e08a; }
             .tv-pay-pend { background: rgba(255,176,32,.14); color: #ffb020; }
@@ -4786,6 +4821,542 @@ function TvStyles() {
     );
 }
 
+
+/* ===== Quadro no celular e tablet (telas abaixo de 1024 px) =====
+ * Em pé: cartões com abas Atendimentos / Coroas / Avisos.
+ * Deitado: uma linha por atendimento, como na TV. A troca é automática pela orientação da tela.
+ * O tema (claro/escuro) acompanha o fundo do app: a cor é lida da página e observada quando muda.
+ */
+type MobAba = "at" | "cr" | "av";
+
+function mobCorEhEscura(cor: string): boolean | null {
+    const m = cor.match(/rgba?\(([^)]+)\)/i);
+    if (!m) return null;
+    const p = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+    if (p.length >= 4 && p[3] === 0) return null; // transparente
+    const [r, g, b] = p;
+    if (![r, g, b].every(Number.isFinite)) return null;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.45;
+}
+
+function useTemaEscuroApp(ref: React.RefObject<HTMLElement | null>): boolean {
+    const [escuro, setEscuro] = useState(false);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+        const calc = () => {
+            let el: HTMLElement | null = ref.current?.parentElement ?? document.body;
+            while (el) {
+                const r = mobCorEhEscura(getComputedStyle(el).backgroundColor);
+                if (r !== null) { setEscuro(r); return; }
+                el = el.parentElement;
+            }
+            setEscuro(!!mq?.matches);
+        };
+        calc();
+        // Rechecagem com atraso: o fundo pode mudar com transição de cor depois da troca de tema.
+        let t = 0;
+        const agendar = () => { calc(); window.clearTimeout(t); t = window.setTimeout(calc, 400); };
+        const intervalo = window.setInterval(calc, 5000);
+        const obs = new MutationObserver(agendar);
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-mode"] });
+        obs.observe(document.body, { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-mode"] });
+        mq?.addEventListener?.("change", agendar);
+        return () => { obs.disconnect(); window.clearTimeout(t); window.clearInterval(intervalo); mq?.removeEventListener?.("change", agendar); };
+    }, [ref]);
+    return escuro;
+}
+
+function mobChipConvenio(convenio?: string): string {
+    const kind = normalizeConvenio(convenio);
+    if (kind === "Prefeitura") return "qm-chip qm-chip-pref";
+    if (kind === "Particular") return "qm-chip qm-chip-part";
+    if (kind === "Associado") return "qm-chip qm-chip-assoc";
+    return "qm-chip qm-chip-adef";
+}
+
+function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: (r: Registro) => void }) {
+    const r = resumo.registro;
+    const rankAtual = statusFlowRank(resumo.atualKey);
+    const ocioso = resumo.durations.get("idle") ?? 0;
+    const ociosoAtivo = resumo.activeKey === "idle";
+    const semVelorio = !rotaAtivaLegado(r.realiza_velorio);
+    const semSepultamento = !rotaAtivaLegado(r.realiza_sepultamento);
+    const sepultamentoTxt = semSepultamento
+        ? "Sem sepultamento pelo PAI"
+        : `${shown(r.local_sepultamento || r.local)} · ${dateDayMonthOr(r.data_fim_velorio)} ${timeOr(r.hora_fim_velorio)}`;
+    const nivel = resumo.alerta?.nivel;
+
+    return (
+        <article
+            className={`qm-card ${nivel ? `qm-card-${nivel}` : ""}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(r)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? onSelect(r) : undefined)}
+            aria-label={`${shown(r.falecido)}: ${resumo.atualLabel}. Toque para ver os detalhes.`}
+        >
+            <h3 className="qm-name">{shown(r.falecido)}</h3>
+
+            <div className="qm-tot">
+                <b title="Tempo total"><span className="qm-tot-ic" aria-label="Total"><StatusIcon type="clock" /></span>{formatDurationMs(resumo.totalMs)}</b>
+                <span
+                    className={`qm-oc ${ociosoAtivo ? "qm-oc-live" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "qm-oc-crit" : ""}`}
+                    title="Tempo ocioso"
+                >
+                    <span className={`qm-oc-ic ${ociosoAtivo ? "qa-status-blink" : ""}`} aria-label="Ocioso"><StatusIcon type="clockPause" /></span>
+                    {formatDurationMs(ocioso)}
+                </span>
+            </div>
+
+            <div className="qm-meta">
+                <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                <span className="qm-meta-t">Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+            </div>
+
+            <div className="qm-now">
+                <span className="qm-dot qa-status-blink" aria-hidden />
+                <div className="qm-now-t">
+                    <b>{resumo.atualLabel}</b>
+                    <span>
+                        há {tvDuracaoTexto(resumo.atualDesdeMs)}
+                        {resumo.atualResponsavel ? ` · ${resumo.atualResponsavel}` : ""}
+                    </span>
+                </div>
+            </div>
+
+            {resumo.alerta && (
+                <div className={`qm-flag qm-flag-${resumo.alerta.nivel}`}>
+                    {resumo.alerta.nivel === "crit" ? "⚠" : "⏱"} {resumo.alerta.texto}
+                </div>
+            )}
+
+            <ol className="qm-steps">
+                {TV_ETAPAS.map((step) => {
+                    const pulada = isStatusStepSkipped(r, step.key);
+                    const duracao = resumo.durations.get(step.key) ?? 0;
+                    const ativa = !pulada && resumo.activeKey === step.key;
+                    const feita = !pulada && !ativa && (duracao > 0 || rankAtual > statusFlowRank(step.key));
+                    const estado = pulada ? "na" : ativa ? "live" : feita ? "done" : "pend";
+                    const texto = pulada ? "sem" : ativa || feita ? formatDurationMs(duracao) : "—";
+                    return (
+                        <li
+                            key={step.key}
+                            className={`qm-s qm-s-${estado}`}
+                            title={`${step.label} • ${pulada ? "Não se aplica" : ativa || feita ? formatDurationMs(duracao) : "Ainda não aconteceu"}`}
+                        >
+                            <span className={`qm-ic ${ativa ? "qa-status-active-ring" : ""}`}>
+                                <span className={`qm-ic-svg ${ativa ? "qa-status-blink" : ""}`}><StatusIcon type={step.icon} /></span>
+                            </span>
+                            <b>{texto}</b>
+                        </li>
+                    );
+                })}
+            </ol>
+
+            <dl className="qm-where">
+                <div>
+                    <dt>Velório</dt>
+                    <dd>{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</dd>
+                </div>
+                <div>
+                    <dt>Sepult.</dt>
+                    <dd>{sepultamentoTxt}</dd>
+                </div>
+            </dl>
+        </article>
+    );
+}
+
+function MobCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso }) {
+    const t = buildCoroaTimeline(pedido, nowMs);
+    const etapas = [
+        { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
+        { key: "coroa", icon: "flower" as CoroaTvIconKey, label: "Coroa", ms: t.coroaMs, ativo: t.coroaActive, pulado: t.coroaSkipped },
+        { key: "faixa", icon: "ribbon" as CoroaTvIconKey, label: "Faixa", ms: t.faixaMs, ativo: t.faixaActive, pulado: false },
+        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Concluída, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
+    ];
+    const ativas = etapas.filter((e) => e.ativo);
+    const qtd = coroaQuantidade(pedido);
+    const pago = coroaPagamentoLabel(pedido) === "Pago";
+    const agora = ativas.length
+        ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
+        : coroaStatusLabel(pedido.status);
+    const hora = coroaCriadoHora(pedido.criado_em);
+
+    return (
+        <div className={`qm-cr ${atraso ? "qm-cr-late" : ""}`}>
+            {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}
+            <div className="qm-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="qm-cr-f">
+                {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
+                {hora ? ` · pedido ${hora}` : ""}
+            </div>
+            <div className="qm-cr-r">
+                <span className="qm-cr-e">{agora}</span>
+                <span className="qm-mini">
+                    {etapas.map((e) => (
+                        <i
+                            key={e.key}
+                            title={`${e.label} • ${e.pulado ? "Não se aplica" : formatDurationMs(e.ms)}`}
+                            className={e.pulado ? "qm-mini-na" : e.ativo ? "qm-mini-live qa-status-active-ring" : e.ms > 0 ? "qm-mini-done" : ""}
+                        >
+                            <span className={e.ativo ? "qa-status-blink" : ""}><CoroaTvIcon type={e.icon} /></span>
+                        </i>
+                    ))}
+                </span>
+            </div>
+            <div className="qm-cr-foot">
+                <span className="qm-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
+                <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+            </div>
+        </div>
+    );
+}
+
+function QuadroMobile({
+    ativos,
+    coroas,
+    coroasError,
+    statusLogsById,
+    nowMs,
+    clockTime,
+    clockDate,
+    avisos,
+    onSelect,
+}: {
+    ativos: Registro[];
+    coroas: CoroaTvPedido[];
+    coroasError?: string | null;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+    clockTime: string;
+    clockDate: string;
+    avisos: Aviso[];
+    onSelect: (r: Registro) => void;
+}) {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const escuro = useTemaEscuroApp(rootRef);
+    const [aba, setAba] = useState<MobAba>("at");
+    const [podeTelaCheia, setPodeTelaCheia] = useState(false);
+    const [telaCheia, setTelaCheia] = useState(false);
+
+    useEffect(() => {
+        setPodeTelaCheia(!!document.fullscreenEnabled);
+        const onFs = () => setTelaCheia(!!document.fullscreenElement);
+        document.addEventListener("fullscreenchange", onFs);
+        return () => document.removeEventListener("fullscreenchange", onFs);
+    }, []);
+
+    // Tela cheia na página inteira (não só no quadro) para a janela de detalhes continuar aparecendo.
+    const alternarTelaCheia = useCallback(() => {
+        if (document.fullscreenElement) void document.exitFullscreen?.();
+        else void document.documentElement.requestFullscreen?.().catch(() => undefined);
+    }, []);
+
+    const resumos = useMemo(
+        () => ativos.map((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs)),
+        [ativos, statusLogsById, nowMs]
+    );
+    const parados = resumos.filter((x) => x.alerta?.nivel === "crit").length;
+    const totalCoroas = coroas.reduce((s, p) => s + coroaQuantidade(p), 0);
+    const pagamentosPendentes = coroas.filter((p) => coroaPagamentoLabel(p) !== "Pago").length;
+    const coroasAtrasadas = coroas.filter((p) => coroaAtrasoTv(p, nowMs)).length;
+    const listaAvisos = useMemo(
+        () =>
+            (avisos ?? [])
+                .map((a) => ({ usuario: shown(a?.usuario, "").trim(), mensagem: shown(a?.mensagem, "").trim() }))
+                .filter((x) => x.usuario || x.mensagem),
+        [avisos]
+    );
+
+    const aba_ = (id: MobAba, rotulo: string, n: number) => (
+        <button type="button" role="tab" aria-selected={aba === id} className="qm-tab" onClick={() => setAba(id)}>
+            {rotulo}
+            <span>{n}</span>
+        </button>
+    );
+
+    return (
+        <div ref={rootRef} className="qm-root" data-tema={escuro ? "escuro" : "claro"}>
+            <header className="qm-top">
+                <div className="qm-tit">
+                    <h1>Quadro de Atendimentos</h1>
+                    <div className="qm-live"><i />Atualizado em tempo real</div>
+                </div>
+                <div className="qm-clk">
+                    <b>{clockTime}</b>
+                    <small>{clockDate}</small>
+                </div>
+                <div className="qm-kpis">
+                    <span className="qm-kpi"><b>{ativos.length}</b>em andamento</span>
+                    {parados > 0 && <span className="qm-kpi qm-kpi-crit"><b>{parados}</b>parados +24 h</span>}
+                    {podeTelaCheia && (
+                        <button
+                            type="button"
+                            className="qm-fs"
+                            onClick={alternarTelaCheia}
+                            aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+                            title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                                {telaCheia
+                                    ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+                                    : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
+                            </svg>
+                        </button>
+                    )}
+                </div>
+                <div className="qm-tabs" role="tablist">
+                    {aba_("at", "Atendimentos", ativos.length)}
+                    {aba_("cr", "Coroas", coroas.length)}
+                    {aba_("av", "Avisos", listaAvisos.length)}
+                </div>
+            </header>
+
+            <div className="qm-body">
+                {aba === "at" && (
+                    <>
+                        {listaAvisos.length > 0 && (
+                            <button type="button" className="qm-aviso" onClick={() => setAba("av")}>
+                                <b>Aviso</b>
+                                <span>{listaAvisos[0].usuario ? `${listaAvisos[0].usuario}: ` : ""}{listaAvisos[0].mensagem}</span>
+                            </button>
+                        )}
+                        {resumos.length > 0 && (
+                            <div className="qm-colhd" aria-hidden>
+                                <span>Atendimento</span>
+                                <span>Agora</span>
+                                <span />
+                                <span />
+                            </div>
+                        )}
+                        <div className="qm-list">
+                            {resumos.length === 0 && <p className="qm-empty">Nenhum atendimento em andamento.</p>}
+                            {resumos.map((resumo, i) => (
+                                <MobCartaoAtendimento key={resumo.trackingId || i} resumo={resumo} onSelect={onSelect} />
+                            ))}
+                        </div>
+                    </>
+                )}
+
+                {aba === "cr" && (
+                    <>
+                        {coroasError && <p className="qm-note qm-note-warn">Dados das coroas podem estar desatualizados.</p>}
+                        {coroas.length > 0 ? (
+                            <>
+                                <p className="qm-note">
+                                    {totalCoroas} {totalCoroas === 1 ? "coroa" : "coroas"} em {coroas.length} {coroas.length === 1 ? "pedido" : "pedidos"}
+                                    {pagamentosPendentes ? ` · ${pagamentosPendentes} aguardando pagamento` : ""}
+                                    {coroasAtrasadas ? ` · ${coroasAtrasadas} ${coroasAtrasadas === 1 ? "atrasada" : "atrasadas"}` : ""} · ordem de chegada
+                                </p>
+                                <div className="qm-grid">
+                                    {coroas.map((p, i) => (
+                                        <MobCartaoCoroa
+                                            key={String(p.id ?? i)}
+                                            pedido={p}
+                                            nowMs={nowMs}
+                                            atraso={coroaAtrasoTv(p, nowMs)}
+                                        />
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            <p className="qm-empty">Nenhuma coroa em confecção.</p>
+                        )}
+                    </>
+                )}
+
+                {aba === "av" && (
+                    <div className="qm-grid">
+                        {listaAvisos.length === 0 && <p className="qm-empty">Nenhum aviso no momento.</p>}
+                        {listaAvisos.map((a, i) => (
+                            <article key={i} className="qm-av">
+                                {a.usuario && <b>{a.usuario}</b>}
+                                <p>{a.mensagem}</p>
+                            </article>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <MobStyles />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function MobStyles() {
+    return (
+        <style jsx global>{`
+            .qm-root {
+                --qm-surface: #ffffff; --qm-s2: #f5f8fc; --qm-line: #dbe4ef; --qm-text: #0f1b2d; --qm-muted: #667891;
+                --qm-acc: #0e9be0; --qm-accbg: #e3f3fc;
+                --qm-ok: #16a34a; --qm-okbg: #e6f8ee; --qm-warn: #b45309; --qm-warnbg: #fff4e0; --qm-crit: #dc2626; --qm-critbg: #fdecec;
+                --qm-shadow: 0 1px 2px rgba(15, 27, 45, .06), 0 6px 18px rgba(15, 27, 45, .06);
+                flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; color: var(--qm-text);
+            }
+            .qm-root[data-tema="escuro"] {
+                --qm-surface: #0f1f36; --qm-s2: #0c1a2e; --qm-line: #20385e; --qm-text: #eaf2ff; --qm-muted: #8ca2c4;
+                --qm-acc: #3b9bff; --qm-accbg: #12294a;
+                --qm-ok: #35e08a; --qm-okbg: rgba(34, 197, 94, .14); --qm-warn: #ffb020; --qm-warnbg: rgba(255, 176, 32, .12); --qm-crit: #ff5a5f; --qm-critbg: rgba(255, 90, 95, .13);
+                --qm-shadow: none;
+            }
+            .qm-root button { font: inherit; color: inherit; }
+
+            .qm-top { flex: none; background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 18px; box-shadow: var(--qm-shadow);
+                padding: 12px 14px 10px; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "tit clk" "kpi kpi" "tab tab"; }
+            .qm-tit { grid-area: tit; min-width: 0; }
+            .qm-tit h1 { margin: 0; font-size: 16px; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
+            .qm-live { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; color: var(--qm-ok); overflow-wrap: anywhere; }
+            .qm-live i { flex: none; }
+            .qm-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--qm-ok); }
+            .qm-clk { grid-area: clk; text-align: right; line-height: 1.1; }
+            .qm-clk b { display: block; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
+            .qm-clk small { font-size: 11px; font-weight: 800; color: var(--qm-muted); }
+            .qm-kpis { grid-area: kpi; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+            .qm-kpi { white-space: nowrap; display: flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--qm-s2); border: 1px solid var(--qm-line); font-size: 12px; font-weight: 800; color: var(--qm-muted); }
+            .qm-kpi b { font-size: 15px; color: var(--qm-text); font-variant-numeric: tabular-nums; }
+            .qm-kpi-crit { background: var(--qm-critbg); border-color: transparent; color: var(--qm-crit); }
+            .qm-kpi-crit b { color: var(--qm-crit); }
+            .qm-fs { margin-left: auto; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--qm-line); background: transparent; border-radius: 999px; padding: 0; color: var(--qm-muted) !important; cursor: pointer; }
+            .qm-fs svg { width: 16px; height: 16px; }
+            .qm-tabs { grid-area: tab; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; background: var(--qm-s2); border: 1px solid var(--qm-line); border-radius: 12px; }
+            .qm-tab { min-width: 0; border: 0; background: transparent; border-radius: 9px; padding: 7px 2px; font-size: 12px !important; font-weight: 800; color: var(--qm-muted) !important; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+            .qm-tab span { flex: none; background: var(--qm-line); color: var(--qm-text); border-radius: 999px; padding: 0 7px; font-size: 11px; font-variant-numeric: tabular-nums; }
+            .qm-tab[aria-selected="true"] { background: var(--qm-surface); color: var(--qm-text) !important; box-shadow: var(--qm-shadow); }
+            .qm-tab[aria-selected="true"] span { background: var(--qm-acc); color: #fff; }
+            .qm-tab:focus-visible, .qm-card:focus-visible, .qm-aviso:focus-visible, .qm-fs:focus-visible { outline: 2px solid var(--qm-acc); outline-offset: 2px; }
+
+            .qm-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+            .qm-body > * { flex: none; }
+            .qm-aviso { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 0; cursor: pointer; background: var(--qm-accbg); border-radius: 14px; padding: 9px 12px; font-size: 13px !important; font-weight: 700; }
+            .qm-aviso b { flex: none; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-acc); }
+            .qm-aviso span { min-width: 0; overflow-wrap: anywhere; }
+            .qm-colhd { display: none; }
+            .qm-list, .qm-grid { display: grid; gap: 10px; }
+            .qm-empty { margin: 0; padding: 20px 12px; text-align: center; font-size: 14px; font-weight: 700; color: var(--qm-muted); background: var(--qm-surface); border: 1px dashed var(--qm-line); border-radius: 16px; }
+            .qm-note { margin: 0; text-align: center; font-size: 12px; font-weight: 800; color: var(--qm-muted); }
+            .qm-note-warn { color: var(--qm-warn); }
+
+            .qm-card { position: relative; overflow: hidden; cursor: pointer; background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 18px; box-shadow: var(--qm-shadow);
+                padding: 12px 12px 12px 14px; display: grid; gap: 6px 10px; grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-areas: "name tot" "meta tot" "now now" "flag flag" "steps steps" "where where"; }
+            .qm-card-crit { box-shadow: inset 4px 0 0 var(--qm-crit), var(--qm-shadow); }
+            .qm-card-warn { box-shadow: inset 4px 0 0 var(--qm-warn), var(--qm-shadow); }
+            .qm-name { grid-area: name; margin: 0; align-self: end; font-size: 17px; font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
+            .qm-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--qm-muted); }
+            .qm-meta-t { overflow-wrap: anywhere; }
+            .qm-chip { flex: none; font-size: 11px; font-weight: 900; line-height: 1.5; color: #fff; border-radius: 999px; padding: 0 8px; }
+            .qm-chip-pref { background: #0e9be0; }
+            .qm-chip-part { background: #f59e0b; color: #1d1405; }
+            .qm-chip-assoc { background: #14b8a6; }
+            .qm-chip-adef { background: transparent; color: var(--qm-muted); border: 1px dashed var(--qm-muted); }
+            .qm-tot { grid-area: tot; align-self: start; text-align: right; display: grid; gap: 2px; justify-items: end; }
+            .qm-tot small { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-muted); }
+            .qm-tot b { display: inline-flex; align-items: center; gap: 4px; font-size: 18px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+            .qm-tot-ic { display: inline-flex; width: 18px; height: 18px; color: inherit; }
+            .qm-tot-ic svg, .qm-oc-ic svg { width: 100%; height: 100%; }
+            .qm-oc { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; color: var(--qm-muted); font-variant-numeric: tabular-nums; }
+            .qm-oc-ic { width: 13px; height: 13px; display: inline-flex; }
+            .qm-oc-live { color: var(--qm-ok); }
+            .qm-oc-crit { color: var(--qm-crit); }
+            .qm-now { grid-area: now; display: flex; align-items: center; gap: 10px; min-width: 0; background: var(--qm-okbg); border-radius: 12px; padding: 7px 10px; }
+            .qm-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--qm-ok); }
+            .qm-now-t { min-width: 0; }
+            .qm-now-t b { display: block; font-size: 15px; font-weight: 900; line-height: 1.2; }
+            .qm-now-t span { display: block; font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
+            .qm-flag { grid-area: flag; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 5px 10px; }
+            .qm-flag-crit { background: var(--qm-critbg); color: var(--qm-crit); }
+            .qm-flag-warn { background: var(--qm-warnbg); color: var(--qm-warn); }
+            .qm-steps { grid-area: steps; list-style: none; margin: 2px 0 0; padding: 8px 2px 6px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--qm-s2); border: 1px solid var(--qm-line); border-radius: 14px; }
+            .qm-s { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+            .qm-s:not(:first-child)::before { content: ""; position: absolute; top: 16px; right: 50%; width: 100%; height: 2px; background: var(--qm-line); }
+            .qm-s-done::before, .qm-s-live::before { background: var(--qm-acc) !important; }
+            .qm-ic { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--qm-line); background: var(--qm-surface); color: var(--qm-muted); }
+            .qm-ic-svg { width: 16px; height: 16px; display: inline-block; }
+            .qm-s-done .qm-ic { background: var(--qm-acc); border-color: var(--qm-acc); color: #fff; }
+            .qm-s-live .qm-ic { border-color: var(--qm-ok); background: linear-gradient(var(--qm-okbg), var(--qm-okbg)), var(--qm-surface); color: var(--qm-ok); }
+            .qm-s-na .qm-ic { border-style: dashed; background: var(--qm-surface); }
+            .qm-s-na .qm-ic-svg { opacity: .45; }
+            .qm-s em { font-style: normal; margin-top: 2px; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; color: var(--qm-muted); white-space: nowrap; }
+            .qm-s b { font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums; }
+            .qm-s-pend b, .qm-s-na b { color: var(--qm-muted); font-weight: 700; }
+            .qm-s-live b, .qm-s-live em { color: var(--qm-ok); }
+            .qm-where { grid-area: where; margin: 0; display: grid; gap: 3px; font-size: 12px; }
+            .qm-where div { display: flex; gap: 6px; min-width: 0; }
+            .qm-where dt { flex: none; width: 58px; font-weight: 800; color: var(--qm-muted); }
+            .qm-where dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+
+            .qm-cr, .qm-av { background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 16px; box-shadow: var(--qm-shadow); padding: 10px 12px; display: grid; gap: 5px; min-width: 0; }
+            .qm-cr-late { box-shadow: inset 4px 0 0 var(--qm-warn), var(--qm-shadow); }
+            .qm-cr .qm-flag { grid-area: auto; justify-self: start; }
+            .qm-cr-m { font-size: 14px; font-weight: 900; overflow-wrap: anywhere; }
+            .qm-cr-f { font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
+            .qm-cr-r { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+            .qm-cr-e { min-width: 0; overflow-wrap: normal; font-size: 12px; font-weight: 800; color: var(--qm-ok); overflow-wrap: anywhere; }
+            .qm-mini { flex: none; display: flex; gap: 4px; }
+            .qm-mini i { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--qm-line); color: var(--qm-muted); display: grid; place-items: center; }
+            .qm-mini i > span { width: 12px; height: 12px; display: inline-block; }
+            .qm-mini-done { background: var(--qm-acc); border-color: var(--qm-acc) !important; color: #fff !important; }
+            .qm-mini-live { background: var(--qm-okbg); border-color: var(--qm-ok) !important; color: var(--qm-ok) !important; }
+            .qm-mini-na { border-style: dashed !important; opacity: .5; }
+            .qm-cr-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+            .qm-origem { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: var(--qm-accbg); color: var(--qm-acc); }
+            .qm-pay { justify-self: start; font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; }
+            .qm-pay-ok { background: var(--qm-okbg); color: var(--qm-ok); }
+            .qm-pay-pend { background: var(--qm-warnbg); color: var(--qm-warn); }
+            .qm-av b { font-size: 14px; font-weight: 900; }
+            .qm-av p { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.45; }
+
+            /* Tablet em pé: duas colunas de cartões */
+            @media (min-width: 640px) and (orientation: portrait) {
+                .qm-list, .qm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+
+            /* Deitado: uma linha por atendimento, como na TV */
+            @media (orientation: landscape) {
+                .qm-root { gap: 6px; }
+                .qm-top { grid-template-columns: minmax(0, 1fr) auto minmax(250px, 300px) auto; grid-template-areas: "tit kpi tab clk"; align-items: center; padding: 6px 12px; gap: 12px; border-radius: 14px; }
+                .qm-tit h1 { font-size: 15px; }
+                .qm-live { display: none; }
+                .qm-clk b { font-size: 18px; }
+                .qm-clk small { display: none; }
+                .qm-kpis { flex-wrap: nowrap; justify-content: flex-end; }
+                .qm-kpi:not(.qm-kpi-crit) { display: none; }
+                .qm-fs { margin-left: 0; }
+                .qm-tab { padding: 5px 4px; font-size: 12px !important; }
+                .qm-body { gap: 6px; }
+                .qm-aviso { padding: 6px 10px; }
+                .qm-list { gap: 6px; }
+                .qm-colhd, .qm-card { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 264px 82px; }
+                .qm-colhd { display: grid; gap: 10px; position: sticky; top: 0; z-index: 3; padding: 4px 12px 2px 16px; font-size: 8.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; white-space: nowrap; color: var(--qm-muted); background: var(--qm-s2); border-radius: 8px; }
+                .qm-colhd-st { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); text-align: center; }
+                .qm-colhd > span:last-child { text-align: right; }
+                .qm-card { grid-template-areas: "name now steps tot" "meta flag steps tot" "where where where where"; align-items: center; gap: 4px 10px; padding: 8px 12px 8px 16px; border-radius: 14px; }
+                .qm-name { font-size: 14px; line-height: 1.2; }
+                .qm-meta { font-size: 11px; }
+                .qm-now { grid-row: 1 / span 2; align-self: center; background: transparent; padding: 0; gap: 8px; }
+                .qm-card:has(.qm-flag) .qm-now { grid-row: 1; align-self: end; }
+                .qm-now-t b { font-size: 13px; }
+                .qm-now-t span { font-size: 11px; }
+                .qm-flag { align-self: start; font-size: 10.5px; padding: 2px 8px; overflow-wrap: anywhere; }
+                .qm-steps { background: transparent; border: 0; padding: 0; margin: 0; }
+                .qm-s em { display: none; }
+                .qm-ic { width: 28px; height: 28px; }
+                .qm-ic-svg { width: 14px; height: 14px; }
+                .qm-s:not(:first-child)::before { top: 14px; }
+                .qm-s b { font-size: 11px; }
+                .qm-tot { align-self: center; }
+                .qm-tot b { font-size: 16px; }
+                .qm-where { display: flex; gap: 18px; font-size: 11px; border-top: 1px dashed var(--qm-line); padding-top: 5px; margin-top: 2px; }
+                .qm-where div { flex: 1 1 0; }
+                .qm-where dt { width: auto; }
+                .qm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+        `}</style>
+    );
+}
 
 /* ===== Componentes auxiliares ===== */
 function Topic({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
@@ -5018,6 +5589,23 @@ function StatusIcon({ type }: { type: StatusIconKey }) {
                     <path d="M16 3c0 5-8 5-8 9s8 4 8 9" />
                     <path d="M10 8h4" />
                     <path d="M10 16h4" />
+                </svg>
+            );
+        case "clock":
+            // Tempo total: relógio comum
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                </svg>
+            );
+        case "clockPause":
+            // Tempo ocioso: relógio em pausa
+            return (
+                <svg {...common}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M10 9v6" />
+                    <path d="M14 9v6" />
                 </svg>
             );
         case "timer":
