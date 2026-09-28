@@ -20,7 +20,7 @@ export type VisitaStatusResumo = {
 };
 
 type VisitaPergunta = {
-    numero: 1 | 2 | 3 | 4 | 5;
+    numero: 1 | 2 | 3 | 4 | 5 | 6;
     titulo: string;
     descricao: string;
     aplicavel: boolean;
@@ -1040,7 +1040,7 @@ export default function Visita({
                             </div>
 
                             <div className="space-y-4">
-                                {perguntas.map((pergunta) => {
+                                {perguntas.filter((pergunta) => pergunta.aplicavel).map((pergunta) => {
                                     const resp =
                                         respostas[pergunta.numero] ??
                                         defaultResposta();
@@ -1070,14 +1070,6 @@ export default function Visita({
                                                     <p className="mt-1 text-sm leading-6 text-slate-600">
                                                         {pergunta.descricao}
                                                     </p>
-
-                                                    {!pergunta.aplicavel ? (
-                                                        <p className="mt-2 text-xs font-medium text-slate-500">
-                                                            Não aplicável:{" "}
-                                                            {pergunta.motivo_nao_aplicavel ||
-                                                                "esta etapa não ocorreu."}
-                                                        </p>
-                                                    ) : null}
                                                 </div>
                                             </div>
 
