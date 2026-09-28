@@ -151,25 +151,43 @@ export async function consultarStatusVisitas(
         ),
     );
 
-    if (uniqueIds.length === 0) return {};
+    if (uniqueIds.length === 0) {
+        return {};
+    }
 
-    const data = await apiJson(
-        `${API_URL}?action=status_batch&ids=${encodeURIComponent(uniqueIds.join(","))}&_=${Date.now()}`,
-    );
+    /**
+     * O visita.php limita o status_batch a 300 IDs por requisição.
+     * Usamos 200 para:
+     * - ficar com margem abaixo do limite do backend;
+     * - evitar URLs excessivamente grandes;
+     * - reduzir risco de 400/414 em Apache, proxy ou WAF.
+     */
+    const BATCH_SIZE = 200;
 
     const out: Record<string, VisitaStatus> = {};
 
-    for (const row of Array.isArray(data?.rows) ? data.rows : []) {
-        const id = String(row?.atendimento_id ?? "").trim();
-        const status = String(row?.status ?? "") as VisitaStatus;
-        if (!id) continue;
+    for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+        const lote = uniqueIds.slice(i, i + BATCH_SIZE);
 
-        out[id] =
-            status === "visitado" ||
-                status === "em_andamento" ||
-                status === "visitar"
-                ? status
-                : "indisponivel";
+        const data = await apiJson(
+            `${API_URL}?action=status_batch&ids=${encodeURIComponent(
+                lote.join(","),
+            )}&_=${Date.now()}`,
+        );
+
+        for (const row of Array.isArray(data?.rows) ? data.rows : []) {
+            const id = String(row?.atendimento_id ?? "").trim();
+            if (!id) continue;
+
+            const status = String(row?.status ?? "") as VisitaStatus;
+
+            out[id] =
+                status === "visitado" ||
+                    status === "em_andamento" ||
+                    status === "visitar"
+                    ? status
+                    : "indisponivel";
+        }
     }
 
     return out;
@@ -186,9 +204,44 @@ function defaultResposta(): VisitaResposta {
 }
 
 function normalizarStatus(status?: string) {
-    const s = String(status ?? "").trim().toLowerCase();
-    if (/^fase0?8$/.test(s)) return "fase08";
-    return s;
+    const raw = String(status ?? "").trim();
+    if (!raw) return "";
+
+    const low = raw.toLowerCase();
+
+    if (low.startsWith("fase")) {
+        const num = low.replace(/\D+/g, "");
+        if (!num) return low;
+        return `fase${num.padStart(2, "0")}`;
+    }
+
+    const key = low
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+
+    const map: Record<string, string> = {
+        removendo: "fase01",
+        "aguardando procedimento": "fase02",
+        preparando: "fase03",
+        "aguardando ornamentacao": "fase04",
+        ornamentando: "fase05",
+        "fim da ornamentacao": "fase06",
+        "aguardando corpo pronto": "fase06",
+        "corpo pronto": "fase12",
+        transportando: "fase07",
+        "transportando obito p/velorio": "fase07",
+        "transportando obito para velorio": "fase07",
+        velando: "fase08",
+        "entrega de corpo": "fase08",
+        sepultando: "fase09",
+        "transportando p/ sepultamento": "fase09",
+        "transportando obito para o sepultamento": "fase09",
+        "sepultamento concluido": "fase10",
+        "material recolhido": "fase11",
+    };
+
+    return map[key] ?? low;
 }
 
 function formatarDataHora(value?: string | null) {
