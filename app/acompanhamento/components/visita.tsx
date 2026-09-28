@@ -822,10 +822,6 @@ export default function Visita({
             }
         }
 
-        if (registrosFotos.length === 0) {
-            levarAoCampo(registrosRef.current);
-            throw new Error("Adicione pelo menos um registro fotográfico.");
-        }
     };
 
     const salvar = async (finalizar: boolean) => {
@@ -1141,10 +1137,10 @@ export default function Visita({
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
                                         <h3 className="font-semibold text-slate-950">
-                                            Registros <span className="text-red-600">*</span>
+                                            Registros
                                         </h3>
                                         <p className="mt-1 text-sm text-slate-600">
-                                            Adicione pelo menos uma foto. Você pode incluir vários registros e uma legenda em cada um.
+                                            Você pode adicionar fotos da visita e incluir uma legenda em cada registro.
                                         </p>
                                     </div>
 
