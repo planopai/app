@@ -817,10 +817,6 @@ export default function Visita({
                             ) : null}
                         </div>
 
-                        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                            A avaliação é cega. Este formulário não informa quem
-                            executou cada etapa do atendimento.
-                        </p>
                     </div>
 
                     {loading ? (
@@ -849,16 +845,6 @@ export default function Visita({
 
                     {!loading && dados && !visita ? (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                            <h3 className="font-semibold text-amber-950">
-                                Iniciar visita
-                            </h3>
-                            <p className="mt-1 text-sm text-amber-900">
-                                Ao iniciar, o sistema registrará a hora e a
-                                localização atual. A visita só pode começar
-                                enquanto o atendimento estiver em Velando
-                                (fase08).
-                            </p>
-
                             <button
                                 type="button"
                                 onClick={iniciarVisita}
@@ -868,11 +854,9 @@ export default function Visita({
                                         dados?.atendimento?.status,
                                     ) !== "fase08"
                                 }
-                                className="mt-4 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {saving
-                                    ? "Iniciando..."
-                                    : "Iniciar visita e registrar localização"}
+                                {saving ? "Iniciando..." : "Iniciar Visita"}
                             </button>
                         </div>
                     ) : null}
