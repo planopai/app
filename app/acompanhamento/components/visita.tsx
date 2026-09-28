@@ -47,6 +47,7 @@ type VisitaDados = {
         com_quem_conversou?: string | null;
         grau_parentesco?: string | null;
         apoio_prestado?: string | null;
+        observacao_geral?: string | null;
         latitude_inicio?: number | null;
         longitude_inicio?: number | null;
         precisao_inicio_m?: number | null;
@@ -416,9 +417,9 @@ export default function Visita({
     const [sucesso, setSucesso] = useState("");
     const [dados, setDados] = useState<VisitaDados | null>(null);
 
-    const [comQuem, setComQuem] = useState("");
+    const [responsavel, setResponsavel] = useState("");
     const [parentesco, setParentesco] = useState("");
-    const [apoio, setApoio] = useState("");
+    const [observacaoGeral, setObservacaoGeral] = useState("");
 
     const [respostas, setRespostas] = useState<
         Record<number, VisitaResposta>
@@ -465,9 +466,11 @@ export default function Visita({
             setDados(data);
 
             const v = data?.visita;
-            setComQuem(String(v?.com_quem_conversou ?? ""));
+            setResponsavel(String(v?.com_quem_conversou ?? ""));
             setParentesco(String(v?.grau_parentesco ?? ""));
-            setApoio(String(v?.apoio_prestado ?? ""));
+            setObservacaoGeral(
+                String(v?.observacao_geral ?? v?.apoio_prestado ?? ""),
+            );
 
             const next: Record<number, VisitaResposta> = {};
 
@@ -664,37 +667,33 @@ export default function Visita({
             visita_id: visita.id,
             atendimento_id: atendimentoId,
             finalizar,
-            com_quem_conversou: comQuem.trim(),
+            responsavel: responsavel.trim(),
             grau_parentesco: parentesco,
-            apoio_prestado: apoio.trim(),
+            observacao_geral: observacaoGeral.trim(),
             respostas: perguntas.map((p) => ({
                 pergunta_numero: p.numero,
                 nota: respostas[p.numero]?.nota || null,
-                observacao:
-                    respostas[p.numero]?.observacao?.trim() || "",
             })),
         };
 
         const form = new FormData();
         form.append("payload", JSON.stringify(payload));
 
-        for (const p of perguntas) {
-            const blob = respostas[p.numero]?.fotoBlob;
-            if (blob) {
-                form.append(
-                    `foto_${p.numero}`,
-                    blob,
-                    `visita-${atendimentoId}-pergunta-${p.numero}.jpg`,
-                );
-            }
+        const fotoMontagem = respostas[5]?.fotoBlob;
+        if (fotoMontagem) {
+            form.append(
+                "foto_5",
+                fotoMontagem,
+                `visita-${atendimentoId}-montagem-ambiente.jpg`,
+            );
         }
 
         return form;
     };
 
     const validarFinalizacao = () => {
-        if (!comQuem.trim()) {
-            throw new Error("Informe com quem você conversou.");
+        if (!responsavel.trim()) {
+            throw new Error("Informe o responsável.");
         }
 
         if (!parentesco) {
@@ -712,11 +711,12 @@ export default function Visita({
             }
 
             if (
+                pergunta.numero === 5 &&
                 !resp?.fotoBlob &&
                 !String(resp?.fotoExistenteUrl || "").trim()
             ) {
                 throw new Error(
-                    `Tire a foto obrigatória da pergunta ${pergunta.numero}.`,
+                    "Tire a foto obrigatória da montagem do ambiente.",
                 );
             }
         }
@@ -764,10 +764,16 @@ export default function Visita({
         const aplicaveis = perguntas.filter((p) => p.aplicavel);
         const completos = aplicaveis.filter((p) => {
             const r = respostas[p.numero];
-            return (
-                !!r?.nota &&
-                (!!r?.fotoBlob || !!String(r?.fotoExistenteUrl || "").trim())
-            );
+            if (!r?.nota) return false;
+
+            if (p.numero === 5) {
+                return (
+                    !!r?.fotoBlob ||
+                    !!String(r?.fotoExistenteUrl || "").trim()
+                );
+            }
+
+            return true;
         });
 
         return {
@@ -894,23 +900,24 @@ export default function Visita({
                             <div className="grid gap-4 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
                                 <label className="block">
                                     <span className="text-sm font-medium">
-                                        Com quem conversou
+                                        Responsável <span className="text-red-600">*</span>
                                     </span>
                                     <input
-                                        value={comQuem}
+                                        value={responsavel}
                                         onChange={(e) =>
-                                            setComQuem(e.target.value)
+                                            setResponsavel(e.target.value)
                                         }
                                         disabled={concluida}
                                         maxLength={180}
+                                        required
                                         className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
-                                        placeholder="Nome ou identificação da pessoa"
+                                        placeholder="Nome do responsável"
                                     />
                                 </label>
 
                                 <label className="block">
                                     <span className="text-sm font-medium">
-                                        Grau de parentesco
+                                        Grau de parentesco <span className="text-red-600">*</span>
                                     </span>
                                     <select
                                         value={parentesco}
@@ -918,6 +925,7 @@ export default function Visita({
                                             setParentesco(e.target.value)
                                         }
                                         disabled={concluida}
+                                        required
                                         className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
                                     >
                                         <option value="">
@@ -929,23 +937,6 @@ export default function Visita({
                                             </option>
                                         ))}
                                     </select>
-                                </label>
-
-                                <label className="block sm:col-span-2">
-                                    <span className="text-sm font-medium">
-                                        Apoio prestado à família
-                                    </span>
-                                    <textarea
-                                        value={apoio}
-                                        onChange={(e) =>
-                                            setApoio(e.target.value)
-                                        }
-                                        disabled={concluida}
-                                        maxLength={2000}
-                                        rows={3}
-                                        className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
-                                        placeholder="Ex.: resolveu dúvida, ajudou com algo prático, fez acolhimento emocional..."
-                                    />
                                 </label>
                             </div>
 
@@ -1045,80 +1036,68 @@ export default function Visita({
                                                         </div>
                                                     </div>
 
-                                                    <label className="block">
-                                                        <span className="text-sm font-medium">
-                                                            Observação
-                                                        </span>
-                                                        <textarea
-                                                            value={
-                                                                resp.observacao
-                                                            }
-                                                            onChange={(e) =>
-                                                                updateResposta(
-                                                                    pergunta.numero,
-                                                                    {
-                                                                        observacao:
-                                                                            e
-                                                                                .target
-                                                                                .value,
-                                                                    },
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                concluida
-                                                            }
-                                                            maxLength={2000}
-                                                            rows={3}
-                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
-                                                            placeholder="Observação livre"
-                                                        />
-                                                    </label>
-
-                                                    <div>
-                                                        <div className="mb-2 text-sm font-medium">
-                                                            Foto obrigatória
-                                                        </div>
-
-                                                        {resp.fotoPreview ||
-                                                            resp.fotoExistenteUrl ? (
-                                                            <img
-                                                                src={
-                                                                    resp.fotoPreview ||
-                                                                    resp.fotoExistenteUrl
-                                                                }
-                                                                alt={`Foto da pergunta ${pergunta.numero}`}
-                                                                className="max-h-72 w-full rounded-lg border object-contain bg-black"
-                                                            />
-                                                        ) : (
-                                                            <div className="rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
-                                                                Nenhuma foto
-                                                                registrada.
+                                                    {pergunta.numero === 5 ? (
+                                                        <div>
+                                                            <div className="mb-2 text-sm font-medium">
+                                                                Foto da montagem do ambiente
+                                                                <span className="ml-1 text-red-600">*</span>
                                                             </div>
-                                                        )}
 
-                                                        {!concluida ? (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    abrirCamera(
-                                                                        pergunta.numero,
-                                                                    )
-                                                                }
-                                                                className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                                                            >
-                                                                {resp.fotoBlob ||
-                                                                    resp.fotoExistenteUrl
-                                                                    ? "Tirar nova foto"
-                                                                    : "Abrir câmera"}
-                                                            </button>
-                                                        ) : null}
-                                                    </div>
+                                                            {resp.fotoPreview ||
+                                                                resp.fotoExistenteUrl ? (
+                                                                <img
+                                                                    src={
+                                                                        resp.fotoPreview ||
+                                                                        resp.fotoExistenteUrl
+                                                                    }
+                                                                    alt="Foto da montagem do ambiente"
+                                                                    className="max-h-72 w-full rounded-lg border object-contain bg-black"
+                                                                />
+                                                            ) : (
+                                                                <div className="rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
+                                                                    Nenhuma foto registrada.
+                                                                </div>
+                                                            )}
+
+                                                            {!concluida ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        abrirCamera(5)
+                                                                    }
+                                                                    className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                                                >
+                                                                    {resp.fotoBlob ||
+                                                                        resp.fotoExistenteUrl
+                                                                        ? "Tirar nova foto"
+                                                                        : "Abrir câmera"}
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    ) : null}
                                                 </div>
                                             ) : null}
                                         </section>
                                     );
                                 })}
                             </div>
+
+                            <label className="block rounded-xl border border-slate-200 p-4">
+                                <span className="text-sm font-medium">
+                                    Observação geral
+                                </span>
+                                <textarea
+                                    value={observacaoGeral}
+                                    onChange={(e) =>
+                                        setObservacaoGeral(e.target.value)
+                                    }
+                                    disabled={concluida}
+                                    maxLength={4000}
+                                    rows={5}
+                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
+                                    placeholder="Adicione uma observação geral sobre a visita..."
+                                />
+                            </label>
 
                             {!concluida ? (
                                 <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end">
@@ -1165,10 +1144,10 @@ export default function Visita({
             >
                 <div>
                     <h3 className="text-lg font-semibold">
-                        Foto da pergunta {cameraPergunta}
+                        Foto da montagem do ambiente
                     </h3>
                     <p className="mt-1 text-sm text-slate-600">
-                        A foto é tirada diretamente pela câmera. O sistema adiciona
+                        A foto será registrada diretamente pela câmera com
                         data/hora e o nome do falecido.
                     </p>
 
