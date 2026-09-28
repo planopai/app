@@ -4,12 +4,21 @@ import React from "react";
 import { IconShare3 } from "@tabler/icons-react";
 import { Registro } from "./types";
 import { capitalizeStatus } from "./helpers";
+import { VisitaBotao, type VisitaStatus } from "./visita";
 
 interface Props {
     registros: Registro[];
     onAcao: (id: Registro["id"]) => void;
     onInfo: (id: Registro["id"]) => void;
     onCompartilhar: (id: Registro["id"]) => void;
+
+    // Visita de avaliação
+    visitaPermitida?: boolean;
+    visitaStatusById?: Record<string, VisitaStatus>;
+    onVisita?: (id: Registro["id"]) => void;
+
+    // A avaliação é cega: usuários autorizados à Visita não devem ver o agente.
+    ocultarAgente?: boolean;
 }
 
 const statusClasses: Record<string, string> = {
@@ -75,6 +84,10 @@ export default function TabelaAtendimentos({
     onAcao,
     onInfo,
     onCompartilhar,
+    visitaPermitida = false,
+    visitaStatusById = {},
+    onVisita,
+    ocultarAgente = false,
 }: Props) {
     const visiveis = registros.filter((r) => {
         if (r.status === "fase11") return false;
@@ -90,6 +103,9 @@ export default function TabelaAtendimentos({
         return r.status !== "fase12";
     });
 
+    const totalColunas =
+        5 + (ocultarAgente ? 0 : 1) + (visitaPermitida ? 1 : 0);
+
     return (
         <div className="overflow-x-auto rounded-xl border">
             <table className="min-w-full text-sm">
@@ -97,17 +113,26 @@ export default function TabelaAtendimentos({
                     <tr>
                         <th className="w-44 px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Falecido(a)</th>
-                        <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">Agente</th>
+                        {!ocultarAgente && (
+                            <th className="hidden w-48 px-3 py-2 text-left font-semibold sm:table-cell">
+                                Agente
+                            </th>
+                        )}
                         <th className="w-40 px-3 py-2 text-left font-semibold">Ações</th>
                         <th className="hidden w-28 px-3 py-2 text-left font-semibold sm:table-cell">Info</th>
                         <th className="hidden w-20 px-3 py-2 text-left font-semibold sm:table-cell">Compart.</th>
+                        {visitaPermitida && (
+                            <th className="hidden w-32 px-3 py-2 text-left font-semibold sm:table-cell">
+                                Visita
+                            </th>
+                        )}
                     </tr>
                 </thead>
 
                 <tbody id="tb-registros">
                     {visiveis.length === 0 ? (
                         <tr>
-                            <td className="px-3 py-6 text-center opacity-70" colSpan={6}>
+                            <td className="px-3 py-6 text-center opacity-70" colSpan={totalColunas}>
                                 Nenhum registro disponível neste aparelho.
                             </td>
                         </tr>
@@ -129,7 +154,11 @@ export default function TabelaAtendimentos({
                                     </div>
                                 </td>
 
-                                <td className="hidden px-3 py-2 sm:table-cell">{r.agente || ""}</td>
+                                {!ocultarAgente && (
+                                    <td className="hidden px-3 py-2 sm:table-cell">
+                                        {r.agente || ""}
+                                    </td>
+                                )}
 
                                 <td className="px-3 py-2">
                                     <div className="flex flex-col gap-2">
@@ -155,6 +184,19 @@ export default function TabelaAtendimentos({
                                             <IconShare3 className="size-4" />
                                             Compartilhar
                                         </button>
+
+                                        {visitaPermitida && onVisita && (
+                                            <VisitaBotao
+                                                status={
+                                                    visitaStatusById[String(r.id ?? "")] ??
+                                                    "indisponivel"
+                                                }
+                                                onClick={() =>
+                                                    r.id != null && onVisita(r.id)
+                                                }
+                                                className="sm:hidden"
+                                            />
+                                        )}
                                     </div>
                                 </td>
 
@@ -177,6 +219,20 @@ export default function TabelaAtendimentos({
                                         <IconShare3 className="size-4" />
                                     </button>
                                 </td>
+
+                                {visitaPermitida && onVisita && (
+                                    <td className="hidden px-3 py-2 sm:table-cell">
+                                        <VisitaBotao
+                                            status={
+                                                visitaStatusById[String(r.id ?? "")] ??
+                                                "indisponivel"
+                                            }
+                                            onClick={() =>
+                                                r.id != null && onVisita(r.id)
+                                            }
+                                        />
+                                    </td>
+                                )}
                             </tr>
                         ))
                     )}

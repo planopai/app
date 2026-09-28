@@ -33,6 +33,11 @@ import {
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
+import Visita, {
+  consultarAcessoVisita,
+  consultarStatusVisitas,
+  type VisitaStatus,
+} from "./components/visita";
 
 import Wizard from "./components/Wizard";
 import MateriaisModal from "./components/MateriaisModal";
@@ -701,6 +706,14 @@ export default function AcompanhamentoPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareId, setShareId] = useState<Registro["id"] | null>(null);
 
+  // Visita de avaliação — permissão individual "visita-avaliacao"
+  const [visitaPermitida, setVisitaPermitida] = useState(false);
+  const [visitaOpen, setVisitaOpen] = useState(false);
+  const [visitaId, setVisitaId] = useState<Registro["id"] | null>(null);
+  const [visitaStatusById, setVisitaStatusById] = useState<
+    Record<string, VisitaStatus>
+  >({});
+
   // Assinatura
   const [signOpen, setSignOpen] = useState(false);
   const [signTipo, setSignTipo] = useState<"recebimento" | "requisicao">(
@@ -1335,6 +1348,59 @@ export default function AcompanhamentoPage() {
     [fetchAvisos],
   );
 
+  /* -------------------- Visita de avaliação -------------------- */
+  useEffect(() => {
+    let cancelled = false;
+
+    consultarAcessoVisita(true)
+      .then((me) => {
+        if (!cancelled) {
+          setVisitaPermitida(!!me.autorizado);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVisitaPermitida(false);
+          setVisitaStatusById({});
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const recarregarStatusVisitas = useCallback(async () => {
+    if (!visitaPermitida) {
+      setVisitaStatusById({});
+      return;
+    }
+
+    const ids = registros
+      .map((r) => r.id)
+      .filter(
+        (id): id is NonNullable<Registro["id"]> =>
+          id !== null && id !== undefined && String(id).trim() !== "",
+      );
+
+    if (ids.length === 0) {
+      setVisitaStatusById({});
+      return;
+    }
+
+    const map = await consultarStatusVisitas(
+      ids.map((id) => String(id)),
+    );
+
+    setVisitaStatusById(map);
+  }, [registros, visitaPermitida]);
+
+  useEffect(() => {
+    void recarregarStatusVisitas().catch(() => {
+      setVisitaStatusById({});
+    });
+  }, [recarregarStatusVisitas]);
+
   /* -------------------- Ciclos -------------------- */
   useEffect(() => {
     fetchRegistros();
@@ -1392,6 +1458,7 @@ export default function AcompanhamentoPage() {
         setAcaoOpen(false);
         setInfoOpen(false);
         setShareOpen(false);
+        setVisitaOpen(false);
         setMateriaisOpen(false);
         setArrumacaoOpen(false);
         setSignOpen(false);
@@ -3774,6 +3841,14 @@ export default function AcompanhamentoPage() {
     [registros, shareId],
   );
 
+  const registroVisita = useMemo(
+    () =>
+      visitaId != null
+        ? (registros.find((x) => String(x.id) === String(visitaId)) ?? null)
+        : null,
+    [registros, visitaId],
+  );
+
   const infoIdxResolved = useMemo(() => {
     if (infoId == null) return null;
     const idx = registros.findIndex((x) => String(x.id) === String(infoId));
@@ -3800,6 +3875,16 @@ export default function AcompanhamentoPage() {
     setShareId(id != null ? String(id) : null);
     setShareOpen(true);
   }, []);
+
+  const abrirVisitaPorId = useCallback(
+    (id: Registro["id"]) => {
+      if (!visitaPermitida || id == null) return;
+
+      setVisitaId(String(id));
+      setVisitaOpen(true);
+    },
+    [visitaPermitida],
+  );
 
   const abrirWizardFromInfo = useCallback(
     (
@@ -3940,6 +4025,10 @@ export default function AcompanhamentoPage() {
         onAcao={(id) => abrirPopupAcaoPorId(id)}
         onInfo={(id) => abrirInfoPorId(id)}
         onCompartilhar={(id) => abrirCompartilharPorId(id)}
+        visitaPermitida={visitaPermitida}
+        visitaStatusById={visitaStatusById}
+        onVisita={abrirVisitaPorId}
+        ocultarAgente={visitaPermitida}
       />
 
       <Wizard
@@ -4133,6 +4222,17 @@ export default function AcompanhamentoPage() {
         onClose={() => setShareOpen(false)}
         registro={registroCompartilhar}
       />
+
+      {visitaPermitida && (
+        <Visita
+          open={visitaOpen}
+          onClose={() => setVisitaOpen(false)}
+          registro={registroVisita}
+          onSaved={async () => {
+            await recarregarStatusVisitas();
+          }}
+        />
+      )}
 
       <SignatureModal
         open={signOpen}
