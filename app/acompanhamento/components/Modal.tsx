@@ -1,13 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-
-type VisualViewportState = {
-    width: number;
-    height: number;
-    offsetTop: number;
-    offsetLeft: number;
-};
+import React, { useEffect } from "react";
 
 export default function Modal({
     open,
@@ -32,33 +25,24 @@ export default function Modal({
     contentClassName?: string;
     footer?: React.ReactNode;
 }) {
-    const [viewport, setViewport] = useState<VisualViewportState | null>(null);
-
     useEffect(() => {
-        if (!open || typeof window === "undefined") return;
+        if (!open || typeof document === "undefined") return;
 
-        const updateViewport = () => {
-            const vv = window.visualViewport;
+        const html = document.documentElement;
+        const body = document.body;
 
-            setViewport({
-                width: Math.max(1, Math.round(vv?.width ?? window.innerWidth)),
-                height: Math.max(1, Math.round(vv?.height ?? window.innerHeight)),
-                offsetTop: Math.max(0, Math.round(vv?.offsetTop ?? 0)),
-                offsetLeft: Math.max(0, Math.round(vv?.offsetLeft ?? 0)),
-            });
-        };
+        const previousHtmlOverflow = html.style.overflow;
+        const previousBodyOverflow = body.style.overflow;
+        const previousBodyOverscroll = body.style.overscrollBehavior;
 
-        updateViewport();
-
-        const vv = window.visualViewport;
-        vv?.addEventListener("resize", updateViewport);
-        vv?.addEventListener("scroll", updateViewport);
-        window.addEventListener("resize", updateViewport);
+        html.style.overflow = "hidden";
+        body.style.overflow = "hidden";
+        body.style.overscrollBehavior = "none";
 
         return () => {
-            vv?.removeEventListener("resize", updateViewport);
-            vv?.removeEventListener("scroll", updateViewport);
-            window.removeEventListener("resize", updateViewport);
+            html.style.overflow = previousHtmlOverflow;
+            body.style.overflow = previousBodyOverflow;
+            body.style.overscrollBehavior = previousBodyOverscroll;
         };
     }, [open]);
 
@@ -66,13 +50,11 @@ export default function Modal({
 
     return (
         <div
-            className="fixed flex items-center justify-center overflow-hidden bg-black/50 p-4"
+            className="fixed inset-0 flex items-center justify-center overflow-hidden bg-black/50 p-3 sm:p-4"
             style={{
                 zIndex,
-                top: viewport?.offsetTop ?? 0,
-                left: viewport?.offsetLeft ?? 0,
-                width: viewport ? `${viewport.width}px` : "100vw",
-                height: viewport ? `${viewport.height}px` : "100dvh",
+                width: "100vw",
+                height: "100dvh",
             }}
             role={role}
             aria-modal="true"
@@ -84,18 +66,23 @@ export default function Modal({
             }}
         >
             <div
-                className="flex max-h-full w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl outline-none"
-                style={{ maxWidth: maxWidth ?? 720 }}
+                className="flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl outline-none sm:max-h-[calc(100dvh-2rem)]"
+                style={{
+                    maxWidth: maxWidth ?? 720,
+                }}
             >
                 <div
-                    className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 ${contentClassName}`}
-                    style={{ WebkitOverflowScrolling: "touch" }}
+                    className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 ${contentClassName}`}
+                    style={{
+                        WebkitOverflowScrolling: "touch",
+                        touchAction: "pan-y",
+                    }}
                 >
                     {children}
                 </div>
 
                 {footer ? (
-                    <div className="shrink-0 border-t bg-white px-5 py-4">
+                    <div className="shrink-0 border-t bg-white px-4 py-3 sm:px-5 sm:py-4">
                         {footer}
                     </div>
                 ) : null}

@@ -431,6 +431,13 @@ export default function Visita({
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
+    // Referências usadas para levar o usuário diretamente ao primeiro
+    // campo obrigatório pendente ao tentar concluir a visita.
+    const responsavelRef = useRef<HTMLInputElement>(null);
+    const parentescoRef = useRef<HTMLSelectElement>(null);
+    const perguntaRefs = useRef<Record<number, HTMLElement | null>>({});
+    const fotoMontagemRef = useRef<HTMLDivElement>(null);
+
     const perguntas = dados?.perguntas ?? [];
     const visita = dados?.visita ?? null;
     const concluida = visita?.status === "visitado";
@@ -647,6 +654,29 @@ export default function Visita({
         }
     };
 
+    const levarAoCampo = useCallback((element: HTMLElement | null) => {
+        if (!element) return;
+
+        requestAnimationFrame(() => {
+            element.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+                inline: "nearest",
+            });
+
+            window.setTimeout(() => {
+                const focusable =
+                    element.matches("input, select, textarea, button")
+                        ? element
+                        : element.querySelector<HTMLElement>(
+                            'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])',
+                        );
+
+                focusable?.focus({ preventScroll: true });
+            }, 350);
+        });
+    }, []);
+
     const updateResposta = (
         numero: number,
         patch: Partial<VisitaResposta>,
@@ -693,10 +723,12 @@ export default function Visita({
 
     const validarFinalizacao = () => {
         if (!responsavel.trim()) {
+            levarAoCampo(responsavelRef.current);
             throw new Error("Informe o responsável.");
         }
 
         if (!parentesco) {
+            levarAoCampo(parentescoRef.current);
             throw new Error("Informe o grau de parentesco.");
         }
 
@@ -704,7 +736,9 @@ export default function Visita({
             if (!pergunta.aplicavel) continue;
 
             const resp = respostas[pergunta.numero];
+
             if (!resp?.nota) {
+                levarAoCampo(perguntaRefs.current[pergunta.numero] ?? null);
                 throw new Error(
                     `Selecione uma nota para a pergunta ${pergunta.numero}.`,
                 );
@@ -715,6 +749,7 @@ export default function Visita({
                 !resp?.fotoBlob &&
                 !String(resp?.fotoExistenteUrl || "").trim()
             ) {
+                levarAoCampo(fotoMontagemRef.current);
                 throw new Error(
                     "Tire a foto obrigatória da montagem do ambiente.",
                 );
@@ -903,6 +938,7 @@ export default function Visita({
                                         Responsável <span className="text-red-600">*</span>
                                     </span>
                                     <input
+                                        ref={responsavelRef}
                                         value={responsavel}
                                         onChange={(e) =>
                                             setResponsavel(e.target.value)
@@ -910,7 +946,7 @@ export default function Visita({
                                         disabled={concluida}
                                         maxLength={180}
                                         required
-                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
+                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
                                         placeholder="Nome do responsável"
                                     />
                                 </label>
@@ -920,13 +956,14 @@ export default function Visita({
                                         Grau de parentesco <span className="text-red-600">*</span>
                                     </span>
                                     <select
+                                        ref={parentescoRef}
                                         value={parentesco}
                                         onChange={(e) =>
                                             setParentesco(e.target.value)
                                         }
                                         disabled={concluida}
                                         required
-                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
+                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
                                     >
                                         <option value="">
                                             Selecione...
@@ -949,6 +986,9 @@ export default function Visita({
                                     return (
                                         <section
                                             key={pergunta.numero}
+                                            ref={(el) => {
+                                                perguntaRefs.current[pergunta.numero] = el;
+                                            }}
                                             className={[
                                                 "rounded-xl border p-4",
                                                 pergunta.aplicavel
@@ -1037,7 +1077,7 @@ export default function Visita({
                                                     </div>
 
                                                     {pergunta.numero === 5 ? (
-                                                        <div>
+                                                        <div ref={fotoMontagemRef}>
                                                             <div className="mb-2 text-sm font-medium">
                                                                 Foto da montagem do ambiente
                                                                 <span className="ml-1 text-red-600">*</span>
@@ -1094,7 +1134,7 @@ export default function Visita({
                                     disabled={concluida}
                                     maxLength={4000}
                                     rows={5}
-                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50"
+                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
                                     placeholder="Adicione uma observação geral sobre a visita..."
                                 />
                             </label>
