@@ -35,6 +35,15 @@ type VisitaResposta = {
     fotoExistenteUrl: string;
 };
 
+type VisitaRegistroFoto = {
+    localId: string;
+    id?: number;
+    fotoBlob: Blob | null;
+    fotoPreview: string;
+    fotoUrl: string;
+    legenda: string;
+};
+
 type VisitaDados = {
     visita: null | {
         id: number;
@@ -63,6 +72,12 @@ type VisitaDados = {
         nota: string | null;
         observacao: string | null;
         foto_url: string | null;
+    }>;
+    registros: Array<{
+        id: number;
+        foto_url: string;
+        legenda: string | null;
+        criado_em?: string | null;
     }>;
 };
 
@@ -425,7 +440,10 @@ export default function Visita({
         Record<number, VisitaResposta>
     >({});
 
-    const [cameraPergunta, setCameraPergunta] = useState<number | null>(null);
+    const [registrosFotos, setRegistrosFotos] = useState<VisitaRegistroFoto[]>([]);
+    const [registrosRemover, setRegistrosRemover] = useState<number[]>([]);
+
+    const [cameraAberta, setCameraAberta] = useState(false);
     const [cameraLoading, setCameraLoading] = useState(false);
     const [cameraErro, setCameraErro] = useState("");
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -436,7 +454,7 @@ export default function Visita({
     const responsavelRef = useRef<HTMLInputElement>(null);
     const parentescoRef = useRef<HTMLSelectElement>(null);
     const perguntaRefs = useRef<Record<number, HTMLElement | null>>({});
-    const fotoMontagemRef = useRef<HTMLDivElement>(null);
+    const registrosRef = useRef<HTMLDivElement>(null);
 
     const perguntas = dados?.perguntas ?? [];
     const visita = dados?.visita ?? null;
@@ -448,7 +466,7 @@ export default function Visita({
             for (const track of stream.getTracks()) track.stop();
         }
         streamRef.current = null;
-        setCameraPergunta(null);
+        setCameraAberta(false);
         setCameraLoading(false);
         setCameraErro("");
     }, []);
@@ -514,6 +532,24 @@ export default function Visita({
                 }
                 return next;
             });
+
+            setRegistrosFotos((prev) => {
+                for (const item of prev) {
+                    if (item.fotoPreview?.startsWith("blob:")) {
+                        URL.revokeObjectURL(item.fotoPreview);
+                    }
+                }
+
+                return (data?.registros ?? []).map((item) => ({
+                    localId: `db-${item.id}`,
+                    id: Number(item.id),
+                    fotoBlob: null,
+                    fotoPreview: "",
+                    fotoUrl: String(item.foto_url ?? ""),
+                    legenda: String(item.legenda ?? ""),
+                }));
+            });
+            setRegistrosRemover([]);
         } catch (e: any) {
             setDados(null);
             setErro(e?.message || "Não foi possível carregar a visita.");
@@ -572,11 +608,11 @@ export default function Visita({
         }
     };
 
-    const abrirCamera = async (numero: number) => {
+    const abrirCamera = async () => {
         if (concluida) return;
 
         pararCamera();
-        setCameraPergunta(numero);
+        setCameraAberta(true);
         setCameraLoading(true);
         setCameraErro("");
 
@@ -618,9 +654,8 @@ export default function Visita({
     };
 
     const capturarFoto = async () => {
-        const numero = cameraPergunta;
         const video = videoRef.current;
-        if (!numero || !video) return;
+        if (!video) return;
 
         setCameraLoading(true);
         setCameraErro("");
@@ -629,24 +664,25 @@ export default function Visita({
             const blob = await comprimirFotoComCarimbo(video, falecido);
             const preview = URL.createObjectURL(blob);
 
-            setRespostas((prev) => {
-                const atual = prev[numero] ?? defaultResposta();
-
-                if (atual.fotoPreview?.startsWith("blob:")) {
-                    URL.revokeObjectURL(atual.fotoPreview);
-                }
-
-                return {
-                    ...prev,
-                    [numero]: {
-                        ...atual,
-                        fotoBlob: blob,
-                        fotoPreview: preview,
-                    },
-                };
-            });
+            setRegistrosFotos((prev) => [
+                ...prev,
+                {
+                    localId: `novo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                    fotoBlob: blob,
+                    fotoPreview: preview,
+                    fotoUrl: "",
+                    legenda: "",
+                },
+            ]);
 
             pararCamera();
+
+            requestAnimationFrame(() => {
+                registrosRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                });
+            });
         } catch (e: any) {
             setCameraErro(e?.message || "Falha ao capturar a foto.");
         } finally {
@@ -690,6 +726,32 @@ export default function Visita({
         }));
     };
 
+    const atualizarLegendaRegistro = (localId: string, legenda: string) => {
+        setRegistrosFotos((prev) =>
+            prev.map((item) =>
+                item.localId === localId ? { ...item, legenda } : item,
+            ),
+        );
+    };
+
+    const removerRegistro = (localId: string) => {
+        setRegistrosFotos((prev) => {
+            const item = prev.find((x) => x.localId === localId);
+
+            if (item?.fotoPreview?.startsWith("blob:")) {
+                URL.revokeObjectURL(item.fotoPreview);
+            }
+
+            if (item?.id) {
+                setRegistrosRemover((ids) =>
+                    ids.includes(item.id!) ? ids : [...ids, item.id!],
+                );
+            }
+
+            return prev.filter((x) => x.localId !== localId);
+        });
+    };
+
     const montarFormData = (finalizar: boolean) => {
         if (!visita?.id) throw new Error("A visita ainda não foi iniciada.");
 
@@ -703,18 +765,33 @@ export default function Visita({
             respostas: perguntas.map((p) => ({
                 pergunta_numero: p.numero,
                 nota: respostas[p.numero]?.nota || null,
+                observacao: respostas[p.numero]?.observacao?.trim() || "",
             })),
+            registros_existentes: registrosFotos
+                .filter((item) => item.id)
+                .map((item) => ({
+                    id: item.id,
+                    legenda: item.legenda.trim(),
+                })),
+            registros_remover: registrosRemover,
+            registros_novos: registrosFotos
+                .filter((item) => item.fotoBlob)
+                .map((item) => ({
+                    local_id: item.localId,
+                    legenda: item.legenda.trim(),
+                })),
         };
 
         const form = new FormData();
         form.append("payload", JSON.stringify(payload));
 
-        const fotoMontagem = respostas[5]?.fotoBlob;
-        if (fotoMontagem) {
+        for (const item of registrosFotos) {
+            if (!item.fotoBlob) continue;
+
             form.append(
-                "foto_5",
-                fotoMontagem,
-                `visita-${atendimentoId}-montagem-ambiente.jpg`,
+                `registro_${item.localId}`,
+                item.fotoBlob,
+                `visita-${atendimentoId}-${item.localId}.jpg`,
             );
         }
 
@@ -743,17 +820,11 @@ export default function Visita({
                     `Selecione uma nota para a pergunta ${pergunta.numero}.`,
                 );
             }
+        }
 
-            if (
-                pergunta.numero === 5 &&
-                !resp?.fotoBlob &&
-                !String(resp?.fotoExistenteUrl || "").trim()
-            ) {
-                levarAoCampo(fotoMontagemRef.current);
-                throw new Error(
-                    "Tire a foto obrigatória da montagem do ambiente.",
-                );
-            }
+        if (registrosFotos.length === 0) {
+            levarAoCampo(registrosRef.current);
+            throw new Error("Adicione pelo menos um registro fotográfico.");
         }
     };
 
@@ -799,16 +870,7 @@ export default function Visita({
         const aplicaveis = perguntas.filter((p) => p.aplicavel);
         const completos = aplicaveis.filter((p) => {
             const r = respostas[p.numero];
-            if (!r?.nota) return false;
-
-            if (p.numero === 5) {
-                return (
-                    !!r?.fotoBlob ||
-                    !!String(r?.fotoExistenteUrl || "").trim()
-                );
-            }
-
-            return true;
+            return !!r?.nota;
         });
 
         return {
@@ -1021,100 +1083,58 @@ export default function Visita({
 
                                             {pergunta.aplicavel ? (
                                                 <div className="mt-4 space-y-4">
-                                                    <div>
-                                                        <div className="mb-2 text-sm font-medium">
+                                                    <label className="block">
+                                                        <span className="text-sm font-medium">
                                                             Nota
-                                                        </div>
-                                                        <div className="grid gap-2 sm:grid-cols-3">
-                                                            {NOTAS.map(
-                                                                (nota) => (
-                                                                    <label
-                                                                        key={
-                                                                            nota.value
-                                                                        }
-                                                                        className={[
-                                                                            "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-                                                                            resp.nota ===
-                                                                                nota.value
-                                                                                ? "border-slate-900 bg-slate-50"
-                                                                                : "border-slate-200",
-                                                                            concluida
-                                                                                ? "cursor-default"
-                                                                                : "",
-                                                                        ].join(
-                                                                            " ",
-                                                                        )}
-                                                                    >
-                                                                        <input
-                                                                            type="radio"
-                                                                            name={`visita-nota-${pergunta.numero}`}
-                                                                            value={
-                                                                                nota.value
-                                                                            }
-                                                                            checked={
-                                                                                resp.nota ===
-                                                                                nota.value
-                                                                            }
-                                                                            onChange={() =>
-                                                                                updateResposta(
-                                                                                    pergunta.numero,
-                                                                                    {
-                                                                                        nota: nota.value,
-                                                                                    },
-                                                                                )
-                                                                            }
-                                                                            disabled={
-                                                                                concluida
-                                                                            }
-                                                                        />
-                                                                        {
-                                                                            nota.label
-                                                                        }
-                                                                    </label>
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    {pergunta.numero === 5 ? (
-                                                        <div ref={fotoMontagemRef}>
-                                                            <div className="mb-2 text-sm font-medium">
-                                                                Foto da montagem do ambiente
-                                                                <span className="ml-1 text-red-600">*</span>
-                                                            </div>
-
-                                                            {resp.fotoPreview ||
-                                                                resp.fotoExistenteUrl ? (
-                                                                <img
-                                                                    src={
-                                                                        resp.fotoPreview ||
-                                                                        resp.fotoExistenteUrl
-                                                                    }
-                                                                    alt="Foto da montagem do ambiente"
-                                                                    className="max-h-72 w-full rounded-lg border object-contain bg-black"
-                                                                />
-                                                            ) : (
-                                                                <div className="rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
-                                                                    Nenhuma foto registrada.
-                                                                </div>
-                                                            )}
-
-                                                            {!concluida ? (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        abrirCamera(5)
-                                                                    }
-                                                                    className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                                        </span>
+                                                        <select
+                                                            value={resp.nota}
+                                                            onChange={(e) =>
+                                                                updateResposta(
+                                                                    pergunta.numero,
+                                                                    {
+                                                                        nota: e.target.value as VisitaResposta["nota"],
+                                                                    },
+                                                                )
+                                                            }
+                                                            disabled={concluida}
+                                                            className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                        >
+                                                            <option value="">
+                                                                Selecione a nota...
+                                                            </option>
+                                                            {NOTAS.map((nota) => (
+                                                                <option
+                                                                    key={nota.value}
+                                                                    value={nota.value}
                                                                 >
-                                                                    {resp.fotoBlob ||
-                                                                        resp.fotoExistenteUrl
-                                                                        ? "Tirar nova foto"
-                                                                        : "Abrir câmera"}
-                                                                </button>
-                                                            ) : null}
-                                                        </div>
-                                                    ) : null}
+                                                                    {nota.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+
+                                                    <label className="block">
+                                                        <span className="text-sm font-medium">
+                                                            Observação
+                                                        </span>
+                                                        <textarea
+                                                            value={resp.observacao}
+                                                            onChange={(e) =>
+                                                                updateResposta(
+                                                                    pergunta.numero,
+                                                                    {
+                                                                        observacao: e.target.value,
+                                                                    },
+                                                                )
+                                                            }
+                                                            disabled={concluida}
+                                                            maxLength={2000}
+                                                            rows={3}
+                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                            placeholder="Observação deste item"
+                                                        />
+                                                    </label>
                                                 </div>
                                             ) : null}
                                         </section>
@@ -1122,9 +1142,92 @@ export default function Visita({
                                 })}
                             </div>
 
+                            <div
+                                ref={registrosRef}
+                                className="rounded-xl border border-slate-200 p-4"
+                            >
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <h3 className="font-semibold text-slate-950">
+                                            Registros <span className="text-red-600">*</span>
+                                        </h3>
+                                        <p className="mt-1 text-sm text-slate-600">
+                                            Adicione pelo menos uma foto. Você pode incluir vários registros e uma legenda em cada um.
+                                        </p>
+                                    </div>
+
+                                    {!concluida ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void abrirCamera()}
+                                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                        >
+                                            Adicionar registro
+                                        </button>
+                                    ) : null}
+                                </div>
+
+                                {registrosFotos.length > 0 ? (
+                                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                        {registrosFotos.map((item, index) => (
+                                            <div
+                                                key={item.localId}
+                                                className="rounded-xl border border-slate-200 p-3"
+                                            >
+                                                <img
+                                                    src={item.fotoPreview || item.fotoUrl}
+                                                    alt={`Registro ${index + 1}`}
+                                                    className="max-h-72 w-full rounded-lg bg-black object-contain"
+                                                />
+
+                                                <label className="mt-3 block">
+                                                    <span className="text-sm font-medium">
+                                                        Legenda
+                                                    </span>
+                                                    <textarea
+                                                        value={item.legenda}
+                                                        onChange={(e) =>
+                                                            atualizarLegendaRegistro(
+                                                                item.localId,
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        disabled={concluida}
+                                                        maxLength={500}
+                                                        rows={2}
+                                                        className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                        placeholder="Legenda do registro"
+                                                    />
+                                                </label>
+
+                                                {!concluida ? (
+                                                    <div className="mt-3 flex justify-end">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                removerRegistro(
+                                                                    item.localId,
+                                                                )
+                                                            }
+                                                            className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                                        >
+                                                            Remover
+                                                        </button>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
+                                        Nenhum registro adicionado.
+                                    </div>
+                                )}
+                            </div>
+
                             <label className="block rounded-xl border border-slate-200 p-4">
                                 <span className="text-sm font-medium">
-                                    Observação geral
+                                    Conclusão
                                 </span>
                                 <textarea
                                     value={observacaoGeral}
@@ -1135,7 +1238,7 @@ export default function Visita({
                                     maxLength={4000}
                                     rows={5}
                                     className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
-                                    placeholder="Adicione uma observação geral sobre a visita..."
+                                    placeholder="Registre a conclusão geral da visita..."
                                 />
                             </label>
 
@@ -1175,7 +1278,7 @@ export default function Visita({
             </Modal>
 
             <Modal
-                open={cameraPergunta != null}
+                open={cameraAberta}
                 onClose={pararCamera}
                 ariaLabel="Câmera da visita"
                 maxWidth={760}
@@ -1184,11 +1287,11 @@ export default function Visita({
             >
                 <div>
                     <h3 className="text-lg font-semibold">
-                        Foto da montagem do ambiente
+                        Novo registro fotográfico
                     </h3>
                     <p className="mt-1 text-sm text-slate-600">
                         A foto será registrada diretamente pela câmera com
-                        data/hora e o nome do falecido.
+                        data/hora e o nome do falecido. Depois você poderá adicionar uma legenda.
                     </p>
 
                     {cameraErro ? (

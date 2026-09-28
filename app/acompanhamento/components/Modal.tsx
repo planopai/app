@@ -28,6 +28,8 @@ export default function Modal({
     useEffect(() => {
         if (!open || typeof document === "undefined") return;
 
+        // Evita que o documento por trás do modal role enquanto o modal está aberto.
+        // Isso também reduz saltos de viewport no Safari/iOS ao abrir selects e teclado.
         const html = document.documentElement;
         const body = document.body;
 
@@ -67,9 +69,7 @@ export default function Modal({
         >
             <div
                 className="flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl outline-none sm:max-h-[calc(100dvh-2rem)]"
-                style={{
-                    maxWidth: maxWidth ?? 720,
-                }}
+                style={{ maxWidth: maxWidth ?? 720 }}
             >
                 <div
                     className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 ${contentClassName}`}
