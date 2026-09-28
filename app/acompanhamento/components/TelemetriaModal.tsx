@@ -12,9 +12,6 @@ import Modal from "./Modal";
 import { Registro } from "./types";
 
 const TELEMETRIA_URL = "https://api.planoassistencialintegrado.com.br/telemetria.php";
-const VISITA_CONTEXT_URL =
-    "https://api.planoassistencialintegrado.com.br/visita.php?action=contexto_remocao";
-
 /* ======================= Tipos ======================= */
 
 export type TipoTele = "remocao" | "para_velorio" | "para_sepultamento";
@@ -301,34 +298,6 @@ async function requestWakeLock(): Promise<any | null> {
     return null;
 }
 
-async function salvarContextoRemocao(
-    atendimentoId: string | number,
-    veiculo: VeiculoOpcao,
-): Promise<void> {
-    const response = await fetch(VISITA_CONTEXT_URL, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            atendimento_id: atendimentoId,
-            veiculo_nome: veiculo.nome,
-            placa: normalizePlaca(veiculo.placa) || null,
-        }),
-    });
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok || data?.erro) {
-        throw new Error(
-            data?.msg ||
-            "Não foi possível registrar o veículo escolhido para a remoção.",
-        );
-    }
-}
-
 /* ======================= Componente ======================= */
 
 export default forwardRef<
@@ -409,21 +378,6 @@ export default forwardRef<
         };
 
         try {
-            const atendimentoId = getRegistroId(registro);
-
-            if (
-                tipo === "remocao" &&
-                atendimentoId != null &&
-                !isLocalAttendanceId(atendimentoId)
-            ) {
-                // Persiste o veículo escolhido para que a Visita possa decidir
-                // se a pergunta "Remoção" deve ou não ser exibida.
-                await salvarContextoRemocao(
-                    atendimentoId,
-                    veicNormalizado,
-                );
-            }
-
             // Primeiro registra a fase inicial no atendimento.
             // Se isso falhar, não marca a telemetria como ativa.
             await onConfirmAcao?.(fase);
