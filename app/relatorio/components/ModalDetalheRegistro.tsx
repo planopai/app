@@ -10,11 +10,11 @@ import {
     type MateriaisMap,
 } from "./Api";
 import LinhaDoTempoLogs from "./LinhaDoTempoLogs";
-import ResumoFinal from "./ResumoFinal";
 import BotaoExportarPdf from "./BotaoExportarPdf";
 import { estaFinalizado, montarResumoFinalDoLog } from "./Normalizadores";
 import { traduzirFase } from "./ConstantesFases";
 import { formataDataHora } from "./UtilDatas";
+import { organizarResumoRelatorio } from "./FormatadorRelatorio";
 
 interface Props {
     aberto: boolean;
@@ -26,6 +26,32 @@ type FotoHistorico = {
     url: string;
     titulo: string;
 };
+
+type AbaDetalhe =
+    | "falecido"
+    | "responsavel"
+    | "servicos"
+    | "itens"
+    | "velorio"
+    | "outras"
+    | "timeline";
+
+type VisualViewportState = {
+    width: number;
+    height: number;
+    offsetTop: number;
+    offsetLeft: number;
+};
+
+const ABAS_DETALHE: Array<{ id: AbaDetalhe; label: string }> = [
+    { id: "falecido", label: "Dados do falecido" },
+    { id: "responsavel", label: "Responsável" },
+    { id: "servicos", label: "Serviços e procedimentos" },
+    { id: "itens", label: "Itens do atendimento" },
+    { id: "velorio", label: "Velório e sepultamento" },
+    { id: "outras", label: "Outras informações" },
+    { id: "timeline", label: "Linha do Tempo" },
+];
 
 function getRegistroId(item: FalecidoItem): string {
     const anyItem = item as any;
@@ -246,6 +272,46 @@ function ultimoStatus(logs: LogItem[]) {
     return "";
 }
 
+function CamposAba({
+    titulo,
+    campos,
+}: {
+    titulo: string;
+    campos: Array<{ chave: string; label: string; valor: string }>;
+}) {
+    if (!campos.length) {
+        return (
+            <div className="rounded-2xl border bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+                Nenhuma informação disponível nesta seção.
+            </div>
+        );
+    }
+
+    return (
+        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+            <div className="border-b bg-slate-50 px-4 py-3 sm:px-5">
+                <h4 className="text-sm font-semibold text-slate-900">{titulo}</h4>
+            </div>
+
+            <dl className="divide-y divide-slate-100">
+                {campos.map((campo, index) => (
+                    <div
+                        key={`${campo.chave}-${index}`}
+                        className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4 sm:px-5"
+                    >
+                        <dt className="text-xs font-medium text-slate-500">
+                            {campo.label}
+                        </dt>
+                        <dd className="min-w-0 break-words text-sm text-slate-900">
+                            {campo.valor}
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+        </section>
+    );
+}
+
 export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Props) {
     const [logs, setLogs] = useState<LogItem[]>([]);
     const [registroCompleto, setRegistroCompleto] =
@@ -253,6 +319,9 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     const [loading, setLoading] = useState(false);
     const [materiaisMap, setMateriaisMap] = useState<MateriaisMap>({});
     const [fotosOpen, setFotosOpen] = useState(false);
+    const [abaAtiva, setAbaAtiva] = useState<AbaDetalhe>("falecido");
+    const [viewport, setViewport] =
+        useState<VisualViewportState | null>(null);
 
     useEffect(() => {
         if (!aberto || !registro) return;
@@ -307,7 +376,76 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     }, [aberto]);
 
     useEffect(() => {
-        if (!aberto) setFotosOpen(false);
+        if (!aberto) {
+            setFotosOpen(false);
+            setAbaAtiva("falecido");
+        }
+    }, [aberto]);
+
+    useEffect(() => {
+        if (!aberto || typeof window === "undefined") return;
+
+        const html = document.documentElement;
+        const body = document.body;
+
+        const oldHtmlOverflow = html.style.overflow;
+        const oldBodyOverflow = body.style.overflow;
+        const oldBodyOverscroll = body.style.overscrollBehavior;
+        const oldBodyTouchAction = body.style.touchAction;
+
+        const updateViewport = () => {
+            const vv = window.visualViewport;
+
+            setViewport({
+                width: Math.max(
+                    1,
+                    Math.round(vv?.width ?? window.innerWidth),
+                ),
+                height: Math.max(
+                    1,
+                    Math.round(vv?.height ?? window.innerHeight),
+                ),
+                offsetTop: Math.max(
+                    0,
+                    Math.round(vv?.offsetTop ?? 0),
+                ),
+                offsetLeft: Math.max(
+                    0,
+                    Math.round(vv?.offsetLeft ?? 0),
+                ),
+            });
+        };
+
+        updateViewport();
+
+        html.style.overflow = "hidden";
+        body.style.overflow = "hidden";
+        body.style.overscrollBehavior = "none";
+        body.style.touchAction = "none";
+
+        const vv = window.visualViewport;
+
+        vv?.addEventListener("resize", updateViewport);
+        vv?.addEventListener("scroll", updateViewport);
+        window.addEventListener("resize", updateViewport);
+        window.addEventListener("orientationchange", updateViewport);
+
+        return () => {
+            vv?.removeEventListener("resize", updateViewport);
+            vv?.removeEventListener("scroll", updateViewport);
+            window.removeEventListener("resize", updateViewport);
+            window.removeEventListener(
+                "orientationchange",
+                updateViewport,
+            );
+
+            html.style.overflow = oldHtmlOverflow;
+            body.style.overflow = oldBodyOverflow;
+            body.style.overscrollBehavior = oldBodyOverscroll;
+            body.style.touchAction = oldBodyTouchAction;
+
+            setViewport(null);
+        };
     }, [aberto]);
 
     const finalizado = useMemo(() => estaFinalizado(logs), [logs]);
@@ -336,6 +474,31 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
             ),
         [dadosListaResumo, dadosLogsResumo, dadosBancoResumo],
     );
+
+    const resumoOrganizado = useMemo(
+        () => organizarResumoRelatorio(resumoAtual, materiaisMap),
+        [resumoAtual, materiaisMap],
+    );
+
+    const secoesPorId = useMemo(() => {
+        const map = new Map<
+            string,
+            { id: string; titulo: string; campos: Array<{ chave: string; label: string; valor: string }> }
+        >();
+
+        for (const secao of resumoOrganizado.secoes) {
+            map.set(String(secao.id), secao);
+        }
+
+        return map;
+    }, [resumoOrganizado]);
+
+    const camposOutrasInformacoes = useMemo(() => {
+        const observacoes = secoesPorId.get("observacoes")?.campos ?? [];
+        const outras = secoesPorId.get("outras")?.campos ?? [];
+
+        return [...observacoes, ...outras];
+    }, [secoesPorId]);
 
     const criacaoSelecionado = useMemo(
         () =>
@@ -380,7 +543,13 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     return (
         <>
             <div
-                className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-3 sm:p-6"
+                className="fixed z-50 flex items-center justify-center overflow-hidden bg-black/50 p-2 sm:p-6"
+                style={{
+                    top: viewport?.offsetTop ?? 0,
+                    left: viewport?.offsetLeft ?? 0,
+                    width: viewport ? `${viewport.width}px` : "100vw",
+                    height: viewport ? `${viewport.height}px` : "100dvh",
+                }}
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Histórico de ${nomeFalecidoAtual}`}
@@ -388,76 +557,153 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                     if (e.target === e.currentTarget) onFechar();
                 }}
             >
-                <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-2xl border bg-white shadow-xl">
-                    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/95 p-4 backdrop-blur sm:px-5">
-                        <div className="min-w-0">
-                            <h3 className="truncate text-lg font-semibold leading-tight text-slate-900">
-                                {nomeFalecidoAtual}
-                            </h3>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                                {registroId && <span>Atendimento #{registroId}</span>}
-                                {criacaoSelecionado && (
-                                    <span>Criado em {formataDataHora(criacaoSelecionado)}</span>
-                                )}
-                                {statusAtual && <span>Status: {statusAtual}</span>}
-                                <span
-                                    className={`rounded-full px-2 py-0.5 font-medium ${finalizado
-                                        ? "bg-emerald-50 text-emerald-700"
-                                        : "bg-amber-50 text-amber-700"
-                                        }`}
-                                >
-                                    {finalizado ? "Finalizado" : "Em andamento"}
-                                </span>
-                            </div>
-                        </div>
+                <div
+                    className="flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border bg-white shadow-xl"
+                    style={{
+                        maxHeight: viewport
+                            ? `${Math.max(1, viewport.height - 16)}px`
+                            : "calc(100dvh - 1rem)",
+                    }}
+                >
+                    <div className="shrink-0 border-b bg-white/95 p-3 backdrop-blur sm:px-5 sm:py-4">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <h3 className="break-words text-base font-semibold leading-tight text-slate-900 sm:text-lg">
+                                    {nomeFalecidoAtual}
+                                </h3>
 
-                        <div className="flex shrink-0 items-center gap-2">
-                            <button
-                                type="button"
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                                title={fotos.length > 0 ? "Ver fotos anexadas" : "Nenhuma foto anexada"}
-                                aria-label="Ver fotos anexadas"
-                                disabled={loading || fotos.length === 0}
-                                onClick={() => setFotosOpen(true)}
-                            >
-                                <IconPhoto className="size-5" />
-                            </button>
+                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                    {registroId && (
+                                        <span>Atendimento #{registroId}</span>
+                                    )}
 
-                            <div
-                                className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                                title="Baixar PDF"
-                                aria-label="Baixar PDF"
-                            >
-                                <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-                                    <IconFileTypePdf className="size-5" />
-                                </span>
+                                    {criacaoSelecionado && (
+                                        <span>
+                                            Criado em{" "}
+                                            {formataDataHora(
+                                                criacaoSelecionado,
+                                            )}
+                                        </span>
+                                    )}
 
-                                <div className="[&_button]:!h-10 [&_button]:!w-10 [&_button]:!overflow-hidden [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-0 [&_button]:!text-transparent [&_button]:hover:!bg-transparent">
-                                    <BotaoExportarPdf
-                                        desabilitado={loading || logs.length === 0}
-                                        selecionadoNome={nomeFalecidoAtual}
-                                        criacaoSelecionado={criacaoSelecionado}
-                                        logVisiveis={logs}
-                                        resumoFinal={resumoAtual}
-                                        materiaisMap={materiaisMap}
-                                        sepultamentoId={registroId}
-                                    />
+                                    {statusAtual && (
+                                        <span>Status: {statusAtual}</span>
+                                    )}
+
+                                    <span
+                                        className={`rounded-full px-2 py-0.5 font-medium ${finalizado
+                                                ? "bg-emerald-50 text-emerald-700"
+                                                : "bg-amber-50 text-amber-700"
+                                            }`}
+                                    >
+                                        {finalizado
+                                            ? "Finalizado"
+                                            : "Em andamento"}
+                                    </span>
                                 </div>
                             </div>
 
-                            <button
-                                type="button"
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted"
-                                onClick={onFechar}
-                                title="Fechar"
-                                aria-label="Fechar"
-                            >
-                                <IconX className="size-5" />
-                            </button>
+                            <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                    type="button"
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                                    title={
+                                        fotos.length > 0
+                                            ? "Ver fotos anexadas"
+                                            : "Nenhuma foto anexada"
+                                    }
+                                    aria-label="Ver fotos anexadas"
+                                    disabled={
+                                        loading || fotos.length === 0
+                                    }
+                                    onClick={() => setFotosOpen(true)}
+                                >
+                                    <IconPhoto className="size-5" />
+                                </button>
+
+                                <div
+                                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                                    title="Baixar PDF"
+                                    aria-label="Baixar PDF"
+                                >
+                                    <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                                        <IconFileTypePdf className="size-5" />
+                                    </span>
+
+                                    <div className="[&_button]:!h-10 [&_button]:!w-10 [&_button]:!overflow-hidden [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-0 [&_button]:!text-transparent [&_button]:hover:!bg-transparent">
+                                        <BotaoExportarPdf
+                                            desabilitado={
+                                                loading ||
+                                                logs.length === 0
+                                            }
+                                            selecionadoNome={
+                                                nomeFalecidoAtual
+                                            }
+                                            criacaoSelecionado={
+                                                criacaoSelecionado
+                                            }
+                                            logVisiveis={logs}
+                                            resumoFinal={resumoAtual}
+                                            materiaisMap={materiaisMap}
+                                            sepultamentoId={registroId}
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-md border hover:bg-muted"
+                                    onClick={onFechar}
+                                    title="Fechar"
+                                    aria-label="Fechar"
+                                >
+                                    <IconX className="size-5" />
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="h-[calc(92vh-72px)] overflow-auto bg-slate-50/40 p-4 sm:p-5">
+                    <div className="shrink-0 border-b bg-white">
+                        <div
+                            className="flex gap-1 overflow-x-auto px-2 py-2 sm:px-4"
+                            style={{
+                                WebkitOverflowScrolling: "touch",
+                                overscrollBehaviorX: "contain",
+                            }}
+                        >
+                            {ABAS_DETALHE.map((aba) => {
+                                const ativa = abaAtiva === aba.id;
+
+                                return (
+                                    <button
+                                        key={aba.id}
+                                        type="button"
+                                        onClick={() =>
+                                            setAbaAtiva(aba.id)
+                                        }
+                                        className={[
+                                            "shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition sm:text-sm",
+                                            ativa
+                                                ? "border-slate-900 bg-slate-900 text-white"
+                                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                                        ].join(" ")}
+                                        aria-pressed={ativa}
+                                    >
+                                        {aba.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div
+                        className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/40 p-3 sm:p-5"
+                        style={{
+                            WebkitOverflowScrolling: "touch",
+                            overscrollBehaviorY: "contain",
+                            touchAction: "pan-y",
+                        }}
+                    >
                         {loading ? (
                             <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
                                 Carregando histórico…
@@ -466,26 +712,79 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                             <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
                                 Nenhum log encontrado para este registro.
                             </div>
-                        ) : (
-                            <div className="space-y-5">
-                                <ResumoFinal
-                                    visivel={Object.keys(resumoAtual).length > 0}
-                                    resumo={resumoAtual}
-                                    titulo={finalizado ? "Resumo Final" : "Resumo do Atendimento"}
-                                    subtitulo="Dados principais separados por assunto. Informações técnicas ficam recolhidas por padrão."
+                        ) : abaAtiva === "timeline" ? (
+                            <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+                                <div className="mb-4">
+                                    <h4 className="text-sm font-semibold text-slate-900">
+                                        Linha do Tempo
+                                    </h4>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                        Eventos em ordem cronológica,
+                                        mostrando apenas informações
+                                        relevantes de cada ação.
+                                    </p>
+                                </div>
+
+                                <LinhaDoTempoLogs
+                                    logs={logs}
                                     materiaisMap={materiaisMap}
                                 />
+                            </section>
+                        ) : abaAtiva === "outras" ? (
+                            <div className="space-y-4">
+                                <CamposAba
+                                    titulo="Outras informações"
+                                    campos={camposOutrasInformacoes}
+                                />
 
-                                <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
-                                    <div className="mb-4">
-                                        <h4 className="text-sm font-semibold text-slate-900">Linha do Tempo</h4>
-                                        <p className="mt-0.5 text-xs text-slate-500">
-                                            Eventos em ordem cronológica, mostrando apenas informações relevantes de cada ação.
-                                        </p>
-                                    </div>
-                                    <LinhaDoTempoLogs logs={logs} materiaisMap={materiaisMap} />
-                                </section>
+                                {resumoOrganizado.tecnicos.length > 0 ? (
+                                    <details className="rounded-2xl border bg-white shadow-sm">
+                                        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 sm:px-5">
+                                            Dados técnicos (
+                                            {
+                                                resumoOrganizado
+                                                    .tecnicos.length
+                                            }
+                                            )
+                                        </summary>
+
+                                        <dl className="divide-y divide-slate-100 border-t">
+                                            {resumoOrganizado.tecnicos.map(
+                                                (campo, index) => (
+                                                    <div
+                                                        key={`${campo.chave}-${index}`}
+                                                        className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4 sm:px-5"
+                                                    >
+                                                        <dt className="text-xs font-medium text-slate-500">
+                                                            {
+                                                                campo.label
+                                                            }
+                                                        </dt>
+                                                        <dd className="min-w-0 break-all text-xs text-slate-700">
+                                                            {
+                                                                campo.valor
+                                                            }
+                                                        </dd>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </dl>
+                                    </details>
+                                ) : null}
                             </div>
+                        ) : (
+                            <CamposAba
+                                titulo={
+                                    ABAS_DETALHE.find(
+                                        (aba) =>
+                                            aba.id === abaAtiva,
+                                    )?.label ?? "Informações"
+                                }
+                                campos={
+                                    secoesPorId.get(abaAtiva)?.campos ??
+                                    []
+                                }
+                            />
                         )}
                     </div>
                 </div>
@@ -493,7 +792,17 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
             {fotosOpen && (
                 <div
-                    className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-3 sm:p-6"
+                    className="fixed z-[90] flex items-center justify-center overflow-hidden bg-black/70 p-3 sm:p-6"
+                    style={{
+                        top: viewport?.offsetTop ?? 0,
+                        left: viewport?.offsetLeft ?? 0,
+                        width: viewport
+                            ? `${viewport.width}px`
+                            : "100vw",
+                        height: viewport
+                            ? `${viewport.height}px`
+                            : "100dvh",
+                    }}
                     role="dialog"
                     aria-modal="true"
                     aria-label="Fotos anexadas"
@@ -501,7 +810,14 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                         if (e.target === e.currentTarget) setFotosOpen(false);
                     }}
                 >
-                    <div className="w-full max-w-5xl overflow-hidden rounded-2xl border bg-white shadow-2xl">
+                    <div
+                        className="flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl"
+                        style={{
+                            maxHeight: viewport
+                                ? `${Math.max(1, viewport.height - 24)}px`
+                                : "calc(100dvh - 1.5rem)",
+                        }}
+                    >
                         <div className="flex items-center justify-between gap-3 border-b p-3 sm:p-4">
                             <div>
                                 <h3 className="text-base font-semibold">Fotos anexadas</h3>
@@ -521,7 +837,14 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                             </button>
                         </div>
 
-                        <div className="max-h-[78vh] overflow-auto bg-slate-50 p-3 sm:p-4">
+                        <div
+                            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 p-3 sm:p-4"
+                            style={{
+                                WebkitOverflowScrolling: "touch",
+                                overscrollBehaviorY: "contain",
+                                touchAction: "pan-y",
+                            }}
+                        >
                             {fotos.length === 0 ? (
                                 <div className="rounded-xl border bg-white p-6 text-center text-sm text-muted-foreground">
                                     Nenhuma foto anexada neste atendimento.
