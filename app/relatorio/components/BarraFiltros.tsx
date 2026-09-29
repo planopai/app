@@ -29,7 +29,7 @@ interface Props {
  * Mobile:
  * - mostra somente a busca por nome;
  * - mostra um botão de filtro no canto direito;
- * - datas ficam dentro de um bottom sheet/modal;
+ * - datas ficam dentro de um modal central;
  * - "Análise Geral" fica dentro do mesmo painel para não poluir a tela;
  * - o ícone de filtro mostra indicador quando há datas aplicadas.
  */
@@ -233,11 +233,11 @@ export default function BarraFiltros({
             </div>
 
             {/* =========================
-                MODAL / BOTTOM SHEET MOBILE
+                MODAL CENTRAL MOBILE
                ========================= */}
             {filtrosMobileOpen ? (
                 <div
-                    className="fixed inset-0 z-[100] flex items-end bg-black/45 sm:hidden"
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:hidden"
                     role="dialog"
                     aria-modal="true"
                     aria-label="Filtros do relatório"
@@ -248,9 +248,10 @@ export default function BarraFiltros({
                     }}
                 >
                     <div
-                        className="w-full rounded-t-3xl border-x border-t bg-background shadow-2xl"
+                        className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
                         style={{
-                            maxHeight: "min(86dvh, 620px)",
+                            maxHeight:
+                                "calc(100dvh - max(1.5rem, env(safe-area-inset-top)) - max(1.5rem, env(safe-area-inset-bottom)))",
                         }}
                     >
                         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -281,10 +282,11 @@ export default function BarraFiltros({
                         </div>
 
                         <div
-                            className="overflow-y-auto p-4"
+                            className="min-h-0 flex-1 overflow-y-auto p-4"
                             style={{
                                 WebkitOverflowScrolling: "touch",
                                 overscrollBehaviorY: "contain",
+                                touchAction: "pan-y",
                             }}
                         >
                             <div className="space-y-4">
@@ -353,7 +355,7 @@ export default function BarraFiltros({
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 border-t bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                        <div className="grid shrink-0 grid-cols-2 gap-2 border-t bg-background p-4">
                             <button
                                 type="button"
                                 onClick={limparFiltrosMobile}
