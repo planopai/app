@@ -1,5 +1,7 @@
 "use client";
 
+// Esta página usa variantes dark e tokens semânticos do tema global.
+
 import React, {
     FormEvent,
     KeyboardEvent,
@@ -387,9 +389,9 @@ function ProductCardView({ product }: { product: ProductCard }) {
     const stock = Number(product.quantidade_total || 0);
 
     return (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/70">
             {current?.foto_url ? (
-                <a href={current.foto_url} target="_blank" rel="noreferrer" className="block bg-white">
+                <a href={current.foto_url} target="_blank" rel="noreferrer" className="block bg-white dark:bg-slate-900">
                     <img
                         src={current.foto_url}
                         alt={current.legenda || product.produto_nome}
@@ -400,15 +402,15 @@ function ProductCardView({ product }: { product: ProductCard }) {
             ) : null}
 
             {photos.length > 1 ? (
-                <div className="flex gap-2 overflow-x-auto border-t border-slate-200 bg-white p-2">
+                <div className="flex gap-2 overflow-x-auto border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2">
                     {photos.slice(0, 8).map((photo, index) => (
                         <button
                             key={`${product.produto_id}-photo-${photo.id ?? index}`}
                             type="button"
                             onClick={() => setActive(index)}
                             className={[
-                                "h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-white",
-                                index === active ? "border-sky-500 ring-2 ring-sky-100" : "border-slate-200",
+                                "h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-white dark:bg-slate-900",
+                                index === active ? "border-sky-500 dark:border-sky-500 ring-2 ring-sky-100 dark:ring-sky-900/60" : "border-slate-200 dark:border-slate-700",
                             ].join(" ")}
                             title={photo.legenda || `Foto ${index + 1}`}
                         >
@@ -419,16 +421,16 @@ function ProductCardView({ product }: { product: ProductCard }) {
             ) : null}
 
             <div className="space-y-2 p-3 text-left">
-                <div className="font-semibold text-slate-950">{product.produto_nome}</div>
-                {price ? <div className="text-base font-semibold text-emerald-700">{price}</div> : null}
-                <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600">
-                    {product.fabricante ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">{product.fabricante}</span> : null}
-                    {product.categoria ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">{product.categoria}</span> : null}
-                    {product.classificacao ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">{product.classificacao}</span> : null}
-                    <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200">Estoque: {stock.toLocaleString("pt-BR")}</span>
+                <div className="font-semibold text-slate-950 dark:text-slate-50">{product.produto_nome}</div>
+                {price ? <div className="text-base font-semibold text-emerald-700 dark:text-emerald-300">{price}</div> : null}
+                <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                    {product.fabricante ? <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">{product.fabricante}</span> : null}
+                    {product.categoria ? <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">{product.categoria}</span> : null}
+                    {product.classificacao ? <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">{product.classificacao}</span> : null}
+                    <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">Estoque: {stock.toLocaleString("pt-BR")}</span>
                 </div>
-                {product.descricao ? <p className="text-xs leading-5 text-slate-600">{product.descricao}</p> : null}
-                {product.codigo_barras ? <div className="text-[11px] text-slate-500">Código: {product.codigo_barras}</div> : null}
+                {product.descricao ? <p className="text-xs leading-5 text-slate-600 dark:text-slate-400">{product.descricao}</p> : null}
+                {product.codigo_barras ? <div className="text-[11px] text-slate-500 dark:text-slate-400">Código: {product.codigo_barras}</div> : null}
             </div>
         </div>
     );
@@ -455,8 +457,8 @@ function ProductSuggestions({
 }) {
     if (!suggestions?.length) return null;
     return (
-        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sugestões próximas</div>
+        <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Sugestões próximas</div>
             <div className="flex flex-wrap gap-2">
                 {suggestions.slice(0, 6).map((item) => (
                     <button
@@ -464,12 +466,12 @@ function ProductSuggestions({
                         type="button"
                         disabled={disabled}
                         onClick={() => onChoose(item.produto_nome)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-left text-xs text-slate-700 dark:text-slate-300 shadow-sm transition hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/50 disabled:cursor-not-allowed disabled:opacity-50"
                         title={[item.categoria, item.fabricante].filter(Boolean).join(" • ")}
                     >
-                        <span className="block font-semibold text-slate-900">{item.produto_nome}</span>
+                        <span className="block font-semibold text-slate-900 dark:text-slate-100">{item.produto_nome}</span>
                         {(item.categoria || item.fabricante) ? (
-                            <span className="mt-0.5 block text-[10px] text-slate-500">
+                            <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
                                 {[item.categoria, item.fabricante].filter(Boolean).join(" • ")}
                             </span>
                         ) : null}
@@ -559,22 +561,22 @@ function ExportCards({ cards }: { cards?: ExportCard[] }) {
                 return (
                     <div
                         key={card.id}
-                        className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+                        className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
                     >
                         <div className="flex items-center gap-3 p-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700">
                                 <span className="text-[11px] font-bold uppercase">{card.format}</span>
                             </div>
 
                             <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm font-semibold text-slate-950">
+                                <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">
                                     {card.title}
                                 </div>
-                                <div className="mt-0.5 truncate text-[11px] text-slate-500">
+                                <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
                                     {exportFormatDescription(card.format)} • {card.filename}
                                 </div>
                                 {validExpiry ? (
-                                    <div className="mt-0.5 text-[10px] text-slate-400">
+                                    <div className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
                                         Link temporário até {expiry!.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                                     </div>
                                 ) : null}
@@ -720,12 +722,12 @@ function PendingActionCards({
                         className={[
                             "overflow-hidden rounded-2xl border",
                             completed
-                                ? "border-emerald-200 bg-emerald-50/70"
+                                ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40"
                                 : cancelled
-                                    ? "border-slate-200 bg-slate-50"
+                                    ? "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
                                     : action.status === "error"
-                                        ? "border-red-200 bg-red-50/70"
-                                        : "border-amber-200 bg-amber-50/70",
+                                        ? "border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-950/40"
+                                        : "border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/40",
                         ].join(" ")}
                     >
                         <div className="p-4">
@@ -734,10 +736,10 @@ function PendingActionCards({
                                     className={[
                                         "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold",
                                         completed
-                                            ? "bg-emerald-100 text-emerald-700"
+                                            ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300"
                                             : cancelled
-                                                ? "bg-slate-200 text-slate-600"
-                                                : "bg-amber-100 text-amber-700",
+                                                ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                                : "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300",
                                     ].join(" ")}
                                 >
                                     {action.kind === "novo_atendimento"
@@ -752,9 +754,9 @@ function PendingActionCards({
                                 </div>
 
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-slate-950">{action.title}</div>
+                                    <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{action.title}</div>
                                     {action.description ? (
-                                        <div className="mt-1 text-xs leading-5 text-slate-600">{action.description}</div>
+                                        <div className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">{action.description}</div>
                                     ) : null}
                                 </div>
 
@@ -762,14 +764,14 @@ function PendingActionCards({
                                     className={[
                                         "shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold",
                                         completed
-                                            ? "bg-emerald-100 text-emerald-700"
+                                            ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300"
                                             : cancelled
-                                                ? "bg-slate-200 text-slate-600"
+                                                ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
                                                 : executing
-                                                    ? "bg-sky-100 text-sky-700"
+                                                    ? "bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300"
                                                     : action.status === "error"
-                                                        ? "bg-red-100 text-red-700"
-                                                        : "bg-amber-100 text-amber-700",
+                                                        ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300"
+                                                        : "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300",
                                     ].join(" ")}
                                 >
                                     {completed
@@ -787,24 +789,24 @@ function PendingActionCards({
                             </div>
 
                             {action.details.length ? (
-                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 p-3 ring-1 ring-inset ring-slate-200/70">
+                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 dark:bg-slate-900/80 p-3 ring-1 ring-inset ring-slate-200/70 dark:ring-slate-700/70">
                                     {action.details.map((detail, index) => (
                                         <div key={`${action.id}-detail-${index}`} className="grid grid-cols-[minmax(90px,0.42fr)_1fr] gap-3 text-xs">
-                                            <span className="text-slate-500">{detail.label}</span>
-                                            <span className="break-words font-medium text-slate-800">{detail.value}</span>
+                                            <span className="text-slate-500 dark:text-slate-400">{detail.label}</span>
+                                            <span className="break-words font-medium text-slate-800 dark:text-slate-200">{detail.value}</span>
                                         </div>
                                     ))}
                                 </div>
                             ) : null}
 
                             {action.result_label ? (
-                                <div className="mt-3 text-xs font-semibold text-emerald-700">
+                                <div className="mt-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                                     {action.result_label}
                                 </div>
                             ) : null}
 
                             {action.error ? (
-                                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                <div className="mt-3 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">
                                     {action.error}
                                 </div>
                             ) : null}
@@ -823,18 +825,18 @@ function PendingActionCards({
                                         type="button"
                                         disabled={disabled || executing}
                                         onClick={() => onCancel(action)}
-                                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                         Cancelar
                                     </button>
-                                    <span className="self-center text-[10px] text-slate-500">
+                                    <span className="self-center text-[10px] text-slate-500 dark:text-slate-400">
                                         Você também pode digitar “confirmar”.
                                     </span>
                                 </div>
                             ) : null}
 
                             {expired && pending ? (
-                                <div className="mt-3 text-xs text-amber-700">
+                                <div className="mt-3 text-xs text-amber-700 dark:text-amber-300">
                                     Esta confirmação expirou. Peça à Aurora para preparar a ação novamente.
                                 </div>
                             ) : null}
@@ -924,17 +926,17 @@ function AttendanceEditFormCard({
     }
 
     return (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/50">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-950/30">
             <div className="p-4">
-                <div className="text-sm font-semibold text-slate-950">{form.title}</div>
-                <div className="mt-0.5 text-xs text-slate-500">{form.falecido || `Atendimento #${form.attendance_id}`}</div>
+                <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{form.title}</div>
+                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{form.falecido || `Atendimento #${form.attendance_id}`}</div>
 
                 {form.summary.length ? (
-                    <div className="mt-3 grid gap-1.5 rounded-xl bg-white p-3 ring-1 ring-slate-200">
+                    <div className="mt-3 grid gap-1.5 rounded-xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700">
                         {form.summary.map((item) => (
                             <div key={`${form.id}-summary-${item.key}`} className="grid grid-cols-[minmax(110px,0.45fr)_1fr] gap-3 text-xs">
-                                <span className="text-slate-500">{item.label}</span>
-                                <span className="font-medium text-slate-800">{item.value || "Não informado"}</span>
+                                <span className="text-slate-500 dark:text-slate-400">{item.label}</span>
+                                <span className="font-medium text-slate-800 dark:text-slate-200">{item.value || "Não informado"}</span>
                             </div>
                         ))}
                     </div>
@@ -943,7 +945,7 @@ function AttendanceEditFormCard({
                 <div className="mt-3 grid gap-3">
                     {form.fields.map((field) => (
                         <label key={`${form.id}-${field.key}`} className="block">
-                            <span className="mb-1 block text-xs font-medium text-slate-700">
+                            <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
                                 {field.label}{field.required ? " *" : ""}
                             </span>
                             {field.type === "textarea" ? (
@@ -952,14 +954,14 @@ function AttendanceEditFormCard({
                                     onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                                     disabled={disabled || busy}
                                     rows={3}
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60 sm:text-sm"
+                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[16px] text-slate-900 dark:text-slate-100 outline-none focus:border-sky-400 dark:focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900/60 disabled:opacity-60 sm:text-sm"
                                 />
                             ) : field.type === "select" ? (
                                 <select
                                     value={values[field.key] || ""}
                                     onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                                     disabled={disabled || busy}
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60 sm:text-sm"
+                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-[16px] text-slate-900 dark:text-slate-100 outline-none focus:border-sky-400 dark:focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900/60 disabled:opacity-60 sm:text-sm"
                                 >
                                     <option value="">Selecione</option>
                                     {(field.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
@@ -970,14 +972,14 @@ function AttendanceEditFormCard({
                                     value={values[field.key] || ""}
                                     onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                                     disabled={disabled || busy}
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60 sm:text-sm"
+                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-[16px] text-slate-900 dark:text-slate-100 outline-none focus:border-sky-400 dark:focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900/60 disabled:opacity-60 sm:text-sm"
                                 />
                             )}
                         </label>
                     ))}
                 </div>
 
-                {localError ? <div className="mt-3 text-xs font-medium text-red-600">{localError}</div> : null}
+                {localError ? <div className="mt-3 text-xs font-medium text-red-600 dark:text-red-400">{localError}</div> : null}
 
                 <button
                     type="button"
@@ -1106,9 +1108,9 @@ function OperationalFlowCards({
             {flows.map((flow) => {
                 if (flow.kind === "attendance_list") {
                     return (
-                        <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                             <div className="p-3.5">
-                                <div className="text-sm font-semibold text-slate-950">{flow.title || "Escolha o atendimento"}</div>
+                                <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{flow.title || "Escolha o atendimento"}</div>
                                 <div className="mt-3 grid gap-2">
                                     {(flow.attendances || []).map((choice) => (
                                         <button
@@ -1116,14 +1118,14 @@ function OperationalFlowCards({
                                             type="button"
                                             disabled={disabled}
                                             onClick={() => onChooseAttendance(choice)}
-                                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-left transition hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/50 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                            <div className="text-sm font-semibold text-slate-900">{choice.falecido}</div>
-                                            <div className="mt-0.5 text-[11px] text-slate-500">{choice.status_label || "Aguardando"}</div>
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{choice.falecido}</div>
+                                            <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{choice.status_label || "Aguardando"}</div>
                                         </button>
                                     ))}
                                     {!(flow.attendances || []).length ? (
-                                        <div className="text-xs text-slate-500">Nenhum atendimento ativo.</div>
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">Nenhum atendimento ativo.</div>
                                     ) : null}
                                 </div>
                             </div>
@@ -1136,12 +1138,12 @@ function OperationalFlowCards({
                 const vehicleOpen = vehicleFlowId === flow.id;
 
                 return (
-                    <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                         <div className="p-3.5">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className="truncate text-sm font-semibold text-slate-950">{flow.attendance.falecido}</div>
-                                    <div className="mt-0.5 text-xs text-slate-500">{flow.attendance.status_label || "Aguardando"}</div>
+                                    <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">{flow.attendance.falecido}</div>
+                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{flow.attendance.status_label || "Aguardando"}</div>
                                 </div>
                             </div>
 
@@ -1173,14 +1175,14 @@ function OperationalFlowCards({
                                             {action.label}
                                         </a>
                                     ) : (
-                                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                                        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
                                             {action.label}
                                         </div>
                                     )}
 
                                     {action.vehicle_required && vehicleOpen ? (
-                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                            <div className="mb-2 text-xs font-semibold text-slate-700">Escolha o veículo</div>
+                                        <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3">
+                                            <div className="mb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">Escolha o veículo</div>
                                             <div className="grid gap-2 sm:grid-cols-2">
                                                 {(action.vehicles || []).map((vehicle) => (
                                                     <button
@@ -1196,7 +1198,7 @@ function OperationalFlowCards({
                                                                 setVehicleBusyId(null);
                                                             }
                                                         }}
-                                                        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-slate-800 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-left text-xs font-semibold text-slate-800 dark:text-slate-200 transition hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/50 disabled:cursor-not-allowed disabled:opacity-50"
                                                     >
                                                         {vehicleBusyId === vehicle.id ? "Preparando..." : vehicle.label}
                                                     </button>
@@ -1206,7 +1208,7 @@ function OperationalFlowCards({
                                     ) : null}
                                 </div>
                             ) : (
-                                <div className="mt-3 text-xs font-medium text-emerald-700">Fluxo concluído.</div>
+                                <div className="mt-3 text-xs font-medium text-emerald-700 dark:text-emerald-300">Fluxo concluído.</div>
                             )}
                         </div>
                     </div>
@@ -1446,7 +1448,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
                         href={cleanUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="break-all font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
+                        className="break-all font-semibold text-sky-700 dark:text-sky-300 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:hover:text-sky-300"
                     >
                         Abrir link de pagamento
                     </a>
@@ -1457,7 +1459,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 
         if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
             return (
-                <strong key={key} className="font-semibold text-slate-950">
+                <strong key={key} className="font-semibold text-slate-950 dark:text-slate-50">
                     {part.slice(2, -2)}
                 </strong>
             );
@@ -1465,7 +1467,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 
         if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
             return (
-                <code key={key} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.9em] text-slate-700">
+                <code key={key} className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono text-[0.9em] text-slate-700 dark:text-slate-300">
                     {part.slice(1, -1)}
                 </code>
             );
@@ -1498,7 +1500,7 @@ function AssistantContent({ content }: { content: string }) {
                 if (numbered) {
                     return (
                         <div key={`number-${index}`} className="flex items-start gap-2">
-                            <span className="min-w-5 shrink-0 font-medium text-slate-500">{numbered[1]}.</span>
+                            <span className="min-w-5 shrink-0 font-medium text-slate-500 dark:text-slate-400">{numbered[1]}.</span>
                             <div className="min-w-0 flex-1">{renderInlineMarkdown(numbered[2], `number-${index}`)}</div>
                         </div>
                     );
@@ -1611,14 +1613,14 @@ function TypingIndicator({ label = "Consultando dados" }: { label?: string }) {
     return (
         <div className="flex items-start gap-3">
             <AssistantAvatar />
-            <div className="rounded-2xl rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="rounded-2xl rounded-tl-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm">
                 <div className="flex items-center gap-2" aria-label={label}>
                     <div className="flex items-center gap-1.5">
                         <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.25s]" />
                         <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.12s]" />
                         <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
                     </div>
-                    <span className="text-xs text-slate-500">{label}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{label}</span>
                 </div>
             </div>
         </div>
@@ -1633,15 +1635,15 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
     if (!items.length) return null;
 
     return (
-        <div className="mt-3 border-t border-slate-100 pt-2.5">
+        <div className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-2.5">
             <button
                 type="button"
                 onClick={() => setExpanded((value) => !value)}
                 aria-expanded={expanded}
-                className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 transition hover:text-slate-600"
+                className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 transition hover:text-slate-600 dark:hover:text-slate-300"
             >
                 <span className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-indigo-600">
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300">
                         K
                     </span>
                     <span className="truncate">
@@ -1676,17 +1678,17 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
                         return (
                             <div
                                 key={`kb-${source.documento_id}`}
-                                className="rounded-xl border border-indigo-100 bg-indigo-50/45 px-3 py-2.5"
+                                className="rounded-xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/45 dark:bg-indigo-950/35 px-3 py-2.5"
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="truncate text-xs font-semibold text-slate-800">{source.titulo}</div>
+                                        <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">{source.titulo}</div>
                                         {meta.length ? (
-                                            <div className="mt-0.5 text-[10px] text-slate-500">{meta.join(" • ")}</div>
+                                            <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{meta.join(" • ")}</div>
                                         ) : null}
                                     </div>
                                     {source.alerta_pendente ? (
-                                        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
+                                        <span className="shrink-0 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200 dark:ring-amber-800">
                                             Conflito pendente
                                         </span>
                                     ) : null}
@@ -1703,11 +1705,11 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
 function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
     return (
         <div className="mx-auto flex min-h-[55vh] w-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
-            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200">
+            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200 dark:shadow-black/30">
                 <IconSparkles className="h-7 w-7" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Aurora</h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:text-3xl">Aurora</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400 sm:text-base">
                 Assistente Administrativo do PAI. Consulta dados, gera arquivos e prepara ações administrativas que só são executadas após sua confirmação.
             </p>
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1719,8 +1721,8 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                         className={[
                             "rounded-2xl border px-4 py-3 text-left text-sm font-medium shadow-sm transition active:scale-[0.99]",
                             index === 0
-                                ? "border-sky-300 bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-100 hover:bg-sky-100"
-                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                                ? "border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 text-sky-900 dark:text-sky-200 ring-1 ring-inset ring-sky-100 dark:ring-sky-900/60 hover:bg-sky-100 dark:hover:bg-sky-900/60"
+                                : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800",
                         ].join(" ")}
                     >
                         {prompt}
@@ -1728,10 +1730,10 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                 ))}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                <div className="flex items-center gap-2 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200 dark:ring-emerald-800">
                     <IconShield /> Consultas controladas
                 </div>
-                <div className="flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                <div className="flex items-center gap-2 rounded-full bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200 dark:ring-amber-800">
                     <IconShield /> Ações só após confirmação
                 </div>
             </div>
@@ -2724,8 +2726,8 @@ export default function AuroraPage() {
     }
 
     return (
-        <div className="flex min-h-[100dvh] flex-col bg-slate-50 text-slate-950">
-            <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+        <div className="flex min-h-[100dvh] flex-col bg-background text-foreground">
+            <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 backdrop-blur-xl">
                 <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
                     <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
@@ -2733,15 +2735,15 @@ export default function AuroraPage() {
                         </div>
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <h1 className="truncate text-sm font-semibold text-slate-950 sm:text-base">Aurora</h1>
-                                <span className="hidden rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200 sm:inline-flex">
+                                <h1 className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50 sm:text-base">Aurora</h1>
+                                <span className="hidden rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200 dark:ring-emerald-800 sm:inline-flex">
                                     Ações confirmadas
                                 </span>
-                                <span className="hidden rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 ring-1 ring-inset ring-indigo-200 md:inline-flex">
+                                <span className="hidden rounded-full bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-200 dark:ring-indigo-800 md:inline-flex">
                                     Base de conhecimento
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500">Assistente Administrativo • dados operacionais + Base de Conhecimento</p>
+                            <p className="truncate text-xs text-slate-500 dark:text-slate-400">Assistente Administrativo • dados operacionais + Base de Conhecimento</p>
                         </div>
                     </div>
 
@@ -2749,7 +2751,7 @@ export default function AuroraPage() {
                         type="button"
                         onClick={clearChat}
                         disabled={loading || recording || transcribing || messages.length === 0}
-                        className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                         title="Iniciar novo chat"
                     >
                         <IconPlus className="h-4 w-4" />
@@ -2763,7 +2765,7 @@ export default function AuroraPage() {
                 style={{ paddingBottom: `${composerHeight + 12}px`, scrollPaddingBottom: `${composerHeight + 20}px` }}
             >
                 {!hydrated ? (
-                    <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-400">Carregando chat...</div>
+                    <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-400 dark:text-slate-500">Carregando chat...</div>
                 ) : messages.length === 0 ? (
                     <EmptyState onPrompt={(prompt) => void sendMessage(prompt)} />
                 ) : (
@@ -2779,7 +2781,7 @@ export default function AuroraPage() {
                                                 "break-words px-4 py-3 text-sm leading-6 sm:text-[15px]",
                                                 isUser
                                                     ? "rounded-2xl rounded-br-md bg-slate-950 text-white shadow-sm"
-                                                    : "rounded-2xl rounded-tl-md border border-slate-200 bg-white text-slate-800 shadow-sm",
+                                                    : "rounded-2xl rounded-tl-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-sm",
                                             ].join(" ")}
                                         >
                                             {isUser ? (
@@ -2855,7 +2857,7 @@ export default function AuroraPage() {
                                         {!isUser && message.toolsUsed?.length ? (
                                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                                 {message.toolsUsed.map((tool) => (
-                                                    <span key={`${message.id}-${tool}`} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                                                    <span key={`${message.id}-${tool}`} className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[10px] font-medium text-slate-500 dark:text-slate-400">
                                                         {toolLabel(tool)}
                                                     </span>
                                                 ))}
@@ -2873,7 +2875,7 @@ export default function AuroraPage() {
                         ) : null}
 
                         {error ? (
-                            <div className="ml-0 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700 sm:ml-12">
+                            <div className="ml-0 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm leading-5 text-red-700 dark:text-red-300 sm:ml-12">
                                 {error}
                             </div>
                         ) : null}
@@ -2884,7 +2886,7 @@ export default function AuroraPage() {
 
             <div
                 ref={composerRef}
-                className="fixed inset-x-0 z-40 border-t border-slate-200/70 bg-slate-50/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl"
+                className="fixed inset-x-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl"
                 style={{ bottom: keyboardOpen ? `${keyboardInset}px` : "0px" }}
             >
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
@@ -2895,7 +2897,7 @@ export default function AuroraPage() {
                                     key={prompt}
                                     type="button"
                                     onClick={() => void sendMessage(prompt)}
-                                    className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+                                    className="shrink-0 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800"
                                 >
                                     {prompt}
                                 </button>
@@ -2905,14 +2907,14 @@ export default function AuroraPage() {
 
                     <form
                         onSubmit={handleSubmit}
-                        className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/50 focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-slate-200/70"
+                        className="rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-lg shadow-black/5 dark:shadow-black/30 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20"
                     >
                         <div className="flex items-end gap-2">
                             {recording ? (
-                                <div className="flex min-h-[44px] flex-1 items-center gap-3 px-3 py-2 text-sm text-red-700">
+                                <div className="flex min-h-[44px] flex-1 items-center gap-3 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                                     <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
                                     <span className="font-semibold">Gravando {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}</span>
-                                    <span className="text-xs text-slate-500">Solte para enviar</span>
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">Solte para enviar</span>
                                 </div>
                             ) : (
                                 <textarea
@@ -2924,7 +2926,7 @@ export default function AuroraPage() {
                                     rows={1}
                                     maxLength={5000}
                                     placeholder={transcribing ? "Entendendo o áudio..." : loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
-                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60"
+                                    className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
                                 />
                             )}
 
@@ -2932,7 +2934,7 @@ export default function AuroraPage() {
                                 <button
                                     type="submit"
                                     disabled={!canSend}
-                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500"
                                     aria-label="Enviar mensagem"
                                 >
                                     <IconSend className="h-4.5 w-4.5" />
@@ -2959,7 +2961,7 @@ export default function AuroraPage() {
                                     }}
                                     onContextMenu={(event) => event.preventDefault()}
                                     className={[
-                                        "flex h-10 w-10 shrink-0 touch-none select-none items-center justify-center rounded-xl text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400",
+                                        "flex h-10 w-10 shrink-0 touch-none select-none items-center justify-center rounded-xl text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500",
                                         recording ? "bg-red-600 hover:bg-red-700" : "bg-slate-950 hover:bg-slate-800",
                                     ].join(" ")}
                                     aria-label={recording ? "Solte para enviar o áudio" : "Segure para gravar uma mensagem"}
