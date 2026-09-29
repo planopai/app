@@ -706,74 +706,236 @@ function PendingActionCards({
 }) {
     if (!actions?.length) return null;
 
+    const IconClock = ({ className = "h-3.5 w-3.5" }: { className?: string }) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+        </svg>
+    );
+
+    const IconCheck = ({ className = "h-4 w-4" }: { className?: string }) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="m5 12 4 4L19 6" />
+        </svg>
+    );
+
+    const IconX = ({ className = "h-4 w-4" }: { className?: string }) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+    );
+
+    const IconPackage = ({ className = "h-5 w-5" }: { className?: string }) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+            <path d="m4.5 7.7 7.5 4.2 7.5-4.2" />
+            <path d="M12 12v9" />
+        </svg>
+    );
+
+    const IconTag = ({ className = "h-4 w-4" }: { className?: string }) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="M20 13 13 20 4 11V4h7l9 9Z" />
+            <circle cx="8.5" cy="8.5" r="1" />
+        </svg>
+    );
+
+    const IconBuilding = ({ className = "h-4 w-4" }: { className?: string }) => (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <path d="M3 21h18" />
+            <path d="M5 21V10h14v11" />
+            <path d="m4 10 8-5 8 5" />
+            <path d="M9 14v3M15 14v3" />
+        </svg>
+    );
+
+    const labelIsItem = (label: string) => {
+        const q = normalizeCommandText(label);
+        return q === "material" || /^item\s+\d+$/.test(q);
+    };
+
     return (
         <div className="mt-3 space-y-3">
             {actions.map((action) => {
                 const expiry = action.expires_at ? new Date(action.expires_at) : null;
-                const expired = Boolean(expiry && !Number.isNaN(expiry.getTime()) && expiry.getTime() < Date.now());
+                const expired = Boolean(
+                    expiry &&
+                    !Number.isNaN(expiry.getTime()) &&
+                    expiry.getTime() < Date.now()
+                );
+
                 const pending = action.status === "pending" || action.status === "error";
                 const executing = action.status === "executing";
                 const completed = action.status === "completed";
                 const cancelled = action.status === "cancelled";
+                const isRequest = action.kind === "requisicao_material";
+
+                const itemDetails = isRequest
+                    ? action.details.filter((detail) => labelIsItem(detail.label))
+                    : [];
+
+                const metaDetails = isRequest
+                    ? action.details.filter((detail) => !labelIsItem(detail.label))
+                    : action.details;
+
+                const classification = metaDetails.find(
+                    (detail) => normalizeCommandText(detail.label) === "classificacao"
+                );
+
+                const destination = metaDetails.find(
+                    (detail) => normalizeCommandText(detail.label) === "destino"
+                );
+
+                const requestType = metaDetails.find(
+                    (detail) => normalizeCommandText(detail.label) === "tipo da requisicao"
+                );
+
+                const titleText =
+                    isRequest && requestType?.value
+                        ? requestType.value
+                        : action.title;
 
                 return (
                     <div
                         key={action.id}
                         className={[
-                            "overflow-hidden rounded-2xl border",
+                            "overflow-hidden rounded-2xl border shadow-sm",
                             completed
-                                ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40"
+                                ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/40"
                                 : cancelled
-                                    ? "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
+                                    ? "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950"
                                     : action.status === "error"
-                                        ? "border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-950/40"
-                                        : "border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/40",
+                                        ? "border-red-200 bg-red-50/70 dark:border-red-800 dark:bg-red-950/40"
+                                        : "border-amber-200 bg-gradient-to-b from-amber-50/85 to-white dark:border-amber-800 dark:from-amber-950/35 dark:to-slate-950",
                         ].join(" ")}
                     >
-                        <div className="p-4">
-                            <div className="flex items-start gap-3">
+                        <div className="p-3 sm:p-4">
+                            <div className="flex items-start gap-2.5 sm:gap-3">
                                 <div
                                     className={[
-                                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold",
+                                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
                                         completed
-                                            ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300"
+                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
                                             : cancelled
-                                                ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
-                                                : "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300",
+                                                ? "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                                : action.status === "error"
+                                                    ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                                                    : "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300",
                                     ].join(" ")}
                                 >
-                                    {action.kind === "novo_atendimento"
-                                        ? "ATD"
-                                        : action.kind === "atendimento_fase"
-                                            ? "AÇÃO"
-                                            : action.kind === "editar_atendimento"
-                                                ? "EDIT"
-                                                : action.kind === "module_action"
-                                                    ? "MOD"
-                                                    : "REQ"}
+                                    {isRequest ? (
+                                        <IconPackage />
+                                    ) : (
+                                        <span className="text-[10px] font-bold">
+                                            {action.kind === "novo_atendimento"
+                                                ? "ATD"
+                                                : action.kind === "atendimento_fase"
+                                                    ? "AÇÃO"
+                                                    : action.kind === "editar_atendimento"
+                                                        ? "EDIT"
+                                                        : action.kind === "module_action"
+                                                            ? "MOD"
+                                                            : "REQ"}
+                                        </span>
+                                    )}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{action.title}</div>
-                                    {action.description ? (
-                                        <div className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">{action.description}</div>
+                                    <div className="text-[13px] font-semibold leading-tight text-slate-950 dark:text-slate-50 sm:text-sm">
+                                        {isRequest ? "Nova requisição" : action.title}
+                                    </div>
+
+                                    {isRequest && titleText ? (
+                                        <div className="mt-0.5 text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-200 sm:text-sm">
+                                            {titleText}
+                                        </div>
+                                    ) : null}
+
+                                    {/*
+                                      Para requisições de material, NÃO exibimos a descrição:
+                                      "Esta requisição ficará PENDENTE..."
+                                      Isso deixa o card mais limpo no celular.
+                                      As demais ações continuam exibindo suas descrições normalmente.
+                                    */}
+                                    {!isRequest && action.description ? (
+                                        <div className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">
+                                            {action.description}
+                                        </div>
                                     ) : null}
                                 </div>
 
                                 <span
                                     className={[
-                                        "shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold",
+                                        "inline-flex max-w-[46%] shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold leading-tight sm:max-w-none sm:text-[10px]",
                                         completed
-                                            ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300"
+                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
                                             : cancelled
-                                                ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+                                                ? "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
                                                 : executing
-                                                    ? "bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300"
+                                                    ? "bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300"
                                                     : action.status === "error"
-                                                        ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300"
-                                                        : "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300",
+                                                        ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
                                     ].join(" ")}
                                 >
+                                    {!completed && !cancelled && !executing && action.status !== "error" ? (
+                                        <IconClock className="h-3 w-3 shrink-0" />
+                                    ) : null}
+
                                     {completed
                                         ? "Concluída"
                                         : cancelled
@@ -788,12 +950,89 @@ function PendingActionCards({
                                 </span>
                             </div>
 
-                            {action.details.length ? (
-                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 dark:bg-slate-900/80 p-3 ring-1 ring-inset ring-slate-200/70 dark:ring-slate-700/70">
-                                    {action.details.map((detail, index) => (
-                                        <div key={`${action.id}-detail-${index}`} className="grid grid-cols-[minmax(90px,0.42fr)_1fr] gap-3 text-xs">
-                                            <span className="text-slate-500 dark:text-slate-400">{detail.label}</span>
-                                            <span className="break-words font-medium text-slate-800 dark:text-slate-200">{detail.value}</span>
+                            {isRequest ? (
+                                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/90 bg-white/90 dark:border-slate-700 dark:bg-slate-900/85">
+                                    {itemDetails.length ? (
+                                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {itemDetails.map((detail, index) => {
+                                                const match = detail.value.match(
+                                                    /^\s*([0-9.,]+)\s*[×xX]\s*(.+?)\s*$/
+                                                );
+
+                                                const quantity = match?.[1]?.trim() || "";
+                                                const product = match?.[2]?.trim() || detail.value;
+
+                                                return (
+                                                    <div
+                                                        key={`${action.id}-item-${index}`}
+                                                        className="flex items-center gap-3 px-3 py-2.5"
+                                                    >
+                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                                            <IconPackage className="h-4 w-4" />
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100 sm:text-[13px]">
+                                                                {product}
+                                                            </div>
+                                                        </div>
+
+                                                        {quantity ? (
+                                                            <div className="shrink-0 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                                                {quantity} un
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : null}
+
+                                    {(classification || destination) ? (
+                                        <div className="grid grid-cols-1 gap-2 border-t border-slate-100 px-3 py-2.5 dark:border-slate-800 min-[420px]:grid-cols-2">
+                                            {classification ? (
+                                                <div className="flex min-w-0 items-start gap-2">
+                                                    <IconTag className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                                                    <div className="min-w-0">
+                                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">
+                                                            Classificação
+                                                        </div>
+                                                        <div className="mt-0.5 break-words text-[10px] font-semibold leading-tight text-slate-800 dark:text-slate-200">
+                                                            {classification?.value}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            {destination ? (
+                                                <div className="flex min-w-0 items-start gap-2">
+                                                    <IconBuilding className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                                                    <div className="min-w-0">
+                                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">
+                                                            Destino
+                                                        </div>
+                                                        <div className="mt-0.5 break-words text-[10px] font-semibold leading-tight text-slate-800 dark:text-slate-200">
+                                                            {destination?.value}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : metaDetails.length ? (
+                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 p-3 ring-1 ring-inset ring-slate-200/70 dark:bg-slate-900/80 dark:ring-slate-700/70">
+                                    {metaDetails.map((detail, index) => (
+                                        <div
+                                            key={`${action.id}-detail-${index}`}
+                                            className="grid grid-cols-[minmax(90px,0.42fr)_1fr] gap-3 text-xs"
+                                        >
+                                            <span className="text-slate-500 dark:text-slate-400">
+                                                {detail.label}
+                                            </span>
+                                            <span className="break-words font-medium text-slate-800 dark:text-slate-200">
+                                                {detail.value}
+                                            </span>
                                         </div>
                                     ))}
                                 </div>
@@ -806,32 +1045,37 @@ function PendingActionCards({
                             ) : null}
 
                             {action.error ? (
-                                <div className="mt-3 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
                                     {action.error}
                                 </div>
                             ) : null}
 
                             {pending && !expired ? (
-                                <div className="mt-4 flex flex-wrap gap-2">
+                                <div className="mt-3 grid grid-cols-2 gap-2">
                                     <button
                                         type="button"
                                         disabled={disabled || executing}
                                         onClick={() => onConfirm(action)}
-                                        className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
-                                        {action.status === "error" ? "Tentar novamente" : (action.confirm_label || "Confirmar")}
+                                        <IconCheck />
+                                        <span>
+                                            {action.status === "error"
+                                                ? "Tentar novamente"
+                                                : (action.confirm_label ||
+                                                    (isRequest ? "Criar requisição" : "Confirmar"))}
+                                        </span>
                                     </button>
+
                                     <button
                                         type="button"
                                         disabled={disabled || executing}
                                         onClick={() => onCancel(action)}
-                                        className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                                     >
-                                        Cancelar
+                                        <IconX />
+                                        <span>Cancelar</span>
                                     </button>
-                                    <span className="self-center text-[10px] text-slate-500 dark:text-slate-400">
-                                        Você também pode digitar “confirmar”.
-                                    </span>
                                 </div>
                             ) : null}
 
