@@ -266,9 +266,13 @@ export default function PaginaHistoricoSepultamentos() {
         Math.ceil(filtrados.length / porPagina),
     );
 
-    const pageItems = filtrados.slice(
-        (pagina - 1) * porPagina,
-        pagina * porPagina,
+    const pageItems = useMemo(
+        () =>
+            filtrados.slice(
+                (pagina - 1) * porPagina,
+                pagina * porPagina,
+            ),
+        [filtrados, pagina],
     );
 
     const idsPagina = useMemo(
@@ -279,10 +283,23 @@ export default function PaginaHistoricoSepultamentos() {
         [pageItems],
     );
 
+    const idsPaginaKey = useMemo(
+        () => idsPagina.join(","),
+        [idsPagina],
+    );
+
     const carregarStatusAvaliacoes = useCallback(
         async () => {
-            if (idsPagina.length === 0) {
+            const ids = idsPaginaKey
+                .split(",")
+                .map((id) => id.trim())
+                .filter(Boolean);
+
+            if (ids.length === 0) {
                 setAvaliacoesMap({});
+                setPodeVerVisita(false);
+                setPodeVerPosAtendimento(false);
+                setLoadingAvaliacoes(false);
                 return;
             }
 
@@ -290,9 +307,7 @@ export default function PaginaHistoricoSepultamentos() {
 
             try {
                 const data =
-                    await listarStatusAvaliacoes(
-                        idsPagina,
-                    );
+                    await listarStatusAvaliacoes(ids);
 
                 const map: Record<
                     string,
@@ -300,9 +315,8 @@ export default function PaginaHistoricoSepultamentos() {
                 > = {};
 
                 for (const row of data.rows ?? []) {
-                    map[
-                        String(row.atendimento_id)
-                    ] = row;
+                    map[String(row.atendimento_id)] =
+                        row;
                 }
 
                 setAvaliacoesMap(map);
@@ -312,8 +326,7 @@ export default function PaginaHistoricoSepultamentos() {
                 );
 
                 setPodeVerPosAtendimento(
-                    !!data.permissoes
-                        ?.pos_atendimento,
+                    !!data.permissoes?.pos_atendimento,
                 );
             } catch (e) {
                 console.error(
@@ -328,7 +341,7 @@ export default function PaginaHistoricoSepultamentos() {
                 setLoadingAvaliacoes(false);
             }
         },
-        [idsPagina],
+        [idsPaginaKey],
     );
 
     useEffect(() => {
