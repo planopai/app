@@ -663,14 +663,8 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                         </div>
                     </div>
 
-                    <div className="shrink-0 border-b bg-white">
-                        <div
-                            className="flex gap-1 overflow-x-auto px-2 py-2 sm:px-4"
-                            style={{
-                                WebkitOverflowScrolling: "touch",
-                                overscrollBehaviorX: "contain",
-                            }}
-                        >
+                    <div className="shrink-0 border-b bg-white px-2 py-2 sm:px-4 sm:py-3">
+                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
                             {ABAS_DETALHE.map((aba) => {
                                 const ativa = abaAtiva === aba.id;
 
@@ -682,14 +676,16 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                             setAbaAtiva(aba.id)
                                         }
                                         className={[
-                                            "shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition sm:text-sm",
+                                            "min-h-10 min-w-0 rounded-lg border px-2 py-2 text-center text-[11px] font-medium leading-tight transition sm:px-3 sm:text-xs",
                                             ativa
-                                                ? "border-slate-900 bg-slate-900 text-white"
+                                                ? "border-slate-900 bg-slate-900 text-white shadow-sm"
                                                 : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                                         ].join(" ")}
                                         aria-pressed={ativa}
                                     >
-                                        {aba.label}
+                                        <span className="block break-words">
+                                            {aba.label}
+                                        </span>
                                     </button>
                                 );
                             })}
