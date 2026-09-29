@@ -319,7 +319,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     const [loading, setLoading] = useState(false);
     const [materiaisMap, setMateriaisMap] = useState<MateriaisMap>({});
     const [fotosOpen, setFotosOpen] = useState(false);
-    const [abaAtiva, setAbaAtiva] = useState<AbaDetalhe>("falecido");
+    const [abaAtiva, setAbaAtiva] = useState<AbaDetalhe | null>(null);
     const [viewport, setViewport] =
         useState<VisualViewportState | null>(null);
 
@@ -378,7 +378,7 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
     useEffect(() => {
         if (!aberto) {
             setFotosOpen(false);
-            setAbaAtiva("falecido");
+            setAbaAtiva(null);
         }
     }, [aberto]);
 
@@ -663,128 +663,187 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                         </div>
                     </div>
 
-                    <div className="shrink-0 border-b bg-white px-2 py-2 sm:px-4 sm:py-3">
-                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
-                            {ABAS_DETALHE.map((aba) => {
-                                const ativa = abaAtiva === aba.id;
-
-                                return (
-                                    <button
-                                        key={aba.id}
-                                        type="button"
-                                        onClick={() =>
-                                            setAbaAtiva(aba.id)
-                                        }
-                                        className={[
-                                            "min-h-10 min-w-0 rounded-lg border px-2 py-2 text-center text-[11px] font-medium leading-tight transition sm:px-3 sm:text-xs",
-                                            ativa
-                                                ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                                        ].join(" ")}
-                                        aria-pressed={ativa}
-                                    >
-                                        <span className="block break-words">
-                                            {aba.label}
-                                        </span>
-                                    </button>
-                                );
-                            })}
+                    <div className="shrink-0 bg-white px-3 py-3 sm:px-5 sm:py-4">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                            {ABAS_DETALHE.map((aba) => (
+                                <button
+                                    key={aba.id}
+                                    type="button"
+                                    onClick={() => setAbaAtiva(aba.id)}
+                                    className="min-h-12 min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-medium leading-tight text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] sm:text-sm"
+                                >
+                                    <span className="block break-words">
+                                        {aba.label}
+                                    </span>
+                                </button>
+                            ))}
                         </div>
-                    </div>
 
-                    <div
-                        className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/40 p-3 sm:p-5"
-                        style={{
-                            WebkitOverflowScrolling: "touch",
-                            overscrollBehaviorY: "contain",
-                            touchAction: "pan-y",
-                        }}
-                    >
-                        {loading ? (
-                            <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
-                                Carregando histórico…
-                            </div>
-                        ) : logs.length === 0 ? (
-                            <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
-                                Nenhum log encontrado para este registro.
-                            </div>
-                        ) : abaAtiva === "timeline" ? (
-                            <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
-                                <div className="mb-4">
-                                    <h4 className="text-sm font-semibold text-slate-900">
-                                        Linha do Tempo
-                                    </h4>
-                                    <p className="mt-0.5 text-xs text-slate-500">
-                                        Eventos em ordem cronológica,
-                                        mostrando apenas informações
-                                        relevantes de cada ação.
-                                    </p>
-                                </div>
-
-                                <LinhaDoTempoLogs
-                                    logs={logs}
-                                    materiaisMap={materiaisMap}
-                                />
-                            </section>
-                        ) : abaAtiva === "outras" ? (
-                            <div className="space-y-4">
-                                <CamposAba
-                                    titulo="Outras informações"
-                                    campos={camposOutrasInformacoes}
-                                />
-
-                                {resumoOrganizado.tecnicos.length > 0 ? (
-                                    <details className="rounded-2xl border bg-white shadow-sm">
-                                        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 sm:px-5">
-                                            Dados técnicos (
-                                            {
-                                                resumoOrganizado
-                                                    .tecnicos.length
-                                            }
-                                            )
-                                        </summary>
-
-                                        <dl className="divide-y divide-slate-100 border-t">
-                                            {resumoOrganizado.tecnicos.map(
-                                                (campo, index) => (
-                                                    <div
-                                                        key={`${campo.chave}-${index}`}
-                                                        className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4 sm:px-5"
-                                                    >
-                                                        <dt className="text-xs font-medium text-slate-500">
-                                                            {
-                                                                campo.label
-                                                            }
-                                                        </dt>
-                                                        <dd className="min-w-0 break-all text-xs text-slate-700">
-                                                            {
-                                                                campo.valor
-                                                            }
-                                                        </dd>
-                                                    </div>
-                                                ),
-                                            )}
-                                        </dl>
-                                    </details>
-                                ) : null}
-                            </div>
-                        ) : (
-                            <CamposAba
-                                titulo={
-                                    ABAS_DETALHE.find(
-                                        (aba) =>
-                                            aba.id === abaAtiva,
-                                    )?.label ?? "Informações"
-                                }
-                                campos={
-                                    secoesPorId.get(abaAtiva)?.campos ??
-                                    []
-                                }
-                            />
-                        )}
+                        <p className="mt-3 text-center text-xs text-slate-500">
+                            Toque em uma opção para abrir as informações.
+                        </p>
                     </div>
                 </div>
             </div>
+
+            {abaAtiva ? (
+                <div
+                    className="fixed z-[80] flex items-center justify-center overflow-hidden bg-black/60 p-2 sm:p-5"
+                    style={{
+                        top: viewport?.offsetTop ?? 0,
+                        left: viewport?.offsetLeft ?? 0,
+                        width: viewport
+                            ? `${viewport.width}px`
+                            : "100vw",
+                        height: viewport
+                            ? `${viewport.height}px`
+                            : "100dvh",
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={
+                        ABAS_DETALHE.find(
+                            (aba) => aba.id === abaAtiva,
+                        )?.label ?? "Detalhes do atendimento"
+                    }
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setAbaAtiva(null);
+                        }
+                    }}
+                >
+                    <div
+                        className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl"
+                        style={{
+                            maxHeight: viewport
+                                ? `${Math.max(
+                                    1,
+                                    viewport.height - 16,
+                                )}px`
+                                : "calc(100dvh - 1rem)",
+                        }}
+                    >
+                        <div className="flex shrink-0 items-start justify-between gap-3 border-b bg-white px-4 py-3 sm:px-5 sm:py-4">
+                            <div className="min-w-0">
+                                <div className="text-xs text-slate-500">
+                                    {nomeFalecidoAtual}
+                                </div>
+
+                                <h3 className="mt-0.5 break-words text-base font-semibold text-slate-950 sm:text-lg">
+                                    {ABAS_DETALHE.find(
+                                        (aba) =>
+                                            aba.id === abaAtiva,
+                                    )?.label ?? "Detalhes"}
+                                </h3>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setAbaAtiva(null)}
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                title="Fechar"
+                                aria-label="Fechar"
+                            >
+                                <IconX className="size-5" />
+                            </button>
+                        </div>
+
+                        <div
+                            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/50 p-3 sm:p-5"
+                            style={{
+                                WebkitOverflowScrolling: "touch",
+                                overscrollBehaviorY: "contain",
+                                touchAction: "pan-y",
+                            }}
+                        >
+                            {abaAtiva === "timeline" ? (
+                                <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+                                    <div className="mb-4">
+                                        <h4 className="text-sm font-semibold text-slate-900">
+                                            Linha do Tempo
+                                        </h4>
+                                        <p className="mt-0.5 text-xs text-slate-500">
+                                            Eventos em ordem cronológica,
+                                            mostrando apenas informações
+                                            relevantes de cada ação.
+                                        </p>
+                                    </div>
+
+                                    <LinhaDoTempoLogs
+                                        logs={logs}
+                                        materiaisMap={materiaisMap}
+                                    />
+                                </section>
+                            ) : abaAtiva === "outras" ? (
+                                <div className="space-y-4">
+                                    <CamposAba
+                                        titulo="Outras informações"
+                                        campos={
+                                            camposOutrasInformacoes
+                                        }
+                                    />
+
+                                    {resumoOrganizado.tecnicos.length >
+                                        0 ? (
+                                        <details className="rounded-2xl border bg-white shadow-sm">
+                                            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 sm:px-5">
+                                                Dados técnicos (
+                                                {
+                                                    resumoOrganizado
+                                                        .tecnicos
+                                                        .length
+                                                }
+                                                )
+                                            </summary>
+
+                                            <dl className="divide-y divide-slate-100 border-t">
+                                                {resumoOrganizado.tecnicos.map(
+                                                    (
+                                                        campo,
+                                                        index,
+                                                    ) => (
+                                                        <div
+                                                            key={`${campo.chave}-${index}`}
+                                                            className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4 sm:px-5"
+                                                        >
+                                                            <dt className="text-xs font-medium text-slate-500">
+                                                                {
+                                                                    campo.label
+                                                                }
+                                                            </dt>
+                                                            <dd className="min-w-0 break-all text-xs text-slate-700">
+                                                                {
+                                                                    campo.valor
+                                                                }
+                                                            </dd>
+                                                        </div>
+                                                    ),
+                                                )}
+                                            </dl>
+                                        </details>
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <CamposAba
+                                    titulo={
+                                        ABAS_DETALHE.find(
+                                            (aba) =>
+                                                aba.id ===
+                                                abaAtiva,
+                                        )?.label ??
+                                        "Informações"
+                                    }
+                                    campos={
+                                        secoesPorId.get(
+                                            abaAtiva,
+                                        )?.campos ?? []
+                                    }
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             {fotosOpen && (
                 <div
