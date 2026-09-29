@@ -1,63 +1,88 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+
 import BarraFiltros from "./BarraFiltros";
 import ListaRegistros from "./ListaRegistros";
 import ModalAnaliseGeral from "./ModalAnaliseGeral";
 import ModalDetalheRegistro from "./ModalDetalheRegistro";
-import { listarFalecidosComCriacao, listarAnalitico } from "./Api";
+import ModalAvaliacaoAtendimento from "./ModalAvaliacaoAtendimento";
+
+import {
+    listarFalecidosComCriacao,
+    listarAnalitico,
+    listarStatusAvaliacoes,
+    StatusAvaliacoesItem,
+    TipoAvaliacao,
+} from "./Api";
+
 import { FalecidoItem } from "./TiposHistorico";
 
 /* =========================
    Helpers: ID e Datas
    ========================= */
 
-/**
- * ✅ CORREÇÃO PRINCIPAL:
- * - usar `||` ao invés de `??` para cair no `id` quando `sepultamento_id` vier ""
- * - isso resolve registros de "outras empresas" que vêm com poucas fases/ID diferente
- */
 function getRegistroId(item: FalecidoItem): string {
     const anyItem = item as any;
-    return String(item?.sepultamento_id || anyItem?.id || "").trim();
+
+    return String(
+        item?.sepultamento_id || anyItem?.id || "",
+    ).trim();
 }
 
-// dd/mm/aaaa[, HH:MM[:SS]]
 function parseBrDate(s: string): Date | null {
-    const m = s?.trim().match(
-        /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
-    );
+    const m = s
+        ?.trim()
+        .match(
+            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/,
+        );
+
     if (!m) return null;
+
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+
     return isNaN(d.getTime()) ? null : d;
 }
 
-// ISO local-friendly (sem timezone vira horário local)
 function parseIsoDate(s: string): Date | null {
     const t = s?.trim().replace(" ", "T");
+
     if (!t) return null;
 
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
     if (m) {
         const [, yyyy, mm, dd] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
+
         return isNaN(d.getTime()) ? null : d;
     }
 
-    m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    m = t.match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/,
+    );
+
     if (m) {
         const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+
         return isNaN(d.getTime()) ? null : d;
     }
 
     const d = new Date(t);
+
     return isNaN(d.getTime()) ? null : d;
 }
 
 function parseDateFlex(s?: string | null): Date | null {
     if (!s) return null;
+
     return parseBrDate(s) || parseIsoDate(s) || null;
 }
 
@@ -66,6 +91,7 @@ function startOfDay(d: Date) {
     x.setHours(0, 0, 0, 0);
     return x;
 }
+
 function endOfDay(d: Date) {
     const x = new Date(d);
     x.setHours(23, 59, 59, 999);
@@ -82,16 +108,25 @@ function makeRange(de?: string, ate?: string) {
     const start = baseStart ? startOfDay(baseStart) : null;
     const end = baseEnd ? endOfDay(baseEnd) : null;
 
-    if (start && end && end < start) return { start: end, end: start };
-    return { start, end };
+    if (start && end && end < start) {
+        return {
+            start: end,
+            end: start,
+        };
+    }
+
+    return {
+        start,
+        end,
+    };
 }
 
-/** Melhor data disponível para um item (ordenação/filtragem). */
 function getItemDate(
     item: FalecidoItem,
-    criacaoMap: Record<string, string>
+    criacaoMap: Record<string, string>,
 ): Date | null {
     const id = getRegistroId(item);
+
     const candidatos = [
         id ? criacaoMap[id] : undefined,
         (item as any).created_at,
@@ -102,8 +137,10 @@ function getItemDate(
 
     for (const c of candidatos) {
         const d = parseDateFlex(String(c || ""));
+
         if (d) return d;
     }
+
     return null;
 }
 
@@ -117,9 +154,27 @@ export default function PaginaHistoricoSepultamentos() {
     const [filtroAte, setFiltroAte] = useState("");
 
     const [modalAberto, setModalAberto] = useState(false);
-    const [registroSelecionado, setRegistroSelecionado] = useState<FalecidoItem | null>(null);
+    const [registroSelecionado, setRegistroSelecionado] =
+        useState<FalecidoItem | null>(null);
 
     const [analiseOpen, setAnaliseOpen] = useState(false);
+
+    const [avaliacaoAberta, setAvaliacaoAberta] = useState(false);
+    const [tipoAvaliacao, setTipoAvaliacao] =
+        useState<TipoAvaliacao>("visita");
+    const [registroAvaliacao, setRegistroAvaliacao] =
+        useState<FalecidoItem | null>(null);
+
+    const [avaliacoesMap, setAvaliacoesMap] = useState<
+        Record<string, StatusAvaliacoesItem>
+    >({});
+
+    const [loadingAvaliacoes, setLoadingAvaliacoes] =
+        useState(false);
+
+    const [podeVerVisita, setPodeVerVisita] = useState(false);
+    const [podeVerPosAtendimento, setPodeVerPosAtendimento] =
+        useState(false);
 
     const hoje = new Date();
     const yyyy = hoje.getFullYear();
@@ -127,17 +182,27 @@ export default function PaginaHistoricoSepultamentos() {
     const dd = String(hoje.getDate()).padStart(2, "0");
 
     const [aDe, setADe] = useState(`${yyyy}-${mm}-01`);
-    const [aAte, setAAte] = useState(`${yyyy}-${mm}-${dd}`);
-    const [somenteTanato, setSomenteTanato] = useState(false);
+    const [aAte, setAAte] = useState(
+        `${yyyy}-${mm}-${dd}`,
+    );
+    const [somenteTanato, setSomenteTanato] =
+        useState(false);
 
-    const [criacaoMap, setCriacaoMap] = useState<Record<string, string>>({});
+    const [criacaoMap, setCriacaoMap] = useState<
+        Record<string, string>
+    >({});
 
     useEffect(() => {
-        (async () => {
+        void (async () => {
             setLoadingLista(true);
+
             try {
-                const { lista, criacaoMap } = await listarFalecidosComCriacao();
-                setLista(Array.isArray(lista) ? lista : []);
+                const { lista, criacaoMap } =
+                    await listarFalecidosComCriacao();
+
+                setLista(
+                    Array.isArray(lista) ? lista : [],
+                );
                 setCriacaoMap(criacaoMap || {});
             } finally {
                 setLoadingLista(false);
@@ -149,18 +214,26 @@ export default function PaginaHistoricoSepultamentos() {
 
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
-        const { start, end } = makeRange(filtroDe, filtroAte);
+        const { start, end } = makeRange(
+            filtroDe,
+            filtroAte,
+        );
 
         const base = (lista || []).filter((reg) => {
-            // filtro por nome (se falecido vier vazio, não bloqueia quando nome está vazio)
             if (nome) {
-                const n = String(reg?.falecido || "").toLowerCase();
+                const n = String(
+                    reg?.falecido || "",
+                ).toLowerCase();
+
                 if (!n.includes(nome)) return false;
             }
 
-            // filtro por período
             if (start || end) {
-                const d = getItemDate(reg, criacaoMap);
+                const d = getItemDate(
+                    reg,
+                    criacaoMap,
+                );
+
                 if (!d) return false;
                 if (start && d < start) return false;
                 if (end && d > end) return false;
@@ -172,20 +245,108 @@ export default function PaginaHistoricoSepultamentos() {
         base.sort((a, b) => {
             const da = getItemDate(a, criacaoMap);
             const db = getItemDate(b, criacaoMap);
+
             const ta = da ? da.getTime() : 0;
             const tb = db ? db.getTime() : 0;
+
             return tb - ta;
         });
 
         return base;
-    }, [lista, filtroNome, filtroDe, filtroAte, criacaoMap]);
+    }, [
+        lista,
+        filtroNome,
+        filtroDe,
+        filtroAte,
+        criacaoMap,
+    ]);
 
-    const totalPaginas = Math.max(1, Math.ceil(filtrados.length / porPagina));
-    const pageItems = filtrados.slice((pagina - 1) * porPagina, pagina * porPagina);
+    const totalPaginas = Math.max(
+        1,
+        Math.ceil(filtrados.length / porPagina),
+    );
+
+    const pageItems = filtrados.slice(
+        (pagina - 1) * porPagina,
+        pagina * porPagina,
+    );
+
+    const idsPagina = useMemo(
+        () =>
+            pageItems
+                .map(getRegistroId)
+                .filter(Boolean),
+        [pageItems],
+    );
+
+    const carregarStatusAvaliacoes = useCallback(
+        async () => {
+            if (idsPagina.length === 0) {
+                setAvaliacoesMap({});
+                return;
+            }
+
+            setLoadingAvaliacoes(true);
+
+            try {
+                const data =
+                    await listarStatusAvaliacoes(
+                        idsPagina,
+                    );
+
+                const map: Record<
+                    string,
+                    StatusAvaliacoesItem
+                > = {};
+
+                for (const row of data.rows ?? []) {
+                    map[
+                        String(row.atendimento_id)
+                    ] = row;
+                }
+
+                setAvaliacoesMap(map);
+
+                setPodeVerVisita(
+                    !!data.permissoes?.visita,
+                );
+
+                setPodeVerPosAtendimento(
+                    !!data.permissoes
+                        ?.pos_atendimento,
+                );
+            } catch (e) {
+                console.error(
+                    "[RELATORIO] Falha ao carregar status das avaliações:",
+                    e,
+                );
+
+                setAvaliacoesMap({});
+                setPodeVerVisita(false);
+                setPodeVerPosAtendimento(false);
+            } finally {
+                setLoadingAvaliacoes(false);
+            }
+        },
+        [idsPagina],
+    );
+
+    useEffect(() => {
+        void carregarStatusAvaliacoes();
+    }, [carregarStatusAvaliacoes]);
 
     function abrirModal(item: FalecidoItem) {
         setRegistroSelecionado(item);
         setModalAberto(true);
+    }
+
+    function abrirAvaliacao(
+        item: FalecidoItem,
+        tipo: TipoAvaliacao,
+    ) {
+        setRegistroAvaliacao(item);
+        setTipoAvaliacao(tipo);
+        setAvaliacaoAberta(true);
     }
 
     async function carregarAnalise() {
@@ -194,14 +355,26 @@ export default function PaginaHistoricoSepultamentos() {
 
     useEffect(() => {
         if (!analiseOpen) return;
-        carregarAnalise();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [analiseOpen, aDe, aAte, somenteTanato]);
 
-    const selecionadoId = registroSelecionado ? getRegistroId(registroSelecionado) : undefined;
+        void carregarAnalise();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        analiseOpen,
+        aDe,
+        aAte,
+        somenteTanato,
+    ]);
+
+    const selecionadoId = registroSelecionado
+        ? getRegistroId(registroSelecionado)
+        : undefined;
+
+    const avaliacaoId = registroAvaliacao
+        ? getRegistroId(registroAvaliacao)
+        : "";
 
     return (
-        <div className="p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 p-4">
             <BarraFiltros
                 filtroNome={filtroNome}
                 filtroDe={filtroDe}
@@ -218,7 +391,9 @@ export default function PaginaHistoricoSepultamentos() {
                     setFiltroAte(v);
                     setPagina(1);
                 }}
-                onAbrirAnalise={() => setAnaliseOpen(true)}
+                onAbrirAnalise={() =>
+                    setAnaliseOpen(true)
+                }
             />
 
             <ListaRegistros
@@ -226,29 +401,87 @@ export default function PaginaHistoricoSepultamentos() {
                 loading={loadingLista}
                 pagina={pagina}
                 totalPaginas={totalPaginas}
-                onPaginaAnterior={() => setPagina((p) => Math.max(1, p - 1))}
-                onPaginaProxima={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-                selecionadoId={selecionadoId} // ✅ agora funciona p/ sepultamento_id "" também
+                onPaginaAnterior={() =>
+                    setPagina((p) =>
+                        Math.max(1, p - 1),
+                    )
+                }
+                onPaginaProxima={() =>
+                    setPagina((p) =>
+                        Math.min(
+                            totalPaginas,
+                            p + 1,
+                        ),
+                    )
+                }
+                selecionadoId={selecionadoId}
                 onSelecionar={abrirModal}
                 criacaoMap={criacaoMap}
+                avaliacoesMap={avaliacoesMap}
+                podeVerVisita={podeVerVisita}
+                podeVerPosAtendimento={
+                    podeVerPosAtendimento
+                }
+                loadingAvaliacoes={
+                    loadingAvaliacoes
+                }
+                onAbrirVisita={(item) =>
+                    abrirAvaliacao(
+                        item,
+                        "visita",
+                    )
+                }
+                onAbrirPosAtendimento={(item) =>
+                    abrirAvaliacao(
+                        item,
+                        "pos_atendimento",
+                    )
+                }
             />
 
             <ModalDetalheRegistro
                 aberto={modalAberto}
                 registro={registroSelecionado}
-                onFechar={() => setModalAberto(false)}
+                onFechar={() =>
+                    setModalAberto(false)
+                }
             />
 
             <ModalAnaliseGeral
                 aberto={analiseOpen}
-                onFechar={() => setAnaliseOpen(false)}
+                onFechar={() =>
+                    setAnaliseOpen(false)
+                }
                 aDe={aDe}
                 aAte={aAte}
                 setADe={setADe}
                 setAAte={setAAte}
                 somenteTanato={somenteTanato}
-                setSomenteTanato={setSomenteTanato}
+                setSomenteTanato={
+                    setSomenteTanato
+                }
                 onRecarregar={carregarAnalise}
+            />
+
+            <ModalAvaliacaoAtendimento
+                aberto={
+                    avaliacaoAberta &&
+                    !!registroAvaliacao &&
+                    !!avaliacaoId
+                }
+                onFechar={() => {
+                    setAvaliacaoAberta(false);
+                    setRegistroAvaliacao(null);
+                }}
+                atendimentoId={avaliacaoId}
+                falecido={String(
+                    registroAvaliacao?.falecido ??
+                    "",
+                )}
+                tipo={tipoAvaliacao}
+                onAtualizado={() =>
+                    void carregarStatusAvaliacoes()
+                }
             />
         </div>
     );

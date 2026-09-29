@@ -316,3 +316,237 @@ export async function listarFalecidosComCriacao(): Promise<{
 
     return { lista, criacaoMap };
 }
+
+/* ======================== Avaliações: Visita + Pós ======================== */
+
+export const AVALIACOES_API =
+    "https://api.planoassistencialintegrado.com.br/visita.php";
+
+export type TipoAvaliacao = "visita" | "pos_atendimento";
+
+export type StatusAvaliacao =
+    | "concluida"
+    | "pendente"
+    | "em_andamento"
+    | "nao_aplicavel";
+
+export type AvaliacaoStatusResumo = {
+    status: StatusAvaliacao;
+    avaliador_id?: number | null;
+    avaliador_nome?: string | null;
+    fim_em?: string | null;
+};
+
+export type StatusAvaliacoesItem = {
+    atendimento_id: number;
+    visita: AvaliacaoStatusResumo | null;
+    pos_atendimento: AvaliacaoStatusResumo | null;
+};
+
+export type StatusAvaliacoesResposta = {
+    sucesso?: boolean;
+    permissoes?: {
+        visita?: boolean;
+        pos_atendimento?: boolean;
+    };
+    rows?: StatusAvaliacoesItem[];
+};
+
+export async function listarStatusAvaliacoes(
+    ids: Array<string | number>,
+): Promise<StatusAvaliacoesResposta> {
+    const uniqueIds = Array.from(
+        new Set(
+            ids
+                .map((id) => String(id ?? "").trim())
+                .filter(Boolean),
+        ),
+    );
+
+    if (uniqueIds.length === 0) {
+        return {
+            sucesso: true,
+            permissoes: {
+                visita: false,
+                pos_atendimento: false,
+            },
+            rows: [],
+        };
+    }
+
+    // O backend aceita até 300 IDs. O relatório trabalha com 10 por página,
+    // mas mantemos lote de 200 para segurança e reaproveitamento futuro.
+    const BATCH_SIZE = 200;
+
+    const rows: StatusAvaliacoesItem[] = [];
+    let permissoes: StatusAvaliacoesResposta["permissoes"] = undefined;
+
+    for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+        const lote = uniqueIds.slice(i, i + BATCH_SIZE);
+
+        const url =
+            `${AVALIACOES_API}?action=status_avaliacoes_batch&ids=` +
+            encodeURIComponent(lote.join(","));
+
+        const res = await fetch(url, {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+        });
+
+        const data = (await res.json().catch(() => null)) as
+            | StatusAvaliacoesResposta
+            | null;
+
+        if (!res.ok || !data) {
+            throw new Error(
+                `Falha ao consultar avaliações (${res.status}).`,
+            );
+        }
+
+        if (!permissoes && data.permissoes) {
+            permissoes = data.permissoes;
+        }
+
+        if (Array.isArray(data.rows)) {
+            rows.push(...data.rows);
+        }
+    }
+
+    return {
+        sucesso: true,
+        permissoes: permissoes ?? {
+            visita: false,
+            pos_atendimento: false,
+        },
+        rows,
+    };
+}
+
+export async function consultarAcessoAvaliacao(
+    tipo: TipoAvaliacao,
+): Promise<{
+    autorizado: boolean;
+    nome?: string;
+    usuario?: string;
+    cargo?: string;
+}> {
+    const url =
+        `${AVALIACOES_API}?action=me&tipo=${encodeURIComponent(tipo)}`;
+
+    const res = await fetch(url, {
+        credentials: "include",
+        cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data) {
+        throw new Error(
+            data?.msg || `Falha ao validar acesso (${res.status}).`,
+        );
+    }
+
+    return {
+        autorizado: !!data.autorizado,
+        nome: data.nome,
+        usuario: data.usuario,
+        cargo: data.cargo,
+    };
+}
+
+export async function obterAvaliacaoAtendimento(
+    atendimentoId: string | number,
+    tipo: TipoAvaliacao,
+): Promise<any> {
+    const url =
+        `${AVALIACOES_API}?action=obter&tipo=${encodeURIComponent(tipo)}` +
+        `&atendimento_id=${encodeURIComponent(String(atendimentoId))}` +
+        `&_=${Date.now()}`;
+
+    const res = await fetch(url, {
+        credentials: "include",
+        cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data) {
+        throw new Error(
+            data?.msg || `Falha ao carregar avaliação (${res.status}).`,
+        );
+    }
+
+    return data;
+}
+
+export async function iniciarAvaliacao(
+    atendimentoId: string | number,
+    tipo: TipoAvaliacao,
+    localizacao?: {
+        latitude: number;
+        longitude: number;
+        precisao_m?: number | null;
+    },
+): Promise<any> {
+    const url =
+        `${AVALIACOES_API}?action=iniciar&tipo=${encodeURIComponent(tipo)}`;
+
+    const payload: any = {
+        atendimento_id: atendimentoId,
+    };
+
+    if (localizacao) {
+        payload.latitude = localizacao.latitude;
+        payload.longitude = localizacao.longitude;
+        payload.precisao_m = localizacao.precisao_m ?? null;
+    }
+
+    const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data || data?.erro) {
+        throw new Error(
+            data?.msg || `Falha ao iniciar avaliação (${res.status}).`,
+        );
+    }
+
+    return data;
+}
+
+export async function salvarAvaliacao(
+    tipo: TipoAvaliacao,
+    action: "salvar_rascunho" | "finalizar",
+    form: FormData,
+): Promise<any> {
+    const url =
+        `${AVALIACOES_API}?action=${encodeURIComponent(action)}` +
+        `&tipo=${encodeURIComponent(tipo)}`;
+
+    const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        body: form,
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data || data?.erro) {
+        throw new Error(
+            data?.msg || `Falha ao salvar avaliação (${res.status}).`,
+        );
+    }
+
+    return data;
+}
+

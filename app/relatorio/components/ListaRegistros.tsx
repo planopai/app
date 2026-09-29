@@ -3,6 +3,10 @@
 import React from "react";
 import { FalecidoItem } from "./TiposHistorico";
 import { formataDataHora } from "./UtilDatas";
+import type {
+    AvaliacaoStatusResumo,
+    StatusAvaliacoesItem,
+} from "./Api";
 
 interface Props {
     registros: FalecidoItem[];
@@ -14,6 +18,14 @@ interface Props {
     selecionadoId?: string;
     onSelecionar: (item: FalecidoItem) => void;
     criacaoMap: Record<string, string>;
+
+    avaliacoesMap?: Record<string, StatusAvaliacoesItem>;
+    podeVerVisita?: boolean;
+    podeVerPosAtendimento?: boolean;
+    loadingAvaliacoes?: boolean;
+
+    onAbrirVisita?: (item: FalecidoItem) => void;
+    onAbrirPosAtendimento?: (item: FalecidoItem) => void;
 }
 
 /* =========================
@@ -21,39 +33,41 @@ interface Props {
    ========================= */
 
 function getRegistroId(item: FalecidoItem): string {
-    // fallback para registros que não têm sepultamento_id (ex.: "terceiro")
     const anyItem = item as any;
     return String(item?.sepultamento_id ?? anyItem?.id ?? "").trim();
 }
 
-// dd/mm/aaaa[, HH:MM:SS]
 function parseBrDate(s: string): Date | null {
     const m = s
         ?.trim()
         .match(
-            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+            /^(\d{2})\/(\d{2})\/(\d{4})(?:[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/,
         );
+
     if (!m) return null;
+
     const [, dd, mm, yyyy, hh = "00", mi = "00", ss = "00"] = m;
     const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+
     return isNaN(d.getTime()) ? null : d;
 }
 
-// ISO — se não houver timezone, considerar LOCAL
 function parseIsoDate(s: string): Date | null {
     const t = s?.trim().replace(" ", "T");
     if (!t) return null;
 
-    // aaaa-mm-dd
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
     if (m) {
         const [, yyyy, mm, dd] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, 0, 0, 0);
         return isNaN(d.getTime()) ? null : d;
     }
 
-    // aaaa-mm-ddTHH:MM[:SS]
-    m = t.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    m = t.match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/,
+    );
+
     if (m) {
         const [, yyyy, mm, dd, hh, mi, ss = "00"] = m;
         const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
@@ -69,16 +83,12 @@ function parseDateFlex(s?: string | null): Date | null {
     return parseBrDate(s) || parseIsoDate(s) || null;
 }
 
-/* pega a melhor data de exibição/ordenação:
-   1) criacaoMap[id]
-   2) item.created_at
-   3) item.data / data_inicio_velorio / etc (quando existir)
-*/
 function getItemDate(
     item: FalecidoItem,
-    criacaoMap: Record<string, string>
+    criacaoMap: Record<string, string>,
 ): Date | null {
     const id = getRegistroId(item);
+
     const candidatos = [
         id ? criacaoMap[id] : undefined,
         (item as any).created_at,
@@ -91,7 +101,127 @@ function getItemDate(
         const d = parseDateFlex(String(c || ""));
         if (d) return d;
     }
+
     return null;
+}
+
+/* =========================
+   Ícones / status
+   ========================= */
+
+function IconeVisita() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+        >
+            <path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z" />
+            <circle cx="12" cy="10" r="2.2" />
+        </svg>
+    );
+}
+
+function IconePos() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+        >
+            <rect x="5" y="4" width="14" height="17" rx="2" />
+            <path d="M9 4.5h6M9 9h6M9 13h6M9 17h4" />
+            <path d="m15.5 16.5 1.3 1.3 2.7-3" />
+        </svg>
+    );
+}
+
+function statusVisual(status?: AvaliacaoStatusResumo | null) {
+    switch (status?.status) {
+        case "concluida":
+            return {
+                classes:
+                    "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+                texto: status.avaliador_nome
+                    ? `Concluída por ${status.avaliador_nome}`
+                    : "Concluída",
+            };
+
+        case "em_andamento":
+            return {
+                classes:
+                    "border-blue-200 bg-blue-100 text-blue-700 hover:bg-blue-200",
+                texto: status.avaliador_nome
+                    ? `Em andamento por ${status.avaliador_nome}`
+                    : "Em andamento",
+            };
+
+        case "pendente":
+            return {
+                classes:
+                    "border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-200",
+                texto: "Pendente",
+            };
+
+        case "nao_aplicavel":
+            return {
+                classes:
+                    "border-slate-200 bg-slate-100 text-slate-400 cursor-default",
+                texto: "Não aplicável",
+            };
+
+        default:
+            return {
+                classes:
+                    "border-slate-200 bg-slate-100 text-slate-400",
+                texto: "Status indisponível",
+            };
+    }
+}
+
+function BotaoAvaliacao({
+    tipo,
+    status,
+    disabled,
+    onClick,
+}: {
+    tipo: "visita" | "pos";
+    status?: AvaliacaoStatusResumo | null;
+    disabled?: boolean;
+    onClick: () => void;
+}) {
+    const visual = statusVisual(status);
+    const naoAplicavel = status?.status === "nao_aplicavel";
+
+    const titulo =
+        `${tipo === "visita" ? "Visita" : "Pós-Atendimento"}: ` +
+        visual.texto;
+
+    return (
+        <button
+            type="button"
+            title={titulo}
+            aria-label={titulo}
+            disabled={disabled || naoAplicavel}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (!disabled && !naoAplicavel) onClick();
+            }}
+            className={[
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition",
+                visual.classes,
+                disabled ? "opacity-50 cursor-wait" : "",
+            ].join(" ")}
+        >
+            {tipo === "visita" ? <IconeVisita /> : <IconePos />}
+        </button>
+    );
 }
 
 export default function ListaRegistros({
@@ -104,12 +234,15 @@ export default function ListaRegistros({
     selecionadoId,
     onSelecionar,
     criacaoMap,
+
+    avaliacoesMap = {},
+    podeVerVisita = false,
+    podeVerPosAtendimento = false,
+    loadingAvaliacoes = false,
+
+    onAbrirVisita,
+    onAbrirPosAtendimento,
 }: Props) {
-    /**
-     * 1) Deduplica de forma segura:
-     * - NÃO descarta itens sem ID (cria ID sintético)
-     * - se houver duplicados com mesmo ID, mantém o mais recente pela melhor data
-     */
     const semDuplicados = React.useMemo(() => {
         const map = new Map<string, FalecidoItem>();
 
@@ -117,7 +250,6 @@ export default function ListaRegistros({
             const it = registros[i];
             let id = getRegistroId(it);
 
-            // Se não tiver id, cria um id sintético para NÃO sumir
             if (!id) {
                 const created = (it as any).created_at || "";
                 id = `sem-id-${i}-${String(created)}`;
@@ -126,68 +258,134 @@ export default function ListaRegistros({
             }
 
             const atual = map.get(id);
+
             if (!atual) {
                 map.set(id, it);
             } else {
                 const dNovo = getItemDate(it, criacaoMap)?.getTime() ?? 0;
                 const dAtual = getItemDate(atual, criacaoMap)?.getTime() ?? 0;
-                if (dNovo >= dAtual) map.set(id, it);
+
+                if (dNovo >= dAtual) {
+                    map.set(id, it);
+                }
             }
         }
 
         return Array.from(map.values());
     }, [registros, criacaoMap]);
 
-    // 2) Ordena DESC pela melhor data
     const ordenados = React.useMemo(() => {
         const arr = [...semDuplicados];
+
         arr.sort((a, b) => {
             const da = getItemDate(a, criacaoMap);
             const db = getItemDate(b, criacaoMap);
+
             const ta = da ? da.getTime() : 0;
             const tb = db ? db.getTime() : 0;
-            return tb - ta; // DESC
+
+            return tb - ta;
         });
+
         return arr;
     }, [semDuplicados, criacaoMap]);
 
     return (
-        <div className="flex flex-col border rounded overflow-hidden w-full">
+        <div className="flex w-full flex-col overflow-hidden rounded border">
             <div className="bg-gray-100 p-3 font-semibold">Registros</div>
 
             <div className="flex-1 overflow-y-auto">
                 {loading ? (
                     <div className="p-4 text-center">Carregando...</div>
                 ) : ordenados.length === 0 ? (
-                    <div className="p-4 text-center">Nenhum registro encontrado.</div>
+                    <div className="p-4 text-center">
+                        Nenhum registro encontrado.
+                    </div>
                 ) : (
                     <ul>
                         {ordenados.map((item, idx) => {
                             const id = getRegistroId(item);
 
-                            // data exibida no UI
                             const criadoEm =
-                                (id ? criacaoMap[id] : "") || (item as any).created_at || "";
+                                (id ? criacaoMap[id] : "") ||
+                                (item as any).created_at ||
+                                "";
 
-                            // key estável mesmo sem id
                             const key =
-                                (id ? `id-${id}` : `sem-id-${idx}`) + `-${criadoEm || "s-data"}`;
+                                (id ? `id-${id}` : `sem-id-${idx}`) +
+                                `-${criadoEm || "s-data"}`;
+
+                            const status =
+                                id && avaliacoesMap[id]
+                                    ? avaliacoesMap[id]
+                                    : undefined;
 
                             return (
-                                <li key={key}>
-                                    <button
-                                        type="button"
-                                        className={`w-full p-3 border-b hover:bg-muted/40 flex items-center ${selecionadoId === id ? "bg-blue-50" : ""
-                                            }`}
-                                        onClick={() => onSelecionar(item)}
-                                    >
-                                        <div className="flex-1 text-left font-medium truncate">
-                                            {item.falecido}
+                                <li
+                                    key={key}
+                                    className={[
+                                        "border-b",
+                                        selecionadoId === id
+                                            ? "bg-blue-50"
+                                            : "bg-white",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex min-h-[48px] items-center gap-2 px-3 py-2 hover:bg-muted/40">
+                                        <button
+                                            type="button"
+                                            className="min-w-0 flex-1 text-left"
+                                            onClick={() => onSelecionar(item)}
+                                        >
+                                            <div className="truncate font-medium">
+                                                {item.falecido}
+                                            </div>
+                                        </button>
+
+                                        <div className="flex shrink-0 items-center gap-2">
+                                            <div className="hidden text-right text-xs text-muted-foreground sm:block">
+                                                {criadoEm
+                                                    ? formataDataHora(criadoEm)
+                                                    : "—"}
+                                            </div>
+
+                                            {id && podeVerVisita ? (
+                                                <BotaoAvaliacao
+                                                    tipo="visita"
+                                                    status={status?.visita}
+                                                    disabled={
+                                                        loadingAvaliacoes
+                                                    }
+                                                    onClick={() =>
+                                                        onAbrirVisita?.(item)
+                                                    }
+                                                />
+                                            ) : null}
+
+                                            {id &&
+                                                podeVerPosAtendimento ? (
+                                                <BotaoAvaliacao
+                                                    tipo="pos"
+                                                    status={
+                                                        status?.pos_atendimento
+                                                    }
+                                                    disabled={
+                                                        loadingAvaliacoes
+                                                    }
+                                                    onClick={() =>
+                                                        onAbrirPosAtendimento?.(
+                                                            item,
+                                                        )
+                                                    }
+                                                />
+                                            ) : null}
                                         </div>
-                                        <div className="text-xs text-muted-foreground text-right">
-                                            {criadoEm ? formataDataHora(criadoEm) : "—"}
+
+                                        <div className="w-full text-xs text-muted-foreground sm:hidden">
+                                            {criadoEm
+                                                ? formataDataHora(criadoEm)
+                                                : "—"}
                                         </div>
-                                    </button>
+                                    </div>
                                 </li>
                             );
                         })}
@@ -195,21 +393,23 @@ export default function ListaRegistros({
                 )}
             </div>
 
-            <div className="flex justify-between items-center p-2 border-t bg-gray-50">
+            <div className="flex items-center justify-between border-t bg-gray-50 p-2">
                 <button
                     onClick={onPaginaAnterior}
                     disabled={pagina <= 1}
-                    className="px-2 py-1 border rounded disabled:opacity-50"
+                    className="rounded border px-2 py-1 disabled:opacity-50"
                 >
                     ← Anterior
                 </button>
+
                 <span className="text-sm">
                     Página {pagina} / {Math.max(1, totalPaginas)}
                 </span>
+
                 <button
                     onClick={onPaginaProxima}
                     disabled={pagina >= totalPaginas}
-                    className="px-2 py-1 border rounded disabled:opacity-50"
+                    className="rounded border px-2 py-1 disabled:opacity-50"
                 >
                     Próxima →
                 </button>
