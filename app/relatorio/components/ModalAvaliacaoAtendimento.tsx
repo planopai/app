@@ -38,6 +38,13 @@ type RegistroFoto = {
     legenda: string;
 };
 
+type VisualViewportState = {
+    width: number;
+    height: number;
+    offsetTop: number;
+    offsetLeft: number;
+};
+
 const PARENTESCOS = [
     "Cônjuge/companheiro(a)",
     "Filho(a)",
@@ -217,6 +224,9 @@ export default function ModalAvaliacaoAtendimento({
     const [cameraLoading, setCameraLoading] = useState(false);
     const [cameraErro, setCameraErro] = useState("");
 
+    const [viewport, setViewport] =
+        useState<VisualViewportState | null>(null);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
@@ -267,20 +277,68 @@ export default function ModalAvaliacaoAtendimento({
     }, [aberto, pararCamera]);
 
     useEffect(() => {
-        if (!aberto) return;
+        if (!aberto || typeof window === "undefined") return;
 
         const html = document.documentElement;
         const body = document.body;
 
         const oldHtmlOverflow = html.style.overflow;
         const oldBodyOverflow = body.style.overflow;
+        const oldBodyOverscroll = body.style.overscrollBehavior;
+        const oldBodyTouchAction = body.style.touchAction;
+
+        const updateViewport = () => {
+            const vv = window.visualViewport;
+
+            setViewport({
+                width: Math.max(
+                    1,
+                    Math.round(vv?.width ?? window.innerWidth),
+                ),
+                height: Math.max(
+                    1,
+                    Math.round(vv?.height ?? window.innerHeight),
+                ),
+                offsetTop: Math.max(
+                    0,
+                    Math.round(vv?.offsetTop ?? 0),
+                ),
+                offsetLeft: Math.max(
+                    0,
+                    Math.round(vv?.offsetLeft ?? 0),
+                ),
+            });
+        };
+
+        updateViewport();
 
         html.style.overflow = "hidden";
         body.style.overflow = "hidden";
+        body.style.overscrollBehavior = "none";
+        body.style.touchAction = "none";
+
+        const vv = window.visualViewport;
+
+        vv?.addEventListener("resize", updateViewport);
+        vv?.addEventListener("scroll", updateViewport);
+        window.addEventListener("resize", updateViewport);
+        window.addEventListener("orientationchange", updateViewport);
 
         return () => {
+            vv?.removeEventListener("resize", updateViewport);
+            vv?.removeEventListener("scroll", updateViewport);
+            window.removeEventListener("resize", updateViewport);
+            window.removeEventListener(
+                "orientationchange",
+                updateViewport,
+            );
+
             html.style.overflow = oldHtmlOverflow;
             body.style.overflow = oldBodyOverflow;
+            body.style.overscrollBehavior = oldBodyOverscroll;
+            body.style.touchAction = oldBodyTouchAction;
+
+            setViewport(null);
         };
     }, [aberto]);
 
@@ -381,8 +439,8 @@ export default function ModalAvaliacaoAtendimento({
                         )
                             ? element
                             : element.querySelector<HTMLElement>(
-                                  "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])",
-                              );
+                                "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])",
+                            );
 
                     focusable?.focus({
                         preventScroll: true,
@@ -414,10 +472,10 @@ export default function ModalAvaliacaoAtendimento({
         try {
             let localizacao:
                 | {
-                      latitude: number;
-                      longitude: number;
-                      precisao_m?: number | null;
-                  }
+                    latitude: number;
+                    longitude: number;
+                    precisao_m?: number | null;
+                }
                 | undefined;
 
             if (tipo === "visita") {
@@ -603,7 +661,7 @@ export default function ModalAvaliacaoAtendimento({
         } catch (e: any) {
             setCameraErro(
                 e?.message ||
-                    "Não foi possível abrir a câmera.",
+                "Não foi possível abrir a câmera.",
             );
         } finally {
             setCameraLoading(false);
@@ -680,14 +738,31 @@ export default function ModalAvaliacaoAtendimento({
 
     return (
         <div
-            className="fixed inset-0 z-[80] flex h-[100dvh] w-screen items-center justify-center bg-black/50 p-3 sm:p-4"
+            className="fixed z-[80] flex items-center justify-center overflow-hidden bg-black/50 p-3 sm:p-4"
+            style={{
+                top: viewport?.offsetTop ?? 0,
+                left: viewport?.offsetLeft ?? 0,
+                width: viewport
+                    ? `${viewport.width}px`
+                    : "100vw",
+                height: viewport
+                    ? `${viewport.height}px`
+                    : "100dvh",
+            }}
             onClick={(e) => {
                 if (e.target === e.currentTarget) {
                     onFechar();
                 }
             }}
         >
-            <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div
+                className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+                style={{
+                    maxHeight: viewport
+                        ? `${Math.max(1, viewport.height - 24)}px`
+                        : "calc(100dvh - 1.5rem)",
+                }}
+            >
                 <div className="flex shrink-0 items-start justify-between gap-4 border-b p-4 sm:p-5">
                     <div>
                         <h2 className="text-lg font-semibold text-slate-950">
@@ -710,9 +785,11 @@ export default function ModalAvaliacaoAtendimento({
                 </div>
 
                 <div
-                    className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5"
                     style={{
                         WebkitOverflowScrolling: "touch",
+                        overscrollBehaviorY: "contain",
+                        touchAction: "pan-y",
                     }}
                 >
                     {erro ? (
@@ -736,8 +813,8 @@ export default function ModalAvaliacaoAtendimento({
                                 {saving
                                     ? "Iniciando..."
                                     : tipo === "visita"
-                                      ? "Iniciar Visita"
-                                      : "Iniciar Pós-Atendimento"}
+                                        ? "Iniciar Visita"
+                                        : "Iniciar Pós-Atendimento"}
                             </button>
                         </div>
                     ) : (
@@ -840,7 +917,7 @@ export default function ModalAvaliacaoAtendimento({
                                     (pergunta) => {
                                         const resp =
                                             respostas[
-                                                pergunta.numero
+                                            pergunta.numero
                                             ] ?? {
                                                 nota: "",
                                                 observacao: "",
@@ -976,122 +1053,125 @@ export default function ModalAvaliacaoAtendimento({
                                 )}
                             </div>
 
-                            <div className="rounded-xl border border-slate-200 p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                        <h3 className="font-semibold text-slate-950">
-                                            Registros
-                                        </h3>
+                            {tipo === "visita" ? (
+                                <div className="rounded-xl border border-slate-200 p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <h3 className="font-semibold text-slate-950">
+                                                Registros
+                                            </h3>
 
-                                        <p className="mt-1 text-sm text-slate-600">
-                                            Você pode adicionar fotos
-                                            da avaliação e uma legenda
-                                            em cada registro.
-                                        </p>
+                                            <p className="mt-1 text-sm text-slate-600">
+                                                Você pode adicionar fotos
+                                                da avaliação e uma legenda
+                                                em cada registro.
+                                            </p>
+                                        </div>
+
+                                        {!concluida ? (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    void abrirCamera()
+                                                }
+                                                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                            >
+                                                Adicionar registro
+                                            </button>
+                                        ) : null}
                                     </div>
 
-                                    {!concluida ? (
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                void abrirCamera()
-                                            }
-                                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                                        >
-                                            Adicionar registro
-                                        </button>
-                                    ) : null}
-                                </div>
-
-                                {registros.length > 0 ? (
-                                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                                        {registros.map(
-                                            (item, index) => (
-                                                <div
-                                                    key={
-                                                        item.localId
-                                                    }
-                                                    className="rounded-xl border border-slate-200 p-3"
-                                                >
-                                                    <img
-                                                        src={
-                                                            item.fotoPreview ||
-                                                            item.fotoUrl
+                                    {registros.length > 0 ? (
+                                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                            {registros.map(
+                                                (item, index) => (
+                                                    <div
+                                                        key={
+                                                            item.localId
                                                         }
-                                                        alt={`Registro ${index + 1}`}
-                                                        className="max-h-72 w-full rounded-lg bg-black object-contain"
-                                                    />
-
-                                                    <label className="mt-3 block">
-                                                        <span className="text-sm font-medium">
-                                                            Legenda
-                                                        </span>
-
-                                                        <textarea
-                                                            value={
-                                                                item.legenda
+                                                        className="rounded-xl border border-slate-200 p-3"
+                                                    >
+                                                        <img
+                                                            src={
+                                                                item.fotoPreview ||
+                                                                item.fotoUrl
                                                             }
-                                                            onChange={(
-                                                                e,
-                                                            ) =>
-                                                                setRegistros(
-                                                                    (
-                                                                        prev,
-                                                                    ) =>
-                                                                        prev.map(
-                                                                            (
-                                                                                x,
-                                                                            ) =>
-                                                                                x.localId ===
-                                                                                item.localId
-                                                                                    ? {
-                                                                                          ...x,
-                                                                                          legenda:
-                                                                                              e
-                                                                                                  .target
-                                                                                                  .value,
-                                                                                      }
-                                                                                    : x,
-                                                                        ),
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                concluida
-                                                            }
-                                                            maxLength={
-                                                                500
-                                                            }
-                                                            rows={2}
-                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
-                                                            placeholder="Legenda do registro"
+                                                            alt={`Registro ${index + 1}`}
+                                                            className="max-h-72 w-full rounded-lg bg-black object-contain"
                                                         />
-                                                    </label>
 
-                                                    {!concluida ? (
-                                                        <div className="mt-3 flex justify-end">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    removerRegistro(
-                                                                        item.localId,
+                                                        <label className="mt-3 block">
+                                                            <span className="text-sm font-medium">
+                                                                Legenda
+                                                            </span>
+
+                                                            <textarea
+                                                                value={
+                                                                    item.legenda
+                                                                }
+                                                                onChange={(
+                                                                    e,
+                                                                ) =>
+                                                                    setRegistros(
+                                                                        (
+                                                                            prev,
+                                                                        ) =>
+                                                                            prev.map(
+                                                                                (
+                                                                                    x,
+                                                                                ) =>
+                                                                                    x.localId ===
+                                                                                        item.localId
+                                                                                        ? {
+                                                                                            ...x,
+                                                                                            legenda:
+                                                                                                e
+                                                                                                    .target
+                                                                                                    .value,
+                                                                                        }
+                                                                                        : x,
+                                                                            ),
                                                                     )
                                                                 }
-                                                                className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
-                                                            >
-                                                                Remover
-                                                            </button>
-                                                        </div>
-                                                    ) : null}
-                                                </div>
-                                            ),
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
-                                        Nenhum registro adicionado.
-                                    </div>
-                                )}
-                            </div>
+                                                                disabled={
+                                                                    concluida
+                                                                }
+                                                                maxLength={
+                                                                    500
+                                                                }
+                                                                rows={2}
+                                                                className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                                placeholder="Legenda do registro"
+                                                            />
+                                                        </label>
+
+                                                        {!concluida ? (
+                                                            <div className="mt-3 flex justify-end">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        removerRegistro(
+                                                                            item.localId,
+                                                                        )
+                                                                    }
+                                                                    className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                                                >
+                                                                    Remover
+                                                                </button>
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                ),
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
+                                            Nenhum registro adicionado.
+                                        </div>
+                                    )}
+                                </div>
+
+                            ) : null}
 
                             <label className="block rounded-xl border border-slate-200 p-4">
                                 <span className="text-sm font-medium">
@@ -1150,8 +1230,30 @@ export default function ModalAvaliacaoAtendimento({
             </div>
 
             {cameraAberta ? (
-                <div className="fixed inset-0 z-[100] flex h-[100dvh] w-screen items-center justify-center bg-black/80 p-3">
-                    <div className="w-full max-w-xl rounded-2xl bg-white p-4 shadow-2xl">
+                <div
+                    className="fixed z-[100] flex items-center justify-center overflow-hidden bg-black/80 p-3"
+                    style={{
+                        top: viewport?.offsetTop ?? 0,
+                        left: viewport?.offsetLeft ?? 0,
+                        width: viewport
+                            ? `${viewport.width}px`
+                            : "100vw",
+                        height: viewport
+                            ? `${viewport.height}px`
+                            : "100dvh",
+                    }}
+                >
+                    <div
+                        className="w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl"
+                        style={{
+                            maxHeight: viewport
+                                ? `${Math.max(1, viewport.height - 24)}px`
+                                : "calc(100dvh - 1.5rem)",
+                            WebkitOverflowScrolling: "touch",
+                            overscrollBehaviorY: "contain",
+                            touchAction: "pan-y",
+                        }}
+                    >
                         <div className="flex items-center justify-between gap-4">
                             <h3 className="font-semibold">
                                 Novo registro fotográfico

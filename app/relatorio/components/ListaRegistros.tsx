@@ -330,60 +330,60 @@ export default function ListaRegistros({
                                             : "bg-white",
                                     ].join(" ")}
                                 >
-                                    <div className="flex min-h-[48px] items-center gap-2 px-3 py-2 hover:bg-muted/40">
-                                        <button
-                                            type="button"
-                                            className="min-w-0 flex-1 text-left"
-                                            onClick={() => onSelecionar(item)}
-                                        >
-                                            <div className="truncate font-medium">
-                                                {item.falecido}
+                                    <div className="px-3 py-3 hover:bg-muted/40">
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                                            <button
+                                                type="button"
+                                                className="min-w-0 flex-1 text-left"
+                                                onClick={() => onSelecionar(item)}
+                                            >
+                                                <div className="break-words text-sm font-medium leading-5 text-slate-900 sm:truncate sm:text-base">
+                                                    {item.falecido}
+                                                </div>
+                                            </button>
+
+                                            <div className="flex min-w-0 items-center justify-between gap-3 sm:shrink-0 sm:justify-end">
+                                                <div className="min-w-0 text-xs text-muted-foreground sm:text-right">
+                                                    {criadoEm
+                                                        ? formataDataHora(criadoEm)
+                                                        : "—"}
+                                                </div>
+
+                                                <div className="flex shrink-0 items-center gap-2">
+                                                    {id && podeVerVisita ? (
+                                                        <BotaoAvaliacao
+                                                            tipo="visita"
+                                                            status={status?.visita}
+                                                            disabled={
+                                                                loadingAvaliacoes
+                                                            }
+                                                            onClick={() =>
+                                                                onAbrirVisita?.(
+                                                                    item,
+                                                                )
+                                                            }
+                                                        />
+                                                    ) : null}
+
+                                                    {id &&
+                                                        podeVerPosAtendimento ? (
+                                                        <BotaoAvaliacao
+                                                            tipo="pos"
+                                                            status={
+                                                                status?.pos_atendimento
+                                                            }
+                                                            disabled={
+                                                                loadingAvaliacoes
+                                                            }
+                                                            onClick={() =>
+                                                                onAbrirPosAtendimento?.(
+                                                                    item,
+                                                                )
+                                                            }
+                                                        />
+                                                    ) : null}
+                                                </div>
                                             </div>
-                                        </button>
-
-                                        <div className="flex shrink-0 items-center gap-2">
-                                            <div className="hidden text-right text-xs text-muted-foreground sm:block">
-                                                {criadoEm
-                                                    ? formataDataHora(criadoEm)
-                                                    : "—"}
-                                            </div>
-
-                                            {id && podeVerVisita ? (
-                                                <BotaoAvaliacao
-                                                    tipo="visita"
-                                                    status={status?.visita}
-                                                    disabled={
-                                                        loadingAvaliacoes
-                                                    }
-                                                    onClick={() =>
-                                                        onAbrirVisita?.(item)
-                                                    }
-                                                />
-                                            ) : null}
-
-                                            {id &&
-                                                podeVerPosAtendimento ? (
-                                                <BotaoAvaliacao
-                                                    tipo="pos"
-                                                    status={
-                                                        status?.pos_atendimento
-                                                    }
-                                                    disabled={
-                                                        loadingAvaliacoes
-                                                    }
-                                                    onClick={() =>
-                                                        onAbrirPosAtendimento?.(
-                                                            item,
-                                                        )
-                                                    }
-                                                />
-                                            ) : null}
-                                        </div>
-
-                                        <div className="w-full text-xs text-muted-foreground sm:hidden">
-                                            {criadoEm
-                                                ? formataDataHora(criadoEm)
-                                                : "—"}
                                         </div>
                                     </div>
                                 </li>
