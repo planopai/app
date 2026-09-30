@@ -255,30 +255,39 @@ export function AppSidebar(
     );
 
   /**
-   * Nome do usuário:
-   * cookie ou fallback, garantindo
-   * primeira letra maiúscula.
+   * Nome do usuário.
+   *
+   * IMPORTANTE:
+   * o primeiro render precisa ser idêntico no servidor e no navegador
+   * para evitar hydration mismatch (React #418).
+   *
+   * Por isso começamos sempre com "Usuário" e só lemos document.cookie
+   * depois que o componente já montou no cliente.
    */
-  const displayName =
-    React.useMemo(() => {
-      const raw =
-        readCookie("pai_name") ||
-        readCookie("pai_user") ||
-        "Usuário";
+  const [displayName, setDisplayName] =
+    React.useState("Usuário");
 
-      const cleaned = raw
-        .trim()
-        .replace(/\s+/g, " ");
+  React.useEffect(() => {
+    const raw =
+      readCookie("pai_name") ||
+      readCookie("pai_user") ||
+      "Usuário";
 
-      return cleaned
-        .split(" ")
-        .map((word, index) =>
-          index === 0
-            ? capitalizeFirstLetter(word)
-            : word
-        )
-        .join(" ");
-    }, []);
+    const cleaned = raw
+      .trim()
+      .replace(/\s+/g, " ");
+
+    const formatted = cleaned
+      .split(" ")
+      .map((word, index) =>
+        index === 0
+          ? capitalizeFirstLetter(word)
+          : word
+      )
+      .join(" ");
+
+    setDisplayName(formatted);
+  }, []);
 
   const badgeText = "USUÁRIO";
 
@@ -664,8 +673,8 @@ export function AppSidebar(
                       <IconChevronDown
                         size={16}
                         className={`transition ${opened
-                            ? "rotate-180"
-                            : ""
+                          ? "rotate-180"
+                          : ""
                           }`}
                       />
                     </button>
