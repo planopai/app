@@ -230,7 +230,7 @@ type CoroasTvResponse = {
 type QaDensity = "normal" | "compact" | "dense" | "ultra" | "micro";
 
 const COROAS_TV_LOCAL =
-    "/api/php/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
+    "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
 
 const COROAS_TV_REMOTA =
     "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
@@ -1968,7 +1968,7 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE_INFO = "/api/php/informativo.php?listar=1";
+        const BASE_INFO = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
 
         async function load() {
             try {
@@ -2101,7 +2101,7 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE_AVISOS = "/api/php/avisos.php?listar=1";
+        const BASE_AVISOS = "https://api.planoassistencialintegrado.com.br/avisos.php?listar=1";
 
         async function load() {
             if (!alive) return;
@@ -2147,7 +2147,7 @@ export default function QuadroAtendimentoPage() {
 
         async function loadMateriaisCatalog() {
             try {
-                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                const url = `https://api.planoassistencialintegrado.com.br/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
                 const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
 
                 const tree = (res?.data ?? res) as any[];
@@ -2413,7 +2413,7 @@ export default function QuadroAtendimentoPage() {
                 await Promise.all(
                     targets.map(async ({ id, trackingId }) => {
                         try {
-                            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
+                            const BASE = `https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
                             const url = `${BASE}&_ts=${Date.now()}`;
 
                             // ttl 0: o histórico é pequeno e deve refletir a etapa real.
@@ -2604,7 +2604,7 @@ export default function QuadroAtendimentoPage() {
                 return;
             }
 
-            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
+            const BASE = `https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
             const url = `${BASE}&_ts=${Date.now()}`;
 
             const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
