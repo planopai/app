@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { IconFlower, IconHome, IconSearch } from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
-
 /* =========================================================
    CONFIGURAÇÃO DOS CONTADORES
    ========================================================= */
@@ -16,7 +15,6 @@ const REQUISICOES_API =
   "https://api.planoassistencialintegrado.com.br/requisicoes.php";
 const STATUS_REQUISICOES =
   "PENDENTE,EM_SEPARACAO,EM_TRANSITO";
-
 /* =========================================================
    TIPOS
    ========================================================= */
@@ -52,7 +50,6 @@ type RequisicoesResponse = {
   rows?: any[];
   msg?: string;
 };
-
 /* =========================================================
    REGRAS DO QUADRO DE SERVIÇOS FUNERÁRIOS
    ========================================================= */
@@ -172,7 +169,6 @@ function registroEstaNoQuadro(
   // Sem velório e sem sepultamento, encerra em Corpo Pronto (fase12).
   return status !== "fase12";
 }
-
 /* =========================================================
    CONSULTAS
    ========================================================= */
@@ -309,7 +305,6 @@ async function buscarQuantidadeRequisicoes() {
     ? json.rows.length
     : 0;
 }
-
 /* =========================================================
    CONTADOR VISUAL
    ========================================================= */
@@ -324,7 +319,6 @@ function formatCount(
     "0"
   );
 }
-
 /* =========================================================
    ÍCONE CIRCULAR
    ========================================================= */
@@ -350,7 +344,6 @@ function QuickIcon({
     </span>
   );
 }
-
 /* =========================================================
    BOTÕES
    ========================================================= */
@@ -580,11 +573,9 @@ const quickActions: QuickAction[] = [
     ),
   },
 ];
-
 /* =========================================================
    PAGE
    ========================================================= */
-
 /* =========================================================
    PESQUISA GLOBAL DE FUNÇÕES
    ========================================================= */
@@ -632,7 +623,6 @@ function normalizeSearch(value: string) {
     .toLowerCase()
     .trim();
 }
-
 export default function HomePage() {
   const { perms, has } = usePerms();
   const [now, setNow] =
@@ -853,8 +843,16 @@ export default function HomePage() {
             <IconHome className="size-6 text-primary" />
             <h1 className="text-2xl font-bold tracking-tight">Início</h1>
           </div>
-          <div className="mt-4 flex items-stretch gap-3">
-            <div className="min-w-0 flex-1">
+          {/*
+            MOBILE:
+            1ª linha = data/hora
+            2ª linha = pesquisa
+            DESKTOP (sm+):
+            pesquisa à esquerda e data/hora à direita,
+            preservando o layout atual.
+          */}
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+            <div className="order-2 min-w-0 w-full sm:order-1 sm:flex-1">
               <div className="flex h-[54px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-950">
                 <IconSearch
                   size={19}
@@ -872,7 +870,7 @@ export default function HomePage() {
                   disabled={!permissionsReady}
                   aria-label="Pesquisar funções do sistema"
                   autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-60 dark:text-white dark:placeholder:text-gray-500"
+                  className="min-w-0 flex-1 bg-transparent text-base font-medium text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-60 sm:text-sm dark:text-white dark:placeholder:text-gray-500"
                 />
                 {searchQuery.trim() !== "" && (
                   <button
@@ -886,7 +884,7 @@ export default function HomePage() {
                 )}
               </div>
             </div>
-            <div className="flex h-[54px] min-w-[150px] shrink-0 flex-col justify-center rounded-xl border border-gray-200 bg-white px-4 text-right shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="order-1 flex h-[54px] w-full shrink-0 flex-col justify-center rounded-xl border border-gray-200 bg-white px-4 text-right shadow-sm sm:order-2 sm:w-auto sm:min-w-[150px] dark:border-gray-800 dark:bg-gray-900">
               <div className="text-sm font-bold tabular-nums">{now}</div>
               <div className="text-[11px] text-muted-foreground">{dateStr}</div>
             </div>
