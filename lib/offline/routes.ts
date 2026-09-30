@@ -16,7 +16,7 @@ export const OFFLINE_ROUTES = [
 
   "/acompanhamento",
   "/administrativo",
-  "/ajuda",
+  "/help",
   "/assistencia",
   "/associados",
   "/atendimento",
@@ -29,7 +29,6 @@ export const OFFLINE_ROUTES = [
   "/desempenho",
   "/estoque",
   "/geral",
-  "/homenagens",
   "/inicio",
   "/leads",
   "/medicos",

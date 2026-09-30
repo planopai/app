@@ -7,6 +7,8 @@
  *   balanco.php?inicio&fim         → atendimentos oficiais do período e do período anterior
  *   informativo.php?listar=1       → registros completos
  *   historico_sepultamentos.php    → fases, responsáveis e horários (6 consultas por vez)
+ *   visita.php?action=painel_avaliacoes → visitas, pós-atendimentos e notas por colaborador
+ *   visita.php?action=obter        → respostas e fotos de uma avaliação (ficha)
  * Os cálculos são feitos no navegador.
  * Visual: mesmas variáveis --dash-* e fonte Nunito do Dashboard de desempenho.
  */
@@ -683,6 +685,93 @@ function Tabela({ cabecalho, linhas, larguraMin = 640 }: { cabecalho: React.Reac
     );
 }
 
+
+/* =========================================================
+   AVALIAÇÕES (visita.php?action=painel_avaliacoes)
+========================================================= */
+const VISITA_URL = "/api/php/visita.php";
+
+type Avaliacao = {
+    id: number; atendimento_id: number; tipo: string; falecido_nome: string;
+    avaliador_id: number | null; avaliador_nome: string; avaliador_cargo: string; status: string;
+    inicio_em: string | null; fim_em: string | null; duracao_segundos: number | null;
+    fase08_em: string | null; tempo_fase08_ate_visita_segundos: number | null;
+    com_quem_conversou: string | null; grau_parentesco: string | null; observacao_geral: string | null;
+};
+type NotaColab = {
+    avaliacao_id: number; atendimento_id: number; tipo_avaliacao: string; pergunta_numero: number;
+    pergunta_codigo: string; pergunta_titulo: string; nota_original: string; nota_valor: number | null;
+    responsavel_usuario_id: number | null; responsavel_nome: string | null; responsavel_login: string | null;
+    fase_referencia: string | null; avaliador_nome: string | null; criado_em: string | null;
+};
+type AvalResp = {
+    sucesso?: boolean; erro?: boolean; msg?: string; sem_permissao?: boolean;
+    permissoes?: { visita: boolean; pos_atendimento: boolean };
+    avaliacoes?: Avaliacao[]; notas?: NotaColab[];
+};
+type AvalEstado = { carregando: boolean; erro: string | null; semPermissao: boolean; dados: AvalResp | null };
+
+/** Pergunta da avaliação → etapa do painel (mesma atribuição de responsável feita pelo visita.php). */
+const PERGUNTA_ETAPA: Record<string, string> = {
+    primeiro_atendimento: "resposta", remocao: "remocao", preparacao: "conservacao", apresentacao_corpo: "ornamentacao",
+    cerimonia_horario: "transporte", montagem_ambiente: "velorio", sepultamento: "sepultamento",
+};
+const PERGUNTA_TITULO: Record<string, string> = {
+    primeiro_atendimento: "Primeiro atendimento", remocao: "Remoção", preparacao: "Preparação", apresentacao_corpo: "Apresentação do corpo",
+    cerimonia_horario: "Cerimônia no horário", montagem_ambiente: "Montagem do ambiente", sepultamento: "Sepultamento",
+};
+const TIPO_AVAL: Record<string, string> = { visita: "Visita", pos_atendimento: "Pós-atendimento" };
+
+/** Notas de 1 a 5 exibidas em % (5 = 100%). */
+const NOTA_MAX = 5;
+const notaPct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round((v / NOTA_MAX) * 100)}%`);
+const corNota = (m: number) => { const p = m / NOTA_MAX; return p >= 0.9 ? "var(--dash-green)" : p >= 0.75 ? "var(--dash-blue)" : p >= 0.6 ? "var(--dash-yellow)" : "var(--dash-danger-text)"; };
+const avConcluida = (a: Avaliacao) => norm(a.status) === "visitado";
+const segH = (s: number | null | undefined) => (s == null ? null : s / 3600);
+
+async function carregarAvaliacoes(inicio: string, fim: string): Promise<AvalResp> {
+    const ac = new AbortController();
+    const t = window.setTimeout(() => ac.abort(), 30000);
+    try {
+        const res = await fetch(`${VISITA_URL}?action=painel_avaliacoes&data_de=${inicio}&data_ate=${fim}&_ts=${Date.now()}`, { method: "GET", credentials: "include", cache: "no-store", signal: ac.signal });
+        const json = (await res.json().catch(() => null)) as AvalResp | null;
+        if (res.status === 401 || (json as any)?.need_login) throw new LoginError(json?.msg || "Sessão expirada. Faça login novamente.");
+        if (res.status === 403) return { erro: true, sem_permissao: true, msg: json?.msg || "Usuário sem permissão para visualizar avaliações." };
+        if (!res.ok || !json || json.erro) throw new Error(json?.msg || `HTTP ${res.status}`);
+        return json;
+    } finally {
+        window.clearTimeout(t);
+    }
+}
+
+/**
+ * Casa o responsável da nota (nome completo ou login do cadastro de usuários) com o nome usado no histórico de fases.
+ * Tenta nome, depois login, depois o primeiro nome quando ele é único entre os conhecidos.
+ */
+function resolverNome(n: NotaColab, conhecidos: Set<string>): string {
+    const cands = [n.responsavel_nome, n.responsavel_login].map((v) => nomeProprio(v)).filter(Boolean);
+    for (const c of cands) if (conhecidos.has(c)) return c;
+    for (const c of cands) {
+        const p = c.split(" ")[0];
+        const hits = [...conhecidos].filter((k) => k.split(" ")[0] === p);
+        if (hits.length === 1) return hits[0];
+    }
+    return cands[0] || "Não identificado";
+}
+function nomesConhecidos(d: Painel): Set<string> {
+    const s = new Set<string>();
+    d.lista.forEach((x) => { if (x.agente) s.add(x.agente); Object.values(x.etapas).forEach((e) => e.quem && s.add(e.quem)); });
+    d.equipe.matriz.forEach((l) => s.add(l.agente));
+    return s;
+}
+/** Avaliações e notas só dos atendimentos que estão no painel (respeita período, convênio e agente). */
+function avalDoPainel(d: Painel, av: AvalResp | null) {
+    const ids = new Set(d.lista.map((x) => x.id));
+    const avaliacoes = (av?.avaliacoes ?? []).filter((a) => ids.has(Number(a.atendimento_id)));
+    const notas = (av?.notas ?? []).filter((n) => ids.has(Number(n.atendimento_id)));
+    return { avaliacoes, notas };
+}
+
 /* =========================================================
    ABAS
 ========================================================= */
@@ -764,22 +853,46 @@ function AbaGeral({ d, filtrar }: { d: Painel; filtrar: (campo: "convenio", v: s
     );
 }
 
-function AbaEquipe({ d }: { d: Painel }) {
-    const [modo, setModo] = useState<"n" | "horas" | "mediana">("n");
+function AbaEquipe({ d, av }: { d: Painel; av: AvalEstado }) {
+    const [modo, setModo] = useState<"hn" | "n" | "horas">("hn");
     const e = d.equipe;
     const exec = e.etapas.filter((x) => x.tipo === "execucao");
     const esp = e.etapas.filter((x) => x.tipo === "espera");
     const pv = e.pontualidade.velorio, ps = e.pontualidade.sepultamento;
     const loteTot = e.registro_lote.reduce((a, x) => a + x.trocas, 0), loteN = e.registro_lote.reduce((a, x) => a + x.em_lote, 0);
+    const semHistorico = d.resumo.com_historico < d.resumo.total;
+
+    /* Notas da família por pessoa e por etapa (pergunta → etapa, responsável definido pelo visita.php) */
+    const { notasPorEtapa, notasGerais, pessoasSoComNota } = useMemo(() => {
+        const { notas } = avalDoPainel(d, av.dados);
+        const conhecidos = nomesConhecidos(d);
+        const porEtapa: Record<string, Record<string, number[]>> = {}, gerais: Record<string, number[]> = {};
+        notas.forEach((n) => {
+            if (n.nota_valor == null || !n.responsavel_nome && !n.responsavel_login) return;
+            const w = resolverNome(n, conhecidos);
+            (gerais[w] ??= []).push(n.nota_valor);
+            const et = PERGUNTA_ETAPA[n.pergunta_codigo];
+            if (et) ((porEtapa[w] ??= {})[et] ??= []).push(n.nota_valor);
+        });
+        const naMatriz = new Set(e.matriz.map((l) => l.agente));
+        return { notasPorEtapa: porEtapa, notasGerais: gerais, pessoasSoComNota: Object.keys(gerais).filter((w) => !naMatriz.has(w)).sort((a, b) => a.localeCompare(b, "pt-BR")) };
+    }, [d, av.dados, e.matriz]);
+
+    const linhas: MatrizLinha[] = modo === "hn" ? [...e.matriz, ...pessoasSoComNota.map((agente) => ({ agente, etapas: {}, total_n: 0, total_h: 0 }))] : e.matriz;
     const colMax: Record<string, number> = {};
-    const val = (c?: { n: number; horas: number; mediana_h: number | null }) => (!c ? null : modo === "n" ? c.n : modo === "horas" ? c.horas : c.mediana_h);
+    const val = (c?: { n: number; horas: number; mediana_h: number | null }) => (!c ? null : modo === "n" ? c.n : c.horas);
     exec.forEach((x) => { colMax[x.chave] = Math.max(0, ...e.matriz.map((l) => val(l.etapas[x.chave]) ?? 0)); });
     const tom = (v: number | null, m: number) => {
         if (!v || !m) return {};
         const t = v / m, k = t > 0.8 ? 5 : t > 0.6 ? 4 : t > 0.4 ? 3 : t > 0.2 ? 2 : 1;
         return { background: `var(--dash-heat-${k})`, color: k >= 4 ? "#fff" : "var(--dash-text)" };
     };
-    const semHistorico = d.resumo.com_historico < d.resumo.total;
+    const chip = (arr?: number[]) => {
+        if (!arr || !arr.length) return <span className="text-[11px]" style={{ color: "var(--dash-text-soft)" }}>sem nota</span>;
+        const m = media(arr)!;
+        return <span className="mt-0.5 inline-block rounded-full px-2 text-[11px] font-extrabold tabular-nums text-white" style={{ background: corNota(m) }} title={`${arr.length} nota(s) da família`}>{notaPct(m)}</span>;
+    };
+    const infoNotas = av.semPermissao ? "Sem permissão para ver as avaliações." : av.erro ? `Notas indisponíveis: ${av.erro}` : av.carregando ? "Carregando as notas…" : `${fmtN(Object.values(notasGerais).reduce((a, v) => a + v.length, 0))} notas da família no período.`;
 
     return (
         <div className="flex flex-col gap-4">
@@ -817,27 +930,56 @@ function AbaEquipe({ d }: { d: Painel }) {
                 </div>
             </Card>
 
-            <Card titulo="Etapas por agente" dica="Cada etapa é creditada a quem tocou o comando de início"
-                acao={<div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: "var(--dash-border-light)" }}>{([["n", "Quantidade"], ["horas", "Horas totais"], ["mediana", "Horas (mediana)"]] as const).map(([k, l]) => (
+            <Card titulo="Etapas por agente"
+                dica={modo === "hn" ? `Tempo médio de cada etapa e a nota média da família para quem foi responsável por ela (notas de 1 a 5 em %, 5 = 100%) · ${infoNotas}` : modo === "n" ? "Quantas etapas cada agente iniciou (quem tocou o comando de início)" : "Horas somadas das etapas que cada agente iniciou"}
+                acao={<div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: "var(--dash-border-light)" }}>{([["hn", "Horas médias e nota"], ["n", "Quantidade"], ["horas", "Horas totais"]] as const).map(([k, l]) => (
                     <button key={k} type="button" onClick={() => setModo(k)} className="rounded-md px-3 py-1 text-xs font-bold" style={modo === k ? { background: "var(--dash-blue-dark)", color: "#fff" } : { color: "var(--dash-text-soft)" }}>{l}</button>))}</div>}>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[820px] border-separate text-sm" style={{ borderSpacing: 3, color: "var(--dash-text)" }}>
-                        <thead><tr><th className="text-left text-xs" style={{ color: "var(--dash-text-soft)" }}>Agente</th>{exec.map((x) => <th key={x.chave} className="text-center text-xs font-bold" style={{ color: "var(--dash-text-soft)" }}>{x.rotulo}</th>)}<th className="text-center text-xs" style={{ color: "var(--dash-text-soft)" }}>Total</th></tr></thead>
+                    <table className="w-full min-w-[900px] border-separate text-sm" style={{ borderSpacing: 3, color: "var(--dash-text)" }}>
+                        <thead><tr>
+                            <th className="text-left text-xs" style={{ color: "var(--dash-text-soft)" }}>Agente</th>
+                            {modo === "hn" && <th className="text-center text-xs font-bold" style={{ color: "var(--dash-text-soft)" }} title="Nota do primeiro atendimento (agente que abriu o atendimento)">1º atendimento</th>}
+                            {exec.map((x) => <th key={x.chave} className="text-center text-xs font-bold" style={{ color: "var(--dash-text-soft)" }}>{x.rotulo}</th>)}
+                            <th className="text-center text-xs" style={{ color: "var(--dash-text-soft)" }}>Total</th>
+                        </tr></thead>
                         <tbody>
-                            {e.matriz.map((l) => (
-                                <tr key={l.agente}>
-                                    <td className="font-bold whitespace-nowrap">{l.agente}</td>
-                                    {exec.map((x) => {
-                                        const c = l.etapas[x.chave]; const v = val(c);
-                                        return <td key={x.chave} className="rounded-md px-2 py-1.5 text-center tabular-nums" style={tom(v, colMax[x.chave])} title={c ? `${c.n} vez(es) · ${fmtH(c.horas)} somadas · mediana ${fmtH(c.mediana_h)}` : ""}>{v == null ? <span style={{ color: "var(--dash-text-soft)" }}>—</span> : modo === "n" ? v : fmtH(v)}</td>;
-                                    })}
-                                    <td className="rounded-md px-2 py-1.5 text-center font-extrabold tabular-nums" style={{ background: "var(--dash-card-soft)" }}>{modo === "n" ? l.total_n : fmtH(l.total_h)}</td>
-                                </tr>
-                            ))}
+                            {linhas.map((l) => {
+                                const np = notasPorEtapa[l.agente] ?? {};
+                                return (
+                                    <tr key={l.agente}>
+                                        <td className="font-bold whitespace-nowrap">{l.agente}</td>
+                                        {modo === "hn" && <td className="rounded-md px-2 py-1.5 text-center" style={{ background: np.resposta?.length ? "var(--dash-card-soft)" : undefined }}>{np.resposta?.length ? chip(np.resposta) : <span style={{ color: "var(--dash-text-soft)" }}>—</span>}</td>}
+                                        {exec.map((x) => {
+                                            const c = l.etapas[x.chave];
+                                            const tip = c ? `${c.n} vez(es) · ${fmtH(c.horas)} somadas · média ${fmtH(c.horas / c.n)} · mediana ${fmtH(c.mediana_h)}` : "";
+                                            if (modo === "hn") {
+                                                const nt = np[x.chave];
+                                                if (!c && !nt?.length) return <td key={x.chave} className="text-center" style={{ color: "var(--dash-text-soft)" }}>—</td>;
+                                                return (
+                                                    <td key={x.chave} className="rounded-md px-2 py-1.5 text-center leading-tight" style={{ background: "var(--dash-card-soft)" }} title={`${tip}${nt?.length ? ` · nota ${notaPct(media(nt))} (${nt.length})` : ""}`}>
+                                                        <div className="tabular-nums">{c ? fmtH(c.horas / c.n) : "—"}</div>
+                                                        {chip(nt)}
+                                                    </td>
+                                                );
+                                            }
+                                            const v = val(c);
+                                            return <td key={x.chave} className="rounded-md px-2 py-1.5 text-center tabular-nums" style={tom(v, colMax[x.chave])} title={tip}>{v == null ? <span style={{ color: "var(--dash-text-soft)" }}>—</span> : modo === "n" ? v : fmtH(v)}</td>;
+                                        })}
+                                        <td className="rounded-md px-2 py-1.5 text-center font-extrabold tabular-nums leading-tight" style={{ background: "var(--dash-card-soft)" }}>
+                                            {modo === "hn" ? (<><div>{l.total_n ? fmtH(l.total_h / l.total_n) : "—"}</div>{chip(notasGerais[l.agente])}</>) : modo === "n" ? l.total_n : fmtH(l.total_h)}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
-                    {!e.matriz.length && <Vazio />}
+                    {!linhas.length && <Vazio />}
                 </div>
+                <p className="mt-2 text-xs" style={{ color: "var(--dash-text-soft)" }}>
+                    {modo === "hn"
+                        ? "Nota: verde a partir de 90%, azul a partir de 75%, amarelo a partir de 60%, vermelho abaixo. \"Não sei\" não entra na média. Primeiro atendimento: nota do agente que abriu o atendimento."
+                        : "Cores mais fortes = valor maior dentro da mesma etapa."}
+                </p>
             </Card>
 
             <div className="grid gap-4 xl:grid-cols-2">
@@ -863,6 +1005,311 @@ function AbaEquipe({ d }: { d: Painel }) {
                     <Barras itens={e.titulares.slice(0, 12)} total={d.resumo.total} />
                 </Card>
             </div>
+        </div>
+    );
+}
+
+const ORDEM_FASES = ["aguardando", "fase01", "fase02", "fase03", "fase04", "fase05", "fase06", "fase12", "fase07", "fase08", "fase09", "fase10", "fase11"];
+const rankFase = (s: string) => ORDEM_FASES.indexOf(s);
+
+function Pill({ ok, texto }: { ok: boolean; texto: string }) {
+    return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold whitespace-nowrap" style={ok ? { background: "color-mix(in srgb, var(--dash-green) 16%, transparent)", color: "var(--dash-green)" } : { background: "color-mix(in srgb, var(--dash-yellow) 22%, transparent)", color: "var(--dash-warn)" }}>{texto}</span>;
+}
+function ChipNota({ m, n }: { m: number | null; n?: number }) {
+    if (m == null) return <span className="text-xs" style={{ color: "var(--dash-text-soft)" }}>—</span>;
+    return <span className="inline-block rounded-full px-2 text-xs font-extrabold tabular-nums text-white" style={{ background: corNota(m) }} title={n != null ? `${n} nota(s)` : undefined}>{notaPct(m)}</span>;
+}
+
+type LinhaAgente = { w: string; n: number; aval: number; media: number; dist: number[]; max: number; baixas: number; vis: number; pos: number; atuou: number; cob: number | null };
+
+function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; abrirAtendimento: (id: number) => void }) {
+    const [ordem, setOrdem] = useState<{ k: keyof LinhaAgente; dir: 1 | -1 }>({ k: "media", dir: -1 });
+    const [aberta, setAberta] = useState<Avaliacao | null>(null);
+
+    const c = useMemo(() => {
+        const { avaliacoes, notas } = avalDoPainel(d, av.dados);
+        const vis = avaliacoes.filter((a) => a.tipo === "visita"), pos = avaliacoes.filter((a) => a.tipo === "pos_atendimento");
+        const visOk = new Set(vis.filter(avConcluida).map((a) => a.atendimento_id)), posOk = new Set(pos.filter(avConcluida).map((a) => a.atendimento_id));
+        const visAlguma = new Set(vis.map((a) => a.atendimento_id)), posAlguma = new Set(pos.map((a) => a.atendimento_id));
+        const elegVis = d.lista.filter((x) => x.velorio !== "Sem velório" && rankFase(x.status) >= rankFase("fase08"));
+        const elegPos = d.lista.filter((x) => x.status === "fase10" || x.status === "fase11");
+        const tAte = vis.map((a) => segH(a.tempo_fase08_ate_visita_segundos)).filter((v): v is number => v != null && v >= 0);
+        const dur = avaliacoes.filter(avConcluida).map((a) => segH(a.duracao_segundos)).filter((v): v is number => v != null && v >= 0);
+        const validas = notas.filter((n) => n.nota_valor != null);
+        const mediaTipo = (t: string) => media(validas.filter((n) => n.tipo_avaliacao === t).map((n) => n.nota_valor!));
+
+        /* Desempenho por agente */
+        const conhecidos = nomesConhecidos(d);
+        const atuou: Record<string, Set<number>> = {};
+        d.lista.forEach((x) => { [x.agente, ...Object.values(x.etapas).map((e) => e.quem)].filter(Boolean).forEach((w) => (atuou[w] ??= new Set()).add(x.id)); });
+        const G: Record<string, { notas: number[]; av: Set<number>; at: Set<number>; vis: Set<number>; pos: Set<number> }> = {};
+        validas.forEach((n) => {
+            const w = (n.responsavel_nome || n.responsavel_login) ? resolverNome(n, conhecidos) : "Não identificado";
+            const g = (G[w] ??= { notas: [], av: new Set(), at: new Set(), vis: new Set(), pos: new Set() });
+            g.notas.push(n.nota_valor!); g.av.add(n.avaliacao_id); g.at.add(n.atendimento_id);
+            (n.tipo_avaliacao === "pos_atendimento" ? g.pos : g.vis).add(n.avaliacao_id);
+        });
+        const agentes: LinhaAgente[] = Object.entries(G).map(([w, g]) => {
+            const nAt = atuou[w]?.size ?? 0;
+            return {
+                w, n: g.notas.length, aval: g.av.size, media: media(g.notas)!, dist: [1, 2, 3, 4, 5].map((k) => g.notas.filter((v) => v === k).length),
+                max: (g.notas.filter((v) => v === NOTA_MAX).length / g.notas.length) * 100, baixas: g.notas.filter((v) => v <= 2).length,
+                vis: g.vis.size, pos: g.pos.size, atuou: nAt, cob: nAt ? Math.min(100, ([...g.at].filter((id) => atuou[w].has(id)).length / nAt) * 100) : null,
+            };
+        });
+
+        /* Por pergunta: visita x pós */
+        const perg: Record<string, { v: number[]; p: number[] }> = {};
+        validas.forEach((n) => { const g = (perg[n.pergunta_codigo] ??= { v: [], p: [] }); (n.tipo_avaliacao === "pos_atendimento" ? g.p : g.v).push(n.nota_valor!); });
+        const perguntas = Object.entries(perg).map(([k, g]) => ({ k, titulo: PERGUNTA_TITULO[k] ?? k, v: media(g.v), nv: g.v.length, p: media(g.p), np: g.p.length }))
+            .sort((a, b) => Object.keys(PERGUNTA_TITULO).indexOf(a.k) - Object.keys(PERGUNTA_TITULO).indexOf(b.k));
+
+        const porAvaliador = conta(avaliacoes, (a) => nomeProprio(a.avaliador_nome) || "Não informado");
+        const baixas = validas.filter((n) => n.nota_valor! <= 2).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+        const falecido = new Map(d.lista.map((x) => [x.id, x.falecido]));
+        return {
+            avaliacoes: [...avaliacoes].sort((a, b) => String(b.inicio_em).localeCompare(String(a.inicio_em))), notas, vis, pos, visOk, posOk, elegVis, elegPos, tAte, dur,
+            mediaVis: mediaTipo("visita"), mediaPos: mediaTipo("pos_atendimento"), semResp: notas.filter((n) => n.responsavel_usuario_id == null && !n.responsavel_nome).length,
+            agentes, perguntas, porAvaliador, baixas, falecido,
+            semVisita: elegVis.filter((x) => !visAlguma.has(x.id)), semPos: elegPos.filter((x) => !posAlguma.has(x.id)),
+        };
+    }, [d, av.dados]);
+
+    if (av.semPermissao) return <Card><Vazio texto="Seu usuário não tem permissão para ver as avaliações (visita-avaliacao ou pos-atendimento-avaliacao)." /></Card>;
+    if (av.erro) return <div className="rounded-xl border px-4 py-3 text-sm" style={{ background: "var(--dash-danger-bg)", borderColor: "var(--dash-danger-border)", color: "var(--dash-danger-text)" }}>Não foi possível carregar as avaliações: {av.erro}</div>;
+    if (av.carregando && !av.dados) return <Vazio texto="Carregando as avaliações…" />;
+
+    const cobV = c.elegVis.filter((x) => c.visOk.has(x.id)).length, cobP = c.elegPos.filter((x) => c.posOk.has(x.id)).length;
+    const sub = (arr: Avaliacao[]) => `${fmtN(arr.filter(avConcluida).length)} concluídas · ${fmtN(arr.filter((a) => !avConcluida(a)).length)} em andamento`;
+    const agentes = [...c.agentes].sort((a, b) => {
+        const va = a[ordem.k], vb = b[ordem.k];
+        if (ordem.k === "w") return ordem.dir * String(va).localeCompare(String(vb), "pt-BR");
+        return ordem.dir * (((va as number) ?? -1) - ((vb as number) ?? -1)) || b.n - a.n;
+    });
+    const MIN = 3;
+    const DC = ["var(--dash-danger-text)", "#e8743b", "var(--dash-yellow)", "var(--dash-blue)", "var(--dash-green)"];
+    const COLS: [keyof LinhaAgente | "dist", string][] = [["w", "Agente"], ["aval", "Avaliações"], ["media", "Nota média"], ["dist", "Distribuição"], ["max", "Nota máxima"], ["baixas", "Notas baixas"], ["vis", "Visita"], ["pos", "Pós"], ["atuou", "Atendimentos em que atuou"], ["cob", "Atendimentos avaliados"]];
+    const cov = (rot: string, a: number, b: number) => {
+        const p = b ? (a / b) * 100 : 0;
+        return (
+            <div>
+                <div className="mb-1 flex justify-between gap-2 text-sm"><b>{rot}</b><span className="tabular-nums" style={{ color: "var(--dash-text-soft)" }}>{fmtN(a)} de {fmtN(b)} · {b ? fmtP(p) : "—"}</span></div>
+                <div className="h-2.5 overflow-hidden rounded-full" style={{ background: "var(--dash-empty)" }}><div className="h-full rounded-full" style={{ width: `${p}%`, background: p >= 80 ? "var(--dash-green)" : p >= 50 ? "var(--dash-yellow)" : "var(--dash-danger-text)" }} /></div>
+            </div>
+        );
+    };
+    const lista = (arr: ListaItem[], vazio: string) => arr.length ? (
+        <ul className="max-h-80 overflow-y-auto">
+            {arr.map((x) => (
+                <li key={x.id}><button type="button" onClick={() => abrirAtendimento(x.id)} className="flex w-full justify-between gap-3 border-b px-1 py-1.5 text-left text-sm hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }}>
+                    <span className="font-semibold">{x.falecido}</span><span className="text-xs whitespace-nowrap tabular-nums" style={{ color: "var(--dash-text-soft)" }}>{x.status_rotulo} · {dataBR(x.criado_em)}</span>
+                </button></li>))}
+        </ul>
+    ) : <Vazio texto={vazio} />;
+
+    return (
+        <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <Kpi rotulo="Visitas" valor={fmtN(c.vis.length)} detalhe={sub(c.vis)} />
+                <Kpi rotulo="Pós-atendimentos" valor={fmtN(c.pos.length)} detalhe={sub(c.pos)} />
+                <Kpi rotulo="Cobertura de visita" valor={c.elegVis.length ? fmtP(pct(cobV, c.elegVis.length)) : "—"} detalhe={`${fmtN(cobV)} de ${fmtN(c.elegVis.length)} com velório`} alerta={c.elegVis.length && pct(cobV, c.elegVis.length) < 50 ? "atencao" : undefined} />
+                <Kpi rotulo="Cobertura de pós" valor={c.elegPos.length ? fmtP(pct(cobP, c.elegPos.length)) : "—"} detalhe={`${fmtN(cobP)} de ${fmtN(c.elegPos.length)} concluídos`} alerta={c.elegPos.length && pct(cobP, c.elegPos.length) < 50 ? "atencao" : undefined} />
+                <Kpi rotulo="Nota média" valor={<span className="flex gap-3"><span title="Visita">{notaPct(c.mediaVis)}</span><span style={{ color: "var(--dash-text-soft)" }}>·</span><span title="Pós-atendimento">{notaPct(c.mediaPos)}</span></span>} detalhe="visita · pós-atendimento (5 = 100%)" />
+                <Kpi rotulo="Entrega de corpo → visita" valor={c.tAte.length ? fmtH(mediana(c.tAte)) : "—"} detalhe={c.tAte.length ? `mediana · duração da avaliação ${fmtH(mediana(c.dur))}` : "Sem visitas no período"} />
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+                <Card titulo="Cobertura" dica="Visita: atendimentos com velório que já chegaram à Entrega de corpo · Pós: atendimentos concluídos · conta só avaliações concluídas">
+                    <div className="flex flex-col gap-4">{cov("Visita durante o velório", cobV, c.elegVis.length)}{cov("Pós-atendimento", cobP, c.elegPos.length)}</div>
+                    <p className="mt-3 text-xs" style={{ color: "var(--dash-text-soft)" }}>Verde a partir de 80%, amarelo a partir de 50%.{c.semResp ? ` ${fmtN(c.semResp)} nota(s) sem responsável identificado.` : ""}</p>
+                </Card>
+                <Card titulo="Avaliações por avaliador" dica="Quem fez a visita ou o pós-atendimento">
+                    <Barras itens={c.porAvaliador} />
+                </Card>
+            </div>
+
+            <Card titulo="Desempenho por agente nas avaliações" dica="Notas da família a cada colaborador (1 a 5 em %, 5 = 100%) · o responsável de cada nota é definido pelo visita.php · clique no cabeçalho para ordenar">
+                {agentes.length ? (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[980px] text-sm" style={{ color: "var(--dash-text)" }}>
+                            <thead><tr style={{ background: "var(--dash-card-soft)" }}>
+                                {COLS.map(([k, l]) => (
+                                    <th key={k} className={`px-2 py-2 text-xs font-bold whitespace-nowrap ${k === "w" ? "text-left" : "text-center"} ${k !== "dist" ? "cursor-pointer" : ""}`} style={{ color: "var(--dash-text-soft)" }}
+                                        onClick={() => k !== "dist" && setOrdem((o) => ({ k: k as keyof LinhaAgente, dir: o.k === k ? (o.dir === 1 ? -1 : 1) : k === "w" ? 1 : -1 }))}>
+                                        {l}{ordem.k === k ? (ordem.dir === 1 ? " ↑" : " ↓") : ""}
+                                    </th>))}
+                            </tr></thead>
+                            <tbody>
+                                {agentes.map((r) => (
+                                    <tr key={r.w} className="border-t" style={{ borderColor: "var(--dash-border-light)", opacity: r.n < MIN ? 0.62 : 1 }}>
+                                        <td className="px-2 py-1.5 font-bold whitespace-nowrap">{r.w}{r.n < MIN && <span className="ml-2 rounded px-1.5 text-[10px] font-semibold" style={{ background: "var(--dash-empty)" }}>amostra pequena</span>}</td>
+                                        <td className="px-2 text-center tabular-nums">{fmtN(r.aval)}</td>
+                                        <td className="px-2"><span className="flex items-center gap-2"><span className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: "var(--dash-empty)", minWidth: 70 }}><span className="block h-full rounded-full" style={{ width: `${(r.media / NOTA_MAX) * 100}%`, background: corNota(r.media) }} /></span><b className="tabular-nums">{notaPct(r.media)}</b></span></td>
+                                        <td className="px-2"><span className="flex h-2.5 w-32 overflow-hidden rounded" style={{ background: "var(--dash-empty)" }} title={r.dist.map((q, i) => `${(i + 1) * 20}%: ${q}`).join(" · ")}>{r.dist.map((q, i) => q ? <span key={i} style={{ width: `${(q / r.n) * 100}%`, background: DC[i] }} /> : null)}</span></td>
+                                        <td className="px-2 text-center tabular-nums">{fmtP(r.max)}</td>
+                                        <td className="px-2 text-center tabular-nums" style={{ color: r.baixas ? "var(--dash-danger-text)" : undefined, fontWeight: r.baixas ? 800 : undefined }}>{r.baixas}</td>
+                                        <td className="px-2 text-center tabular-nums">{r.vis}</td>
+                                        <td className="px-2 text-center tabular-nums">{r.pos}</td>
+                                        <td className="px-2 text-center tabular-nums">{r.atuou || "—"}</td>
+                                        <td className="px-2 text-center tabular-nums">{r.cob != null ? fmtP(r.cob) : "—"}</td>
+                                    </tr>))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : <Vazio texto={av.carregando ? "Carregando as notas…" : "Nenhuma nota de colaborador nas avaliações do período."} />}
+                <p className="mt-2 text-xs" style={{ color: "var(--dash-text-soft)" }}>
+                    Distribuição: <span style={{ color: DC[0] }}>■</span> 20% <span style={{ color: DC[1] }}>■</span> 40% <span style={{ color: DC[2] }}>■</span> 60% <span style={{ color: DC[3] }}>■</span> 80% <span style={{ color: DC[4] }}>■</span> 100% · nota máxima = % de notas 100% · notas baixas = 20% ou 40% (nota 1 ou 2) · &quot;Não sei&quot; fica fora · menos de {MIN} notas = amostra pequena · atendimentos avaliados = atendimentos com nota para a pessoa ÷ atendimentos em que ela atuou.
+                </p>
+            </Card>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+                <Card titulo="Nota média por agente" dica={`Só agentes com ${MIN} notas ou mais`}>
+                    <Barras itens={c.agentes.filter((r) => r.n >= MIN).sort((a, b) => b.media - a.media).map((r) => ({ nome: r.w, total: Math.round((r.media / NOTA_MAX) * 100), cor: corNota(r.media), extra: `${r.w}: ${notaPct(r.media)} em ${r.n} notas` }))} max={100} semParticipacao formato={(v) => `${v}%`} />
+                </Card>
+                <Card titulo="Nota por pergunta" dica="Visita × pós-atendimento · média em % (5 = 100%)">
+                    {c.perguntas.length ? (
+                        <Tabela cabecalho={["Pergunta", "Visita", "Pós", "Diferença"]} larguraMin={380}
+                            linhas={c.perguntas.map((p) => [p.titulo, <ChipNota key="v" m={p.v} n={p.nv} />, <ChipNota key="p" m={p.p} n={p.np} />,
+                            p.v != null && p.p != null ? <span key="d" className="font-bold" style={{ color: p.p - p.v < 0 ? "var(--dash-danger-text)" : "var(--dash-green)" }}>{p.p - p.v >= 0 ? "+" : ""}{Math.round(((p.p - p.v) / NOTA_MAX) * 100)} pts</span> : "—"])} />
+                    ) : <Vazio />}
+                </Card>
+            </div>
+
+            <Card titulo="Notas baixas (1 ou 2)" dica="Para retorno à família e à equipe · clique para abrir a avaliação">
+                {c.baixas.length ? (
+                    <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><tbody>
+                        {c.baixas.slice(0, 60).map((n, i) => {
+                            const a = c.avaliacoes.find((x) => x.id === n.avaliacao_id);
+                            return (
+                                <tr key={i} className="border-t cursor-pointer hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }} onClick={() => a && setAberta(a)}>
+                                    <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{dataHoraBR(n.criado_em)}</td>
+                                    <td className="px-2 font-semibold">{c.falecido.get(n.atendimento_id) ?? `#${n.atendimento_id}`}</td>
+                                    <td className="px-2">{TIPO_AVAL[n.tipo_avaliacao] ?? n.tipo_avaliacao}</td>
+                                    <td className="px-2">{PERGUNTA_TITULO[n.pergunta_codigo] ?? n.pergunta_titulo}</td>
+                                    <td className="px-2"><ChipNota m={n.nota_valor} /></td>
+                                    <td className="px-2">{n.responsavel_nome || "Não identificado"}</td>
+                                    <td className="px-2" style={{ color: "var(--dash-text-soft)" }}>{n.avaliador_nome || "—"}</td>
+                                </tr>);
+                        })}
+                    </tbody></table></div>
+                ) : <Vazio texto="Nenhuma nota 1 ou 2 no período." />}
+            </Card>
+
+            <Card titulo={`Avaliações do período · ${fmtN(c.avaliacoes.length)}`} dica="Clique para ver as respostas, observações e fotos">
+                {c.avaliacoes.length ? (
+                    <div className="max-h-[460px] overflow-auto rounded-lg border" style={{ borderColor: "var(--dash-border-light)" }}>
+                        <table className="w-full min-w-[980px] text-sm" style={{ color: "var(--dash-text)" }}>
+                            <thead className="sticky top-0" style={{ background: "var(--dash-card-soft)" }}><tr>{["Início", "Tipo", "Falecido", "Avaliador", "Situação", "Entrega de corpo → visita", "Duração", "Conversou com", "Nota"].map((h) => <th key={h} className="px-2 py-2 text-left text-xs font-bold whitespace-nowrap" style={{ color: "var(--dash-text-soft)" }}>{h}</th>)}</tr></thead>
+                            <tbody>
+                                {c.avaliacoes.map((a) => {
+                                    const ns = c.notas.filter((n) => n.avaliacao_id === a.id && n.nota_valor != null).map((n) => n.nota_valor!);
+                                    return (
+                                        <tr key={a.id} className="border-t cursor-pointer hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }} onClick={() => setAberta(a)}>
+                                            <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{dataHoraBR(a.inicio_em)}</td>
+                                            <td className="px-2">{TIPO_AVAL[a.tipo] ?? a.tipo}</td>
+                                            <td className="px-2 font-semibold">{a.falecido_nome || c.falecido.get(a.atendimento_id) || "—"}</td>
+                                            <td className="px-2">{a.avaliador_nome || "—"}</td>
+                                            <td className="px-2"><Pill ok={avConcluida(a)} texto={avConcluida(a) ? "Concluída" : "Em andamento"} /></td>
+                                            <td className="px-2 tabular-nums">{a.tipo === "visita" ? fmtH(segH(a.tempo_fase08_ate_visita_segundos)) : "—"}</td>
+                                            <td className="px-2 tabular-nums">{fmtH(segH(a.duracao_segundos))}</td>
+                                            <td className="px-2">{[a.com_quem_conversou, a.grau_parentesco].filter(Boolean).join(" · ") || "—"}</td>
+                                            <td className="px-2"><ChipNota m={media(ns)} n={ns.length} /></td>
+                                        </tr>);
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : <Vazio texto="Nenhuma avaliação para os atendimentos do período." />}
+            </Card>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+                <Card titulo={`Sem visita · ${fmtN(c.semVisita.length)}`} dica="Com velório, já na Entrega de corpo ou depois, sem visita registrada · clique para abrir">{lista(c.semVisita, "Todos os atendimentos elegíveis têm visita.")}</Card>
+                <Card titulo={`Sem pós-atendimento · ${fmtN(c.semPos.length)}`} dica="Concluídos sem pós-atendimento registrado · clique para abrir">{lista(c.semPos, "Todos os concluídos têm pós-atendimento.")}</Card>
+            </div>
+
+            {aberta && <FichaAvaliacao a={aberta} notas={c.notas.filter((n) => n.avaliacao_id === aberta.id)} fechar={() => setAberta(null)} abrirAtendimento={(id) => { setAberta(null); abrirAtendimento(id); }} />}
+        </div>
+    );
+}
+
+function FichaAvaliacao({ a, notas, fechar, abrirAtendimento }: { a: Avaliacao; notas: NotaColab[]; fechar: () => void; abrirAtendimento: (id: number) => void }) {
+    const [det, setDet] = useState<any | null>(null);
+    const [erro, setErro] = useState<string | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        setDet(null); setErro(null);
+        getJson<any>(`${VISITA_URL}?action=obter&tipo=${encodeURIComponent(a.tipo)}&atendimento_id=${a.atendimento_id}`)
+            .then((j) => { if (vivo) { if (j?.erro) setErro(j.msg || "Falha ao carregar."); else setDet(j); } })
+            .catch((e) => vivo && setErro(e?.message || "Não foi possível carregar as respostas."));
+        return () => { vivo = false; };
+    }, [a.id, a.tipo, a.atendimento_id]);
+    useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && fechar(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [fechar]);
+
+    const respostas: any[] = det?.respostas ?? [];
+    const perguntas: any[] = (det?.perguntas ?? []).filter((p: any) => p.aplicavel);
+    const itens = perguntas.length ? perguntas.map((p: any) => ({ codigo: String(p.codigo), titulo: String(p.titulo), descricao: String(p.descricao ?? ""), r: respostas.find((r) => Number(r.pergunta_numero) === Number(p.numero)) }))
+        : notas.map((n) => ({ codigo: n.pergunta_codigo, titulo: PERGUNTA_TITULO[n.pergunta_codigo] ?? n.pergunta_titulo, descricao: "", r: { nota: n.nota_original } as any }));
+    const registros: any[] = det?.registros ?? [];
+
+    return (
+        <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal>
+            <div className="absolute inset-0 bg-black/40" onClick={fechar} aria-hidden />
+            <aside className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-hidden shadow-2xl" style={{ background: "var(--dash-card)", color: "var(--dash-text)" }}>
+                <div className="flex items-start justify-between gap-3 border-b p-4" style={{ borderColor: "var(--dash-border-light)" }}>
+                    <div>
+                        <h2 className="text-xl font-black">{a.falecido_nome || `Atendimento #${a.atendimento_id}`}</h2>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--dash-text-soft)" }}>
+                            <Pill ok={avConcluida(a)} texto={avConcluida(a) ? "Concluída" : "Em andamento"} /><span>{TIPO_AVAL[a.tipo] ?? a.tipo}</span><span>· atendimento #{a.atendimento_id}</span>
+                        </div>
+                    </div>
+                    <button type="button" onClick={fechar} className="rounded-md border px-2 py-1 text-sm" style={{ borderColor: "var(--dash-border-light)" }} aria-label="Fechar">✕</button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 text-sm">
+                    <dl className="grid grid-cols-[170px_1fr] gap-x-3 gap-y-1">
+                        {[["Avaliador", [a.avaliador_nome, a.avaliador_cargo].filter(Boolean).join(" · ") || "—"], ["Início", dataHoraBR(a.inicio_em)], ["Fim", dataHoraBR(a.fim_em)], ["Duração", fmtH(segH(a.duracao_segundos))],
+                        ...(a.tipo === "visita" ? [["Entrega de corpo", dataHoraBR(a.fase08_em)], ["Entrega de corpo → visita", fmtH(segH(a.tempo_fase08_ate_visita_segundos))]] : []),
+                        ["Conversou com", a.com_quem_conversou || "—"], ["Parentesco", a.grau_parentesco || "—"]].map(([k, v]) => (
+                            <React.Fragment key={k}><dt style={{ color: "var(--dash-text-soft)" }}>{k}</dt><dd className="break-words">{v}</dd></React.Fragment>))}
+                    </dl>
+                    {a.observacao_geral && <p className="mt-3 whitespace-pre-wrap rounded-lg p-3" style={{ background: "var(--dash-card-soft)" }}>{a.observacao_geral}</p>}
+
+                    <h4 className="mt-5 mb-2 text-xs font-extrabold uppercase tracking-wider" style={{ color: "var(--dash-text-soft)" }}>Respostas</h4>
+                    {erro && !notas.length ? <p style={{ color: "var(--dash-danger-text)" }}>{erro}</p> : !det && !erro ? <p style={{ color: "var(--dash-text-soft)" }}>Carregando…</p> : (
+                        <div className="flex flex-col gap-2">
+                            {itens.map((it) => {
+                                const nota = String(it.r?.nota ?? "");
+                                const nv = /^[1-5]$/.test(nota) ? Number(nota) : null;
+                                const resp = notas.find((n) => n.pergunta_codigo === it.codigo);
+                                return (
+                                    <div key={it.codigo} className="rounded-lg p-3" style={{ background: "var(--dash-card-soft)" }}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div><div className="font-bold">{it.titulo}</div>{it.descricao && <div className="text-xs" style={{ color: "var(--dash-text-soft)" }}>{it.descricao}</div>}</div>
+                                            {nv != null ? <ChipNota m={nv} /> : <span className="text-xs font-bold" style={{ color: "var(--dash-text-soft)" }}>{nota === "nao_sei" ? "Não sei" : "Sem nota"}</span>}
+                                        </div>
+                                        {resp && <div className="mt-1 text-xs" style={{ color: "var(--dash-text-soft)" }}>Responsável: <b>{resp.responsavel_nome || "não identificado"}</b></div>}
+                                        {it.r?.observacao && <div className="mt-1 whitespace-pre-wrap">{it.r.observacao}</div>}
+                                        {it.r?.foto_url && <a href={it.r.foto_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold underline" style={{ color: "var(--dash-blue-dark)" }}>Ver foto</a>}
+                                    </div>);
+                            })}
+                            {!itens.length && <p style={{ color: "var(--dash-text-soft)" }}>Sem respostas registradas.</p>}
+                        </div>
+                    )}
+
+                    {registros.length > 0 && (<>
+                        <h4 className="mt-5 mb-2 text-xs font-extrabold uppercase tracking-wider" style={{ color: "var(--dash-text-soft)" }}>Registros fotográficos</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                            {registros.map((r) => (
+                                <a key={r.id} href={r.foto_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border" style={{ borderColor: "var(--dash-border-light)" }} title={r.legenda || ""}>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={r.foto_url} alt={r.legenda || "Registro da avaliação"} className="h-24 w-full object-cover" loading="lazy" />
+                                    {r.legenda && <div className="p-1 text-[11px]">{r.legenda}</div>}
+                                </a>))}
+                        </div>
+                    </>)}
+
+                    <button type="button" onClick={() => abrirAtendimento(a.atendimento_id)} className="mt-5 rounded-lg border px-3 py-1.5 text-sm font-bold" style={{ borderColor: "var(--dash-border-light)" }}>Abrir o atendimento</button>
+                </div>
+            </aside>
         </div>
     );
 }
@@ -1038,7 +1485,7 @@ function Ficha({ item, etapasDef, fechar }: { item: ListaItem; etapasDef: { chav
    PÁGINA
 ========================================================= */
 
-type Aba = "geral" | "equipe" | "perfil" | "lista";
+type Aba = "geral" | "equipe" | "perfil" | "visitas" | "lista";
 
 function diasEntre(a: string, b: string) { return Math.round((tsOf(b) - tsOf(a)) / 864e5) + 1; }
 function somaDias(s: string, n: number) { const d = new Date(tsOf(s)); d.setDate(d.getDate() + n); return iso(d); }
@@ -1064,6 +1511,17 @@ export default function PainelAtendimentosPage() {
     const [carregando, setCarregando] = useState(false);
     const [geradoEm, setGeradoEm] = useState<string>("");
     const [erro, setErro] = useState<{ tipo: "login" | "falha"; msg: string } | null>(null);
+    const [aval, setAval] = useState<AvalEstado>({ carregando: false, erro: null, semPermissao: false, dados: null });
+
+    /* Avaliações de visita e pós-atendimento do período (visita.php) */
+    useEffect(() => {
+        let vivo = true;
+        setAval((s) => ({ ...s, carregando: true, erro: null }));
+        carregarAvaliacoes(range.inicio, range.fim)
+            .then((j) => { if (!vivo) return; setAval(j.sem_permissao ? { carregando: false, erro: null, semPermissao: true, dados: null } : { carregando: false, erro: null, semPermissao: false, dados: j }); })
+            .catch((e) => { if (!vivo) return; if (e instanceof LoginError) setErro({ tipo: "login", msg: e.message }); setAval({ carregando: false, erro: e?.name === "AbortError" ? "O servidor demorou a responder." : e?.message || "Falha ao carregar.", semPermissao: false, dados: null }); });
+        return () => { vivo = false; };
+    }, [range, recarga]);
 
     /* 1) Atendimentos do período (balanco.php), período anterior e registros completos (informativo.php) */
     useEffect(() => {
@@ -1212,7 +1670,7 @@ export default function PainelAtendimentosPage() {
                         </div>
                     )}
                     <nav className="flex gap-1 overflow-x-auto border-b" style={{ borderColor: "var(--dash-border-light)" }} role="tablist">
-                        {([["geral", "Visão geral"], ["equipe", "Desempenho da equipe"], ["perfil", "Perfil dos atendimentos"], ["lista", `Lista analítica${dados ? ` · ${dados.lista.length}` : ""}`]] as [Aba, string][]).map(([k, l]) => (
+                        {([["geral", "Visão geral"], ["equipe", "Desempenho da equipe"], ["perfil", "Perfil dos atendimentos"], ["visitas", `Visitas e pós-atendimento${dados && aval.dados ? ` · ${avalDoPainel(dados, aval.dados).avaliacoes.length}` : ""}`], ["lista", `Lista analítica${dados ? ` · ${dados.lista.length}` : ""}`]] as [Aba, string][]).map(([k, l]) => (
                             <button key={k} role="tab" aria-selected={aba === k} type="button" onClick={() => setAba(k)} className="-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-bold"
                                 style={{ borderColor: aba === k ? "var(--dash-blue-dark)" : "transparent", color: aba === k ? "var(--dash-text)" : "var(--dash-text-soft)" }}>{l}</button>))}
                     </nav>
@@ -1227,8 +1685,9 @@ export default function PainelAtendimentosPage() {
                 {dados && (
                     <div style={{ opacity: carregando ? 0.6 : 1, transition: "opacity .15s" }}>
                         {aba === "geral" && <AbaGeral d={dados} filtrar={filtrar} />}
-                        {aba === "equipe" && <AbaEquipe d={dados} />}
+                        {aba === "equipe" && <AbaEquipe d={dados} av={aval} />}
                         {aba === "perfil" && <AbaPerfil d={dados} />}
+                        {aba === "visitas" && <AbaVisitas d={dados} av={aval} abrirAtendimento={setFichaId} />}
                         {aba === "lista" && <AbaLista d={dados} abrir={setFichaId} />}
                     </div>
                 )}
