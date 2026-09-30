@@ -1721,39 +1721,166 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
     });
 }
 
+function parseMarkdownTableRow(line: string): string[] {
+    let value = String(line || "").trim();
+    if (value.startsWith("|")) value = value.slice(1);
+    if (value.endsWith("|")) value = value.slice(0, -1);
+
+    const cells: string[] = [];
+    let current = "";
+    let escaped = false;
+
+    for (const char of value) {
+        if (escaped) {
+            current += char;
+            escaped = false;
+            continue;
+        }
+        if (char === "\\") {
+            escaped = true;
+            current += char;
+            continue;
+        }
+        if (char === "|") {
+            cells.push(current.trim().replace(/\\\|/g, "|"));
+            current = "";
+            continue;
+        }
+        current += char;
+    }
+    cells.push(current.trim().replace(/\\\|/g, "|"));
+    return cells;
+}
+
+function isMarkdownTableSeparator(line: string) {
+    const cells = parseMarkdownTableRow(line);
+    return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function markdownTableAlignments(separatorLine: string): Array<"left" | "center" | "right"> {
+    return parseMarkdownTableRow(separatorLine).map((cell) => {
+        const trimmed = cell.trim();
+        if (trimmed.startsWith(":") && trimmed.endsWith(":")) return "center";
+        if (trimmed.endsWith(":")) return "right";
+        return "left";
+    });
+}
+
 function AssistantContent({ content }: { content: string }) {
     const lines = String(content || "").replace(/\r\n/g, "\n").split("\n");
-    return (
-        <div className="space-y-1.5">
-            {lines.map((rawLine, index) => {
-                const line = rawLine.trimEnd();
-                const trimmed = line.trim();
-                if (!trimmed) return <div key={`gap-${index}`} className="h-1" />;
+    const blocks: React.ReactNode[] = [];
 
-                const bullet = trimmed.match(/^[-•]\s+(.+)$/);
-                if (bullet) {
-                    return (
-                        <div key={`bullet-${index}`} className="flex items-start gap-2 pl-0.5">
-                            <span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-                            <div className="min-w-0 flex-1">{renderInlineMarkdown(bullet[1], `bullet-${index}`)}</div>
-                        </div>
-                    );
-                }
+    for (let index = 0; index < lines.length;) {
+        const rawLine = lines[index] ?? "";
+        const line = rawLine.trimEnd();
+        const trimmed = line.trim();
 
-                const numbered = trimmed.match(/^(\d+)[.)]\s+(.+)$/);
-                if (numbered) {
-                    return (
-                        <div key={`number-${index}`} className="flex items-start gap-2">
-                            <span className="min-w-5 shrink-0 font-medium text-slate-500 dark:text-slate-400">{numbered[1]}.</span>
-                            <div className="min-w-0 flex-1">{renderInlineMarkdown(numbered[2], `number-${index}`)}</div>
-                        </div>
-                    );
-                }
+        // Tabela Markdown: cabeçalho | separador | linhas de dados.
+        if (
+            trimmed.includes("|")
+            && index + 1 < lines.length
+            && isMarkdownTableSeparator(lines[index + 1] ?? "")
+        ) {
+            const headers = parseMarkdownTableRow(trimmed);
+            const alignments = markdownTableAlignments(lines[index + 1] ?? "");
+            const rows: string[][] = [];
+            let cursor = index + 2;
 
-                return <div key={`line-${index}`}>{renderInlineMarkdown(line, `line-${index}`)}</div>;
-            })}
-        </div>
-    );
+            while (cursor < lines.length) {
+                const candidate = String(lines[cursor] ?? "").trim();
+                if (!candidate || !candidate.includes("|")) break;
+                const cells = parseMarkdownTableRow(candidate);
+                if (cells.length < 2) break;
+                rows.push(cells);
+                cursor++;
+            }
+
+            blocks.push(
+                <div key={`table-${index}`} className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                    <table className="min-w-full border-collapse text-sm">
+                        <thead className="bg-slate-100 dark:bg-slate-800/90">
+                            <tr>
+                                {headers.map((header, columnIndex) => (
+                                    <th
+                                        key={`table-${index}-head-${columnIndex}`}
+                                        className={[
+                                            "border-b border-slate-200 dark:border-slate-700 px-3 py-2 font-semibold text-slate-900 dark:text-slate-100",
+                                            alignments[columnIndex] === "right"
+                                                ? "text-right"
+                                                : alignments[columnIndex] === "center"
+                                                    ? "text-center"
+                                                    : "text-left",
+                                        ].join(" ")}
+                                    >
+                                        {renderInlineMarkdown(header, `table-${index}-head-${columnIndex}`)}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-900/40">
+                            {rows.map((row, rowIndex) => (
+                                <tr key={`table-${index}-row-${rowIndex}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                    {headers.map((_, columnIndex) => (
+                                        <td
+                                            key={`table-${index}-cell-${rowIndex}-${columnIndex}`}
+                                            className={[
+                                                "px-3 py-2 text-slate-700 dark:text-slate-300",
+                                                alignments[columnIndex] === "right"
+                                                    ? "text-right tabular-nums"
+                                                    : alignments[columnIndex] === "center"
+                                                        ? "text-center"
+                                                        : "text-left",
+                                            ].join(" ")}
+                                        >
+                                            {renderInlineMarkdown(row[columnIndex] ?? "", `table-${index}-cell-${rowIndex}-${columnIndex}`)}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+
+            index = cursor;
+            continue;
+        }
+
+        if (!trimmed) {
+            blocks.push(<div key={`gap-${index}`} className="h-1" />);
+            index++;
+            continue;
+        }
+
+        const bullet = trimmed.match(/^[-•]\s+(.+)$/);
+        if (bullet) {
+            blocks.push(
+                <div key={`bullet-${index}`} className="flex items-start gap-2 pl-0.5">
+                    <span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                    <div className="min-w-0 flex-1">{renderInlineMarkdown(bullet[1], `bullet-${index}`)}</div>
+                </div>
+            );
+            index++;
+            continue;
+        }
+
+        const numbered = trimmed.match(/^(\d+)[.)]\s+(.+)$/);
+        if (numbered) {
+            blocks.push(
+                <div key={`number-${index}`} className="flex items-start gap-2">
+                    <span className="min-w-5 shrink-0 font-medium text-slate-500 dark:text-slate-400">{numbered[1]}.</span>
+                    <div className="min-w-0 flex-1">{renderInlineMarkdown(numbered[2], `number-${index}`)}</div>
+                </div>
+            );
+            index++;
+            continue;
+        }
+
+        blocks.push(<div key={`line-${index}`}>{renderInlineMarkdown(line, `line-${index}`)}</div>);
+        index++;
+    }
+
+    return <div className="space-y-1.5">{blocks}</div>;
 }
 
 async function consumeSse(response: Response, onEvent: (event: SseEvent) => void) {
