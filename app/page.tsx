@@ -2,33 +2,43 @@
 
 
 
-import React, {
 
-  useEffect,
 
-  useState,
 
-} from "react";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+
 
 import Link from "next/link";
 
-import {
 
-  IconFlower,
 
-  IconHome,
+import { IconFlower, IconHome, IconSearch, IconArrowRight } from "@tabler/icons-react";
 
-} from "@tabler/icons-react";
+
 
 import { usePerms } from "./_perms/PermsProvider";
 
 
 
+
+
+
+
 /* =========================================================
+
+
 
    CONFIGURAÇÃO DOS CONTADORES
 
+
+
    ========================================================= */
+
+
+
+
 
 
 
@@ -36,197 +46,395 @@ const COUNTS_REFRESH_MS = 15_000;
 
 
 
+
+
+
+
 const SERVICOS_API =
+
+
 
   "https://api.planoassistencialintegrado.com.br/informativo.php";
 
 
 
+
+
+
+
 const COROAS_API =
+
+
 
   "https://api.planoassistencialintegrado.com.br/coroas.php";
 
 
 
+
+
+
+
 const REQUISICOES_API =
+
+
 
   "https://api.planoassistencialintegrado.com.br/requisicoes.php";
 
 
 
+
+
+
+
 const STATUS_REQUISICOES =
+
+
 
   "PENDENTE,EM_SEPARACAO,EM_TRANSITO";
 
 
 
+
+
+
+
 /* =========================================================
+
+
 
    TIPOS
 
+
+
    ========================================================= */
+
+
+
+
 
 
 
 type CounterKey =
 
+
+
   | "servicos"
 
+
+
   | "coroas"
+
+
 
   | "requisicoes";
 
 
 
+
+
+
+
 type DashboardCounts = Record<
+
+
 
   CounterKey,
 
+
+
   number | null
+
+
 
 >;
 
 
 
+
+
+
+
 type RegistroFunerario = {
+
+
 
   status?: string;
 
+
+
   assistencia?: string;
+
+
 
   realiza_velorio?: string;
 
+
+
   realiza_sepultamento?: string;
+
+
 
   tipo_atendimento?: string;
 
 
 
+
+
+
+
   [key: string]: any;
 
+
+
 };
+
+
+
+
 
 
 
 type CoroasResponse = {
 
+
+
   sucesso?: boolean;
+
+
 
   dados?: Array<{
 
+
+
     id?: number;
+
+
 
     status?: string | null;
 
+
+
   }>;
+
+
 
   meta?: {
 
+
+
     total?: number | string;
+
+
 
   };
 
+
+
   msg?: string;
 
+
+
 };
+
+
+
+
 
 
 
 type RequisicoesResponse = {
 
+
+
   ok?: boolean;
+
+
 
   rows?: any[];
 
+
+
   msg?: string;
 
+
+
 };
+
+
+
+
 
 
 
 /* =========================================================
 
+
+
    REGRAS DO QUADRO DE SERVIÇOS FUNERÁRIOS
+
+
 
    ========================================================= */
 
 
 
+
+
+
+
 const ROTULO_PARA_FASE: Record<string, string> = {
+
+
 
   removendo: "fase01",
 
+
+
   "aguardando procedimento": "fase02",
+
+
 
   preparando: "fase03",
 
+
+
   "aguardando ornamentacao": "fase04",
+
+
 
   ornamentando: "fase05",
 
+
+
   "fim da ornamentacao": "fase06",
+
+
 
   "aguardando corpo pronto": "fase06",
 
+
+
   "corpo pronto": "fase12",
+
+
 
   transportando: "fase07",
 
+
+
   "transportando obito p/velorio": "fase07",
+
+
 
   "transportando obito para velorio": "fase07",
 
+
+
   "transportando p/ velorio": "fase07",
+
+
 
   "transportando p/ velório": "fase07",
 
+
+
   velando: "fase08",
+
+
 
   sepultando: "fase09",
 
+
+
   "transportando p/ sepultamento": "fase09",
+
+
 
   "sepultamento concluido": "fase10",
 
+
+
   "sepultamento concluído": "fase10",
+
+
 
   "material recolhido": "fase11",
 
+
+
   concluido: "fase11",
 
+
+
   concluído: "fase11",
+
+
 
 };
 
 
 
+
+
+
+
 function normalizeKey(value: string) {
+
+
 
   return value
 
+
+
     .normalize("NFD")
+
+
 
     .replace(/[\u0300-\u036f]/g, "")
 
+
+
     .toLowerCase()
 
+
+
     .trim();
+
+
 
 }
 
 
 
+
+
+
+
 function normalizarStatus(
+
+
 
   status?: string
 
+
+
 ): string | undefined {
+
+
 
   if (!status) {
 
+
+
     return undefined;
 
+
+
   }
+
+
+
+
 
 
 
@@ -234,249 +442,499 @@ function normalizarStatus(
 
 
 
+
+
+
+
   if (s.toLowerCase().startsWith("fase")) {
+
+
 
     const digits = s.replace(
 
+
+
       /[^0-9]/g,
+
+
 
       ""
 
+
+
     );
+
+
+
+
 
 
 
     if (!digits) {
 
+
+
       return s.toLowerCase();
 
+
+
     }
+
+
+
+
 
 
 
     return `fase${digits.padStart(
 
+
+
       2,
+
+
 
       "0"
 
+
+
     )}`.toLowerCase();
 
+
+
   }
+
+
+
+
 
 
 
   const mapeado =
 
+
+
     ROTULO_PARA_FASE[normalizeKey(s)];
+
+
+
+
 
 
 
   return (mapeado || s).toLowerCase();
 
+
+
 }
+
+
+
+
 
 
 
 function isNao(value?: string) {
 
+
+
   const s = String(value ?? "")
 
+
+
     .trim()
+
+
 
     .toLowerCase();
 
 
 
+
+
+
+
   return (
+
+
 
     s === "não" ||
 
+
+
     s === "nao" ||
+
+
 
     s === "n"
 
+
+
   );
 
+
+
 }
+
+
+
+
 
 
 
 function isSim(value?: string) {
 
+
+
   return String(value ?? "")
+
+
 
     .trim()
 
+
+
     .toLowerCase() === "sim";
 
+
+
 }
+
+
+
+
 
 
 
 function isTerceiroRegistro(
 
+
+
   registro: RegistroFunerario
+
+
 
 ) {
 
+
+
   // Não inferir pelo conteúdo dos campos. Um atendimento funerário normal
+
+
 
   // também pode ter Assistência, Tanato e Ornamentação marcados como Não.
 
+
+
   return (
+
+
 
     String(
 
+
+
       registro.tipo_atendimento ?? ""
+
+
 
     )
 
+
+
       .trim()
+
+
 
       .toLowerCase() === "terceiro"
 
+
+
   );
 
+
+
 }
+
+
+
+
 
 
 
 function registroEstaNoQuadro(
 
+
+
   registro: RegistroFunerario
+
+
 
 ) {
 
+
+
   const status = normalizarStatus(
+
+
 
     registro.status
 
+
+
   );
+
+
+
+
 
 
 
   // Mesma regra usada pela TabelaAtendimentos da tela de Serviços Funerários.
 
+
+
   if (status === "fase11") {
+
+
 
     return false;
 
+
+
   }
+
+
+
+
 
 
 
   if (isTerceiroRegistro(registro)) {
 
+
+
     return status !== "fase10";
 
+
+
   }
+
+
+
+
 
 
 
   // Com assistência, o atendimento continua visível até Material Recolhido.
 
+
+
   if (isSim(registro.assistencia)) {
+
+
 
     return true;
 
+
+
   }
+
+
+
+
 
 
 
   const semVelorio = isNao(
 
+
+
     registro.realiza_velorio
 
+
+
   );
+
+
 
   const semSepultamento = isNao(
 
+
+
     registro.realiza_sepultamento
 
+
+
   );
+
+
+
+
 
 
 
   // Com sepultamento, encerra em fase10.
 
+
+
   if (!semSepultamento) {
+
+
 
     return status !== "fase10";
 
+
+
   }
+
+
+
+
 
 
 
   // Sem sepultamento, mas com velório, encerra na entrega do corpo (fase08).
 
+
+
   if (!semVelorio) {
+
+
 
     return status !== "fase08";
 
+
+
   }
+
+
+
+
 
 
 
   // Sem velório e sem sepultamento, encerra em Corpo Pronto (fase12).
 
+
+
   return status !== "fase12";
+
+
 
 }
 
 
 
+
+
+
+
 /* =========================================================
 
+
+
    CONSULTAS
+
+
 
    ========================================================= */
 
 
 
+
+
+
+
 async function buscarQuantidadeServicos() {
+
+
 
   const url = new URL(SERVICOS_API);
 
 
 
+
+
+
+
   url.searchParams.set("listar", "1");
+
+
 
   url.searchParams.set(
 
+
+
     "_nocache",
+
+
 
     String(Date.now())
 
+
+
   );
+
+
+
+
 
 
 
   const response = await fetch(
 
+
+
     url.toString(),
+
+
 
     {
 
+
+
       cache: "no-store",
+
+
 
       credentials: "include",
 
+
+
     }
+
+
 
   );
 
 
 
+
+
+
+
   if (!response.ok) {
+
+
 
     throw new Error(
 
+
+
       `Erro ao consultar serviços funerários: ${response.status}`
+
+
 
     );
 
+
+
   }
+
+
+
+
 
 
 
@@ -484,935 +942,2033 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
   const registros: RegistroFunerario[] =
+
+
 
     Array.isArray(json) ? json : [];
 
 
 
+
+
+
+
   return registros.filter(
+
+
 
     registroEstaNoQuadro
 
+
+
   ).length;
 
+
+
 }
+
+
+
+
 
 
 
 async function buscarQuantidadeCoroas() {
 
+
+
   const url = new URL(COROAS_API);
+
+
+
+
 
 
 
   url.searchParams.set("listar", "1");
 
+
+
   url.searchParams.set(
+
+
 
     "grupo",
 
+
+
     "confeccao"
 
+
+
   );
+
+
 
   url.searchParams.set("page", "1");
 
+
+
   url.searchParams.set(
+
+
 
     "per_page",
 
+
+
     "100"
 
+
+
   );
+
+
 
   url.searchParams.set(
 
+
+
     "fresh",
+
+
 
     String(Date.now())
 
+
+
   );
+
+
+
+
 
 
 
   const response = await fetch(
 
+
+
     url.toString(),
+
+
 
     {
 
+
+
       cache: "no-store",
+
+
 
       credentials: "include",
 
+
+
     }
+
+
 
   );
 
 
 
+
+
+
+
   if (!response.ok) {
+
+
 
     throw new Error(
 
+
+
       `Erro ao consultar coroas: ${response.status}`
+
+
 
     );
 
+
+
   }
+
+
+
+
 
 
 
   const json: CoroasResponse =
 
+
+
     await response.json();
+
+
+
+
 
 
 
   if (!json?.sucesso) {
 
+
+
     throw new Error(
+
+
 
       json?.msg ||
 
+
+
       "Não foi possível consultar as coroas."
+
+
 
     );
 
+
+
   }
+
+
+
+
 
 
 
   const total = Number(
 
+
+
     json.meta?.total
 
+
+
   );
+
+
+
+
 
 
 
   if (
 
+
+
     Number.isFinite(total) &&
+
+
 
     total >= 0
 
+
+
   ) {
+
+
 
     return total;
 
+
+
   }
+
+
+
+
 
 
 
   const pedidos = Array.isArray(
 
+
+
     json.dados
+
+
 
   )
 
+
+
     ? json.dados
+
+
 
     : [];
 
 
 
+
+
+
+
   return pedidos.filter((pedido) => {
+
+
 
     const status = String(
 
+
+
       pedido.status ?? ""
+
+
 
     )
 
+
+
       .trim()
+
+
 
       .toLowerCase();
 
 
 
+
+
+
+
     return (
+
+
 
       status === "novo" ||
 
+
+
       status === "coroa" ||
+
+
 
       status === "faixa"
 
+
+
     );
+
+
 
   }).length;
 
+
+
 }
+
+
+
+
 
 
 
 async function buscarQuantidadeRequisicoes() {
 
+
+
   const url = new URL(
+
+
 
     REQUISICOES_API
 
+
+
   );
 
 
 
+
+
+
+
   url.searchParams.set(
+
+
 
     "action",
 
+
+
     "fila"
+
+
 
   );
 
 
 
+
+
+
+
   url.searchParams.set(
+
+
 
     "status",
 
+
+
     STATUS_REQUISICOES
+
+
 
   );
 
 
 
+
+
+
+
   url.searchParams.set(
+
+
 
     "limit",
 
+
+
     "200"
 
+
+
   );
+
+
+
+
 
 
 
   url.searchParams.set(
 
+
+
     "_ts",
+
+
 
     String(Date.now())
 
+
+
   );
+
+
+
+
 
 
 
   const response = await fetch(
 
+
+
     url.toString(),
+
+
 
     {
 
+
+
       cache: "no-store",
+
+
 
       credentials: "include",
 
+
+
     }
 
+
+
   );
+
+
+
+
 
 
 
   if (!response.ok) {
 
+
+
     throw new Error(
+
+
 
       `Erro ao consultar requisições: ${response.status}`
 
+
+
     );
 
+
+
   }
+
+
+
+
 
 
 
   const json: RequisicoesResponse =
 
+
+
     await response.json();
+
+
+
+
 
 
 
   if (!json?.ok) {
 
+
+
     throw new Error(
+
+
 
       json?.msg ||
 
+
+
       "Não foi possível consultar as requisições."
+
+
 
     );
 
+
+
   }
+
+
+
+
 
 
 
   return Array.isArray(json.rows)
 
+
+
     ? json.rows.length
 
+
+
     : 0;
+
+
 
 }
 
 
 
+
+
+
+
 /* =========================================================
+
+
 
    CONTADOR VISUAL
 
+
+
    ========================================================= */
+
+
+
+
 
 
 
 function formatCount(
 
+
+
   value: number | null | undefined
+
+
 
 ) {
 
+
+
   if (value == null) {
 
+
+
     return "...";
+
+
 
   }
 
 
 
+
+
+
+
   return String(value).padStart(
+
+
 
     2,
 
+
+
     "0"
 
+
+
   );
+
+
 
 }
 
 
 
+
+
+
+
 /* =========================================================
+
+
 
    ÍCONE CIRCULAR
 
+
+
    ========================================================= */
+
+
+
+
 
 
 
 function QuickIcon({
 
+
+
   children,
+
+
 
 }: {
 
+
+
   children: React.ReactNode;
+
+
 
 }) {
 
+
+
   return (
+
+
 
     <span
 
+
+
       className="
+
+
 
         grid h-11 w-11 place-items-center rounded-full
 
+
+
         bg-sky-100 text-sky-700
+
+
 
         transition-colors
 
+
+
         group-hover:bg-sky-600
+
+
 
         group-hover:text-white
 
+
+
         dark:bg-sky-900/30
+
+
 
         dark:text-sky-200
 
+
+
         dark:group-hover:bg-sky-600
+
+
 
       "
 
+
+
     >
+
+
 
       {children}
 
+
+
     </span>
 
+
+
   );
+
+
 
 }
 
 
 
+
+
+
+
 /* =========================================================
+
+
 
    BOTÕES
 
+
+
    ========================================================= */
+
+
+
+
 
 
 
 type QuickAction = {
 
+
+
   label: string;
+
+
 
   href: string;
 
+
+
   slug: string;
+
+
 
   icon: React.ReactNode;
 
+
+
   counterKey?: CounterKey;
+
+
 
 };
 
 
 
+
+
+
+
 const quickActions: QuickAction[] = [
+
   {
+
     label: "Chat",
+
     href: "/chat",
+
     slug: "chat",
+
     icon: (
+
       <svg
+
         width="22"
+
         height="22"
+
         viewBox="0 0 24 24"
+
         fill="none"
+
       >
+
         <path
+
           d="M5 5.5A2.5 2.5 0 017.5 3h9A2.5 2.5 0 0119 5.5v7a2.5 2.5 0 01-2.5 2.5H11l-4.5 4v-4H7.5A2.5 2.5 0 015 12.5v-7z"
+
           stroke="currentColor"
+
           strokeWidth="1.8"
+
           strokeLinecap="round"
+
           strokeLinejoin="round"
+
         />
+
         <path
+
           d="M9 8h6M9 11h4"
+
           stroke="currentColor"
+
           strokeWidth="1.8"
+
           strokeLinecap="round"
+
         />
+
       </svg>
+
     ),
+
   },
 
 
+
+
+
   {
+
+
 
     label: "Serviços Funerários",
 
+
+
     href: "/servicos-funerarios",
+
+
 
     slug: "servicos-funerarios",
 
+
+
     counterKey: "servicos",
+
+
 
     icon: (
 
+
+
       <svg
+
+
 
         width="22"
 
+
+
         height="22"
+
+
 
         viewBox="0 0 24 24"
 
+
+
         fill="none"
+
+
 
       >
 
+
+
         <path
+
+
 
           d="M7 7h10M8.5 10h7M10 14h4"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
+
+
 
         />
 
+
+
         <path
+
+
 
           d="M6 19V7a2 2 0 012-2h8a2 2 0 012 2v12"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
 
+
+
         <path
+
+
 
           d="M8 19h8"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
+
+
 
         />
 
+
+
       </svg>
 
+
+
     ),
+
+
 
   },
 
 
 
+
+
+
+
   {
+
+
 
     label: "Coroa de Flores",
 
+
+
     href: "/coroa-de-flores",
+
+
 
     slug: "coroa-de-flores",
 
+
+
     counterKey: "coroas",
 
+
+
     icon: (
+
+
 
       <IconFlower size={22} />
 
+
+
     ),
+
+
 
   },
 
 
 
+
+
+
+
   {
+
+
 
     label: "Plano",
 
+
+
     href: "/plano",
+
+
 
     slug: "plano",
 
+
+
     icon: (
+
+
 
       <svg
 
+
+
         width="22"
+
+
 
         height="22"
 
+
+
         viewBox="0 0 24 24"
+
+
 
         fill="none"
 
+
+
       >
 
+
+
         <path
+
+
 
           d="M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
 
+
+
         <path
+
+
 
           d="M8 8h8M8 12h8M8 16h6"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
+
+
 
         />
 
+
+
       </svg>
 
+
+
     ),
+
+
 
   },
 
 
 
+
+
+
+
   {
+
+
 
     label: "Administrativo",
 
+
+
     href: "/administrativo",
+
+
 
     slug: "administrativo",
 
+
+
     icon: (
+
+
 
       <svg
 
+
+
         width="22"
+
+
 
         height="22"
 
+
+
         viewBox="0 0 24 24"
+
+
 
         fill="none"
 
+
+
       >
 
+
+
         <path
+
+
 
           d="M4 20V9a2 2 0 012-2h12a2 2 0 012 2v11"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
 
+
+
         <path
+
+
 
           d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
+
+
 
         />
 
+
+
         <path
+
+
 
           d="M4 13h16"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
+
+
 
         />
 
+
+
       </svg>
 
+
+
     ),
+
+
 
   },
 
 
 
+
+
+
+
   {
+
+
 
     label: "Estoque",
 
+
+
     href: "/estoque",
+
+
 
     slug: "estoque",
 
+
+
     icon: (
+
+
 
       <svg
 
+
+
         width="22"
+
+
 
         height="22"
 
+
+
         viewBox="0 0 24 24"
+
+
 
         fill="none"
 
+
+
       >
 
+
+
         <path
+
+
 
           d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
 
+
+
         <path
+
+
 
           d="M7 8l5 3 5-3"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
+
+
 
         <path
 
+
+
           d="M12 11v10"
+
+
 
           stroke="currentColor"
 
+
+
           strokeWidth="1.8"
+
+
 
           strokeLinecap="round"
 
+
+
         />
+
+
 
       </svg>
 
+
+
     ),
+
+
 
   },
 
 
 
+
+
+
+
   {
+
+
 
     label: "Consulta",
 
+
+
     href: "/produtos",
+
+
 
     slug: "produtos",
 
+
+
     icon: (
+
+
 
       <svg
 
+
+
         width="22"
+
+
 
         height="22"
 
+
+
         viewBox="0 0 24 24"
+
+
 
         fill="none"
 
+
+
       >
 
+
+
         <path
+
+
 
           d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
 
+
+
         <path
+
+
 
           d="M7 8l5 3 5-3"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
+
+
 
         <path
 
+
+
           d="M12 11v10"
+
+
 
           stroke="currentColor"
 
+
+
           strokeWidth="1.8"
+
+
 
           strokeLinecap="round"
 
+
+
         />
+
+
 
       </svg>
 
+
+
     ),
 
+
+
   },
+
+
+
+
 
 
 
   {
 
+
+
     label: "Requisição de Material",
+
+
 
     href: "/requisicao",
 
+
+
     slug: "requisicao",
+
+
 
     counterKey: "requisicoes",
 
+
+
     icon: (
+
+
 
       <svg
 
+
+
         width="22"
+
+
 
         height="22"
 
+
+
         viewBox="0 0 24 24"
+
+
 
         fill="none"
 
+
+
       >
 
+
+
         <path
+
+
 
           d="M8 4h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6a2 2 0 012-2z"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
         />
 
+
+
         <path
+
+
 
           d="M9 8h6M9 12h6M9 16h3"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
 
+
+
         />
+
+
 
         <path
 
+
+
           d="M14 17l2 2 4-5"
+
+
 
           stroke="currentColor"
 
+
+
           strokeWidth="1.8"
+
+
 
           strokeLinecap="round"
 
+
+
           strokeLinejoin="round"
+
+
 
         />
 
+
+
       </svg>
+
+
 
     ),
 
+
+
   },
+
+
 
 ];
 
 
 
+
+
+
+
 /* =========================================================
 
+
+
    PAGE
+
+
 
    ========================================================= */
 
 
 
+
+
+
+
+
+/* =========================================================
+   PESQUISA GLOBAL DE FUNÇÕES
+   ========================================================= */
+
+type SearchAction = {
+  title: string;
+  href: string;
+  slug: string;
+  group: string;
+  keywords?: string[];
+};
+
+const SEARCH_ACTIONS: SearchAction[] = [
+  { title: "Chat", href: "/chat", slug: "chat", group: "Início", keywords: ["aurora", "assistente", "ia"] },
+
+  { title: "Quadro de Acompanhamento", href: "/quadro-acompanhamento", slug: "quadro-acompanhamento", group: "Serviços Funerários", keywords: ["quadro", "atendimentos"] },
+  { title: "Atendimentos", href: "/acompanhamento", slug: "acompanhamento", group: "Serviços Funerários", keywords: ["atendimento", "falecido"] },
+  { title: "Catálogo", href: "/catalogo", slug: "catalogo", group: "Serviços Funerários", keywords: ["urna", "produto"] },
+  { title: "Obituário", href: "/obituario", slug: "obituario", group: "Serviços Funerários", keywords: ["óbito", "falecido"] },
+  { title: "Memorial", href: "/memorial", slug: "memorial", group: "Serviços Funerários" },
+  { title: "Avisos", href: "/avisos", slug: "avisos", group: "Serviços Funerários", keywords: ["aviso", "comunicado"] },
+
+  { title: "Associados", href: "/associados", slug: "associados", group: "Plano", keywords: ["associado", "cliente"] },
+  { title: "Descontos", href: "/parceiros", slug: "parceiros", group: "Plano", keywords: ["parceiros", "desconto", "clube"] },
+  { title: "Enviar Notícias", href: "/noticias", slug: "noticias", group: "Plano", keywords: ["notícia", "noticias"] },
+  { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano", keywords: ["médico", "consulta", "clínica"] },
+  { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Plano", keywords: ["guia", "consulta", "relatório"] },
+  { title: "Sorteios", href: "/sorteios", slug: "sorteios", group: "Plano" },
+
+  { title: "Usuários", href: "/usuarios", slug: "usuarios", group: "Administrativo", keywords: ["usuário", "acesso"] },
+  { title: "Permissões", href: "/permissoes", slug: "permissoes", group: "Administrativo", keywords: ["permissão", "cargo", "acesso"] },
+  { title: "Conhecimento IA", href: "/conhecimento", slug: "conhecimento", group: "Administrativo", keywords: ["ia", "base", "conhecimento"] },
+  { title: "Configurações do Catálogo", href: "/config-catalogo", slug: "config-catalogo", group: "Administrativo", keywords: ["catálogo", "configuração"] },
+  { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Administrativo", keywords: ["relatório", "histórico"] },
+  { title: "Dashboard", href: "/desempenho", slug: "desempenho", group: "Administrativo", keywords: ["dashboard", "desempenho", "indicadores"] },
+  { title: "Balanço", href: "/balanco", slug: "balanco", group: "Administrativo", keywords: ["balanço", "financeiro"] },
+  { title: "Leads", href: "/leads", slug: "leads", group: "Administrativo" },
+  { title: "Telemetria", href: "/telemetria", slug: "telemetria", group: "Administrativo", keywords: ["carro", "veículo", "motorista", "gps"] },
+
+  { title: "Estoque", href: "/estoque", slug: "estoque", group: "Estoque", keywords: ["estoque", "depósito", "produto", "urna"] },
+  { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Estoque", keywords: ["produto", "consulta", "urna", "preço"] },
+
+  { title: "Solicitar Produto", href: "/solicitar-produto", slug: "solicitar-produto", group: "Requisição de Material", keywords: ["solicitar", "produto", "material"] },
+  { title: "Minhas Solicitações", href: "/minhas-solicitacoes", slug: "minhas-solicitacoes", group: "Requisição de Material", keywords: ["solicitações", "pedidos"] },
+  { title: "Requisições", href: "/requisicoes", slug: "requisicoes", group: "Requisição de Material", keywords: ["requisição", "pedidos", "material"] },
+  { title: "Dashboard Requisições", href: "/dashboard-requisicoes", slug: "dashboard-requisicoes", group: "Requisição de Material", keywords: ["dashboard", "requisições"] },
+];
+
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function GlobalSearch({
+  permissionsReady,
+  has,
+}: {
+  permissionsReady: boolean;
+  has: (slug: string) => boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const allowed = useMemo(
+    () => (permissionsReady ? SEARCH_ACTIONS.filter((item) => has(item.slug)) : []),
+    [permissionsReady, has]
+  );
+
+  const results = useMemo(() => {
+    const q = normalizeSearch(query);
+    if (!q) return [];
+
+    return allowed
+      .filter((item) =>
+        normalizeSearch([item.title, item.group, ...(item.keywords ?? [])].join(" ")).includes(q)
+      )
+      .slice(0, 8);
+  }, [allowed, query]);
+
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, []);
+
+  return (
+    <div ref={rootRef} className="relative w-full">
+      <div className="flex h-[54px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-950">
+        <IconSearch size={19} className="shrink-0 text-gray-400 dark:text-gray-500" />
+
+        <input
+          type="search"
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setOpen(false);
+            if (event.key === "Enter" && results.length === 1) {
+              window.location.href = results[0].href;
+            }
+          }}
+          placeholder={permissionsReady ? "Pesquisar função, página ou recurso..." : "Carregando acessos..."}
+          disabled={!permissionsReady}
+          aria-label="Pesquisar funções do sistema"
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-60 dark:text-white dark:placeholder:text-gray-500"
+        />
+      </div>
+
+      {open && query.trim() !== "" && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+          {results.length > 0 ? (
+            <div className="max-h-[360px] overflow-y-auto p-2">
+              {results.map((item) => (
+                <Link
+                  key={`${item.slug}-${item.href}`}
+                  href={item.href}
+                  onClick={() => {
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className="group flex items-center justify-between gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-gray-950 dark:text-white">
+                      {item.title}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                      {item.group}
+                    </div>
+                  </div>
+                  <IconArrowRight size={17} className="shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-600" />
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-5 text-center">
+              <div className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                Nenhuma função disponível
+              </div>
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                A busca mostra somente páginas permitidas para seu usuário.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
+
+
 
   const { perms, has } = usePerms();
 
 
 
+
+
+
+
   const [now, setNow] =
 
+
+
     useState("");
+
+
+
+
 
 
 
   const [dateStr, setDateStr] =
 
+
+
     useState("");
+
+
+
+
 
 
 
   const [counts, setCounts] =
 
+
+
     useState<DashboardCounts>({
+
+
 
       servicos: null,
 
+
+
       coroas: null,
 
+
+
       requisicoes: null,
+
+
 
     });
 
 
 
+
+
+
+
   /* =======================================================
 
+
+
      RELÓGIO
+
+
 
      ======================================================= */
 
 
 
+
+
+
+
   useEffect(() => {
 
+
+
     const tick = () => {
+
+
 
       const dt = new Date();
 
 
 
+
+
+
+
       setNow(
+
+
 
         dt.toLocaleTimeString(
 
+
+
           "pt-BR",
+
+
 
           {
 
+
+
             hour: "2-digit",
+
+
 
             minute: "2-digit",
 
+
+
             second: "2-digit",
+
+
 
           }
 
+
+
         )
 
+
+
       );
+
+
+
+
 
 
 
       const days = [
 
+
+
         "Domingo",
+
+
 
         "Segunda-feira",
 
+
+
         "Terça-feira",
+
+
 
         "Quarta-feira",
 
+
+
         "Quinta-feira",
+
+
 
         "Sexta-feira",
 
+
+
         "Sábado",
+
+
 
       ];
 
 
 
+
+
+
+
       setDateStr(
+
+
 
         `${days[dt.getDay()]}, ${String(
 
+
+
           dt.getDate()
+
+
 
         ).padStart(2, "0")}/${String(
 
+
+
           dt.getMonth() + 1
+
+
 
         ).padStart(
 
+
+
           2,
+
+
 
           "0"
 
+
+
         )}/${dt.getFullYear()}`
+
+
 
       );
 
+
+
     };
+
+
+
+
 
 
 
@@ -1420,63 +2976,127 @@ export default function HomePage() {
 
 
 
+
+
+
+
     const timer =
+
+
 
       window.setInterval(
 
+
+
         tick,
 
+
+
         1000
+
+
 
       );
 
 
 
+
+
+
+
     return () => {
+
+
 
       window.clearInterval(timer);
 
+
+
     };
+
+
 
   }, []);
 
 
 
+
+
+
+
   /* =======================================================
 
+
+
      CONTADORES
+
+
 
      ======================================================= */
 
 
 
+
+
+
+
   useEffect(() => {
 
+
+
     let alive = true;
+
+
 
     let loading = false;
 
 
 
+
+
+
+
     async function carregarContadores() {
+
+
 
       if (loading) {
 
+
+
         return;
 
+
+
       }
+
+
+
+
 
 
 
       // Neste primeiro teste offline, os contadores não devem tentar APIs sem rede.
 
+
+
       // A ausência desses dados não pode impedir a Home/layout de abrir.
+
+
 
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
 
+
+
         return;
 
+
+
       }
+
+
+
+
 
 
 
@@ -1484,141 +3104,283 @@ export default function HomePage() {
 
 
 
+
+
+
+
       try {
+
+
 
         const [
 
+
+
           servicosResult,
+
+
 
           coroasResult,
 
+
+
           requisicoesResult,
+
+
 
         ] = await Promise.allSettled([
 
+
+
           buscarQuantidadeServicos(),
+
+
 
           buscarQuantidadeCoroas(),
 
+
+
           buscarQuantidadeRequisicoes(),
+
+
 
         ]);
 
 
 
+
+
+
+
         if (!alive) {
+
+
 
           return;
 
+
+
         }
+
+
+
+
 
 
 
         setCounts((current) => ({
 
+
+
           servicos:
+
+
 
             servicosResult.status ===
 
+
+
               "fulfilled"
 
+
+
               ? servicosResult.value
+
+
 
               : current.servicos,
 
 
 
+
+
+
+
           coroas:
+
+
 
             coroasResult.status ===
 
+
+
               "fulfilled"
 
+
+
               ? coroasResult.value
+
+
 
               : current.coroas,
 
 
 
+
+
+
+
           requisicoes:
+
+
 
             requisicoesResult.status ===
 
+
+
               "fulfilled"
+
+
 
               ? requisicoesResult.value
 
+
+
               : current.requisicoes,
+
+
 
         }));
 
 
 
+
+
+
+
         if (
+
+
 
           servicosResult.status ===
 
+
+
           "rejected"
+
+
 
         ) {
 
+
+
           console.error(
+
+
 
             "Erro no contador de Serviços Funerários:",
 
+
+
             servicosResult.reason
 
+
+
           );
+
+
 
         }
 
 
 
+
+
+
+
         if (
+
+
 
           coroasResult.status ===
 
+
+
           "rejected"
+
+
 
         ) {
 
+
+
           console.error(
+
+
 
             "Erro no contador de Coroas:",
 
+
+
             coroasResult.reason
+
+
 
           );
 
+
+
         }
+
+
+
+
 
 
 
         if (
 
+
+
           requisicoesResult.status ===
+
+
 
           "rejected"
 
+
+
         ) {
+
+
 
           console.error(
 
+
+
             "Erro no contador de Requisições:",
+
+
 
             requisicoesResult.reason
 
+
+
           );
+
+
 
         }
 
+
+
       } finally {
+
+
 
         loading = false;
 
+
+
       }
 
+
+
     }
+
+
+
+
 
 
 
@@ -1626,61 +3388,123 @@ export default function HomePage() {
 
 
 
+
+
+
+
     const timer =
+
+
 
       window.setInterval(() => {
 
+
+
         if (!document.hidden) {
+
+
 
           void carregarContadores();
 
+
+
         }
+
+
 
       }, COUNTS_REFRESH_MS);
 
 
 
+
+
+
+
     const handleVisibilityChange =
+
+
 
       () => {
 
+
+
         if (!document.hidden) {
+
+
 
           void carregarContadores();
 
+
+
         }
+
+
 
       };
 
 
 
+
+
+
+
     const handleOnline = () => {
+
+
 
       if (!document.hidden) {
 
+
+
         void carregarContadores();
 
+
+
       }
+
+
 
     };
 
 
 
+
+
+
+
     document.addEventListener(
+
+
 
       "visibilitychange",
 
+
+
       handleVisibilityChange
 
+
+
     );
+
+
 
     window.addEventListener("online", handleOnline);
 
 
 
+
+
+
+
     return () => {
 
+
+
       alive = false;
+
+
+
+
 
 
 
@@ -1688,19 +3512,39 @@ export default function HomePage() {
 
 
 
+
+
+
+
       document.removeEventListener(
+
+
 
         "visibilitychange",
 
+
+
         handleVisibilityChange
+
+
 
       );
 
+
+
       window.removeEventListener("online", handleOnline);
+
+
 
     };
 
+
+
   }, []);
+
+
+
+
 
 
 
@@ -1708,246 +3552,419 @@ export default function HomePage() {
 
 
 
+
+
+
+
   const actions = permissionsReady
+
+
 
     ? quickActions.filter((action) =>
 
+
+
       has(action.slug)
 
+
+
     )
+
+
 
     : [];
 
 
 
+
+
+
+
   return (
 
+
+
     <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
+
+
 
       <div className="mx-auto max-w-6xl px-5 py-5">
 
 
 
+
+
+
+
         {/* HEADER */}
-
-        <header className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-
-          <div>
-
-            <div className="flex items-center gap-2">
-
-              <IconHome className="size-6 text-primary" />
-
-
-
-              <h1 className="text-2xl font-bold tracking-tight">
-
-                Início
-
-              </h1>
-
-            </div>
-
+        <header className="mb-5">
+          <div className="flex items-center gap-2">
+            <IconHome className="size-6 text-primary" />
+            <h1 className="text-2xl font-bold tracking-tight">Início</h1>
           </div>
 
-
-
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-right shadow-sm dark:border-gray-800 dark:bg-gray-900">
-
-            <div className="text-sm font-bold">
-
-              {now}
-
+          <div className="mt-4 flex items-stretch gap-3">
+            <div className="min-w-0 flex-1">
+              <GlobalSearch permissionsReady={permissionsReady} has={has} />
             </div>
 
-
-
-            <div className="text-[11px] text-muted-foreground">
-
-              {dateStr}
-
+            <div className="flex h-[54px] min-w-[150px] shrink-0 flex-col justify-center rounded-xl border border-gray-200 bg-white px-4 text-right shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <div className="text-sm font-bold tabular-nums">{now}</div>
+              <div className="text-[11px] text-muted-foreground">{dateStr}</div>
             </div>
-
           </div>
-
         </header>
-
-
 
         {/* BOTÕES */}
 
+
+
         <section className="mb-6">
+
+
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
 
 
 
+
+
+
+
             {!permissionsReady && (
+
+
 
               <div className="col-span-2 rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-muted-foreground shadow-sm sm:col-span-4 dark:border-gray-800 dark:bg-gray-900">
 
+
+
                 Carregando acessos disponíveis neste dispositivo...
 
+
+
               </div>
+
+
 
             )}
 
 
 
+
+
+
+
             {actions.map((action) => {
+
+
 
               const count =
 
+
+
                 action.counterKey
+
+
 
                   ? counts[
 
+
+
                   action.counterKey
 
+
+
                   ]
+
+
 
                   : undefined;
 
 
 
+
+
+
+
               return (
+
+
 
                 <Link
 
+
+
                   key={action.label}
+
+
 
                   href={action.href}
 
+
+
                   className="
+
+
 
                     group relative
 
+
+
                     flex flex-col
+
+
 
                     items-center
 
+
+
                     justify-center
+
+
 
                     gap-2.5
 
+
+
                     rounded-2xl
+
+
 
                     border border-gray-200
 
+
+
                     bg-white
+
+
 
                     px-3 py-4
 
+
+
                     shadow-sm
+
+
 
                     transition-all
 
+
+
                     hover:-translate-y-[1px]
+
+
 
                     hover:shadow-md
 
+
+
                     dark:border-gray-800
+
+
 
                     dark:bg-gray-900
 
+
+
                   "
+
+
 
                 >
 
 
 
+
+
+
+
                   {/* CONTADOR */}
+
+
 
                   {action.counterKey && (
 
+
+
                     <span
+
+
 
                       className="
 
+
+
                         absolute
+
+
 
                         right-2.5 top-2.5
 
+
+
                         inline-flex
+
+
 
                         min-w-8
 
+
+
                         items-center
+
+
 
                         justify-center
 
+
+
                         rounded-full
+
+
 
                         bg-sky-100
 
+
+
                         px-2 py-1
+
+
 
                         text-[11px]
 
+
+
                         font-black
+
+
 
                         tabular-nums
 
+
+
                         leading-none
+
+
 
                         text-sky-700
 
+
+
                         transition-colors
+
+
 
                         group-hover:bg-sky-600
 
+
+
                         group-hover:text-white
+
+
 
                         dark:bg-sky-900/40
 
+
+
                         dark:text-sky-200
+
+
 
                       "
 
+
+
                     >
+
+
 
                       {formatCount(count)}
 
+
+
                     </span>
+
+
 
                   )}
 
 
 
+
+
+
+
                   <QuickIcon>
 
+
+
                     {action.icon}
+
+
 
                   </QuickIcon>
 
 
 
+
+
+
+
                   <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
 
+
+
                     {action.label}
+
+
 
                   </span>
 
 
 
+
+
+
+
                 </Link>
 
+
+
               );
+
+
 
             })}
 
 
 
+
+
+
+
           </div>
+
+
 
         </section>
 
 
 
+
+
+
+
       </div>
+
+
 
     </div>
 
+
+
   );
+
+
 
 }
