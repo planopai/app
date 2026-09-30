@@ -6,7 +6,19 @@
 
 
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+
+
+
+
+
+
+
+
+import React, { useEffect, useMemo, useState } from "react";
+
+
+
+
 
 
 
@@ -14,7 +26,15 @@ import Link from "next/link";
 
 
 
-import { IconFlower, IconHome, IconSearch, IconArrowRight } from "@tabler/icons-react";
+
+
+
+
+import { IconFlower, IconHome, IconSearch } from "@tabler/icons-react";
+
+
+
+
 
 
 
@@ -26,7 +46,19 @@ import { usePerms } from "./_perms/PermsProvider";
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
+
+
+
+
 
 
 
@@ -34,7 +66,19 @@ import { usePerms } from "./_perms/PermsProvider";
 
 
 
+
+
+
+
    ========================================================= */
+
+
+
+
+
+
+
+
 
 
 
@@ -50,7 +94,19 @@ const COUNTS_REFRESH_MS = 15_000;
 
 
 
+
+
+
+
+
+
+
+
 const SERVICOS_API =
+
+
+
+
 
 
 
@@ -62,7 +118,19 @@ const SERVICOS_API =
 
 
 
+
+
+
+
+
+
+
+
 const COROAS_API =
+
+
+
+
 
 
 
@@ -74,7 +142,19 @@ const COROAS_API =
 
 
 
+
+
+
+
+
+
+
+
 const REQUISICOES_API =
+
+
+
+
 
 
 
@@ -86,7 +166,19 @@ const REQUISICOES_API =
 
 
 
+
+
+
+
+
+
+
+
 const STATUS_REQUISICOES =
+
+
+
+
 
 
 
@@ -98,7 +190,19 @@ const STATUS_REQUISICOES =
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
+
+
+
+
 
 
 
@@ -106,7 +210,19 @@ const STATUS_REQUISICOES =
 
 
 
+
+
+
+
    ========================================================= */
+
+
+
+
+
+
+
+
 
 
 
@@ -118,11 +234,23 @@ type CounterKey =
 
 
 
+
+
+
+
   | "servicos"
 
 
 
+
+
+
+
   | "coroas"
+
+
+
+
 
 
 
@@ -134,7 +262,19 @@ type CounterKey =
 
 
 
+
+
+
+
+
+
+
+
 type DashboardCounts = Record<
+
+
+
+
 
 
 
@@ -142,7 +282,15 @@ type DashboardCounts = Record<
 
 
 
+
+
+
+
   number | null
+
+
+
+
 
 
 
@@ -154,7 +302,19 @@ type DashboardCounts = Record<
 
 
 
+
+
+
+
+
+
+
+
 type RegistroFunerario = {
+
+
+
+
 
 
 
@@ -162,7 +322,15 @@ type RegistroFunerario = {
 
 
 
+
+
+
+
   assistencia?: string;
+
+
+
+
 
 
 
@@ -170,7 +338,15 @@ type RegistroFunerario = {
 
 
 
+
+
+
+
   realiza_sepultamento?: string;
+
+
+
+
 
 
 
@@ -182,11 +358,31 @@ type RegistroFunerario = {
 
 
 
+
+
+
+
+
+
+
+
   [key: string]: any;
 
 
 
+
+
+
+
 };
+
+
+
+
+
+
+
+
 
 
 
@@ -198,7 +394,15 @@ type CoroasResponse = {
 
 
 
+
+
+
+
   sucesso?: boolean;
+
+
+
+
 
 
 
@@ -206,7 +410,15 @@ type CoroasResponse = {
 
 
 
+
+
+
+
     id?: number;
+
+
+
+
 
 
 
@@ -214,7 +426,15 @@ type CoroasResponse = {
 
 
 
+
+
+
+
   }>;
+
+
+
+
 
 
 
@@ -222,7 +442,15 @@ type CoroasResponse = {
 
 
 
+
+
+
+
     total?: number | string;
+
+
+
+
 
 
 
@@ -230,11 +458,27 @@ type CoroasResponse = {
 
 
 
+
+
+
+
   msg?: string;
 
 
 
+
+
+
+
 };
+
+
+
+
+
+
+
+
 
 
 
@@ -246,7 +490,15 @@ type RequisicoesResponse = {
 
 
 
+
+
+
+
   ok?: boolean;
+
+
+
+
 
 
 
@@ -254,11 +506,27 @@ type RequisicoesResponse = {
 
 
 
+
+
+
+
   msg?: string;
 
 
 
+
+
+
+
 };
+
+
+
+
+
+
+
+
 
 
 
@@ -270,7 +538,15 @@ type RequisicoesResponse = {
 
 
 
+
+
+
+
    REGRAS DO QUADRO DE SERVIÇOS FUNERÁRIOS
+
+
+
+
 
 
 
@@ -282,7 +558,19 @@ type RequisicoesResponse = {
 
 
 
+
+
+
+
+
+
+
+
 const ROTULO_PARA_FASE: Record<string, string> = {
+
+
+
+
 
 
 
@@ -290,7 +578,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "aguardando procedimento": "fase02",
+
+
+
+
 
 
 
@@ -298,7 +594,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "aguardando ornamentacao": "fase04",
+
+
+
+
 
 
 
@@ -306,7 +610,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "fim da ornamentacao": "fase06",
+
+
+
+
 
 
 
@@ -314,7 +626,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "corpo pronto": "fase12",
+
+
+
+
 
 
 
@@ -322,7 +642,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "transportando obito p/velorio": "fase07",
+
+
+
+
 
 
 
@@ -330,7 +658,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "transportando p/ velorio": "fase07",
+
+
+
+
 
 
 
@@ -338,7 +674,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   velando: "fase08",
+
+
+
+
 
 
 
@@ -346,7 +690,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "transportando p/ sepultamento": "fase09",
+
+
+
+
 
 
 
@@ -354,7 +706,15 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   "sepultamento concluído": "fase10",
+
+
+
+
 
 
 
@@ -362,11 +722,23 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
   concluido: "fase11",
 
 
 
+
+
+
+
   concluído: "fase11",
+
+
+
+
 
 
 
@@ -378,7 +750,19 @@ const ROTULO_PARA_FASE: Record<string, string> = {
 
 
 
+
+
+
+
+
+
+
+
 function normalizeKey(value: string) {
+
+
+
+
 
 
 
@@ -386,7 +770,15 @@ function normalizeKey(value: string) {
 
 
 
+
+
+
+
     .normalize("NFD")
+
+
+
+
 
 
 
@@ -394,11 +786,23 @@ function normalizeKey(value: string) {
 
 
 
+
+
+
+
     .toLowerCase()
 
 
 
+
+
+
+
     .trim();
+
+
+
+
 
 
 
@@ -410,7 +814,19 @@ function normalizeKey(value: string) {
 
 
 
+
+
+
+
+
+
+
+
 function normalizarStatus(
+
+
+
+
 
 
 
@@ -418,7 +834,15 @@ function normalizarStatus(
 
 
 
+
+
+
+
 ): string | undefined {
+
+
+
+
 
 
 
@@ -426,11 +850,27 @@ function normalizarStatus(
 
 
 
+
+
+
+
     return undefined;
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -446,7 +886,19 @@ function normalizarStatus(
 
 
 
+
+
+
+
+
+
+
+
   if (s.toLowerCase().startsWith("fase")) {
+
+
+
+
 
 
 
@@ -454,7 +906,15 @@ function normalizarStatus(
 
 
 
+
+
+
+
       /[^0-9]/g,
+
+
+
+
 
 
 
@@ -462,7 +922,19 @@ function normalizarStatus(
 
 
 
+
+
+
+
     );
+
+
+
+
+
+
+
+
 
 
 
@@ -474,11 +946,27 @@ function normalizarStatus(
 
 
 
+
+
+
+
       return s.toLowerCase();
 
 
 
+
+
+
+
     }
+
+
+
+
+
+
+
+
 
 
 
@@ -490,7 +978,15 @@ function normalizarStatus(
 
 
 
+
+
+
+
       2,
+
+
+
+
 
 
 
@@ -498,11 +994,27 @@ function normalizarStatus(
 
 
 
+
+
+
+
     )}`.toLowerCase();
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -514,7 +1026,19 @@ function normalizarStatus(
 
 
 
+
+
+
+
     ROTULO_PARA_FASE[normalizeKey(s)];
+
+
+
+
+
+
+
+
 
 
 
@@ -526,7 +1050,19 @@ function normalizarStatus(
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -538,11 +1074,23 @@ function isNao(value?: string) {
 
 
 
+
+
+
+
   const s = String(value ?? "")
 
 
 
+
+
+
+
     .trim()
+
+
+
+
 
 
 
@@ -554,7 +1102,19 @@ function isNao(value?: string) {
 
 
 
+
+
+
+
+
+
+
+
   return (
+
+
+
+
 
 
 
@@ -562,7 +1122,15 @@ function isNao(value?: string) {
 
 
 
+
+
+
+
     s === "nao" ||
+
+
+
+
 
 
 
@@ -570,11 +1138,27 @@ function isNao(value?: string) {
 
 
 
+
+
+
+
   );
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -586,7 +1170,15 @@ function isSim(value?: string) {
 
 
 
+
+
+
+
   return String(value ?? "")
+
+
+
+
 
 
 
@@ -594,11 +1186,27 @@ function isSim(value?: string) {
 
 
 
+
+
+
+
     .toLowerCase() === "sim";
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -610,7 +1218,15 @@ function isTerceiroRegistro(
 
 
 
+
+
+
+
   registro: RegistroFunerario
+
+
+
+
 
 
 
@@ -618,7 +1234,15 @@ function isTerceiroRegistro(
 
 
 
+
+
+
+
   // Não inferir pelo conteúdo dos campos. Um atendimento funerário normal
+
+
+
+
 
 
 
@@ -626,7 +1250,15 @@ function isTerceiroRegistro(
 
 
 
+
+
+
+
   return (
+
+
+
+
 
 
 
@@ -634,7 +1266,15 @@ function isTerceiroRegistro(
 
 
 
+
+
+
+
       registro.tipo_atendimento ?? ""
+
+
+
+
 
 
 
@@ -642,7 +1282,15 @@ function isTerceiroRegistro(
 
 
 
+
+
+
+
       .trim()
+
+
+
+
 
 
 
@@ -650,11 +1298,27 @@ function isTerceiroRegistro(
 
 
 
+
+
+
+
   );
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -666,7 +1330,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   registro: RegistroFunerario
+
+
+
+
 
 
 
@@ -674,7 +1346,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   const status = normalizarStatus(
+
+
+
+
 
 
 
@@ -682,7 +1362,19 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -694,7 +1386,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   if (status === "fase11") {
+
+
+
+
 
 
 
@@ -702,7 +1402,19 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -714,11 +1426,27 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
     return status !== "fase10";
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -730,7 +1458,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   if (isSim(registro.assistencia)) {
+
+
+
+
 
 
 
@@ -738,7 +1474,19 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -750,11 +1498,23 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
     registro.realiza_velorio
 
 
 
+
+
+
+
   );
+
+
+
+
 
 
 
@@ -762,11 +1522,27 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
     registro.realiza_sepultamento
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -778,7 +1554,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   if (!semSepultamento) {
+
+
+
+
 
 
 
@@ -786,7 +1570,19 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -798,7 +1594,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   if (!semVelorio) {
+
+
+
+
 
 
 
@@ -806,7 +1610,19 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -818,7 +1634,15 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
   return status !== "fase12";
+
+
+
+
 
 
 
@@ -830,11 +1654,27 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
 
 
 
+
+
+
+
    CONSULTAS
+
+
+
+
 
 
 
@@ -846,7 +1686,19 @@ function registroEstaNoQuadro(
 
 
 
+
+
+
+
+
+
+
+
 async function buscarQuantidadeServicos() {
+
+
+
+
 
 
 
@@ -858,7 +1710,19 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
+
+
+
+
   url.searchParams.set("listar", "1");
+
+
+
+
 
 
 
@@ -866,7 +1730,15 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
     "_nocache",
+
+
+
+
 
 
 
@@ -874,7 +1746,19 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -886,7 +1770,15 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
     url.toString(),
+
+
+
+
 
 
 
@@ -894,7 +1786,15 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
       cache: "no-store",
+
+
+
+
 
 
 
@@ -902,7 +1802,15 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
     }
+
+
+
+
 
 
 
@@ -914,7 +1822,19 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
+
+
+
+
   if (!response.ok) {
+
+
+
+
 
 
 
@@ -922,7 +1842,15 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
       `Erro ao consultar serviços funerários: ${response.status}`
+
+
+
+
 
 
 
@@ -930,7 +1858,19 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -946,7 +1886,19 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
+
+
+
+
   const registros: RegistroFunerario[] =
+
+
+
+
 
 
 
@@ -958,7 +1910,19 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
+
+
+
+
   return registros.filter(
+
+
+
+
 
 
 
@@ -966,11 +1930,27 @@ async function buscarQuantidadeServicos() {
 
 
 
+
+
+
+
   ).length;
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -982,7 +1962,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   const url = new URL(COROAS_API);
+
+
+
+
+
+
+
+
 
 
 
@@ -994,7 +1986,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   url.searchParams.set(
+
+
+
+
 
 
 
@@ -1002,11 +2002,23 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     "confeccao"
 
 
 
+
+
+
+
   );
+
+
+
+
 
 
 
@@ -1014,7 +2026,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   url.searchParams.set(
+
+
+
+
 
 
 
@@ -1022,11 +2042,23 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     "100"
 
 
 
+
+
+
+
   );
+
+
+
+
 
 
 
@@ -1034,7 +2066,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     "fresh",
+
+
+
+
 
 
 
@@ -1042,7 +2082,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -1054,7 +2106,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     url.toString(),
+
+
+
+
 
 
 
@@ -1062,7 +2122,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
       cache: "no-store",
+
+
+
+
 
 
 
@@ -1070,7 +2138,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     }
+
+
+
+
 
 
 
@@ -1082,7 +2158,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
+
+
+
+
   if (!response.ok) {
+
+
+
+
 
 
 
@@ -1090,7 +2178,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
       `Erro ao consultar coroas: ${response.status}`
+
+
+
+
 
 
 
@@ -1098,7 +2194,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -1110,7 +2218,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     await response.json();
+
+
+
+
+
+
+
+
 
 
 
@@ -1122,7 +2242,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     throw new Error(
+
+
+
+
 
 
 
@@ -1130,7 +2258,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
       "Não foi possível consultar as coroas."
+
+
+
+
 
 
 
@@ -1138,7 +2274,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -1150,11 +2298,27 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     json.meta?.total
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -1166,7 +2330,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     Number.isFinite(total) &&
+
+
+
+
 
 
 
@@ -1174,7 +2346,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   ) {
+
+
+
+
 
 
 
@@ -1182,7 +2362,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -1194,7 +2386,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     json.dados
+
+
+
+
 
 
 
@@ -1202,7 +2402,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     ? json.dados
+
+
+
+
 
 
 
@@ -1214,7 +2422,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
+
+
+
+
   return pedidos.filter((pedido) => {
+
+
+
+
 
 
 
@@ -1222,7 +2442,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
       pedido.status ?? ""
+
+
+
+
 
 
 
@@ -1230,7 +2458,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
       .trim()
+
+
+
+
 
 
 
@@ -1242,7 +2478,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
+
+
+
+
     return (
+
+
+
+
 
 
 
@@ -1250,7 +2498,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
       status === "coroa" ||
+
+
+
+
 
 
 
@@ -1258,7 +2514,15 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
     );
+
+
+
+
 
 
 
@@ -1266,7 +2530,19 @@ async function buscarQuantidadeCoroas() {
 
 
 
+
+
+
+
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -1278,7 +2554,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
   const url = new URL(
+
+
+
+
 
 
 
@@ -1286,6 +2570,10 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
   );
 
 
@@ -1294,7 +2582,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
+
+
+
+
   url.searchParams.set(
+
+
+
+
 
 
 
@@ -1302,7 +2602,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     "fila"
+
+
+
+
 
 
 
@@ -1314,7 +2622,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
+
+
+
+
   url.searchParams.set(
+
+
+
+
 
 
 
@@ -1322,7 +2642,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     STATUS_REQUISICOES
+
+
+
+
 
 
 
@@ -1334,7 +2662,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
+
+
+
+
   url.searchParams.set(
+
+
+
+
 
 
 
@@ -1342,11 +2682,27 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     "200"
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -1358,7 +2714,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     "_ts",
+
+
+
+
 
 
 
@@ -1366,7 +2730,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -1378,7 +2754,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     url.toString(),
+
+
+
+
 
 
 
@@ -1386,7 +2770,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
       cache: "no-store",
+
+
+
+
 
 
 
@@ -1394,11 +2786,27 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     }
 
 
 
+
+
+
+
   );
+
+
+
+
+
+
+
+
 
 
 
@@ -1410,7 +2818,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     throw new Error(
+
+
+
+
 
 
 
@@ -1418,11 +2834,27 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     );
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -1434,7 +2866,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     await response.json();
+
+
+
+
+
+
+
+
 
 
 
@@ -1446,7 +2890,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     throw new Error(
+
+
+
+
 
 
 
@@ -1454,7 +2906,15 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
       "Não foi possível consultar as requisições."
+
+
+
+
 
 
 
@@ -1462,7 +2922,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
   }
+
+
+
+
+
+
+
+
 
 
 
@@ -1474,11 +2946,23 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
     ? json.rows.length
 
 
 
+
+
+
+
     : 0;
+
+
+
+
 
 
 
@@ -1490,7 +2974,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
+
+
+
+
 
 
 
@@ -1498,7 +2994,19 @@ async function buscarQuantidadeRequisicoes() {
 
 
 
+
+
+
+
    ========================================================= */
+
+
+
+
+
+
+
+
 
 
 
@@ -1510,7 +3018,15 @@ function formatCount(
 
 
 
+
+
+
+
   value: number | null | undefined
+
+
+
+
 
 
 
@@ -1518,11 +3034,23 @@ function formatCount(
 
 
 
+
+
+
+
   if (value == null) {
 
 
 
+
+
+
+
     return "...";
+
+
+
+
 
 
 
@@ -1534,7 +3062,19 @@ function formatCount(
 
 
 
+
+
+
+
+
+
+
+
   return String(value).padStart(
+
+
+
+
 
 
 
@@ -1542,11 +3082,23 @@ function formatCount(
 
 
 
+
+
+
+
     "0"
 
 
 
+
+
+
+
   );
+
+
+
+
 
 
 
@@ -1558,7 +3110,19 @@ function formatCount(
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
+
+
+
+
 
 
 
@@ -1566,7 +3130,19 @@ function formatCount(
 
 
 
+
+
+
+
    ========================================================= */
+
+
+
+
+
+
+
+
 
 
 
@@ -1578,7 +3154,15 @@ function QuickIcon({
 
 
 
+
+
+
+
   children,
+
+
+
+
 
 
 
@@ -1586,7 +3170,15 @@ function QuickIcon({
 
 
 
+
+
+
+
   children: React.ReactNode;
+
+
+
+
 
 
 
@@ -1594,7 +3186,15 @@ function QuickIcon({
 
 
 
+
+
+
+
   return (
+
+
+
+
 
 
 
@@ -1602,7 +3202,15 @@ function QuickIcon({
 
 
 
+
+
+
+
       className="
+
+
+
+
 
 
 
@@ -1610,7 +3218,15 @@ function QuickIcon({
 
 
 
+
+
+
+
         bg-sky-100 text-sky-700
+
+
+
+
 
 
 
@@ -1618,7 +3234,15 @@ function QuickIcon({
 
 
 
+
+
+
+
         group-hover:bg-sky-600
+
+
+
+
 
 
 
@@ -1626,7 +3250,15 @@ function QuickIcon({
 
 
 
+
+
+
+
         dark:bg-sky-900/30
+
+
+
+
 
 
 
@@ -1634,7 +3266,15 @@ function QuickIcon({
 
 
 
+
+
+
+
         dark:group-hover:bg-sky-600
+
+
+
+
 
 
 
@@ -1642,7 +3282,15 @@ function QuickIcon({
 
 
 
+
+
+
+
     >
+
+
+
+
 
 
 
@@ -1650,11 +3298,23 @@ function QuickIcon({
 
 
 
+
+
+
+
     </span>
 
 
 
+
+
+
+
   );
+
+
+
+
 
 
 
@@ -1666,7 +3326,19 @@ function QuickIcon({
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
+
+
+
+
 
 
 
@@ -1674,7 +3346,19 @@ function QuickIcon({
 
 
 
+
+
+
+
    ========================================================= */
+
+
+
+
+
+
+
+
 
 
 
@@ -1686,7 +3370,15 @@ type QuickAction = {
 
 
 
+
+
+
+
   label: string;
+
+
+
+
 
 
 
@@ -1694,7 +3386,15 @@ type QuickAction = {
 
 
 
+
+
+
+
   slug: string;
+
+
+
+
 
 
 
@@ -1702,11 +3402,27 @@ type QuickAction = {
 
 
 
+
+
+
+
   counterKey?: CounterKey;
 
 
 
+
+
+
+
 };
+
+
+
+
+
+
+
+
 
 
 
@@ -1716,57 +3432,111 @@ type QuickAction = {
 
 const quickActions: QuickAction[] = [
 
+
+
   {
+
+
 
     label: "Chat",
 
+
+
     href: "/chat",
+
+
 
     slug: "chat",
 
+
+
     icon: (
+
+
 
       <svg
 
+
+
         width="22"
+
+
 
         height="22"
 
+
+
         viewBox="0 0 24 24"
+
+
 
         fill="none"
 
+
+
       >
 
+
+
         <path
+
+
 
           d="M5 5.5A2.5 2.5 0 017.5 3h9A2.5 2.5 0 0119 5.5v7a2.5 2.5 0 01-2.5 2.5H11l-4.5 4v-4H7.5A2.5 2.5 0 015 12.5v-7z"
 
+
+
           stroke="currentColor"
+
+
 
           strokeWidth="1.8"
 
+
+
           strokeLinecap="round"
+
+
 
           strokeLinejoin="round"
 
+
+
         />
+
+
 
         <path
 
+
+
           d="M9 8h6M9 11h4"
+
+
 
           stroke="currentColor"
 
+
+
           strokeWidth="1.8"
+
+
 
           strokeLinecap="round"
 
+
+
         />
+
+
 
       </svg>
 
+
+
     ),
+
+
 
   },
 
@@ -1774,7 +3544,17 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
   {
+
+
+
+
 
 
 
@@ -1782,7 +3562,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     href: "/servicos-funerarios",
+
+
+
+
 
 
 
@@ -1790,7 +3578,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     counterKey: "servicos",
+
+
+
+
 
 
 
@@ -1798,7 +3594,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       <svg
+
+
+
+
 
 
 
@@ -1806,7 +3610,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         height="22"
+
+
+
+
 
 
 
@@ -1814,7 +3626,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         fill="none"
+
+
+
+
 
 
 
@@ -1822,7 +3642,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -1830,7 +3658,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -1838,7 +3674,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinecap="round"
+
+
+
+
 
 
 
@@ -1846,7 +3690,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -1854,7 +3706,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -1862,11 +3722,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -1874,7 +3746,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -1882,7 +3762,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinecap="round"
+
+
+
+
 
 
 
@@ -1890,11 +3778,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       </svg>
 
 
 
+
+
+
+
     ),
+
+
+
+
 
 
 
@@ -1906,7 +3806,19 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
+
+
   {
+
+
+
+
 
 
 
@@ -1914,7 +3826,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     href: "/coroa-de-flores",
+
+
+
+
 
 
 
@@ -1922,11 +3842,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     counterKey: "coroas",
 
 
 
+
+
+
+
     icon: (
+
+
+
+
 
 
 
@@ -1934,7 +3866,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     ),
+
+
+
+
 
 
 
@@ -1946,7 +3886,19 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
+
+
   {
+
+
+
+
 
 
 
@@ -1954,7 +3906,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     href: "/plano",
+
+
+
+
 
 
 
@@ -1962,7 +3922,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     icon: (
+
+
+
+
 
 
 
@@ -1970,7 +3938,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         width="22"
+
+
+
+
 
 
 
@@ -1978,7 +3954,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         viewBox="0 0 24 24"
+
+
+
+
 
 
 
@@ -1986,11 +3970,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       >
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -1998,7 +3994,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2006,11 +4010,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2018,7 +4034,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2026,7 +4050,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinecap="round"
+
+
+
+
 
 
 
@@ -2034,11 +4066,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       </svg>
 
 
 
+
+
+
+
     ),
+
+
+
+
 
 
 
@@ -2050,7 +4094,19 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
+
+
   {
+
+
+
+
 
 
 
@@ -2058,7 +4114,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     href: "/administrativo",
+
+
+
+
 
 
 
@@ -2066,7 +4130,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     icon: (
+
+
+
+
 
 
 
@@ -2074,7 +4146,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         width="22"
+
+
+
+
 
 
 
@@ -2082,7 +4162,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         viewBox="0 0 24 24"
+
+
+
+
 
 
 
@@ -2090,11 +4178,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       >
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2102,7 +4202,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2110,11 +4218,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2122,7 +4242,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2130,7 +4258,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinecap="round"
+
+
+
+
 
 
 
@@ -2138,7 +4274,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2146,7 +4290,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2154,7 +4306,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinecap="round"
+
+
+
+
 
 
 
@@ -2162,11 +4322,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       </svg>
 
 
 
+
+
+
+
     ),
+
+
+
+
 
 
 
@@ -2178,7 +4350,19 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
+
+
   {
+
+
+
+
 
 
 
@@ -2186,7 +4370,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     href: "/estoque",
+
+
+
+
 
 
 
@@ -2194,7 +4386,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     icon: (
+
+
+
+
 
 
 
@@ -2202,7 +4402,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         width="22"
+
+
+
+
 
 
 
@@ -2210,7 +4418,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         viewBox="0 0 24 24"
+
+
+
+
 
 
 
@@ -2218,11 +4434,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       >
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2230,7 +4458,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2238,11 +4474,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2250,7 +4498,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2258,7 +4514,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
+
+
+
+
 
 
 
@@ -2266,7 +4530,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           d="M12 11v10"
+
+
+
+
 
 
 
@@ -2274,7 +4546,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeWidth="1.8"
+
+
+
+
 
 
 
@@ -2282,7 +4562,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
+
+
+
+
 
 
 
@@ -2290,7 +4578,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     ),
+
+
+
+
 
 
 
@@ -2302,7 +4598,19 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
+
+
   {
+
+
+
+
 
 
 
@@ -2310,7 +4618,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     href: "/produtos",
+
+
+
+
 
 
 
@@ -2318,7 +4634,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     icon: (
+
+
+
+
 
 
 
@@ -2326,7 +4650,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         width="22"
+
+
+
+
 
 
 
@@ -2334,7 +4666,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         viewBox="0 0 24 24"
+
+
+
+
 
 
 
@@ -2342,11 +4682,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       >
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2354,7 +4706,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2362,11 +4722,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2374,7 +4746,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2382,7 +4762,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
+
+
+
+
 
 
 
@@ -2390,7 +4778,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           d="M12 11v10"
+
+
+
+
 
 
 
@@ -2398,7 +4794,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeWidth="1.8"
+
+
+
+
 
 
 
@@ -2406,7 +4810,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
+
+
+
+
 
 
 
@@ -2414,11 +4826,27 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     ),
 
 
 
+
+
+
+
   },
+
+
+
+
+
+
+
+
 
 
 
@@ -2430,7 +4858,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     label: "Requisição de Material",
+
+
+
+
 
 
 
@@ -2438,7 +4874,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     slug: "requisicao",
+
+
+
+
 
 
 
@@ -2446,7 +4890,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     icon: (
+
+
+
+
 
 
 
@@ -2454,7 +4906,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         width="22"
+
+
+
+
 
 
 
@@ -2462,7 +4922,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         viewBox="0 0 24 24"
+
+
+
+
 
 
 
@@ -2470,11 +4938,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
       >
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2482,7 +4962,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2490,11 +4978,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
         />
 
 
 
+
+
+
+
         <path
+
+
+
+
 
 
 
@@ -2502,7 +5002,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           stroke="currentColor"
+
+
+
+
 
 
 
@@ -2510,11 +5018,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinecap="round"
 
 
 
+
+
+
+
         />
+
+
+
+
 
 
 
@@ -2522,7 +5042,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           d="M14 17l2 2 4-5"
+
+
+
+
 
 
 
@@ -2530,7 +5058,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeWidth="1.8"
+
+
+
+
 
 
 
@@ -2538,11 +5074,23 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
           strokeLinejoin="round"
 
 
 
+
+
+
+
         />
+
+
+
+
 
 
 
@@ -2550,7 +5098,15 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
     ),
+
+
+
+
 
 
 
@@ -2558,6 +5114,10 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
 ];
 
 
@@ -2566,7 +5126,19 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
+
+
+
+
 /* =========================================================
+
+
+
+
 
 
 
@@ -2574,7 +5146,20 @@ const quickActions: QuickAction[] = [
 
 
 
+
+
+
+
    ========================================================= */
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2584,167 +5169,122 @@ const quickActions: QuickAction[] = [
 
 
 /* =========================================================
+
    PESQUISA GLOBAL DE FUNÇÕES
+
    ========================================================= */
 
+
+
 type SearchAction = {
+
   title: string;
+
   href: string;
+
   slug: string;
+
   group: string;
+
   keywords?: string[];
+
 };
 
+
+
 const SEARCH_ACTIONS: SearchAction[] = [
+
   { title: "Chat", href: "/chat", slug: "chat", group: "Início", keywords: ["aurora", "assistente", "ia"] },
 
+
+
   { title: "Quadro de Acompanhamento", href: "/quadro-acompanhamento", slug: "quadro-acompanhamento", group: "Serviços Funerários", keywords: ["quadro", "atendimentos"] },
+
   { title: "Atendimentos", href: "/acompanhamento", slug: "acompanhamento", group: "Serviços Funerários", keywords: ["atendimento", "falecido"] },
+
   { title: "Catálogo", href: "/catalogo", slug: "catalogo", group: "Serviços Funerários", keywords: ["urna", "produto"] },
+
   { title: "Obituário", href: "/obituario", slug: "obituario", group: "Serviços Funerários", keywords: ["óbito", "falecido"] },
+
   { title: "Memorial", href: "/memorial", slug: "memorial", group: "Serviços Funerários" },
+
   { title: "Avisos", href: "/avisos", slug: "avisos", group: "Serviços Funerários", keywords: ["aviso", "comunicado"] },
 
+
+
   { title: "Associados", href: "/associados", slug: "associados", group: "Plano", keywords: ["associado", "cliente"] },
+
   { title: "Descontos", href: "/parceiros", slug: "parceiros", group: "Plano", keywords: ["parceiros", "desconto", "clube"] },
+
   { title: "Enviar Notícias", href: "/noticias", slug: "noticias", group: "Plano", keywords: ["notícia", "noticias"] },
+
   { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano", keywords: ["médico", "consulta", "clínica"] },
+
   { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Plano", keywords: ["guia", "consulta", "relatório"] },
+
   { title: "Sorteios", href: "/sorteios", slug: "sorteios", group: "Plano" },
 
+
+
   { title: "Usuários", href: "/usuarios", slug: "usuarios", group: "Administrativo", keywords: ["usuário", "acesso"] },
+
   { title: "Permissões", href: "/permissoes", slug: "permissoes", group: "Administrativo", keywords: ["permissão", "cargo", "acesso"] },
+
   { title: "Conhecimento IA", href: "/conhecimento", slug: "conhecimento", group: "Administrativo", keywords: ["ia", "base", "conhecimento"] },
+
   { title: "Configurações do Catálogo", href: "/config-catalogo", slug: "config-catalogo", group: "Administrativo", keywords: ["catálogo", "configuração"] },
+
   { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Administrativo", keywords: ["relatório", "histórico"] },
+
   { title: "Dashboard", href: "/desempenho", slug: "desempenho", group: "Administrativo", keywords: ["dashboard", "desempenho", "indicadores"] },
+
   { title: "Balanço", href: "/balanco", slug: "balanco", group: "Administrativo", keywords: ["balanço", "financeiro"] },
+
   { title: "Leads", href: "/leads", slug: "leads", group: "Administrativo" },
+
   { title: "Telemetria", href: "/telemetria", slug: "telemetria", group: "Administrativo", keywords: ["carro", "veículo", "motorista", "gps"] },
 
+
+
   { title: "Estoque", href: "/estoque", slug: "estoque", group: "Estoque", keywords: ["estoque", "depósito", "produto", "urna"] },
+
   { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Estoque", keywords: ["produto", "consulta", "urna", "preço"] },
 
+
+
   { title: "Solicitar Produto", href: "/solicitar-produto", slug: "solicitar-produto", group: "Requisição de Material", keywords: ["solicitar", "produto", "material"] },
+
   { title: "Minhas Solicitações", href: "/minhas-solicitacoes", slug: "minhas-solicitacoes", group: "Requisição de Material", keywords: ["solicitações", "pedidos"] },
+
   { title: "Requisições", href: "/requisicoes", slug: "requisicoes", group: "Requisição de Material", keywords: ["requisição", "pedidos", "material"] },
+
   { title: "Dashboard Requisições", href: "/dashboard-requisicoes", slug: "dashboard-requisicoes", group: "Requisição de Material", keywords: ["dashboard", "requisições"] },
+
 ];
 
+
+
 function normalizeSearch(value: string) {
+
   return value
+
     .normalize("NFD")
+
     .replace(/[\u0300-\u036f]/g, "")
+
     .toLowerCase()
+
     .trim();
+
 }
 
-function GlobalSearch({
-  permissionsReady,
-  has,
-}: {
-  permissionsReady: boolean;
-  has: (slug: string) => boolean;
-}) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const allowed = useMemo(
-    () => (permissionsReady ? SEARCH_ACTIONS.filter((item) => has(item.slug)) : []),
-    [permissionsReady, has]
-  );
-
-  const results = useMemo(() => {
-    const q = normalizeSearch(query);
-    if (!q) return [];
-
-    return allowed
-      .filter((item) =>
-        normalizeSearch([item.title, item.group, ...(item.keywords ?? [])].join(" ")).includes(q)
-      )
-      .slice(0, 8);
-  }, [allowed, query]);
-
-  useEffect(() => {
-    const closeOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-
-    document.addEventListener("pointerdown", closeOutside);
-    return () => document.removeEventListener("pointerdown", closeOutside);
-  }, []);
-
-  return (
-    <div ref={rootRef} className="relative w-full">
-      <div className="flex h-[54px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-950">
-        <IconSearch size={19} className="shrink-0 text-gray-400 dark:text-gray-500" />
-
-        <input
-          type="search"
-          value={query}
-          onFocus={() => setOpen(true)}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setOpen(true);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setOpen(false);
-            if (event.key === "Enter" && results.length === 1) {
-              window.location.href = results[0].href;
-            }
-          }}
-          placeholder={permissionsReady ? "Pesquisar função, página ou recurso..." : "Carregando acessos..."}
-          disabled={!permissionsReady}
-          aria-label="Pesquisar funções do sistema"
-          autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-60 dark:text-white dark:placeholder:text-gray-500"
-        />
-      </div>
-
-      {open && query.trim() !== "" && (
-        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
-          {results.length > 0 ? (
-            <div className="max-h-[360px] overflow-y-auto p-2">
-              {results.map((item) => (
-                <Link
-                  key={`${item.slug}-${item.href}`}
-                  href={item.href}
-                  onClick={() => {
-                    setOpen(false);
-                    setQuery("");
-                  }}
-                  className="group flex items-center justify-between gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-sky-50 dark:hover:bg-sky-950/40"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-black text-gray-950 dark:text-white">
-                      {item.title}
-                    </div>
-                    <div className="mt-0.5 truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                      {item.group}
-                    </div>
-                  </div>
-                  <IconArrowRight size={17} className="shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-600" />
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="px-4 py-5 text-center">
-              <div className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                Nenhuma função disponível
-              </div>
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                A busca mostra somente páginas permitidas para seu usuário.
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function HomePage() {
+
+
+
+
 
 
 
@@ -2756,11 +5296,31 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
   const [now, setNow] =
 
 
 
+
+
+
+
     useState("");
+
+
+
+
+
+
+
+
 
 
 
@@ -2772,7 +5332,21 @@ export default function HomePage() {
 
 
 
+
+
+
+
     useState("");
+
+  const [searchQuery, setSearchQuery] = useState("");
+
+
+
+
+
+
+
+
 
 
 
@@ -2784,7 +5358,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
     useState<DashboardCounts>({
+
+
+
+
 
 
 
@@ -2792,11 +5374,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
       coroas: null,
 
 
 
+
+
+
+
       requisicoes: null,
+
+
+
+
 
 
 
@@ -2808,11 +5402,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
   /* =======================================================
 
 
 
+
+
+
+
      RELÓGIO
+
+
+
+
 
 
 
@@ -2824,11 +5434,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
   useEffect(() => {
 
 
 
+
+
+
+
     const tick = () => {
+
+
+
+
 
 
 
@@ -2840,7 +5466,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
       setNow(
+
+
+
+
 
 
 
@@ -2848,7 +5486,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           "pt-BR",
+
+
+
+
 
 
 
@@ -2856,7 +5502,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
             hour: "2-digit",
+
+
+
+
 
 
 
@@ -2864,7 +5518,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
             second: "2-digit",
+
+
+
+
 
 
 
@@ -2872,11 +5534,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
         )
 
 
 
+
+
+
+
       );
+
+
+
+
+
+
+
+
 
 
 
@@ -2888,7 +5566,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         "Domingo",
+
+
+
+
 
 
 
@@ -2896,7 +5582,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         "Terça-feira",
+
+
+
+
 
 
 
@@ -2904,7 +5598,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         "Quinta-feira",
+
+
+
+
 
 
 
@@ -2912,7 +5614,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         "Sábado",
+
+
+
+
 
 
 
@@ -2924,7 +5634,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
       setDateStr(
+
+
+
+
 
 
 
@@ -2932,7 +5654,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           dt.getDate()
+
+
+
+
 
 
 
@@ -2940,7 +5670,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           dt.getMonth() + 1
+
+
+
+
 
 
 
@@ -2948,7 +5686,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           2,
+
+
+
+
 
 
 
@@ -2956,7 +5702,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         )}/${dt.getFullYear()}`
+
+
+
+
 
 
 
@@ -2964,7 +5718,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
     };
+
+
+
+
+
+
+
+
 
 
 
@@ -2980,7 +5746,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     const timer =
+
+
+
+
 
 
 
@@ -2988,11 +5766,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
         tick,
 
 
 
+
+
+
+
         1000
+
+
+
+
 
 
 
@@ -3004,7 +5794,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     return () => {
+
+
+
+
 
 
 
@@ -3012,7 +5814,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
     };
+
+
+
+
 
 
 
@@ -3024,11 +5834,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
   /* =======================================================
 
 
 
+
+
+
+
      CONTADORES
+
+
+
+
 
 
 
@@ -3040,11 +5866,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
   useEffect(() => {
 
 
 
+
+
+
+
     let alive = true;
+
+
+
+
 
 
 
@@ -3056,7 +5898,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     async function carregarContadores() {
+
+
+
+
 
 
 
@@ -3064,11 +5918,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
         return;
 
 
 
+
+
+
+
       }
+
+
+
+
+
+
+
+
 
 
 
@@ -3080,7 +5950,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
       // A ausência desses dados não pode impedir a Home/layout de abrir.
+
+
+
+
 
 
 
@@ -3088,11 +5966,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
         return;
 
 
 
+
+
+
+
       }
+
+
+
+
+
+
+
+
 
 
 
@@ -3108,7 +6002,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
       try {
+
+
+
+
 
 
 
@@ -3116,7 +6022,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           servicosResult,
+
+
+
+
 
 
 
@@ -3124,7 +6038,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           requisicoesResult,
+
+
+
+
 
 
 
@@ -3132,7 +6054,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           buscarQuantidadeServicos(),
+
+
+
+
 
 
 
@@ -3140,7 +6070,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           buscarQuantidadeRequisicoes(),
+
+
+
+
 
 
 
@@ -3152,7 +6090,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
         if (!alive) {
+
+
+
+
 
 
 
@@ -3160,7 +6110,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
         }
+
+
+
+
+
+
+
+
 
 
 
@@ -3172,7 +6134,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           servicos:
+
+
+
+
 
 
 
@@ -3180,11 +6150,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
               "fulfilled"
 
 
 
+
+
+
+
               ? servicosResult.value
+
+
+
+
 
 
 
@@ -3196,7 +6178,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
           coroas:
+
+
+
+
 
 
 
@@ -3204,11 +6198,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
               "fulfilled"
 
 
 
+
+
+
+
               ? coroasResult.value
+
+
+
+
 
 
 
@@ -3220,7 +6226,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
           requisicoes:
+
+
+
+
 
 
 
@@ -3228,7 +6246,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
               "fulfilled"
+
+
+
+
 
 
 
@@ -3236,7 +6262,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
               : current.requisicoes,
+
+
+
+
 
 
 
@@ -3248,7 +6282,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
         if (
+
+
+
+
 
 
 
@@ -3256,7 +6302,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           "rejected"
+
+
+
+
 
 
 
@@ -3264,7 +6318,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           console.error(
+
+
+
+
 
 
 
@@ -3272,11 +6334,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
             servicosResult.reason
 
 
 
+
+
+
+
           );
+
+
+
+
 
 
 
@@ -3288,7 +6362,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
         if (
+
+
+
+
 
 
 
@@ -3296,7 +6382,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           "rejected"
+
+
+
+
 
 
 
@@ -3304,7 +6398,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           console.error(
+
+
+
+
 
 
 
@@ -3312,7 +6414,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
             coroasResult.reason
+
+
+
+
 
 
 
@@ -3320,7 +6430,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
         }
+
+
+
+
+
+
+
+
 
 
 
@@ -3332,7 +6454,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           requisicoesResult.status ===
+
+
+
+
 
 
 
@@ -3340,7 +6470,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         ) {
+
+
+
+
 
 
 
@@ -3348,7 +6486,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
             "Erro no contador de Requisições:",
+
+
+
+
 
 
 
@@ -3356,7 +6502,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
           );
+
+
+
+
 
 
 
@@ -3364,7 +6518,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
       } finally {
+
+
+
+
 
 
 
@@ -3372,11 +6534,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
       }
 
 
 
+
+
+
+
     }
+
+
+
+
+
+
+
+
 
 
 
@@ -3392,7 +6570,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     const timer =
+
+
+
+
 
 
 
@@ -3400,7 +6590,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         if (!document.hidden) {
+
+
+
+
 
 
 
@@ -3408,7 +6606,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         }
+
+
+
+
 
 
 
@@ -3420,7 +6626,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     const handleVisibilityChange =
+
+
+
+
 
 
 
@@ -3428,7 +6646,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         if (!document.hidden) {
+
+
+
+
 
 
 
@@ -3436,7 +6662,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         }
+
+
+
+
 
 
 
@@ -3448,7 +6682,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     const handleOnline = () => {
+
+
+
+
 
 
 
@@ -3456,11 +6702,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
         void carregarContadores();
 
 
 
+
+
+
+
       }
+
+
+
+
 
 
 
@@ -3472,7 +6730,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     document.addEventListener(
+
+
+
+
 
 
 
@@ -3480,11 +6750,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
       handleVisibilityChange
 
 
 
+
+
+
+
     );
+
+
+
+
 
 
 
@@ -3496,11 +6778,31 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
     return () => {
 
 
 
+
+
+
+
       alive = false;
+
+
+
+
+
+
+
+
 
 
 
@@ -3516,7 +6818,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
       document.removeEventListener(
+
+
+
+
 
 
 
@@ -3524,7 +6838,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         handleVisibilityChange
+
+
+
+
 
 
 
@@ -3532,11 +6854,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
       window.removeEventListener("online", handleOnline);
 
 
 
+
+
+
+
     };
+
+
+
+
 
 
 
@@ -3548,39 +6882,75 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
   const permissionsReady = perms !== null;
 
+  const actions = useMemo(
+    () =>
+      permissionsReady
+        ? quickActions.filter((action) => has(action.slug))
+        : [],
+    [permissionsReady, has]
+  );
 
+  const filteredActions = useMemo(() => {
+    const q = normalizeSearch(searchQuery);
 
+    if (!q) {
+      return actions.map((action) => ({
+        label: action.label,
+        href: action.href,
+        slug: action.slug,
+        icon: action.icon,
+        counterKey: action.counterKey,
+        group: "",
+      }));
+    }
 
+    const matched = SEARCH_ACTIONS
+      .filter((item) => has(item.slug))
+      .filter((item) => {
+        const haystack = normalizeSearch(
+          [
+            item.title,
+            item.group,
+            ...(item.keywords ?? []),
+          ].join(" ")
+        );
 
+        return haystack.includes(q);
+      });
 
+    return matched.map((item) => {
+      const mainAction = quickActions.find(
+        (action) =>
+          action.slug === item.slug ||
+          action.href === item.href
+      );
 
-  const actions = permissionsReady
-
-
-
-    ? quickActions.filter((action) =>
-
-
-
-      has(action.slug)
-
-
-
-    )
-
-
-
-    : [];
-
-
-
-
-
-
+      return {
+        label: item.title,
+        href: item.href,
+        slug: item.slug,
+        icon: mainAction?.icon ?? <IconSearch size={22} />,
+        counterKey: mainAction?.counterKey,
+        group: item.group,
+      };
+    });
+  }, [actions, has, searchQuery]);
 
   return (
+
+
+
+
 
 
 
@@ -3588,7 +6958,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
       <div className="mx-auto max-w-6xl px-5 py-5">
+
+
+
+
+
+
+
+
 
 
 
@@ -3605,7 +6987,38 @@ export default function HomePage() {
 
           <div className="mt-4 flex items-stretch gap-3">
             <div className="min-w-0 flex-1">
-              <GlobalSearch permissionsReady={permissionsReady} has={has} />
+              <div className="flex h-[54px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-950">
+                <IconSearch
+                  size={19}
+                  className="shrink-0 text-gray-400 dark:text-gray-500"
+                />
+
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={
+                    permissionsReady
+                      ? "Pesquisar função, página ou recurso..."
+                      : "Carregando acessos..."
+                  }
+                  disabled={!permissionsReady}
+                  aria-label="Pesquisar funções do sistema"
+                  autoComplete="off"
+                  className="min-w-0 flex-1 bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-60 dark:text-white dark:placeholder:text-gray-500"
+                />
+
+                {searchQuery.trim() !== "" && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                    aria-label="Limpar pesquisa"
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex h-[54px] min-w-[150px] shrink-0 flex-col justify-center rounded-xl border border-gray-200 bg-white px-4 text-right shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -3619,7 +7032,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
         <section className="mb-6">
+
+
+
+
 
 
 
@@ -3631,7 +7052,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
             {!permissionsReady && (
+
+
+
+
 
 
 
@@ -3639,11 +7072,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
                 Carregando acessos disponíveis neste dispositivo...
 
 
 
+
+
+
+
               </div>
+
+
+
+
 
 
 
@@ -3655,7 +7100,38 @@ export default function HomePage() {
 
 
 
-            {actions.map((action) => {
+
+
+
+
+
+
+
+
+            {permissionsReady &&
+              searchQuery.trim() !== "" &&
+              filteredActions.length === 0 && (
+                <div className="col-span-2 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center shadow-sm sm:col-span-4 dark:border-gray-700 dark:bg-gray-900">
+                  <IconSearch
+                    size={24}
+                    className="mx-auto text-gray-400 dark:text-gray-500"
+                  />
+
+                  <div className="mt-3 text-sm font-black text-gray-900 dark:text-white">
+                    Nenhuma função encontrada
+                  </div>
+
+                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Não há páginas permitidas que correspondam a “{searchQuery.trim()}”.
+                  </div>
+                </div>
+              )}
+
+            {filteredActions.map((action) => {
+
+
+
+
 
 
 
@@ -3663,7 +7139,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                 action.counterKey
+
+
+
+
 
 
 
@@ -3671,11 +7155,23 @@ export default function HomePage() {
 
 
 
+
+
+
+
                   action.counterKey
 
 
 
+
+
+
+
                   ]
+
+
+
+
 
 
 
@@ -3687,7 +7183,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
               return (
+
+
+
+
 
 
 
@@ -3695,7 +7203,15 @@ export default function HomePage() {
 
 
 
-                  key={action.label}
+
+
+
+
+                  key={`${action.slug}-${action.href}`}
+
+
+
+
 
 
 
@@ -3703,7 +7219,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                   className="
+
+
+
+
 
 
 
@@ -3711,7 +7235,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     flex flex-col
+
+
+
+
 
 
 
@@ -3719,7 +7251,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     justify-center
+
+
+
+
 
 
 
@@ -3727,7 +7267,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     rounded-2xl
+
+
+
+
 
 
 
@@ -3735,7 +7283,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     bg-white
+
+
+
+
 
 
 
@@ -3743,7 +7299,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     shadow-sm
+
+
+
+
 
 
 
@@ -3751,7 +7315,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     hover:-translate-y-[1px]
+
+
+
+
 
 
 
@@ -3759,7 +7331,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     dark:border-gray-800
+
+
+
+
 
 
 
@@ -3767,7 +7347,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                   "
+
+
+
+
 
 
 
@@ -3779,7 +7367,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
                   {/* CONTADOR */}
+
+
+
+
 
 
 
@@ -3787,7 +7387,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     <span
+
+
+
+
 
 
 
@@ -3795,7 +7403,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         absolute
+
+
+
+
 
 
 
@@ -3803,7 +7419,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         inline-flex
+
+
+
+
 
 
 
@@ -3811,7 +7435,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         items-center
+
+
+
+
 
 
 
@@ -3819,7 +7451,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         rounded-full
+
+
+
+
 
 
 
@@ -3827,7 +7467,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         px-2 py-1
+
+
+
+
 
 
 
@@ -3835,7 +7483,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         font-black
+
+
+
+
 
 
 
@@ -3843,7 +7499,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         leading-none
+
+
+
+
 
 
 
@@ -3851,7 +7515,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         transition-colors
+
+
+
+
 
 
 
@@ -3859,7 +7531,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         group-hover:text-white
+
+
+
+
 
 
 
@@ -3867,7 +7547,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                         dark:text-sky-200
+
+
+
+
 
 
 
@@ -3875,7 +7563,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     >
+
+
+
+
 
 
 
@@ -3883,7 +7579,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
                     </span>
+
+
+
+
 
 
 
@@ -3895,11 +7599,27 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
                   <QuickIcon>
 
 
 
+
+
+
+
                     {action.icon}
+
+
+
+
 
 
 
@@ -3911,7 +7631,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
                   <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
+
+
+
+
 
 
 
@@ -3919,7 +7651,25 @@ export default function HomePage() {
 
 
 
+
+
+
+
                   </span>
+
+                  {searchQuery.trim() !== "" && action.group ? (
+                    <span className="-mt-1 text-center text-[10px] font-semibold leading-tight text-gray-400 dark:text-gray-500">
+                      {action.group}
+                    </span>
+                  ) : null}
+
+
+
+
+
+
+
+
 
 
 
@@ -3931,7 +7681,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
               );
+
+
+
+
 
 
 
@@ -3943,7 +7701,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
           </div>
+
+
+
+
 
 
 
@@ -3955,7 +7725,19 @@ export default function HomePage() {
 
 
 
+
+
+
+
+
+
+
+
       </div>
+
+
+
+
 
 
 
@@ -3963,7 +7745,15 @@ export default function HomePage() {
 
 
 
+
+
+
+
   );
+
+
+
+
 
 
 
