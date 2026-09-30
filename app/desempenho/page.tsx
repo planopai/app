@@ -689,7 +689,7 @@ function Tabela({ cabecalho, linhas, larguraMin = 640 }: { cabecalho: React.Reac
 /* =========================================================
    AVALIAÇÕES (visita.php?action=painel_avaliacoes)
 ========================================================= */
-const VISITA_URL = "/api/php/visita.php";
+const VISITA_URL = "https://api.planoassistencialintegrado.com.br/visita.php";
 
 type Avaliacao = {
     id: number; atendimento_id: number; tipo: string; falecido_nome: string;
