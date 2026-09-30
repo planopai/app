@@ -864,7 +864,7 @@ export default function HomePage() {
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder={
                     permissionsReady
-                      ? "Pesquisar função, página ou recurso..."
+                      ? "Pesquise"
                       : "Carregando acessos..."
                   }
                   disabled={!permissionsReady}
