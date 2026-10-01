@@ -402,7 +402,8 @@ function sanitizeAttachment(value: unknown): ChatAttachment | null {
 }
 
 function attachmentApiContext(attachment: ChatAttachment) {
-    return `[ANEXO_AURORA token="${attachment.token}" nome="${attachment.name.replaceAll('"', "")}" mime="${attachment.mime}" tipo="${attachment.kind}"]`;
+    const visualFlag = attachment.kind === "image" ? ' visual="1"' : "";
+    return `[ANEXO_AURORA token="${attachment.token}" nome="${attachment.name.replaceAll('"', "")}" mime="${attachment.mime}" tipo="${attachment.kind}"${visualFlag}]`;
 }
 
 function moneyBRL(value?: number | null, formatted?: string | null) {
