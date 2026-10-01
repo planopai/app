@@ -62,6 +62,15 @@ type ProductSuggestion = {
     similaridade?: number | null;
 };
 
+type ChatAttachment = {
+    token: string;
+    name: string;
+    mime: string;
+    size: number;
+    kind: "image" | "pdf" | "file";
+    preview_url?: string | null;
+};
+
 type ExportFormat = "pdf" | "xlsx" | "csv" | "txt" | "json";
 
 type ExportCard = {
@@ -202,6 +211,9 @@ type ChatMessage = {
     operationalFlows?: OperationalFlowCard[];
     editForms?: AttendanceEditForm[];
     knowledgeSources?: KnowledgeSource[];
+    attachment?: ChatAttachment | null;
+    /** Conteúdo enviado à API. Pode incluir metadados internos do anexo sem poluir a bolha do usuário. */
+    apiContent?: string;
 };
 
 type SseEvent = {
@@ -218,6 +230,7 @@ const QUICK_PROMPTS = [
     "Quero solicitar materiais",
     "Quero consultar um produto no estoque",
     "Quantas coroas de flores estão sendo confeccionadas?",
+    "Quero criar um pedido de coroa de flores",
 ];
 
 const TOOL_LABELS: Record<string, string> = {
@@ -232,6 +245,7 @@ const TOOL_LABELS: Record<string, string> = {
     consultar_movimentacoes: "Movimentações",
     consultar_requisicoes: "Requisições",
     consultar_coroas: "Coroas",
+    preparar_acao_modulo: "Ação administrativa",
     consultar_balanco: "Balanço",
 };
 
@@ -364,6 +378,31 @@ function sanitizeProductSuggestions(value: unknown): ProductSuggestion[] {
         });
     }
     return out.slice(0, 6);
+}
+
+function sanitizeAttachment(value: unknown): ChatAttachment | null {
+    if (!value || typeof value !== "object") return null;
+    const item = value as any;
+    const token = String(item.token || "").trim();
+    const name = String(item.name || "arquivo").trim();
+    const mime = String(item.mime || "application/octet-stream").trim();
+    const size = Number(item.size || 0);
+    const rawKind = String(item.kind || "").toLowerCase();
+    const kind: ChatAttachment["kind"] =
+        rawKind === "image" ? "image" : rawKind === "pdf" ? "pdf" : "file";
+    if (!token || !name) return null;
+    return {
+        token,
+        name,
+        mime,
+        size: Number.isFinite(size) && size > 0 ? size : 0,
+        kind,
+        preview_url: item.preview_url == null ? null : String(item.preview_url),
+    };
+}
+
+function attachmentApiContext(attachment: ChatAttachment) {
+    return `[ANEXO_AURORA token="${attachment.token}" nome="${attachment.name.replaceAll('"', "")}" mime="${attachment.mime}" tipo="${attachment.kind}"]`;
 }
 
 function moneyBRL(value?: number | null, formatted?: string | null) {
@@ -1652,6 +1691,8 @@ function loadStoredMessages(): ChatMessage[] {
                 operationalFlows: sanitizeOperationalFlows(item.operationalFlows),
                 editForms: sanitizeEditForms(item.editForms),
                 knowledgeSources: sanitizeKnowledgeSources(item.knowledgeSources),
+                attachment: sanitizeAttachment(item.attachment),
+                apiContent: typeof item.apiContent === "string" ? item.apiContent : undefined,
                 streaming: false,
             }));
     } catch {
@@ -1944,6 +1985,31 @@ function IconSend({ className = "h-5 w-5" }: { className?: string }) {
     );
 }
 
+function IconCamera({ className = "h-5 w-5" }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+            <path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+            <circle cx="12" cy="13" r="4" />
+        </svg>
+    );
+}
+
+function IconPaperclip({ className = "h-5 w-5" }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+            <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48" />
+        </svg>
+    );
+}
+
+function IconX({ className = "h-4 w-4" }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={className} aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+    );
+}
+
 function IconMic({ className = "h-5 w-5" }: { className?: string }) {
     return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
@@ -2125,10 +2191,15 @@ export default function AuroraPage() {
     const [keyboardOpen, setKeyboardOpen] = useState(false);
     const [keyboardInset, setKeyboardInset] = useState(0);
     const [composerHeight, setComposerHeight] = useState(96);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [selectedFilePreview, setSelectedFilePreview] = useState<string | null>(null);
+    const [uploadingAttachment, setUploadingAttachment] = useState(false);
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const composerRef = useRef<HTMLDivElement>(null);
+    const cameraInputRef = useRef<HTMLInputElement>(null);
+    const attachmentInputRef = useRef<HTMLInputElement>(null);
     const abortRef = useRef<AbortController | null>(null);
     const messagesRef = useRef<ChatMessage[]>([]);
     const loadingRef = useRef(false);
@@ -2452,9 +2523,17 @@ export default function AuroraPage() {
         };
     }, []);
 
+    useEffect(() => {
+        return () => {
+            if (selectedFilePreview?.startsWith("blob:")) {
+                try { URL.revokeObjectURL(selectedFilePreview); } catch { }
+            }
+        };
+    }, [selectedFilePreview]);
+
     const canSend = useMemo(
-        () => input.trim().length > 0 && !loading && !transcribing && !recording,
-        [input, loading, transcribing, recording],
+        () => (input.trim().length > 0 || Boolean(selectedFile)) && !loading && !transcribing && !recording && !uploadingAttachment,
+        [input, selectedFile, loading, transcribing, recording, uploadingAttachment],
     );
 
     function commitMessages(next: ChatMessage[]) {
@@ -2907,6 +2986,71 @@ export default function AuroraPage() {
         }
     }
 
+    function clearSelectedFile() {
+        if (selectedFilePreview?.startsWith("blob:")) {
+            try { URL.revokeObjectURL(selectedFilePreview); } catch { }
+        }
+        setSelectedFile(null);
+        setSelectedFilePreview(null);
+        if (cameraInputRef.current) cameraInputRef.current.value = "";
+        if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+
+    function chooseFile(file?: File | null) {
+        if (!file) return;
+        const max = 15 * 1024 * 1024;
+        const allowed = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+        if (!allowed.has(file.type)) {
+            setError("Envie uma imagem JPG/PNG/WEBP ou um PDF.");
+            return;
+        }
+        if (file.size <= 0 || file.size > max) {
+            setError("O arquivo precisa ter no máximo 15 MB.");
+            return;
+        }
+
+        if (selectedFilePreview?.startsWith("blob:")) {
+            try { URL.revokeObjectURL(selectedFilePreview); } catch { }
+        }
+
+        setError("");
+        setSelectedFile(file);
+        setSelectedFilePreview(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+
+    async function uploadChatAttachment(file: File): Promise<ChatAttachment> {
+        setUploadingAttachment(true);
+        try {
+            const form = new FormData();
+            form.append("attachment", file, file.name || `aurora-${Date.now()}`);
+
+            const response = await fetch(`${CHAT_API}?action=upload-chat-file&_=${Date.now()}`, {
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                body: form,
+            });
+
+            const json = (await response.json().catch(() => null)) as
+                | { ok?: boolean; msg?: string; need_login?: 1; attachment?: unknown }
+                | null;
+
+            if (response.status === 401 || json?.need_login) {
+                throw new Error("Sua sessão expirou. Faça login novamente no PAI.");
+            }
+            if (!response.ok || json?.ok !== true) {
+                throw new Error(json?.msg || "Não foi possível enviar o arquivo.");
+            }
+
+            const attachment = sanitizeAttachment(json.attachment);
+            if (!attachment) throw new Error("O servidor não devolveu os dados do anexo.");
+            return attachment;
+        } finally {
+            setUploadingAttachment(false);
+        }
+    }
+
     function stopRecording() {
         const recorder = mediaRecorderRef.current;
         if (!recorder || recorder.state === "inactive") return;
@@ -2919,25 +3063,45 @@ export default function AuroraPage() {
 
     async function sendMessage(rawText?: string) {
         const text = String(rawText ?? input).trim();
-        if (!text || loadingRef.current || transcribing || recording) return;
+        const fileToSend = rawText === undefined ? selectedFile : null;
+        if ((!text && !fileToSend) || loadingRef.current || transcribing || recording || uploadingAttachment) return;
 
         const pending = latestPendingAction();
-        if (pending && isExplicitConfirmCommand(text)) {
+        if (!fileToSend && pending && isExplicitConfirmCommand(text)) {
             await runPendingActionFromText(pending, "execute", text);
             return;
         }
-        if (pending && isExplicitCancelCommand(text)) {
+        if (!fileToSend && pending && isExplicitCancelCommand(text)) {
             await runPendingActionFromText(pending, "cancel", text);
             return;
         }
 
         setError("");
+
+        let uploadedAttachment: ChatAttachment | null = null;
+        try {
+            if (fileToSend) {
+                uploadedAttachment = await uploadChatAttachment(fileToSend);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Não foi possível enviar o arquivo.");
+            return;
+        }
+
+        const visibleText = text || (uploadedAttachment?.kind === "image" ? "Enviei uma foto." : "Enviei um arquivo.");
+        const apiText = uploadedAttachment
+            ? `${visibleText}\n\n${attachmentApiContext(uploadedAttachment)}`
+            : visibleText;
+
         setInput("");
+        if (fileToSend) clearSelectedFile();
 
         const userMessage: ChatMessage = {
             id: makeId("user"),
             role: "user",
-            content: text,
+            content: visibleText,
+            apiContent: apiText,
+            attachment: uploadedAttachment,
             createdAt: nowIso(),
         };
         const assistantId = makeId("assistant");
@@ -2974,7 +3138,7 @@ export default function AuroraPage() {
             const payloadMessages = [...messagesRef.current]
                 .filter((m) => m.id !== assistantId && m.content.trim())
                 .slice(-MAX_HISTORY_TO_API)
-                .map(({ role, content }) => ({ role, content }));
+                .map(({ role, content, apiContent }) => ({ role, content: apiContent || content }));
 
             const response = await fetch(`${CHAT_API}?action=chat-stream&_=${Date.now()}`, {
                 method: "POST",
@@ -3075,6 +3239,7 @@ export default function AuroraPage() {
         autoFollowRef.current = true;
         commitMessages([]);
         setInput("");
+        clearSelectedFile();
         setError("");
         try {
             window.localStorage.removeItem(STORAGE_KEY);
@@ -3156,7 +3321,25 @@ export default function AuroraPage() {
                                             ].join(" ")}
                                         >
                                             {isUser ? (
-                                                <div className="whitespace-pre-wrap">{message.content}</div>
+                                                <div>
+                                                    {message.attachment ? (
+                                                        <div className="mb-2 overflow-hidden rounded-xl border border-white/15 bg-white/10 text-left">
+                                                            {message.attachment.kind === "image" && message.attachment.preview_url ? (
+                                                                <img
+                                                                    src={message.attachment.preview_url}
+                                                                    alt={message.attachment.name}
+                                                                    className="max-h-64 w-full object-contain bg-black/10"
+                                                                    loading="lazy"
+                                                                />
+                                                            ) : null}
+                                                            <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/85">
+                                                                <IconPaperclip className="h-4 w-4 shrink-0" />
+                                                                <span className="truncate">{message.attachment.name}</span>
+                                                            </div>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="whitespace-pre-wrap">{message.content}</div>
+                                                </div>
                                             ) : message.content ? (
                                                 <>
                                                     <AssistantContent content={message.content} />
@@ -3280,7 +3463,75 @@ export default function AuroraPage() {
                         onSubmit={handleSubmit}
                         className="rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-lg shadow-black/5 dark:shadow-black/30 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20"
                     >
+                        <input
+                            ref={cameraInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(event) => chooseFile(event.target.files?.[0])}
+                        />
+                        <input
+                            ref={attachmentInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            className="hidden"
+                            onChange={(event) => chooseFile(event.target.files?.[0])}
+                        />
+
+                        {selectedFile ? (
+                            <div className="mb-2 flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-2">
+                                {selectedFilePreview ? (
+                                    <img src={selectedFilePreview} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                                ) : (
+                                    <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-background ring-1 ring-border">
+                                        <IconPaperclip className="h-5 w-5 text-muted-foreground" />
+                                    </div>
+                                )}
+                                <div className="min-w-0 flex-1 text-left">
+                                    <div className="truncate text-xs font-semibold">{selectedFile.name}</div>
+                                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={clearSelectedFile}
+                                    disabled={uploadingAttachment || loading}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-50"
+                                    aria-label="Remover anexo"
+                                    title="Remover anexo"
+                                >
+                                    <IconX />
+                                </button>
+                            </div>
+                        ) : null}
+
                         <div className="flex items-end gap-2">
+                            {!recording ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        disabled={loading || transcribing || uploadingAttachment}
+                                        onClick={() => cameraInputRef.current?.click()}
+                                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-foreground transition hover:bg-muted active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                                        aria-label="Tirar foto"
+                                        title="Tirar foto"
+                                    >
+                                        <IconCamera className="h-5 w-5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={loading || transcribing || uploadingAttachment}
+                                        onClick={() => attachmentInputRef.current?.click()}
+                                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-foreground transition hover:bg-muted active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                                        aria-label="Anexar imagem ou PDF"
+                                        title="Anexar imagem ou PDF"
+                                    >
+                                        <IconPaperclip className="h-5 w-5" />
+                                    </button>
+                                </>
+                            ) : null}
                             {recording ? (
                                 <div className="flex min-h-[44px] flex-1 items-center gap-3 px-3 py-2 text-sm text-red-700 dark:text-red-300">
                                     <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
@@ -3293,15 +3544,15 @@ export default function AuroraPage() {
                                     value={input}
                                     onChange={(event) => setInput(event.target.value)}
                                     onKeyDown={handleKeyDown}
-                                    disabled={loading || transcribing}
+                                    disabled={loading || transcribing || uploadingAttachment}
                                     rows={1}
                                     maxLength={5000}
-                                    placeholder={transcribing ? "Entendendo o áudio..." : loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
+                                    placeholder={uploadingAttachment ? "Enviando anexo..." : transcribing ? "Entendendo o áudio..." : loading ? "Recebendo resposta..." : "Pergunte à Aurora..."}
                                     className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
                                 />
                             )}
 
-                            {input.trim() && !recording ? (
+                            {(input.trim() || selectedFile) && !recording ? (
                                 <button
                                     type="submit"
                                     disabled={!canSend}
@@ -3313,7 +3564,7 @@ export default function AuroraPage() {
                             ) : (
                                 <button
                                     type="button"
-                                    disabled={loading || transcribing}
+                                    disabled={loading || transcribing || uploadingAttachment}
                                     onPointerDown={(event) => {
                                         if (event.pointerType === "mouse" && event.button !== 0) return;
                                         event.preventDefault();
