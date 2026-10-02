@@ -203,18 +203,6 @@ const ROTULOS: Record<string, string> = {
   realiza_velorio: "Velório", realiza_sepultamento: "Sepultamento",
 };
 
-/** Resumo dos itens "Sim" do pacote (ex.: "Urna (2), Roupa, Velório"). */
-function resumoItens(r: RegrasTela): string {
-  const out: string[] = [];
-  Object.keys(ROTULOS).forEach((k) => {
-    const it: any = (r as any)[k];
-    if (it?.valor !== "Sim") return;
-    const n = Array.isArray(it.produtos) ? it.produtos.length : 0;
-    out.push(n > 1 ? `${ROTULOS[k]} (${n})` : ROTULOS[k]);
-  });
-  return out.join(", ");
-}
-
 /** Itens marcados "Sim" sem item escolhido (e, na Prefeitura, sem valor) — bloqueiam o salvar. */
 function pendenciasRegras(r: RegrasTela, comValor = false): string[] {
   const out: string[] = [];
@@ -277,9 +265,12 @@ function ItemPicker({
   const [erro, setErro] = useState("");
   /** Busca aberta a pedido ("Adicionar outro item"). Sem itens escolhidos, a busca fica sempre aberta. */
   const [adicionando, setAdicionando] = useState(false);
+  /** Mantém os detalhes recolhidos por padrão para deixar a tela do pacote mais compacta. */
+  const [expandido, setExpandido] = useState(false);
 
   const escolhidos = value.produtos;
-  const buscaAberta = value.valor === "Sim" && grupo !== "" && (escolhidos.length === 0 || adicionando);
+  const buscaAberta =
+    expandido && value.valor === "Sim" && grupo !== "" && (escolhidos.length === 0 || adicionando);
 
   useEffect(() => {
     if (!buscaAberta) {
@@ -332,10 +323,14 @@ function ItemPicker({
     setQ("");
     setAdicionando(false);
     if (v !== "Sim") {
+      setExpandido(false);
       onChange(regraVazia(v));
       setRows([]);
       return;
     }
+    // Ao marcar Sim sem item escolhido, abre só para permitir a configuração inicial.
+    // Pacotes já configurados continuam compactos ao entrar na tela.
+    if (escolhidos.length === 0) setExpandido(true);
     onChange({ ...value, valor: "Sim", deposito_nome: "", quantidade: Math.max(1, value.quantidade || 1) });
   };
 
@@ -343,7 +338,8 @@ function ItemPicker({
     if (row.id <= 0 || escolhidos.some((x) => x.produto_id === row.id)) return;
     onChange(comItens(value, [...escolhidos, { produto_id: row.id, nome: row.nome, codigo_barras: row.codigo_barras }]));
     setQ("");
-    setAdicionando(false); // escolheu: fecha a lista
+    setAdicionando(false);
+    setExpandido(false); // escolheu: recolhe o card novamente
   };
 
   const remover = (id: number) => onChange(comItens(value, escolhidos.filter((x) => x.produto_id !== id)));
@@ -354,15 +350,38 @@ function ItemPicker({
     <section
       className={["rounded-xl border bg-white p-4", faltaItem ? "border-amber-300" : "border-slate-200"].join(" ")}
     >
-      <div className="grid gap-3 md:grid-cols-[1fr_180px] md:items-center">
-        <div>
+      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="min-w-0">
           <h3 className="font-semibold text-slate-800">{titulo}</h3>
-          <p className="text-xs text-slate-500">{descricao}</p>
+          {value.valor === "Sim" && escolhidos.length > 0 ? (
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {escolhidos.length === 1 ? escolhidos[0].nome : `${escolhidos.length} itens selecionados`}
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500">{descricao}</p>
+          )}
         </div>
-        <SimNaoSelect value={value.valor} onChange={setValor} disabled={disabled} />
+        <div className="flex items-center gap-2 md:w-[228px]">
+          <div className="min-w-0 flex-1">
+            <SimNaoSelect value={value.valor} onChange={setValor} disabled={disabled} />
+          </div>
+          {value.valor === "Sim" && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setExpandido((v) => !v)}
+              aria-expanded={expandido}
+              aria-label={expandido ? `Ocultar detalhes de ${titulo}` : `Mostrar detalhes de ${titulo}`}
+              title={expandido ? "Ocultar detalhes" : "Mostrar detalhes"}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <span className={`text-base transition-transform ${expandido ? "rotate-180" : ""}`}>⌄</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {value.valor === "Sim" && (
+      {value.valor === "Sim" && expandido && (
         <div className="mt-4 space-y-3 border-t pt-4">
           {(extra || mostrarQuantidade || comValor) && (
             <div className="grid gap-3 md:grid-cols-2">
@@ -1143,11 +1162,8 @@ export default function ConveniosAdminPage() {
         {tela === "convenio" && atual && (
           <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="border-b p-5">
-              <h2 className="text-lg font-bold">Pacotes</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                {pacotes.length} pacote(s). Cada pacote tem os seus itens. O pacote <b>padrão</b> é o usado na Ordem de
-                Serviço.
-              </p>
+              <h2 className="text-lg font-bold">Pacotes cadastrados</h2>
+              <p className="mt-1 text-xs text-slate-500">{pacotes.length} registro(s)</p>
             </div>
             {carregandoPacotes ? (
               <div className="p-8 text-center text-sm text-slate-500">Carregando pacotes...</div>
@@ -1163,10 +1179,8 @@ export default function ConveniosAdminPage() {
                 <table className="min-w-full border-collapse text-sm">
                   <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                     <tr>
-                      <th className="whitespace-nowrap border-b px-4 py-3">ID</th>
-                      <th className="min-w-[220px] border-b px-4 py-3">Pacote</th>
-                      <th className="min-w-[260px] border-b px-4 py-3">Itens</th>
-                      {ehPrefeitura && <th className="whitespace-nowrap border-b px-4 py-3 text-right">Valor</th>}
+                      <th className="min-w-[320px] border-b px-4 py-3">Pacote</th>
+                      <th className="whitespace-nowrap border-b px-4 py-3 text-right">Valor</th>
                       <th className="whitespace-nowrap border-b px-4 py-3">Status</th>
                       <th className="whitespace-nowrap border-b px-4 py-3">Atualizado</th>
                       <th className="whitespace-nowrap border-b px-4 py-3 text-right">Ações</th>
@@ -1174,28 +1188,16 @@ export default function ConveniosAdminPage() {
                   </thead>
                   <tbody>
                     {pacotes.map((p) => {
-                      const pend = pendenciasRegras(p.regras, ehPrefeitura);
                       return (
                         <tr
                           key={p.id}
                           onClick={() => abrirPacote(p)}
                           className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50"
                         >
-                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-700">{p.id}</td>
                           <td className="px-4 py-3">
                             <div className="font-semibold text-slate-900">{p.nome}</div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              vigente a partir de {dataBR(p.vigente_desde)}
-                              {p.observacao ? ` · ${p.observacao}` : ""}
-                            </div>
-                            {pend.length > 0 && (
-                              <div className="mt-1 text-xs font-medium text-amber-700">Falta: {pend.join(", ")}</div>
-                            )}
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-600">{resumoItens(p.regras) || "—"}</td>
-                          {ehPrefeitura && (
-                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold">{moeda(p.valor)}</td>
-                          )}
+                          <td className="whitespace-nowrap px-4 py-3 text-right font-semibold">{moeda(p.valor)}</td>
                           <td className="whitespace-nowrap px-4 py-3">
                             <div className="flex gap-1.5">
                               <Etiqueta cor={p.ativo ? "verde" : "cinza"}>{p.ativo ? "Ativo" : "Inativo"}</Etiqueta>
