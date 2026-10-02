@@ -1,23 +1,22 @@
 "use client";
 
 /**
- * app/convenio/page.tsx — Convênios
+ * app/convenio/page.tsx — Convênios e pacotes
  *
- * 02/10/2026:
- *  - Urna, Roupa, Véu, Cordão, Invol e Coroa: escolha do item SEM depósito (busca no cadastro, saldo total).
- *  - Demais regras: Kit Lanche, Assistência, Tanatopraxia e Ornamentação, ao marcar "Sim", listam os
- *    itens da classificação SERVIÇOS e exigem a escolha de um item. Velório e Sepultamento: só Sim/Não.
- *  - Para salvar, todo item marcado "Sim" precisa de item escolhido (validado também no convenio.php).
- *  - A busca usa convenio.php?action=product_search&grupo=... (EstoquePicker/CoroaEditor não são mais usados aqui).
- *  - (2ª etapa) Cada opção aceita VÁRIOS itens (ex.: 3 urnas aceitas no pacote). Depois de escolher, a lista fecha e
- *    ficam só os itens escolhidos; "Adicionar outro item" reabre a busca. Em "Dados e valores da OS" os itens da
- *    mesma opção ficam na mesma linha e o valor vale para qualquer um deles.
+ * Fluxo (02/10/2026, 3ª etapa):
+ *   1. Lista de convênios → clicar abre o convênio.
+ *   2. Convênio = lista de PACOTES (botão "Novo pacote" no topo; "Dados do convênio" para nome, status e OS).
+ *   3. Pacote = itens próprios (cada pacote tem os seus): Urna, Roupa, Véu, Cordão, Invol, Coroa, Kit Lanche,
+ *      Assistência, Tanatopraxia, Ornamentação (com item, vários aceitos), Velório e Sepultamento (Sim/Não).
+ *      Na Prefeitura, cada item tem o valor no contrato (vale para qualquer produto aceito); a soma é o valor do pacote.
+ *   - O pacote PADRÃO é o que o motor da OS usa hoje (atendimento ainda não escolhe pacote).
+ *   - Itens escolhidos sem depósito (convenio.php?action=product_search&grupo=...). Depois de escolher, a lista fecha.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CONVENIO_API, apiJson } from "./components/api";
-import type { Convenio, ProdutoRegra, RegrasConvenio, SimNao } from "./components/tipos";
-import { convenioNovo, normalizeProduto, normalizeRegras, regraProduto } from "./components/tipos";
+import type { ProdutoRegra, RegrasConvenio, SimNao } from "./components/tipos";
+import { normalizeProduto, normalizeRegras, regraProduto } from "./components/tipos";
 import SimNaoSelect from "./components/SimNaoSelect";
 import SecaoOS from "./components/SecaoOS";
 
@@ -28,7 +27,7 @@ import SecaoOS from "./components/SecaoOS";
 type TipoFlor = "" | "Natural" | "Artificial";
 type ItemEscolhido = { produto_id: number; nome: string; codigo_barras: string };
 /** Regra com lista de itens; produto_id/nome/codigo_barras = o primeiro da lista (formato antigo). */
-type RegraItens = ProdutoRegra & { produtos: ItemEscolhido[] };
+type RegraItens = ProdutoRegra & { produtos: ItemEscolhido[]; valor_contrato: string };
 type ItemComTipo = RegraItens & { tipo: TipoFlor };
 
 type RegrasTela = Omit<
@@ -47,7 +46,32 @@ type RegrasTela = Omit<
   coroa_flores: ItemComTipo;
 };
 
-type ConvenioTela = Omit<Convenio, "regras"> & { regras: RegrasTela };
+type ConvenioTela = {
+  id: number;
+  nome: string;
+  slug: string;
+  ativo: boolean;
+  ordem: number;
+  observacao: string;
+  versao: number;
+  tipo: string; // tipo na OS: PARTICULAR | ASSOCIADO | PREFEITURA | ""
+  codigo: string; // código na OS
+  atualizado_em: string;
+};
+
+type Pacote = {
+  id: number;
+  convenio_id: number;
+  nome: string;
+  ativo: boolean;
+  padrao: boolean;
+  valor: number;
+  vigente_desde: string;
+  observacao: string;
+  versao: number;
+  regras: RegrasTela;
+  atualizado_em: string;
+};
 
 type Grupo = "urna" | "roupa" | "veu" | "cordao" | "invol" | "coroa_natural" | "coroa_artificial" | "servico";
 
@@ -75,8 +99,16 @@ function comItens<T extends RegraItens>(r: T, produtos: ItemEscolhido[]): T {
 }
 
 function regraVazia(valor: SimNao = ""): RegraItens {
-  return { ...regraProduto(), valor, produtos: [] };
+  return { ...regraProduto(), valor, produtos: [], valor_contrato: "" };
 }
+
+const decBR = (v: any) =>
+  v === null || v === undefined || v === "" || Number(v) <= 0
+    ? ""
+    : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = (s: any) => Number(String(s ?? "").replace(/\./g, "").replace(",", ".")) || 0;
+const hoje = () => new Date().toLocaleDateString("sv-SE");
+const dataBR = (s: string) => (s ? new Date(s.slice(0, 10) + "T12:00").toLocaleDateString("pt-BR") : "—");
 
 function normalizarRegrasTela(raw: any): RegrasTela {
   const base = normalizeRegras(raw);
@@ -96,7 +128,7 @@ function normalizarRegrasTela(raw: any): RegrasTela {
         lista.push({ produto_id: id, nome: String(x?.nome ?? ""), codigo_barras: String(x?.codigo_barras ?? "") });
       }
     });
-    return comItens({ ...p, produtos: [] }, p.valor === "Sim" ? lista : []);
+    return comItens({ ...p, produtos: [], valor_contrato: decBR(v?.valor_contrato) }, p.valor === "Sim" ? lista : []);
   };
 
   return {
@@ -115,7 +147,23 @@ function normalizarRegrasTela(raw: any): RegrasTela {
 }
 
 function convenioNovoTela(): ConvenioTela {
-  return { ...convenioNovo(), regras: normalizarRegrasTela({}) };
+  return { id: 0, nome: "", slug: "", ativo: true, ordem: 0, observacao: "", versao: 0, tipo: "", codigo: "", atualizado_em: "" };
+}
+
+function pacoteNovo(convenioId: number, padrao: boolean): Pacote {
+  return {
+    id: 0,
+    convenio_id: convenioId,
+    nome: "",
+    ativo: true,
+    padrao,
+    valor: 0,
+    vigente_desde: hoje(),
+    observacao: "",
+    versao: 0,
+    regras: normalizarRegrasTela({}),
+    atualizado_em: "",
+  };
 }
 
 type ChaveEstoque = "urna" | "roupa" | "veu" | "cordao" | "invol";
@@ -141,9 +189,40 @@ const ITENS_SIM_NAO = [
   ["realiza_sepultamento", "Sepultamento"],
 ] as const;
 
-/** Itens marcados "Sim" sem item escolhido (bloqueiam o salvar). */
-function pendenciasRegras(r: RegrasTela): string[] {
+/** Regras que têm valor no contrato (Prefeitura). Tanatopraxia tem preço de contrato próprio. */
+const CHAVES_COM_VALOR = ["urna", "roupa", "veu", "cordao", "invol", "coroa_flores", "kit_lanche", "assistencia", "ornamentacao"] as const;
+
+/** Soma do pacote = valor de cada item "Sim" (uma vez por item). */
+function somaPacote(r: RegrasTela): number {
+  return CHAVES_COM_VALOR.reduce((a, k) => a + (r[k].valor === "Sim" ? num(r[k].valor_contrato) : 0), 0);
+}
+
+const ROTULOS: Record<string, string> = {
+  urna: "Urna", roupa: "Roupa", veu: "Véu", cordao: "Cordão", invol: "Invol", coroa_flores: "Coroa",
+  kit_lanche: "Kit Lanche", assistencia: "Assistência", tanato: "Tanatopraxia", ornamentacao: "Ornamentação",
+  realiza_velorio: "Velório", realiza_sepultamento: "Sepultamento",
+};
+
+/** Resumo dos itens "Sim" do pacote (ex.: "Urna (2), Roupa, Velório"). */
+function resumoItens(r: RegrasTela): string {
   const out: string[] = [];
+  Object.keys(ROTULOS).forEach((k) => {
+    const it: any = (r as any)[k];
+    if (it?.valor !== "Sim") return;
+    const n = Array.isArray(it.produtos) ? it.produtos.length : 0;
+    out.push(n > 1 ? `${ROTULOS[k]} (${n})` : ROTULOS[k]);
+  });
+  return out.join(", ");
+}
+
+/** Itens marcados "Sim" sem item escolhido (e, na Prefeitura, sem valor) — bloqueiam o salvar. */
+function pendenciasRegras(r: RegrasTela, comValor = false): string[] {
+  const out: string[] = [];
+  if (comValor) {
+    CHAVES_COM_VALOR.forEach((k) => {
+      if (r[k].valor === "Sim" && num(r[k].valor_contrato) <= 0) out.push(`valor de ${ROTULOS[k]}`);
+    });
+  }
   ITENS_ESTOQUE.forEach(([k, label]) => {
     if (r[k].valor === "Sim" && r[k].produtos.length === 0) out.push(label);
   });
@@ -175,6 +254,7 @@ function ItemPicker({
   mostrarSaldo = true,
   extra,
   avisoSemGrupo,
+  comValor = false,
 }: {
   titulo: string;
   descricao: string;
@@ -188,6 +268,8 @@ function ItemPicker({
   /** Campos a mais exibidos quando "Sim" (ex.: tipo da coroa/ornamentação). */
   extra?: React.ReactNode;
   avisoSemGrupo?: string;
+  /** Prefeitura: mostra "Valor no contrato" (vale para qualquer item aceito). */
+  comValor?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<ProdutoBusca[]>([]);
@@ -266,7 +348,7 @@ function ItemPicker({
 
   const remover = (id: number) => onChange(comItens(value, escolhidos.filter((x) => x.produto_id !== id)));
 
-  const faltaItem = value.valor === "Sim" && escolhidos.length === 0;
+  const faltaItem = value.valor === "Sim" && (escolhidos.length === 0 || (comValor && num(value.valor_contrato) <= 0));
 
   return (
     <section
@@ -282,9 +364,25 @@ function ItemPicker({
 
       {value.valor === "Sim" && (
         <div className="mt-4 space-y-3 border-t pt-4">
-          {(extra || mostrarQuantidade) && (
+          {(extra || mostrarQuantidade || comValor) && (
             <div className="grid gap-3 md:grid-cols-2">
               {extra}
+              {comValor && (
+                <label className="text-sm text-slate-700">
+                  <span className="mb-1 block font-medium">Valor no contrato (R$)</span>
+                  <input
+                    inputMode="decimal"
+                    value={value.valor_contrato}
+                    disabled={disabled}
+                    placeholder="0,00"
+                    onChange={(e) => onChange({ ...value, valor_contrato: e.target.value })}
+                    className={[
+                      "w-full rounded-lg border px-3 py-2 text-right",
+                      num(value.valor_contrato) > 0 ? "border-slate-300" : "border-amber-300 bg-amber-50",
+                    ].join(" ")}
+                  />
+                </label>
+              )}
               {mostrarQuantidade && (
                 <label className="text-sm text-slate-700">
                   <span className="mb-1 block font-medium">Quantidade padrão</span>
@@ -308,7 +406,9 @@ function ItemPicker({
           {escolhidos.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-medium text-slate-500">
-                {escolhidos.length === 1 ? "Item escolhido" : `${escolhidos.length} itens aceitos (qualquer um vale como padrão)`}
+                {escolhidos.length === 1
+                  ? "Item escolhido"
+                  : `${escolhidos.length} itens aceitos (qualquer um vale como padrão${comValor ? ", pelo mesmo valor" : ""})`}
               </div>
               {escolhidos.map((it) => (
                 <div
@@ -438,63 +538,173 @@ function ItemPicker({
 }
 
 /* ====================================================================== */
+/* Peças de tela                                                           */
+/* ====================================================================== */
+
+const btnPrim = "rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60";
+const btnSec = "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60";
+const btnPerigo = "rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60";
+const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2";
+
+const TIPO_OS: Record<string, string> = {
+  PARTICULAR: "Particular",
+  ASSOCIADO: "Plano de associado",
+  PREFEITURA: "Prefeitura",
+};
+
+function Etiqueta({ cor, children }: { cor: "verde" | "cinza" | "azul" | "amarelo"; children: React.ReactNode }) {
+  const cls = {
+    verde: "bg-emerald-100 text-emerald-800",
+    cinza: "bg-slate-200 text-slate-600",
+    azul: "bg-blue-100 text-blue-800",
+    amarelo: "bg-amber-100 text-amber-800",
+  }[cor];
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>{children}</span>;
+}
+
+function ModalExcluir({
+  titulo,
+  nome,
+  aviso,
+  ocupado,
+  onCancelar,
+  onConfirmar,
+}: {
+  titulo: string;
+  nome: string;
+  aviso: string;
+  ocupado: boolean;
+  onCancelar: () => void;
+  onConfirmar: () => void;
+}) {
+  const [conf, setConf] = useState("");
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !ocupado) onCancelar();
+      }}
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <h2 className="text-xl font-bold text-red-700">{titulo}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          {aviso} <b>{nome}</b>. Para confirmar, digite exatamente:
+        </p>
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center font-mono text-base font-bold tracking-widest text-red-700">
+          EXCLUIR
+        </div>
+        <label className="mt-4 block text-sm font-medium text-slate-700">
+          Confirmação
+          <input
+            autoFocus
+            value={conf}
+            disabled={ocupado}
+            onChange={(e) => setConf(e.target.value)}
+            placeholder="Digite EXCLUIR"
+            autoComplete="off"
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+          />
+        </label>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" disabled={ocupado} onClick={onCancelar} className={btnSec}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={ocupado || conf !== "EXCLUIR"}
+            onClick={onConfirmar}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {ocupado ? "Excluindo..." : "Confirmar exclusão"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ====================================================================== */
 /* Página                                                                  */
 /* ====================================================================== */
 
-export default function ConveniosAdminPage() {
-  const [rows, setRows] = useState<ConvenioTela[]>([]);
-  const [form, setForm] = useState<ConvenioTela>(convenioNovoTela());
-  const [tela, setTela] = useState<"lista" | "form">("lista");
+type Tela = "lista" | "convenio" | "dados" | "pacote";
 
+export default function ConveniosAdminPage() {
+  const [tela, setTela] = useState<Tela>("lista");
+
+  const [rows, setRows] = useState<ConvenioTela[]>([]);
   const [loading, setLoading] = useState(true);
+
+  /** Convênio aberto (tela de pacotes) */
+  const [atual, setAtual] = useState<ConvenioTela | null>(null);
+  /** Formulário "Dados do convênio" */
+  const [form, setForm] = useState<ConvenioTela>(convenioNovoTela());
+
+  const [pacotes, setPacotes] = useState<Pacote[]>([]);
+  const [carregandoPacotes, setCarregandoPacotes] = useState(false);
+  const [pacote, setPacote] = useState<Pacote>(pacoteNovo(0, true));
+
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [erro, setErro] = useState("");
   const [msg, setMsg] = useState("");
+  const [excluir, setExcluir] = useState<null | "convenio" | "pacote">(null);
 
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState("");
-
-  const isEditing = form.id > 0;
   const bloqueado = saving || deleting;
+  const ehPrefeitura = (atual?.tipo || "").toUpperCase() === "PREFEITURA";
+
+  const topo = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  const limparAvisos = () => {
+    setErro("");
+    setMsg("");
+  };
 
   const normalizarConvenio = useCallback(
     (r: any): ConvenioTela => ({
-      ...r,
       id: Number(r?.id ?? 0),
-      ordem: Number(r?.ordem ?? 0),
-      versao: Number(r?.versao ?? 0),
-      ativo: !!r?.ativo,
       nome: String(r?.nome ?? ""),
       slug: String(r?.slug ?? ""),
+      ativo: !!r?.ativo,
+      ordem: Number(r?.ordem ?? 0),
       observacao: String(r?.observacao ?? ""),
-      regras: normalizarRegrasTela(r?.regras),
-      criado_em: String(r?.criado_em ?? ""),
+      versao: Number(r?.versao ?? 0),
+      tipo: String(r?.tipo ?? ""),
+      codigo: String(r?.codigo ?? ""),
       atualizado_em: String(r?.atualizado_em ?? ""),
     }),
     [],
   );
 
-  const carregar = useCallback(async () => {
-    setLoading(true);
-    setErro("");
+  const normalizarPacote = (r: any): Pacote => ({
+    id: Number(r?.id ?? 0),
+    convenio_id: Number(r?.convenio_id ?? 0),
+    nome: String(r?.nome ?? ""),
+    ativo: !!r?.ativo,
+    padrao: !!r?.padrao,
+    valor: Number(r?.valor ?? 0),
+    vigente_desde: String(r?.vigente_desde ?? hoje()).slice(0, 10),
+    observacao: String(r?.observacao ?? ""),
+    versao: Number(r?.versao ?? 1),
+    regras: normalizarRegrasTela(r?.regras),
+    atualizado_em: String(r?.atualizado_em ?? ""),
+  });
 
+  /* ---------------------------- carregamentos ---------------------------- */
+
+  const carregar = useCallback(async (): Promise<ConvenioTela[]> => {
+    setLoading(true);
     try {
       await apiJson(`${CONVENIO_API}?action=me&_=${Date.now()}`);
-
       const data = await apiJson(`${CONVENIO_API}?action=list&include_inactive=1&_=${Date.now()}`);
-
-      const lista = Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data?.dados)
-          ? data.dados
-          : Array.isArray(data?.rows)
-            ? data.rows
-            : [];
-
-      setRows(lista.map(normalizarConvenio));
+      const lista = Array.isArray(data?.data) ? data.data : Array.isArray(data?.dados) ? data.dados : [];
+      const conv = lista.map(normalizarConvenio);
+      setRows(conv);
+      return conv;
     } catch (e: any) {
       setErro(e?.message || "Não foi possível carregar os convênios.");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -504,136 +714,246 @@ export default function ConveniosAdminPage() {
     void carregar();
   }, [carregar]);
 
-  const patchRegra = <K extends keyof RegrasTela>(key: K, value: RegrasTela[K]) => {
-    setForm((prev) => ({
-      ...prev,
-      regras: {
-        ...prev.regras,
-        [key]: value,
-      },
-    }));
+  const carregarPacotes = async (convId: number) => {
+    setCarregandoPacotes(true);
+    try {
+      const data = await apiJson(`${CONVENIO_API}?action=pacotes_listar&convenio_id=${convId}&_=${Date.now()}`);
+      const lista = Array.isArray(data?.data) ? data.data : [];
+      setPacotes(lista.map(normalizarPacote));
+    } catch (e: any) {
+      setPacotes([]);
+      setErro(e?.message || "Não foi possível carregar os pacotes.");
+    } finally {
+      setCarregandoPacotes(false);
+    }
   };
 
-  const pendencias = useMemo(() => pendenciasRegras(form.regras), [form.regras]);
+  /* ------------------------------ navegação ------------------------------ */
 
-  const abrirEdicao = (row: ConvenioTela) => {
-    setErro("");
-    setMsg("");
-    setDeleteOpen(false);
-    setDeleteConfirm("");
-    setForm({
-      ...row,
-      regras: normalizarRegrasTela(row.regras),
-    });
-    setTela("form");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const novo = () => {
-    setErro("");
-    setMsg("");
-    setDeleteOpen(false);
-    setDeleteConfirm("");
-    setForm(convenioNovoTela());
-    setTela("form");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const voltarParaLista = () => {
+  const irParaLista = () => {
     if (bloqueado) return;
-    setErro("");
-    setDeleteOpen(false);
-    setDeleteConfirm("");
-    setForm(convenioNovoTela());
+    limparAvisos();
+    setAtual(null);
+    setPacotes([]);
     setTela("lista");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    topo();
   };
 
-  const salvar = async () => {
+  const abrirConvenio = (c: ConvenioTela) => {
+    limparAvisos();
+    setAtual(c);
+    setTela("convenio");
+    void carregarPacotes(c.id);
+    topo();
+  };
+
+  const voltarConvenio = () => {
+    if (bloqueado || !atual) return;
+    limparAvisos();
+    setTela("convenio");
+    topo();
+    if (tela === "dados") {
+      // os dados da OS (tipo/código) podem ter mudado em "Dados do convênio": recarrega convênio e pacotes
+      void carregar().then((lista) => {
+        const c = lista.find((x) => x.id === atual.id);
+        if (c) setAtual(c);
+      });
+      void carregarPacotes(atual.id);
+    }
+  };
+
+  const novoConvenio = () => {
+    limparAvisos();
+    setAtual(null);
+    setForm(convenioNovoTela());
+    setTela("dados");
+    topo();
+  };
+
+  const editarDados = () => {
+    if (!atual) return;
+    limparAvisos();
+    setForm({ ...atual });
+    setTela("dados");
+    topo();
+  };
+
+  const abrirPacote = (p: Pacote) => {
+    limparAvisos();
+    setPacote({ ...p, regras: normalizarRegrasTela(p.regras) });
+    setTela("pacote");
+    topo();
+  };
+
+  const novoPacote = () => {
+    if (!atual) return;
+    limparAvisos();
+    setPacote(pacoteNovo(atual.id, pacotes.filter((p) => p.ativo).length === 0));
+    setTela("pacote");
+    topo();
+  };
+
+  const duplicarPacote = () => {
+    limparAvisos();
+    setPacote({ ...pacote, id: 0, versao: 0, padrao: false, nome: `${pacote.nome} (cópia)`, regras: normalizarRegrasTela(pacote.regras) });
+    setMsg("Cópia criada. Ajuste o nome e os itens e salve.");
+    topo();
+  };
+
+  /* ------------------------------ ações: convênio ------------------------------ */
+
+  const salvarDados = async () => {
     if (bloqueado) return;
-
     const nome = form.nome.trim();
-
     if (!nome) {
       setErro("Informe o nome do convênio.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      topo();
       return;
     }
-
-    if (pendencias.length > 0) {
-      setErro(`Escolha o item de: ${pendencias.join(", ")}.`);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-
     setSaving(true);
-    setErro("");
-    setMsg("");
-
+    limparAvisos();
     try {
-      await apiJson(CONVENIO_API, {
+      const r = await apiJson(CONVENIO_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "save",
+          action: "save_info",
           id: form.id || 0,
           nome,
           ativo: form.ativo,
           ordem: form.ordem,
           observacao: form.observacao.trim(),
           versao: form.versao,
-          regras: form.regras,
         }),
       });
-
-      await carregar();
-      setForm(convenioNovoTela());
-      setTela("lista");
-      setMsg(isEditing ? "Convênio atualizado com sucesso." : "Convênio criado com sucesso.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      const salvo = normalizarConvenio(r?.data);
+      const lista = await carregar();
+      const conv = lista.find((c) => c.id === salvo.id) || salvo;
+      const eraNovo = !form.id;
+      abrirConvenio(conv);
+      setMsg(eraNovo ? "Convênio criado. Agora crie os pacotes." : "Dados do convênio salvos.");
     } catch (e: any) {
       setErro(e?.message || "Não foi possível salvar o convênio.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      if (e?.code === "VERSION_CONFLICT") {
-        await carregar();
-      }
+      topo();
+      if (e?.code === "VERSION_CONFLICT") await carregar();
     } finally {
       setSaving(false);
     }
   };
 
-  const excluir = async () => {
-    if (!isEditing || bloqueado) return;
-    if (deleteConfirm !== "EXCLUIR") return;
-
+  const excluirConvenio = async () => {
+    if (!form.id || bloqueado) return;
     setDeleting(true);
-    setErro("");
-    setMsg("");
+    limparAvisos();
+    try {
+      await apiJson(CONVENIO_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: form.id, versao: form.versao, confirmacao: "EXCLUIR" }),
+      });
+      setExcluir(null);
+      setAtual(null);
+      setTela("lista");
+      await carregar();
+      setMsg("Convênio excluído com sucesso.");
+      topo();
+    } catch (e: any) {
+      setExcluir(null);
+      setErro(e?.message || "Não foi possível excluir o convênio.");
+      topo();
+    } finally {
+      setDeleting(false);
+    }
+  };
 
+  /* ------------------------------ ações: pacote ------------------------------ */
+
+  const pendencias = useMemo(() => pendenciasRegras(pacote.regras, ehPrefeitura), [pacote.regras, ehPrefeitura]);
+  const total = useMemo(() => somaPacote(pacote.regras), [pacote.regras]);
+  const temItem = useMemo(
+    () => Object.keys(ROTULOS).some((k) => (pacote.regras as any)[k]?.valor === "Sim"),
+    [pacote.regras],
+  );
+
+  const patchRegra = <K extends keyof RegrasTela>(key: K, value: RegrasTela[K]) => {
+    setPacote((prev) => ({ ...prev, regras: { ...prev.regras, [key]: value } }));
+  };
+
+  const salvarPacote = async () => {
+    if (bloqueado || !atual) return;
+    if (!pacote.nome.trim()) {
+      setErro("Informe o nome do pacote.");
+      topo();
+      return;
+    }
+    if (!temItem) {
+      setErro("Marque ao menos um item como “Sim” no pacote.");
+      topo();
+      return;
+    }
+    if (pendencias.length > 0) {
+      setErro(`Falta: ${pendencias.join(", ")}.`);
+      topo();
+      return;
+    }
+    setSaving(true);
+    limparAvisos();
     try {
       await apiJson(CONVENIO_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "delete",
-          id: form.id,
-          versao: form.versao,
-          confirmacao: deleteConfirm,
+          action: "pacote_salvar",
+          id: pacote.id || 0,
+          convenio_id: atual.id,
+          nome: pacote.nome.trim(),
+          ativo: pacote.ativo,
+          padrao: pacote.padrao,
+          vigente_desde: pacote.vigente_desde,
+          observacao: pacote.observacao.trim(),
+          versao: pacote.versao,
+          regras: pacote.regras,
         }),
       });
-
-      setDeleteOpen(false);
-      setDeleteConfirm("");
-      setForm(convenioNovoTela());
-      setTela("lista");
-      await carregar();
-      setMsg("Convênio excluído com sucesso.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      const eraNovo = !pacote.id;
+      await carregarPacotes(atual.id);
+      setTela("convenio");
+      setMsg(eraNovo ? "Pacote criado com sucesso." : "Pacote atualizado com sucesso.");
+      topo();
     } catch (e: any) {
-      setErro(e?.message || "Não foi possível excluir o convênio.");
-      if (e?.code === "VERSION_CONFLICT") {
-        await carregar();
-      }
+      setErro(e?.message || "Não foi possível salvar o pacote.");
+      topo();
+      if (e?.code === "VERSION_CONFLICT") await carregarPacotes(atual.id);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const excluirPacote = async () => {
+    if (!atual || !pacote.id || bloqueado) return;
+    setDeleting(true);
+    limparAvisos();
+    try {
+      await apiJson(CONVENIO_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "pacote_excluir",
+          id: pacote.id,
+          convenio_id: atual.id,
+          versao: pacote.versao,
+          confirmacao: "EXCLUIR",
+        }),
+      });
+      setExcluir(null);
+      await carregarPacotes(atual.id);
+      setTela("convenio");
+      setMsg("Pacote excluído com sucesso.");
+      topo();
+    } catch (e: any) {
+      setExcluir(null);
+      setErro(e?.message || "Não foi possível excluir o pacote.");
+      topo();
     } finally {
       setDeleting(false);
     }
@@ -642,80 +962,125 @@ export default function ConveniosAdminPage() {
   const formatarData = (value?: string) => {
     const raw = String(value || "").trim();
     if (!raw) return "—";
-
-    const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-    const date = new Date(normalized);
-
+    const date = new Date(raw.includes("T") ? raw : raw.replace(" ", "T"));
     if (Number.isNaN(date.getTime())) return raw;
-
-    return new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(date);
+    return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
   };
 
-  const coroa = form.regras.coroa_flores;
+  const regras = pacote.regras;
+  const coroa = regras.coroa_flores;
   const grupoCoroa: Grupo | "" =
     coroa.tipo === "Natural" ? "coroa_natural" : coroa.tipo === "Artificial" ? "coroa_artificial" : "";
+
+  /* ------------------------------ render ------------------------------ */
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900">
       <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Convênios</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Cadastre convênios e defina os itens/regras padrão de cada atendimento.
-            </p>
-          </div>
-
-          {tela === "lista" ? (
-            <button
-              type="button"
-              onClick={novo}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-            >
+        {/* Cabeçalho de cada tela */}
+        {tela === "lista" && (
+          <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">Convênios</h1>
+              <p className="mt-1 text-sm text-slate-600">Cadastre convênios e os pacotes de cada um.</p>
+            </div>
+            <button type="button" onClick={novoConvenio} className={btnPrim}>
               Novo convênio
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={voltarParaLista}
-              disabled={bloqueado}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              Voltar para lista
-            </button>
-          )}
-        </header>
-
-        {erro && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{erro}</div>
+          </header>
         )}
 
+        {tela === "convenio" && atual && (
+          <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <button type="button" onClick={irParaLista} className="text-xs font-semibold text-blue-700 hover:underline">
+                ‹ Convênios
+              </button>
+              <h1 className="mt-1 text-2xl font-bold">{atual.nome}</h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Etiqueta cor={atual.ativo ? "verde" : "cinza"}>{atual.ativo ? "Ativo" : "Inativo"}</Etiqueta>
+                {atual.tipo ? (
+                  <Etiqueta cor="azul">
+                    {TIPO_OS[atual.tipo] || atual.tipo}
+                    {atual.codigo ? ` · ${atual.codigo}` : ""}
+                  </Etiqueta>
+                ) : (
+                  <Etiqueta cor="amarelo">OS não configurada</Etiqueta>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <button type="button" onClick={editarDados} className={btnSec}>
+                Dados do convênio
+              </button>
+              <button type="button" onClick={novoPacote} className={btnPrim}>
+                Novo pacote
+              </button>
+            </div>
+          </header>
+        )}
+
+        {tela === "dados" && (
+          <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <button
+                type="button"
+                onClick={atual ? voltarConvenio : irParaLista}
+                className="text-xs font-semibold text-blue-700 hover:underline"
+              >
+                ‹ {atual ? atual.nome : "Convênios"}
+              </button>
+              <h1 className="mt-1 text-2xl font-bold">{form.id ? "Dados do convênio" : "Novo convênio"}</h1>
+              <p className="mt-1 text-sm text-slate-600">Nome, status e como o convênio entra na Ordem de Serviço.</p>
+            </div>
+            {form.id > 0 && (
+              <button type="button" onClick={() => setExcluir("convenio")} disabled={bloqueado} className={btnPerigo}>
+                Excluir convênio
+              </button>
+            )}
+          </header>
+        )}
+
+        {tela === "pacote" && atual && (
+          <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <button type="button" onClick={voltarConvenio} className="text-xs font-semibold text-blue-700 hover:underline">
+                ‹ {atual.nome}
+              </button>
+              <h1 className="mt-1 text-2xl font-bold">{pacote.id ? pacote.nome || `Pacote #${pacote.id}` : "Novo pacote"}</h1>
+              <p className="mt-1 text-sm text-slate-600">Os itens deste pacote são só dele.</p>
+            </div>
+            {pacote.id > 0 && (
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <button type="button" onClick={duplicarPacote} disabled={bloqueado} className={btnSec}>
+                  Duplicar
+                </button>
+                <button type="button" onClick={() => setExcluir("pacote")} disabled={bloqueado} className={btnPerigo}>
+                  Excluir pacote
+                </button>
+              </div>
+            )}
+          </header>
+        )}
+
+        {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{erro}</div>}
         {msg && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{msg}</div>
         )}
 
-        {tela === "lista" ? (
+        {/* ======================= 1. Lista de convênios ======================= */}
+        {tela === "lista" && (
           <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-            <div className="flex flex-col gap-2 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-bold">Convênios cadastrados</h2>
-                <p className="mt-1 text-xs text-slate-500">{rows.length} registro(s)</p>
-              </div>
+            <div className="border-b p-5">
+              <h2 className="text-lg font-bold">Convênios cadastrados</h2>
+              <p className="mt-1 text-xs text-slate-500">{rows.length} registro(s)</p>
             </div>
-
             {loading ? (
               <div className="p-8 text-center text-sm text-slate-500">Carregando convênios...</div>
             ) : rows.length === 0 ? (
               <div className="p-8 text-center">
                 <div className="text-sm font-medium text-slate-700">Nenhum convênio cadastrado.</div>
-                <button
-                  type="button"
-                  onClick={novo}
-                  className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                >
+                <button type="button" onClick={novoConvenio} className={`mt-4 ${btnPrim}`}>
                   Criar primeiro convênio
                 </button>
               </div>
@@ -733,41 +1098,120 @@ export default function ConveniosAdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => {
-                      const pend = pendenciasRegras(row.regras);
+                    {rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        onClick={() => abrirConvenio(row)}
+                        className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50"
+                      >
+                        <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-700">{row.id}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-900">{row.nome}</div>
+                          {row.observacao ? (
+                            <div className="mt-1 max-w-xl truncate text-xs text-slate-500">{row.observacao}</div>
+                          ) : null}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <Etiqueta cor={row.ativo ? "verde" : "cinza"}>{row.ativo ? "Ativo" : "Inativo"}</Etiqueta>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.ordem}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
+                          {formatarData(row.atualizado_em)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirConvenio(row);
+                            }}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                          >
+                            Ver pacotes
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
+        {/* ======================= 2. Pacotes do convênio ======================= */}
+        {tela === "convenio" && atual && (
+          <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+            <div className="border-b p-5">
+              <h2 className="text-lg font-bold">Pacotes</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {pacotes.length} pacote(s). Cada pacote tem os seus itens. O pacote <b>padrão</b> é o usado na Ordem de
+                Serviço.
+              </p>
+            </div>
+            {carregandoPacotes ? (
+              <div className="p-8 text-center text-sm text-slate-500">Carregando pacotes...</div>
+            ) : pacotes.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="text-sm font-medium text-slate-700">Nenhum pacote cadastrado neste convênio.</div>
+                <button type="button" onClick={novoPacote} className={`mt-4 ${btnPrim}`}>
+                  Criar primeiro pacote
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <tr>
+                      <th className="whitespace-nowrap border-b px-4 py-3">ID</th>
+                      <th className="min-w-[220px] border-b px-4 py-3">Pacote</th>
+                      <th className="min-w-[260px] border-b px-4 py-3">Itens</th>
+                      {ehPrefeitura && <th className="whitespace-nowrap border-b px-4 py-3 text-right">Valor</th>}
+                      <th className="whitespace-nowrap border-b px-4 py-3">Status</th>
+                      <th className="whitespace-nowrap border-b px-4 py-3">Atualizado</th>
+                      <th className="whitespace-nowrap border-b px-4 py-3 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pacotes.map((p) => {
+                      const pend = pendenciasRegras(p.regras, ehPrefeitura);
                       return (
-                        <tr key={row.id} className="border-b last:border-b-0 hover:bg-slate-50">
-                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-700">{row.id}</td>
+                        <tr
+                          key={p.id}
+                          onClick={() => abrirPacote(p)}
+                          className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50"
+                        >
+                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-700">{p.id}</td>
                           <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-900">{row.nome}</div>
-                            {row.observacao ? (
-                              <div className="mt-1 max-w-xl truncate text-xs text-slate-500">{row.observacao}</div>
-                            ) : null}
+                            <div className="font-semibold text-slate-900">{p.nome}</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              vigente a partir de {dataBR(p.vigente_desde)}
+                              {p.observacao ? ` · ${p.observacao}` : ""}
+                            </div>
                             {pend.length > 0 && (
-                              <div className="mt-1 text-xs font-medium text-amber-700">
-                                Falta escolher item: {pend.join(", ")}
-                              </div>
+                              <div className="mt-1 text-xs font-medium text-amber-700">Falta: {pend.join(", ")}</div>
                             )}
                           </td>
+                          <td className="px-4 py-3 text-xs text-slate-600">{resumoItens(p.regras) || "—"}</td>
+                          {ehPrefeitura && (
+                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold">{moeda(p.valor)}</td>
+                          )}
                           <td className="whitespace-nowrap px-4 py-3">
-                            <span
-                              className={[
-                                "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
-                                row.ativo ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600",
-                              ].join(" ")}
-                            >
-                              {row.ativo ? "Ativo" : "Inativo"}
-                            </span>
+                            <div className="flex gap-1.5">
+                              <Etiqueta cor={p.ativo ? "verde" : "cinza"}>{p.ativo ? "Ativo" : "Inativo"}</Etiqueta>
+                              {p.padrao && <Etiqueta cor="azul">Padrão</Etiqueta>}
+                            </div>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.ordem}</td>
                           <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
-                            {formatarData(row.atualizado_em)}
+                            {formatarData(p.atualizado_em)}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-right">
                             <button
                               type="button"
-                              onClick={() => abrirEdicao(row)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                abrirPacote(p);
+                              }}
                               className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
                             >
                               Ver / Editar
@@ -781,35 +1225,13 @@ export default function ConveniosAdminPage() {
               </div>
             )}
           </section>
-        ) : (
+        )}
+
+        {/* ======================= 3. Dados do convênio ======================= */}
+        {tela === "dados" && (
           <div className="space-y-5">
             <section className="rounded-2xl border bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold">{isEditing ? `Convênio #${form.id}` : "Novo convênio"}</h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {isEditing
-                      ? "Visualize e altere as regras deste convênio."
-                      : "Preencha os dados para criar um novo convênio."}
-                  </p>
-                </div>
-
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleteConfirm("");
-                      setDeleteOpen(true);
-                    }}
-                    disabled={bloqueado}
-                    className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
-                  >
-                    Excluir convênio
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm">
                   <span className="mb-1 block font-medium">Nome do convênio</span>
                   <input
@@ -817,10 +1239,9 @@ export default function ConveniosAdminPage() {
                     disabled={bloqueado}
                     onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))}
                     maxLength={150}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className={inputCls}
                   />
                 </label>
-
                 <label className="text-sm">
                   <span className="mb-1 block font-medium">Ordem</span>
                   <input
@@ -828,24 +1249,19 @@ export default function ConveniosAdminPage() {
                     value={form.ordem}
                     disabled={bloqueado}
                     onChange={(e) => setForm((p) => ({ ...p, ordem: Number(e.target.value) || 0 }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className={inputCls}
                   />
                 </label>
               </div>
-
-              <div className="mt-4 flex items-center gap-2">
+              <label className="mt-4 flex items-center gap-2 text-sm font-medium">
                 <input
-                  id="convenio-ativo"
                   type="checkbox"
                   checked={form.ativo}
                   disabled={bloqueado}
                   onChange={(e) => setForm((p) => ({ ...p, ativo: e.target.checked }))}
                 />
-                <label htmlFor="convenio-ativo" className="text-sm font-medium">
-                  Convênio ativo
-                </label>
-              </div>
-
+                Convênio ativo
+              </label>
               <label className="mt-4 block text-sm">
                 <span className="mb-1 block font-medium">Observação administrativa</span>
                 <textarea
@@ -854,49 +1270,126 @@ export default function ConveniosAdminPage() {
                   maxLength={1000}
                   rows={3}
                   onChange={(e) => setForm((p) => ({ ...p, observacao: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className={inputCls}
                 />
               </label>
+              <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button type="button" disabled={bloqueado} onClick={atual ? voltarConvenio : irParaLista} className={btnSec}>
+                  Cancelar
+                </button>
+                <button type="button" disabled={bloqueado} onClick={() => void salvarDados()} className={btnPrim}>
+                  {saving ? "Salvando..." : form.id ? "Salvar dados" : "Criar convênio"}
+                </button>
+              </div>
             </section>
 
-            {/* Itens do estoque: escolhe só o item (sem depósito) */}
+            {/* Tipo na OS, código, aditivos e preços/valores do convênio */}
+            <SecaoOS convenio={{ id: form.id }} disabled={bloqueado} />
+          </div>
+        )}
+
+        {/* ======================= 4. Pacote ======================= */}
+        {tela === "pacote" && atual && (
+          <div className="space-y-5">
+            <section className="rounded-2xl border bg-white p-5 shadow-sm">
+              <div className="grid gap-4 md:grid-cols-[1fr_200px]">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Nome do pacote</span>
+                  <input
+                    value={pacote.nome}
+                    disabled={bloqueado}
+                    maxLength={120}
+                    placeholder="ex.: Atendimento funerário padrão"
+                    onChange={(e) => setPacote((p) => ({ ...p, nome: e.target.value }))}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Vigente a partir de</span>
+                  <input
+                    type="date"
+                    value={pacote.vigente_desde}
+                    disabled={bloqueado}
+                    onChange={(e) => setPacote((p) => ({ ...p, vigente_desde: e.target.value }))}
+                    className={inputCls}
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-6">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={pacote.ativo}
+                    disabled={bloqueado}
+                    onChange={(e) =>
+                      setPacote((p) => ({ ...p, ativo: e.target.checked, padrao: e.target.checked ? p.padrao : false }))
+                    }
+                  />
+                  Pacote ativo
+                </label>
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={pacote.padrao}
+                    disabled={bloqueado || !pacote.ativo}
+                    onChange={(e) => setPacote((p) => ({ ...p, padrao: e.target.checked }))}
+                  />
+                  Pacote padrão do convênio
+                  <span className="text-xs font-normal text-slate-500">(usado na Ordem de Serviço)</span>
+                </label>
+              </div>
+              <label className="mt-4 block text-sm">
+                <span className="mb-1 block font-medium">Observação</span>
+                <input
+                  value={pacote.observacao}
+                  disabled={bloqueado}
+                  maxLength={255}
+                  onChange={(e) => setPacote((p) => ({ ...p, observacao: e.target.value }))}
+                  className={inputCls}
+                />
+              </label>
+              {ehPrefeitura && (
+                <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                  Prefeitura: informe o <b>valor no contrato</b> de cada item. Quando um item tem vários produtos aceitos, o
+                  valor vale para qualquer um deles. O valor do pacote é a soma. A tanatopraxia usa o preço de contrato de
+                  “Dados do convênio”.
+                </p>
+              )}
+            </section>
+
+            {/* Itens do estoque */}
             <div className="grid gap-4 lg:grid-cols-2">
               {ITENS_ESTOQUE.map(([key, label, grupo]) => (
                 <ItemPicker
                   key={key}
                   titulo={label}
-                  descricao="Define se o convênio oferece este item. Se “Sim”, escolha o item."
+                  descricao="Define se o pacote inclui este item. Se “Sim”, escolha o item."
                   grupo={grupo}
-                  value={form.regras[key]}
+                  value={regras[key]}
                   onChange={(v) => patchRegra(key, v)}
                   disabled={bloqueado}
+                  comValor={ehPrefeitura}
                 />
               ))}
             </div>
 
             <ItemPicker
               titulo="Coroa de Flores"
-              descricao="Se “Sim”, escolha o tipo e o modelo padrão."
+              descricao="Se “Sim”, escolha o tipo e o modelo."
               grupo={grupoCoroa}
               value={coroa}
               disabled={bloqueado}
+              comValor={ehPrefeitura}
               avisoSemGrupo="Escolha o tipo (Natural ou Artificial) para listar os modelos."
-              onChange={(v) =>
-                patchRegra("coroa_flores", {
-                  ...v,
-                  tipo: v.valor === "Sim" ? coroa.tipo : "",
-                })
-              }
+              onChange={(v) => patchRegra("coroa_flores", { ...v, tipo: v.valor === "Sim" ? coroa.tipo : "" })}
               extra={
                 <label className="text-sm text-slate-700">
                   <span className="mb-1 block font-medium">Tipo</span>
                   <select
                     value={coroa.tipo}
                     disabled={bloqueado}
-                    onChange={(e) =>
-                      patchRegra("coroa_flores", comItens({ ...coroa, tipo: tipoFlor(e.target.value) }, []))
-                    }
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    onChange={(e) => patchRegra("coroa_flores", comItens({ ...coroa, tipo: tipoFlor(e.target.value) }, []))}
+                    className={inputCls}
                   >
                     <option value="">Selecione...</option>
                     <option value="Natural">Natural</option>
@@ -909,8 +1402,8 @@ export default function ConveniosAdminPage() {
             <section className="rounded-2xl border bg-white p-5 shadow-sm">
               <h2 className="text-lg font-bold">Demais regras</h2>
               <p className="mb-4 mt-1 text-xs text-slate-500">
-                “Não definido” preserva decisão manual no atendimento futuro. Ao marcar “Sim”, escolha o item da
-                classificação SERVIÇOS (exceto Velório e Sepultamento).
+                “Não definido” preserva decisão manual no atendimento. Ao marcar “Sim”, escolha o item da classificação
+                SERVIÇOS (exceto Velório e Sepultamento).
               </p>
 
               <div className="grid gap-4 lg:grid-cols-2">
@@ -919,31 +1412,26 @@ export default function ConveniosAdminPage() {
                     <ItemPicker
                       key={key}
                       titulo={label}
-                      descricao="Serviço de ornamentação incluso no convênio."
+                      descricao="Serviço de ornamentação incluso no pacote."
                       grupo="servico"
-                      value={form.regras.ornamentacao}
+                      value={regras.ornamentacao}
                       disabled={bloqueado}
                       mostrarQuantidade={false}
                       mostrarSaldo={false}
+                      comValor={ehPrefeitura}
                       onChange={(v) =>
-                        patchRegra("ornamentacao", {
-                          ...v,
-                          tipo: v.valor === "Sim" ? form.regras.ornamentacao.tipo : "",
-                        })
+                        patchRegra("ornamentacao", { ...v, tipo: v.valor === "Sim" ? regras.ornamentacao.tipo : "" })
                       }
                       extra={
                         <label className="text-sm text-slate-700">
                           <span className="mb-1 block font-medium">Tipo padrão de ornamentação</span>
                           <select
-                            value={form.regras.ornamentacao.tipo}
+                            value={regras.ornamentacao.tipo}
                             disabled={bloqueado}
                             onChange={(e) =>
-                              patchRegra("ornamentacao", {
-                                ...form.regras.ornamentacao,
-                                tipo: tipoFlor(e.target.value),
-                              })
+                              patchRegra("ornamentacao", { ...regras.ornamentacao, tipo: tipoFlor(e.target.value) })
                             }
-                            className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                            className={inputCls}
                           >
                             <option value="">Não definido</option>
                             <option value="Natural">Natural</option>
@@ -956,12 +1444,17 @@ export default function ConveniosAdminPage() {
                     <ItemPicker
                       key={key}
                       titulo={label}
-                      descricao="Serviço incluso no convênio."
+                      descricao={
+                        key === "tanato" && ehPrefeitura
+                          ? "Serviço incluso. Valor: preço de contrato em “Dados do convênio”."
+                          : "Serviço incluso no pacote."
+                      }
                       grupo="servico"
-                      value={form.regras[key]}
+                      value={regras[key]}
                       disabled={bloqueado}
                       mostrarQuantidade={false}
                       mostrarSaldo={false}
+                      comValor={ehPrefeitura && key !== "tanato"}
                       onChange={(v) => patchRegra(key, v)}
                     />
                   ),
@@ -973,116 +1466,63 @@ export default function ConveniosAdminPage() {
                   <div key={key} className="grid grid-cols-[1fr_160px] items-center gap-3 rounded-xl border p-3">
                     <span className="text-sm font-medium">{label}</span>
                     <SimNaoSelect
-                      value={form.regras[key].valor}
+                      value={regras[key].valor}
                       disabled={bloqueado}
-                      onChange={(v) => patchRegra(key, { ...form.regras[key], valor: v })}
+                      onChange={(v) => patchRegra(key, { ...regras[key], valor: v })}
                     />
                   </div>
                 ))}
               </div>
             </section>
 
-            {/* Dados e valores da OS (módulo de Ordem de Serviço) — itens inclusos = regras acima */}
-            <SecaoOS convenio={form} disabled={bloqueado} />
-
             <div className="sticky bottom-0 flex flex-col gap-3 rounded-xl border bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs">
-                {pendencias.length > 0 ? (
-                  <span className="font-medium text-amber-700">Falta escolher item: {pendencias.join(", ")}</span>
+                {!temItem ? (
+                  <span className="font-medium text-amber-700">Marque ao menos um item como “Sim”.</span>
+                ) : pendencias.length > 0 ? (
+                  <span className="font-medium text-amber-700">Falta: {pendencias.join(", ")}</span>
                 ) : (
-                  <span className="text-slate-500">Todos os itens marcados “Sim” estão com item escolhido.</span>
+                  <span className="text-slate-500">Todos os itens marcados “Sim” estão completos.</span>
                 )}
               </div>
-
-              <div className="flex flex-col-reverse gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={bloqueado}
-                  onClick={voltarParaLista}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
-                >
+              <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center">
+                {ehPrefeitura && (
+                  <div className="text-right">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Valor do pacote</div>
+                    <div className="text-xl font-bold">{moeda(total)}</div>
+                  </div>
+                )}
+                <button type="button" disabled={bloqueado} onClick={voltarConvenio} className={btnSec}>
                   Cancelar
                 </button>
-
-                <button
-                  type="button"
-                  disabled={bloqueado}
-                  onClick={() => void salvar()}
-                  className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {saving ? "Salvando..." : isEditing ? "Salvar alterações" : "Criar convênio"}
+                <button type="button" disabled={bloqueado} onClick={() => void salvarPacote()} className={btnPrim}>
+                  {saving ? "Salvando..." : pacote.id ? "Salvar pacote" : "Criar pacote"}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {deleteOpen && isEditing && (
-          <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-convenio-title"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget && !deleting) {
-                setDeleteOpen(false);
-                setDeleteConfirm("");
-              }
-            }}
-          >
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 id="delete-convenio-title" className="text-xl font-bold text-red-700">
-                    Excluir convênio
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Esta ação excluirá permanentemente o convênio <b>{form.nome}</b>. Para confirmar, digite exatamente:
-                  </p>
-                </div>
-              </div>
+        {excluir === "convenio" && form.id > 0 && (
+          <ModalExcluir
+            titulo="Excluir convênio"
+            aviso="Esta ação excluirá permanentemente o convênio e todos os seus pacotes:"
+            nome={form.nome}
+            ocupado={deleting}
+            onCancelar={() => setExcluir(null)}
+            onConfirmar={() => void excluirConvenio()}
+          />
+        )}
 
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center font-mono text-base font-bold tracking-widest text-red-700">
-                EXCLUIR
-              </div>
-
-              <label className="mt-4 block text-sm font-medium text-slate-700">
-                Confirmação
-                <input
-                  autoFocus
-                  value={deleteConfirm}
-                  disabled={deleting}
-                  onChange={(e) => setDeleteConfirm(e.target.value)}
-                  placeholder="Digite EXCLUIR"
-                  autoComplete="off"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
-                />
-              </label>
-
-              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  disabled={deleting}
-                  onClick={() => {
-                    setDeleteOpen(false);
-                    setDeleteConfirm("");
-                  }}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="button"
-                  disabled={deleting || deleteConfirm !== "EXCLUIR"}
-                  onClick={() => void excluir()}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {deleting ? "Excluindo..." : "Confirmar exclusão"}
-                </button>
-              </div>
-            </div>
-          </div>
+        {excluir === "pacote" && pacote.id > 0 && (
+          <ModalExcluir
+            titulo="Excluir pacote"
+            aviso="Esta ação excluirá permanentemente o pacote"
+            nome={pacote.nome}
+            ocupado={deleting}
+            onCancelar={() => setExcluir(null)}
+            onConfirmar={() => void excluirPacote()}
+          />
         )}
       </div>
     </main>
