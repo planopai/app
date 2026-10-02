@@ -344,21 +344,22 @@ function ItemPicker({
 
   const remover = (id: number) => onChange(comItens(value, escolhidos.filter((x) => x.produto_id !== id)));
 
-  const faltaItem = value.valor === "Sim" && (escolhidos.length === 0 || (comValor && num(value.valor_contrato) <= 0));
+  const faltaItem = value.valor === "Sim" && escolhidos.length === 0;
 
   return (
     <section
-      className={["rounded-xl border bg-white p-4", faltaItem ? "border-amber-300" : "border-slate-200"].join(" ")}
+      className={[
+        "bg-white px-4 py-3",
+        faltaItem ? "bg-amber-50/40" : "",
+      ].join(" ")}
     >
       <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
         <div className="min-w-0">
           <h3 className="font-semibold text-slate-800">{titulo}</h3>
-          {value.valor === "Sim" && escolhidos.length > 0 ? (
+          {value.valor === "Sim" && escolhidos.length > 0 && (
             <p className="mt-0.5 truncate text-xs text-slate-500">
               {escolhidos.length === 1 ? escolhidos[0].nome : `${escolhidos.length} itens selecionados`}
             </p>
-          ) : (
-            <p className="text-xs text-slate-500">{descricao}</p>
           )}
         </div>
         <div className="flex items-center gap-2 md:w-[228px]">
@@ -382,26 +383,11 @@ function ItemPicker({
       </div>
 
       {value.valor === "Sim" && expandido && (
-        <div className="mt-4 space-y-3 border-t pt-4">
-          {(extra || mostrarQuantidade || comValor) && (
+        <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+          <p className="text-xs text-slate-500">{descricao}</p>
+          {(extra || mostrarQuantidade) && (
             <div className="grid gap-3 md:grid-cols-2">
               {extra}
-              {comValor && (
-                <label className="text-sm text-slate-700">
-                  <span className="mb-1 block font-medium">Valor no contrato (R$)</span>
-                  <input
-                    inputMode="decimal"
-                    value={value.valor_contrato}
-                    disabled={disabled}
-                    placeholder="0,00"
-                    onChange={(e) => onChange({ ...value, valor_contrato: e.target.value })}
-                    className={[
-                      "w-full rounded-lg border px-3 py-2 text-right",
-                      num(value.valor_contrato) > 0 ? "border-slate-300" : "border-amber-300 bg-amber-50",
-                    ].join(" ")}
-                  />
-                </label>
-              )}
               {mostrarQuantidade && (
                 <label className="text-sm text-slate-700">
                   <span className="mb-1 block font-medium">Quantidade padrão</span>
@@ -427,7 +413,7 @@ function ItemPicker({
               <div className="text-xs font-medium text-slate-500">
                 {escolhidos.length === 1
                   ? "Item escolhido"
-                  : `${escolhidos.length} itens aceitos (qualquer um vale como padrão${comValor ? ", pelo mesmo valor" : ""})`}
+                  : `${escolhidos.length} itens aceitos`}
               </div>
               {escolhidos.map((it) => (
                 <div
@@ -1352,77 +1338,75 @@ export default function ConveniosAdminPage() {
               </label>
               {ehPrefeitura && (
                 <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                  Prefeitura: informe o <b>valor no contrato</b> de cada item. Quando um item tem vários produtos aceitos, o
-                  valor vale para qualquer um deles. O valor do pacote é a soma. A tanatopraxia usa o preço de contrato de
-                  “Dados do convênio”.
+                  Prefeitura: selecione os itens do pacote primeiro. Os <b>valores de contrato</b> ficam reunidos em uma única
+                  seção no final desta tela. A tanatopraxia continua usando o preço cadastrado em “Dados do convênio”.
                 </p>
               )}
             </section>
 
-            {/* Itens do estoque */}
-            <div className="grid gap-4 lg:grid-cols-2">
-              {ITENS_ESTOQUE.map(([key, label, grupo]) => (
-                <ItemPicker
-                  key={key}
-                  titulo={label}
-                  descricao="Define se o pacote inclui este item. Se “Sim”, escolha o item."
-                  grupo={grupo}
-                  value={regras[key]}
-                  onChange={(v) => patchRegra(key, v)}
-                  disabled={bloqueado}
-                  comValor={ehPrefeitura}
-                />
-              ))}
-            </div>
+            {/* Itens do pacote — lista única e compacta */}
+            <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+              <div className="grid grid-cols-[1fr_228px] items-center border-b bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <span>Item / produto padrão incluído</span>
+                <span className="text-center">Inclui no pacote</span>
+              </div>
 
-            <ItemPicker
-              titulo="Coroa de Flores"
-              descricao="Se “Sim”, escolha o tipo e o modelo."
-              grupo={grupoCoroa}
-              value={coroa}
-              disabled={bloqueado}
-              comValor={ehPrefeitura}
-              avisoSemGrupo="Escolha o tipo (Natural ou Artificial) para listar os modelos."
-              onChange={(v) => patchRegra("coroa_flores", { ...v, tipo: v.valor === "Sim" ? coroa.tipo : "" })}
-              extra={
-                <label className="text-sm text-slate-700">
-                  <span className="mb-1 block font-medium">Tipo</span>
-                  <select
-                    value={coroa.tipo}
+              <div className="divide-y divide-slate-200">
+                {ITENS_ESTOQUE.map(([key, label, grupo]) => (
+                  <ItemPicker
+                    key={key}
+                    titulo={label}
+                    descricao="Escolha o produto padrão aceito para este item."
+                    grupo={grupo}
+                    value={regras[key]}
+                    onChange={(v) => patchRegra(key, v)}
                     disabled={bloqueado}
-                    onChange={(e) => patchRegra("coroa_flores", comItens({ ...coroa, tipo: tipoFlor(e.target.value) }, []))}
-                    className={inputCls}
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Natural">Natural</option>
-                    <option value="Artificial">Artificial</option>
-                  </select>
-                </label>
-              }
-            />
+                  />
+                ))}
 
-            <section className="rounded-2xl border bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-bold">Demais regras</h2>
-              <p className="mb-4 mt-1 text-xs text-slate-500">
-                “Não definido” preserva decisão manual no atendimento. Ao marcar “Sim”, escolha o item da classificação
-                SERVIÇOS (exceto Velório e Sepultamento).
-              </p>
+                <ItemPicker
+                  titulo="Coroa de Flores"
+                  descricao="Escolha o tipo e o modelo padrão de coroa."
+                  grupo={grupoCoroa}
+                  value={coroa}
+                  disabled={bloqueado}
+                  avisoSemGrupo="Escolha o tipo (Natural ou Artificial) para listar os modelos."
+                  onChange={(v) => patchRegra("coroa_flores", { ...v, tipo: v.valor === "Sim" ? coroa.tipo : "" })}
+                  extra={
+                    <label className="text-sm text-slate-700">
+                      <span className="mb-1 block font-medium">Tipo</span>
+                      <select
+                        value={coroa.tipo}
+                        disabled={bloqueado}
+                        onChange={(e) =>
+                          patchRegra("coroa_flores", comItens({ ...coroa, tipo: tipoFlor(e.target.value) }, []))
+                        }
+                        className={inputCls}
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="Natural">Natural</option>
+                        <option value="Artificial">Artificial</option>
+                      </select>
+                    </label>
+                  }
+                />
 
-              <div className="grid gap-4 lg:grid-cols-2">
                 {ITENS_SERVICO.map(([key, label]) =>
                   key === "ornamentacao" ? (
                     <ItemPicker
                       key={key}
                       titulo={label}
-                      descricao="Serviço de ornamentação incluso no pacote."
+                      descricao="Escolha o serviço padrão de ornamentação."
                       grupo="servico"
                       value={regras.ornamentacao}
                       disabled={bloqueado}
                       mostrarQuantidade={false}
                       mostrarSaldo={false}
-                      comValor={ehPrefeitura}
                       onChange={(v) =>
-                        patchRegra("ornamentacao", { ...v, tipo: v.valor === "Sim" ? regras.ornamentacao.tipo : "" })
+                        patchRegra("ornamentacao", {
+                          ...v,
+                          tipo: v.valor === "Sim" ? regras.ornamentacao.tipo : "",
+                        })
                       }
                       extra={
                         <label className="text-sm text-slate-700">
@@ -1431,7 +1415,10 @@ export default function ConveniosAdminPage() {
                             value={regras.ornamentacao.tipo}
                             disabled={bloqueado}
                             onChange={(e) =>
-                              patchRegra("ornamentacao", { ...regras.ornamentacao, tipo: tipoFlor(e.target.value) })
+                              patchRegra("ornamentacao", {
+                                ...regras.ornamentacao,
+                                tipo: tipoFlor(e.target.value),
+                              })
                             }
                             className={inputCls}
                           >
@@ -1448,25 +1435,28 @@ export default function ConveniosAdminPage() {
                       titulo={label}
                       descricao={
                         key === "tanato" && ehPrefeitura
-                          ? "Serviço incluso. Valor: preço de contrato em “Dados do convênio”."
-                          : "Serviço incluso no pacote."
+                          ? "Serviço incluso. O preço da tanatopraxia é definido em Dados do convênio."
+                          : "Escolha o serviço padrão incluído no pacote."
                       }
                       grupo="servico"
                       value={regras[key]}
                       disabled={bloqueado}
                       mostrarQuantidade={false}
                       mostrarSaldo={false}
-                      comValor={ehPrefeitura && key !== "tanato"}
                       onChange={(v) => patchRegra(key, v)}
                     />
                   ),
                 )}
-              </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {ITENS_SIM_NAO.map(([key, label]) => (
-                  <div key={key} className="grid grid-cols-[1fr_160px] items-center gap-3 rounded-xl border p-3">
-                    <span className="text-sm font-medium">{label}</span>
+                  <div
+                    key={key}
+                    className="grid gap-3 bg-white px-4 py-3 md:grid-cols-[1fr_228px] md:items-center"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-800">{label}</div>
+                      <div className="mt-0.5 text-xs text-slate-500">Regra simples do pacote, sem produto para selecionar.</div>
+                    </div>
                     <SimNaoSelect
                       value={regras[key].valor}
                       disabled={bloqueado}
@@ -1476,6 +1466,92 @@ export default function ConveniosAdminPage() {
                 ))}
               </div>
             </section>
+
+            {/* Valores de contrato agrupados no final, no padrão da referência */}
+            {ehPrefeitura && (
+              <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                <div className="border-b p-5">
+                  <h2 className="text-lg font-bold">Valores do contrato</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Os valores ficam reunidos aqui. O valor do pacote é a soma dos itens marcados como “Sim”.
+                  </p>
+                </div>
+
+                {CHAVES_COM_VALOR.some((key) => regras[key].valor === "Sim") ? (
+                  <>
+                    <div className="hidden grid-cols-[200px_1fr_190px] gap-3 border-b bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 md:grid">
+                      <span>Categoria</span>
+                      <span>Produto padrão incluído</span>
+                      <span className="text-right">Valor no contrato</span>
+                    </div>
+
+                    <div className="divide-y divide-slate-200">
+                      {CHAVES_COM_VALOR.filter((key) => regras[key].valor === "Sim").map((key) => {
+                        const regra = regras[key];
+                        const produto =
+                          regra.produtos.length === 0
+                            ? "Produto não selecionado"
+                            : regra.produtos.length === 1
+                              ? regra.produtos[0].nome
+                              : `${regra.produtos.length} itens aceitos`;
+
+                        return (
+                          <div
+                            key={key}
+                            className="grid gap-3 px-4 py-3 md:grid-cols-[200px_1fr_190px] md:items-center"
+                          >
+                            <div className="font-semibold text-slate-800">{ROTULOS[key]}</div>
+                            <div className="min-w-0 truncate text-sm text-slate-600">{produto}</div>
+                            <label>
+                              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">
+                                Valor no contrato
+                              </span>
+                              <div
+                                className={[
+                                  "flex items-center rounded-lg border bg-white",
+                                  num(regra.valor_contrato) > 0
+                                    ? "border-slate-300"
+                                    : "border-amber-300 bg-amber-50",
+                                ].join(" ")}
+                              >
+                                <span className="pl-3 text-sm font-semibold text-slate-500">R$</span>
+                                <input
+                                  inputMode="decimal"
+                                  value={regra.valor_contrato}
+                                  disabled={bloqueado}
+                                  placeholder="0,00"
+                                  onChange={(e) =>
+                                    patchRegra(key, { ...regra, valor_contrato: e.target.value } as RegrasTela[typeof key])
+                                  }
+                                  className="min-w-0 flex-1 bg-transparent px-2 py-2 text-right font-semibold outline-none"
+                                />
+                              </div>
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-col gap-2 border-t bg-slate-50 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
+                      <p className="max-w-2xl text-xs text-slate-500">
+                        Troca de modelo: a diferença pode ser calculada a partir do produto escolhido e do valor previsto no contrato.
+                        Tanatopraxia continua usando o preço cadastrado em “Dados do convênio”.
+                      </p>
+                      <div className="shrink-0 text-right">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Valor do pacote = soma dos itens
+                        </div>
+                        <div className="text-2xl font-bold text-slate-900">{moeda(total)}</div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-5 text-sm text-slate-500">
+                    Marque algum item como “Sim” para informar os valores de contrato.
+                  </div>
+                )}
+              </section>
+            )}
 
             <div className="sticky bottom-0 flex flex-col gap-3 rounded-xl border bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs">
@@ -1488,12 +1564,6 @@ export default function ConveniosAdminPage() {
                 )}
               </div>
               <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center">
-                {ehPrefeitura && (
-                  <div className="text-right">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Valor do pacote</div>
-                    <div className="text-xl font-bold">{moeda(total)}</div>
-                  </div>
-                )}
                 <button type="button" disabled={bloqueado} onClick={voltarConvenio} className={btnSec}>
                   Cancelar
                 </button>
