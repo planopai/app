@@ -6,6 +6,13 @@
  * - Aqui ficam só os dados que a OS precisa: tipo, código do número, aditivos, valores de contrato e regras do plano.
  * - Cada valor salvo tem vigência; as OS já lançadas mantêm o valor que usaram (preços congelados).
  * Permissão: página "convenio" (pai_api.php) — a mesma da tela.
+ *
+ * 02/10/2026:
+ *  - Cada item incluso pode ter VÁRIOS produtos aceitos (escolhidos nas regras). Eles aparecem na mesma linha e o
+ *    valor no contrato vale para qualquer um deles (o pacote grava uma linha por produto, todas com o mesmo valor).
+ *  - Ornamentação, Assistência e Kit lanche mostram os produtos de serviço escolhidos nas regras (não pede mais código).
+ *  - Prefeitura: ao abrir o convênio aparece a LISTA de pacotes; clique em um para ver e, se quiser, criar uma nova
+ *    versão a partir dele. As versões não são alteradas no lugar (OS já lançadas guardam a versão que usaram).
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,21 +28,60 @@ const inputCls = "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 t
 const lbl = "mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]";
 
 type TipoOS = "" | "PARTICULAR" | "ASSOCIADO" | "PREFEITURA";
-type ItemPacote = { categoria: string; rotulo: string; produto_id: number; nome: string; servico: boolean; valor_item: string };
+type ProdutoLinha = { produto_id: number; nome: string };
+/** Uma linha do pacote = uma categoria (item incluso), com um ou mais produtos aceitos e um valor só. */
+type LinhaPacote = { categoria: string; rotulo: string; produtos: ProdutoLinha[] };
 
-/** Itens inclusos = regras marcadas "Sim" (produtos com o modelo padrão; serviços pedem o código do produto de serviço). */
-function itensDasRegras(r: RegrasConvenio): Omit<ItemPacote, "valor_item">[] {
-    const out: Omit<ItemPacote, "valor_item">[] = [];
-    const prod: [keyof RegrasConvenio, string, string][] = [["urna", "URNA", "Urna"], ["roupa", "ROUPA", "Roupa"], ["invol", "INVOLUCRO", "Invol"],
-        ["veu", "VEU", "Véu"], ["cordao", "CORDAO", "Cordão"], ["coroa_flores", "COROA", "Coroa de flores"]];
-    prod.forEach(([k, cat, rot]) => {
-        const it: any = r[k];
-        if (it?.valor === "Sim") out.push({ categoria: cat, rotulo: rot, produto_id: Number(it.produto_id) || 0, nome: it.nome || "", servico: false });
+const CATEGORIAS_REGRAS: [string, string, string][] = [
+    ["urna", "URNA", "Urna"], ["roupa", "ROUPA", "Roupa"], ["invol", "INVOLUCRO", "Invol"], ["veu", "VEU", "Véu"],
+    ["cordao", "CORDAO", "Cordão"], ["coroa_flores", "COROA", "Coroa de flores"], ["ornamentacao", "ORNAMENTACAO", "Ornamentação"],
+    ["assistencia", "ASSISTENCIA", "Assistência"], ["kit_lanche", "KIT_LANCHE", "Kit lanche"],
+];
+const ROTULO_CATEGORIA: Record<string, string> = Object.fromEntries(CATEGORIAS_REGRAS.map(([, c, r]) => [c, r]));
+
+/** Produtos de uma regra (lista "produtos" ou, no formato antigo, só produto_id). */
+function produtosDaRegra(it: any): ProdutoLinha[] {
+    const lista: any[] = Array.isArray(it?.produtos) && it.produtos.length > 0 ? it.produtos : Number(it?.produto_id) > 0 ? [it] : [];
+    const vistos = new Set<number>();
+    return lista
+        .map((x) => ({ produto_id: Number(x?.produto_id) || 0, nome: String(x?.nome || "") }))
+        .filter((x) => x.produto_id > 0 && !vistos.has(x.produto_id) && (vistos.add(x.produto_id), true));
+}
+
+/** Itens inclusos = regras marcadas "Sim", com os produtos escolhidos nas regras. Tanatopraxia tem preço próprio (abaixo). */
+function itensDasRegras(r: RegrasConvenio): LinhaPacote[] {
+    const out: LinhaPacote[] = [];
+    CATEGORIAS_REGRAS.forEach(([k, cat, rot]) => {
+        const it: any = (r as any)[k];
+        if (it?.valor !== "Sim") return;
+        const rotulo = (k === "ornamentacao" || k === "coroa_flores") && it.tipo ? `${rot} ${String(it.tipo).toLowerCase()}` : rot;
+        out.push({ categoria: cat, rotulo, produtos: produtosDaRegra(it) });
     });
-    if (r.ornamentacao?.valor === "Sim") out.push({ categoria: "ORNAMENTACAO", rotulo: `Ornamentação ${r.ornamentacao.tipo ? r.ornamentacao.tipo.toLowerCase() : ""}`.trim(), produto_id: 0, nome: "", servico: true });
-    if (r.assistencia?.valor === "Sim") out.push({ categoria: "ASSISTENCIA", rotulo: "Assistência", produto_id: 0, nome: "", servico: true });
-    if (r.kit_lanche?.valor === "Sim") out.push({ categoria: "KIT_LANCHE", rotulo: "Kit lanche", produto_id: 0, nome: "", servico: true });
     return out;
+}
+
+/** Itens gravados numa versão, agrupados por categoria (um valor por categoria). */
+function agruparVersao(itens: any[]): { categoria: string; produtos: ProdutoLinha[]; valor: number }[] {
+    const m = new Map<string, { categoria: string; produtos: ProdutoLinha[]; valor: number }>();
+    (itens || []).forEach((i: any) => {
+        const cat = String(i.categoria);
+        if (!m.has(cat)) m.set(cat, { categoria: cat, produtos: [], valor: Number(i.valor_item) || 0 });
+        m.get(cat)!.produtos.push({ produto_id: Number(i.produto_id) || 0, nome: String(i.produto_nome || "") });
+    });
+    return Array.from(m.values());
+}
+
+function Chips({ produtos, vazio }: { produtos: ProdutoLinha[]; vazio?: React.ReactNode }) {
+    if (produtos.length === 0) return <div className="rounded-lg bg-[#FDECEA] px-3 py-2 text-sm text-[#B03A2E]">{vazio || "nenhum produto"}</div>;
+    return (
+        <div className="flex flex-wrap gap-1.5 rounded-lg bg-[#F4F6F9] px-2 py-1.5">
+            {produtos.map((p) => (
+                <span key={p.produto_id} className="rounded-md border border-[#E1E5EC] bg-white px-2 py-0.5 text-xs">
+                    <b>{p.nome || "produto"}</b> <span className="text-[#6B7488]">#{p.produto_id}</span>
+                </span>
+            ))}
+        </div>
+    );
 }
 
 function Botao({ children, primario, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { primario?: boolean }) {
@@ -96,7 +142,7 @@ export default function SecaoOS({ convenio, disabled }: { convenio: Convenio; di
     return (
         <section className="rounded-xl border border-[#E1E5EC] bg-white p-5 text-[#313C55]" style={{ borderTop: "4px solid #00AEEC" }}>
             <div className="mb-1 text-lg font-extrabold">Dados e valores da OS</div>
-            <div className="mb-4 text-xs text-[#6B7488]">Os itens inclusos e o modelo padrão são os das regras acima (itens marcados “Sim”). Aqui ficam só os valores e regras que a Ordem de Serviço usa. Valores com vigência; OS já lançadas não mudam.</div>
+            <div className="mb-4 text-xs text-[#6B7488]">Os itens inclusos e os produtos aceitos são os das regras acima (itens marcados “Sim”). Quando uma opção tem vários produtos, eles ficam na mesma linha e o valor vale para qualquer um. Valores com vigência; OS já lançadas não mudam.</div>
             {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
             {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
 
@@ -134,46 +180,64 @@ export default function SecaoOS({ convenio, disabled }: { convenio: Convenio; di
 }
 
 /* ====================================================================== */
-/* Prefeitura: valor no contrato de cada item incluso, preços de tanatopraxia e km, vigência e versões */
+/* Prefeitura: lista de pacotes (versões) → ver → criar nova versão; preços de tanatopraxia e km */
+
+type Aberto = null | { modo: "ver"; id: number } | { modo: "editar"; baseId: number | null };
 
 function ValoresPrefeitura({ codigo, regras, disabled }: { codigo: string; regras: RegrasConvenio; disabled?: boolean }) {
     const [dados, setDados] = useState<any>(null);
+    const [carregando, setCarregando] = useState(true);
+    const [aberto, setAberto] = useState<Aberto>(null);
     const [nome, setNome] = useState("Atendimento funerário padrão");
     const [vigencia, setVigencia] = useState(hoje());
-    const [itens, setItens] = useState<ItemPacote[]>([]);
+    const [valores, setValores] = useState<Record<string, string>>({});
     const [precos, setPrecos] = useState({ TANATOPRAXIA: "", TRANSLADO_KM: "" });
     const [erro, setErro] = useState("");
     const [msg, setMsg] = useState("");
     const [salvando, setSalvando] = useState(false);
 
-    const base = useMemo(() => itensDasRegras(regras), [regras]);
+    const linhas = useMemo(() => itensDasRegras(regras), [regras]);
+    const versoes: any[] = dados?.versoes || [];
+    const vigenteId: number | null = dados?.vigente?.id ? Number(dados.vigente.id) : null;
 
     const carregar = useCallback(async () => {
+        setCarregando(true);
         try {
             const r = await osGet("convenio_pacotes_listar", { convenio: codigo });
             const d = r.dados;
             setDados(d);
-            const vig = d?.vigente;
-            if (vig?.nome) setNome(vig.nome);
-            const anterior: Record<string, any> = {};
-            (vig?.itens || []).forEach((i: any) => (anterior[i.categoria] = i));
-            setItens(base.map((b) => ({
-                ...b,
-                produto_id: b.servico ? Number(anterior[b.categoria]?.produto_id || 0) : b.produto_id,
-                valor_item: decBR(anterior[b.categoria]?.valor_item),
-            })));
             setPrecos({ TANATOPRAXIA: decBR(d?.precos_avulsos?.TANATOPRAXIA), TRANSLADO_KM: decBR(d?.precos_avulsos?.TRANSLADO_KM) });
         } catch (e: any) {
-            setErro(e?.message || "Não foi possível carregar o pacote.");
+            setErro(e?.message || "Não foi possível carregar os pacotes.");
+        } finally {
+            setCarregando(false);
         }
-    }, [codigo, base]);
+    }, [codigo]);
     useEffect(() => { void carregar(); }, [carregar]);
 
-    const soma = itens.reduce((a, i) => a + num(i.valor_item), 0);
-    const pendente = itens.find((i) => !i.produto_id || num(i.valor_item) <= 0);
-    const foraDasRegras = (dados?.vigente?.itens || []).filter((i: any) => !base.some((b) => b.categoria === i.categoria));
+    const situacao = (v: any) =>
+        Number(v.id) === vigenteId ? ["VIGENTE", "bg-[#E8F3D0] text-[#4C6A12]"]
+            : String(v.vigente_desde) > hoje() ? ["AGENDADA", "bg-[#DDF3FC] text-[#00799F]"]
+                : ["ANTERIOR", "bg-[#F4F6F9] text-[#6B7488]"];
 
-    const executar = async (fn: () => Promise<any>, ok: string) => {
+    /** Abre o editor de nova versão; se vier de uma versão, copia nome e valores (por categoria). */
+    const abrirEditor = (base: any | null) => {
+        setErro("");
+        setMsg("");
+        setNome(base?.nome || "Atendimento funerário padrão");
+        setVigencia(hoje());
+        const vals: Record<string, string> = {};
+        agruparVersao(base?.itens || []).forEach((g) => (vals[g.categoria] = decBR(g.valor)));
+        setValores(vals);
+        setAberto({ modo: "editar", baseId: base ? Number(base.id) : null });
+    };
+
+    const soma = linhas.reduce((a, l) => a + num(valores[l.categoria]), 0);
+    const pendente = linhas.find((l) => l.produtos.length === 0 || num(valores[l.categoria]) <= 0);
+    const base = aberto?.modo === "editar" && aberto.baseId ? versoes.find((v) => Number(v.id) === aberto.baseId) : null;
+    const foraDasRegras = agruparVersao(base?.itens || []).filter((g) => !linhas.some((l) => l.categoria === g.categoria));
+
+    const executar = async (fn: () => Promise<any>, ok: string, depois?: () => void) => {
         if (salvando) return;
         setSalvando(true);
         setErro("");
@@ -181,6 +245,7 @@ function ValoresPrefeitura({ codigo, regras, disabled }: { codigo: string; regra
         try {
             await fn();
             setMsg(ok);
+            depois?.();
             await carregar();
         } catch (e: any) {
             setErro(e?.message || "Não foi possível salvar.");
@@ -191,76 +256,158 @@ function ValoresPrefeitura({ codigo, regras, disabled }: { codigo: string; regra
 
     const salvarPacote = () => executar(() => osPost("convenio_pacote_salvar", {
         convenio: codigo, nome, valor: soma.toFixed(2), vigente_desde: vigencia,
-        itens: JSON.stringify(itens.map((i) => ({ categoria: i.categoria, produto_id: i.produto_id, valor_item: num(i.valor_item) }))),
-    }), `Nova versão do pacote salva (vigente a partir de ${dataBR(vigencia)}).`);
+        // uma linha por produto aceito, todas com o mesmo valor da categoria
+        itens: JSON.stringify(linhas.flatMap((l) => l.produtos.map((p) => ({ categoria: l.categoria, produto_id: p.produto_id, valor_item: num(valores[l.categoria]) })))),
+    }), `Nova versão do pacote salva (vigente a partir de ${dataBR(vigencia)}).`, () => setAberto(null));
 
     const salvarPrecos = () => executar(async () => {
         for (const chave of ["TANATOPRAXIA", "TRANSLADO_KM"] as const) {
-            if (precos[chave] !== "") await osPost("convenio_regra_definir", { convenio: codigo, chave, valor: num(precos[chave]), vigente_desde: vigencia });
+            if (precos[chave] !== "") await osPost("convenio_regra_definir", { convenio: codigo, chave, valor: num(precos[chave]), vigente_desde: hoje() });
         }
     }, "Preços de contrato salvos.");
+
+    const versaoAberta = aberto?.modo === "ver" ? versoes.find((v) => Number(v.id) === aberto.id) : null;
 
     return (
         <div className="mt-5 border-t border-[#E1E5EC] pt-5">
             {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
             {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
-            <div className="mb-3 flex flex-wrap items-end gap-3">
-                <label className="min-w-[240px] flex-1"><span className={lbl}>Nome do pacote</span><input className={inputCls} disabled={disabled} value={nome} onChange={(e) => setNome(e.target.value)} /></label>
-                <label className="w-44"><span className={lbl}>Vigente a partir de</span><input type="date" className={inputCls} disabled={disabled} value={vigencia} onChange={(e) => setVigencia(e.target.value)} /></label>
-                {!dados?.vigente && <span className="rounded-full bg-[#FBEFC4] px-3 py-1 text-xs font-extrabold">PACOTE AINDA NÃO CRIADO</span>}
-            </div>
 
-            {base.length === 0 ? (
-                <div className="rounded-lg bg-[#FFF8E1] p-3 text-sm">Nenhum item marcado “Sim” nas regras acima. Marque os itens inclusos no contrato e salve o convênio.</div>
-            ) : (
-                <>
-                    <div className="mb-1 grid grid-cols-[170px_1fr_140px] gap-2"><span className={lbl}>Item incluso</span><span className={lbl}>Produto padrão</span><span className={`${lbl} text-right`}>Valor no contrato</span></div>
-                    {itens.map((it, i) => (
-                        <div key={it.categoria} className="mb-2 grid grid-cols-[170px_1fr_140px] items-center gap-2">
-                            <div className="text-sm font-bold">{it.rotulo}</div>
-                            {it.servico ? (
-                                <input inputMode="numeric" className={inputCls} disabled={disabled} placeholder="código do produto de serviço"
-                                       value={it.produto_id || ""} onChange={(e) => setItens(itens.map((x, k) => (k === i ? { ...x, produto_id: Number(e.target.value.replace(/\D/g, "")) || 0 } : x)))} />
-                            ) : (
-                                <div className="truncate rounded-lg bg-[#F4F6F9] px-3 py-2 text-sm">{it.produto_id ? <><b>{it.nome || "produto"}</b> · #{it.produto_id}</> : <span className="text-[#B03A2E]">escolha o modelo padrão nas regras acima</span>}</div>
-                            )}
-                            <input inputMode="decimal" className={`${inputCls} text-right`} disabled={disabled} placeholder="0,00" value={it.valor_item}
-                                   onChange={(e) => setItens(itens.map((x, k) => (k === i ? { ...x, valor_item: e.target.value } : x)))} />
+            {/* ---------- Lista de pacotes ---------- */}
+            {aberto === null && (
+                <div className="rounded-xl border border-[#E1E5EC]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E1E5EC] p-4">
+                        <div>
+                            <div className="font-extrabold">Pacotes</div>
+                            <div className="text-xs text-[#6B7488]">Clique em um pacote para ver os itens e valores. Para alterar, crie uma nova versão a partir dele.</div>
                         </div>
-                    ))}
-                    {foraDasRegras.length > 0 && (
-                        <div className="mb-2 rounded-lg bg-[#FFF8E1] p-3 text-xs">Na versão vigente há itens que não estão mais marcados “Sim” nas regras: {foraDasRegras.map((i: any) => i.categoria).join(", ")}. Ao salvar a nova versão, eles saem do pacote.</div>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
-                        <div className="max-w-md text-xs text-[#6B7488]">Troca de modelo no atendimento: diferença = preço do item escolhido − valor do item no contrato. Item fora do pacote vai inteiro para a Dif.Prf. A OS da Prefeitura não tem desconto nem acréscimo.</div>
-                        <div className="text-right"><div className={lbl}>Valor do pacote = soma dos itens</div><div className="text-2xl font-extrabold">{brl(soma)}</div></div>
+                        <Botao primario disabled={disabled || linhas.length === 0} title={linhas.length === 0 ? "Marque os itens inclusos nas regras acima" : ""}
+                            onClick={() => abrirEditor(versoes.find((v) => Number(v.id) === vigenteId) || versoes[0] || null)}>
+                            {versoes.length ? "Nova versão" : "Criar pacote"}
+                        </Botao>
                     </div>
-                    <div className="mt-3 flex justify-end"><Botao primario disabled={disabled || salvando || !!pendente} title={pendente ? `Falta ${pendente.produto_id ? "o valor" : "o produto"} de ${pendente.rotulo}` : ""} onClick={() => void salvarPacote()}>Salvar nova versão do pacote</Botao></div>
-                </>
+                    {carregando ? (
+                        <div className="p-4 text-sm text-[#6B7488]">Carregando pacotes...</div>
+                    ) : versoes.length === 0 ? (
+                        <div className="p-4 text-sm text-[#6B7488]">
+                            Nenhum pacote criado ainda.{linhas.length === 0 && " Marque os itens inclusos nas regras acima e salve o convênio."}
+                        </div>
+                    ) : (
+                        versoes.map((v) => {
+                            const [txt, cls] = situacao(v);
+                            const grupos = agruparVersao(v.itens || []);
+                            return (
+                                <button key={v.id} type="button" onClick={() => { setErro(""); setMsg(""); setAberto({ modo: "ver", id: Number(v.id) }); }}
+                                    className="flex w-full flex-wrap items-center justify-between gap-3 border-b border-[#E1E5EC] px-4 py-3 text-left last:border-b-0 hover:bg-[#F4F6F9]">
+                                    <span className="min-w-0">
+                                        <span className="block font-bold">{v.nome}</span>
+                                        <span className="block text-xs text-[#6B7488]">
+                                            vigente a partir de {dataBR(String(v.vigente_desde))} · {grupos.length} {grupos.length === 1 ? "item incluso" : "itens inclusos"}
+                                        </span>
+                                    </span>
+                                    <span className="flex items-center gap-3">
+                                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-extrabold ${cls}`}>{txt}</span>
+                                        <b className="w-28 text-right">{brl(v.valor)}</b>
+                                        <span className="text-xs font-bold text-[#00AEEC]">Ver ›</span>
+                                    </span>
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
             )}
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {/* ---------- Ver uma versão ---------- */}
+            {versaoAberta && (
                 <div className="rounded-xl border border-[#E1E5EC] p-4">
-                    <div className="mb-3 font-extrabold">Serviços com preço de contrato</div>
-                    {([["TRANSLADO_KM", "Translado", "por km · sem limite"], ["TANATOPRAXIA", "Tanatopraxia", "por atendimento"]] as const).map(([k, r, s]) => (
-                        <div key={k} className="mb-3 flex items-center gap-3">
-                            <div className="flex-1"><b>{r}</b><div className="text-xs text-[#6B7488]">{s}</div></div>
-                            <input inputMode="decimal" className={`${inputCls} w-32 text-right`} disabled={disabled} value={precos[k]} placeholder="0,00" onChange={(e) => setPrecos({ ...precos, [k]: e.target.value })} />
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div className="text-lg font-extrabold">{versaoAberta.nome}</div>
+                            <div className="text-xs text-[#6B7488]">vigente a partir de {dataBR(String(versaoAberta.vigente_desde))} · {situacao(versaoAberta)[0].toLowerCase()}</div>
+                        </div>
+                        <div className="flex gap-2">
+                            <Botao onClick={() => setAberto(null)}>Voltar à lista</Botao>
+                            <Botao primario disabled={disabled || linhas.length === 0} onClick={() => abrirEditor(versaoAberta)}>Criar nova versão a partir desta</Botao>
+                        </div>
+                    </div>
+                    <div className="mb-1 grid grid-cols-[170px_1fr_140px] gap-2"><span className={lbl}>Item incluso</span><span className={lbl}>Produtos aceitos</span><span className={`${lbl} text-right`}>Valor no contrato</span></div>
+                    {agruparVersao(versaoAberta.itens || []).map((g) => (
+                        <div key={g.categoria} className="mb-2 grid grid-cols-[170px_1fr_140px] items-center gap-2">
+                            <div className="text-sm font-bold">{ROTULO_CATEGORIA[g.categoria] || g.categoria}</div>
+                            <Chips produtos={g.produtos} />
+                            <div className="text-right text-sm font-bold">{brl(g.valor)}</div>
                         </div>
                     ))}
-                    <div className="mb-3 text-xs text-[#6B7488]">Valem quando a Prefeitura autoriza no atendimento. Avançada e embalsamamento: a família paga a diferença sobre a tanatopraxia autorizada.</div>
-                    <div className="flex justify-end"><Botao primario disabled={disabled || salvando} onClick={() => void salvarPrecos()}>Salvar preços</Botao></div>
+                    <div className="mt-2 text-right"><div className={lbl}>Valor do pacote</div><div className="text-2xl font-extrabold">{brl(versaoAberta.valor)}</div></div>
                 </div>
-                <div className="rounded-xl border border-[#E1E5EC] p-4">
-                    <div className="mb-3 font-extrabold">Versões do pacote</div>
-                    {(dados?.versoes || []).length === 0 && <div className="text-sm text-[#6B7488]">Nenhuma versão ainda.</div>}
-                    {(dados?.versoes || []).map((v: any) => (
-                        <div key={v.id} className="flex justify-between border-b border-[#E1E5EC] py-2 text-sm last:border-b-0">
-                            <span><b>{dataBR(v.vigente_desde)}</b> · {brl(v.valor)} {v.id === dados?.vigente?.id ? "— vigente" : v.vigente_desde > hoje() ? "— agendada" : ""}</span>
-                            <span className="text-[#6B7488]">{v.nome}</span>
+            )}
+
+            {/* ---------- Nova versão ---------- */}
+            {aberto?.modo === "editar" && (
+                <div className="rounded-xl border border-[#00AEEC] p-4">
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div className="text-lg font-extrabold">{versoes.length ? "Nova versão do pacote" : "Novo pacote"}</div>
+                            <div className="text-xs text-[#6B7488]">
+                                Itens e produtos vêm das regras acima.{base ? ` Valores copiados de “${base.nome}” (${dataBR(String(base.vigente_desde))}).` : ""}
+                            </div>
                         </div>
-                    ))}
+                        <Botao disabled={salvando} onClick={() => setAberto(null)}>Cancelar</Botao>
+                    </div>
+                    <div className="mb-3 flex flex-wrap items-end gap-3">
+                        <label className="min-w-[240px] flex-1"><span className={lbl}>Nome do pacote</span><input className={inputCls} disabled={disabled} value={nome} onChange={(e) => setNome(e.target.value)} /></label>
+                        <label className="w-44"><span className={lbl}>Vigente a partir de</span><input type="date" className={inputCls} disabled={disabled} value={vigencia} onChange={(e) => setVigencia(e.target.value)} /></label>
+                    </div>
+
+                    {linhas.length === 0 ? (
+                        <div className="rounded-lg bg-[#FFF8E1] p-3 text-sm">Nenhum item marcado “Sim” nas regras acima. Marque os itens inclusos no contrato e salve o convênio.</div>
+                    ) : (
+                        <>
+                            <div className="mb-1 grid grid-cols-[170px_1fr_140px] gap-2"><span className={lbl}>Item incluso</span><span className={lbl}>Produtos aceitos</span><span className={`${lbl} text-right`}>Valor no contrato</span></div>
+                            {linhas.map((l) => (
+                                <div key={l.categoria} className="mb-2 grid grid-cols-[170px_1fr_140px] items-center gap-2">
+                                    <div className="text-sm font-bold">
+                                        {l.rotulo}
+                                        {l.produtos.length > 1 && <div className="text-[11px] font-semibold text-[#6B7488]">valor vale para qualquer um</div>}
+                                    </div>
+                                    <Chips produtos={l.produtos} vazio="escolha o item nas regras acima" />
+                                    <input inputMode="decimal" className={`${inputCls} text-right`} disabled={disabled} placeholder="0,00" value={valores[l.categoria] ?? ""}
+                                        onChange={(e) => setValores({ ...valores, [l.categoria]: e.target.value })} />
+                                </div>
+                            ))}
+                            {foraDasRegras.length > 0 && (
+                                <div className="mb-2 rounded-lg bg-[#FFF8E1] p-3 text-xs">
+                                    Na versão de origem há itens que não estão mais marcados “Sim” nas regras: {foraDasRegras.map((g) => ROTULO_CATEGORIA[g.categoria] || g.categoria).join(", ")}. Eles não entram na nova versão.
+                                </div>
+                            )}
+                            <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+                                <div className="max-w-md text-xs text-[#6B7488]">Troca de modelo no atendimento: qualquer produto aceito da linha não gera diferença; outro produto gera diferença = preço do item escolhido − valor do item no contrato. Item fora do pacote vai inteiro para a Dif.Prf. A OS da Prefeitura não tem desconto nem acréscimo.</div>
+                                <div className="text-right"><div className={lbl}>Valor do pacote = soma dos itens</div><div className="text-2xl font-extrabold">{brl(soma)}</div></div>
+                            </div>
+                            <div className="mt-3 flex justify-end">
+                                <Botao primario disabled={disabled || salvando || !!pendente}
+                                    title={pendente ? `Falta ${pendente.produtos.length ? "o valor" : "o produto"} de ${pendente.rotulo}` : ""}
+                                    onClick={() => void salvarPacote()}>
+                                    {salvando ? "Salvando..." : versoes.length ? "Salvar nova versão" : "Criar pacote"}
+                                </Botao>
+                            </div>
+                            {pendente && <div className="mt-1 text-right text-xs text-[#B03A2E]">Falta {pendente.produtos.length ? "o valor" : "o produto"} de {pendente.rotulo}.</div>}
+                        </>
+                    )}
                 </div>
+            )}
+
+            {/* ---------- Preços de contrato ---------- */}
+            <div className="mt-5 rounded-xl border border-[#E1E5EC] p-4 lg:max-w-xl">
+                <div className="mb-3 font-extrabold">Serviços com preço de contrato</div>
+                {([["TRANSLADO_KM", "Translado", "por km · sem limite"], ["TANATOPRAXIA", "Tanatopraxia", "por atendimento"]] as const).map(([k, r, sub]) => (
+                    <div key={k} className="mb-3 flex items-center gap-3">
+                        <div className="flex-1"><b>{r}</b><div className="text-xs text-[#6B7488]">{sub}</div></div>
+                        <input inputMode="decimal" className={`${inputCls} w-32 text-right`} disabled={disabled} value={precos[k]} placeholder="0,00" onChange={(e) => setPrecos({ ...precos, [k]: e.target.value })} />
+                    </div>
+                ))}
+                <div className="mb-3 text-xs text-[#6B7488]">Valem quando a Prefeitura autoriza no atendimento (vigentes a partir de hoje). Avançada e embalsamamento: a família paga a diferença sobre a tanatopraxia autorizada.</div>
+                <div className="flex justify-end"><Botao primario disabled={disabled || salvando} onClick={() => void salvarPrecos()}>Salvar preços</Botao></div>
             </div>
         </div>
     );

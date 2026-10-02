@@ -9,6 +9,9 @@
  *    itens da classificação SERVIÇOS e exigem a escolha de um item. Velório e Sepultamento: só Sim/Não.
  *  - Para salvar, todo item marcado "Sim" precisa de item escolhido (validado também no convenio.php).
  *  - A busca usa convenio.php?action=product_search&grupo=... (EstoquePicker/CoroaEditor não são mais usados aqui).
+ *  - (2ª etapa) Cada opção aceita VÁRIOS itens (ex.: 3 urnas aceitas no pacote). Depois de escolher, a lista fecha e
+ *    ficam só os itens escolhidos; "Adicionar outro item" reabre a busca. Em "Dados e valores da OS" os itens da
+ *    mesma opção ficam na mesma linha e o valor vale para qualquer um deles.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,12 +26,23 @@ import SecaoOS from "./components/SecaoOS";
 /* ====================================================================== */
 
 type TipoFlor = "" | "Natural" | "Artificial";
-type ItemComTipo = ProdutoRegra & { tipo: TipoFlor };
+type ItemEscolhido = { produto_id: number; nome: string; codigo_barras: string };
+/** Regra com lista de itens; produto_id/nome/codigo_barras = o primeiro da lista (formato antigo). */
+type RegraItens = ProdutoRegra & { produtos: ItemEscolhido[] };
+type ItemComTipo = RegraItens & { tipo: TipoFlor };
 
-type RegrasTela = Omit<RegrasConvenio, "kit_lanche" | "assistencia" | "tanato" | "ornamentacao" | "coroa_flores"> & {
-  kit_lanche: ProdutoRegra;
-  assistencia: ProdutoRegra;
-  tanato: ProdutoRegra;
+type RegrasTela = Omit<
+  RegrasConvenio,
+  "urna" | "roupa" | "veu" | "cordao" | "invol" | "kit_lanche" | "assistencia" | "tanato" | "ornamentacao" | "coroa_flores"
+> & {
+  urna: RegraItens;
+  roupa: RegraItens;
+  veu: RegraItens;
+  cordao: RegraItens;
+  invol: RegraItens;
+  kit_lanche: RegraItens;
+  assistencia: RegraItens;
+  tanato: RegraItens;
   ornamentacao: ItemComTipo;
   coroa_flores: ItemComTipo;
 };
@@ -47,9 +61,43 @@ type ProdutoBusca = {
 
 const tipoFlor = (v: any): TipoFlor => (v === "Natural" || v === "Artificial" ? v : "");
 
+/** Grava a lista e espelha o primeiro item nos campos antigos. */
+function comItens<T extends RegraItens>(r: T, produtos: ItemEscolhido[]): T {
+  const p = produtos[0];
+  return {
+    ...r,
+    produtos,
+    produto_id: p ? p.produto_id : 0,
+    nome: p ? p.nome : "",
+    codigo_barras: p ? p.codigo_barras : "",
+    deposito_nome: "",
+  };
+}
+
+function regraVazia(valor: SimNao = ""): RegraItens {
+  return { ...regraProduto(), valor, produtos: [] };
+}
+
 function normalizarRegrasTela(raw: any): RegrasTela {
   const base = normalizeRegras(raw);
-  const limpo = (v: any): ProdutoRegra => ({ ...normalizeProduto(v), deposito_nome: "" });
+  const limpo = (v: any): RegraItens => {
+    const p = normalizeProduto(v);
+    const vistos = new Set<number>();
+    const lista: ItemEscolhido[] = [];
+    const fonte: any[] = Array.isArray(v?.produtos) && v.produtos.length > 0
+      ? v.produtos
+      : p.produto_id > 0
+        ? [{ produto_id: p.produto_id, nome: p.nome, codigo_barras: p.codigo_barras }]
+        : [];
+    fonte.forEach((x) => {
+      const id = Number(x?.produto_id ?? x?.id ?? 0) || 0;
+      if (id > 0 && !vistos.has(id)) {
+        vistos.add(id);
+        lista.push({ produto_id: id, nome: String(x?.nome ?? ""), codigo_barras: String(x?.codigo_barras ?? "") });
+      }
+    });
+    return comItens({ ...p, produtos: [] }, p.valor === "Sim" ? lista : []);
+  };
 
   return {
     ...base,
@@ -97,14 +145,14 @@ const ITENS_SIM_NAO = [
 function pendenciasRegras(r: RegrasTela): string[] {
   const out: string[] = [];
   ITENS_ESTOQUE.forEach(([k, label]) => {
-    if (r[k].valor === "Sim" && r[k].produto_id <= 0) out.push(label);
+    if (r[k].valor === "Sim" && r[k].produtos.length === 0) out.push(label);
   });
   if (r.coroa_flores.valor === "Sim") {
     if (!r.coroa_flores.tipo) out.push("Coroa de Flores (tipo)");
-    else if (r.coroa_flores.produto_id <= 0) out.push("Coroa de Flores");
+    else if (r.coroa_flores.produtos.length === 0) out.push("Coroa de Flores");
   }
   ITENS_SERVICO.forEach(([k, label]) => {
-    if (r[k].valor === "Sim" && r[k].produto_id <= 0) out.push(label);
+    if (r[k].valor === "Sim" && r[k].produtos.length === 0) out.push(label);
   });
   return out;
 }
@@ -113,7 +161,7 @@ const moeda = (v: number | null) =>
   v === null || Number.isNaN(v) ? "" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /* ====================================================================== */
-/* Seletor de item (sem depósito)                                          */
+/* Seletor de itens (sem depósito, vários itens por opção)                  */
 /* ====================================================================== */
 
 function ItemPicker({
@@ -132,8 +180,8 @@ function ItemPicker({
   descricao: string;
   /** Grupo da busca; vazio = ainda não dá para buscar (ex.: coroa sem tipo). */
   grupo: Grupo | "";
-  value: ProdutoRegra;
-  onChange: (next: ProdutoRegra) => void;
+  value: RegraItens;
+  onChange: (next: RegraItens) => void;
   disabled?: boolean;
   mostrarQuantidade?: boolean;
   mostrarSaldo?: boolean;
@@ -145,11 +193,14 @@ function ItemPicker({
   const [rows, setRows] = useState<ProdutoBusca[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+  /** Busca aberta a pedido ("Adicionar outro item"). Sem itens escolhidos, a busca fica sempre aberta. */
+  const [adicionando, setAdicionando] = useState(false);
 
-  const ativo = value.valor === "Sim" && grupo !== "";
+  const escolhidos = value.produtos;
+  const buscaAberta = value.valor === "Sim" && grupo !== "" && (escolhidos.length === 0 || adicionando);
 
   useEffect(() => {
-    if (!ativo) {
+    if (!buscaAberta) {
       setRows([]);
       return;
     }
@@ -193,12 +244,13 @@ function ItemPicker({
       window.clearTimeout(t);
       ac.abort();
     };
-  }, [ativo, grupo, q]);
+  }, [buscaAberta, grupo, q]);
 
   const setValor = (v: SimNao) => {
     setQ("");
+    setAdicionando(false);
     if (v !== "Sim") {
-      onChange({ ...regraProduto(), valor: v });
+      onChange(regraVazia(v));
       setRows([]);
       return;
     }
@@ -206,26 +258,19 @@ function ItemPicker({
   };
 
   const selecionar = (row: ProdutoBusca) => {
-    if (row.id <= 0) return;
-    onChange({
-      ...value,
-      produto_id: row.id,
-      nome: row.nome,
-      codigo_barras: row.codigo_barras,
-      deposito_nome: "",
-    });
+    if (row.id <= 0 || escolhidos.some((x) => x.produto_id === row.id)) return;
+    onChange(comItens(value, [...escolhidos, { produto_id: row.id, nome: row.nome, codigo_barras: row.codigo_barras }]));
+    setQ("");
+    setAdicionando(false); // escolheu: fecha a lista
   };
 
-  const limpar = () => onChange({ ...value, produto_id: 0, nome: "", codigo_barras: "" });
+  const remover = (id: number) => onChange(comItens(value, escolhidos.filter((x) => x.produto_id !== id)));
 
-  const faltaItem = value.valor === "Sim" && value.produto_id <= 0;
+  const faltaItem = value.valor === "Sim" && escolhidos.length === 0;
 
   return (
     <section
-      className={[
-        "rounded-xl border bg-white p-4",
-        faltaItem ? "border-amber-300" : "border-slate-200",
-      ].join(" ")}
+      className={["rounded-xl border bg-white p-4", faltaItem ? "border-amber-300" : "border-slate-200"].join(" ")}
     >
       <div className="grid gap-3 md:grid-cols-[1fr_180px] md:items-center">
         <div>
@@ -259,87 +304,130 @@ function ItemPicker({
             </div>
           )}
 
+          {/* Itens escolhidos */}
+          {escolhidos.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-slate-500">
+                {escolhidos.length === 1 ? "Item escolhido" : `${escolhidos.length} itens aceitos (qualquer um vale como padrão)`}
+              </div>
+              {escolhidos.map((it) => (
+                <div
+                  key={it.produto_id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+                >
+                  <span className="min-w-0">
+                    <b className="block truncate">{it.nome || "item"}</b>
+                    <span className="text-xs text-emerald-800">
+                      produto #{it.produto_id}
+                      {it.codigo_barras ? ` · CB ${it.codigo_barras}` : ""}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => remover(it.produto_id)}
+                    className="shrink-0 text-xs font-semibold text-emerald-800 underline hover:text-emerald-950 disabled:opacity-60"
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+              {grupo !== "" && !adicionando && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setAdicionando(true)}
+                  className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  + Adicionar outro item
+                </button>
+              )}
+            </div>
+          )}
+
           {grupo === "" ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {avisoSemGrupo || "Complete os campos acima para listar os itens."}
             </div>
           ) : (
-            <>
-              <label className="block text-sm text-slate-700">
-                <span className="mb-1 block font-medium">Buscar item</span>
-                <input
-                  value={q}
-                  disabled={disabled}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Digite para filtrar ou deixe vazio para listar..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
+            buscaAberta && (
+              <div className="space-y-2">
+                <div className="flex items-end gap-2">
+                  <label className="block flex-1 text-sm text-slate-700">
+                    <span className="mb-1 block font-medium">
+                      {escolhidos.length > 0 ? "Adicionar outro item" : "Buscar item"}
+                    </span>
+                    <input
+                      value={q}
+                      disabled={disabled}
+                      onChange={(e) => setQ(e.target.value)}
+                      placeholder="Digite para filtrar ou deixe vazio para listar..."
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    />
+                  </label>
+                  {escolhidos.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdicionando(false);
+                        setQ("");
+                      }}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Fechar
+                    </button>
+                  )}
+                </div>
 
-              <div className="max-h-52 overflow-y-auto rounded-lg border">
-                {loading && <div className="p-3 text-sm text-slate-500">Consultando itens...</div>}
+                <div className="max-h-52 overflow-y-auto rounded-lg border">
+                  {loading && <div className="p-3 text-sm text-slate-500">Consultando itens...</div>}
 
-                {!loading && erro && <div className="p-3 text-sm text-red-700">{erro}</div>}
+                  {!loading && erro && <div className="p-3 text-sm text-red-700">{erro}</div>}
 
-                {!loading && !erro && rows.length === 0 && (
-                  <div className="p-3 text-sm text-slate-500">Nenhum item encontrado.</div>
-                )}
+                  {!loading && !erro && rows.length === 0 && (
+                    <div className="p-3 text-sm text-slate-500">Nenhum item encontrado.</div>
+                  )}
 
-                {!loading &&
-                  !erro &&
-                  rows.map((row) => {
-                    const selected = row.id > 0 && row.id === value.produto_id;
+                  {!loading &&
+                    !erro &&
+                    rows.map((row) => {
+                      const jaEscolhido = escolhidos.some((x) => x.produto_id === row.id);
 
-                    return (
-                      <button
-                        type="button"
-                        key={row.id}
-                        disabled={disabled || row.id <= 0}
-                        onClick={() => selecionar(row)}
-                        className={[
-                          "flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0",
-                          selected ? "bg-blue-50 text-blue-900" : "hover:bg-slate-50",
-                        ].join(" ")}
-                      >
-                        <span className="min-w-0">
-                          <span className="block font-medium">{row.nome}</span>
-                          <span className="block text-xs text-slate-500">
-                            ID {row.id}
-                            {row.codigo_barras ? ` · CB ${row.codigo_barras}` : ""}
+                      return (
+                        <button
+                          type="button"
+                          key={row.id}
+                          disabled={disabled || row.id <= 0 || jaEscolhido}
+                          onClick={() => selecionar(row)}
+                          className={[
+                            "flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0",
+                            jaEscolhido ? "cursor-default bg-slate-50 text-slate-400" : "hover:bg-blue-50",
+                          ].join(" ")}
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-medium">{row.nome}</span>
+                            <span className="block text-xs text-slate-500">
+                              ID {row.id}
+                              {row.codigo_barras ? ` · CB ${row.codigo_barras}` : ""}
+                              {jaEscolhido ? " · já escolhido" : ""}
+                            </span>
                           </span>
-                        </span>
-                        <span className="shrink-0 text-right text-xs text-slate-500">
-                          {row.valor !== null && row.valor > 0 && <span className="block">{moeda(row.valor)}</span>}
-                          {mostrarSaldo && row.saldo_total !== null && (
-                            <span className="block">Saldo {row.saldo_total.toLocaleString("pt-BR")}</span>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-            </>
-          )}
+                          <span className="shrink-0 text-right text-xs text-slate-500">
+                            {row.valor !== null && row.valor > 0 && <span className="block">{moeda(row.valor)}</span>}
+                            {mostrarSaldo && row.saldo_total !== null && (
+                              <span className="block">Saldo {row.saldo_total.toLocaleString("pt-BR")}</span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
 
-          {value.produto_id > 0 ? (
-            <div className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-              <span>
-                Selecionado: <b>{value.nome || "item"}</b> · produto #{value.produto_id}
-                {value.codigo_barras ? ` · CB ${value.codigo_barras}` : ""}
-              </span>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={limpar}
-                className="shrink-0 text-xs font-semibold text-emerald-800 underline hover:text-emerald-950 disabled:opacity-60"
-              >
-                Remover
-              </button>
-            </div>
-          ) : (
-            grupo !== "" && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Escolha um item na lista. Ele é obrigatório quando a opção está como “Sim”.
+                {escolhidos.length === 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Escolha um item na lista. Ele é obrigatório quando a opção está como “Sim”.
+                  </div>
+                )}
               </div>
             )
           )}
@@ -806,14 +894,7 @@ export default function ConveniosAdminPage() {
                     value={coroa.tipo}
                     disabled={bloqueado}
                     onChange={(e) =>
-                      patchRegra("coroa_flores", {
-                        ...coroa,
-                        tipo: tipoFlor(e.target.value),
-                        produto_id: 0,
-                        nome: "",
-                        codigo_barras: "",
-                        deposito_nome: "",
-                      })
+                      patchRegra("coroa_flores", comItens({ ...coroa, tipo: tipoFlor(e.target.value) }, []))
                     }
                     className="w-full rounded-lg border border-slate-300 px-3 py-2"
                   >
