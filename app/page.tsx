@@ -8,11 +8,11 @@ import { usePerms } from "./_perms/PermsProvider";
    ========================================================= */
 const COUNTS_REFRESH_MS = 15_000;
 const SERVICOS_API =
-  "https://api.planoassistencialintegrado.com.br/informativo.php";
+  "https\\://api.planoassistencialintegrado.com.br/informativo.php";
 const COROAS_API =
-  "https://api.planoassistencialintegrado.com.br/coroas.php";
+  "https\\://api.planoassistencialintegrado.com.br/coroas.php";
 const REQUISICOES_API =
-  "https://api.planoassistencialintegrado.com.br/requisicoes.php";
+  "https\\://api.planoassistencialintegrado.com.br/requisicoes.php";
 const STATUS_REQUISICOES =
   "PENDENTE,EM_SEPARACAO,EM_TRANSITO";
 /* =========================================================
@@ -449,6 +449,26 @@ const quickActions: QuickAction[] = [
     ),
   },
   {
+    label: "Minhas OS",
+    href: "/os/minhas",
+    slug: "os-minhas",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M7 4h10a2 2 0 012 2v14H5V6a2 2 0 012-2z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        />
+        <path
+          d="M8 9h8M8 13h8M8 17h5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
     label: "Administrativo",
     href: "/administrativo",
     slug: "administrativo",
@@ -600,6 +620,7 @@ const SEARCH_ACTIONS: SearchAction[] = [
   { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano", keywords: ["médico", "consulta", "clínica"] },
   { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Plano", keywords: ["guia", "consulta", "relatório"] },
   { title: "Sorteios", href: "/sorteios", slug: "sorteios", group: "Plano" },
+  { title: "Minhas OS", href: "/os/minhas", slug: "os-minhas", group: "Ordens de Serviço", keywords: ["os", "ordem", "serviço", "minhas"] },
   { title: "Usuários", href: "/usuarios", slug: "usuarios", group: "Administrativo", keywords: ["usuário", "acesso"] },
   { title: "Permissões", href: "/permissoes", slug: "permissoes", group: "Administrativo", keywords: ["permissão", "cargo", "acesso"] },
   { title: "Conhecimento IA", href: "/conhecimento", slug: "conhecimento", group: "Administrativo", keywords: ["ia", "base", "conhecimento"] },
