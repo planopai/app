@@ -1488,12 +1488,6 @@ export default function ConveniosAdminPage() {
                     <div className="divide-y divide-slate-200">
                       {CHAVES_COM_VALOR.filter((key) => regras[key].valor === "Sim").map((key) => {
                         const regra = regras[key];
-                        const produto =
-                          regra.produtos.length === 0
-                            ? "Produto não selecionado"
-                            : regra.produtos.length === 1
-                              ? regra.produtos[0].nome
-                              : `${regra.produtos.length} itens aceitos`;
 
                         return (
                           <div
@@ -1501,7 +1495,19 @@ export default function ConveniosAdminPage() {
                             className="grid gap-3 px-4 py-3 md:grid-cols-[200px_1fr_190px] md:items-center"
                           >
                             <div className="font-semibold text-slate-800">{ROTULOS[key]}</div>
-                            <div className="min-w-0 truncate text-sm text-slate-600">{produto}</div>
+                            <div className="min-w-0 text-sm text-slate-600">
+                              {regra.produtos.length === 0 ? (
+                                <span className="text-amber-700">Produto não selecionado</span>
+                              ) : (
+                                <div className="space-y-1">
+                                  {regra.produtos.map((produto) => (
+                                    <div key={produto.produto_id} className="truncate" title={produto.nome || `Produto #${produto.produto_id}`}>
+                                      {produto.nome || `Produto #${produto.produto_id}`}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                             <label>
                               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">
                                 Valor no contrato
