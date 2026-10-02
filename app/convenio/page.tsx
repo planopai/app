@@ -7,7 +7,7 @@
  *   1. Lista de convênios → clicar abre o convênio.
  *   2. Convênio = lista de PACOTES (botão "Novo pacote" no topo; "Dados do convênio" para nome, status e OS).
  *   3. Pacote = itens próprios (cada pacote tem os seus): Urna, Roupa, Véu, Cordão, Invol, Coroa, Kit Lanche,
- *      Assistência, Tanatopraxia, Ornamentação (com item, vários aceitos), Velório e Sepultamento (Sim/Não).
+ *      Assistência, Tanatopraxia, Translado, Ornamentação (com item, vários aceitos), Velório e Sepultamento (Sim/Não).
  *      Na Prefeitura, cada item tem o valor no contrato (vale para qualquer produto aceito); a soma é o valor do pacote.
  *   - O pacote PADRÃO é o que o motor da OS usa hoje (atendimento ainda não escolhe pacote).
  *   - Itens escolhidos sem depósito (convenio.php?action=product_search&grupo=...). Depois de escolher, a lista fecha.
@@ -32,7 +32,7 @@ type ItemComTipo = RegraItens & { tipo: TipoFlor };
 
 type RegrasTela = Omit<
   RegrasConvenio,
-  "urna" | "roupa" | "veu" | "cordao" | "invol" | "kit_lanche" | "assistencia" | "tanato" | "ornamentacao" | "coroa_flores"
+  "urna" | "roupa" | "veu" | "cordao" | "invol" | "kit_lanche" | "assistencia" | "tanato" | "translado" | "ornamentacao" | "coroa_flores"
 > & {
   urna: RegraItens;
   roupa: RegraItens;
@@ -42,6 +42,7 @@ type RegrasTela = Omit<
   kit_lanche: RegraItens;
   assistencia: RegraItens;
   tanato: RegraItens;
+  translado: RegraItens;
   ornamentacao: ItemComTipo;
   coroa_flores: ItemComTipo;
 };
@@ -102,11 +103,43 @@ function regraVazia(valor: SimNao = ""): RegraItens {
   return { ...regraProduto(), valor, produtos: [], valor_contrato: "" };
 }
 
-const decBR = (v: any) =>
-  v === null || v === undefined || v === "" || Number(v) <= 0
-    ? ""
-    : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const num = (s: any) => Number(String(s ?? "").replace(/\./g, "").replace(",", ".")) || 0;
+const num = (s: any) => {
+  if (s === null || s === undefined || s === "") return 0;
+  const raw = String(s).trim();
+  if (!raw) return 0;
+
+  // Aceita tanto 1.234,56 quanto 1234.56/1234,56.
+  const normalizado =
+    raw.includes(",")
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : raw.replace(/[^0-9.-]/g, "");
+
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const decBR = (v: any) => {
+  const n = num(v);
+  return n > 0
+    ? n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "";
+};
+
+/** Campo monetário: aceita somente números e no máximo 2 casas decimais. */
+const valorMonetarioDigitado = (valor: string) => {
+  let s = String(valor ?? "")
+    .replace(/[^0-9,.]/g, "")
+    .replace(/\./g, ",");
+
+  const primeiraVirgula = s.indexOf(",");
+  if (primeiraVirgula >= 0) {
+    const inteiro = s.slice(0, primeiraVirgula).replace(/\D/g, "");
+    const decimal = s.slice(primeiraVirgula + 1).replace(/\D/g, "").slice(0, 2);
+    return `${inteiro || "0"},${decimal}`;
+  }
+
+  return s.replace(/\D/g, "");
+};
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const dataBR = (s: string) => (s ? new Date(s.slice(0, 10) + "T12:00").toLocaleDateString("pt-BR") : "—");
 
@@ -142,6 +175,7 @@ function normalizarRegrasTela(raw: any): RegrasTela {
     kit_lanche: limpo(raw?.kit_lanche),
     assistencia: limpo(raw?.assistencia),
     tanato: limpo(raw?.tanato),
+    translado: limpo(raw?.translado),
     ornamentacao: { ...limpo(raw?.ornamentacao), tipo: tipoFlor(raw?.ornamentacao?.tipo) },
   };
 }
@@ -167,7 +201,7 @@ function pacoteNovo(convenioId: number, padrao: boolean): Pacote {
 }
 
 type ChaveEstoque = "urna" | "roupa" | "veu" | "cordao" | "invol";
-type ChaveServico = "kit_lanche" | "assistencia" | "tanato" | "ornamentacao";
+type ChaveServico = "kit_lanche" | "assistencia" | "tanato" | "translado" | "ornamentacao";
 
 const ITENS_ESTOQUE: [ChaveEstoque, string, Grupo][] = [
   ["urna", "Urna", "urna"],
@@ -181,6 +215,7 @@ const ITENS_SERVICO: [ChaveServico, string][] = [
   ["kit_lanche", "Kit Lanche"],
   ["assistencia", "Assistência (Materiais)"],
   ["tanato", "Tanatopraxia"],
+  ["translado", "Translado"],
   ["ornamentacao", "Ornamentação"],
 ];
 
@@ -189,7 +224,7 @@ const ITENS_SIM_NAO = [
   ["realiza_sepultamento", "Sepultamento"],
 ] as const;
 
-/** Regras que têm valor no contrato (Prefeitura). Tanatopraxia tem preço de contrato próprio. */
+/** Regras que têm valor no contrato (Prefeitura). Tanatopraxia e Translado usam preços próprios em Dados do convênio. */
 const CHAVES_COM_VALOR = ["urna", "roupa", "veu", "cordao", "invol", "coroa_flores", "kit_lanche", "assistencia", "ornamentacao"] as const;
 
 /** Soma do pacote = valor de cada item "Sim" (uma vez por item). */
@@ -199,7 +234,7 @@ function somaPacote(r: RegrasTela): number {
 
 const ROTULOS: Record<string, string> = {
   urna: "Urna", roupa: "Roupa", veu: "Véu", cordao: "Cordão", invol: "Invol", coroa_flores: "Coroa",
-  kit_lanche: "Kit Lanche", assistencia: "Assistência", tanato: "Tanatopraxia", ornamentacao: "Ornamentação",
+  kit_lanche: "Kit Lanche", assistencia: "Assistência", tanato: "Tanatopraxia", translado: "Translado", ornamentacao: "Ornamentação",
   realiza_velorio: "Velório", realiza_sepultamento: "Sepultamento",
 };
 
@@ -1436,7 +1471,9 @@ export default function ConveniosAdminPage() {
                       descricao={
                         key === "tanato" && ehPrefeitura
                           ? "Serviço incluso. O preço da tanatopraxia é definido em Dados do convênio."
-                          : "Escolha o serviço padrão incluído no pacote."
+                          : key === "translado" && ehPrefeitura
+                            ? "Serviço incluso. O preço do translado por km é definido em Dados do convênio."
+                            : "Escolha o serviço padrão incluído no pacote."
                       }
                       grupo="servico"
                       value={regras[key]}
@@ -1522,13 +1559,40 @@ export default function ConveniosAdminPage() {
                               >
                                 <span className="pl-3 text-sm font-semibold text-slate-500">R$</span>
                                 <input
+                                  type="text"
                                   inputMode="decimal"
+                                  pattern="[0-9]*([,][0-9]{0,2})?"
+                                  autoComplete="off"
                                   value={regra.valor_contrato}
                                   disabled={bloqueado}
                                   placeholder="0,00"
                                   onChange={(e) =>
-                                    patchRegra(key, { ...regra, valor_contrato: e.target.value } as RegrasTela[typeof key])
+                                    patchRegra(
+                                      key,
+                                      {
+                                        ...regra,
+                                        valor_contrato: valorMonetarioDigitado(e.target.value),
+                                      } as RegrasTela[typeof key],
+                                    )
                                   }
+                                  onBlur={() => {
+                                    const n = num(regra.valor_contrato);
+                                    patchRegra(
+                                      key,
+                                      {
+                                        ...regra,
+                                        valor_contrato: n > 0 ? decBR(n) : "",
+                                      } as RegrasTela[typeof key],
+                                    );
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (
+                                      e.key.length === 1 &&
+                                      !/[0-9,.]/.test(e.key)
+                                    ) {
+                                      e.preventDefault();
+                                    }
+                                  }}
                                   className="min-w-0 flex-1 bg-transparent px-2 py-2 text-right font-semibold outline-none"
                                 />
                               </div>
@@ -1541,7 +1605,7 @@ export default function ConveniosAdminPage() {
                     <div className="flex flex-col gap-2 border-t bg-slate-50 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
                       <p className="max-w-2xl text-xs text-slate-500">
                         Troca de modelo: a diferença pode ser calculada a partir do produto escolhido e do valor previsto no contrato.
-                        Tanatopraxia continua usando o preço cadastrado em “Dados do convênio”.
+                        Tanatopraxia e Translado continuam usando os preços cadastrados em “Dados do convênio”.
                       </p>
                       <div className="shrink-0 text-right">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
