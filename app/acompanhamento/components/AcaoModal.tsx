@@ -5,6 +5,7 @@ import Modal from "./Modal";
 import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases } from "./constants";
+import { dadosFaltandoParaOrnamentacao, itensBaixaCorpoPronto } from "./avisosAcao";
 import {
     acaoToStatus,
     isTanatoNo,
@@ -80,6 +81,7 @@ export default function AcaoModal({
     onCloseEstoqueInsuficiente,
     onVeiculoRequired,
     onFotoAcaoRequired,
+    onAbrirCadastro,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
@@ -103,6 +105,8 @@ export default function AcaoModal({
         fase: Fase,
         tipo: FotoAcaoTipo,
     ) => void;
+    /** Abre o cadastro completo do atendimento para edição. Sem esta função, vai para /acompanhamento?editar=<id> (o mesmo endereço do Quadro). */
+    onAbrirCadastro?: (id: string) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [me, setMe] = useState<OfflineSession | null>(null);
@@ -297,6 +301,30 @@ export default function AcaoModal({
         : (fasesVisiveis[fasesVisiveis.length - 1] ?? null);
     const concluido = !!efetivo && !!faseFinalEfetiva && efetivo.status === faseFinalEfetiva;
 
+    /* ---- Avisos do mockup ---- */
+    // 1) Faltam dados para iniciar a ornamentação: bloqueia o botão até o cadastro ficar completo.
+    const faltandoOrn = useMemo(
+        () => (efetivo && prox === "fase05" ? dadosFaltandoParaOrnamentacao(efetivo) : []),
+        [efetivo, prox],
+    );
+    // 2) Corpo Pronto: mostra a baixa automática de estoque e só registra depois da confirmação.
+    const [confirmandoBaixa, setConfirmandoBaixa] = useState(false);
+    const itensBaixa = useMemo(() => (efetivo && prox === "fase12" ? itensBaixaCorpoPronto(efetivo) : []), [efetivo, prox]);
+    useEffect(() => {
+        setConfirmandoBaixa(false);
+    }, [open, acaoId, prox]);
+
+    function abrirCadastroCompleto() {
+        const id = acaoId != null ? String(acaoId) : "";
+        if (!id) return;
+        if (onAbrirCadastro) {
+            setOpen(false);
+            onAbrirCadastro(id);
+        } else if (typeof window !== "undefined") {
+            window.location.assign(`/acompanhamento?editar=${encodeURIComponent(id)}`);
+        }
+    }
+
     function podeConservacao(): boolean {
         return !!me?.podeConservacao && (me.userId === "7" || me.userId === "16") && me.cargo === "tanatopraxista";
     }
@@ -319,11 +347,20 @@ export default function AcaoModal({
         return "Esta etapa exige conexão com a internet nesta versão offline.";
     }
 
-    async function handleClickFase(f: Fase) {
+    async function handleClickFase(f: Fase, baixaConfirmada = false) {
         setFrontMsg(null);
 
         const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
         if (!habilitar) return;
+
+        if (f === "fase05" && faltandoOrn.length > 0) {
+            setFrontMsg({ ok: false, text: `Faltam ${faltandoOrn.length} dado${faltandoOrn.length === 1 ? "" : "s"} para iniciar a ornamentação. Complete o cadastro.` });
+            return;
+        }
+        if (f === "fase12" && !baixaConfirmada && !offlineBlockReason(f)) {
+            setConfirmandoBaixa(true);
+            return;
+        }
 
         const blockReason = offlineBlockReason(f);
         if (blockReason) {
@@ -405,6 +442,47 @@ export default function AcaoModal({
                     </p>
                 )}
 
+                {faltandoOrn.length > 0 && (
+                    <div role="alert" className="mt-4 rounded-[14px] border-[1.5px] border-[#F2CB3F] bg-[#FCF3CC] p-3.5 text-[#313C55] dark:bg-[#F2CB3F]/16 dark:text-white">
+                        <div className="flex items-start gap-2.5">
+                            <svg viewBox="0 0 24 24" className="mt-0.5 size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+                                <path d="M12 9v4" />
+                                <path d="M12 17h.01" />
+                            </svg>
+                            <div>
+                                <div className="text-sm font-extrabold">
+                                    Faltam {faltandoOrn.length} dado{faltandoOrn.length === 1 ? "" : "s"} para iniciar a ornamentação
+                                </div>
+                                <div className="mt-0.5 text-[13px] leading-snug">Complete o cadastro para liberar o Início da Ornamentação.</div>
+                            </div>
+                        </div>
+                        <div className="mt-2.5 flex flex-col gap-1.5">
+                            {faltandoOrn.map((d) => (
+                                <button
+                                    key={d.chave}
+                                    type="button"
+                                    onClick={abrirCadastroCompleto}
+                                    className="flex min-h-11 w-full items-center gap-2.5 rounded-[10px] border border-[#E3E8F0] bg-white px-3 py-1.5 text-left text-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white"
+                                >
+                                    <span className="size-[22px] shrink-0 rounded-full border-2 border-[#F2CB3F] bg-white dark:bg-[#232B3F]" aria-hidden="true" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-[13px] font-bold">{d.rotulo}</span>
+                                        <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">Toque para preencher no cadastro</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={abrirCadastroCompleto}
+                            className="mt-3 flex h-11 w-full items-center justify-center rounded-xl border-[1.5px] border-[#313C55] bg-white text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10"
+                        >
+                            Abrir o cadastro completo
+                        </button>
+                    </div>
+                )}
+
                 {efetivo && fasesVisiveis.length > 0 && (
                     <>
                         <p className="mb-2 mt-4 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">
@@ -416,7 +494,8 @@ export default function AcaoModal({
                                 const isConservacao = FASES_CONSERVACAO.includes(f);
                                 const bloqueadoPorCargo = isConservacao && !meLoading && !!me && !podeConservacao();
                                 const reason = habilitar ? offlineBlockReason(f) : null;
-                                const disabled = !habilitar || bloqueadoPorCargo || !!reason;
+                                const faltaDados = f === "fase05" && faltandoOrn.length > 0;
+                                const disabled = !habilitar || bloqueadoPorCargo || !!reason || faltaDados;
                                 const exigeFoto = FASES_COM_FOTO.includes(f);
 
                                 const posProx = prox ? (fasesVisiveis as readonly Fase[]).indexOf(prox) : -1;
@@ -440,7 +519,9 @@ export default function AcaoModal({
                                         ].join(" ")}
                                         title={
                                             reason ||
-                                            (bloqueadoPorCargo
+                                            (faltaDados
+                                                ? "Complete o cadastro para liberar o Início da Ornamentação"
+                                                : bloqueadoPorCargo
                                                 ? "Usuário sem permissão para conservação"
                                                 : habilitar && exigeFoto
                                                     ? "Anexar foto para confirmar esta etapa"
@@ -475,6 +556,52 @@ export default function AcaoModal({
                             })}
                         </div>
                     </>
+                )}
+
+                {confirmandoBaixa && prox === "fase12" && (
+                    <div role="alertdialog" aria-label="Confirmar Corpo Pronto" className="mt-3 rounded-[14px] border-[1.5px] border-[#F2CB3F] bg-[#FCF3CC] p-4 text-[#313C55] dark:bg-[#F2CB3F]/16 dark:text-white">
+                        <div className="text-sm font-extrabold">Registrar “{acaoToStatus("fase12")}” agora?</div>
+                        <div className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">A etapa fica registrada no atendimento, com seu nome e a hora.</div>
+                        <div className="mt-3 rounded-xl border border-[#E3E8F0] bg-white p-3 dark:border-white/[0.12] dark:bg-[#232B3F]">
+                            <div className="text-[13px] font-extrabold">Baixa automática no estoque</div>
+                            <div className="mt-0.5 text-xs leading-snug text-[#5B6478] dark:text-[#AEB9CF]">
+                                O app dá baixa nos itens abaixo. Depois disso, só o administrador corrige. O saldo é conferido antes de dar baixa.
+                            </div>
+                            <ul className="mt-2 flex flex-col gap-1">
+                                {itensBaixa.length === 0 ? (
+                                    <li className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Nenhum item com baixa neste cadastro.</li>
+                                ) : (
+                                    itensBaixa.map((b, i) => (
+                                        <li key={`${b.nome}-${i}`} className={`flex items-baseline gap-3 text-[13px] ${b.semBaixa ? "text-[#5B6478] dark:text-[#AEB9CF]" : ""}`}>
+                                            <span className="min-w-0 flex-1 break-words font-bold">{b.nome}</span>
+                                            <span className="shrink-0 text-xs font-extrabold text-[#5B6478] dark:text-[#AEB9CF]">{b.qtd}</span>
+                                        </li>
+                                    ))
+                                )}
+                            </ul>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setConfirmandoBaixa(false)}
+                                disabled={acaoSubmitting}
+                                className="h-12 flex-1 rounded-xl border-[1.5px] border-[#313C55] bg-white text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-60 dark:border-white/40 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    setConfirmandoBaixa(false);
+                                    await handleClickFase("fase12" as Fase, true);
+                                }}
+                                disabled={acaoSubmitting}
+                                className="h-12 flex-[1.4] rounded-xl bg-[#313C55] text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]"
+                            >
+                                Confirmar Corpo Pronto
+                            </button>
+                        </div>
+                    </div>
                 )}
 
                 {concluido && (

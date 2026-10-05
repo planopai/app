@@ -411,7 +411,7 @@ function EstoqueCombobox({
                     <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">{depositoLabel}</label>
 
                     <select
-                        className="w-full rounded-md border px-2 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                        className={CAMPO_CLS}
                         value={depositoValue}
                         onChange={(e) => {
                             onChangeDeposito(e.target.value);
@@ -454,7 +454,7 @@ function EstoqueCombobox({
                             onClick={() => {
                                 if (!disabled) setPickerOpen(true);
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${errorText ? "border-red-500" : ""
+                            className={`${CAMPO_CLS} ${errorText ? "border-red-500!" : ""
                                 }`}
                             disabled={disabled}
                             autoComplete="off"
@@ -463,7 +463,7 @@ function EstoqueCombobox({
 
                         <button
                             type="button"
-                            className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                            className={`${BTN_SEC_CLS} shrink-0`}
                             disabled={disabled}
                             onClick={() => setPickerOpen(true)}
                         >
@@ -476,7 +476,7 @@ function EstoqueCombobox({
                     <div className="mt-2 flex flex-wrap gap-2">
                         <button
                             type="button"
-                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                            className={`${BTN_SEC_CLS}`}
                             disabled={disabled}
                             onClick={limparSelecao}
                         >
@@ -502,7 +502,7 @@ function EstoqueCombobox({
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
+                        className={`${BTN_SEC_CLS}`}
                         onClick={() => setPickerOpen(false)}
                     >
                         Fechar
@@ -522,13 +522,13 @@ function EstoqueCombobox({
                             // NÃO mexe na seleção
                         }}
                         placeholder="(Opcional) filtrar por nome ou código…"
-                        className="w-full rounded-md border px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
+                        className={CAMPO_CLS}
                         autoComplete="off"
                     />
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
+                        className={`${BTN_SEC_CLS}`}
                         onClick={() => setQ("")}
                         title="Limpar filtro"
                     >
@@ -697,13 +697,13 @@ function CoroaCombobox({
                     value={value}
                     readOnly
                     placeholder={`Selecione uma Coroa ${tipo}...`}
-                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${errorText ? "border-red-500" : ""}`}
+                    className={`${CAMPO_CLS} ${errorText ? "border-red-500!" : ""}`}
                     disabled={disabled}
                     onClick={() => !disabled && setOpen(true)}
                 />
                 <button
                     type="button"
-                    className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                    className={`${BTN_SEC_CLS} shrink-0`}
                     disabled={disabled}
                     onClick={() => setOpen(true)}
                 >
@@ -714,7 +714,7 @@ function CoroaCombobox({
             <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                    className={`${BTN_SEC_CLS}`}
                     disabled={disabled}
                     onClick={() => {
                         setValue("");
@@ -742,7 +742,7 @@ function CoroaCombobox({
                                 : "São exibidos somente modelos com saldo disponível, identificados pelo depósito."}
                         </p>
                     </div>
-                    <button type="button" className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]" onClick={() => setOpen(false)}>
+                    <button type="button" className={`${BTN_SEC_CLS}`} onClick={() => setOpen(false)}>
                         Fechar
                     </button>
                 </div>
@@ -752,7 +752,7 @@ function CoroaCombobox({
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Filtrar por nome ou código..."
-                    className="mt-4 w-full rounded-md border px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
+                    className={`${CAMPO_CLS} mt-4`}
                     autoComplete="off"
                 />
 
@@ -843,6 +843,14 @@ function normalizeDepCordao(v: any): DepCordao {
 /* =========================================================================
    Wizard
    ========================================================================= */
+/* Estilos de formulário do mockup (Registro.dc.html): campo de 48 px, raio 12, borda 1,5 px, rótulo 13 px em negrito. */
+const CAMPO_CLS =
+    "h-12 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
+const AREA_CLS =
+    "min-h-24 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 py-3 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
+const BTN_SEC_CLS =
+    "inline-flex h-11 items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] transition hover:bg-[#EEF2F7] disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
+
 /* =========================================================================
    Coluna da direita do "Editar registro" (mockup Registro.dc.html):
    DOCUMENTOS (termos) + PRÓXIMA ETAPA com o botão Registrar ação.
@@ -861,7 +869,8 @@ function PainelEdicao({
     onDocumento,
     onRegistrarAcao,
 }: {
-    registro: Registro;
+    /** null = novo registro (ainda não existe atendimento: documentos e próxima etapa só depois de salvar). */
+    registro: Registro | null;
     proxima: string;
     onDocumento?: (tipo: "recebimento" | "requisicao") => void;
     onRegistrarAcao?: () => void;
@@ -870,13 +879,14 @@ function PainelEdicao({
         "inline-flex h-11 w-full items-center justify-start gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-left text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
     const baixar =
         "inline-flex h-9 w-full items-center justify-center rounded-lg bg-[#EEF5D6] px-3 text-xs font-extrabold text-[#313C55] hover:bg-[#E2EDBB] dark:bg-[#B3CE52]/20 dark:text-white";
-    const a: any = registro;
+    const a: any = registro ?? {};
+    const novo = !registro;
     return (
-        <div className="flex flex-col gap-4">
+        <div className={`flex-col gap-4 ${novo ? "hidden lg:flex" : "flex"}`}>
             <section className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
                 <div className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
                 <div className="flex flex-col gap-2.5">
-                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("recebimento")} disabled={!onDocumento}>
+                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("recebimento")} disabled={!onDocumento || novo}>
                         <IcDoc />
                         Termo de recebimento de material
                     </button>
@@ -885,7 +895,7 @@ function PainelEdicao({
                             Baixar termo assinado
                         </a>
                     ) : null}
-                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("requisicao")} disabled={!onDocumento}>
+                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("requisicao")} disabled={!onDocumento || novo}>
                         <IcDoc />
                         Termo de requisição de veículo
                     </button>
@@ -895,9 +905,10 @@ function PainelEdicao({
                         </a>
                     ) : null}
                 </div>
+                {novo && <p className="mt-3 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
             </section>
 
-            {proxima !== "—" && (
+            {!novo && proxima !== "—" && (
                 <section className="rounded-[18px] bg-[#313C55] p-5 text-white dark:border dark:border-white/[0.12] dark:bg-[#1C2334]" aria-label="Próxima etapa">
                     <div className="mb-1.5 text-xs font-extrabold uppercase tracking-[0.12em] text-[#B3CE52]">Próxima etapa</div>
                     <div className="mb-3.5 text-lg font-extrabold leading-tight">{proxima}</div>
@@ -1905,8 +1916,13 @@ export default function Wizard({
 
     if (!open) return null;
 
-    const editandoCompleto = !!registroEdicao && !isRestrito;
-    const proximaTxt = registroEdicao ? proximaEtapaDoRegistro(registroEdicao) : "—";
+    const editandoCompleto = !isRestrito; // layout do mockup: Novo registro e Editar registro
+    // Registro em edição: o que a página informa; na falta disso, os próprios dados do formulário quando já têm id
+    // (assim o layout de edição aparece mesmo que a página não repasse o registro).
+    const registroAtual: Registro | null =
+        registroEdicao ?? (String((wizardData as any)?.id ?? "").trim() !== "" ? (wizardData as Registro) : null);
+    const emEdicao = !!registroAtual;
+    const proximaTxt = registroAtual ? proximaEtapaDoRegistro(registroAtual) : "—";
 
     return (
         <Modal
@@ -1915,8 +1931,8 @@ export default function Wizard({
             ariaLabel="Wizard"
             maxWidth={editandoCompleto ? 1140 : 740}
             aside={
-                editandoCompleto && registroEdicao ? (
-                    <PainelEdicao registro={registroEdicao} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} />
+                editandoCompleto ? (
+                    <PainelEdicao registro={registroAtual} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} />
                 ) : undefined
             }
             footer={
@@ -1984,11 +2000,11 @@ export default function Wizard({
                     </h2>
                     {editandoCompleto && (
                         <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                            {String((registroEdicao as any)?.falecido || "").trim() || "Atendimento"} · preencha as abas e conclua.
+                            {emEdicao ? `${String((registroAtual as any)?.falecido || "").trim() || "Atendimento"} · ` : ""}preencha as abas e conclua.
                         </p>
                     )}
                 </div>
-                {editandoCompleto && proximaTxt !== "—" && (
+                {editandoCompleto && emEdicao && proximaTxt !== "—" && (
                     <span className="inline-flex h-8 items-center gap-2 rounded-2xl bg-[#E6F7FE] px-3.5 text-[13px] font-bold text-[#313C55] dark:bg-[#00AEEC]/20 dark:text-white">
                         <span className="size-2 rounded-full bg-[#00AEEC]" />
                         Aguardando {proximaTxt}
@@ -2274,7 +2290,7 @@ export default function Wizard({
                                                 <>
                                                     <button
                                                         type="button"
-                                                        className="rounded-md border px-2 py-1 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                                        className={`${BTN_SEC_CLS}`}
                                                         disabled={wizardSubmitting}
                                                         onClick={() => {
                                                             setWizardData((prev: any) => ({
@@ -2791,7 +2807,7 @@ export default function Wizard({
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">
+                                <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label} {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
                                 </label>
 
@@ -2803,14 +2819,14 @@ export default function Wizard({
                                         list={listId}
                                         placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
                                         defaultValue={currentText}
-                                        className="w-full flex-1 rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                        className={`${CAMPO_CLS} flex-1`}
                                         disabled={wizardSubmitting}
                                     />
 
                                     <div className="flex flex-wrap gap-2">
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-2 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                            className={`${BTN_SEC_CLS}`}
                                             onClick={preencherLocalVelorioComGPS}
                                             disabled={wizardSubmitting || gpsLoading}
                                             title="Capturar localização e gerar link de rota"
@@ -2820,7 +2836,7 @@ export default function Wizard({
 
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-2 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                            className={`${BTN_SEC_CLS}`}
                                             onClick={() => {
                                                 if (localVelorioRef.current) localVelorioRef.current.value = "";
                                                 setGpsMsg(null);
@@ -2878,12 +2894,12 @@ export default function Wizard({
 
                                     {mostraVelorioOnline && (
                                         <div className="mt-4">
-                                            <label className="mb-1 block text-sm font-medium">
+                                            <label className="mb-1.5 block text-[13px] font-bold">
                                                 Velório Online <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
                                             </label>
 
                                             <select
-                                                className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${velorioOnlineErro ? "border-red-500" : ""
+                                                className={`${CAMPO_CLS} ${velorioOnlineErro ? "border-red-500!" : ""
                                                     }`}
                                                 value={onlineAtual}
                                                 onChange={(e) => {
@@ -2937,11 +2953,11 @@ export default function Wizard({
                     if (step.type === "custom" && step.id === "arrumacao") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
                                 <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                                     <button
                                         type="button"
-                                        className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                        className={`${BTN_SEC_CLS}`}
                                         onClick={() => setArrumacaoOpen(true)}
                                         disabled={wizardSubmitting}
                                     >
@@ -2994,7 +3010,7 @@ export default function Wizard({
                                     <div className="mt-2 flex items-center gap-2">
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                            className={`${BTN_SEC_CLS}`}
                                             onClick={() => setMateriaisOpen(true)}
                                             disabled={wizardSubmitting}
                                         >
@@ -3244,13 +3260,13 @@ export default function Wizard({
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">
+                                <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
 
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
-                                    <div className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] border-[#E3E8F0] dark:border-white/[0.12]">
+                                <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[112px_1fr]">
+                                    <div className="flex size-28 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2F7] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">
                                         {previewSrc ? (
                                             <img
                                                 src={previewSrc}
@@ -3275,7 +3291,7 @@ export default function Wizard({
                                             id={`wizard-${step.id}_file`}
                                             type="file"
                                             accept={step.accept || "image/*"}
-                                            className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                            className="block w-full text-sm text-[#5B6478] file:mr-3 file:h-11 file:cursor-pointer file:rounded-xl file:border-[1.5px] file:border-[#C9D1DE] file:bg-white file:px-4 file:text-sm file:font-bold file:text-[#313C55] hover:file:bg-[#EEF2F7] disabled:opacity-60 dark:text-[#AEB9CF] dark:file:border-white/25 dark:file:bg-[#232B3F] dark:file:text-white dark:hover:file:bg-white/10"
                                             disabled={wizardSubmitting}
                                             onChange={async (e) => {
                                                 const file = e.target.files?.[0];
@@ -3329,7 +3345,7 @@ export default function Wizard({
                                         {(fotoAtual || fotoBase64) && (
                                             <button
                                                 type="button"
-                                                className="mt-2 rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                                className={`${BTN_SEC_CLS} mt-2`}
                                                 disabled={wizardSubmitting}
                                                 onClick={() => {
                                                     setWizardData((prev: any) => ({
@@ -3349,7 +3365,7 @@ export default function Wizard({
                                             </button>
                                         )}
 
-                                        <p className="mt-2 text-[11px] text-[#7A8396] dark:text-[#8893AA]">
+                                        <p className="mt-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
                                             ATENÇÃO: Essa foto será usada no obituário, painel e página de homenagens.
                                         </p>
                                     </div>
@@ -3366,7 +3382,7 @@ export default function Wizard({
 
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
+                                <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
@@ -3394,7 +3410,7 @@ export default function Wizard({
                                             cpf_responsavel: somenteNumeros,
                                         }));
                                     }}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                    className={CAMPO_CLS}
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -3404,13 +3420,13 @@ export default function Wizard({
                     if (step.type === "textarea") {
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
                                 <textarea
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                    className={AREA_CLS}
                                     rows={3}
                                     disabled={wizardSubmitting}
                                 />
@@ -3423,7 +3439,7 @@ export default function Wizard({
 
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
+                                <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
@@ -3431,7 +3447,7 @@ export default function Wizard({
                                 <select
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                    className={CAMPO_CLS}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     disabled={wizardSubmitting}
                                 >
@@ -3452,7 +3468,7 @@ export default function Wizard({
                     if (step.type === "date") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">
+                                <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label}
                                     {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
@@ -3462,7 +3478,7 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="date"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                    className={CAMPO_CLS}
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -3472,13 +3488,13 @@ export default function Wizard({
                     if (step.type === "time") {
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
                                 <input
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     type="time"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                    className={CAMPO_CLS}
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -3489,14 +3505,14 @@ export default function Wizard({
                         const listId = `dl-${step.id}`;
                         return (
                             <div key={step.id}>
-                                <label className="mb-1 block text-sm font-medium">{step.label}</label>
+                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
                                 <input
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
                                     list={listId}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
+                                    className={CAMPO_CLS}
                                     disabled={wizardSubmitting}
                                 />
                                 <datalist id={listId}>

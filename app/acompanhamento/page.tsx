@@ -3962,6 +3962,23 @@ export default function AcompanhamentoPage() {
     [registros, abrirWizard],
   );
 
+  /* Editar registro (layout do mockup): documentos e Registrar ação ficam na coluna da direita. */
+  const abrirDocumentoDoWizard = useCallback(
+    (tipo: "recebimento" | "requisicao") => {
+      if (wizardIdx == null) return;
+      setSignIdx(wizardIdx);
+      setSignTipo(tipo);
+      setSignOpen(true);
+    },
+    [wizardIdx],
+  );
+
+  const registrarAcaoDoWizard = useCallback(() => {
+    if (wizardIdx == null) return;
+    const id = registros[wizardIdx]?.id;
+    if (id != null) abrirPopupAcaoPorId(id);
+  }, [wizardIdx, registros, abrirPopupAcaoPorId]);
+
   const abrirAssinaturaFromInfo = useCallback(
     (_idx: number, tipo: "recebimento" | "requisicao") => {
       const idx = infoIdxResolved;
@@ -4148,6 +4165,7 @@ export default function AcompanhamentoPage() {
         onCloseEstoqueInsuficiente={() => setEstoqueInsuficiente(null)}
         onVeiculoRequired={handleVeiculoRequired}
         onFotoAcaoRequired={handleFotoAcaoRequired}
+        onAbrirCadastro={(id) => editarPorId(id)}
       />
 
       <Wizard
@@ -4188,6 +4206,9 @@ export default function AcompanhamentoPage() {
         salvarGrupoWizard={salvarGrupoWizard}
         concluirWizard={concluirWizard}
         wizardSubmitting={wizardSubmitting}
+        registroEdicao={wizardEditing && wizardIdx != null ? (registros[wizardIdx] ?? null) : null}
+        onAbrirDocumento={abrirDocumentoDoWizard}
+        onRegistrarAcaoEdicao={registrarAcaoDoWizard}
       />
 
       <MateriaisModal
