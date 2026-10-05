@@ -934,6 +934,8 @@ export default function Wizard({
     setWizardStep,
     wizardRestrictGroup,
     osSlot,
+    osProcedimentoSlot,
+    osTransladoSlot,
     wizardData,
     setWizardData,
     obrigatorios,
@@ -967,6 +969,10 @@ export default function Wizard({
     wizardRestrictGroup: number | null;
     /** Bloco "Dados da OS" (campos da OS, resumo e folha). Aparece no grupo em que está a Tanatopraxia (Itens). */
     osSlot?: React.ReactNode;
+    /** Tipo de procedimento + Reconstituição facial: aparece logo depois de Tanatopraxia (quando Sim). */
+    osProcedimentoSlot?: React.ReactNode;
+    /** Item Translado: aparece logo depois de Invol, antes de Velório. */
+    osTransladoSlot?: React.ReactNode;
     wizardData: Registro;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     obrigatorios: string[];
@@ -1729,6 +1735,14 @@ export default function Wizard({
         setWizardStep(prev);
     };
 
+    // Edição: as abas são livres. Antes de trocar, guarda o que foi digitado na aba atual (os campos são lidos do formulário).
+    const irParaAba = (i: number) => {
+        if (wizardSubmitting || i === wizardStep) return;
+        const ok = salvarGrupoWizard();
+        if (!ok) return;
+        setWizardStep(i);
+    };
+
     const scrollToFirstError = () => {
         const el =
             (document.querySelector('[data-wizard-error="1"]') as HTMLElement | null) ||
@@ -1950,7 +1964,7 @@ export default function Wizard({
                             Cancelar
                         </button>
 
-                        {isRestrito ? (
+                        {isRestrito || emEdicao ? (
                             <button
                                 className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                 onClick={tentarConcluir}
@@ -1958,7 +1972,7 @@ export default function Wizard({
                                 aria-busy={wizardSubmitting}
                                 title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
                             >
-                                {wizardSubmitting ? "Salvando…" : "Salvar"}
+                                {wizardSubmitting ? "Salvando…" : emEdicao && !isRestrito ? "Salvar alterações" : "Salvar"}
                             </button>
                         ) : (
                             <>
@@ -2028,12 +2042,22 @@ export default function Wizard({
                 {visibleWizardStepIndexes.map((i) => {
                     const t = wizardStepTitles[i];
                     if (!t) return null;
-                    return (
-                        <span
+                    const ativa = i === wizardStep;
+                    const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
+                    // Editando: a aba é um botão (troca livre). Novo registro: continua só indicando a etapa (a validação segue no Próximo).
+                    return emEdicao && editandoCompleto ? (
+                        <button
                             key={`${t}-${i}`}
-                            className={`inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${i === wizardStep ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"
-                                }`}
+                            type="button"
+                            onClick={() => irParaAba(i)}
+                            disabled={wizardSubmitting}
+                            aria-current={ativa ? "step" : undefined}
+                            className={`${classe} ${ativa ? "" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10"} disabled:opacity-60`}
                         >
+                            {t}
+                        </button>
+                    ) : (
+                        <span key={`${t}-${i}`} className={classe}>
                             {t}
                         </span>
                     );
@@ -3530,6 +3554,16 @@ export default function Wizard({
                   const secao = ehPassoItens ? secaoDoPasso(step.id) : "";
                   const abreSecao = ehPassoItens && secao !== secaoAtual;
                   if (abreSecao) secaoAtual = secao;
+                  // Blocos da OS encaixados nos itens: procedimento depois de Tanatopraxia (Sim); translado depois de Invol.
+                  const depoisDoItem: React.ReactNode[] = [];
+                  if (ehPassoItens) {
+                      if (step.id === "tanato" && tanatoVal === "Sim" && osProcedimentoSlot) {
+                          depoisDoItem.push(<React.Fragment key="os-procedimento">{osProcedimentoSlot}</React.Fragment>);
+                      }
+                      if (osTransladoSlot && ((step.id === "invol" && involVal !== "Sim") || step.id === "invol_item")) {
+                          depoisDoItem.push(<React.Fragment key="os-translado">{osTransladoSlot}</React.Fragment>);
+                      }
+                  }
                   return (
                       <React.Fragment key={step.id}>
                           {abreSecao ? (
@@ -3538,6 +3572,7 @@ export default function Wizard({
                               </div>
                           ) : null}
                           {conteudo}
+                          {depoisDoItem}
                       </React.Fragment>
                   );
                   });

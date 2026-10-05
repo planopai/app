@@ -25,6 +25,8 @@ export type OsCampos = {
     contrato_numero: string;
     tanato_produto_id: string;
     tanato_autorizado_prefeitura: SimNao;
+    /** Adicional à parte do procedimento (só com tanatopraxia = Sim). Sim = entra na OS como serviço adicional. */
+    reconstituicao_facial: SimNao;
     translado: SimNao;
     translado_origem: string;
     translado_destino: string;
@@ -37,6 +39,7 @@ export const OS_CAMPOS_VAZIO: OsCampos = {
     contrato_numero: "",
     tanato_produto_id: "",
     tanato_autorizado_prefeitura: "",
+    reconstituicao_facial: "",
     translado: "",
     translado_origem: "",
     translado_destino: "",
@@ -160,6 +163,7 @@ export async function salvarEsincronizarOS(
             contrato_numero: tipo === "associado" ? c.contrato_numero : "",
             tanato_produto_id: tanatoSim ? c.tanato_produto_id : "",
             tanato_autorizado_prefeitura: tipo === "prefeitura" && tanatoSim ? c.tanato_autorizado_prefeitura : "",
+            reconstituicao_facial: tanatoSim ? c.reconstituicao_facial : "",
             translado: c.translado,
             translado_origem: transladoSim ? c.translado_origem : "",
             translado_destino: transladoSim ? c.translado_destino : "",
@@ -235,6 +239,71 @@ function CartaoResumo({ rotulo, os, texto, valor, tom }: { rotulo: string; os: a
     );
 }
 
+/* ---------- Tipo de procedimento: 3 opções (a reconstituição facial é um adicional à parte, Sim/Não) ---------- */
+const semAcento = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Fica só com Tanatopraxia, Tanatopraxia Avançada e Embalsamamento, nesta ordem (reconstituição não é uma opção do procedimento). */
+export function modelosProcedimento(modelos: { produto_id: number; nome: string }[]) {
+    const peso = (nome: string) => {
+        const n = semAcento(nome);
+        if (n.startsWith("embalsam")) return 3;
+        if (n.startsWith("tanatopraxia")) return /avanc/.test(n) ? 2 : 1;
+        return 0; // reconstituição e qualquer outro: fora da lista
+    };
+    return modelos.filter((m) => peso(m.nome) > 0).sort((a, b) => peso(a.nome) - peso(b.nome));
+}
+
+export function rotuloProcedimento(nome: string): string {
+    return nome.trim().toLocaleLowerCase("pt-BR").replace(/(^|\s)(\p{L})/gu, (_m, e: string, c: string) => e + c.toLocaleUpperCase("pt-BR"));
+}
+
+const ROTULO_CAMPO = "mb-1.5 block text-[13px] font-bold text-[#313C55] dark:text-white";
+const CAMPO_V2 =
+    "h-12 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
+const CARTAO_LINHA = "rounded-[14px] border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]";
+
+/** Linha de item no padrão do mockup: cartão com o nome e o seletor Sim | Não (igual aos demais itens do assistente). */
+function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: string; valor: SimNao; onChange: (v: SimNao) => void; disabled?: boolean; children?: React.ReactNode }) {
+    return (
+        <div>
+            <div className={`flex min-h-[68px] items-center gap-3 px-4 py-2.5 ${CARTAO_LINHA}`} role="group" aria-label={rotulo}>
+                <div className="min-w-0 flex-1 text-[15px] font-bold leading-tight text-[#313C55] dark:text-white">{rotulo}</div>
+                <div className="inline-flex shrink-0 overflow-hidden rounded-xl border-[1.5px] border-[#C9D1DE] dark:border-white/25">
+                    {(["Sim", "Não"] as const).map((v, i) => (
+                        <button
+                            key={v}
+                            type="button"
+                            disabled={disabled}
+                            aria-pressed={valor === v}
+                            aria-label={`${rotulo}: ${v}`}
+                            onClick={() => onChange(v)}
+                            className={[
+                                "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
+                                i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
+                                valor === v
+                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                    : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                            ].join(" ")}
+                        >
+                            {v}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            {children}
+        </div>
+    );
+}
+
+export type ParteOS = "tudo" | "procedimento" | "translado" | "resumo";
+
+/**
+ * Seção da OS no "Editar registro". Pode ser desenhada em partes, cada uma no seu lugar do assistente:
+ *  - "procedimento": Tipo de procedimento (logo depois de Tanatopraxia, quando Sim) + Reconstituição facial (Sim/Não);
+ *  - "translado": item Translado (entre Invol e Velório);
+ *  - "resumo": plano do associado, Resumo da OS e Visualização da OS (no fim);
+ *  - "tudo" (padrão): as três em sequência.
+ */
 export function SecaoOSAtendimento({
     convenio,
     tanato,
@@ -244,6 +313,7 @@ export function SecaoOSAtendimento({
     atendimentoId,
     versao = 0,
     disabled,
+    parte = "tudo",
 }: {
     convenio: string;
     tanato: string;
@@ -253,10 +323,14 @@ export function SecaoOSAtendimento({
     atendimentoId?: number | string | null;
     versao?: number;
     disabled?: boolean;
+    parte?: ParteOS;
 }) {
     const tipo = tipoConvenio(convenio);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
     const plano = valores.convenio_os.startsWith("ASSOCIADO_") ? valores.convenio_os.slice(10) : "";
+    const mostraProc = parte === "tudo" || parte === "procedimento";
+    const mostraTransl = parte === "tudo" || parte === "translado";
+    const mostraResumo = parte === "tudo" || parte === "resumo";
 
     const [modelos, setModelos] = useState<{ produto_id: number; nome: string }[]>([]);
     const [modelosErro, setModelosErro] = useState("");
@@ -265,7 +339,7 @@ export function SecaoOSAtendimento({
     const [folhaAberta, setFolhaAberta] = useState(false);
 
     useEffect(() => {
-        if (!tanatoSim || modelos.length) return;
+        if (!mostraProc || !tanatoSim || modelos.length) return;
         let vivo = true;
         listarModelosTanato()
             .then((m) => vivo && (setModelos(m), setModelosErro("")))
@@ -273,9 +347,10 @@ export function SecaoOSAtendimento({
         return () => {
             vivo = false;
         };
-    }, [tanatoSim, modelos.length]);
+    }, [mostraProc, tanatoSim, modelos.length]);
 
     const carregarResumo = useCallback(async () => {
+        if (!mostraResumo) return;
         if (atendimentoId == null || atendimentoId === "") return;
         try {
             setResumo(await lerOSDoAtendimento(atendimentoId));
@@ -283,7 +358,7 @@ export function SecaoOSAtendimento({
         } catch (e: any) {
             setResumoErro(e?.message || "Não foi possível carregar a OS.");
         }
-    }, [atendimentoId]);
+    }, [atendimentoId, mostraResumo]);
 
     useEffect(() => {
         void carregarResumo();
@@ -291,189 +366,206 @@ export function SecaoOSAtendimento({
 
     const os = [resumo?.os_convenio, resumo?.os_particular].filter(Boolean) as any[];
     const ehPref = tipo === "prefeitura";
+    const opcoes = modelosProcedimento(modelos);
 
     return (
-        <section aria-label="Dados da OS" className="mt-5 rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] p-3 dark:border-white/[0.12] dark:bg-[#1C2334] sm:p-4">
-            <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Dados da OS</h3>
-
-            {colunasFaltando.length ? (
-                <div className="mt-3 rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
-                    Faltam colunas da OS no banco ({colunasFaltando.join(", ")}). Rode o <b>alteracoes_atendimento_sugeridas.sql</b> para poder salvar estes campos.
-                </div>
-            ) : null}
-
-            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {tipo === "associado" ? (
-                    <>
-                        <label className="block">
-                            <span className={ROTULO}>Plano do associado *</span>
-                            <select
-                                className={CAMPO}
-                                disabled={disabled}
-                                value={plano}
-                                onChange={(e) => onChange({ convenio_os: e.target.value ? `ASSOCIADO_${e.target.value}` : "" })}
-                            >
-                                <option value="">Selecione</option>
-                                {PLANOS.map((p) => (
-                                    <option key={p} value={p}>
-                                        {p}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="block">
-                            <span className={ROTULO}>Contrato do titular</span>
-                            <input
-                                className={CAMPO}
-                                disabled={disabled}
-                                value={valores.contrato_numero}
-                                onChange={(e) => onChange({ contrato_numero: e.target.value })}
-                                placeholder="Número do contrato"
-                                maxLength={40}
-                            />
-                        </label>
-                    </>
-                ) : null}
-
-                {tanatoSim ? (
-                    <div className="sm:col-span-2">
-                        <label className="block">
-                            <span className={ROTULO}>Tipo de procedimento *</span>
-                            <select
-                                className={CAMPO}
-                                disabled={disabled}
-                                value={valores.tanato_produto_id}
-                                onChange={(e) => onChange({ tanato_produto_id: e.target.value })}
-                            >
-                                <option value="">Selecione</option>
-                                {modelos.map((m) => (
-                                    <option key={m.produto_id} value={String(m.produto_id)}>
-                                        {m.nome}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        {modelosErro ? <p className="mt-1 text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{modelosErro}</p> : null}
+        <>
+            {/* ---------------- TIPO DE PROCEDIMENTO + RECONSTITUIÇÃO FACIAL ---------------- */}
+            {mostraProc && tanatoSim ? (
+                <div data-os-parte="procedimento" className="flex flex-col gap-3">
+                    <div className={`p-4 ${CARTAO_LINHA}`}>
+                        <div className="text-[15px] font-bold text-[#313C55] dark:text-white">
+                            Tipo de procedimento <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
+                        </div>
+                        <div role="radiogroup" aria-label="Tipo de procedimento" className="mt-3 flex flex-wrap gap-2">
+                            {opcoes.map((m) => {
+                                const marcado = valores.tanato_produto_id === String(m.produto_id);
+                                return (
+                                    <button
+                                        key={m.produto_id}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={marcado}
+                                        disabled={disabled}
+                                        onClick={() => onChange({ tanato_produto_id: String(m.produto_id) })}
+                                        className={[
+                                            "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
+                                            marcado
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                                : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
+                                        ].join(" ")}
+                                    >
+                                        {rotuloProcedimento(m.nome)}
+                                    </button>
+                                );
+                            })}
+                            {opcoes.length === 0 && !modelosErro ? <span className="py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando as opções…</span> : null}
+                        </div>
+                        {modelosErro ? <p className="mt-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{modelosErro}</p> : null}
                         {ehPref ? (
                             <Autorizacao servico="tanatopraxia" valor={valores.tanato_autorizado_prefeitura} onChange={(v) => onChange({ tanato_autorizado_prefeitura: v })} disabled={disabled} />
                         ) : null}
                     </div>
-                ) : null}
 
-                <div className="sm:col-span-2">
-                    <span className={ROTULO}>Translado</span>
-                    <SimNaoBotoes valor={valores.translado} onChange={(v) => onChange({ translado: v })} disabled={disabled} />
-
-                    {valores.translado === "Sim" ? (
-                        <>
-                            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_140px]">
-                                <label className="block">
-                                    <span className={ROTULO}>Partida *</span>
-                                    <input className={CAMPO} disabled={disabled} value={valores.translado_origem} onChange={(e) => onChange({ translado_origem: e.target.value })} maxLength={100} />
-                                </label>
-                                <label className="block">
-                                    <span className={ROTULO}>Destino *</span>
-                                    <input className={CAMPO} disabled={disabled} value={valores.translado_destino} onChange={(e) => onChange({ translado_destino: e.target.value })} maxLength={100} />
-                                </label>
-                                <label className="block">
-                                    <span className={ROTULO}>Distância (km) *</span>
-                                    <input
-                                        className={CAMPO}
-                                        disabled={disabled}
-                                        inputMode="decimal"
-                                        value={valores.translado_km}
-                                        onChange={(e) => onChange({ translado_km: e.target.value.replace(/[^\d,.]/g, "") })}
-                                    />
-                                </label>
-                            </div>
-                            {ehPref ? (
-                                <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
-                            ) : null}
-                        </>
-                    ) : null}
-                </div>
-            </div>
-
-            {/* RESUMO DA OS */}
-            <div className="mt-5">
-                <div className="flex items-center gap-2">
-                    <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
-                    {atendimentoId != null && atendimentoId !== "" ? (
-                        <button
-                            type="button"
-                            onClick={() => void carregarResumo()}
-                            className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
-                        >
-                            Atualizar
-                        </button>
-                    ) : null}
-                </div>
-
-                {atendimentoId == null || atendimentoId === "" ? (
-                    <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">A OS é montada quando você salvar o registro.</p>
-                ) : resumoErro ? (
-                    <p className="mt-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">OS: {resumoErro}</p>
-                ) : os.length === 0 ? (
-                    <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Ainda não há OS para este atendimento. Salve o registro para montar.</p>
-                ) : (
-                    <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        {resumo?.os_convenio ? (
-                            <CartaoResumo
-                                rotulo={ehPref ? "Faturar à Prefeitura" : "Coberto pelo plano"}
-                                os={resumo.os_convenio}
-                                tom={ehPref ? "azul" : "verde"}
-                                valor={ehPref ? undefined : "Total a pagar R$ 0,00"}
-                                texto={ehPref ? "O valor do contrato fica no financeiro." : undefined}
-                            />
+                    <LinhaSimNao rotulo="Reconstituição facial" valor={valores.reconstituicao_facial} onChange={(v) => onChange({ reconstituicao_facial: v })} disabled={disabled}>
+                        {valores.reconstituicao_facial === "Sim" ? (
+                            <p className="mt-1.5 px-1 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Serviço adicional: entra na OS junto com o procedimento.</p>
                         ) : null}
-                        {resumo?.os_particular ? (
-                            <CartaoResumo
-                                rotulo={resumo?.os_convenio ? "Diferença da família" : "Total da OS"}
-                                os={resumo.os_particular}
-                                tom="amarelo"
-                                valor={brl(resumo.os_particular.valor_total)}
-                                texto="Confirme os valores e colha a assinatura em Minhas OS."
-                            />
-                        ) : null}
-                    </div>
-                )}
-            </div>
-
-            {/* VISUALIZAÇÃO DA OS */}
-            {os.length ? (
-                <div className="mt-5">
-                    <div className="flex items-center gap-2">
-                        <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Visualização da OS</h3>
-                        <button
-                            type="button"
-                            onClick={() => setFolhaAberta((v) => !v)}
-                            className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
-                        >
-                            {folhaAberta ? "Ocultar folha" : "Ver folha"}
-                        </button>
-                    </div>
-                    <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Rascunho: a folha se monta conforme os itens são lançados.</p>
-
-                    {folhaAberta ? (
-                        <div className="mt-2 space-y-3">
-                            {os.map((o) => {
-                                const url = `${OS_API}?documento_os=1&os_id=${o.id}&formato=visualizar&_=${versao}`;
-                                return (
-                                    <div key={o.id} className={CARTAO}>
-                                        <div className="mb-2 flex items-center gap-2">
-                                            <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">OS nº {o.numero_os}</span>
-                                            <a href={url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#313C55] underline dark:text-white">
-                                                Abrir em nova aba
-                                            </a>
-                                        </div>
-                                        <iframe title={`Folha da OS ${o.numero_os}`} src={url} className="h-[420px] w-full rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]" />
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : null}
+                    </LinhaSimNao>
                 </div>
             ) : null}
-        </section>
+
+            {/* ---------------- TRANSLADO (item, entre Invol e Velório) ---------------- */}
+            {mostraTransl ? (
+                <div data-os-parte="translado">
+                    <LinhaSimNao rotulo="Translado" valor={valores.translado} onChange={(v) => onChange({ translado: v })} disabled={disabled}>
+                        {valores.translado === "Sim" ? (
+                            <div className="mt-2 rounded-[14px] border border-[#E3E8F0] bg-[#F6F8FB] p-4 dark:border-white/[0.12] dark:bg-[#1C2334]">
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_160px]">
+                                    <label className="block">
+                                        <span className={ROTULO_CAMPO}>Partida *</span>
+                                        <input className={CAMPO_V2} disabled={disabled} value={valores.translado_origem} onChange={(e) => onChange({ translado_origem: e.target.value })} maxLength={100} placeholder="Local de partida" />
+                                    </label>
+                                    <label className="block">
+                                        <span className={ROTULO_CAMPO}>Destino *</span>
+                                        <input className={CAMPO_V2} disabled={disabled} value={valores.translado_destino} onChange={(e) => onChange({ translado_destino: e.target.value })} maxLength={100} placeholder="Local de destino" />
+                                    </label>
+                                    <label className="block">
+                                        <span className={ROTULO_CAMPO}>Distância (km) *</span>
+                                        <input
+                                            className={CAMPO_V2}
+                                            disabled={disabled}
+                                            inputMode="decimal"
+                                            value={valores.translado_km}
+                                            placeholder="0"
+                                            onChange={(e) => onChange({ translado_km: e.target.value.replace(/[^\d,.]/g, "") })}
+                                        />
+                                    </label>
+                                </div>
+                                {ehPref ? (
+                                    <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </LinhaSimNao>
+                </div>
+            ) : null}
+
+            {/* ---------------- PLANO DO ASSOCIADO + RESUMO + VISUALIZAÇÃO ---------------- */}
+            {mostraResumo ? (
+                <section aria-label="Dados da OS" className="mt-5 rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] p-3 dark:border-white/[0.12] dark:bg-[#1C2334] sm:p-4">
+                    {tipo === "associado" || colunasFaltando.length ? (
+                        <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Dados da OS</h3>
+                    ) : null}
+
+                    {colunasFaltando.length ? (
+                        <div className="mt-3 rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
+                            Faltam colunas da OS no banco ({colunasFaltando.join(", ")}). Rode o <b>alteracoes_atendimento_sugeridas.sql</b> para poder salvar estes campos.
+                        </div>
+                    ) : null}
+
+                    {tipo === "associado" ? (
+                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <label className="block">
+                                <span className={ROTULO_CAMPO}>Plano do associado *</span>
+                                <select className={CAMPO_V2} disabled={disabled} value={plano} onChange={(e) => onChange({ convenio_os: e.target.value ? `ASSOCIADO_${e.target.value}` : "" })}>
+                                    <option value="">Selecione</option>
+                                    {PLANOS.map((p) => (
+                                        <option key={p} value={p}>
+                                            {p}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className={ROTULO_CAMPO}>Contrato do titular</span>
+                                <input className={CAMPO_V2} disabled={disabled} value={valores.contrato_numero} onChange={(e) => onChange({ contrato_numero: e.target.value })} placeholder="Número do contrato" maxLength={40} />
+                            </label>
+                        </div>
+                    ) : null}
+
+                    {/* RESUMO DA OS */}
+                    <div className={tipo === "associado" || colunasFaltando.length ? "mt-5" : ""}>
+                        <div className="flex items-center gap-2">
+                            <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
+                            {atendimentoId != null && atendimentoId !== "" ? (
+                                <button
+                                    type="button"
+                                    onClick={() => void carregarResumo()}
+                                    className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
+                                >
+                                    Atualizar
+                                </button>
+                            ) : null}
+                        </div>
+
+                        {atendimentoId == null || atendimentoId === "" ? (
+                            <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">A OS é montada quando você salvar o registro.</p>
+                        ) : resumoErro ? (
+                            <p className="mt-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">OS: {resumoErro}</p>
+                        ) : os.length === 0 ? (
+                            <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Ainda não há OS para este atendimento. Salve o registro para montar.</p>
+                        ) : (
+                            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                {resumo?.os_convenio ? (
+                                    <CartaoResumo
+                                        rotulo={ehPref ? "Faturar à Prefeitura" : "Coberto pelo plano"}
+                                        os={resumo.os_convenio}
+                                        tom={ehPref ? "azul" : "verde"}
+                                        valor={ehPref ? undefined : "Total a pagar R$ 0,00"}
+                                        texto={ehPref ? "O valor do contrato fica no financeiro." : undefined}
+                                    />
+                                ) : null}
+                                {resumo?.os_particular ? (
+                                    <CartaoResumo
+                                        rotulo={resumo?.os_convenio ? "Diferença da família" : "Total da OS"}
+                                        os={resumo.os_particular}
+                                        tom="amarelo"
+                                        valor={brl(resumo.os_particular.valor_total)}
+                                        texto="Confirme os valores e colha a assinatura em Minhas OS."
+                                    />
+                                ) : null}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* VISUALIZAÇÃO DA OS */}
+                    {os.length ? (
+                        <div className="mt-5">
+                            <div className="flex items-center gap-2">
+                                <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Visualização da OS</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setFolhaAberta((v) => !v)}
+                                    className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
+                                >
+                                    {folhaAberta ? "Ocultar folha" : "Ver folha"}
+                                </button>
+                            </div>
+                            <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Rascunho: a folha se monta conforme os itens são lançados.</p>
+
+                            {folhaAberta ? (
+                                <div className="mt-2 space-y-3">
+                                    {os.map((o) => {
+                                        const url = `${OS_API}?documento_os=1&os_id=${o.id}&formato=visualizar&_=${versao}`;
+                                        return (
+                                            <div key={o.id} className={CARTAO}>
+                                                <div className="mb-2 flex items-center gap-2">
+                                                    <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">OS nº {o.numero_os}</span>
+                                                    <a href={url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#313C55] underline dark:text-white">
+                                                        Abrir em nova aba
+                                                    </a>
+                                                </div>
+                                                <iframe title={`Folha da OS ${o.numero_os}`} src={url} className="h-[420px] w-full rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]" />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </section>
+            ) : null}
+        </>
     );
 }

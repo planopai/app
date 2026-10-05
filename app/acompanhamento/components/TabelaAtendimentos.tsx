@@ -11,7 +11,8 @@ import { atendimentoDeveFicarNoQuadro } from "@/components/atendimentos/regrasQu
 interface Props {
     registros: Registro[];
     onAcao: (id: Registro["id"]) => void;
-    onInfo: (id: Registro["id"]) => void;
+    /** Opcional: a lista não tem mais o botão de informações (o Editar registro mostra os mesmos dados e os documentos). */
+    onInfo?: (id: Registro["id"]) => void;
     onCompartilhar: (id: Registro["id"]) => void;
     /** Abre o cadastro do atendimento para edição (botão amarelo do mockup). */
     onEditar?: (id: Registro["id"]) => void;
@@ -41,7 +42,6 @@ function Ic({ children, className = "size-5" }: { children: React.ReactNode; cla
 }
 const IcAcaoSeta = () => (<Ic><circle cx="12" cy="12" r="10" /><path d="M8 12h8" /><path d="m12 8 4 4-4 4" /></Ic>);
 const IcAcaoLista = () => (<Ic className="size-[22px]"><path d="m3 17 2 2 4-4" /><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" /></Ic>);
-const IcInfo = ({ className }: { className?: string }) => (<Ic className={className}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></Ic>);
 const IcEditar = ({ className }: { className?: string }) => (<Ic className={className}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></Ic>);
 const IcCompartilhar = ({ className }: { className?: string }) => (<Ic className={className}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4" /><path d="m15.4 6.5-6.8 4" /></Ic>);
 const IcOlho = ({ className }: { className?: string }) => (<Ic className={className}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></Ic>);
@@ -54,14 +54,12 @@ const IcMais = () => (
 /* =====================================================================================
    Botões padronizados (44 × 44, raio 12). Mesma cor em todas as telas:
    • Registrar ação ......... azul-marinho #313C55, ícone branco   (no escuro: ciano #00AEEC, ícone #313C55)
-   • Informações ............ contorno azul-marinho, fundo do cartão
    • Editar ................. amarelo #F2CB3F, ícone #313C55
    • Compartilhar ........... verde-lima #B3CE52, ícone #313C55
    • Visita ................. contorno (visitar) · ciano (em andamento) · verde (finalizada) · apagado (indisponível)
    ===================================================================================== */
 const BASE = "inline-flex h-11 shrink-0 items-center justify-center rounded-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00AEEC]";
 export const BTN_ACAO = `${BASE} w-11 bg-[#313C55] text-white hover:bg-[#232B40] dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]`;
-export const BTN_INFO = `${BASE} w-11 border-[1.5px] border-[#313C55] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10`;
 export const BTN_EDITAR = `${BASE} w-11 border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]`;
 export const BTN_COMPARTILHAR = `${BASE} w-11 border-[1.5px] border-[#B3CE52] bg-[#B3CE52] text-[#313C55] hover:bg-[#A3BE45]`;
 
@@ -129,7 +127,6 @@ function SyncBadge({ registro }: { registro: Registro }) {
 export default function TabelaAtendimentos({
     registros,
     onAcao,
-    onInfo,
     onCompartilhar,
     onEditar,
     visitaPermitida = false,
@@ -211,14 +208,7 @@ export default function TabelaAtendimentos({
                                         </td>
 
                                         <td className="px-3 py-3 align-middle">
-                                            <button
-                                                type="button"
-                                                onClick={() => r.id != null && onInfo(r.id)}
-                                                className="text-left text-[15px] font-extrabold text-[#313C55] hover:underline dark:text-white"
-                                                title="Ver informações do atendimento"
-                                            >
-                                                {r.falecido || ""}
-                                            </button>
+                                            <div className="text-[15px] font-extrabold text-[#313C55] dark:text-white">{r.falecido || ""}</div>
                                             {!ocultarAgente && r.agente ? (
                                                 <div className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Agente: {r.agente}</div>
                                             ) : null}
@@ -230,9 +220,6 @@ export default function TabelaAtendimentos({
                                             <div className="flex items-center justify-end gap-2">
                                                 <button type="button" className={BTN_ACAO} onClick={() => r.id != null && onAcao(r.id)} title="Registrar ação" aria-label="Registrar ação">
                                                     <IcAcaoSeta />
-                                                </button>
-                                                <button type="button" className={BTN_INFO} onClick={() => r.id != null && onInfo(r.id)} title="Informações" aria-label="Informações">
-                                                    <IcInfo />
                                                 </button>
                                                 {onEditar && (
                                                     <button type="button" className={BTN_EDITAR} onClick={() => r.id != null && onEditar(r.id)} title="Editar" aria-label="Editar">
@@ -295,9 +282,6 @@ export default function TabelaAtendimentos({
 
                                 {aberto && (
                                     <div className="flex gap-2 pb-3 pl-9 pr-4">
-                                        <button type="button" className={`${BASE} h-12 flex-1 border-[1.5px] border-[#313C55] bg-white text-[#313C55] dark:border-white/40 dark:bg-[#232B3F] dark:text-white`} onClick={() => r.id != null && onInfo(r.id)} title="Informações" aria-label="Informações">
-                                            <IcInfo className="size-[22px]" />
-                                        </button>
                                         {onEditar && (
                                             <button type="button" className={`${BASE} h-12 flex-1 border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]`} onClick={() => r.id != null && onEditar(r.id)} title="Editar" aria-label="Editar">
                                                 <IcEditar className="size-[22px]" />
