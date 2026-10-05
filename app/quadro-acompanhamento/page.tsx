@@ -3684,15 +3684,17 @@ export default function QuadroAtendimentoPage() {
 
                 {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} />}
 
-                <AcaoModal
-                    open={acaoOpen}
-                    setOpen={setAcaoOpen}
-                    registros={registros as any}
-                    acaoId={acaoId as any}
-                    registrarAcao={registrarAcaoDoQuadro}
-                    acaoMsg={acaoMsg}
-                    acaoSubmitting={acaoSubmitting}
-                />
+                {acaoOpen && (
+                    <AcaoModal
+                        open={acaoOpen}
+                        setOpen={setAcaoOpen}
+                        registros={registros as any}
+                        acaoId={acaoId as any}
+                        registrarAcao={registrarAcaoDoQuadro}
+                        acaoMsg={acaoMsg}
+                        acaoSubmitting={acaoSubmitting}
+                    />
+                )}
 
                 {open && detail && (
                     <div className="qa-drawer-root fixed inset-0 z-50 flex items-stretch justify-end overflow-hidden" data-tema={temaGaveta} aria-modal role="dialog">
