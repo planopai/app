@@ -34,7 +34,9 @@ import {
     IconHeartHandshake,
     IconHome,
     IconListDetails,
+    IconLayoutDashboard,
     IconLock,
+    IconBuildingWarehouse,
     IconMessageCircle,
     IconMessages,
     IconMicroscope,
@@ -64,6 +66,8 @@ export type ItemModulo = {
     icone: Icone;
     /** Quando a mesma tela tem duas chaves/rotas (ex.: geral e estoque), a rota segue a chave que o usuário tem. */
     alternativas?: { slug: string; href: string }[];
+    /** Subtítulo que agrupa itens dentro do módulo (ex.: "Indicadores" em Gestão). Itens da mesma seção devem ficar juntos. */
+    secao?: string;
     /** Chave do contador (useContadores) mostrado como selo. */
     selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger";
 };
@@ -194,16 +198,18 @@ export const MODULOS: Modulo[] = [
         icone: IconChartBar,
         hub: { href: "/gestao", slug: "gestao" },
         itens: [
-            { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog },
-            { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock },
-            { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails },
-            { titulo: "Segurança", desc: "Acessos e proteção de dados", href: "/seguranca", slugs: ["seguranca"], icone: IconLock },
-            { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar },
-            { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages },
-            { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },
-            { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar },
-            { titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar },
-            { titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain },
+            { titulo: "Balanço", desc: "Custo, receita e margem", href: "/indicadores/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
+            { titulo: "Dashboard", desc: "Gráficos e tabela do painel", href: "/indicadores/dashboard", slugs: ["dashboard"], icone: IconLayoutDashboard, secao: "Indicadores" },
+            { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/indicadores/desempenho", slugs: ["desempenho"], icone: IconChartBar, secao: "Indicadores" },
+            { titulo: "Painel de gestão do estoque", desc: "Indicadores do estoque", href: "/indicadores/estoque", slugs: ["estoque"], icone: IconBuildingWarehouse, secao: "Indicadores" },
+            { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog, secao: "Administração" },
+            { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Administração" },
+            { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Administração" },
+            { titulo: "Segurança", desc: "Acessos e proteção de dados", href: "/seguranca", slugs: ["seguranca"], icone: IconLock, secao: "Administração" },
+            { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics, secao: "Administração" },
+            { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages, secao: "Administração" },
+            { titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar, secao: "Administração" },
+            { titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain, secao: "Administração" },
         ],
     },
 ];

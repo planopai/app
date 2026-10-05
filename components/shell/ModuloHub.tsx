@@ -40,11 +40,14 @@ export default function ModuloHub({ moduloId }: { moduloId: string }) {
                     </p>
                 ) : (
                     <div className="grid grid-cols-1 gap-3 sm:landscape:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
-                        {itens.map((i) => {
+                        {itens.map((i, pos) => {
                             const I = i.icone;
                             return (
+                                <React.Fragment key={i.titulo}>
+                                {i.secao && i.secao !== itens[pos - 1]?.secao ? (
+                                    <h2 className="col-span-full pt-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] first:pt-0 dark:text-[#AEB9CF]">{i.secao}</h2>
+                                ) : null}
                                 <Link
-                                    key={i.titulo}
                                     href={hrefDoItem(i, has)}
                                     className="flex items-center gap-3.5 rounded-2xl border border-[#E3E8F0] bg-white p-4 shadow-sm transition hover:border-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:border-white/50"
                                 >
@@ -57,6 +60,7 @@ export default function ModuloHub({ moduloId }: { moduloId: string }) {
                                     </span>
                                     <IconChevronRight size={18} className="shrink-0 text-[#7A8396]" />
                                 </Link>
+                                </React.Fragment>
                             );
                         })}
                     </div>

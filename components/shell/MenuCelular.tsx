@@ -81,6 +81,7 @@ export default function MenuCelularHost() {
 
     const [aberto, setAberto] = useState(false);
     const [temBarra, setTemBarra] = useState(false);
+    const [topo, setTopo] = useState<number | null>(null);
     const [moduloAberto, setModuloAberto] = useState<string | null>(null);
     const [saindo, setSaindo] = useState(false);
 
@@ -91,12 +92,21 @@ export default function MenuCelularHost() {
 
     const fechar = useCallback(() => setAberto(false), []);
 
+    /* Onde começa o menu: logo abaixo do cabeçalho de verdade. No iPhone (app instalado) o conteúdo começa abaixo da barra de status,
+       então medir o cabeçalho (sticky) evita o título e o X ficarem escondidos atrás dele. */
+    const medirTopo = useCallback(() => {
+        const h = document.querySelector("header.sticky") as HTMLElement | null;
+        const b = h ? Math.round(h.getBoundingClientRect().bottom) : 0;
+        setTopo(b > 0 ? b : null);
+    }, []);
+
     // abre/fecha pelo evento; ao abrir, vê se a barra de baixo está na tela (para não ficar por baixo dela)
     useEffect(() => {
         const alternar = () =>
             setAberto((v) => {
                 const novo = !v;
                 if (novo) {
+                    medirTopo();
                     setTemBarra(Boolean(document.querySelector('[data-pai-barra="true"]')));
                     setModuloAberto((atual) => atual ?? moduloDaRota);
                 }
@@ -104,7 +114,7 @@ export default function MenuCelularHost() {
             });
         window.addEventListener(EVENTO_ABRIR_MENU, alternar);
         return () => window.removeEventListener(EVENTO_ABRIR_MENU, alternar);
-    }, [moduloDaRota]);
+    }, [moduloDaRota, medirTopo]);
 
     useEffect(() => {
         setAberto(false);
@@ -115,8 +125,14 @@ export default function MenuCelularHost() {
         if (!aberto) return;
         const aoTecla = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
         window.addEventListener("keydown", aoTecla);
-        return () => window.removeEventListener("keydown", aoTecla);
-    }, [aberto]);
+        window.addEventListener("resize", medirTopo);
+        window.addEventListener("orientationchange", medirTopo);
+        return () => {
+            window.removeEventListener("keydown", aoTecla);
+            window.removeEventListener("resize", medirTopo);
+            window.removeEventListener("orientationchange", medirTopo);
+        };
+    }, [aberto, medirTopo]);
 
     /* mesmo "Sair" do menu lateral: limpa o contexto offline, encerra a sessão e vai para o login */
     const sair = async () => {
@@ -167,7 +183,7 @@ export default function MenuCelularHost() {
             <div
                 className="fixed inset-x-0 z-30 overflow-y-auto overscroll-contain bg-[#F6F8FB] pb-6 text-[#313C55] dark:bg-[#161C2A] dark:text-white md:hidden"
                 style={{
-                    top: "var(--header-height, 3rem)",
+                    top: topo !== null ? `${topo}px` : "var(--header-height, 3rem)",
                     bottom: temBarra ? "calc(4.25rem + env(safe-area-inset-bottom))" : "env(safe-area-inset-bottom)",
                 }}
                 role="region"
@@ -230,12 +246,19 @@ export default function MenuCelularHost() {
                                                 <span className="flex-1 font-extrabold">Visão geral de {m.titulo}</span>
                                                 <IconChevronRight size={16} className="text-[#7A8396]" />
                                             </Link>
-                                            {itens.map((i) => (
-                                                <Link key={i.titulo} href={hrefDoItem(i, has)} className={LINHA}>
-                                                    <span className="flex-1">{i.titulo}</span>
-                                                    <Selo valor={seloDe(i)} />
-                                                    <IconChevronRight size={16} className="text-[#7A8396]" />
-                                                </Link>
+                                            {itens.map((i, pos) => (
+                                                <React.Fragment key={i.titulo}>
+                                                    {i.secao && i.secao !== itens[pos - 1]?.secao ? (
+                                                        <p className="border-t border-[#E3E8F0] bg-[#F6F8FB] px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                                                            {i.secao}
+                                                        </p>
+                                                    ) : null}
+                                                    <Link href={hrefDoItem(i, has)} className={LINHA}>
+                                                        <span className="flex-1">{i.titulo}</span>
+                                                        <Selo valor={seloDe(i)} />
+                                                        <IconChevronRight size={16} className="text-[#7A8396]" />
+                                                    </Link>
+                                                </React.Fragment>
                                             ))}
                                         </div>
                                     ) : null}

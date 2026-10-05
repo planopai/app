@@ -355,6 +355,7 @@ export function AppSidebar(
             href: hrefDoItem(item, has),
             slug: item.slugs[0],
             Icon: item.icone as any,
+            secao: item.secao,
           })),
         }))
         .filter(
@@ -672,7 +673,8 @@ export function AppSidebar(
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2 overflow-hidden">
+      {/* sem overflow-hidden: com 8 módulos + Atalhos a lista passa da altura da tela e precisa rolar (o último módulo, Gestão, ficava cortado) */}
+      <SidebarContent className="px-2 overscroll-contain">
         {isCollapsed ? (
           /*
            * COLAPSADO:
@@ -786,26 +788,30 @@ export function AppSidebar(
                         </SidebarMenuItem>
                         {group.items.map(
                           (
-                            item
+                            item,
+                            posicao
                           ) => (
-                            <SidebarMenuItem
-                              key={
-                                item.href
-                              }
-                            >
-                              <MenuItem
-                                title={
-                                  item.title
-                                }
-                                href={
-                                  item.href
-                                }
-                                Icon={
-                                  item.Icon
-                                }
-                                badge={contadorDe(item.href)}
-                              />
-                            </SidebarMenuItem>
+                            <React.Fragment key={item.href}>
+                              {item.secao && item.secao !== group.items[posicao - 1]?.secao ? (
+                                <li className="px-3 pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                  {item.secao}
+                                </li>
+                              ) : null}
+                              <SidebarMenuItem>
+                                <MenuItem
+                                  title={
+                                    item.title
+                                  }
+                                  href={
+                                    item.href
+                                  }
+                                  Icon={
+                                    item.Icon
+                                  }
+                                  badge={contadorDe(item.href)}
+                                />
+                              </SidebarMenuItem>
+                            </React.Fragment>
                           )
                         )}
                       </SidebarMenu>

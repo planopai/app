@@ -61,7 +61,7 @@ const APELIDOS: { title: string; href: string; slug: string; group: string }[] =
   { title: "Enviar Notícias", href: "/noticias", slug: "noticias", group: "Plano" },
   { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano" },
   { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Administrativo" },
-  { title: "Dashboard", href: "/desempenho", slug: "desempenho", group: "Gestão" },
+  { title: "Painel de Atendimentos", href: "/indicadores/desempenho", slug: "desempenho", group: "Gestão" },
   { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Estoque" },
   { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Gestão" },
   { title: "Requisição de Material", href: "/requisicao", slug: "requisicao", group: "Requisições" },
