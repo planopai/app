@@ -229,8 +229,39 @@ type CoroasTvResponse = {
 
 type QaDensity = "normal" | "compact" | "dense" | "ultra" | "micro";
 
+/* Endereço da API (um código só para as duas rotas):
+ * - rota do Quadro (celular e desktop): usa o proxy do próprio site (/api/php);
+ * - rota da TV: usa o endereço direto da API.
+ * A rota da TV é reconhecida pelo endereço da página (contém "tv") ou por ?tv=1.
+ * Para forçar, troque FORCAR_ROTA_TV por true ou false. */
+const FORCAR_ROTA_TV: boolean | null = null;
+const API_DIRETA = "https://api.planoassistencialintegrado.com.br";
+
+function ehRotaTv(): boolean {
+    if (FORCAR_ROTA_TV !== null) return FORCAR_ROTA_TV;
+    if (typeof window === "undefined") return false;
+    try {
+        if (new URLSearchParams(window.location.search).get("tv") === "1") return true;
+    } catch {
+        // ignore
+    }
+    return /tv/i.test(window.location.pathname);
+}
+const API_PHP = ehRotaTv() ? API_DIRETA : "/api/php";
+
+/* ===== Endereços das telas do app =====
+ * Pela skill do front (lista de páginas do pai_api.php): a tela de atendimento é a chave `atendimento` → rota "/atendimento".
+ * Os PARÂMETROS que abrem "Registrar ação" e "Editar" direto no atendimento escolhido NÃO estão na skill:
+ * deixei como estão abaixo e marquei com  >>> TROCAR AO SUBIR  para você ajustar ao que o app realmente usa.
+ * A rota da TV também não está na skill: o padrão abaixo abre este mesmo Quadro em modo TV (?tv=1). */
+const ROTA_ATENDIMENTO = "/atendimento";
+const rotaRegistrarAcao = (id: string) => `${ROTA_ATENDIMENTO}?registrar_acao=${encodeURIComponent(id)}`; // >>> TROCAR AO SUBIR (parâmetro real)
+const rotaEditar = (id: string) => `${ROTA_ATENDIMENTO}?editar=${encodeURIComponent(id)}`; // >>> TROCAR AO SUBIR (parâmetro real)
+const ROTA_TV = "/quadro-acompanhamento?tv=1"; // >>> TROCAR AO SUBIR (endereço da rota da TV)
+const LOGO_PAI_URL = ""; // >>> TROCAR AO SUBIR (caminho do logo do PAI, ex.: "/logo-pai.png"). Vazio = não mostra o logo na TV.
+
 const COROAS_TV_LOCAL =
-    "/api/php/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
+    `${API_PHP}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
 
 const COROAS_TV_REMOTA =
     "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
@@ -1031,18 +1062,10 @@ function ConvenioBadge({
     size?: "xs" | "sm";
 }) {
     const kind = normalizeConvenio(convenio);
-    const sizeClass =
-        size === "xs"
-            ? "px-1.5 py-0.5 text-[9px]"
-            : "px-2.5 py-1 text-[11px]";
+    const cor = kind === "Prefeitura" ? "qa-tag-conv-pref" : kind === "Particular" ? "qa-tag-conv-part" : kind === "Associado" ? "qa-tag-conv-assoc" : "qa-tag-conv-adef";
 
     return (
-        <span
-            className={`qa-convenio-badge inline-flex items-center rounded-full font-semibold leading-none text-white ${convenioClass(
-                kind
-            )} ${sizeClass}`}
-            title="Convênio"
-        >
+        <span className={`qa-convenio-badge qa-tag ${size === "xs" ? "qa-tag-xs" : ""} ${cor}`} title="Convênio">
             {kind}
         </span>
     );
@@ -1050,10 +1073,10 @@ function ConvenioBadge({
 
 /* ---------------- Etapas (bolinhas) ---------------- */
 const STAGE_DOT_FILLED = [
-    "bg-emerald-500 border-emerald-600",
-    "bg-sky-500 border-sky-600",
-    "bg-violet-500 border-violet-600",
-    "bg-amber-500 border-amber-600",
+    "bg-[#00AEEC] border-[#00AEEC]",
+    "bg-[#00AEEC] border-[#00AEEC]",
+    "bg-[#00AEEC] border-[#00AEEC]",
+    "bg-[#00AEEC] border-[#00AEEC]",
 ];
 const STAGE_DOT_EMPTY = "bg-transparent border-slate-300 dark:border-slate-600";
 
@@ -1300,6 +1323,57 @@ function coroaCriadoHora(v?: string | null): string {
         hour: "2-digit",
         minute: "2-digit",
     });
+}
+
+/* Data e hora do pedido no formato "dd/mm - hh:mm" (ex.: 02/10 - 14:05). */
+function coroaDataHora(v?: string | null): string {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+    const d = new Date(raw.replace(" ", "T"));
+    if (Number.isNaN(d.getTime())) return "";
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} - ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* Foto da coroa = foto do CADASTRO DO PRODUTO (modelo da coroa no estoque).
+ * O pedido guarda só o nome do modelo (ex.: "MOD 03 (1,10MT)"); a foto vem do produto de mesmo nome:
+ *   materiais_gerais.php?action=coroas_buscar&tipo=natural|artificial&q=<modelo>  →  { ok, rows:[{ nome, foto_url, fotos:[{arquivo,is_principal}] }] }
+ * O cadastro guarda só o NOME do arquivo (ex.: "prod_20260327_103510_4e71705e.webp").
+ * >>> TROCAR AO SUBIR: pasta onde o sistema publica as fotos de produto (a skill não mostra esse endereço). */
+const FOTO_PRODUTO_BASE = `${API_DIRETA}/uploads/produtos/`; // >>> TROCAR AO SUBIR
+
+function urlFotoProduto(arquivo?: string | null): string {
+    const t = String(arquivo ?? "").trim();
+    if (!t) return "";
+    if (/^(https?:|data:|blob:)/i.test(t)) return t;
+    if (t.startsWith("/")) return `${API_DIRETA}${t}`;
+    return `${FOTO_PRODUTO_BASE}${t}`;
+}
+
+const normNomeProduto = (v: unknown) => String(v ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const FOTOS_MODELO_COROA = new Map<string, Promise<string>>();
+
+function buscarFotoModeloCoroa(modelo: string, tipo: "natural" | "artificial"): Promise<string> {
+    const chave = `${tipo}|${normNomeProduto(modelo)}`;
+    const guardada = FOTOS_MODELO_COROA.get(chave);
+    if (guardada) return guardada;
+    const p = (async () => {
+        try {
+            const url = `${API_PHP}/materiais_gerais.php?action=coroas_buscar&tipo=${tipo}&q=${encodeURIComponent(modelo)}&limit=20&_ts=${Date.now()}`;
+            const j = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: `foto_coroa_${chave}` });
+            const rows: any[] = Array.isArray(j?.rows) ? j.rows : [];
+            const alvo = normNomeProduto(modelo);
+            const prod = rows.find((r) => normNomeProduto(r?.nome) === alvo) ?? rows[0];
+            const fotos: any[] = Array.isArray(prod?.fotos) ? prod.fotos : [];
+            const arq = prod?.foto_url || fotos.find((f) => f?.is_principal)?.arquivo || fotos[0]?.arquivo;
+            return urlFotoProduto(arq);
+        } catch {
+            FOTOS_MODELO_COROA.delete(chave); // tenta de novo na próxima abertura
+            return "";
+        }
+    })();
+    FOTOS_MODELO_COROA.set(chave, p);
+    return p;
 }
 
 function coroaSomenteArtificial(order?: CoroaTvPedido | null): boolean {
@@ -1908,6 +1982,14 @@ const INTERVALO_PAGINACAO_ATENDIMENTOS_MS = 15_000;
 const INTERVALO_PAGINACAO_COROAS_MS = 15_000;
 
 export default function QuadroAtendimentoPage() {
+    // Tema da gaveta de detalhes (segue a mesma escolha do quadro).
+    const [coroaSel, setCoroaSel] = useState<CoroaTvPedido | null>(null);
+    const fecharCoroa = useCallback(() => setCoroaSel(null), []);
+    const [rotaTv, setRotaTv] = useState<boolean | null>(null);
+    useEffect(() => setRotaTv(ehRotaTv()), []);
+    const gavetaSentinelaRef = useRef<HTMLDivElement | null>(null);
+    const escuroAppPagina = useTemaEscuroApp(gavetaSentinelaRef);
+    const { tema: temaGaveta } = useTemaPai(escuroAppPagina);
     const [clockTime, setClockTime] = useState("");
     const [clockDate, setClockDate] = useState("");
     const [nowMs, setNowMs] = useState(() => Date.now());
@@ -1968,7 +2050,7 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE_INFO = "/api/php/informativo.php?listar=1";
+        const BASE_INFO = `${API_PHP}/informativo.php?listar=1`;
 
         async function load() {
             try {
@@ -2101,7 +2183,7 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE_AVISOS = "/api/php/avisos.php?listar=1";
+        const BASE_AVISOS = `${API_PHP}/avisos.php?listar=1`;
 
         async function load() {
             if (!alive) return;
@@ -2147,7 +2229,7 @@ export default function QuadroAtendimentoPage() {
 
         async function loadMateriaisCatalog() {
             try {
-                const url = `/api/php/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
+                const url = `${API_PHP}/materiais_admin.php?op=list&all=1&_ts=${Date.now()}`;
                 const res = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: "mat_catalog" });
 
                 const tree = (res?.data ?? res) as any[];
@@ -2413,7 +2495,7 @@ export default function QuadroAtendimentoPage() {
                 await Promise.all(
                     targets.map(async ({ id, trackingId }) => {
                         try {
-                            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
+                            const BASE = `${API_PHP}/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(id))}`;
                             const url = `${BASE}&_ts=${Date.now()}`;
 
                             // ttl 0: o histórico é pequeno e deve refletir a etapa real.
@@ -2604,7 +2686,7 @@ export default function QuadroAtendimentoPage() {
                 return;
             }
 
-            const BASE = `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
+            const BASE = `${API_PHP}/historico_sepultamentos.php?log=1&id=${encodeURIComponent(String(sepId))}`;
             const url = `${BASE}&_ts=${Date.now()}`;
 
             const json: any = await fetchJsonFast<any>(url, { ttlMs: 20_000, cacheKey: `hist_${sepId}` });
@@ -2748,6 +2830,66 @@ export default function QuadroAtendimentoPage() {
                         margin-right: auto !important;
                     }
                 }
+                @keyframes qa-drawer-in { from { transform: translateX(32px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+                .qa-drawer-btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 800; text-decoration: none; border: 1px solid transparent; }
+                .qa-drawer-btn-main { background: #313C55; color: #FFFFFF; border-color: rgba(255, 255, 255, .28); }
+                .qa-drawer-btn-edit { background: #F2CB3F; color: #313C55; }
+                .qa-drawer-panel { animation: qa-drawer-in .22s ease-out; border-top-left-radius: 20px; border-bottom-left-radius: 20px; }
+                @media (max-width: 640px) { .qa-drawer-panel { border-radius: 0; } }
+                @media (prefers-reduced-motion: reduce) { .qa-drawer-panel { animation: none; } }
+                /* ===== Gaveta (atendimento e coroa): paleta da marca, nos dois temas ===== */
+                .qa-drawer-root[data-tema="claro"] {
+                    --d-panel: #F6F8FB; --d-card: #FFFFFF; --d-sunk: #F1F4F8; --d-line: #E3E8F0; --d-text: #313C55; --d-muted: #5B6478;
+                    --d-acc: #00AEEC; --d-acctext: #0086B8; --d-accbg: #E6F7FE; --d-ok: #5C7A12; --d-okbg: #EEF5D6; --d-warn: #B45309; --d-warnbg: #FFF1DC; --d-crit: #D93636; --d-critbg: #FDECEC;
+                    --d-shadow: 0 1px 2px rgba(49, 60, 85, .06), 0 6px 18px rgba(49, 60, 85, .06);
+                }
+                .qa-drawer-root[data-tema="escuro"] {
+                    --d-panel: #161C2A; --d-card: #232B3F; --d-sunk: #1C2334; --d-line: rgba(255, 255, 255, .12); --d-text: #FFFFFF; --d-muted: #AEB9CF;
+                    --d-acc: #00AEEC; --d-acctext: #5CCBF4; --d-accbg: rgba(0, 174, 236, .20); --d-ok: #B3CE52; --d-okbg: rgba(179, 206, 82, .18); --d-warn: #ffb020; --d-warnbg: rgba(255, 176, 32, .14); --d-crit: #ff5a5f; --d-critbg: rgba(255, 90, 95, .15);
+                    --d-shadow: none;
+                }
+                .qa-drawer-root .qa-panel-premium { background: var(--d-panel); border-color: var(--d-line); box-shadow: -10px 0 30px rgba(0, 0, 0, .22); color: var(--d-text); }
+                .qa-drawer-root .qa-card-soft { background: var(--d-card); border-color: var(--d-line); }
+                .qa-drawer-root .qa-text-muted, .qa-drawer-root .text-muted-foreground { color: var(--d-muted) !important; }
+                .qa-drawer-root .text-slate-100, .qa-drawer-root .text-slate-200 { color: var(--d-text) !important; }
+                .qa-drawer-root .text-slate-300, .qa-drawer-root .text-slate-400, .qa-drawer-root .text-slate-500 { color: var(--d-muted) !important; }
+                .qa-drawer-root [class~="bg-slate-950/70"] { background-color: var(--d-card) !important; }
+                .qa-drawer-root [class~="bg-slate-950/35"] { background-color: var(--d-card) !important; box-shadow: var(--d-shadow); }
+                .qa-drawer-root [class~="bg-slate-950/55"], .qa-drawer-root [class~="bg-slate-950/45"] { background-color: var(--d-sunk) !important; }
+                .qa-drawer-root [class~="bg-slate-900/50"] { background-color: var(--d-card) !important; }
+                .qa-drawer-root .bg-slate-800, .qa-drawer-root [class~="bg-slate-800/45"] { background-color: var(--d-sunk) !important; }
+                .qa-drawer-root [class~="hover:bg-slate-800"]:hover { background-color: var(--d-sunk) !important; }
+                .qa-drawer-root [class~="border-slate-700/70"], .qa-drawer-root [class~="border-slate-700/60"], .qa-drawer-root [class~="border-slate-700/50"], .qa-drawer-root [class~="border-slate-700/45"] { border-color: var(--d-line) !important; }
+                .qa-drawer-root .log-entry { background-color: var(--d-card) !important; border-color: var(--d-line) !important; box-shadow: none; }
+                .qa-drawer-root .bg-primary\/10 { background-color: var(--d-accbg) !important; }
+                .qa-drawer-root .text-primary { color: var(--d-acctext) !important; }
+                .qa-drawer-root .rounded-lg.border.bg-background { background-color: var(--d-sunk) !important; border-color: var(--d-line) !important; }
+                .qa-drawer-root h4 { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+
+                /* Gaveta da coroa */
+                .qc-foto { width: 100%; max-height: 420px; object-fit: contain; border-radius: 12px; background: var(--d-sunk); border: 1px solid var(--d-line); display: block; }
+                .qc-sem-foto { border: 1.5px dashed var(--d-line); border-radius: 12px; padding: 22px 14px; text-align: center; font-size: 13px; font-weight: 700; color: var(--d-muted); background: var(--d-sunk); }
+                .qc-frase { border-left: 4px solid #F2CB3F; background: var(--d-sunk); border-radius: 10px; padding: 12px 14px; font-size: 16px; font-weight: 800; line-height: 1.35; color: var(--d-text); overflow-wrap: anywhere; }
+                .qc-legenda { margin-top: 6px; font-size: 12px; font-weight: 800; color: var(--d-muted); text-align: center; }
+                .qc-link { color: var(--d-acctext); font-weight: 800; text-decoration: underline; }
+
+                /* Etiquetas (status e convênio) */
+                .qa-tag { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
+                .qa-tag-xs { padding: 2px 8px; font-size: 10px; }
+                .qa-tag-status { background: var(--d-accbg, #E6F7FE); color: var(--d-acctext, #0086B8); border: 1px solid var(--d-acc, #00AEEC); }
+                .qa-tag-ok { background: var(--d-okbg); color: var(--d-ok); }
+                .qa-tag-warn { background: var(--d-warnbg); color: var(--d-warn); }
+                .qa-tag-info { background: var(--d-accbg); color: var(--d-acctext); }
+                .qa-tag-conv-part { background: #F2CB3F; color: #1d1405; }
+                .qa-tag-conv-pref { background: #00AEEC; color: #10233F; }
+                .qa-tag-conv-assoc { background: #B3CE52; color: #1d2a05; }
+                .qa-tag-conv-adef { background: transparent; color: var(--d-muted, #5B6478); border: 1px dashed currentColor; }
+
+                /* Ícones da linha do tempo */
+                .qa-log-ic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--d-accbg); color: var(--d-acctext); border: 1.5px solid var(--d-acc); }
+                .qa-log-ic span { display: inline-flex; width: 16px; height: 16px; }
+                .qa-log-ic svg { width: 100%; height: 100%; }
+                .qa-log-ic-dot { background: var(--d-sunk); color: var(--d-muted); border-color: var(--d-line); }
                 .qa-panel-premium {
                     background:
                         radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 34%),
@@ -3274,6 +3416,7 @@ export default function QuadroAtendimentoPage() {
             `}</style>
 
             <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
+                <div ref={gavetaSentinelaRef} className="hidden" aria-hidden />
                 {/* Celular e tablet: quadro em abas; muda sozinho entre em pé e deitado */}
                 <div className="flex min-h-0 flex-1 flex-col lg:hidden">
                     <QuadroMobile
@@ -3286,37 +3429,57 @@ export default function QuadroAtendimentoPage() {
                         clockDate={clockDate}
                         avisos={avisosParaExibir}
                         onSelect={showDetail}
+                        onSelectCoroa={setCoroaSel}
                     />
                 </div>
 
-                {/* TV e telas largas: novo quadro */}
-                <div className="hidden min-h-0 flex-1 lg:flex">
-                    <QuadroTv
-                        layout={layoutTv}
-                        ativos={ativosPagina}
-                        todosAtivos={ativosOrdenados}
-                        paginaAtendimentos={paginaAtualAtendimentos}
-                        totalPaginasAtendimentos={totalPaginasAtendimentos}
-                        coroas={coroasPagina}
-                        todasCoroas={coroasOrdenadas}
-                        paginaCoroas={paginaAtualCoroas}
-                        totalPaginasCoroas={totalPaginasCoroas}
-                        coroasError={coroasTvError}
-                        statusLogsById={statusLogsById}
-                        nowMs={nowMs}
-                        clockTime={clockTime}
-                        clockDate={clockDate}
-                        avisos={avisosParaExibir}
-                        onSelect={showDetail}
-                        onNaoCoube={tvNaoCoube}
-                    />
-                </div>
+                {/* Telas largas: rota da TV = quadro de TV; demais rotas = quadro do desktop (cartões) */}
+                {rotaTv !== null && (
+                    <div className="hidden min-h-0 flex-1 lg:flex">
+                        {!rotaTv ? (
+                            <QuadroDesktop
+                                ativos={ativosOrdenados}
+                                coroas={coroasOrdenadas}
+                                coroasError={coroasTvError}
+                                statusLogsById={statusLogsById}
+                                nowMs={nowMs}
+                                clockTime={clockTime}
+                                clockDate={clockDate}
+                                avisos={avisosParaExibir}
+                                onSelect={showDetail}
+                                onSelectCoroa={setCoroaSel}
+                            />
+                        ) : (
+                            <QuadroTv
+                                layout={layoutTv}
+                                ativos={ativosPagina}
+                                todosAtivos={ativosOrdenados}
+                                paginaAtendimentos={paginaAtualAtendimentos}
+                                totalPaginasAtendimentos={totalPaginasAtendimentos}
+                                coroas={coroasPagina}
+                                todasCoroas={coroasOrdenadas}
+                                paginaCoroas={paginaAtualCoroas}
+                                totalPaginasCoroas={totalPaginasCoroas}
+                                coroasError={coroasTvError}
+                                statusLogsById={statusLogsById}
+                                nowMs={nowMs}
+                                clockTime={clockTime}
+                                clockDate={clockDate}
+                                avisos={avisosParaExibir}
+                                onSelect={showDetail}
+                                onNaoCoube={tvNaoCoube}
+                            />
+                        )}
+                    </div>
+                )}
+
+                {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} />}
 
                 {open && detail && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-3 sm:p-6" aria-modal role="dialog">
+                    <div className="qa-drawer-root fixed inset-0 z-50 flex items-stretch justify-end overflow-hidden" data-tema={temaGaveta} aria-modal role="dialog">
                         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDetail} aria-hidden />
 
-                        <div className="qa-panel-premium relative z-10 flex max-h-[86dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
+                        <div className="qa-panel-premium qa-drawer-panel relative z-10 flex h-full w-full max-w-[780px] flex-col overflow-hidden border-l shadow-2xl">
                             <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 backdrop-blur sm:px-5">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div className="min-w-0">
@@ -3330,14 +3493,24 @@ export default function QuadroAtendimentoPage() {
                                             <span>Agente: <b className="text-slate-200">{shown(detail.agente)}</b></span>
                                         </div>
                                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-white ${badgeClass(detail.status)}`}>
+                                            <span className="qa-tag qa-tag-status qa-tag-xs">
                                                 {capStatus(detail.status)}
                                             </span>
                                             <ConvenioBadge convenio={detail.convenio} size="xs" />
                                         </div>
                                     </div>
 
-                                    <div className="flex shrink-0 items-center gap-2">
+                                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                        {getRegistroBackendId(detail) && (
+                                            <>
+                                                <a href={rotaRegistrarAcao(getRegistroBackendId(detail) as string)} className="qa-drawer-btn qa-drawer-btn-main" title="Registrar uma ação neste atendimento">
+                                                    Registrar ação
+                                                </a>
+                                                <a href={rotaEditar(getRegistroBackendId(detail) as string)} className="qa-drawer-btn qa-drawer-btn-edit" title="Editar o cadastro deste atendimento">
+                                                    Editar
+                                                </a>
+                                            </>
+                                        )}
                                         <button
                                             onClick={toggleTimelineDetalhe}
                                             className={`rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 ${detailTimelineOpen ? "bg-slate-800" : "bg-slate-900/50"}`}
@@ -4355,7 +4528,7 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
 
     return (
         <article
-            className={`tv-row ${resumo.alerta ? `tv-row-${resumo.alerta.nivel}` : ""}`}
+            className={`tv-row ${resumo.alerta ? `tv-row-${resumo.alerta.nivel}` : ""} ${mobClasseConv(r.convenio).replace("qm-conv-", "tv-conv-")}`}
             onClick={() => onSelect(r)}
             role="button"
             tabIndex={0}
@@ -4433,14 +4606,15 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
     const agora = ativas.length
         ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
         : coroaStatusLabel(pedido.status);
-    const hora = coroaCriadoHora(pedido.criado_em);
+    const hora = coroaDataHora(pedido.criado_em);
 
     return (
         <div className={`tv-cr ${atraso ? "tv-cr-late" : ""}`}>
             <div className="tv-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="tv-cr-s">Solicitante: <b>{shown(pedido.solicitante, "a definir")}</b></div>
             <div className="tv-cr-f">
                 {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
-                {hora ? ` · pedido ${hora}` : ""}
+                {hora ? ` · ${hora}` : ""}
             </div>
             <div className="tv-cr-foot">
                 <span className="tv-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
@@ -4591,9 +4765,12 @@ function QuadroTv({
     );
 
     return (
-        <div ref={hostRef} className={`tv-host ${telaCheia ? "tv-host-fs" : ""}`}>
+        <div ref={hostRef} className={`tv-host ${telaCheia ? "tv-host-fs" : ""}`} data-tema="escuro">
             <div className="tv" style={{ top: topo, transform: `translateX(-50%) scale(${escala})` }}>
                 <header className="tv-top">
+                    {LOGO_PAI_URL ? (
+                        <div className="tv-logo"><img src={LOGO_PAI_URL} alt="PAI" /></div>
+                    ) : null}
                     <div className="tv-brand">
                         <h1>Quadro de Atendimentos</h1>
                         <div className="tv-sub"><span className="tv-dot-live" />Atualizado em tempo real</div>
@@ -4654,92 +4831,98 @@ function QuadroTv({
 function TvStyles() {
     return (
         <style jsx global>{`
-            .tv-host { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; overflow: hidden; border-radius: 14px; background: #050d1a; }
+            .tv-host { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; overflow: hidden; border-radius: 14px; background: var(--page); }
             .tv-host-fs { border-radius: 0; }
             .tv { position: absolute; top: 0; left: 50%; width: 1920px; height: 1080px; transform-origin: top center;
-                background: radial-gradient(120% 90% at 50% -10%, #10264a 0%, #081427 55%, #060f1f 100%);
-                display: flex; flex-direction: column; gap: 20px; padding: 32px 44px 0; overflow: hidden; color: #f2f6fc; font-variant-numeric: tabular-nums; }
-            .tv-fs-btn { position: absolute; right: 10px; bottom: 10px; z-index: 5; font-size: 12px; font-weight: 700; color: #cfe0ff; background: rgba(11,24,48,.85);
-                border: 1px solid #29497d; border-radius: 8px; padding: 4px 10px; opacity: .35; transition: opacity .2s; }
+                background: var(--page);
+                display: flex; flex-direction: column; gap: 20px; padding: 32px 44px 0; overflow: hidden; color: var(--text); font-variant-numeric: tabular-nums; }
+            .tv-fs-btn { position: absolute; right: 10px; bottom: 10px; z-index: 5; font-size: 12px; font-weight: 700; color: var(--text2); background: var(--card);
+                border: 1px solid var(--line2); border-radius: 8px; padding: 4px 10px; opacity: .35; transition: opacity .2s; }
             .tv-host:hover .tv-fs-btn { opacity: 1; }
 
             .tv-top { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+            .tv-logo { flex: none; margin: 0 0 0 -44px; width: 270px; height: 88px; background: #FFFFFF; border-radius: 0 44px 44px 0; display: flex; align-items: center; padding: 0 0 0 44px; box-sizing: border-box; }
+            .tv-logo img { height: 60px; width: auto; display: block; }
+            .tv-brand { flex: 1; min-width: 0; }
             .tv-brand h1 { margin: 0; font-size: 40px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; }
-            .tv-sub { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 20px; color: #a9bddb; font-weight: 700; }
-            .tv-dot-live { width: 12px; height: 12px; border-radius: 50%; background: #35e08a; animation: tv-ping 1.6s infinite; }
+            .tv-sub { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 20px; color: var(--text2); font-weight: 700; }
+            .tv-dot-live { width: 12px; height: 12px; border-radius: 50%; background: var(--ok); animation: tv-ping 1.6s infinite; }
             @keyframes tv-ping { 0% { box-shadow: 0 0 0 0 rgba(53,224,138,.55); } 70% { box-shadow: 0 0 0 12px rgba(53,224,138,0); } 100% { box-shadow: 0 0 0 0 rgba(53,224,138,0); } }
             .tv-counters { display: flex; gap: 14px; }
-            .tv-ctr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 20px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+            .tv-ctr { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 20px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
             .tv-ctr b { font-size: 36px; font-weight: 900; }
-            .tv-ctr span { font-size: 18px; color: #a9bddb; font-weight: 700; }
-            .tv-ctr-alert b { color: #ff5a5f; }
+            .tv-ctr span { font-size: 18px; color: var(--text2); font-weight: 700; }
+            .tv-ctr-alert b { color: var(--crit); }
             .tv-clock { text-align: right; }
             .tv-h { font-size: 64px; font-weight: 900; line-height: 1; letter-spacing: -.02em; }
-            .tv-d { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 4px; }
+            .tv-d { font-size: 20px; color: var(--text2); font-weight: 700; margin-top: 4px; }
 
             .tv-body { flex: 1; display: flex; gap: 20px; min-height: 0; }
             .tv-main { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
             .tv-head, .tv-row { display: grid; grid-template-columns: 480px 390px 1fr; gap: 24px; }
-            .tv-head { padding: 0 28px; color: #6f88ad; font-size: 16px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+            .tv-head { padding: 0 28px; color: var(--text3); font-size: 16px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
             .tv-steps-h, .tv-track { display: grid; grid-template-columns: repeat(6, 1fr) 316px; align-items: center; }
             .tv-steps-h span { text-align: center; font-size: 13px; letter-spacing: 0; white-space: nowrap; }
             .tv-steps-h .tv-steps-h-tot { text-align: right; padding-right: 10px; }
             .tv-rows { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: hidden; }
-            .tv-empty { font-size: 26px; color: #6f88ad; text-align: center; padding: 60px 0; }
+            .tv-empty { font-size: 26px; color: var(--text3); text-align: center; padding: 60px 0; }
             .tv-row { flex: 0 0 auto; min-height: 150px; align-items: center; cursor: pointer;
-                background: linear-gradient(180deg, #132a52, #0f2344); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 28px; }
-            .tv-row:hover { border-color: #4b9bff; }
-            .tv-row-crit { border-color: rgba(255,90,95,.55); box-shadow: inset 6px 0 0 #ff5a5f; }
-            .tv-row-warn { border-color: rgba(255,176,32,.5); box-shadow: inset 6px 0 0 #ffb020; }
+                background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 18px 28px; box-shadow: var(--shadow); }
+            .tv-row:hover { border-color: var(--acc); }
+            .tv-row-crit { border-color: var(--crit-bd); box-shadow: inset 6px 0 0 var(--crit); }
+            .tv-row-warn { border-color: var(--warn-bd); box-shadow: inset 6px 0 0 var(--warn); }
 
             .tv-who { min-width: 0; }
             .tv-name { font-size: 34px; font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
-            .tv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 8px; font-size: 19px; color: #a9bddb; font-weight: 700; overflow-wrap: anywhere; }
-            .tv-chip { font-size: 17px; font-weight: 900; padding: 3px 12px; border-radius: 999px; color: #081427; flex: none; }
-            .tv-chip-pref { background: #3fa7ff; } .tv-chip-part { background: #ffc53d; } .tv-chip-assoc { background: #2ed3c6; }
-            .tv-chip-adef { background: transparent; color: #8aa0c2; border: 2px dashed #8aa0c2; }
+            .tv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 8px; font-size: 19px; color: var(--text2); font-weight: 700; overflow-wrap: anywhere; }
+            .tv-chip { font-size: 17px; font-weight: 900; padding: 3px 12px; border-radius: 999px; color: #1B2640; flex: none; }
+            .tv-chip-pref { background: #00AEEC; } .tv-chip-part { background: #F2CB3F; } .tv-chip-assoc { background: #B3CE52; }
+            .tv-chip-adef { background: transparent; color: var(--text2); border: 2px dashed var(--text2); }
             .tv-place { margin-top: 8px; font-size: 19px; font-weight: 700; line-height: 1.35; }
             .tv-place span { display: block; overflow-wrap: anywhere; }
-            .tv-place-sep { color: #a9bddb; }
-            .tv-place a { color: #4b9bff; }
+            .tv-place-sep { color: var(--text2); }
+            .tv-place a { color: var(--acc-text); }
 
-            .tv-now { min-width: 0; }
+            .tv-now { min-width: 0; border-radius: 16px; padding: 10px 14px; }
+            .tv-conv-assoc .tv-now { background: rgba(179, 206, 82, .28); }
+            .tv-conv-pref .tv-now { background: rgba(0, 174, 236, .22); }
+            .tv-conv-part .tv-now { background: rgba(242, 203, 63, .28); }
             .tv-state { display: flex; align-items: center; gap: 12px; font-size: 27px; font-weight: 900; line-height: 1.1; }
-            .tv-pulse { width: 16px; height: 16px; border-radius: 50%; background: #35e08a; flex: none; animation: tv-ping 1.6s infinite; }
-            .tv-since { font-size: 20px; color: #a9bddb; font-weight: 700; margin-top: 6px; overflow-wrap: anywhere; }
-            .tv-since b { color: #f2f6fc; font-weight: 900; }
+            .tv-pulse { width: 16px; height: 16px; border-radius: 50%; background: var(--live-bd); flex: none; animation: tv-ping-live 1.6s infinite; }
+            .tv-since { font-size: 20px; color: var(--text2); font-weight: 700; margin-top: 6px; overflow-wrap: anywhere; }
+            .tv-since b { color: var(--text); font-weight: 900; }
             .tv-flag { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 17px; font-weight: 900; padding: 5px 12px; border-radius: 10px; }
-            .tv-flag-crit { background: rgba(255,90,95,.15); color: #ff5a5f; }
-            .tv-flag-warn { background: rgba(255,176,32,.14); color: #ffb020; }
+            .tv-flag-crit { background: var(--critbg); color: var(--crit); }
+            .tv-flag-warn { background: var(--warnbg); color: var(--warn); }
 
             .tv-step { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; }
-            .tv-step::before { content: ""; position: absolute; top: 30px; left: -50%; width: 100%; height: 4px; background: #29497d; z-index: 0; }
+            .tv-step::before { content: ""; position: absolute; top: 30px; left: -50%; width: 100%; height: 4px; background: var(--line2); z-index: 0; }
             .tv-step:first-child::before { display: none; }
-            .tv-step-done::before, .tv-step-live::before { background: #3b82f6; }
-            .tv-node { position: relative; z-index: 1; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid #29497d; background: #0c1d38; color: #6f88ad; }
+            .tv-step-done::before, .tv-step-live::before { background: var(--done-bd); }
+            .tv-node { position: relative; z-index: 1; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid var(--line2); background: var(--sunk); color: var(--text3); }
             .tv-t { position: relative; z-index: 1; }
             .tv-node-icon { display: inline-flex; width: 32px; height: 32px; }
             .tv-node-icon svg, .tv-mini-icon svg, .tv-mini i svg { width: 100%; height: 100%; }
-            .tv-t { font-size: 21px; font-weight: 900; color: #6f88ad; white-space: nowrap; }
-            .tv-step-done .tv-node { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-            .tv-step-done .tv-t { color: #f2f6fc; }
-            .tv-step-live .tv-node { border-color: #22c55e; color: #22c55e; background: #10373a; }
-            .tv-step-live .tv-t { color: #35e08a; }
-            .tv-step-na .tv-node { border-style: dashed; border-color: #2b4670; background: #0c1d38; color: #2b4670; }
-            .tv-step-na .tv-t { font-size: 13px; color: #3d5a85; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; text-align: center; white-space: normal; line-height: 1.1; }
+            .tv-t { font-size: 21px; font-weight: 900; color: var(--text3); white-space: nowrap; }
+            .tv-step-done .tv-node { background: var(--done-bg); border-color: var(--done-bd); color: var(--done-fg); }
+            .tv-step-done .tv-t { color: var(--text); }
+            .tv-step-live .tv-node { border-color: var(--live-bd); color: var(--live-fg); background: var(--live-bg); }
+            .tv-step-live .tv-t { color: var(--live-fg); }
+            .tv-step-na .tv-node { border-style: dashed; border-color: var(--line2); background: var(--sunk); color: var(--line2); }
+            .tv-step-na .tv-t { font-size: 13px; color: var(--text3); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; text-align: center; white-space: normal; line-height: 1.1; }
 
             .tv-tot { display: flex; gap: 10px; justify-content: flex-end; padding-left: 18px; }
-            .tv-box { border-radius: 14px; padding: 8px 12px; border: 2px solid #29497d; flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; gap: 8px; }
+            .tv-box { border-radius: 14px; padding: 8px 12px; border: 2px solid var(--line2); flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; gap: 8px; }
             .tv-box-ic { display: inline-flex; flex: none; width: 28px; height: 28px; color: inherit; }
             .tv-box-ic svg { width: 100%; height: 100%; }
-            .tv-box-live .tv-box-ic { color: #35e08a; }
-            .tv-box small { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 900; color: #6f88ad; text-transform: uppercase; letter-spacing: .08em; }
+            .tv-box-live .tv-box-ic { color: var(--live-fg); }
+            .tv-box small { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 900; color: var(--text3); text-transform: uppercase; letter-spacing: .08em; }
             .tv-mini-icon { display: inline-flex; width: 18px; height: 18px; }
             .tv-box b { display: block; font-size: 30px; font-weight: 900; }
-            .tv-box-crit .tv-box-ic { color: #ff5a5f; }
-            .tv-box-live { border-color: #22c55e !important; background: rgba(34,197,94,.14); }
-            .tv-box-live b, .tv-box-live small { color: #35e08a; }
-            .tv-box-crit b { color: #ff5a5f; }
+            .tv-box-crit .tv-box-ic { color: var(--crit); }
+            .tv-box-live { border-color: var(--live-bd) !important; background: var(--live-bg); }
+            .tv-box-live b, .tv-box-live small { color: var(--live-fg); }
+            .tv-box-crit b { color: var(--crit); }
 
             /* compacto */
             .tv-compact .tv-row { padding: 6px 22px; border-radius: 16px; min-height: 96px; }
@@ -4771,48 +4954,72 @@ function TvStyles() {
             .tv-narrow .tv-t { font-size: 16px; }
 
             /* coroas */
-            .tv-side { width: 500px; flex: none; display: flex; flex-direction: column; gap: 10px; background: rgba(10,24,48,.7); border: 1px solid #1f3a66; border-radius: 22px; padding: 18px 18px 14px; min-height: 0; }
-            .tv-band { background: rgba(10,24,48,.7); border: 1px solid #1f3a66; border-radius: 22px; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+            .tv-side { width: 500px; flex: none; display: flex; flex-direction: column; gap: 10px; background: var(--sunk); border: 1px solid var(--line); border-radius: 22px; padding: 18px 18px 14px; min-height: 0; }
+            .tv-band { background: var(--sunk); border: 1px solid var(--line); border-radius: 22px; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
             .tv-cor-title { margin: 0; font-size: 24px; font-weight: 900; display: flex; align-items: center; gap: 10px; }
-            .tv-cor-stale { font-size: 15px; color: #ffb020; font-weight: 800; }
-            .tv-n { background: #2d6fd6; border-radius: 999px; padding: 0 12px; font-size: 20px; font-weight: 900; color: #fff; }
-            .tv-sum { font-size: 17px; color: #a9bddb; font-weight: 700; }
+            .tv-cor-stale { font-size: 15px; color: var(--warn); font-weight: 800; }
+            .tv-n { background: var(--acc); border-radius: 999px; padding: 0 12px; font-size: 20px; font-weight: 900; color: #10233F; }
+            .tv-sum { font-size: 17px; color: var(--text2); font-weight: 700; }
             .tv-clist { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; }
             .tv-side .tv-pager { flex: none; }
             .tv-band .tv-clist { flex-direction: row; }
             .tv-band .tv-cr { flex: 1; }
-            .tv-cr { background: #0f2344; border: 1px solid #1f3a66; border-radius: 16px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; min-width: 0; }
+            .tv-cr { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; min-width: 0; }
             .tv-cr-m { grid-column: 1 / -1; font-size: 20px; font-weight: 900; overflow-wrap: anywhere; }
-            .tv-cr-f { grid-column: 1 / -1; font-size: 17px; color: #a9bddb; font-weight: 700; overflow-wrap: anywhere; }
-            .tv-cr-e { font-size: 17px; font-weight: 800; color: #35e08a; overflow-wrap: anywhere; }
-            .tv-cr-late { box-shadow: inset 5px 0 0 #ffb020; border-color: rgba(255,176,32,.55); }
-            .tv-origem { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: rgba(75,155,255,.14); color: #8fc2ff; white-space: nowrap; }
+            .tv-cr-s { grid-column: 1 / -1; font-size: 17px; font-weight: 700; color: var(--text2); overflow-wrap: anywhere; }
+            .tv-cr-s b { color: var(--text); font-weight: 900; }
+            .tv-cr-f { grid-column: 1 / -1; font-size: 17px; color: var(--text2); font-weight: 700; overflow-wrap: anywhere; }
+            .tv-cr-e { font-size: 17px; font-weight: 800; color: var(--live-fg); overflow-wrap: anywhere; }
+            .tv-cr-late { box-shadow: inset 5px 0 0 var(--warn); border-color: var(--warn-bd); }
+            .tv-origem { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: var(--infobg); color: var(--acc-text); white-space: nowrap; }
             .tv-cr-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-            .tv-cr-late-t { font-size: 16px; font-weight: 900; color: #ffb020; background: rgba(255,176,32,.12); border-radius: 8px; padding: 2px 8px; justify-self: start; overflow-wrap: anywhere; max-width: 100%; }
-            .tv-sum-late { color: #ffb020; font-weight: 900; }
+            .tv-cr-late-t { font-size: 16px; font-weight: 900; color: var(--warn); background: var(--warnbg); border-radius: 8px; padding: 2px 8px; justify-self: start; overflow-wrap: anywhere; max-width: 100%; }
+            .tv-sum-late { color: var(--warn); font-weight: 900; }
             .tv-pay { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; align-self: start; justify-self: end; white-space: nowrap; }
-            .tv-pay-ok { background: rgba(53,224,138,.16); color: #35e08a; }
-            .tv-pay-pend { background: rgba(255,176,32,.14); color: #ffb020; }
+            .tv-pay-ok { background: var(--okbg); color: var(--ok); }
+            .tv-pay-pend { background: var(--warnbg); color: var(--warn); }
             .tv-mini { display: flex; gap: 6px; align-items: center; justify-self: end; }
-            .tv-mini i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #29497d; color: #6f88ad; font-style: normal; }
+            .tv-mini i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line2); color: var(--text3); font-style: normal; }
             .tv-mini i span { display: inline-flex; width: 17px; height: 17px; }
-            .tv-mini .tv-mini-done { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-            .tv-mini .tv-mini-live { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,.14); }
+            .tv-mini .tv-mini-done { background: var(--done-bg); border-color: var(--done-bd); color: var(--done-fg); }
+            .tv-mini .tv-mini-live { border-color: var(--live-bd); color: var(--live-fg); background: var(--live-bg); }
             .tv-mini .tv-mini-na { border-style: dashed; opacity: .35; }
-            .tv-coroas-line { display: flex; align-items: center; gap: 12px; font-size: 20px; color: #a9bddb; font-weight: 700; padding: 0 6px; }
-            .tv-muted { color: #6f88ad; }
+            .tv-coroas-line { display: flex; align-items: center; gap: 12px; font-size: 20px; color: var(--text2); font-weight: 700; padding: 0 6px; }
+            .tv-muted { color: var(--text3); }
 
-            .tv-pager { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 800; color: #6f88ad; }
-            .tv-pager i { width: 10px; height: 10px; border-radius: 50%; background: #29497d; }
-            .tv-pager i.on { background: #4b9bff; }
-            .tv-bar { height: 4px; width: 80px; background: #29497d; border-radius: 2px; overflow: hidden; }
-            .tv-bar span { display: block; height: 100%; background: #4b9bff; animation: tv-fill linear forwards; }
+            .tv-pager { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 800; color: var(--text3); }
+            .tv-pager i { width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
+            .tv-pager i.on { background: var(--acc); }
+            .tv-bar { height: 4px; width: 80px; background: var(--line2); border-radius: 2px; overflow: hidden; }
+            .tv-bar span { display: block; height: 100%; background: var(--acc); animation: tv-fill linear forwards; }
             @keyframes tv-fill { from { width: 0; } to { width: 100%; } }
 
-            .tv-ticker { margin: 0 -44px; height: 64px; flex: none; background: #061024; border-top: 1px solid #1f3a66; display: flex; align-items: center; overflow: hidden; }
-            .tv-tag { flex: none; height: 100%; display: flex; align-items: center; padding: 0 22px; background: #2d6fd6; font-size: 20px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; position: relative; z-index: 1; }
+            .tv-ticker { margin: 0 -44px; height: 64px; flex: none; background: #313C55; border-top: 1px solid var(--line); display: flex; align-items: center; overflow: hidden; }
+            .tv-tag { flex: none; height: 100%; display: flex; align-items: center; padding: 0 22px; background: #00AEEC; color: #10233F; font-size: 20px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; position: relative; z-index: 1; }
             .tv-lane { flex: 1; min-width: 0; overflow: hidden; height: 100%; display: flex; align-items: center; }
             .tv-lane [class*="text-["] { font-size: 24px !important; }
+
+
+            /* ===== Tema da TV: somente Escuro (sem troca de tema). ===== */
+            .tv-host {
+                --page: #161C2A; --card: #232B3F; --sunk: #1C2334; --line: rgba(255,255,255,.12); --line2: rgba(255,255,255,.26);
+                --text: #FFFFFF; --text2: #AEB9CF; --text3: #8893AA;
+                --acc: #00AEEC; --acc-text: #5CCBF4; --infobg: rgba(0,174,236,.20);
+                --done-bg: rgba(0,174,236,.30); --done-bd: #00AEEC; --done-fg: #BDEBFB;
+                --live-bg: rgba(242,203,63,.16); --live-bd: #F2CB3F; --live-fg: #F2CB3F;
+                --ok: #B3CE52; --okbg: rgba(179,206,82,.18);
+                --crit: #ff5a5f; --critbg: rgba(255,90,95,.15); --crit-bd: rgba(255,90,95,.55);
+                --warn: #ffb020; --warnbg: rgba(255,176,32,.14); --warn-bd: rgba(255,176,32,.55);
+                --shadow: none;
+            }
+            .tv-ctr, .tv-cr { box-shadow: var(--shadow); }
+
+            /* etapa em curso: amarelo da marca piscando (só dentro do quadro) */
+            @keyframes pai-blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(1.08); } }
+            @keyframes pai-ring { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(242,203,63,0); } 50% { opacity: .85; box-shadow: 0 0 10px rgba(242,203,63,.65); } }
+            @keyframes tv-ping-live { 0% { box-shadow: 0 0 0 0 rgba(242,203,63,.6); } 70% { box-shadow: 0 0 0 12px rgba(242,203,63,0); } 100% { box-shadow: 0 0 0 0 rgba(242,203,63,0); } }
+            .tv-host .qa-status-blink { animation-name: pai-blink; }
+            .tv-host .qa-status-active-ring { animation-name: pai-ring; }
 
             @media (prefers-reduced-motion: reduce) {
                 .tv-dot-live, .tv-pulse, .tv-bar span { animation: none !important; }
@@ -4867,6 +5074,80 @@ function useTemaEscuroApp(ref: React.RefObject<HTMLElement | null>): boolean {
     return escuro;
 }
 
+/* ===== Tema Claro/Escuro do app PAI =====
+ * A escolha fica no navegador (chave "pai_tema") e vale para as telas já migradas.
+ * Sem escolha salva: celular segue o fundo do app (como antes); desktop abre em Claro; TV abre em Escuro. */
+const TEMA_STORAGE_KEY = "pai_tema";
+const TEMA_EVENTO = "pai_tema_change";
+type TemaPai = "claro" | "escuro";
+
+function lerTemaSalvo(): TemaPai | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const v = window.localStorage.getItem(TEMA_STORAGE_KEY);
+        return v === "claro" || v === "escuro" ? v : null;
+    } catch {
+        return null;
+    }
+}
+
+function useTemaPai(autoEscuro: boolean): { tema: TemaPai; alternar: () => void; fixo: boolean } {
+    const [salvo, setSalvo] = useState<TemaPai | null>(null);
+    const [rotaTv, setRotaTv] = useState(false);
+    const [estreita, setEstreita] = useState(false);
+    useEffect(() => {
+        setRotaTv(ehRotaTv());
+        const mq = window.matchMedia?.("(max-width: 1023.98px)");
+        const medir = () => setEstreita(!!mq?.matches);
+        medir();
+        mq?.addEventListener?.("change", medir);
+        const ler = () => setSalvo(lerTemaSalvo());
+        ler();
+        const onStorage = (e: StorageEvent) => { if (e.key === TEMA_STORAGE_KEY) ler(); };
+        window.addEventListener("storage", onStorage);
+        window.addEventListener(TEMA_EVENTO, ler);
+        return () => { mq?.removeEventListener?.("change", medir); window.removeEventListener("storage", onStorage); window.removeEventListener(TEMA_EVENTO, ler); };
+    }, []);
+    // Rota da TV: sempre Escuro, sem troca de tema (ignora a escolha salva).
+    // Demais rotas: sem escolha salva, telas estreitas (celular/tablet) seguem o fundo do app e o desktop abre Claro.
+    const padrao: TemaPai = estreita ? (autoEscuro ? "escuro" : "claro") : "claro";
+    const tema: TemaPai = rotaTv ? "escuro" : salvo ?? padrao;
+    const alternar = useCallback(() => {
+        if (rotaTv) return;
+        const novo: TemaPai = tema === "escuro" ? "claro" : "escuro";
+        try { window.localStorage.setItem(TEMA_STORAGE_KEY, novo); } catch { /* ignore */ }
+        setSalvo(novo);
+        window.dispatchEvent(new Event(TEMA_EVENTO));
+    }, [tema, rotaTv]);
+    return { tema, alternar, fixo: rotaTv };
+}
+
+function BotaoTema({ tema, onClick, className }: { tema: TemaPai; onClick: () => void; className: string }) {
+    const rotulo = tema === "escuro" ? "Mudar para o tema claro" : "Mudar para o tema escuro";
+    return (
+        <button type="button" className={className} onClick={onClick} aria-label={rotulo} title={rotulo}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                {tema === "escuro" ? (
+                    <>
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+                    </>
+                ) : (
+                    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+                )}
+            </svg>
+        </button>
+    );
+}
+
+function mobClasseConv(convenio?: string): string {
+    const kind = normalizeConvenio(convenio);
+    if (kind === "Prefeitura") return "qm-conv-pref";
+    if (kind === "Particular") return "qm-conv-part";
+    if (kind === "Associado") return "qm-conv-assoc";
+    return "qm-conv-adef";
+}
+
 function mobChipConvenio(convenio?: string): string {
     const kind = normalizeConvenio(convenio);
     if (kind === "Prefeitura") return "qm-chip qm-chip-pref";
@@ -4889,7 +5170,7 @@ function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect
 
     return (
         <article
-            className={`qm-card ${nivel ? `qm-card-${nivel}` : ""}`}
+            className={`qm-card ${nivel ? `qm-card-${nivel}` : ""} ${mobClasseConv(r.convenio)}`}
             role="button"
             tabIndex={0}
             onClick={() => onSelect(r)}
@@ -4968,7 +5249,7 @@ function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect
     );
 }
 
-function MobCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso }) {
+function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso; onSelect?: (p: CoroaTvPedido) => void }) {
     const t = buildCoroaTimeline(pedido, nowMs);
     const etapas = [
         { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
@@ -4982,15 +5263,28 @@ function MobCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowM
     const agora = ativas.length
         ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
         : coroaStatusLabel(pedido.status);
-    const hora = coroaCriadoHora(pedido.criado_em);
+    const hora = coroaDataHora(pedido.criado_em);
+    const clicavel = !!onSelect;
 
     return (
-        <div className={`qm-cr ${atraso ? "qm-cr-late" : ""}`}>
+        <div
+            className={`qm-cr ${atraso ? "qm-cr-late" : ""} ${clicavel ? "qm-cr-click" : ""}`}
+            {...(clicavel
+                ? {
+                    role: "button",
+                    tabIndex: 0,
+                    onClick: () => onSelect?.(pedido),
+                    onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
+                    "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
+                }
+                : {})}
+        >
             {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}
             <div className="qm-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="qm-cr-s">Solicitante: <b>{shown(pedido.solicitante, "a definir")}</b></div>
             <div className="qm-cr-f">
                 {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
-                {hora ? ` · pedido ${hora}` : ""}
+                {hora ? ` · ${hora}` : ""}
             </div>
             <div className="qm-cr-r">
                 <span className="qm-cr-e">{agora}</span>
@@ -5024,6 +5318,7 @@ function QuadroMobile({
     clockDate,
     avisos,
     onSelect,
+    onSelectCoroa,
 }: {
     ativos: Registro[];
     coroas: CoroaTvPedido[];
@@ -5034,9 +5329,12 @@ function QuadroMobile({
     clockDate: string;
     avisos: Aviso[];
     onSelect: (r: Registro) => void;
+    onSelectCoroa?: (p: CoroaTvPedido) => void;
 }) {
     const rootRef = useRef<HTMLDivElement | null>(null);
-    const escuro = useTemaEscuroApp(rootRef);
+    const escuroApp = useTemaEscuroApp(rootRef);
+    const { tema, alternar: alternarTema, fixo: temaFixo } = useTemaPai(escuroApp);
+    const escuro = tema === "escuro";
     const [aba, setAba] = useState<MobAba>("at");
     const [podeTelaCheia, setPodeTelaCheia] = useState(false);
     const [telaCheia, setTelaCheia] = useState(false);
@@ -5091,6 +5389,7 @@ function QuadroMobile({
                 <div className="qm-kpis">
                     <span className="qm-kpi"><b>{ativos.length}</b>em andamento</span>
                     {parados > 0 && <span className="qm-kpi qm-kpi-crit"><b>{parados}</b>parados +24 h</span>}
+                    {!temaFixo && <BotaoTema tema={tema} onClick={alternarTema} className="qm-fs qm-th" />}
                     {podeTelaCheia && (
                         <button
                             type="button"
@@ -5157,6 +5456,7 @@ function QuadroMobile({
                                             pedido={p}
                                             nowMs={nowMs}
                                             atraso={coroaAtrasoTv(p, nowMs)}
+                                            onSelect={onSelectCoroa}
                                         />
                                     ))}
                                 </div>
@@ -5190,16 +5490,19 @@ function MobStyles() {
     return (
         <style jsx global>{`
             .qm-root {
-                --qm-surface: #ffffff; --qm-s2: #f5f8fc; --qm-line: #dbe4ef; --qm-text: #0f1b2d; --qm-muted: #667891;
-                --qm-acc: #0e9be0; --qm-accbg: #e3f3fc;
-                --qm-ok: #16a34a; --qm-okbg: #e6f8ee; --qm-warn: #b45309; --qm-warnbg: #fff4e0; --qm-crit: #dc2626; --qm-critbg: #fdecec;
-                --qm-shadow: 0 1px 2px rgba(15, 27, 45, .06), 0 6px 18px rgba(15, 27, 45, .06);
+                --qm-page: #F6F8FB; --qm-surface: #ffffff; --qm-s2: #F1F4F8; --qm-line: #E3E8F0; --qm-text: #313C55; --qm-muted: #5B6478;
+                --qm-acc: #00AEEC; --qm-accbg: #E6F7FE; --qm-acctext: #0086B8;
+                --qm-ok: #5C7A12; --qm-okbg: #EEF5D6; --qm-warn: #b45309; --qm-warnbg: #FFF1DC; --qm-crit: #dc2626; --qm-critbg: #fdecec;
+                --qm-donebg: rgba(0, 174, 236, .16); --qm-donefg: #0086B8; --qm-live: #8A6A00; --qm-livebg: #FCF3CC; --qm-livebd: #F2CB3F;
+                --qm-shadow: 0 1px 2px rgba(49, 60, 85, .06), 0 6px 18px rgba(49, 60, 85, .06);
                 flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; color: var(--qm-text);
+                background: var(--qm-page); border-radius: 22px; padding: 8px;
             }
             .qm-root[data-tema="escuro"] {
-                --qm-surface: #0f1f36; --qm-s2: #0c1a2e; --qm-line: #20385e; --qm-text: #eaf2ff; --qm-muted: #8ca2c4;
-                --qm-acc: #3b9bff; --qm-accbg: #12294a;
-                --qm-ok: #35e08a; --qm-okbg: rgba(34, 197, 94, .14); --qm-warn: #ffb020; --qm-warnbg: rgba(255, 176, 32, .12); --qm-crit: #ff5a5f; --qm-critbg: rgba(255, 90, 95, .13);
+                --qm-page: #161C2A; --qm-surface: #232B3F; --qm-s2: #1C2334; --qm-line: rgba(255, 255, 255, .12); --qm-text: #FFFFFF; --qm-muted: #AEB9CF;
+                --qm-acc: #00AEEC; --qm-accbg: rgba(0, 174, 236, .20); --qm-acctext: #5CCBF4;
+                --qm-ok: #B3CE52; --qm-okbg: rgba(179, 206, 82, .18); --qm-warn: #ffb020;
+                --qm-donebg: rgba(0, 174, 236, .30); --qm-donefg: #BDEBFB; --qm-live: #F2CB3F; --qm-livebg: rgba(242, 203, 63, .16); --qm-livebd: #F2CB3F; --qm-warnbg: rgba(255, 176, 32, .12); --qm-crit: #ff5a5f; --qm-critbg: rgba(255, 90, 95, .13);
                 --qm-shadow: none;
             }
             .qm-root button { font: inherit; color: inherit; }
@@ -5221,17 +5524,22 @@ function MobStyles() {
             .qm-kpi-crit b { color: var(--qm-crit); }
             .qm-fs { margin-left: auto; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--qm-line); background: transparent; border-radius: 999px; padding: 0; color: var(--qm-muted) !important; cursor: pointer; }
             .qm-fs svg { width: 16px; height: 16px; }
+            .qm-th + .qm-fs { margin-left: 0; }
+            @keyframes pai-blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(1.08); } }
+            @keyframes pai-ring { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(242, 203, 63, 0); } 50% { opacity: .85; box-shadow: 0 0 10px rgba(242, 203, 63, .65); } }
+            .qm-root .qa-status-blink { animation-name: pai-blink; }
+            .qm-root .qa-status-active-ring { animation-name: pai-ring; }
             .qm-tabs { grid-area: tab; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; background: var(--qm-s2); border: 1px solid var(--qm-line); border-radius: 12px; }
             .qm-tab { min-width: 0; border: 0; background: transparent; border-radius: 9px; padding: 7px 2px; font-size: 12px !important; font-weight: 800; color: var(--qm-muted) !important; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
             .qm-tab span { flex: none; background: var(--qm-line); color: var(--qm-text); border-radius: 999px; padding: 0 7px; font-size: 11px; font-variant-numeric: tabular-nums; }
             .qm-tab[aria-selected="true"] { background: var(--qm-surface); color: var(--qm-text) !important; box-shadow: var(--qm-shadow); }
-            .qm-tab[aria-selected="true"] span { background: var(--qm-acc); color: #fff; }
+            .qm-tab[aria-selected="true"] span { background: var(--qm-acc); color: #10233F; }
             .qm-tab:focus-visible, .qm-card:focus-visible, .qm-aviso:focus-visible, .qm-fs:focus-visible { outline: 2px solid var(--qm-acc); outline-offset: 2px; }
 
             .qm-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
             .qm-body > * { flex: none; }
             .qm-aviso { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 0; cursor: pointer; background: var(--qm-accbg); border-radius: 14px; padding: 9px 12px; font-size: 13px !important; font-weight: 700; }
-            .qm-aviso b { flex: none; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-acc); }
+            .qm-aviso b { flex: none; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-acctext); }
             .qm-aviso span { min-width: 0; overflow-wrap: anywhere; }
             .qm-colhd { display: none; }
             .qm-list, .qm-grid { display: grid; gap: 10px; }
@@ -5248,9 +5556,9 @@ function MobStyles() {
             .qm-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--qm-muted); }
             .qm-meta-t { overflow-wrap: anywhere; }
             .qm-chip { flex: none; font-size: 11px; font-weight: 900; line-height: 1.5; color: #fff; border-radius: 999px; padding: 0 8px; }
-            .qm-chip-pref { background: #0e9be0; }
-            .qm-chip-part { background: #f59e0b; color: #1d1405; }
-            .qm-chip-assoc { background: #14b8a6; }
+            .qm-chip-pref { background: #00AEEC; color: #10233F; }
+            .qm-chip-part { background: #F2CB3F; color: #1d1405; }
+            .qm-chip-assoc { background: #B3CE52; color: #1d2a05; }
             .qm-chip-adef { background: transparent; color: var(--qm-muted); border: 1px dashed var(--qm-muted); }
             .qm-tot { grid-area: tot; align-self: start; text-align: right; display: grid; gap: 2px; justify-items: end; }
             .qm-tot small { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--qm-muted); }
@@ -5259,10 +5567,13 @@ function MobStyles() {
             .qm-tot-ic svg, .qm-oc-ic svg { width: 100%; height: 100%; }
             .qm-oc { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; color: var(--qm-muted); font-variant-numeric: tabular-nums; }
             .qm-oc-ic { width: 13px; height: 13px; display: inline-flex; }
-            .qm-oc-live { color: var(--qm-ok); }
+            .qm-oc-live { color: var(--qm-live); }
             .qm-oc-crit { color: var(--qm-crit); }
             .qm-now { grid-area: now; display: flex; align-items: center; gap: 10px; min-width: 0; background: var(--qm-okbg); border-radius: 12px; padding: 7px 10px; }
-            .qm-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--qm-ok); }
+            .qm-conv-assoc .qm-now { background: rgba(179, 206, 82, .28); }
+            .qm-conv-pref .qm-now { background: rgba(0, 174, 236, .22); }
+            .qm-conv-part .qm-now { background: rgba(242, 203, 63, .28); }
+            .qm-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--qm-livebd); }
             .qm-now-t { min-width: 0; }
             .qm-now-t b { display: block; font-size: 15px; font-weight: 900; line-height: 1.2; }
             .qm-now-t span { display: block; font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
@@ -5275,34 +5586,39 @@ function MobStyles() {
             .qm-s-done::before, .qm-s-live::before { background: var(--qm-acc) !important; }
             .qm-ic { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--qm-line); background: var(--qm-surface); color: var(--qm-muted); }
             .qm-ic-svg { width: 16px; height: 16px; display: inline-block; }
-            .qm-s-done .qm-ic { background: var(--qm-acc); border-color: var(--qm-acc); color: #fff; }
-            .qm-s-live .qm-ic { border-color: var(--qm-ok); background: linear-gradient(var(--qm-okbg), var(--qm-okbg)), var(--qm-surface); color: var(--qm-ok); }
+            .qm-s-done .qm-ic { background: var(--qm-donebg); border-color: var(--qm-acc); color: var(--qm-donefg); }
+            .qm-s-live .qm-ic { border-color: var(--qm-livebd); background: linear-gradient(var(--qm-livebg), var(--qm-livebg)), var(--qm-surface); color: var(--qm-live); }
             .qm-s-na .qm-ic { border-style: dashed; background: var(--qm-surface); }
             .qm-s-na .qm-ic-svg { opacity: .45; }
             .qm-s em { font-style: normal; margin-top: 2px; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; color: var(--qm-muted); white-space: nowrap; }
             .qm-s b { font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums; }
             .qm-s-pend b, .qm-s-na b { color: var(--qm-muted); font-weight: 700; }
-            .qm-s-live b, .qm-s-live em { color: var(--qm-ok); }
+            .qm-s-live b, .qm-s-live em { color: var(--qm-live); }
             .qm-where { grid-area: where; margin: 0; display: grid; gap: 3px; font-size: 12px; }
             .qm-where div { display: flex; gap: 6px; min-width: 0; }
             .qm-where dt { flex: none; width: 58px; font-weight: 800; color: var(--qm-muted); }
             .qm-where dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 
             .qm-cr, .qm-av { background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 16px; box-shadow: var(--qm-shadow); padding: 10px 12px; display: grid; gap: 5px; min-width: 0; }
+            .qm-cr-click { cursor: pointer; }
+            .qm-cr-click:hover { border-color: var(--qm-acc); }
+            .qm-cr-click:focus-visible { outline: 2px solid var(--qm-acc); outline-offset: 2px; }
             .qm-cr-late { box-shadow: inset 4px 0 0 var(--qm-warn), var(--qm-shadow); }
             .qm-cr .qm-flag { grid-area: auto; justify-self: start; }
             .qm-cr-m { font-size: 14px; font-weight: 900; overflow-wrap: anywhere; }
+            .qm-cr-s { font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
+            .qm-cr-s b { color: var(--qm-text); font-weight: 900; }
             .qm-cr-f { font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
             .qm-cr-r { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-            .qm-cr-e { min-width: 0; overflow-wrap: normal; font-size: 12px; font-weight: 800; color: var(--qm-ok); overflow-wrap: anywhere; }
+            .qm-cr-e { min-width: 0; overflow-wrap: normal; font-size: 12px; font-weight: 800; color: var(--qm-live); overflow-wrap: anywhere; }
             .qm-mini { flex: none; display: flex; gap: 4px; }
             .qm-mini i { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--qm-line); color: var(--qm-muted); display: grid; place-items: center; }
             .qm-mini i > span { width: 12px; height: 12px; display: inline-block; }
-            .qm-mini-done { background: var(--qm-acc); border-color: var(--qm-acc) !important; color: #fff !important; }
-            .qm-mini-live { background: var(--qm-okbg); border-color: var(--qm-ok) !important; color: var(--qm-ok) !important; }
+            .qm-mini-done { background: var(--qm-donebg); border-color: var(--qm-acc) !important; color: var(--qm-donefg) !important; }
+            .qm-mini-live { background: var(--qm-livebg); border-color: var(--qm-livebd) !important; color: var(--qm-live) !important; }
             .qm-mini-na { border-style: dashed !important; opacity: .5; }
             .qm-cr-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-            .qm-origem { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: var(--qm-accbg); color: var(--qm-acc); }
+            .qm-origem { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: var(--qm-accbg); color: var(--qm-acctext); }
             .qm-pay { justify-self: start; font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; }
             .qm-pay-ok { background: var(--qm-okbg); color: var(--qm-ok); }
             .qm-pay-pend { background: var(--qm-warnbg); color: var(--qm-warn); }
@@ -5353,6 +5669,494 @@ function MobStyles() {
                 .qm-where div { flex: 1 1 0; }
                 .qm-where dt { width: auto; }
                 .qm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+        `}</style>
+    );
+}
+
+/* ===== Gaveta da coroa (desktop e celular): foto, frase da faixa e andamento do pedido ===== */
+function CoroaDrawer({ pedido, tema, nowMs, onClose }: { pedido: CoroaTvPedido; tema: TemaPai; nowMs: number; onClose: () => void }) {
+    const itensPedido = [...(pedido.itens ?? [])].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+    // modelos distintos do pedido (cada um com a foto do seu cadastro de produto)
+    const modelos = useMemo(() => {
+        const mapa = new Map<string, { chave: string; modelo: string; tipo: "natural" | "artificial" }>();
+        const add = (modelo?: string | null, tipoRaw?: string | null) => {
+            const nome = String(modelo ?? "").trim();
+            if (!nome) return;
+            const tipo: "natural" | "artificial" = tipoRaw === "artificial" ? "artificial" : "natural";
+            const chave = `${tipo}|${normNomeProduto(nome)}`;
+            if (!mapa.has(chave)) mapa.set(chave, { chave, modelo: nome, tipo });
+        };
+        for (const it of itensPedido) add(it.modelo_coroa, it.tipo_coroa);
+        if (mapa.size === 0) add(pedido.modelo_coroa, coroaSomenteArtificial(pedido) ? "artificial" : "natural");
+        return [...mapa.values()];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pedido]);
+    const [fotos, setFotos] = useState<Record<string, string>>({});
+    const [fotosCarregando, setFotosCarregando] = useState(true);
+    const [fotosComErro, setFotosComErro] = useState<Record<string, boolean>>({});
+    useEffect(() => {
+        let vivo = true;
+        setFotosCarregando(true);
+        setFotosComErro({});
+        Promise.all(modelos.map(async (m) => [m.chave, await buscarFotoModeloCoroa(m.modelo, m.tipo)] as const)).then((pares) => {
+            if (!vivo) return;
+            setFotos(Object.fromEntries(pares));
+            setFotosCarregando(false);
+        });
+        return () => { vivo = false; };
+    }, [modelos]);
+    useEffect(() => {
+        const aoTeclar = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", aoTeclar);
+        return () => window.removeEventListener("keydown", aoTeclar);
+    }, [onClose]);
+
+    const itens = itensPedido;
+    const qtd = coroaQuantidade(pedido);
+    const pago = coroaPagamentoLabel(pedido) === "Pago";
+    const atraso = coroaAtrasoTv(pedido, nowMs);
+    const tipoTxt = (t?: string | null) => (t === "natural" ? "Natural" : t === "artificial" ? "Artificial" : "");
+    const andamento = [
+        { rotulo: "Pedido recebido", em: pedido.criado_em, por: pedido.criado_por },
+        { rotulo: "Coroa iniciada", em: pedido.coroa_inicio_em, por: pedido.coroa_inicio_por },
+        { rotulo: "Faixa iniciada", em: pedido.faixa_inicio_em, por: pedido.faixa_inicio_por },
+        { rotulo: "Coroa finalizada", em: pedido.finalizada_em, por: pedido.finalizada_por },
+        { rotulo: "Entregue", em: pedido.entregue_em, por: pedido.entregue_por },
+    ].filter((l) => String(l.em ?? "").trim());
+
+    return (
+        <div className="qa-drawer-root fixed inset-0 z-50 flex items-stretch justify-end overflow-hidden" data-tema={tema} aria-modal role="dialog" aria-label="Informações da coroa">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden />
+            <div className="qa-panel-premium qa-drawer-panel relative z-10 flex h-full w-full max-w-[640px] flex-col overflow-hidden border-l shadow-2xl">
+                <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 sm:px-5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] qa-text-muted">Informações da coroa</div>
+                            <h3 className="mt-1 text-lg font-bold leading-tight text-slate-100 sm:text-xl">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</h3>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs qa-text-muted">
+                                <span>Solicitante: <b className="text-slate-200">{shown(pedido.solicitante, "a definir")}</b></span>
+                                {coroaDataHora(pedido.criado_em) && <span>Pedido: <b className="text-slate-200">{coroaDataHora(pedido.criado_em)}</b></span>}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span className="qa-tag qa-tag-status qa-tag-xs">{coroaStatusLabel(pedido.status)}</span>
+                                <span className="qa-tag qa-tag-info qa-tag-xs">{coroaOrigemLabel(pedido.origem)}</span>
+                                <span className={`qa-tag qa-tag-xs ${pago ? "qa-tag-ok" : "qa-tag-warn"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                            </div>
+                            {atraso && <div className="qd-flag qd-flag-warn" style={{ background: "var(--d-warnbg)", color: "var(--d-warn)" }}>⏱ {atraso.longo}</div>}
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="shrink-0 rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                            aria-label="Fechar"
+                        >
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                    <div className="grid gap-3">
+                        <Topic title={modelos.length > 1 ? "FOTOS DAS COROAS" : "FOTO DA COROA"} note="foto do cadastro do produto">
+                            <div className="grid gap-3">
+                                {modelos.length === 0 && <div className="qc-sem-foto">Pedido sem modelo definido.</div>}
+                                {modelos.map((m) => {
+                                    const url = fotos[m.chave];
+                                    return (
+                                        <figure key={m.chave} className="m-0">
+                                            {url && !fotosComErro[m.chave] ? (
+                                                <a href={url} target="_blank" rel="noreferrer" title="Abrir a foto em tamanho maior" className="block">
+                                                    <img src={url} alt={`Foto da coroa ${m.modelo}`} className="qc-foto" onError={() => setFotosComErro((v) => ({ ...v, [m.chave]: true }))} />
+                                                </a>
+                                            ) : (
+                                                <div className="qc-sem-foto">
+                                                    {fotosCarregando ? "Carregando foto…" : fotosComErro[m.chave] ? "Não foi possível carregar a foto deste modelo." : "Este modelo não tem foto no cadastro do produto."}
+                                                </div>
+                                            )}
+                                            <figcaption className="qc-legenda">{m.modelo}</figcaption>
+                                        </figure>
+                                    );
+                                })}
+                            </div>
+                        </Topic>
+
+                        <Topic title={itens.length > 1 ? "FRASES DAS FAIXAS" : "FRASE DA FAIXA"}>
+                            {itens.length > 0 ? (
+                                <div className="grid gap-2">
+                                    {itens.map((it, k) => (
+                                        <div key={String(it.id ?? k)}>
+                                            {itens.length > 1 && (
+                                                <div className="mb-1 text-xs font-bold text-slate-400">
+                                                    Coroa {k + 1}{tipoTxt(it.tipo_coroa) ? ` · ${tipoTxt(it.tipo_coroa)}` : ""}{it.modelo_coroa ? ` · ${it.modelo_coroa}` : ""}
+                                                </div>
+                                            )}
+                                            <div className="qc-frase">{String(it.frase ?? "").trim() ? sanitize(it.frase) : "Sem frase informada"}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="qc-frase">{String(pedido.frase ?? "").trim() ? sanitize(pedido.frase) : "Sem frase informada"}</div>
+                            )}
+                        </Topic>
+
+                        <Topic title="PEDIDO">
+                            <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                                <Field label="Solicitante" value={shown(pedido.solicitante, "a definir")} />
+                                <Field label="Telefone" value={shown(pedido.telefone, "a definir")} />
+                                <Field label="Falecido" value={shown(pedido.falecido, "a definir")} className="sm:col-span-2" />
+                                <Field label="Entrega" value={shown(pedido.local_entrega, "a definir")} className="sm:col-span-2" />
+                                <Field label="Origem" value={coroaOrigemLabel(pedido.origem)} />
+                                <Field
+                                    label="Pagamento"
+                                    value={
+                                        <>
+                                            {pago ? "Pago" : "Aguardando"}
+                                            {String(pedido.comprovante_url ?? "").trim() ? (
+                                                <>
+                                                    {" · "}
+                                                    <a href={String(pedido.comprovante_url)} target="_blank" rel="noreferrer" className="qc-link">Ver comprovante</a>
+                                                </>
+                                            ) : null}
+                                        </>
+                                    }
+                                />
+                                {String(pedido.observacoes ?? "").trim() && <Field label="Observações" value={sanitize(pedido.observacoes)} className="sm:col-span-2" />}
+                            </div>
+                        </Topic>
+
+                        <Topic title="ANDAMENTO">
+                            <div className="grid gap-2">
+                                {andamento.map((l) => (
+                                    <Field key={l.rotulo} label={l.rotulo} value={`${coroaDataHora(l.em)}${String(l.por ?? "").trim() ? ` · ${shown(l.por, "")}` : ""}`} />
+                                ))}
+                            </div>
+                        </Topic>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ===== Quadro do desktop (telas a partir de 1024 px, fora da rota da TV) =====
+ * Cartões um abaixo do outro: identificação | etapas com tempos | Total e Ocioso.
+ * Clique no cartão abre a gaveta de detalhes (a mesma do celular). Coroas em grade de 3 colunas. */
+function DeskCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: (r: Registro) => void }) {
+    const r = resumo.registro;
+    const rankAtual = statusFlowRank(resumo.atualKey);
+    const ocioso = resumo.durations.get("idle") ?? 0;
+    const ociosoAtivo = resumo.activeKey === "idle";
+    const semVelorio = !rotaAtivaLegado(r.realiza_velorio);
+    const semSepultamento = !rotaAtivaLegado(r.realiza_sepultamento);
+    const sepultamentoTxt = semSepultamento
+        ? "Sem sepultamento pelo PAI"
+        : `${shown(r.local_sepultamento || r.local)} · ${dateDayMonthOr(r.data_fim_velorio)} ${timeOr(r.hora_fim_velorio)}`;
+    const nivel = resumo.alerta?.nivel;
+
+    return (
+        <article
+            className={`qd-card ${nivel ? `qd-card-${nivel}` : ""} ${mobClasseConv(r.convenio).replace("qm-conv-", "qd-conv-")}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(r)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? onSelect(r) : undefined)}
+            aria-label={`${shown(r.falecido)}: ${resumo.atualLabel}. Clique para ver os detalhes.`}
+        >
+            <div className="qd-id">
+                <h3 className="qd-name">{shown(r.falecido)}</h3>
+                <div className="qd-meta">
+                    <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+                </div>
+                <div className="qd-now">
+                    <span className="qd-dot qa-status-blink" aria-hidden />
+                    <div>
+                        <b>{resumo.atualLabel}</b>
+                        <span>há {tvDuracaoTexto(resumo.atualDesdeMs)}{resumo.atualResponsavel ? ` · ${resumo.atualResponsavel}` : ""}</span>
+                    </div>
+                </div>
+                {resumo.alerta && (
+                    <div className={`qd-flag qd-flag-${resumo.alerta.nivel}`}>{resumo.alerta.nivel === "crit" ? "⚠" : "⏱"} {resumo.alerta.texto}</div>
+                )}
+            </div>
+
+            <div className="qd-mid">
+                <ol className="qd-steps">
+                    {TV_ETAPAS.map((step) => {
+                        const pulada = isStatusStepSkipped(r, step.key);
+                        const duracao = resumo.durations.get(step.key) ?? 0;
+                        const ativa = !pulada && resumo.activeKey === step.key;
+                        const feita = !pulada && !ativa && (duracao > 0 || rankAtual > statusFlowRank(step.key));
+                        const estado = pulada ? "na" : ativa ? "live" : feita ? "done" : "pend";
+                        const texto = pulada ? "sem" : ativa || feita ? formatDurationMs(duracao) : "—";
+                        return (
+                            <li
+                                key={step.key}
+                                className={`qd-s qd-s-${estado}`}
+                                title={`${step.label} • ${pulada ? "Não se aplica" : ativa || feita ? formatDurationMs(duracao) : "Ainda não aconteceu"}`}
+                            >
+                                <span className={`qd-c ${ativa ? "qa-status-active-ring" : ""}`}>
+                                    <span className={`qd-c-svg ${ativa ? "qa-status-blink" : ""}`}><StatusIcon type={step.icon} /></span>
+                                </span>
+                                <b>{texto}</b>
+                            </li>
+                        );
+                    })}
+                </ol>
+                <dl className="qd-where">
+                    <div><dt>Velório</dt><dd>{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</dd></div>
+                    <div><dt>Sepult.</dt><dd>{sepultamentoTxt}</dd></div>
+                </dl>
+            </div>
+
+            <div className="qd-tot">
+                <div className="qd-box">
+                    <small>Total</small>
+                    <b title="Tempo total"><span className="qd-box-ic" aria-hidden><StatusIcon type="clock" /></span>{formatDurationMs(resumo.totalMs)}</b>
+                </div>
+                <div className={`qd-box qd-box-oc ${ociosoAtivo ? "qd-box-live" : ""} ${ocioso >= TV_LIMITE_PARADO_MS ? "qd-box-crit" : ""}`}>
+                    <small>Ocioso</small>
+                    <b title="Tempo ocioso"><span className={`qd-box-ic ${ociosoAtivo ? "qa-status-blink" : ""}`} aria-hidden><StatusIcon type="clockPause" /></span>{formatDurationMs(ocioso)}</b>
+                </div>
+            </div>
+        </article>
+    );
+}
+
+function QuadroDesktop({
+    ativos,
+    coroas,
+    coroasError,
+    statusLogsById,
+    nowMs,
+    clockTime,
+    clockDate,
+    avisos,
+    onSelect,
+    onSelectCoroa,
+}: {
+    ativos: Registro[];
+    coroas: CoroaTvPedido[];
+    coroasError?: string | null;
+    statusLogsById: Record<string, LogItem[]>;
+    nowMs: number;
+    clockTime: string;
+    clockDate: string;
+    avisos: Aviso[];
+    onSelect: (r: Registro) => void;
+    onSelectCoroa?: (p: CoroaTvPedido) => void;
+}) {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const escuroApp = useTemaEscuroApp(rootRef);
+    const { tema, alternar: alternarTema } = useTemaPai(escuroApp);
+    const [avisosAbertos, setAvisosAbertos] = useState(false);
+
+    const resumos = useMemo(
+        () => ativos.map((r) => resumirAtendimentoTv(r, statusLogsById[getRegistroTrackingId(r)], nowMs)),
+        [ativos, statusLogsById, nowMs]
+    );
+    const parados = resumos.filter((x) => x.alerta?.nivel === "crit").length;
+    const totalCoroas = coroas.reduce((s, p) => s + coroaQuantidade(p), 0);
+    const pagamentosPendentes = coroas.filter((p) => coroaPagamentoLabel(p) !== "Pago").length;
+    const coroasAtrasadas = coroas.filter((p) => coroaAtrasoTv(p, nowMs)).length;
+    const listaAvisos = useMemo(
+        () =>
+            (avisos ?? [])
+                .map((a) => ({ usuario: shown(a?.usuario, "").trim(), mensagem: shown(a?.mensagem, "").trim() }))
+                .filter((x) => x.usuario || x.mensagem),
+        [avisos]
+    );
+
+    return (
+        <div ref={rootRef} className="qm-root qd-root" data-tema={tema}>
+            <div className="qd-scroll">
+                <header className="qd-head">
+                    <div className="qd-ico" aria-hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+                    </div>
+                    <div className="qd-title">
+                        <h1>Quadro de Atendimentos</h1>
+                        <div className="qd-sub">
+                            <span className="qd-live"><i />Atualizado em tempo real</span>
+                            <span className="qd-pill"><b>{ativos.length}</b>em andamento</span>
+                            {parados > 0 && <span className="qd-pill qd-pill-crit"><b>{parados}</b>parados +24 h</span>}
+                            <span className="qd-hint">Clique em um atendimento para ver as informações completas.</span>
+                        </div>
+                    </div>
+                    <div className="qd-actions">
+                        <a className="qd-btn" href={ROTA_TV} title="Abrir o quadro em modo TV">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="2" y="4" width="20" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+                            Modo TV
+                        </a>
+                        <BotaoTema tema={tema} onClick={alternarTema} className="qd-btn qd-ib" />
+                        <div className="qd-clock"><b>{clockTime}</b><small>{clockDate}</small></div>
+                    </div>
+                </header>
+
+                {listaAvisos.length > 0 && (
+                    <>
+                        <div className="qd-aviso">
+                            <b className="qd-aviso-tag">AVISO</b>
+                            <span className="qd-aviso-txt">{listaAvisos[0].usuario ? `${listaAvisos[0].usuario}: ` : ""}{listaAvisos[0].mensagem}</span>
+                            <span className="qd-aviso-n">1 de {listaAvisos.length}</span>
+                            {listaAvisos.length > 1 && (
+                                <button type="button" className="qd-btn qd-btn-sm" aria-expanded={avisosAbertos} onClick={() => setAvisosAbertos((v) => !v)}>
+                                    {avisosAbertos ? "Recolher" : "Ver todos"}
+                                </button>
+                            )}
+                        </div>
+                        {avisosAbertos && (
+                            <div className="qd-avlist">
+                                {listaAvisos.map((a, i) => (
+                                    <div key={i} className="qd-avitem">
+                                        <span className="qd-aviso-tag qd-avitem-tag">AVISO</span>
+                                        <div><b>{a.usuario}</b><p>{a.mensagem}</p></div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                )}
+
+                <div className="qd-list">
+                    {resumos.length === 0 && <p className="qm-empty">Nenhum atendimento em andamento.</p>}
+                    {resumos.map((resumo, i) => (
+                        <DeskCartaoAtendimento key={resumo.trackingId || i} resumo={resumo} onSelect={onSelect} />
+                    ))}
+                </div>
+                {resumos.length > 0 && <p className="qm-note">Mostrando os atendimentos mais recentes (máximo de 60)</p>}
+
+                <section className="qd-cor" aria-label="Coroas de Flores em Confecção">
+                    <h2>Coroas de Flores em Confecção <span className="qd-n">{totalCoroas}</span></h2>
+                    {coroasError && <p className="qm-note qm-note-warn">Dados das coroas podem estar desatualizados.</p>}
+                    {coroas.length > 0 ? (
+                        <>
+                            <p className="qm-note qd-cor-note">
+                                {totalCoroas} {totalCoroas === 1 ? "coroa" : "coroas"} em {coroas.length} {coroas.length === 1 ? "pedido" : "pedidos"}
+                                {pagamentosPendentes ? ` · ${pagamentosPendentes} aguardando pagamento` : ""}
+                                {coroasAtrasadas ? ` · ${coroasAtrasadas} ${coroasAtrasadas === 1 ? "atrasada" : "atrasadas"}` : ""} · ordem de chegada
+                            </p>
+                            <div className="qd-cgrid">
+                                {coroas.map((p, i) => (
+                                    <MobCartaoCoroa key={String(p.id ?? i)} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} onSelect={onSelectCoroa} />
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <p className="qm-empty">Nenhuma coroa em confecção.</p>
+                    )}
+                </section>
+            </div>
+
+            <DeskStyles />
+            <MobStyles />
+            <StatusBlinkStyle />
+        </div>
+    );
+}
+
+function DeskStyles() {
+    return (
+        <style jsx global>{`
+            .qd-root { padding: 16px 18px 0; gap: 0; border-radius: 22px; }
+            .qd-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px; padding: 4px 6px 24px 2px; }
+            .qd-scroll > * { flex: none; }
+            .qd-head { display: flex; align-items: center; gap: 16px; }
+            .qd-ico { flex: none; width: 56px; height: 56px; border-radius: 18px; background: #313C55; color: #fff; display: grid; place-items: center; }
+            .qd-root[data-tema="escuro"] .qd-ico { border: 1px solid var(--qm-line); }
+            .qd-ico svg { width: 28px; height: 28px; }
+            .qd-title { flex: 1; min-width: 0; }
+            .qd-title h1 { margin: 0; font-size: 30px; font-weight: 800; line-height: 1.1; }
+            .qd-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
+            .qd-live { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 800; color: var(--qm-ok); }
+            .qd-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--qm-ok); }
+            .qd-pill { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 16px; border: 1.5px solid var(--qm-line); background: var(--qm-surface); font-size: 13px; font-weight: 700; color: var(--qm-muted); }
+            .qd-pill b { font-size: 15px; font-weight: 800; color: var(--qm-text); }
+            .qd-pill-crit { color: var(--qm-crit); background: var(--qm-critbg); border-color: transparent; }
+            .qd-pill-crit b { color: var(--qm-crit); }
+            .qd-hint { font-size: 13px; color: var(--qm-muted); }
+            .qd-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+            .qd-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid var(--qm-text); background: var(--qm-surface); color: var(--qm-text); font-size: 14px; font-weight: 800; text-decoration: none; cursor: pointer; }
+            .qd-btn:hover { background: var(--qm-s2); }
+            .qd-btn svg { width: 18px; height: 18px; }
+            .qd-ib { width: 44px; padding: 0; border-color: var(--qm-line); }
+            .qd-btn-sm { height: 40px; padding: 0 14px; font-size: 13px; }
+            .qd-btn:focus-visible, .qd-card:focus-visible { outline: 2px solid var(--qm-acc); outline-offset: 2px; }
+            .qd-clock { text-align: right; margin-left: 8px; }
+            .qd-clock b { display: block; font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+            .qd-clock small { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--qm-muted); }
+
+            .qd-aviso { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; background: var(--qm-accbg); }
+            .qd-aviso-tag { font-size: 12px; font-weight: 800; letter-spacing: .12em; }
+            .qd-aviso-txt { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+            .qd-aviso-n { font-size: 12px; font-weight: 700; color: var(--qm-muted); }
+            .qd-avlist { background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 16px; overflow: hidden; margin-top: -8px; }
+            .qd-avitem { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-top: 1px solid var(--qm-line); }
+            .qd-avitem:first-child { border-top: 0; }
+            .qd-avitem-tag { flex: none; padding: 4px 8px; border-radius: 8px; background: var(--qm-accbg); font-size: 11px; }
+            .qd-avitem b { font-size: 14px; font-weight: 800; }
+            .qd-avitem p { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+
+            .qd-list { display: flex; flex-direction: column; gap: 14px; }
+            .qd-card { display: grid; grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) 150px; gap: 28px; align-items: center; padding: 18px 22px; background: var(--qm-surface); border: 1px solid var(--qm-line); border-radius: 22px; box-shadow: var(--qm-shadow); cursor: pointer; text-align: left; }
+            .qd-card:hover { border-color: var(--qm-text); }
+            .qd-card-crit { box-shadow: inset 5px 0 0 var(--qm-crit), var(--qm-shadow); }
+            .qd-card-warn { box-shadow: inset 5px 0 0 var(--qm-warn), var(--qm-shadow); }
+            .qd-id, .qd-mid { min-width: 0; }
+            .qd-name { margin: 0; font-size: 18px; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+            .qd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--qm-muted); }
+            .qd-now { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: var(--qm-s2); }
+            .qd-conv-assoc .qd-now { background: rgba(179, 206, 82, .28); }
+            .qd-conv-pref .qd-now { background: rgba(0, 174, 236, .22); }
+            .qd-conv-part .qd-now { background: rgba(242, 203, 63, .28); }
+            .qd-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--qm-livebd); }
+            .qd-now b { display: block; font-size: 16px; font-weight: 800; line-height: 1.2; }
+            .qd-now span { display: block; margin-top: 2px; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+            .qd-flag { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 5px 10px; }
+            .qd-flag-crit { background: var(--qm-critbg); color: var(--qm-crit); }
+            .qd-flag-warn { background: var(--qm-warnbg); color: var(--qm-warn); }
+
+            .qd-steps { list-style: none; margin: 0; padding: 14px 8px 12px; display: flex; background: var(--qm-s2); border: 1px solid var(--qm-line); border-radius: 18px; }
+            .qd-s { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+            .qd-s:not(:first-child)::before { content: ""; position: absolute; top: 23px; right: calc(50% + 26px); width: calc(100% - 52px); height: 3px; border-radius: 2px; background: var(--qm-line); }
+            .qd-s-done::before, .qd-s-live::before { background: var(--qm-acc) !important; }
+            .qd-c { position: relative; z-index: 1; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; box-sizing: border-box; border: 2px solid var(--qm-line); background: var(--qm-surface); color: var(--qm-muted); }
+            .qd-c-svg { width: 22px; height: 22px; display: inline-block; }
+            .qd-s-done .qd-c { background: var(--qm-donebg); border-color: var(--qm-acc); color: var(--qm-donefg); }
+            .qd-s-live .qd-c { background: var(--qm-livebg); border-color: var(--qm-livebd); color: var(--qm-live); }
+            .qd-s-na .qd-c { border-style: dashed; }
+            .qd-s-na .qd-c-svg { opacity: .45; }
+            .qd-s b { font-size: 14px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+            .qd-s-pend b, .qd-s-na b { color: var(--qm-muted); font-weight: 700; }
+            .qd-s-live b { color: var(--qm-live); }
+            .qd-where { margin: 10px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; font-size: 13px; }
+            .qd-where div { display: flex; gap: 8px; min-width: 0; }
+            .qd-where dt { flex: none; font-weight: 800; color: var(--qm-muted); }
+            .qd-where dd { margin: 0; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+
+            .qd-tot { display: grid; gap: 12px; justify-items: end; }
+            .qd-box { text-align: right; }
+            .qd-box small { display: block; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--qm-muted); }
+            .qd-box b { display: inline-flex; align-items: center; gap: 6px; font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+            .qd-box-ic { display: inline-flex; width: 22px; height: 22px; }
+            .qd-box-ic svg { width: 100%; height: 100%; }
+            .qd-box-oc b { color: var(--qm-ok); }
+            .qd-box-live b { color: var(--qm-live); }
+            .qd-box-crit b { color: var(--qm-crit); }
+
+            .qd-cor h2 { margin: 6px 0 8px; display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; }
+            .qd-n { background: var(--qm-acc); color: #10233F; border-radius: 999px; padding: 0 12px; font-size: 15px; font-weight: 800; }
+            .qd-cor-note { margin-bottom: 10px; text-align: left; }
+            .qd-cgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+
+            @media (max-width: 1279px) {
+                .qd-card { grid-template-columns: minmax(210px, 250px) minmax(0, 1fr) 118px; gap: 18px; padding: 16px 18px; }
+                .qd-c { width: 40px; height: 40px; }
+                .qd-c-svg { width: 19px; height: 19px; }
+                .qd-s:not(:first-child)::before { top: 19px; right: calc(50% + 22px); width: calc(100% - 44px); }
+                .qd-box b { font-size: 20px; }
+                .qd-hint { display: none; }
+                .qd-cgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             }
         `}</style>
     );
@@ -5860,6 +6664,18 @@ function buildDetalhesNodes(raw: unknown): React.ReactNode {
     ) : null;
 }
 
+/* Ícone da linha do tempo: o mesmo conjunto de ícones das etapas (fase), ou ponto para as demais ações. */
+function LogIcone({ acao, status }: { acao?: string; status?: string }) {
+    const fase = normalizarStatus(status);
+    const info = fase && fase.startsWith("fase") ? getStatusStepInfo(fase) : null;
+    const tipo: StatusIconKey = info ? info.icon : "dot";
+    return (
+        <div className={`qa-log-ic ${info ? "" : "qa-log-ic-dot"}`} title={info ? info.label : capitalize(acao || "")} aria-hidden>
+            <span><StatusIcon type={tipo} /></span>
+        </div>
+    );
+}
+
 function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; usuarioVisivel?: boolean }) {
     if (!logs || logs.length === 0) {
         return <div className="p-4 text-center text-muted-foreground">Nenhum log encontrado.</div>;
@@ -5875,7 +6691,7 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                 return (
                     <div key={i} className="log-entry rounded-xl border bg-background/60 p-2.5 shadow-sm overflow-hidden min-w-0">
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 min-w-0">
-                            <div className="text-xl leading-none flex-shrink-0 sm:mt-0.5">{iconForAction(ent.acao, ent.status_novo)}</div>
+                            <LogIcone acao={ent.acao} status={ent.status_novo} />
 
                             <div className="flex-1 min-w-0">
                                 <div className="text-[11px] text-muted-foreground">{formatLogDateTime(ent.datahora)}</div>

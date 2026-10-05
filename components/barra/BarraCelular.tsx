@@ -3,7 +3,7 @@
 /**
  * Barra de baixo do celular (abaixo de 768 px, onde o menu lateral vira gaveta).
  * 5 atalhos personalizáveis (barra_atalhos.php, aparelho "celular") + o Menu, sempre por último,
- * que abre o menu lateral. Contador de não lidas no atalho do Messenger.
+ * que abre o MENU DO CELULAR do mockup (components/shell/MenuCelular.tsx), não a gaveta lateral. Contador de não lidas no atalho do Messenger.
  *
  * Fica dentro do AppShell (precisa do SidebarProvider). Ocupa o próprio espaço no fim da página
  * (não cobre o conteúdo) e some:
@@ -13,10 +13,10 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSidebar } from "@/components/ui/sidebar";
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { useContadores } from "@/components/shell/useContadores";
+import { abrirMenuCelular, useMenuCelularAberto } from "@/components/shell/MenuCelular";
 import { IconeAtalho, useBarra } from "./atalhos";
 
 export const EVENTO_OCULTAR_BARRA = "pai:ocultar-barra";
@@ -30,13 +30,13 @@ const ROTAS_SEM_BARRA = ["/chat", "/tela", "/quadrotv", "/login"];
 
 export default function BarraCelular() {
     const pathname = usePathname() || "/";
-    const sidebar = useSidebar() as any;
     const { perms, has } = usePerms();
     const barra = useBarra();
     const temMessenger = perms !== null && has("messenger");
     const naoLidas = useNaoLidas(temMessenger);
     const numeros = useContadores(perms, has);
     const [ocultaPelaTela, setOcultaPelaTela] = useState(false);
+    const menuAberto = useMenuCelularAberto();
 
     useEffect(() => {
         const aoPedir = (e: Event) => setOcultaPelaTela(Boolean((e as CustomEvent).detail));
@@ -60,10 +60,6 @@ export default function BarraCelular() {
         return 0;
     };
     const ativo = (rota: string) => (rota === "/" ? pathname === "/" : pathname === rota || pathname.startsWith(rota + "/"));
-    const abrirMenu = () => {
-        if (typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(true);
-        else sidebar?.toggleSidebar?.();
-    };
     const classeItem = (on: boolean) =>
         `relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[10.5px] font-bold leading-tight ${on ? "text-primary" : "text-muted-foreground"}`;
 
@@ -73,6 +69,7 @@ export default function BarraCelular() {
             <div aria-hidden="true" className="h-[calc(4.25rem+env(safe-area-inset-bottom))] md:hidden" />
             <nav
                 aria-label="Atalhos"
+                data-pai-barra="true"
                 className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
             >
                 <div className="mx-auto flex h-[4.25rem] max-w-xl items-stretch px-1">
@@ -92,7 +89,7 @@ export default function BarraCelular() {
                             </Link>
                         );
                     })}
-                    <button type="button" onClick={abrirMenu} className={classeItem(false)} aria-label="Abrir o menu">
+                    <button type="button" onClick={abrirMenuCelular} className={classeItem(menuAberto)} aria-label="Abrir o menu" aria-expanded={menuAberto}>
                         <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
                             <path d="M4 12h16M4 6h16M4 18h16" />
                         </svg>

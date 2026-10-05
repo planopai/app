@@ -8,6 +8,7 @@ import { ArrowLeft, Home, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { BotaoMenuCelular } from "@/components/shell/MenuCelular";
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { ThemeSelector } from "./theme-selector";
 import { ModeSwitcher } from "./mode-switcher";
@@ -51,7 +52,9 @@ export function SiteHeader() {
       "
     >
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-        <SidebarTrigger className="-ml-1" />
+        {/* computador: recolher/expandir o menu lateral; celular: abre o Menu do mockup (não a gaveta) */}
+        <SidebarTrigger className="-ml-1 hidden md:inline-flex" />
+        <BotaoMenuCelular />
 
         {/* Home */}
         <Button

@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/sidebar";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { MODULOS, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import { MODULOS, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
 import { IconeAtalho, useBarra } from "@/components/barra/atalhos";
@@ -348,6 +348,8 @@ export function AppSidebar(
         .filter((modulo) => moduloVisivel(modulo, has))
         .map((modulo) => ({
           category: modulo.titulo,
+          /* página de entrada do módulo ("Visão geral"), como no mockup */
+          hub: { title: "Visão geral", href: destinoDoModulo(modulo, has), Icon: modulo.icone as any },
           items: itensVisiveis(modulo, has).map((item) => ({
             title: item.titulo,
             href: hrefDoItem(item, has),
@@ -585,14 +587,14 @@ export function AppSidebar(
   const mostrarAtalhos = !sidebar?.isMobile;
   const atalhos = mostrarAtalhos
     ? barra.computador.itens
-      .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
-      .map((a) => ({
-        title: a.rotulo,
-        href: a.rota,
-        Icon: (p: { className?: string }) => (
-          <IconeAtalho id={a.id} className={p.className} />
-        ),
-      }))
+        .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
+        .map((a) => ({
+          title: a.rotulo,
+          href: a.rota,
+          Icon: (p: { className?: string }) => (
+            <IconeAtalho id={a.id} className={p.className} />
+          ),
+        }))
     : [];
   const hrefsAtalhos = new Set(atalhos.map((a) => a.href));
   const itensRecolhidos = [
@@ -775,6 +777,13 @@ export function AppSidebar(
 
                     {opened && (
                       <SidebarMenu className="space-y-1 pl-1">
+                        <SidebarMenuItem key={`hub-${group.category}`}>
+                          <MenuItem
+                            title={group.hub.title}
+                            href={group.hub.href}
+                            Icon={group.hub.Icon}
+                          />
+                        </SidebarMenuItem>
                         {group.items.map(
                           (
                             item
