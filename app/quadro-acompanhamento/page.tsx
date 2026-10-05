@@ -256,7 +256,10 @@ const API_PHP = ehRotaTv() ? API_DIRETA : "/api/php";
  * deixei como estão abaixo e marquei com  >>> TROCAR AO SUBIR  para você ajustar ao que o app realmente usa.
  * A rota da TV também não está na skill: o padrão abaixo abre este mesmo Quadro em modo TV (?tv=1). */
 const ROTA_ATENDIMENTO = "/atendimento";
-const rotaEditar = (id: string) => `${ROTA_ATENDIMENTO}?editar=${encodeURIComponent(id)}`; // >>> TROCAR AO SUBIR (parâmetro real)
+const ROTA_ACOMPANHAMENTO = "/acompanhamento";
+
+const rotaEditar = (id: string) =>
+    `${ROTA_ACOMPANHAMENTO}?editar=${encodeURIComponent(id)}`;
 const ROTA_TV = "/quadro-acompanhamento?tv=1"; // >>> TROCAR AO SUBIR (endereço da rota da TV)
 const LOGO_PAI_URL = ""; // >>> TROCAR AO SUBIR (caminho do logo do PAI, ex.: "/logo-pai.png"). Vazio = não mostra o logo na TV.
 
