@@ -261,10 +261,10 @@ const ROTA_TV = "/quadro-acompanhamento?tv=1"; // >>> TROCAR AO SUBIR (endereço
 const LOGO_PAI_URL = ""; // >>> TROCAR AO SUBIR (caminho do logo do PAI, ex.: "/logo-pai.png"). Vazio = não mostra o logo na TV.
 
 const COROAS_TV_LOCAL =
-    `${API_PHP}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
+    `${API_DIRETA}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
 
 const COROAS_TV_REMOTA =
-    "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
+    `${API_DIRETA}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
 
 /* =========================
    Helpers comuns
@@ -1335,44 +1335,176 @@ function coroaDataHora(v?: string | null): string {
     return `${p(d.getDate())}/${p(d.getMonth() + 1)} - ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/* Foto da coroa = foto do CADASTRO DO PRODUTO (modelo da coroa no estoque).
- * O pedido guarda só o nome do modelo (ex.: "MOD 03 (1,10MT)"); a foto vem do produto de mesmo nome:
- *   materiais_gerais.php?action=coroas_buscar&tipo=natural|artificial&q=<modelo>  →  { ok, rows:[{ nome, foto_url, fotos:[{arquivo,is_principal}] }] }
- * O cadastro guarda só o NOME do arquivo (ex.: "prod_20260327_103510_4e71705e.webp").
- * >>> TROCAR AO SUBIR: pasta onde o sistema publica as fotos de produto (a skill não mostra esse endereço). */
-const FOTO_PRODUTO_BASE = `${API_DIRETA}/uploads/produtos/`; // >>> TROCAR AO SUBIR
-
+/* Foto da coroa = foto do CADASTRO DO PRODUTO.
+ *
+ * IMPORTANTE:
+ * Esta tela usa o MESMO fluxo da página de Coroas:
+ *   materiais_gerais.php?init=1
+ *
+ * Não usar action=coroas_buscar, pois esse endpoint estava retornando HTTP 400.
+ * Também não usar /api/php para essa consulta.
+ */
 function urlFotoProduto(arquivo?: string | null): string {
-    const t = String(arquivo ?? "").trim();
-    if (!t) return "";
-    if (/^(https?:|data:|blob:)/i.test(t)) return t;
-    if (t.startsWith("/")) return `${API_DIRETA}${t}`;
-    return `${FOTO_PRODUTO_BASE}${t}`;
+    const raw = String(arquivo ?? "").trim();
+
+    if (!raw || raw === "null" || raw === "undefined") return "";
+
+    // Já é uma URL pronta.
+    if (
+        /^data:image\//i.test(raw) ||
+        /^blob:/i.test(raw) ||
+        /^https?:\/\//i.test(raw)
+    ) {
+        return raw;
+    }
+
+    // Quando o backend devolve uploads/produtos/foto.webp ou /uploads/produtos/foto.webp,
+    // não duplica a pasta uploads/produtos.
+    const clean = raw.startsWith("/") ? raw : `/${raw}`;
+
+    if (clean.startsWith("/uploads/")) {
+        return `${API_DIRETA}${clean}`;
+    }
+
+    // Quando vem apenas o nome do arquivo.
+    return `${API_DIRETA}/uploads/produtos/${raw.replace(/^\/+/, "")}`;
 }
 
-const normNomeProduto = (v: unknown) => String(v ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const normNomeProduto = (v: unknown) =>
+    String(v ?? "")
+        .trim()
+        .toLocaleLowerCase("pt-BR")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ");
+
 const FOTOS_MODELO_COROA = new Map<string, Promise<string>>();
 
-function buscarFotoModeloCoroa(modelo: string, tipo: "natural" | "artificial"): Promise<string> {
+let PRODUTOS_COROAS_PROMISE: Promise<any[]> | null = null;
+
+/**
+ * Carrega uma única vez o catálogo de produtos que contém as fotos.
+ * É o mesmo endpoint usado pela tela de Coroas que exibe as imagens corretamente.
+ */
+async function carregarProdutosCoroas(): Promise<any[]> {
+    if (PRODUTOS_COROAS_PROMISE) return PRODUTOS_COROAS_PROMISE;
+
+    PRODUTOS_COROAS_PROMISE = (async () => {
+        try {
+            const url = `${API_DIRETA}/materiais_gerais.php?init=1&_ts=${Date.now()}`;
+
+            const j = await fetchJsonFast<any>(url, {
+                ttlMs: 60_000,
+                timeoutMs: 15_000,
+                cacheKey: "qa_produtos_coroas_init",
+            });
+
+            const produtos: any[] = Array.isArray(j?.produtos)
+                ? j.produtos
+                : [];
+
+            return produtos;
+        } catch (e) {
+            PRODUTOS_COROAS_PROMISE = null;
+            throw e;
+        }
+    })();
+
+    return PRODUTOS_COROAS_PROMISE;
+}
+
+/**
+ * Seleciona a foto principal do cadastro.
+ * Primeiro respeita is_principal; depois ordem; por fim usa foto_url.
+ */
+function arquivoFotoPrincipalProduto(prod: any): string {
+    if (!prod) return "";
+
+    const fotos: any[] = Array.isArray(prod?.fotos)
+        ? [...prod.fotos]
+        : [];
+
+    if (fotos.length > 0) {
+        fotos.sort((a, b) => {
+            const principalA =
+                Number(a?.is_principal || 0) === 1 ? 0 : 1;
+
+            const principalB =
+                Number(b?.is_principal || 0) === 1 ? 0 : 1;
+
+            if (principalA !== principalB) {
+                return principalA - principalB;
+            }
+
+            return Number(a?.ordem || 0) - Number(b?.ordem || 0);
+        });
+
+        const primeira = fotos[0];
+
+        return String(
+            primeira?.foto_url ||
+            primeira?.arquivo ||
+            ""
+        ).trim();
+    }
+
+    return String(prod?.foto_url || "").trim();
+}
+
+function buscarFotoModeloCoroa(
+    modelo: string,
+    tipo: "natural" | "artificial",
+): Promise<string> {
     const chave = `${tipo}|${normNomeProduto(modelo)}`;
+
     const guardada = FOTOS_MODELO_COROA.get(chave);
     if (guardada) return guardada;
+
     const p = (async () => {
         try {
-            const url = `${API_PHP}/materiais_gerais.php?action=coroas_buscar&tipo=${tipo}&q=${encodeURIComponent(modelo)}&limit=20&_ts=${Date.now()}`;
-            const j = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: `foto_coroa_${chave}` });
-            const rows: any[] = Array.isArray(j?.rows) ? j.rows : [];
+            const produtos = await carregarProdutosCoroas();
+
             const alvo = normNomeProduto(modelo);
-            const prod = rows.find((r) => normNomeProduto(r?.nome) === alvo) ?? rows[0];
-            const fotos: any[] = Array.isArray(prod?.fotos) ? prod.fotos : [];
-            const arq = prod?.foto_url || fotos.find((f) => f?.is_principal)?.arquivo || fotos[0]?.arquivo;
-            return urlFotoProduto(arq);
-        } catch {
-            FOTOS_MODELO_COROA.delete(chave); // tenta de novo na próxima abertura
+
+            const categoriaEsperada =
+                tipo === "artificial"
+                    ? "coroas artificiais"
+                    : "coroas naturais";
+
+            // Primeiro tenta nome + categoria.
+            // Caso o backend não devolva categoria_nome, usa somente o nome.
+            const prod =
+                produtos.find(
+                    (r) =>
+                        normNomeProduto(r?.nome) === alvo &&
+                        normNomeProduto(r?.categoria_nome) === categoriaEsperada,
+                ) ??
+                produtos.find(
+                    (r) => normNomeProduto(r?.nome) === alvo,
+                );
+
+            if (!prod) {
+                return "";
+            }
+
+            const arquivo = arquivoFotoPrincipalProduto(prod);
+
+            return urlFotoProduto(arquivo);
+        } catch (e) {
+            console.warn(
+                `Não foi possível carregar a foto da coroa "${modelo}".`,
+                e,
+            );
+
+            // Remove do cache para permitir nova tentativa posteriormente.
+            FOTOS_MODELO_COROA.delete(chave);
+
             return "";
         }
     })();
+
     FOTOS_MODELO_COROA.set(chave, p);
+
     return p;
 }
 
