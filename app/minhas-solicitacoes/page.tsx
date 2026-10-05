@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 /**
  * Tipo utilitário para representar IDs numéricos vindos da API.
@@ -351,7 +352,7 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
  * visual dos cards.
  */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm", className].join(" ")}>{children}</section>;
 }
 
 /**
@@ -362,7 +363,7 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-700">{label}</span>
+            <span className="mb-1 block text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8]">{label}</span>
             {children}
         </label>
     );
@@ -379,8 +380,8 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
         <input
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
-                "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
                 props.className || "",
             ].join(" ")}
         />
@@ -398,8 +399,8 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
         <select
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
                 props.className || "",
             ].join(" ")}
         />
@@ -426,12 +427,12 @@ function Button({
 
     const style =
         variant === "solid"
-            ? "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
             : variant === "soft"
-                ? "border border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200"
+                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
                 : variant === "danger"
-                    ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+                    ? "border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FBDAD6] dark:hover:bg-[#FF9C92]/25"
+                    : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
 
     return (
         <button {...props} className={[base, style, className].join(" ")}>
@@ -459,18 +460,16 @@ function Pill({ children, className = "" }: { children: React.ReactNode; classNa
 function StatusBadge({ status, options }: { status: string; options: StatusOption[] }) {
     const cls =
         status === "PENDENTE"
-            ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+            ? "border border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white"
             : status === "EM_SEPARACAO"
-                ? "bg-sky-50 text-sky-800 ring-1 ring-sky-200"
+                ? "border border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]"
                 : status === "EM_TRANSITO"
-                    ? "bg-indigo-50 text-indigo-800 ring-1 ring-indigo-200"
+                    ? "border border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]"
                     : status === "ENTREGUE"
-                        ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200"
+                        ? "border border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white"
                         : status === "RECUSADA"
-                            ? "bg-rose-50 text-rose-800 ring-1 ring-rose-200"
-                            : status === "CANCELADA"
-                                ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-                                : "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+                            ? "border border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
+                            : "border border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]";
 
     return <Pill className={cls}>{statusLabel(status, options)}</Pill>;
 }
@@ -513,15 +512,15 @@ function Modal({
     if (!open) return null;
 
     return (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-3 sm:items-center sm:p-4">
-            <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-3 sm:items-center sm:p-4">
+            <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
                     <div className="min-w-0">
-                        <h2 className="text-base font-bold text-slate-900">{title}</h2>
-                        {subtitle ? <p className="mt-1 text-sm leading-5 text-slate-600">{subtitle}</p> : null}
+                        <h2 className="text-base font-bold text-[#313C55] dark:text-white">{title}</h2>
+                        {subtitle ? <p className="mt-1 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{subtitle}</p> : null}
                     </div>
 
-                    <button type="button" onClick={onClose} className="rounded-2xl px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100" aria-label="Fechar">
+                    <button type="button" onClick={onClose} className="rounded-2xl px-3 py-2 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10" aria-label="Fechar">
                         ✕
                     </button>
                 </div>
@@ -540,9 +539,9 @@ function Modal({
  */
 function EmptyState({ title, text }: { title: string; text: string }) {
     return (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-            <p className="text-sm font-bold text-slate-900">{title}</p>
-            <p className="mt-1 text-sm leading-5 text-slate-600">{text}</p>
+        <div className="rounded-2xl border border-dashed border-[#C9D1DE] dark:border-white/25 bg-[#F6F8FB] dark:bg-[#1C2334] p-5 text-center">
+            <p className="text-sm font-bold text-[#313C55] dark:text-white">{title}</p>
+            <p className="mt-1 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{text}</p>
         </div>
     );
 }
@@ -571,51 +570,51 @@ function RequestCard({
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-bold text-slate-900">{reqCode(row)}</h3>
+                            <h3 className="text-base font-bold text-[#313C55] dark:text-white">{reqCode(row)}</h3>
                             <StatusBadge status={status} options={statusOptions} />
-                            {atrasada ? <Pill className="bg-rose-50 text-rose-800 ring-1 ring-rose-200">+24h</Pill> : null}
+                            {atrasada ? <Pill className="border border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]">+24h</Pill> : null}
                         </div>
-                        <p className="mt-1 text-xs text-slate-500">Aberta em {fmtDateTime(row.criado_em)}</p>
+                        <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Aberta em {fmtDateTime(row.criado_em)}</p>
                     </div>
 
                     <button
                         type="button"
                         onClick={() => onOpen(row.id)}
-                        className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+                        className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-xs font-bold text-[#313C55] dark:text-[#D6DCE8] shadow-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                     >
                         Ver
                     </button>
                 </div>
 
-                <div className="rounded-2xl bg-slate-50 p-3">
-                    <p className="line-clamp-2 text-sm font-bold text-slate-900">{row.itens_resumo || "Itens não carregados"}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                        {Number(row.total_itens || 0) || 1} item(ns), total solicitado: {fmtQtd(row.total_quantidade || 0)}
+                <div>
+                    <ItensTabela resumo={row.itens_resumo} vazio="Itens não carregados" />
+                    <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                        {Number(row.total_itens || 0) || 1} item(ns), total solicitado: <b className="text-[#313C55] dark:text-white">{fmtQtd(row.total_quantidade || 0)}</b>
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 text-sm text-[#313C55] dark:text-[#D6DCE8] sm:grid-cols-2">
                     <div>
-                        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Destino</span>
-                        <div className="font-bold text-slate-900">{destinoLabel(row)}</div>
+                        <span className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Destino</span>
+                        <div className="font-bold text-[#313C55] dark:text-white">{destinoLabel(row)}</div>
                     </div>
 
                     {row.deposito_origem_nome ? (
                         <div>
-                            <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Origem</span>
-                            <div className="font-bold text-slate-900">{row.deposito_origem_nome}</div>
+                            <span className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Origem</span>
+                            <div className="font-bold text-[#313C55] dark:text-white">{row.deposito_origem_nome}</div>
                         </div>
                     ) : null}
                 </div>
 
-                {row.justificativa ? <p className="line-clamp-2 text-sm leading-5 text-slate-600">{row.justificativa}</p> : null}
+                {row.justificativa ? <p className="line-clamp-2 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{row.justificativa}</p> : null}
 
                 {status === "RECUSADA" && row.motivo_recusa ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{row.motivo_recusa}</div>
+                    <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">{row.motivo_recusa}</div>
                 ) : null}
 
                 {status === "CANCELADA" && row.motivo_cancelamento ? (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{row.motivo_cancelamento}</div>
+                    <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-sm text-[#313C55] dark:text-[#D6DCE8]">{row.motivo_cancelamento}</div>
                 ) : null}
             </div>
         </Card>
@@ -646,85 +645,85 @@ function DetailModal({
     return (
         <Modal open={open} title={row ? reqCode(row) : "Detalhes"} subtitle={row ? destinoLabel(row) : undefined} onClose={onClose}>
             {!row ? (
-                <div className="p-4 text-sm text-slate-500">Carregando...</div>
+                <div className="p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando...</div>
             ) : (
                 <div className="space-y-4">
                     <div className="flex flex-wrap gap-2">
                         <StatusBadge status={String(row.status)} options={statusOptions} />
-                        <Pill className="bg-slate-100 text-slate-700">{row.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</Pill>
+                        <Pill className="bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-[#D6DCE8]">{row.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</Pill>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-sm sm:grid-cols-2">
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Solicitante</div>
-                            <div className="font-bold text-slate-900">{row.solicitante_nome || "-"}</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Solicitante</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{row.solicitante_nome || "-"}</div>
                         </div>
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Criada em</div>
-                            <div className="font-bold text-slate-900">{fmtDateTime(row.criado_em)}</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Criada em</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.criado_em)}</div>
                         </div>
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Separada em</div>
-                            <div className="font-bold text-slate-900">{fmtDateTime(row.separado_em)}</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Separada em</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.separado_em)}</div>
                         </div>
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Enviada em</div>
-                            <div className="font-bold text-slate-900">{fmtDateTime(row.enviado_em)}</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Enviada em</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.enviado_em)}</div>
                         </div>
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Recebida em</div>
-                            <div className="font-bold text-slate-900">{fmtDateTime(row.recebido_em)}</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Recebida em</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.recebido_em)}</div>
                         </div>
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Origem</div>
-                            <div className="font-bold text-slate-900">{row.deposito_origem_nome || "-"}</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Origem</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{row.deposito_origem_nome || "-"}</div>
                         </div>
                     </div>
 
                     {row.justificativa ? (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Justificativa</div>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-slate-800">{row.justificativa}</p>
+                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Justificativa</div>
+                            <p className="mt-1 text-sm font-semibold leading-5 text-[#313C55] dark:text-white">{row.justificativa}</p>
                         </div>
                     ) : null}
 
                     {row.motivo_recusa ? (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-rose-500">Motivo da recusa</div>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-rose-800">{row.motivo_recusa}</p>
+                        <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#B42318] dark:text-[#FF9C92]">Motivo da recusa</div>
+                            <p className="mt-1 text-sm font-semibold leading-5 text-[#B42318] dark:text-[#FF9C92]">{row.motivo_recusa}</p>
                         </div>
                     ) : null}
 
                     {row.motivo_cancelamento ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Motivo do cancelamento</div>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-slate-700">{row.motivo_cancelamento}</p>
+                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Motivo do cancelamento</div>
+                            <p className="mt-1 text-sm font-semibold leading-5 text-[#313C55] dark:text-[#D6DCE8]">{row.motivo_cancelamento}</p>
                         </div>
                     ) : null}
 
                     <div>
-                        <h3 className="mb-2 text-sm font-bold text-slate-900">Itens</h3>
+                        <h3 className="mb-2 text-sm font-bold text-[#313C55] dark:text-white">Itens</h3>
                         <div className="space-y-2">
                             {row.items?.length ? (
                                 row.items.map((item) => (
-                                    <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-3">
-                                        <div className="text-sm font-bold text-slate-900">{item.produto_nome_snapshot}</div>
-                                        <div className="mt-1 text-xs text-slate-500">Código: {item.codigo_barras_snapshot || "sem código"}</div>
+                                    <div key={item.id} className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
+                                        <div className="text-sm font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot}</div>
+                                        <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Código: {item.codigo_barras_snapshot || "sem código"}</div>
                                         <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                                            <div className="rounded-2xl bg-slate-50 p-2">
-                                                <div className="text-slate-500">Solicitada</div>
-                                                <div className="font-bold text-slate-900">{fmtQtd(item.quantidade_solicitada)}</div>
+                                            <div className="rounded-2xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
+                                                <div className="text-[#5B6478] dark:text-[#AEB9CF]">Solicitada</div>
+                                                <div className="font-bold text-[#313C55] dark:text-white">{fmtQtd(item.quantidade_solicitada)}</div>
                                             </div>
-                                            <div className="rounded-2xl bg-slate-50 p-2">
-                                                <div className="text-slate-500">Enviada</div>
-                                                <div className="font-bold text-slate-900">{item.quantidade_enviada == null ? "-" : fmtQtd(item.quantidade_enviada)}</div>
+                                            <div className="rounded-2xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
+                                                <div className="text-[#5B6478] dark:text-[#AEB9CF]">Enviada</div>
+                                                <div className="font-bold text-[#313C55] dark:text-white">{item.quantidade_enviada == null ? "-" : fmtQtd(item.quantidade_enviada)}</div>
                                             </div>
-                                            <div className="rounded-2xl bg-slate-50 p-2">
-                                                <div className="text-slate-500">Recebida</div>
-                                                <div className="font-bold text-slate-900">{item.quantidade_recebida == null ? "-" : fmtQtd(item.quantidade_recebida)}</div>
+                                            <div className="rounded-2xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
+                                                <div className="text-[#5B6478] dark:text-[#AEB9CF]">Recebida</div>
+                                                <div className="font-bold text-[#313C55] dark:text-white">{item.quantidade_recebida == null ? "-" : fmtQtd(item.quantidade_recebida)}</div>
                                             </div>
                                         </div>
-                                        {item.observacao ? <p className="mt-2 text-sm text-slate-600">{item.observacao}</p> : null}
+                                        {item.observacao ? <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">{item.observacao}</p> : null}
                                     </div>
                                 ))
                             ) : (
@@ -734,19 +733,19 @@ function DetailModal({
                     </div>
 
                     <div>
-                        <h3 className="mb-2 text-sm font-bold text-slate-900">Linha do tempo</h3>
+                        <h3 className="mb-2 text-sm font-bold text-[#313C55] dark:text-white">Linha do tempo</h3>
                         <div className="space-y-2">
                             {row.eventos?.length ? (
                                 row.eventos.map((ev) => (
-                                    <div key={ev.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                                    <div key={ev.id} className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <div className="text-sm font-bold text-slate-900">{ev.evento.replace(/_/g, " ")}</div>
-                                                <div className="text-xs text-slate-500">{ev.usuario_nome || `Usuário #${ev.usuario_id}`}</div>
+                                                <div className="text-sm font-bold text-[#313C55] dark:text-white">{ev.evento.replace(/_/g, " ")}</div>
+                                                <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">{ev.usuario_nome || `Usuário #${ev.usuario_id}`}</div>
                                             </div>
-                                            <div className="shrink-0 text-right text-xs text-slate-500">{fmtDateTime(ev.criado_em)}</div>
+                                            <div className="shrink-0 text-right text-xs text-[#5B6478] dark:text-[#AEB9CF]">{fmtDateTime(ev.criado_em)}</div>
                                         </div>
-                                        {ev.observacao ? <p className="mt-2 text-sm text-slate-600">{ev.observacao}</p> : null}
+                                        {ev.observacao ? <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">{ev.observacao}</p> : null}
                                     </div>
                                 ))
                             ) : (
@@ -858,35 +857,35 @@ export default function MinhasSolicitacoesPage() {
     }
 
     return (
-        <main className="min-h-[100dvh] bg-gray-50 pb-[calc(2rem+env(safe-area-inset-bottom))] text-slate-900">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:text-white">
             <div className="mx-auto w-full max-w-5xl px-5 py-5">
                 <header className="mb-5 flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
-                            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" className="text-sky-700">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm">
+                            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" className="text-[#313C55] dark:text-white">
                                 <path d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" stroke="currentColor" strokeWidth="1.8" />
                                 <path d="M8.5 9h7M8.5 13h7M8.5 17h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
                         </div>
 
                         <div className="min-w-0">
-                            <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">Minhas Solicitações</h1>
-                            <p className="mt-1 text-sm text-slate-500">Histórico das suas requisições.</p>
+                            <h1 className="truncate text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">Minhas Solicitações</h1>
+                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Histórico das suas requisições.</p>
                         </div>
                     </div>
 
-                    {me ? (
-                        <div className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-xs shadow-sm sm:block">
-                            <div className="text-slate-500">Usuário</div>
-                            <div className="font-bold text-slate-900">{me.nome || me.usuario || `#${me.id}`}</div>
+                    {me?.nome ? (
+                        <div className="hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-right text-xs shadow-sm sm:block">
+                            <div className="text-[#5B6478] dark:text-[#AEB9CF]">Usuário</div>
+                            <div className="font-bold text-[#313C55] dark:text-white">{me.nome}</div>
                         </div>
                     ) : null}
                 </header>
 
-                {loadingInit ? <Card className="mb-4 p-6 text-center text-sm text-slate-500">Carregando dados...</Card> : null}
+                {loadingInit ? <Card className="mb-4 p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando dados...</Card> : null}
 
                 {err ? (
-                    <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">
+                    <div className="mb-4 rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">
                         {err}
                     </div>
                 ) : null}
@@ -927,11 +926,11 @@ export default function MinhasSolicitacoesPage() {
                     </Card>
 
                     {loadingRows ? (
-                        <Card className="p-6 text-center text-sm text-slate-500">Carregando seu histórico...</Card>
+                        <Card className="p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando seu histórico...</Card>
                     ) : rows.length === 0 ? (
                         <EmptyState title="Nenhuma requisição" text="Não há registros para mostrar." />
                     ) : (
-                        <div className="space-y-3">
+                        <div className="grid grid-cols-1 items-start gap-3 sm:landscape:grid-cols-2 lg:grid-cols-2">
                             {rows.map((row) => (
                                 <RequestCard
                                     key={row.id}

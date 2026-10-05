@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 /**
  * Alias para IDs numéricos vindos da API.
@@ -219,12 +220,12 @@ const STATUS_LABEL: Record<StatusId, string> = {
  * consistente em toda a tela.
  */
 const STATUS_BADGE_CLASS: Record<StatusId, string> = {
-    PENDENTE: "border-amber-200 bg-amber-50 text-amber-800",
-    EM_SEPARACAO: "border-sky-200 bg-sky-50 text-sky-800",
-    EM_TRANSITO: "border-violet-200 bg-violet-50 text-violet-800",
-    ENTREGUE: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    CANCELADA: "border-slate-200 bg-slate-100 text-slate-700",
-    RECUSADA: "border-rose-200 bg-rose-50 text-rose-800",
+    PENDENTE: "border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white",
+    EM_SEPARACAO: "border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]",
+    EM_TRANSITO: "border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]",
+    ENTREGUE: "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white",
+    CANCELADA: "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]",
+    RECUSADA: "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]",
 };
 
 /**
@@ -488,7 +489,7 @@ async function apiPost<T>(body: Record<string, unknown>) {
  * visual nos cards pode ser feita em um único lugar.
  */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm", className].join(" ")}>{children}</section>;
 }
 
 /**
@@ -510,10 +511,10 @@ function Button({
 
     const cls =
         variant === "danger"
-            ? "border border-rose-700 bg-rose-700 text-white hover:bg-rose-800"
+            ? "border border-[#B42318] bg-[#B42318] text-white hover:bg-[#8F1B12]"
             : variant === "ghost"
-                ? "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-                : "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800";
+                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-white hover:bg-[#EEF2F7] dark:hover:bg-white/10"
+                : "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]";
 
     return (
         <button {...props} className={[base, cls, className].join(" ")}>
@@ -530,7 +531,7 @@ function Button({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-bold text-slate-700">{label}</span>
+            <span className="mb-1 block text-xs font-bold text-[#313C55] dark:text-[#D6DCE8]">{label}</span>
             {children}
         </label>
     );
@@ -547,8 +548,8 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
         <select
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
                 props.className || "",
             ].join(" ")}
         />
@@ -566,8 +567,8 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
         <textarea
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
                 props.className || "",
             ].join(" ")}
         />
@@ -620,11 +621,11 @@ function Modal({
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-slate-950/55 p-3 pt-5 sm:items-center sm:p-4" role="dialog" aria-modal="true">
-            <div className={["flex max-h-[calc(100dvh-2.5rem)] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl", maxWidth].join(" ")}>
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
-                    <h2 className="truncate text-lg font-black text-slate-900">{title}</h2>
-                    <button className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100" type="button" onClick={onClose} aria-label="Fechar">
+        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-[#313C55]/45 p-3 pt-5 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+            <div className={["flex max-h-[calc(100dvh-2.5rem)] w-full flex-col overflow-hidden rounded-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl", maxWidth].join(" ")}>
+                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
+                    <h2 className="truncate text-lg font-black text-[#313C55] dark:text-white">{title}</h2>
+                    <button className="rounded-xl px-3 py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10" type="button" onClick={onClose} aria-label="Fechar">
                         ✕
                     </button>
                 </div>
@@ -645,8 +646,8 @@ function Modal({
 function EmptyState() {
     return (
         <Card className="p-6 text-center">
-            <h3 className="font-black text-slate-900">Nenhuma requisição em andamento</h3>
-            <p className="mt-1 text-sm text-slate-600">Quando uma requisição for concluída, recusada ou cancelada, ela sai automaticamente desta tela.</p>
+            <h3 className="font-black text-[#313C55] dark:text-white">Nenhuma requisição em andamento</h3>
+            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Quando uma requisição for concluída, recusada ou cancelada, ela sai automaticamente desta tela.</p>
         </Card>
     );
 }
@@ -1170,13 +1171,13 @@ export default function OperarRequisicoesPage() {
     }
 
     return (
-        <main className="min-h-[100dvh] bg-gray-50 px-3 py-4 text-slate-900 sm:px-6 lg:px-8">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] px-3 py-4 text-[#313C55] dark:text-white sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-5xl space-y-4">
                 <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h1 className="text-2xl font-black tracking-tight text-slate-950">Requisições</h1>
-                        <p className="mt-1 text-sm text-slate-600">Separe e envie os materiais. Requisições em trânsito aguardam confirmação do solicitante.</p>
-                        {me ? <p className="mt-1 text-xs text-slate-500">Operador: {me.nome || me.usuario}</p> : null}
+                        <h1 className="text-2xl font-black tracking-tight text-[#313C55] dark:text-white">Requisições</h1>
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Separe e envie os materiais. Requisições em trânsito aguardam confirmação do solicitante.</p>
+                        {me?.nome ? <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Operador: {me.nome}</p> : null}
                     </div>
 
                     <Button type="button" variant="ghost" onClick={refreshAll} disabled={loading || busy}>
@@ -1184,15 +1185,15 @@ export default function OperarRequisicoesPage() {
                     </Button>
                 </header>
 
-                {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">{error}</div> : null}
-                {okMsg ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800">{okMsg}</div> : null}
+                {error ? <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">{error}</div> : null}
+                {okMsg ? <div className="rounded-2xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-3 text-sm font-bold text-[#313C55] dark:text-white">{okMsg}</div> : null}
 
                 {loading ? (
-                    <Card className="p-6 text-center text-sm font-bold text-slate-600">Carregando...</Card>
+                    <Card className="p-6 text-center text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Carregando...</Card>
                 ) : rows.length === 0 ? (
                     <EmptyState />
                 ) : (
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3 sm:landscape:grid-cols-2 lg:grid-cols-1">
                         {rows.map((row) => (
                             <RequestCard
                                 key={row.id}
@@ -1213,7 +1214,7 @@ export default function OperarRequisicoesPage() {
                 maxWidth="max-w-2xl"
             >
                 <div className="space-y-4">
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                         Selecione de qual estoque os itens serão separados. São exibidos somente estoques com saldo suficiente para atender integralmente a requisição.
                     </p>
 
@@ -1232,14 +1233,14 @@ export default function OperarRequisicoesPage() {
                         </Select>
 
                         {separationDestinationDepositoId > 0 ? (
-                            <span className="mt-1 block text-xs font-semibold text-slate-500">
+                            <span className="mt-1 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                                 Destino: <b>{destinationText(separationReq)}</b>. O estoque de destino não pode ser usado como origem.
                             </span>
                         ) : null}
                     </Field>
 
                     {separationDepositosDisponiveis.length === 0 ? (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">
+                        <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">
                             Nenhum estoque possui saldo suficiente para atender todos os itens desta requisição.
                         </div>
                     ) : null}
@@ -1249,9 +1250,9 @@ export default function OperarRequisicoesPage() {
                             const disponivel = separationDepositoId ? saldoMap.get(`${Number(item.produto_id)}:${separationDepositoId}`) || 0 : 0;
 
                             return (
-                                <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                    <p className="font-bold text-slate-900">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
-                                    <p className="mt-1 text-xs text-slate-600">
+                                <div key={item.id} className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                                    <p className="font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
+                                    <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                         Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b>
                                         {separationDepositoId ? <> | Disponível: <b>{numberBR(disponivel)}</b></> : null}
                                     </p>
@@ -1266,7 +1267,7 @@ export default function OperarRequisicoesPage() {
 
                     <div className={[
                         "rounded-2xl border p-3 text-sm font-bold",
-                        separationValidation.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800",
+                        separationValidation.ok ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white" : "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white",
                     ].join(" ")}>
                         {separationValidation.msg}
                     </div>
@@ -1299,13 +1300,13 @@ export default function OperarRequisicoesPage() {
                         </Select>
 
                         {Number(sendReq?.deposito_origem_id || 0) > 0 ? (
-                            <span className="mt-1 block text-xs font-semibold text-slate-500">
+                            <span className="mt-1 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                                 Origem definida no início da separação e bloqueada para alteração nesta etapa.
                             </span>
                         ) : null}
 
                         {sendDestinationDepositoId > 0 ? (
-                            <span className="mt-1 block text-xs font-semibold text-slate-500">
+                            <span className="mt-1 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                                 Destino: <b>{destinationText(sendReq)}</b>. O estoque de destino não pode ser selecionado como origem.
                             </span>
                         ) : null}
@@ -1318,9 +1319,9 @@ export default function OperarRequisicoesPage() {
                             const invalid = sendDepositoId > 0 && qtd - 0.0001 > disponivel;
 
                             return (
-                                <div key={item.id} className={["rounded-2xl border p-3", invalid ? "border-rose-200 bg-rose-50" : "border-slate-200 bg-slate-50"].join(" ")}>
-                                    <p className="font-bold text-slate-900">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
-                                    <p className="mt-1 text-xs text-slate-600">
+                                <div key={item.id} className={["rounded-2xl border p-3", invalid ? "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15" : "border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334]"].join(" ")}>
+                                    <p className="font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
+                                    <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                         Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b> | Disponível: <b>{numberBR(disponivel)}</b>
                                     </p>
                                 </div>
@@ -1332,7 +1333,7 @@ export default function OperarRequisicoesPage() {
                         <TextArea rows={3} value={sendObs} onChange={(e) => setSendObs(e.target.value)} />
                     </Field>
 
-                    <div className={["rounded-2xl border p-3 text-sm font-bold", sendValidation.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"].join(" ")}>
+                    <div className={["rounded-2xl border p-3 text-sm font-bold", sendValidation.ok ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white" : "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white"].join(" ")}>
                         {sendValidation.msg}
                     </div>
 
@@ -1394,19 +1395,19 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
     const nextText = status === "PENDENTE" ? "Próximo passo: escolher a origem e iniciar a separação" : status === "EM_SEPARACAO" ? "Origem definida. Próximo passo: enviar" : status === "EM_TRANSITO" ? "Aguardando confirmação do solicitante" : "";
 
     return (
-        <Card className={isTruthy(row.atrasada_24h) ? "border-rose-200" : ""}>
+        <Card className={isTruthy(row.atrasada_24h) ? "border-[#F2CB3F] dark:border-[#F2CB3F]" : ""}>
             <div className="p-4">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-lg font-black text-slate-950">{reqCode(row)}</h2>
+                            <h2 className="text-lg font-black text-[#313C55] dark:text-white">{reqCode(row)}</h2>
                             <Badge status={row.status} />
-                            {isTruthy(row.atrasada_24h) ? <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-800">+24h</span> : null}
+                            {isTruthy(row.atrasada_24h) ? <span className="rounded-full border border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] px-2.5 py-1 text-xs font-bold">+24h</span> : null}
                         </div>
 
-                        <p className="mt-2 text-sm font-semibold text-slate-900">{row.itens_resumo || "Itens não informados"}</p>
+                        <ItensTabela resumo={row.itens_resumo} className="mt-3" />
 
-                        <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
+                        <div className="mt-2 grid gap-1 text-xs text-[#5B6478] dark:text-[#AEB9CF] sm:grid-cols-2">
                             <p>
                                 Solicitante: <b>{row.solicitante_nome || "-"}</b>
                             </p>
@@ -1431,10 +1432,10 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
                             ) : null}
                         </div>
 
-                        {nextText ? <p className="mt-2 text-xs font-bold text-slate-500">{nextText}</p> : null}
+                        {nextText ? <p className="mt-2 text-xs font-bold text-[#5B6478] dark:text-[#AEB9CF]">{nextText}</p> : null}
                     </div>
 
-                    <div className="grid shrink-0 grid-cols-2 gap-2 sm:w-64">
+                    <div className="grid shrink-0 grid-cols-2 gap-2 lg:w-64">
                         <Button type="button" onClick={onMain} disabled={busy || status === "EM_TRANSITO" || status === "ENTREGUE" || status === "RECUSADA" || status === "CANCELADA"} title={status === "EM_TRANSITO" ? "Somente o solicitante pode confirmar o recebimento." : undefined}>
                             {mainLabel}
                         </Button>

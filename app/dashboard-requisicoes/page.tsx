@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 type ID = number;
 
@@ -193,12 +194,12 @@ const STATUS_LABEL: Record<StatusId, string> = {
 };
 
 const STATUS_BADGE_CLASS: Record<StatusId, string> = {
-    PENDENTE: "border-amber-200 bg-amber-50 text-amber-800",
-    EM_SEPARACAO: "border-sky-200 bg-sky-50 text-sky-800",
-    EM_TRANSITO: "border-violet-200 bg-violet-50 text-violet-800",
-    ENTREGUE: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    CANCELADA: "border-slate-200 bg-slate-100 text-slate-700",
-    RECUSADA: "border-rose-200 bg-rose-50 text-rose-800",
+    PENDENTE: "border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white",
+    EM_SEPARACAO: "border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]",
+    EM_TRANSITO: "border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]",
+    ENTREGUE: "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white",
+    CANCELADA: "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]",
+    RECUSADA: "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]",
 };
 
 function toStatus(v: unknown): StatusId {
@@ -380,7 +381,7 @@ async function apiGet<T>(action: string, filters?: Partial<Filters>, extra?: Rec
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm", className].join(" ")}>{children}</section>;
 }
 
 function Button({
@@ -394,12 +395,12 @@ function Button({
 
     const cls =
         variant === "solid"
-            ? "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
             : variant === "soft"
-                ? "border border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200"
+                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
                 : variant === "danger"
-                    ? "border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+                    ? "border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FBDAD6] dark:hover:bg-[#FF9C92]/25"
+                    : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
 
     return (
         <button {...props} className={[base, cls, className].join(" ")}>
@@ -411,9 +412,9 @@ function Button({
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-medium text-slate-700">{label}</span>
+            <span className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">{label}</span>
             {children}
-            {hint ? <span className="mt-1 block text-xs text-slate-500">{hint}</span> : null}
+            {hint ? <span className="mt-1 block text-xs text-[#5B6478] dark:text-[#AEB9CF]">{hint}</span> : null}
         </label>
     );
 }
@@ -423,8 +424,8 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
         <input
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[15px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
                 props.className || "",
             ].join(" ")}
         />
@@ -436,8 +437,8 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
         <select
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[15px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
                 props.className || "",
             ].join(" ")}
         />
@@ -484,15 +485,15 @@ function Modal({
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-slate-950/55 p-3 pt-6 sm:items-center sm:p-4">
-            <div className={["flex max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl", maxWidth].join(" ")}>
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
+        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-[#313C55]/45 p-3 pt-6 sm:items-center sm:p-4">
+            <div className={["flex max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl", maxWidth].join(" ")}>
+                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:p-5">
                     <div className="min-w-0">
-                        <h2 className="text-base font-bold tracking-tight text-slate-950">{title}</h2>
-                        {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
+                        <h2 className="text-base font-bold tracking-tight text-[#313C55] dark:text-white">{title}</h2>
+                        {subtitle ? <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">{subtitle}</p> : null}
                     </div>
                     <button
-                        className="rounded-xl px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100"
+                        className="rounded-xl px-3 py-2 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                         onClick={onClose}
                         type="button"
                         aria-label="Fechar"
@@ -503,7 +504,7 @@ function Modal({
 
                 <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">{children}</div>
 
-                {footer ? <div className="border-t border-slate-100 bg-slate-50 p-4 sm:p-5">{footer}</div> : null}
+                {footer ? <div className="border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 sm:p-5">{footer}</div> : null}
             </div>
         </div>
     );
@@ -529,26 +530,26 @@ function StatCard({
             type="button"
             onClick={onClick}
             className={[
-                "rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md",
-                active ? "border-slate-900 ring-2 ring-slate-200" : danger ? "border-rose-200" : "border-slate-200",
+                "rounded-xl border bg-white dark:bg-[#232B3F] p-4 text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md",
+                active ? "border-[#313C55] dark:border-[#F2CB3F] ring-2 ring-[#00AEEC]/30" : danger ? "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15" : "border-[#E3E8F0] dark:border-white/[0.12]",
             ].join(" ")}
         >
             <div className="flex items-start justify-between gap-3">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
-                {danger ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">ALERTA</span> : null}
+                <span className="text-xs font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">{label}</span>
+                {danger ? <span className="rounded-full bg-[#F2CB3F] px-2 py-0.5 text-[10px] font-bold text-[#313C55]">ALERTA</span> : null}
             </div>
-            <div className={["mt-3 text-2xl font-bold tracking-tight", danger ? "text-rose-700" : "text-slate-950"].join(" ")}>{numberBR(value)}</div>
-            {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
+            <div className={["mt-3 text-2xl font-bold tracking-tight", "text-[#313C55] dark:text-white"].join(" ")}>{numberBR(value)}</div>
+            {hint ? <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{hint}</div> : null}
         </button>
     );
 }
 
 function FilterChip({ children, onClear }: { children: React.ReactNode; onClear?: () => void }) {
     return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+        <span className="inline-flex items-center gap-1 rounded-full border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-2.5 py-1 text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8] shadow-sm">
             {children}
             {onClear ? (
-                <button type="button" onClick={onClear} className="ml-1 rounded-full px-1 text-slate-500 hover:bg-slate-100" aria-label="Remover filtro">
+                <button type="button" onClick={onClear} className="ml-1 rounded-full px-1 text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10" aria-label="Remover filtro">
                     ×
                 </button>
             ) : null}
@@ -591,12 +592,12 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
     const transitHours = late ? hoursSince(row.enviado_em) : null;
 
     return (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+        <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-3 shadow-sm transition hover:border-[#C9D1DE] dark:hover:border-white/25 hover:shadow-md">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,0.9fr)_minmax(260px,1.8fr)_minmax(125px,0.8fr)_minmax(145px,0.9fr)_120px_90px_auto] lg:items-center">
                 {/* REQUISIÇÃO / STATUS */}
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-bold tracking-tight text-slate-950">
+                        <div className="font-bold tracking-tight text-[#313C55] dark:text-white">
                             {codigoReq(row)}
                         </div>
 
@@ -605,14 +606,14 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
                         </Badge>
 
                         {late ? (
-                            <Badge className="border-rose-200 bg-rose-50 text-rose-800">
+                            <Badge className="border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]">
                                 +24h
                             </Badge>
                         ) : null}
                     </div>
 
                     {row.deposito_origem_nome ? (
-                        <div className="mt-1 truncate text-[11px] font-semibold text-slate-500">
+                        <div className="mt-1 truncate text-[11px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                             Origem {row.deposito_origem_nome}
                         </div>
                     ) : null}
@@ -620,15 +621,13 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
 
                 {/* ITENS */}
                 <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 lg:hidden">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA] lg:hidden">
                         Itens
                     </div>
-                    <div className="line-clamp-2 text-sm font-semibold leading-5 text-slate-800 lg:line-clamp-1">
-                        {row.itens_resumo || "Itens não carregados"}
-                    </div>
+                    <ItensTabela resumo={row.itens_resumo} vazio="Itens não carregados" className="mt-1" />
 
                     {row.id_atendimento ? (
-                        <div className="mt-1 truncate text-[11px] text-slate-500">
+                        <div className="mt-1 truncate text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                             Atendimento {row.id_atendimento}
                         </div>
                     ) : null}
@@ -636,35 +635,35 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
 
                 {/* SOLICITANTE */}
                 <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">
                         Solicitante
                     </div>
-                    <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                    <div className="mt-0.5 truncate text-sm font-semibold text-[#313C55] dark:text-white">
                         {row.solicitante_nome || "Não informado"}
                     </div>
                 </div>
 
                 {/* DESTINO */}
                 <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">
                         Destino
                     </div>
-                    <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                    <div className="mt-0.5 truncate text-sm font-semibold text-[#313C55] dark:text-white">
                         {destinoLabel(row)}
                     </div>
                 </div>
 
                 {/* ABERTURA */}
                 <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">
                         Abertura
                     </div>
-                    <div className="mt-0.5 text-xs font-semibold leading-4 text-slate-900">
+                    <div className="mt-0.5 text-xs font-semibold leading-4 text-[#313C55] dark:text-white">
                         {fmtDateTime(row.criado_em)}
                     </div>
 
                     {late && transitHours !== null ? (
-                        <div className="mt-1 text-[11px] font-semibold text-rose-700">
+                        <div className="mt-1 text-[11px] font-bold text-[#313C55] dark:text-white">
                             {transitHours}h em trânsito
                         </div>
                     ) : null}
@@ -672,10 +671,10 @@ function RequisitionCard({ row, onOpen }: { row: ReqListRow; onOpen: (id: ID) =>
 
                 {/* QUANTIDADE */}
                 <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">
                         Quantidade
                     </div>
-                    <div className="mt-0.5 text-sm font-bold text-slate-950">
+                    <div className="mt-0.5 text-sm font-bold text-[#313C55] dark:text-white">
                         {numberBR(row.total_quantidade, 3)}
                     </div>
                 </div>
@@ -705,83 +704,83 @@ function DetailModal({ detail, loading, onClose }: { detail: ReqDetail | null; l
             onClose={onClose}
         >
             {loading ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Carregando detalhes...</div>
+                <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-sm text-[#313C55] dark:text-[#D6DCE8]">Carregando detalhes...</div>
             ) : detail ? (
                 <div className="space-y-5">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</div>
+                        <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Status</div>
                             <div className="mt-2">
                                 <Badge className={statusClass(detail.status)}>{statusLabel(detail.status)}</Badge>
                             </div>
                         </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Criada em</div>
-                            <div className="mt-2 text-sm font-bold text-slate-950">{fmtDateTime(detail.criado_em)}</div>
+                        <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Criada em</div>
+                            <div className="mt-2 text-sm font-bold text-[#313C55] dark:text-white">{fmtDateTime(detail.criado_em)}</div>
                         </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Atendimento</div>
-                            <div className="mt-2 text-sm font-bold text-slate-950">{detail.id_atendimento || "Sem vínculo"}</div>
+                        <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Atendimento</div>
+                            <div className="mt-2 text-sm font-bold text-[#313C55] dark:text-white">{detail.id_atendimento || "Sem vínculo"}</div>
                         </div>
                     </div>
 
-                    <div className="rounded-xl border border-slate-200 p-4">
-                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Justificativa</h3>
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{detail.justificativa || "Não informada."}</p>
+                    <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] p-4">
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Justificativa</h3>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#313C55] dark:text-white">{detail.justificativa || "Não informada."}</p>
                     </div>
 
                     <div>
-                        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Itens</h3>
+                        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Itens</h3>
                         <div className="space-y-2">
                             {(detail.items || []).map((item) => (
-                                <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                                <div key={item.id} className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                         <div className="min-w-0">
-                                            <div className="font-bold text-slate-950">{item.produto_nome_snapshot}</div>
-                                            <div className="mt-1 text-xs text-slate-500">
+                                            <div className="font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot}</div>
+                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                 {item.codigo_barras_snapshot ? `CB ${item.codigo_barras_snapshot}` : "Sem código informado"}
                                                 {item.categoria_nome ? ` | ${item.categoria_nome}` : ""}
                                                 {item.classificacao_nome ? ` | ${item.classificacao_nome}` : ""}
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-[260px]">
-                                            <div className="rounded-xl bg-slate-50 p-2">
-                                                <div className="font-bold text-slate-500">Solicitada</div>
-                                                <div className="mt-1 font-bold text-slate-900">{numberBR(item.quantidade_solicitada, 3)}</div>
+                                            <div className="rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
+                                                <div className="font-bold text-[#5B6478] dark:text-[#AEB9CF]">Solicitada</div>
+                                                <div className="mt-1 font-bold text-[#313C55] dark:text-white">{numberBR(item.quantidade_solicitada, 3)}</div>
                                             </div>
-                                            <div className="rounded-xl bg-slate-50 p-2">
-                                                <div className="font-bold text-slate-500">Enviada</div>
-                                                <div className="mt-1 font-bold text-slate-900">{item.quantidade_enviada == null ? "-" : numberBR(item.quantidade_enviada, 3)}</div>
+                                            <div className="rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
+                                                <div className="font-bold text-[#5B6478] dark:text-[#AEB9CF]">Enviada</div>
+                                                <div className="mt-1 font-bold text-[#313C55] dark:text-white">{item.quantidade_enviada == null ? "-" : numberBR(item.quantidade_enviada, 3)}</div>
                                             </div>
-                                            <div className="rounded-xl bg-slate-50 p-2">
-                                                <div className="font-bold text-slate-500">Recebida</div>
-                                                <div className="mt-1 font-bold text-slate-900">{item.quantidade_recebida == null ? "-" : numberBR(item.quantidade_recebida, 3)}</div>
+                                            <div className="rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
+                                                <div className="font-bold text-[#5B6478] dark:text-[#AEB9CF]">Recebida</div>
+                                                <div className="mt-1 font-bold text-[#313C55] dark:text-white">{item.quantidade_recebida == null ? "-" : numberBR(item.quantidade_recebida, 3)}</div>
                                             </div>
                                         </div>
                                     </div>
-                                    {item.observacao ? <p className="mt-2 text-xs text-slate-600">Obs.: {item.observacao}</p> : null}
+                                    {item.observacao ? <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Obs.: {item.observacao}</p> : null}
                                 </div>
                             ))}
                         </div>
                     </div>
 
                     <div>
-                        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Linha do tempo</h3>
+                        <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Linha do tempo</h3>
                         <div className="space-y-2">
                             {(detail.eventos || []).length === 0 ? (
-                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Nenhum evento registrado.</div>
+                                <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Nenhum evento registrado.</div>
                             ) : (
                                 (detail.eventos || []).map((ev) => (
-                                    <div key={ev.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div key={ev.id} className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <div className="font-bold text-slate-950">{compactEventName(ev.evento)}</div>
-                                            <div className="text-xs font-semibold text-slate-500">{fmtDateTime(ev.criado_em)}</div>
+                                            <div className="font-bold text-[#313C55] dark:text-white">{compactEventName(ev.evento)}</div>
+                                            <div className="text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{fmtDateTime(ev.criado_em)}</div>
                                         </div>
-                                        <div className="mt-1 text-xs text-slate-600">
+                                        <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                             {ev.usuario_nome || ev.usuario_login || `Usuário #${ev.usuario_id}`}
                                             {ev.status_de || ev.status_para ? ` | ${ev.status_de || ""} para ${ev.status_para || ""}` : ""}
                                         </div>
-                                        {ev.observacao ? <div className="mt-2 text-sm text-slate-700">{ev.observacao}</div> : null}
+                                        {ev.observacao ? <div className="mt-2 text-sm text-[#313C55] dark:text-[#D6DCE8]">{ev.observacao}</div> : null}
                                     </div>
                                 ))
                             )}
@@ -995,10 +994,10 @@ export default function DashboardRequisicoesPage() {
     }
 
     return (
-        <main className="min-h-[100dvh] bg-gray-50 px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] px-4 py-5 text-[#313C55] dark:text-white sm:px-6 lg:px-8">
             <div className="mx-auto max-w-6xl space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-950">Dashboard Requisições</h1>
+                    <h1 className="text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">Dashboard Requisições</h1>
 
                     <div className="grid grid-cols-3 gap-2 sm:flex">
                         <Button type="button" variant="ghost" onClick={() => setFilterOpen(true)}>
@@ -1013,7 +1012,7 @@ export default function DashboardRequisicoesPage() {
                     </div>
                 </div>
 
-                {msg ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{msg}</div> : null}
+                {msg ? <div className="rounded-xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">{msg}</div> : null}
 
                 <div className="flex flex-wrap gap-2">
                     {activeFilterChips.length === 0 ? (
@@ -1023,7 +1022,7 @@ export default function DashboardRequisicoesPage() {
                     )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+                <div className="grid grid-cols-2 gap-3 sm:landscape:grid-cols-4 md:grid-cols-4 xl:grid-cols-7">
                     <StatCard label="Total" value={totalFiltrado} hint="No filtro atual" active={!appliedFilters.status && !appliedFilters.atrasadas} onClick={() => void applyFilters({ ...appliedFilters, status: "", atrasadas: false })} />
                     {STATUS_OPTIONS.map((s) => (
                         <StatCard
@@ -1041,10 +1040,10 @@ export default function DashboardRequisicoesPage() {
                     <Card className="p-4 sm:p-5">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                             <div>
-                                <h2 className="text-base font-bold tracking-tight text-slate-950">Distribuição por status</h2>
+                                <h2 className="text-base font-bold tracking-tight text-[#313C55] dark:text-white">Distribuição por status</h2>
 
                             </div>
-                            <div className="text-xs font-semibold text-slate-500">Total: {numberBR(totalFiltrado)}</div>
+                            <div className="text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Total: {numberBR(totalFiltrado)}</div>
                         </div>
 
                         <div className="mt-5 space-y-3">
@@ -1055,11 +1054,11 @@ export default function DashboardRequisicoesPage() {
                                     onClick={() => void applyFilters({ ...appliedFilters, status: r.id, atrasadas: false })}
                                     className="grid w-full grid-cols-[120px_1fr_48px] items-center gap-3 text-left text-sm sm:grid-cols-[160px_1fr_64px]"
                                 >
-                                    <div className="truncate font-bold text-slate-700">{r.nome}</div>
-                                    <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                                        <div className="h-full rounded-full bg-slate-900" style={{ width: `${r.total === 0 ? 0 : r.percent}%` }} />
+                                    <div className="truncate font-bold text-[#313C55] dark:text-[#D6DCE8]">{r.nome}</div>
+                                    <div className="h-3 overflow-hidden rounded-full bg-[#EEF2F7] dark:bg-white/10">
+                                        <div className="h-full rounded-full bg-[#313C55] dark:bg-[#F2CB3F]" style={{ width: `${r.total === 0 ? 0 : r.percent}%` }} />
                                     </div>
-                                    <div className="text-right font-bold text-slate-950">{numberBR(r.total)}</div>
+                                    <div className="text-right font-bold text-[#313C55] dark:text-white">{numberBR(r.total)}</div>
                                 </button>
                             ))}
                         </div>
@@ -1068,21 +1067,21 @@ export default function DashboardRequisicoesPage() {
                     <Card className="p-4 sm:p-5">
                         <div className="flex items-start justify-between gap-3">
                             <div>
-                                <h2 className="text-base font-bold tracking-tight text-slate-950">Alertas</h2>
+                                <h2 className="text-base font-bold tracking-tight text-[#313C55] dark:text-white">Alertas</h2>
 
                             </div>
-                            <Badge className="border-rose-200 bg-rose-50 text-rose-800">{numberBR(summary.atrasadas_24h || 0)} atrasadas</Badge>
+                            <Badge className="border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]">{numberBR(summary.atrasadas_24h || 0)} atrasadas</Badge>
                         </div>
 
                         <div className="mt-4 grid grid-cols-1 gap-3">
                             <button
                                 type="button"
                                 onClick={() => void applyFilters({ ...appliedFilters, status: "EM_TRANSITO", atrasadas: true })}
-                                className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-left"
+                                className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 p-3 text-left"
                             >
-                                <div className="text-sm font-bold text-rose-900">Em trânsito acima de 24h</div>
-                                <div className="mt-1 text-2xl font-bold text-rose-800">{numberBR(summary.atrasadas_24h || alertasTransito.length || 0)}</div>
-                                <div className="mt-1 text-xs text-rose-700">Toque para filtrar somente as atrasadas.</div>
+                                <div className="text-sm font-bold text-[#313C55] dark:text-white">Em trânsito acima de 24h</div>
+                                <div className="mt-1 text-2xl font-bold text-[#313C55] dark:text-white">{numberBR(summary.atrasadas_24h || alertasTransito.length || 0)}</div>
+                                <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Toque para filtrar somente as atrasadas.</div>
                             </button>
 
                         </div>
@@ -1091,7 +1090,7 @@ export default function DashboardRequisicoesPage() {
 
                 {alertasTransito.length > 0 ? (
                     <Card className="p-4 sm:p-5">
-                        <h2 className="text-base font-bold tracking-tight text-slate-950">Trânsito acima de 24h</h2>
+                        <h2 className="text-base font-bold tracking-tight text-[#313C55] dark:text-white">Trânsito acima de 24h</h2>
 
                         <div className="mt-4 space-y-2">
                             {alertasTransito.slice(0, 6).map((r) => (
@@ -1099,20 +1098,18 @@ export default function DashboardRequisicoesPage() {
                                     key={r.id}
                                     type="button"
                                     onClick={() => void openDetail(r.id)}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                                    className="w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3 text-left transition hover:border-[#C9D1DE] dark:hover:border-white/25 hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                 >
                                     <div className="flex items-center justify-between gap-3">
-                                        <div className="font-bold text-slate-950">{codigoReq(r)}</div>
-                                        <Badge className="border-rose-200 bg-rose-50 text-rose-800">
+                                        <div className="font-bold text-[#313C55] dark:text-white">{codigoReq(r)}</div>
+                                        <Badge className="border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]">
                                             {hoursSince(r.enviado_em) || "+24"}h
                                         </Badge>
                                     </div>
 
-                                    <div className="mt-1 line-clamp-1 text-sm font-semibold text-slate-700">
-                                        {r.itens_resumo}
-                                    </div>
+                                    <ItensTabela resumo={r.itens_resumo} className="mt-2" />
 
-                                    <div className="mt-1 text-xs text-slate-500">
+                                    <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                         {destinoLabel(r)} | Enviado em {fmtDateTime(r.enviado_em)}
                                     </div>
                                 </button>
@@ -1122,10 +1119,10 @@ export default function DashboardRequisicoesPage() {
                 ) : null}
 
                 <Card className="overflow-hidden">
-                    <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <div className="flex flex-col gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                         <div>
-                            <h2 className="text-base font-bold tracking-tight text-slate-950">Requisições filtradas</h2>
-                            <p className="mt-1 text-sm text-slate-600">
+                            <h2 className="text-base font-bold tracking-tight text-[#313C55] dark:text-white">Requisições filtradas</h2>
+                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                 {loading ? "Carregando..." : `${numberBR(rows.length)} registros nesta página`}
                                 {offset > 0 ? ` | A partir do registro ${offset + 1}` : ""}
                             </p>
@@ -1148,9 +1145,9 @@ export default function DashboardRequisicoesPage() {
 
                     <div className="p-4 sm:p-5">
                         {loading ? (
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Carregando dashboard...</div>
+                            <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-sm text-[#313C55] dark:text-[#D6DCE8]">Carregando dashboard...</div>
                         ) : rows.length === 0 ? (
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">Nenhuma requisição encontrada para os filtros aplicados.</div>
+                            <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Nenhuma requisição encontrada para os filtros aplicados.</div>
                         ) : (
                             <div className="space-y-2">
                                 {rows.map((row) => (
@@ -1261,7 +1258,7 @@ export default function DashboardRequisicoesPage() {
                             onClick={() => setFilters((f) => ({ ...f, atrasadas: !f.atrasadas, status: !f.atrasadas ? "EM_TRANSITO" : f.status }))}
                             className={[
                                 "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-[15px] font-bold shadow-sm",
-                                filters.atrasadas ? "border-rose-200 bg-rose-50 text-rose-800" : "border-slate-200 bg-white text-slate-700",
+                                filters.atrasadas ? "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white" : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8]",
                             ].join(" ")}
                         >
                             <span>Somente trânsito acima de 24h</span>
