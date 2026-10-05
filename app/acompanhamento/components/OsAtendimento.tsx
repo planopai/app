@@ -319,32 +319,30 @@ function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: 
 }
 
 /* =========================================================================================================
-   Vínculo com o cadastro de Convênios + prévia da OS em tempo real  (os_previa.php)
+   Vínculo com o cadastro de Convênios + prévia da OS em tempo real  (os_principal.php: convenios_opcoes e previa_os_atendimento)
    A prévia NÃO grava nada: a OS só entra no banco quando o registro é salvo.
    ========================================================================================================= */
-const PREVIA_API = `${API_BASE}/os_previa.php`;
-
 export type ItemPacoteOpcao = { chave: string; rotulo: string; quantidade: number; tipo: string; produtos: { produto_id: number; nome: string }[]; valor_contrato?: number | null };
 export type PacoteOpcao = { id: number; nome: string; padrao: boolean; itens: ItemPacoteOpcao[]; realiza_velorio: boolean; realiza_sepultamento: boolean };
 export type ConvenioOpcao = { id: number; nome: string; tipo: TipoCadastro; codigo: string; pacotes: PacoteOpcao[]; aditivos_permitidos: string[] };
 
+/** Convênios/pacotes e a prévia da OS vêm do os_principal.php (mesmo login e permissão da OS no atendimento). */
 async function previaChamar(acao: "opcoes" | "previa", corpo?: unknown, signal?: AbortSignal) {
-    const res = await fetch(`${PREVIA_API}?acao=${acao}&_=${Date.now()}`, {
-        method: corpo === undefined ? "GET" : "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: corpo === undefined ? undefined : { "Content-Type": "application/json" },
-        body: corpo === undefined ? undefined : JSON.stringify(corpo),
-        signal,
-    });
+    const qs = new URLSearchParams({ [acao === "opcoes" ? "convenios_opcoes" : "previa_os_atendimento"]: "1" });
+    if (corpo !== undefined) qs.set("rascunho", JSON.stringify(corpo));
+    const res =
+        corpo === undefined
+            ? await fetch(`${OS_API}?${qs.toString()}&_=${Date.now()}`, { credentials: "include", cache: "no-store", signal })
+            : await fetch(OS_API, { method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: qs, signal });
     const json = await res.json().catch(() => null);
-    if (res.status === 401 || json?.need_login || json?.code === "NEED_LOGIN") {
+    if (res.status === 401 || json?.need_login) {
         if (typeof window !== "undefined") window.location.href = LOGIN_URL;
         throw new Error("Sessão expirada.");
     }
-    if (res.status === 404 || (!json && !res.ok)) {
-        throw new Error("Prévia indisponível: o arquivo os_previa.php ainda não está no servidor.");
+    if (res.status === 404 && /Nenhuma ação reconhecida/i.test(String(json?.msg ?? ""))) {
+        throw new Error("Prévia indisponível: o os_principal.php do servidor ainda é a versão antiga. Publique a versão nova.");
     }
+    if (!res.ok && !json) throw new Error(`Falha na requisição (${res.status}).`);
     if (!res.ok || json?.erro || json?.sucesso === false) throw new Error(json?.msg || `Falha na requisição (${res.status}).`);
     return json.dados ?? json.data;
 }
@@ -599,9 +597,9 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
         (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim");
 }
 
-type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
+type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA" | "A_PARTE"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
 
-function LinhaDaPrevia({ l, compacto }: { l: LinhaPrevia; compacto: boolean }) {
+function LinhaDaPrevia({ l, compacto, prefeitura }: { l: LinhaPrevia; compacto: boolean; prefeitura?: boolean }) {
     const nome = l.nome && l.nome !== l.rotulo ? `${l.rotulo}: ${l.nome}` : l.rotulo;
     const valor =
         l.destino === "FAMILIA"
@@ -610,11 +608,13 @@ function LinhaDaPrevia({ l, compacto }: { l: LinhaPrevia; compacto: boolean }) {
                 : "valor definido pela OS"
             : l.destino === "CONVENIO"
                 ? l.valor !== null
-                    ? `contrato ${brl(l.valor)}`
+                    ? `${prefeitura ? "contrato" : "coberto"} ${brl(l.valor)}`
                     : l.valor_oculto
                         ? "no contrato"
                         : "coberto"
-                : "sem cobrança";
+                : l.destino === "A_PARTE"
+                    ? "pedido à parte"
+                    : "sem cobrança";
     return (
         <li className={`flex items-baseline gap-3 ${compacto ? "py-1 text-[13px]" : "py-1.5 text-sm"}`}>
             <span className="min-w-0 flex-1">
@@ -660,7 +660,8 @@ export function PreviaOS({ compacto = false }: { compacto?: boolean }) {
     const linhas: LinhaPrevia[] = d?.linhas ?? [];
     const cobertas = linhas.filter((l) => l.destino === "CONVENIO");
     const familia = linhas.filter((l) => l.destino === "FAMILIA");
-    const semCobranca = linhas.filter((l) => l.destino === "SEM_COBRANCA");
+    const semCobranca = linhas.filter((l) => l.destino === "SEM_COBRANCA" || l.destino === "A_PARTE");
+    const ehPref = d?.convenio?.tipo === "PREFEITURA";
     const pend = Number(d?.totais?.familia_valores_pendentes ?? 0);
 
     return (
@@ -689,15 +690,15 @@ export function PreviaOS({ compacto = false }: { compacto?: boolean }) {
 
                     {cobertas.length ? (
                         <div className="mt-3 rounded-xl bg-[#EEF5D6] px-3 py-2 dark:bg-[#B3CE52]/15">
-                            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5C7A12] dark:text-[#B3CE52]">{d.convenio?.tipo === "PREFEITURA" ? "Faturado à Prefeitura" : "Coberto pelo plano"}</div>
-                            <ul className="divide-y divide-[#B3CE52]/30">{cobertas.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} />)}</ul>
+                            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5C7A12] dark:text-[#B3CE52]">{ehPref ? "Faturado à Prefeitura" : "Coberto pelo plano"}</div>
+                            <ul className="divide-y divide-[#B3CE52]/30">{cobertas.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} prefeitura={ehPref} />)}</ul>
                         </div>
                     ) : null}
 
                     {familia.length ? (
                         <div className="mt-3 rounded-xl bg-[#FCF3CC] px-3 py-2 dark:bg-[#F2CB3F]/15">
                             <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#7A5600] dark:text-[#F2CB3F]">{cobertas.length ? "Diferença da família" : "Total da família"}</div>
-                            <ul className="divide-y divide-[#F2CB3F]/40">{familia.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} />)}</ul>
+                            <ul className="divide-y divide-[#F2CB3F]/40">{familia.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} prefeitura={ehPref} />)}</ul>
                             <div className="mt-1.5 flex items-baseline gap-3 border-t border-[#F2CB3F]/50 pt-2">
                                 <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">A pagar pela família</span>
                                 <span className="text-lg font-extrabold text-[#313C55] dark:text-white">{brl(d.totais?.familia ?? 0)}</span>
@@ -707,7 +708,7 @@ export function PreviaOS({ compacto = false }: { compacto?: boolean }) {
                     ) : null}
 
                     {semCobranca.length ? (
-                        <ul className="mt-2 divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">{semCobranca.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} />)}</ul>
+                        <ul className="mt-2 divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">{semCobranca.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} prefeitura={ehPref} />)}</ul>
                     ) : null}
 
                     {(d.avisos ?? []).map((a: string, i: number) => (
