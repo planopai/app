@@ -458,6 +458,20 @@ export default function PaginaHistoricoSepultamentos() {
                 onFechar={() =>
                     setModalAberto(false)
                 }
+                statusAvaliacoes={
+                    selecionadoId
+                        ? avaliacoesMap[selecionadoId]
+                        : undefined
+                }
+                podeVerVisita={podeVerVisita}
+                podeVerPosAtendimento={podeVerPosAtendimento}
+                loadingAvaliacoes={loadingAvaliacoes}
+                onAbrirVisita={(item) =>
+                    abrirAvaliacao(item, "visita")
+                }
+                onAbrirPosAtendimento={(item) =>
+                    abrirAvaliacao(item, "pos_atendimento")
+                }
             />
 
             <ModalAnaliseGeral

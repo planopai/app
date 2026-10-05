@@ -8,6 +8,8 @@ import {
     obterMateriaisMap,
     obterRegistroAnaliticoPorId,
     type MateriaisMap,
+    type AvaliacaoStatusResumo,
+    type StatusAvaliacoesItem,
 } from "./Api";
 import LinhaDoTempoLogs from "./LinhaDoTempoLogs";
 import BotaoExportarPdf from "./BotaoExportarPdf";
@@ -20,6 +22,12 @@ interface Props {
     aberto: boolean;
     registro: FalecidoItem | null;
     onFechar: () => void;
+    statusAvaliacoes?: StatusAvaliacoesItem;
+    podeVerVisita?: boolean;
+    podeVerPosAtendimento?: boolean;
+    loadingAvaliacoes?: boolean;
+    onAbrirVisita?: (item: FalecidoItem) => void;
+    onAbrirPosAtendimento?: (item: FalecidoItem) => void;
 }
 
 type FotoHistorico = {
@@ -52,6 +60,40 @@ const ABAS_DETALHE: Array<{ id: AbaDetalhe; label: string }> = [
     { id: "outras", label: "Outras informações" },
     { id: "timeline", label: "Linha do Tempo" },
 ];
+
+function IconeVisita() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z" />
+            <circle cx="12" cy="10" r="2.2" />
+        </svg>
+    );
+}
+
+function IconePos() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <rect x="5" y="4" width="14" height="17" rx="2" />
+            <path d="M9 4.5h6M9 9h6M9 13h6M9 17h4" />
+            <path d="m15.5 16.5 1.3 1.3 2.7-3" />
+        </svg>
+    );
+}
+
+function statusVisualAvaliacao(status?: AvaliacaoStatusResumo | null) {
+    switch (status?.status) {
+        case "concluida":
+            return { classes: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100", texto: status.avaliador_nome ? `Concluída por ${status.avaliador_nome}` : "Concluída" };
+        case "em_andamento":
+            return { classes: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100", texto: status.avaliador_nome ? `Em andamento por ${status.avaliador_nome}` : "Em andamento" };
+        case "pendente":
+            return { classes: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100", texto: "Pendente" };
+        case "nao_aplicavel":
+            return { classes: "border-slate-200 bg-slate-50 text-slate-400", texto: "Não aplicável" };
+        default:
+            return { classes: "border-slate-200 bg-white text-slate-700 hover:bg-muted", texto: "Abrir" };
+    }
+}
 
 function getRegistroId(item: FalecidoItem): string {
     const anyItem = item as any;
@@ -312,7 +354,17 @@ function CamposAba({
     );
 }
 
-export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Props) {
+export default function ModalDetalheRegistro({
+    aberto,
+    registro,
+    onFechar,
+    statusAvaliacoes,
+    podeVerVisita = false,
+    podeVerPosAtendimento = false,
+    loadingAvaliacoes = false,
+    onAbrirVisita,
+    onAbrirPosAtendimento,
+}: Props) {
     const [logs, setLogs] = useState<LogItem[]>([]);
     const [registroCompleto, setRegistroCompleto] =
         useState<RegistroAnalise | null>(null);
@@ -592,8 +644,8 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
 
                                     <span
                                         className={`rounded-full px-2 py-0.5 font-medium ${finalizado
-                                                ? "bg-emerald-50 text-emerald-700"
-                                                : "bg-amber-50 text-amber-700"
+                                            ? "bg-emerald-50 text-emerald-700"
+                                            : "bg-amber-50 text-amber-700"
                                             }`}
                                     >
                                         {finalizado
@@ -649,6 +701,38 @@ export default function ModalDetalheRegistro({ aberto, registro, onFechar }: Pro
                                         />
                                     </div>
                                 </div>
+
+                                {registro && podeVerVisita && (
+                                    <button
+                                        type="button"
+                                        className={[
+                                            "inline-flex h-10 w-10 items-center justify-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-50",
+                                            statusVisualAvaliacao(statusAvaliacoes?.visita).classes,
+                                        ].join(" ")}
+                                        onClick={() => onAbrirVisita?.(registro)}
+                                        disabled={loadingAvaliacoes || statusAvaliacoes?.visita?.status === "nao_aplicavel"}
+                                        title={`Visita: ${statusVisualAvaliacao(statusAvaliacoes?.visita).texto}`}
+                                        aria-label={`Visualizar visita. ${statusVisualAvaliacao(statusAvaliacoes?.visita).texto}`}
+                                    >
+                                        <IconeVisita />
+                                    </button>
+                                )}
+
+                                {registro && podeVerPosAtendimento && (
+                                    <button
+                                        type="button"
+                                        className={[
+                                            "inline-flex h-10 w-10 items-center justify-center rounded-md border transition disabled:cursor-not-allowed disabled:opacity-50",
+                                            statusVisualAvaliacao(statusAvaliacoes?.pos_atendimento).classes,
+                                        ].join(" ")}
+                                        onClick={() => onAbrirPosAtendimento?.(registro)}
+                                        disabled={loadingAvaliacoes || statusAvaliacoes?.pos_atendimento?.status === "nao_aplicavel"}
+                                        title={`Pós-Atendimento: ${statusVisualAvaliacao(statusAvaliacoes?.pos_atendimento).texto}`}
+                                        aria-label={`Visualizar pós-atendimento. ${statusVisualAvaliacao(statusAvaliacoes?.pos_atendimento).texto}`}
+                                    >
+                                        <IconePos />
+                                    </button>
+                                )}
 
                                 <button
                                     type="button"
