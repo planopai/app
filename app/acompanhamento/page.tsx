@@ -3952,6 +3952,16 @@ export default function AcompanhamentoPage() {
     [infoIdxResolved, abrirWizard, registros],
   );
 
+  const editarPorId = useCallback(
+    (id: Registro["id"]) => {
+      const idx = registros.findIndex((r) => String(r.id) === String(id));
+      if (idx < 0) return;
+      setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
+      abrirWizard("editar", idx, null);
+    },
+    [registros, abrirWizard],
+  );
+
   const abrirAssinaturaFromInfo = useCallback(
     (_idx: number, tipo: "recebimento" | "requisicao") => {
       const idx = infoIdxResolved;
@@ -4081,6 +4091,11 @@ export default function AcompanhamentoPage() {
   return (
     <div className="min-h-[100dvh] bg-[#F6F8FB] p-4 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6 lg:px-10 lg:py-8">
       <header className="mb-5 flex flex-col gap-3 sm:mb-7 sm:flex-row sm:items-center sm:gap-4">
+        <div className="hidden size-14 shrink-0 items-center justify-center rounded-[18px] bg-[#313C55] text-white sm:flex dark:bg-[#00AEEC] dark:text-[#313C55]" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="size-[26px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M12 11h4" /><path d="M12 16h4" />
+          </svg>
+        </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-extrabold leading-tight sm:text-[32px]">Atendimentos</h1>
           <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF] sm:text-[15px]">
@@ -4090,25 +4105,31 @@ export default function AcompanhamentoPage() {
         <div className="flex gap-2.5">
           <a
             href="/os/minhas"
-            className="inline-flex h-12 flex-1 items-center justify-center rounded-[14px] border-[1.5px] border-[#313C55] bg-white dark:bg-[#232B3F] px-5 text-[15px] font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10 sm:flex-none"
+            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-[#313C55] bg-white px-5 text-[15px] font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10"
           >
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><path d="M14 2v6h6" /><path d="M9 13h6" /><path d="M9 17h6" />
+            </svg>
             Minhas OS
           </a>
           <button
-            className="inline-flex h-12 flex-1 items-center justify-center rounded-[14px] bg-[#313C55] px-5 text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30] sm:flex-none"
+            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-[14px] bg-[#313C55] px-5 text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]"
             onClick={() => iniciarNovoRegistro("funerario")}
           >
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+              <path d="M5 12h14" /><path d="M12 5v14" />
+            </svg>
             Novo registro
           </button>
         </div>
       </header>
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-5">
       <TabelaAtendimentos
         selecionadoId={acaoOpen ? acaoId : null}
         registros={registros}
         onAcao={(id) => abrirPopupAcaoPorId(id)}
         onInfo={(id) => abrirInfoPorId(id)}
+        onEditar={editarPorId}
         onCompartilhar={(id) => abrirCompartilharPorId(id)}
         visitaPermitida={visitaPermitida}
         visitaStatusById={visitaStatusById}
@@ -4128,7 +4149,6 @@ export default function AcompanhamentoPage() {
         onVeiculoRequired={handleVeiculoRequired}
         onFotoAcaoRequired={handleFotoAcaoRequired}
       />
-      </div>
 
       <Wizard
         open={wizardOpen}

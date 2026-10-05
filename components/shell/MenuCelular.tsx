@@ -185,7 +185,7 @@ export default function MenuCelularHost() {
         FIXOS.find((f) => f.titulo === "Quadro de Atendimentos")!,
         FIXOS.find((f) => f.titulo === "Minhas OS")!,
         messenger,
-        FIXOS.find((f) => f.titulo === "Chat")!,
+        FIXOS.find((f) => f.titulo === "Aurora")!,
         FIXOS.find((f) => f.titulo === "Avisos")!,
     ].filter((i) => itemVisivel(i, has));
     const modulos = MODULOS.filter((m) => moduloVisivel(m, has));

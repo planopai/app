@@ -27,7 +27,7 @@ const PADRAO: MinhaBarra = {
             { id: "quadro", pagina: "quadro-acompanhamento", rotulo: "Quadro de Atendimentos", curto: "Quadro", rota: "/quadro-acompanhamento" },
             { id: "minhasos", pagina: "os-minhas", rotulo: "Minhas OS", curto: "Minhas OS", rota: "/os/minhas" },
             { id: "messenger", pagina: "messenger", rotulo: "Messenger", curto: "Messenger", rota: "/messenger" },
-            { id: "chat", pagina: "chat", rotulo: "Chat (Aurora)", curto: "Chat", rota: "/chat" },
+            { id: "chat", pagina: "chat", rotulo: "Aurora", curto: "Aurora", rota: "/chat" },
         ],
     },
     celular: {
@@ -70,7 +70,7 @@ const D: Record<string, string> = {
     atendimentos: "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11h4M12 16h4",
     coroas: circ(12, 7, 3) + circ(12, 17, 3) + circ(7, 12, 3) + circ(17, 12, 3),
     messenger: "M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",
-    chat: "M7.9 20A9 9 0 1 0 4 16.1L2 22Z",
+    chat: "M7.9 20A9 9 0 1 0 4 16.1L2 22Z" + "M12.5 7l1.2 3.3 3.3 1.2-3.3 1.2-1.2 3.3-1.2-3.3L8 11.5l3.3-1.2z",
     avisos: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0",
     requisicao: "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11v6M9 14h6",
     requisicoes: "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16ZM12 22V12M3.3 7 12 12l8.7-5",

@@ -53,6 +53,7 @@ import {
     IconUsersGroup,
 } from "@tabler/icons-react";
 
+import { IconeAurora } from "@/components/shell/IconeAurora";
 export type Icone = React.ElementType<any>;
 
 export type ItemModulo = {
@@ -89,7 +90,7 @@ export const FIXOS: ItemModulo[] = [
     { titulo: "Início", desc: "Resumo do dia", href: "/", slugs: ["*"], icone: IconHome },
     { titulo: "Quadro de Atendimentos", desc: "Andamento em tempo real", href: "/quadro-acompanhamento", slugs: ["*"], icone: IconDeviceDesktopAnalytics },
     { titulo: "Minhas OS", desc: "Ordens que você abriu", href: "/os/minhas", slugs: ["*"], icone: IconFileInvoice },
-    { titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
+    { titulo: "Aurora", desc: "Chat com a assistente de IA", href: "/chat", slugs: ["*"], icone: IconeAurora },
     { titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["*"], icone: IconBell, selo: "avisos" },
 ];
 
@@ -116,7 +117,7 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/comunicacao", slug: "comunicacao" },
         itens: [
             { titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
-            { titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
+            { titulo: "Aurora", desc: "Chat com a assistente de IA", href: "/chat", slugs: ["chat"], icone: IconeAurora },
             { titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
     },

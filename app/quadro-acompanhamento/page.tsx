@@ -3700,156 +3700,323 @@ export default function QuadroAtendimentoPage() {
                 )}
 
                 {open && detail && (
-                    <div className="qa-drawer-root fixed inset-0 z-50 flex items-stretch justify-end overflow-hidden" data-tema={temaGaveta} aria-modal role="dialog">
-                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeDetail} aria-hidden />
-
-                        <div className="qa-panel-premium qa-drawer-panel relative z-10 flex h-full w-full max-w-[780px] flex-col overflow-hidden border-l shadow-2xl">
-                            <div className="shrink-0 border-b border-slate-700/60 bg-slate-950/70 px-4 py-3 backdrop-blur sm:px-5">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0">
-                                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] qa-text-muted">Detalhes do atendimento</div>
-                                        <h3 className="mt-1 truncate text-lg font-bold leading-tight text-slate-100 sm:text-xl">
-                                            {shown(detail.falecido)}
-                                        </h3>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs qa-text-muted">
-                                            <span>Data: <b className="text-slate-200">{dateOr(detail.data)}</b></span>
-                                            <span>Hora: <b className="text-slate-200">{timeOr(detail.hora_fim_velorio)}</b></span>
-                                            <span>Agente: <b className="text-slate-200">{shown(detail.agente)}</b></span>
-                                        </div>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                                            <span className="qa-tag qa-tag-status qa-tag-xs">
-                                                {capStatus(detail.status)}
-                                            </span>
-                                            <ConvenioBadge convenio={detail.convenio} size="xs" />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                        {getRegistroBackendId(detail) && (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => abrirRegistrarAcao(detail)}
-                                                    className="qa-drawer-btn qa-drawer-btn-main"
-                                                    title="Registrar uma ação neste atendimento"
-                                                >
-                                                    Registrar ação
-                                                </button>
-                                                <a href={rotaEditar(getRegistroBackendId(detail) as string)} className="qa-drawer-btn qa-drawer-btn-edit" title="Editar o cadastro deste atendimento">
-                                                    Editar
-                                                </a>
-                                            </>
-                                        )}
-                                        <button
-                                            onClick={toggleTimelineDetalhe}
-                                            className={`rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 ${detailTimelineOpen ? "bg-slate-800" : "bg-slate-900/50"}`}
-                                            aria-label="Linha do tempo"
-                                            title="Ver linha do tempo deste atendimento"
-                                        >
-                                            Linha do tempo
-                                        </button>
-
-                                        <button
-                                            onClick={handleCopy}
-                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
-                                            aria-label="Copiar"
-                                            title="Copiar informações"
-                                        >
-                                            {copied ? "Copiado!" : "Copiar"}
-                                        </button>
-
-                                        <button
-                                            onClick={closeDetail}
-                                            className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
-                                            aria-label="Fechar"
-                                        >
-                                            Fechar
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {detailTimelineOpen && (
-                                    <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-950/55 p-3">
-                                        <div className="mb-2 flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-bold text-slate-200">Linha do Tempo</div>
-                                                <div className="truncate text-[11px] qa-text-muted">Logs deste atendimento: {shown(detail.falecido)}</div>
-                                            </div>
-                                            <button
-                                                onClick={() => setDetailTimelineOpen(false)}
-                                                className="shrink-0 rounded-full border border-slate-700/70 px-2.5 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
-                                                aria-label="Ocultar linha do tempo"
-                                            >
-                                                Ocultar
-                                            </button>
-                                        </div>
-
-                                        {detailLogsLoading && <p className="text-sm qa-text-muted">Carregando histórico…</p>}
-                                        {detailLogsError && <p className="text-sm text-red-400">{detailLogsError}</p>}
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length === 0 && (
-                                            <p className="text-sm qa-text-muted">Nenhum log encontrado para este atendimento.</p>
-                                        )}
-                                        {!detailLogsLoading && !detailLogsError && detailLogs.length > 0 && <LinhaDoTempoLogs logs={detailLogs} usuarioVisivel />}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-                                <div className="grid gap-3">
-                                    <Topic title="INFORMAÇÕES GERAIS" note={obsList(missingEtapa0(detail))}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-                                            <Field label="Falecido" value={shown(detail.falecido)} />
-                                            <Field label="Religião" value={shown(detail.religiao)} />
-                                            <Field label="Contato" value={shown(detail.contato)} className="sm:col-span-2" />
-                                            <Field label="Convênio" value={shown(detail.convenio)} className="sm:col-span-2" />
-                                            <Field label="Obs. Atendimento" value={shown(detail.observacao_atendimento, "")} className="sm:col-span-2" />
-                                        </div>
-                                    </Topic>
-
-                                    <Topic title="ITENS" note={obsList(missingEtapa1(detail))}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-                                            <Field label="Urna" value={shown(detail.urna)} />
-                                            <Field label="Roupa" value={shown(detail.roupa)} />
-                                            <Field label="Assistência" value={shown(detail.assistencia)} />
-                                            <Field label="Tanatopraxia" value={shown(detail.tanato)} />
-                                            <Field label="Invol" value={involSimNao(detail.invol)} />
-                                            <Field label="Ornamentação" value={shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)} />
-                                            {normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0 && (
-                                                <Field label="Materiais" value={<MateriaisValue registro={detail} lookup={matLookup} />} className="sm:col-span-2" />
-                                            )}
-                                            <Field label="Obs. Itens" value={shown(detail.observacao_itens, "")} className="sm:col-span-2" />
-                                        </div>
-                                    </Topic>
-
-                                    <Topic title="VELÓRIO" note={obsList(missingEtapa2(detail))}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
-                                            <Field label="Local Velório" value={<LocalVelorioValue value={detail.local_velorio} />} />
-                                            <Field label="Data Início Velório" value={dateOr(detail.data_inicio_velorio)} />
-                                            <Field label="Início Velório" value={timeOr(detail.hora_inicio_velorio)} />
-                                            <Field label="Obs. Velório" value={shown(detail.observacao_velorio01, "")} className="sm:col-span-3" />
-                                        </div>
-                                    </Topic>
-
-                                    <Topic title="SEPULTAMENTO" note={noteEtapa3(detail)}>
-                                        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-3">
-                                            <Field label="Local" value={shown(detail.local_sepultamento || detail.local)} />
-                                            <Field label="Data" value={dateOr(detail.data_fim_velorio)} />
-                                            <Field label="Hora" value={timeOr(detail.hora_fim_velorio)} />
-                                            <Field label="Obs. Sepultamento" value={shown(detail.observacao_velorio02, "")} className="sm:col-span-3" />
-                                        </div>
-                                    </Topic>
-
-                                    <div className="rounded-xl border border-slate-700/60 bg-slate-950/45 p-3">
-                                        <div className="mb-2 text-xs font-semibold qa-text-muted">Etapas preenchidas</div>
-                                        <EtapasRow registro={detail} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <DetalheAtendimentoDrawer
+                        detail={detail}
+                        tema={temaGaveta}
+                        nowMs={nowMs}
+                        logs={statusLogsById[getRegistroTrackingId(detail)]}
+                        onClose={closeDetail}
+                        copied={copied}
+                        onCopy={handleCopy}
+                        timelineOpen={detailTimelineOpen}
+                        onToggleTimeline={toggleTimelineDetalhe}
+                        onHideTimeline={() => setDetailTimelineOpen(false)}
+                        timelineLogs={detailLogs}
+                        timelineLoading={detailLogsLoading}
+                        timelineError={detailLogsError}
+                        matLookup={matLookup}
+                        faltam={[...missingEtapa0(detail), ...missingEtapa1(detail), ...missingEtapa2(detail)].map((k) => LABELS[k] ?? k)}
+                        onRegistrarAcao={() => abrirRegistrarAcao(detail)}
+                    />
                 )}
             </div>
         </>
+    );
+}
+
+/* ===== Janela "Informações do atendimento" (padrão do mockup Quadro.dc.html) =====
+ * Fundo na cor da marca (#313C55 a 45 %), janela à direita de 540 px, cabeçalho com nome e etiquetas,
+ * seções RESUMO · TEMPOS · ETAPAS · LOCAIS · ITENS · OBSERVAÇÕES e rodapé com Registrar ação / Editar / Fechar.
+ * No celular ocupa a tela toda e respeita as bordas de cima e de baixo. */
+function DetalheAtendimentoDrawer({
+    detail,
+    tema,
+    nowMs,
+    logs,
+    onClose,
+    copied,
+    onCopy,
+    timelineOpen,
+    onToggleTimeline,
+    onHideTimeline,
+    timelineLogs,
+    timelineLoading,
+    timelineError,
+    matLookup,
+    faltam,
+    onRegistrarAcao,
+}: {
+    detail: Registro;
+    tema: string;
+    nowMs: number;
+    logs: LogItem[] | undefined;
+    onClose: () => void;
+    copied: boolean;
+    onCopy: () => void;
+    timelineOpen: boolean;
+    onToggleTimeline: () => void;
+    onHideTimeline: () => void;
+    timelineLogs: LogItem[];
+    timelineLoading: boolean;
+    timelineError: string | null | undefined;
+    matLookup: any;
+    faltam: string[];
+    /** Abre o Registrar ação dentro do Quadro (a função é a do Quadro: fecha esta janela e abre o AcaoModal). */
+    onRegistrarAcao: () => void;
+}) {
+    const resumo = useMemo(() => resumirAtendimentoTv(detail, logs, nowMs), [detail, logs, nowMs]);
+    const backendId = getRegistroBackendId(detail);
+
+    // Esc fecha; o fundo da página não rola enquanto a janela está aberta.
+    useEffect(() => {
+        const aoTecla = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", aoTecla);
+        const html = document.documentElement;
+        const antes = html.style.overflow;
+        html.style.overflow = "hidden";
+        return () => {
+            window.removeEventListener("keydown", aoTecla);
+            html.style.overflow = antes;
+        };
+    }, [onClose]);
+
+    const statusRaw = String(detail.status || "").toLowerCase();
+    const concluido = statusRaw === "fase10" || statusRaw === "fase11" || statusRaw === "concluido";
+    const novo = statusRaw === "fase00" || statusRaw === "";
+    const chipFundo = concluido ? "bg-[var(--d-okbg)]" : novo ? "bg-[#FCF3CC] dark:bg-[#F2CB3F]/16" : "bg-[var(--d-accbg)]";
+    const chipPonto = concluido ? "bg-[#B3CE52]" : novo ? "bg-[#F2CB3F]" : "bg-[#00AEEC]";
+
+    const historico = useMemo(() => {
+        return (logs ?? [])
+            .map((l) => ({ st: getStatusFromLog(l), ts: parseLogTs(l.datahora), quem: shown(l.usuario, "") }))
+            .filter((x) => !!x.st && x.ts > 0)
+            .sort((a, b) => a.ts - b.ts)
+            .slice(-40);
+    }, [logs]);
+
+    const observacoes = [
+        ["Atendimento", detail.observacao_atendimento],
+        ["Itens", detail.observacao_itens],
+        ["Velório", detail.observacao_velorio01],
+        ["Sepultamento", detail.observacao_velorio02],
+    ]
+        .map(([k, v]) => [k, shown(v as string, "")] as const)
+        .filter(([, v]) => !!String(v).trim());
+
+    const itens: Array<[string, React.ReactNode]> = [
+        ["Urna", shown(detail.urna)],
+        ["Roupa", shown(detail.roupa)],
+        ["Assistência", shown(detail.assistencia)],
+        ["Tanatopraxia", shown(detail.tanato)],
+        ["Invol", involSimNao(detail.invol)],
+        ["Ornamentação", shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)],
+    ];
+    if (normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0) {
+        itens.push(["Materiais", <MateriaisValue key="mat" registro={detail} lookup={matLookup} />]);
+    }
+
+    const rotulo = "mb-2 mt-5 text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--d-muted)]";
+    const botaoIcone =
+        "grid size-11 shrink-0 place-items-center rounded-xl text-[var(--d-text)] hover:bg-black/5 dark:hover:bg-white/10";
+
+    return (
+        <div
+            className="qa-drawer-root fixed inset-0 z-50 flex items-stretch justify-end overflow-hidden"
+            data-tema={tema}
+            data-pai-overlay
+            data-pai-sem-folga
+            role="dialog"
+            aria-modal="true"
+            aria-label="Informações do atendimento"
+            style={{ background: "rgba(49, 60, 85, .45)" }}
+            onClick={(e) => {
+                if (e.target === e.currentTarget) onClose();
+            }}
+        >
+            <aside
+                className="flex h-full w-[540px] max-w-full flex-col bg-[var(--d-card)] text-[var(--d-text)] shadow-[-8px_0_24px_rgba(49,60,85,.18)]"
+                style={{ paddingTop: "env(safe-area-inset-top)", animation: "qa-drawer-in .22s ease-out" }}
+            >
+                {/* Cabeçalho */}
+                <div className="flex shrink-0 items-start gap-3 border-b border-[var(--d-line)] px-5 pb-3.5 pt-5 sm:px-6">
+                    <div className="min-w-0 flex-1">
+                        <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--d-muted)]">Informações do atendimento</div>
+                        <h2 className="mt-1 break-words text-2xl font-extrabold leading-tight">{shown(detail.falecido)}</h2>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                            <ConvenioBadge convenio={detail.convenio} size="xs" />
+                            <span className={`inline-flex min-h-7 items-center gap-2 rounded-[14px] px-3 py-1 text-[13px] font-bold ${chipFundo}`}>
+                                <span className={`size-2 rounded-full ${chipPonto}`} />
+                                {capStatus(detail.status)}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="-mr-2 -mt-1.5 flex shrink-0 items-center">
+                        <button type="button" onClick={onCopy} className={botaoIcone} aria-label="Copiar informações" title={copied ? "Copiado!" : "Copiar informações"}>
+                            {copied ? (
+                                <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                            ) : (
+                                <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                            )}
+                        </button>
+                        <button type="button" onClick={onToggleTimeline} className={`${botaoIcone} ${timelineOpen ? "bg-black/5 dark:bg-white/10" : ""}`} aria-label="Linha do tempo" aria-pressed={timelineOpen} title="Ver linha do tempo deste atendimento">
+                            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                        </button>
+                        <button type="button" onClick={onClose} className={botaoIcone} aria-label="Fechar">
+                            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Corpo */}
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1 sm:px-6" style={{ WebkitOverflowScrolling: "touch" }}>
+                    {faltam.length > 0 && (
+                        <div className="mt-4 rounded-[14px] border-[1.5px] border-[#F2CB3F] bg-[#FCF3CC] px-3.5 py-3 text-[13px] leading-snug text-[#313C55] dark:bg-[#F2CB3F]/16 dark:text-white">
+                            <b>Faltam dados:</b> {faltam.join(", ")}.
+                        </div>
+                    )}
+
+                    <div className={rotulo}>Resumo</div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                        {[
+                            ["Aberto em", tvDataHora(resumo.criadoTs) || "—"],
+                            ["Agente", shown(detail.agente)],
+                            ["Contato", shown(detail.contato)],
+                            ["Religião", shown(detail.religiao)],
+                            ["Convênio", shown(detail.convenio)],
+                            ["Situação", `${resumo.atualLabel} · há ${tvDuracaoTexto(resumo.atualDesdeMs)}`],
+                        ].map(([k, v]) => (
+                            <div key={k} className="min-w-0">
+                                <div className="text-xs font-bold text-[var(--d-muted)]">{k}</div>
+                                <div className="break-words font-extrabold [overflow-wrap:anywhere]">{v}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className={rotulo}>Tempos</div>
+                    <div className="grid grid-cols-4 gap-2">
+                        {TV_ETAPAS.map((step) => {
+                            const ms = resumo.durations.get(step.key) ?? 0;
+                            const ativo = resumo.activeKey === step.key;
+                            const feito = !ativo && ms > 0;
+                            return (
+                                <div
+                                    key={step.key}
+                                    className={`rounded-xl border px-1.5 py-2 text-center ${ativo ? "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/16" : feito ? "border-[#B3CE52] bg-[var(--d-okbg)]" : "border-[var(--d-line)] bg-[var(--d-sunk)]"}`}
+                                >
+                                    <div className="text-[11px] font-bold leading-tight text-[var(--d-muted)]">{step.label}</div>
+                                    <div className="mt-0.5 text-sm font-extrabold tabular-nums">{ativo || feito ? formatDurationMs(ms) : "—"}</div>
+                                </div>
+                            );
+                        })}
+                        <div className="rounded-xl border border-[var(--d-line)] bg-[var(--d-sunk)] px-1.5 py-2 text-center">
+                            <div className="text-[11px] font-bold leading-tight text-[var(--d-muted)]">Ocioso</div>
+                            <div className="mt-0.5 text-sm font-extrabold tabular-nums">{formatDurationMs(resumo.durations.get("idle") ?? 0)}</div>
+                        </div>
+                        <div className="rounded-xl border border-[var(--d-line)] bg-[var(--d-sunk)] px-1.5 py-2 text-center">
+                            <div className="text-[11px] font-bold leading-tight text-[var(--d-muted)]">Total</div>
+                            <div className="mt-0.5 text-sm font-extrabold tabular-nums">{formatDurationMs(resumo.totalMs)}</div>
+                        </div>
+                    </div>
+
+                    {historico.length > 0 && (
+                        <>
+                            <div className={rotulo}>Etapas registradas</div>
+                            <div className="overflow-hidden rounded-[14px] border border-[var(--d-line)]">
+                                {historico.map((h, i) => (
+                                    <div key={`${h.ts}-${i}`} className="flex items-center gap-3 border-t border-[var(--d-line)] px-3.5 py-2.5 text-sm first:border-t-0">
+                                        <span className="min-w-0 flex-1 font-bold">{capStatus(h.st)}</span>
+                                        <span className="shrink-0 text-[13px] font-extrabold text-[var(--d-acctext)]">{tvDataHora(h.ts)}</span>
+                                        <span className="w-[110px] shrink-0 truncate text-right text-xs text-[var(--d-muted)]">{h.quem}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    <div className={rotulo}>Locais</div>
+                    <div className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1.5 text-sm">
+                        <span className="font-extrabold text-[var(--d-muted)]">Velório</span>
+                        <span className="font-extrabold">
+                            <LocalVelorioValue value={detail.local_velorio} />
+                            {" · "}
+                            {dateOr(detail.data_inicio_velorio)} {timeOr(detail.hora_inicio_velorio)}
+                        </span>
+                        <span className="font-extrabold text-[var(--d-muted)]">Sepultamento</span>
+                        <span className="font-extrabold">
+                            {shown(detail.local_sepultamento || detail.local)}
+                            {" · "}
+                            {dateOr(detail.data_fim_velorio)} {timeOr(detail.hora_fim_velorio)}
+                        </span>
+                    </div>
+
+                    <div className={rotulo}>Itens</div>
+                    <div className="overflow-hidden rounded-[14px] border border-[var(--d-line)]">
+                        {itens.map(([k, v]) => (
+                            <div key={k} className="flex gap-3 border-t border-[var(--d-line)] px-3.5 py-2.5 text-sm first:border-t-0">
+                                <span className="flex-1 font-bold">{k}</span>
+                                <span className="max-w-[260px] shrink-0 break-words text-right font-extrabold [overflow-wrap:anywhere]">{v}</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className={rotulo}>Observações</div>
+                    <div className="rounded-[14px] bg-[var(--d-sunk)] px-3.5 py-3 text-sm leading-relaxed">
+                        {observacoes.length === 0 ? (
+                            <span className="text-[var(--d-muted)]">Sem observações.</span>
+                        ) : (
+                            observacoes.map(([k, v]) => (
+                                <p key={k} className="m-0 [&:not(:first-child)]:mt-1.5">
+                                    <b>{k}:</b> {v}
+                                </p>
+                            ))
+                        )}
+                    </div>
+
+                    <div className={rotulo}>Cadastro preenchido</div>
+                    <div className="rounded-[14px] border border-[var(--d-line)] bg-[var(--d-sunk)] p-3">
+                        <EtapasRow registro={detail} />
+                    </div>
+
+                    {timelineOpen && (
+                        <>
+                            <div className="mb-2 mt-5 flex items-center justify-between gap-2">
+                                <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--d-muted)]">Linha do tempo</div>
+                                <button type="button" onClick={onHideTimeline} className="h-9 rounded-xl border-[1.5px] border-[var(--d-line)] px-3 text-xs font-bold hover:bg-black/5 dark:hover:bg-white/10">
+                                    Ocultar
+                                </button>
+                            </div>
+                            <div className="rounded-[14px] border border-[var(--d-line)] p-3">
+                                {timelineLoading && <p className="text-sm text-[var(--d-muted)]">Carregando histórico…</p>}
+                                {timelineError && <p className="text-sm text-[var(--d-crit)]">{timelineError}</p>}
+                                {!timelineLoading && !timelineError && timelineLogs.length === 0 && (
+                                    <p className="text-sm text-[var(--d-muted)]">Nenhum log encontrado para este atendimento.</p>
+                                )}
+                                {!timelineLoading && !timelineError && timelineLogs.length > 0 && <LinhaDoTempoLogs logs={timelineLogs} usuarioVisivel />}
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Rodapé: Registrar ação · Editar · Fechar */}
+                <div className="flex shrink-0 gap-2.5 border-t border-[var(--d-line)] px-5 pt-3.5 sm:px-6" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
+                    {backendId ? (
+                        <>
+                            <button type="button" onClick={onRegistrarAcao} title="Registrar uma ação neste atendimento" className="flex h-12 flex-1 items-center justify-center rounded-xl bg-[#313C55] text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]">
+                                Registrar ação
+                            </button>
+                            <a href={rotaEditar(backendId)} className="flex h-12 items-center justify-center rounded-xl border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] px-5 text-[15px] font-extrabold text-[#313C55] no-underline hover:bg-[#E4BC30]">
+                                Editar
+                            </a>
+                        </>
+                    ) : null}
+                    <button type="button" onClick={onClose} className={`h-12 rounded-xl border-[1.5px] border-[var(--d-line)] px-5 text-[15px] font-bold hover:bg-black/5 dark:hover:bg-white/10 ${backendId ? "" : "flex-1"}`}>
+                        Fechar
+                    </button>
+                </div>
+            </aside>
+        </div>
     );
 }
 

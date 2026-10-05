@@ -11,6 +11,7 @@ import React, {
     useState,
 } from "react";
 
+import { IconeAurora } from "@/components/shell/IconeAurora";
 const CHAT_API = "https://api.planoassistencialintegrado.com.br/chatpai.php";
 const TELEMETRIA_URL = "https://api.planoassistencialintegrado.com.br/telemetria.php";
 const STORAGE_KEY = "pai-aurora-v4-editing";
@@ -429,9 +430,9 @@ function ProductCardView({ product }: { product: ProductCard }) {
     const stock = Number(product.quantidade_total || 0);
 
     return (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/70">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB]/70 dark:bg-[#232B3F]/70">
             {current?.foto_url ? (
-                <a href={current.foto_url} target="_blank" rel="noreferrer" className="block bg-white dark:bg-slate-900">
+                <a href={current.foto_url} target="_blank" rel="noreferrer" className="block bg-white dark:bg-[#232B3F]">
                     <img
                         src={current.foto_url}
                         alt={current.legenda || product.produto_nome}
@@ -442,15 +443,15 @@ function ProductCardView({ product }: { product: ProductCard }) {
             ) : null}
 
             {photos.length > 1 ? (
-                <div className="flex gap-2 overflow-x-auto border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2">
+                <div className="flex gap-2 overflow-x-auto border-t border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-2">
                     {photos.slice(0, 8).map((photo, index) => (
                         <button
                             key={`${product.produto_id}-photo-${photo.id ?? index}`}
                             type="button"
                             onClick={() => setActive(index)}
                             className={[
-                                "h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-white dark:bg-slate-900",
-                                index === active ? "border-sky-500 dark:border-sky-500 ring-2 ring-sky-100 dark:ring-sky-900/60" : "border-slate-200 dark:border-slate-700",
+                                "h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-white dark:bg-[#232B3F]",
+                                index === active ? "border-[#00AEEC] dark:border-[#00AEEC] ring-2 ring-[#00AEEC]/20 dark:ring-[#00AEEC]/30" : "border-[#E3E8F0] dark:border-white/[0.12]",
                             ].join(" ")}
                             title={photo.legenda || `Foto ${index + 1}`}
                         >
@@ -461,16 +462,16 @@ function ProductCardView({ product }: { product: ProductCard }) {
             ) : null}
 
             <div className="space-y-2 p-3 text-left">
-                <div className="font-semibold text-slate-950 dark:text-slate-50">{product.produto_nome}</div>
-                {price ? <div className="text-base font-semibold text-emerald-700 dark:text-emerald-300">{price}</div> : null}
-                <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
-                    {product.fabricante ? <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">{product.fabricante}</span> : null}
-                    {product.categoria ? <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">{product.categoria}</span> : null}
-                    {product.classificacao ? <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">{product.classificacao}</span> : null}
-                    <span className="rounded-full bg-white dark:bg-slate-900 px-2 py-1 ring-1 ring-slate-200 dark:ring-slate-700">Estoque: {stock.toLocaleString("pt-BR")}</span>
+                <div className="font-semibold text-[#313C55] dark:text-white">{product.produto_nome}</div>
+                {price ? <div className="text-base font-semibold text-[#5C7A12] dark:text-[#B3CE52]">{price}</div> : null}
+                <div className="flex flex-wrap gap-1.5 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
+                    {product.fabricante ? <span className="rounded-full bg-white dark:bg-[#232B3F] px-2 py-1 ring-1 ring-[#E3E8F0] dark:ring-white/[0.12]">{product.fabricante}</span> : null}
+                    {product.categoria ? <span className="rounded-full bg-white dark:bg-[#232B3F] px-2 py-1 ring-1 ring-[#E3E8F0] dark:ring-white/[0.12]">{product.categoria}</span> : null}
+                    {product.classificacao ? <span className="rounded-full bg-white dark:bg-[#232B3F] px-2 py-1 ring-1 ring-[#E3E8F0] dark:ring-white/[0.12]">{product.classificacao}</span> : null}
+                    <span className="rounded-full bg-white dark:bg-[#232B3F] px-2 py-1 ring-1 ring-[#E3E8F0] dark:ring-white/[0.12]">Estoque: {stock.toLocaleString("pt-BR")}</span>
                 </div>
-                {product.descricao ? <p className="text-xs leading-5 text-slate-600 dark:text-slate-400">{product.descricao}</p> : null}
-                {product.codigo_barras ? <div className="text-[11px] text-slate-500 dark:text-slate-400">Código: {product.codigo_barras}</div> : null}
+                {product.descricao ? <p className="text-xs leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{product.descricao}</p> : null}
+                {product.codigo_barras ? <div className="text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">Código: {product.codigo_barras}</div> : null}
             </div>
         </div>
     );
@@ -497,8 +498,8 @@ function ProductSuggestions({
 }) {
     if (!suggestions?.length) return null;
     return (
-        <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2.5">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Sugestões próximas</div>
+        <div className="mt-3 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-2.5">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">Sugestões próximas</div>
             <div className="flex flex-wrap gap-2">
                 {suggestions.slice(0, 6).map((item) => (
                     <button
@@ -506,12 +507,12 @@ function ProductSuggestions({
                         type="button"
                         disabled={disabled}
                         onClick={() => onChoose(item.produto_nome)}
-                        className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-left text-xs text-slate-700 dark:text-slate-300 shadow-sm transition hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-left text-xs text-[#313C55] dark:text-[#D6DCE8] shadow-sm transition hover:border-[#00AEEC] dark:hover:border-[#00AEEC]/60 hover:bg-[#E6F7FE] dark:hover:bg-[#00AEEC]/15 disabled:cursor-not-allowed disabled:opacity-50"
                         title={[item.categoria, item.fabricante].filter(Boolean).join(" • ")}
                     >
-                        <span className="block font-semibold text-slate-900 dark:text-slate-100">{item.produto_nome}</span>
+                        <span className="block font-semibold text-[#313C55] dark:text-white">{item.produto_nome}</span>
                         {(item.categoria || item.fabricante) ? (
-                            <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
+                            <span className="mt-0.5 block text-[10px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 {[item.categoria, item.fabricante].filter(Boolean).join(" • ")}
                             </span>
                         ) : null}
@@ -601,22 +602,22 @@ function ExportCards({ cards }: { cards?: ExportCard[] }) {
                 return (
                     <div
                         key={card.id}
-                        className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
+                        className="overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334]"
                     >
                         <div className="flex items-center gap-3 p-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] shadow-sm ring-1 ring-[#E3E8F0] dark:ring-white/[0.12]">
                                 <span className="text-[11px] font-bold uppercase">{card.format}</span>
                             </div>
 
                             <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">
+                                <div className="truncate text-sm font-semibold text-[#313C55] dark:text-white">
                                     {card.title}
                                 </div>
-                                <div className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                <div className="mt-0.5 truncate text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                     {exportFormatDescription(card.format)} • {card.filename}
                                 </div>
                                 {validExpiry ? (
-                                    <div className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
+                                    <div className="mt-0.5 text-[10px] text-[#7A8396] dark:text-[#8893AA]">
                                         Link temporário até {expiry!.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                                     </div>
                                 ) : null}
@@ -624,7 +625,7 @@ function ExportCards({ cards }: { cards?: ExportCard[] }) {
 
                             <a
                                 href={exportDownloadUrl(card)}
-                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#0097CC]"
                                 title={`Baixar ${card.filename}`}
                             >
                                 <IconDownload className="h-4 w-4" />
@@ -895,12 +896,12 @@ function PendingActionCards({
                         className={[
                             "overflow-hidden rounded-2xl border shadow-sm",
                             completed
-                                ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/40"
+                                ? "border-[#B3CE52]/60 bg-[#EEF5D6]/70 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15"
                                 : cancelled
-                                    ? "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950"
+                                    ? "border-[#E3E8F0] bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#1C2334]"
                                     : action.status === "error"
-                                        ? "border-red-200 bg-red-50/70 dark:border-red-800 dark:bg-red-950/40"
-                                        : "border-amber-200 bg-gradient-to-b from-amber-50/85 to-white dark:border-amber-800 dark:from-amber-950/35 dark:to-slate-950",
+                                        ? "border-[#F4B8B1] bg-[#FDECEA]/70 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15"
+                                        : "border-[#F2CB3F]/70 bg-gradient-to-b from-[#FCF3CC]/85 to-white dark:border-[#F2CB3F]/40 dark:from-[#F2CB3F]/15 dark:to-[#1C2334]",
                         ].join(" ")}
                     >
                         <div className="p-3 sm:p-4">
@@ -909,12 +910,12 @@ function PendingActionCards({
                                     className={[
                                         "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
                                         completed
-                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                                            ? "bg-[#EEF5D6] text-[#5C7A12] dark:bg-[#B3CE52]/20 dark:text-[#B3CE52]"
                                             : cancelled
-                                                ? "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                                ? "bg-[#E3E8F0] text-[#5B6478] dark:bg-white/15 dark:text-[#D6DCE8]"
                                                 : action.status === "error"
-                                                    ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
-                                                    : "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300",
+                                                    ? "bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/20 dark:text-[#FF9C92]"
+                                                    : "bg-[#FCF3CC] text-[#B45309] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]",
                                     ].join(" ")}
                                 >
                                     {isRequest ? (
@@ -935,12 +936,12 @@ function PendingActionCards({
                                 </div>
 
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-[13px] font-semibold leading-tight text-slate-950 dark:text-slate-50 sm:text-sm">
+                                    <div className="text-[13px] font-semibold leading-tight text-[#313C55] dark:text-white sm:text-sm">
                                         {isRequest ? "Nova requisição" : action.title}
                                     </div>
 
                                     {isRequest && titleText ? (
-                                        <div className="mt-0.5 text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-200 sm:text-sm">
+                                        <div className="mt-0.5 text-[13px] font-semibold leading-tight text-[#313C55] dark:text-[#E8ECF4] sm:text-sm">
                                             {titleText}
                                         </div>
                                     ) : null}
@@ -952,7 +953,7 @@ function PendingActionCards({
                                       As demais ações continuam exibindo suas descrições normalmente.
                                     */}
                                     {!isRequest && action.description ? (
-                                        <div className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">
+                                        <div className="mt-1 text-xs leading-5 text-[#5B6478] dark:text-[#AEB9CF]">
                                             {action.description}
                                         </div>
                                     ) : null}
@@ -962,14 +963,14 @@ function PendingActionCards({
                                     className={[
                                         "inline-flex max-w-[46%] shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold leading-tight sm:max-w-none sm:text-[10px]",
                                         completed
-                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                                            ? "bg-[#EEF5D6] text-[#5C7A12] dark:bg-[#B3CE52]/20 dark:text-[#B3CE52]"
                                             : cancelled
-                                                ? "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                                ? "bg-[#E3E8F0] text-[#5B6478] dark:bg-white/15 dark:text-[#D6DCE8]"
                                                 : executing
-                                                    ? "bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300"
+                                                    ? "bg-[#E6F7FE] text-[#0086B8] dark:bg-[#00AEEC]/20 dark:text-[#5CCBF4]"
                                                     : action.status === "error"
-                                                        ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
-                                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+                                                        ? "bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/20 dark:text-[#FF9C92]"
+                                                        : "bg-[#FCF3CC] text-[#7A5600] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]",
                                     ].join(" ")}
                                 >
                                     {!completed && !cancelled && !executing && action.status !== "error" ? (
@@ -991,9 +992,9 @@ function PendingActionCards({
                             </div>
 
                             {isRequest ? (
-                                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/90 bg-white/90 dark:border-slate-700 dark:bg-slate-900/85">
+                                <div className="mt-3 overflow-hidden rounded-xl border border-[#E3E8F0]/90 bg-white/90 dark:border-white/[0.12] dark:bg-[#232B3F]/85">
                                     {itemDetails.length ? (
-                                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        <div className="divide-y divide-[#EEF2F7] dark:divide-white/[0.08]">
                                             {itemDetails.map((detail, index) => {
                                                 const match = detail.value.match(
                                                     /^\s*([0-9.,]+)\s*[×xX]\s*(.+?)\s*$/
@@ -1007,18 +1008,18 @@ function PendingActionCards({
                                                         key={`${action.id}-item-${index}`}
                                                         className="flex items-center gap-3 px-3 py-2.5"
                                                     >
-                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E3E8F0] bg-[#F6F8FB] text-[#5B6478] dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-[#D6DCE8]">
                                                             <IconPackage className="h-4 w-4" />
                                                         </div>
 
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100 sm:text-[13px]">
+                                                            <div className="truncate text-xs font-semibold text-[#313C55] dark:text-white sm:text-[13px]">
                                                                 {product}
                                                             </div>
                                                         </div>
 
                                                         {quantity ? (
-                                                            <div className="shrink-0 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                                            <div className="shrink-0 text-xs font-semibold text-[#313C55] dark:text-white">
                                                                 {quantity} un
                                                             </div>
                                                         ) : null}
@@ -1029,15 +1030,15 @@ function PendingActionCards({
                                     ) : null}
 
                                     {(classification || destination) ? (
-                                        <div className="grid grid-cols-1 gap-2 border-t border-slate-100 px-3 py-2.5 dark:border-slate-800 min-[420px]:grid-cols-2">
+                                        <div className="grid grid-cols-1 gap-2 border-t border-[#EEF2F7] px-3 py-2.5 dark:border-white/[0.08] min-[420px]:grid-cols-2">
                                             {classification ? (
                                                 <div className="flex min-w-0 items-start gap-2">
-                                                    <IconTag className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                                                    <IconTag className="mt-0.5 h-4 w-4 shrink-0 text-[#5B6478] dark:text-[#AEB9CF]" />
                                                     <div className="min-w-0">
-                                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">
+                                                        <div className="text-[9px] text-[#5B6478] dark:text-[#AEB9CF]">
                                                             Classificação
                                                         </div>
-                                                        <div className="mt-0.5 break-words text-[10px] font-semibold leading-tight text-slate-800 dark:text-slate-200">
+                                                        <div className="mt-0.5 break-words text-[10px] font-semibold leading-tight text-[#313C55] dark:text-[#E8ECF4]">
                                                             {classification?.value}
                                                         </div>
                                                     </div>
@@ -1046,12 +1047,12 @@ function PendingActionCards({
 
                                             {destination ? (
                                                 <div className="flex min-w-0 items-start gap-2">
-                                                    <IconBuilding className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                                                    <IconBuilding className="mt-0.5 h-4 w-4 shrink-0 text-[#5B6478] dark:text-[#AEB9CF]" />
                                                     <div className="min-w-0">
-                                                        <div className="text-[9px] text-slate-500 dark:text-slate-400">
+                                                        <div className="text-[9px] text-[#5B6478] dark:text-[#AEB9CF]">
                                                             Destino
                                                         </div>
-                                                        <div className="mt-0.5 break-words text-[10px] font-semibold leading-tight text-slate-800 dark:text-slate-200">
+                                                        <div className="mt-0.5 break-words text-[10px] font-semibold leading-tight text-[#313C55] dark:text-[#E8ECF4]">
                                                             {destination?.value}
                                                         </div>
                                                     </div>
@@ -1061,16 +1062,16 @@ function PendingActionCards({
                                     ) : null}
                                 </div>
                             ) : metaDetails.length ? (
-                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 p-3 ring-1 ring-inset ring-slate-200/70 dark:bg-slate-900/80 dark:ring-slate-700/70">
+                                <div className="mt-3 grid gap-1.5 rounded-xl bg-white/80 p-3 ring-1 ring-inset ring-[#E3E8F0]/70 dark:bg-[#232B3F]/80 dark:ring-white/[0.12]">
                                     {metaDetails.map((detail, index) => (
                                         <div
                                             key={`${action.id}-detail-${index}`}
                                             className="grid grid-cols-[minmax(90px,0.42fr)_1fr] gap-3 text-xs"
                                         >
-                                            <span className="text-slate-500 dark:text-slate-400">
+                                            <span className="text-[#5B6478] dark:text-[#AEB9CF]">
                                                 {detail.label}
                                             </span>
-                                            <span className="break-words font-medium text-slate-800 dark:text-slate-200">
+                                            <span className="break-words font-medium text-[#313C55] dark:text-[#E8ECF4]">
                                                 {detail.value}
                                             </span>
                                         </div>
@@ -1079,13 +1080,13 @@ function PendingActionCards({
                             ) : null}
 
                             {action.result_label ? (
-                                <div className="mt-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                <div className="mt-3 text-xs font-semibold text-[#5C7A12] dark:text-[#B3CE52]">
                                     {action.result_label}
                                 </div>
                             ) : null}
 
                             {action.error ? (
-                                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+                                <div className="mt-3 rounded-xl border border-[#F4B8B1] bg-[#FDECEA] px-3 py-2 text-xs text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                                     {action.error}
                                 </div>
                             ) : null}
@@ -1096,7 +1097,7 @@ function PendingActionCards({
                                         type="button"
                                         disabled={disabled || executing}
                                         onClick={() => onConfirm(action)}
-                                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-[#B3CE52] px-3 py-2 text-xs font-semibold text-[#313C55] shadow-sm transition hover:bg-[#A3BE45] disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                         <IconCheck />
                                         <span>
@@ -1111,7 +1112,7 @@ function PendingActionCards({
                                         type="button"
                                         disabled={disabled || executing}
                                         onClick={() => onCancel(action)}
-                                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#C9D1DE] bg-white px-3 py-2 text-xs font-semibold text-[#313C55] shadow-sm transition hover:bg-[#EEF2F7] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-white/10"
                                     >
                                         <IconX />
                                         <span>Cancelar</span>
@@ -1120,7 +1121,7 @@ function PendingActionCards({
                             ) : null}
 
                             {expired && pending ? (
-                                <div className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+                                <div className="mt-3 text-xs text-[#7A5600] dark:text-[#F2CB3F]">
                                     Esta confirmação expirou. Peça à Aurora para preparar a ação novamente.
                                 </div>
                             ) : null}
@@ -1210,17 +1211,17 @@ function AttendanceEditFormCard({
     }
 
     return (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-950/30">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-[#8FD6F4] dark:border-[#00AEEC]/40 bg-[#E6F7FE]/50 dark:bg-[#00AEEC]/10">
             <div className="p-4">
-                <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{form.title}</div>
-                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{form.falecido || `Atendimento #${form.attendance_id}`}</div>
+                <div className="text-sm font-semibold text-[#313C55] dark:text-white">{form.title}</div>
+                <div className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{form.falecido || `Atendimento #${form.attendance_id}`}</div>
 
                 {form.summary.length ? (
-                    <div className="mt-3 grid gap-1.5 rounded-xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700">
+                    <div className="mt-3 grid gap-1.5 rounded-xl bg-white dark:bg-[#232B3F] p-3 ring-1 ring-[#E3E8F0] dark:ring-white/[0.12]">
                         {form.summary.map((item) => (
                             <div key={`${form.id}-summary-${item.key}`} className="grid grid-cols-[minmax(110px,0.45fr)_1fr] gap-3 text-xs">
-                                <span className="text-slate-500 dark:text-slate-400">{item.label}</span>
-                                <span className="font-medium text-slate-800 dark:text-slate-200">{item.value || "Não informado"}</span>
+                                <span className="text-[#5B6478] dark:text-[#AEB9CF]">{item.label}</span>
+                                <span className="font-medium text-[#313C55] dark:text-[#E8ECF4]">{item.value || "Não informado"}</span>
                             </div>
                         ))}
                     </div>
@@ -1229,7 +1230,7 @@ function AttendanceEditFormCard({
                 <div className="mt-3 grid gap-3">
                     {form.fields.map((field) => (
                         <label key={`${form.id}-${field.key}`} className="block">
-                            <span className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                            <span className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">
                                 {field.label}{field.required ? " *" : ""}
                             </span>
                             {field.type === "textarea" ? (
@@ -1238,14 +1239,14 @@ function AttendanceEditFormCard({
                                     onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                                     disabled={disabled || busy}
                                     rows={3}
-                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[16px] text-slate-900 dark:text-slate-100 outline-none focus:border-sky-400 dark:focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900/60 disabled:opacity-60 sm:text-sm"
+                                    className="w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 dark:focus:ring-[#00AEEC]/30 disabled:opacity-60 sm:text-sm"
                                 />
                             ) : field.type === "select" ? (
                                 <select
                                     value={values[field.key] || ""}
                                     onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                                     disabled={disabled || busy}
-                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-[16px] text-slate-900 dark:text-slate-100 outline-none focus:border-sky-400 dark:focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900/60 disabled:opacity-60 sm:text-sm"
+                                    className="w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 dark:focus:ring-[#00AEEC]/30 disabled:opacity-60 sm:text-sm"
                                 >
                                     <option value="">Selecione</option>
                                     {(field.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
@@ -1256,20 +1257,20 @@ function AttendanceEditFormCard({
                                     value={values[field.key] || ""}
                                     onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                                     disabled={disabled || busy}
-                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-[16px] text-slate-900 dark:text-slate-100 outline-none focus:border-sky-400 dark:focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900/60 disabled:opacity-60 sm:text-sm"
+                                    className="w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 dark:focus:ring-[#00AEEC]/30 disabled:opacity-60 sm:text-sm"
                                 />
                             )}
                         </label>
                     ))}
                 </div>
 
-                {localError ? <div className="mt-3 text-xs font-medium text-red-600 dark:text-red-400">{localError}</div> : null}
+                {localError ? <div className="mt-3 text-xs font-medium text-[#B42318] dark:text-[#FF9C92]">{localError}</div> : null}
 
                 <button
                     type="button"
                     onClick={() => void submit()}
                     disabled={disabled || busy}
-                    className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-4 w-full rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#232B40] dark:hover:bg-[#0097CC] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     {busy ? "Preparando..." : "Revisar alterações"}
                 </button>
@@ -1392,9 +1393,9 @@ function OperationalFlowCards({
             {flows.map((flow) => {
                 if (flow.kind === "attendance_list") {
                     return (
-                        <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                        <div key={flow.id} className="overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]">
                             <div className="p-3.5">
-                                <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{flow.title || "Escolha o atendimento"}</div>
+                                <div className="text-sm font-semibold text-[#313C55] dark:text-white">{flow.title || "Escolha o atendimento"}</div>
                                 <div className="mt-3 grid gap-2">
                                     {(flow.attendances || []).map((choice) => (
                                         <button
@@ -1402,14 +1403,14 @@ function OperationalFlowCards({
                                             type="button"
                                             disabled={disabled}
                                             onClick={() => onChooseAttendance(choice)}
-                                            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-left transition hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] px-3 py-2.5 text-left transition hover:border-[#00AEEC] dark:hover:border-[#00AEEC]/60 hover:bg-[#E6F7FE] dark:hover:bg-[#00AEEC]/15 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{choice.falecido}</div>
-                                            <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{choice.status_label || "Aguardando"}</div>
+                                            <div className="text-sm font-semibold text-[#313C55] dark:text-white">{choice.falecido}</div>
+                                            <div className="mt-0.5 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">{choice.status_label || "Aguardando"}</div>
                                         </button>
                                     ))}
                                     {!(flow.attendances || []).length ? (
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">Nenhum atendimento ativo.</div>
+                                        <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Nenhum atendimento ativo.</div>
                                     ) : null}
                                 </div>
                             </div>
@@ -1422,12 +1423,12 @@ function OperationalFlowCards({
                 const vehicleOpen = vehicleFlowId === flow.id;
 
                 return (
-                    <div key={flow.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <div key={flow.id} className="overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]">
                         <div className="p-3.5">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">{flow.attendance.falecido}</div>
-                                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{flow.attendance.status_label || "Aguardando"}</div>
+                                    <div className="truncate text-sm font-semibold text-[#313C55] dark:text-white">{flow.attendance.falecido}</div>
+                                    <div className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{flow.attendance.status_label || "Aguardando"}</div>
                                 </div>
                             </div>
 
@@ -1438,7 +1439,7 @@ function OperationalFlowCards({
                                             type="button"
                                             disabled={disabled}
                                             onClick={() => setVehicleFlowId(vehicleOpen ? null : flow.id)}
-                                            className="w-full rounded-xl bg-amber-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="w-full rounded-xl bg-[#F2CB3F] px-4 py-3 text-left text-sm font-semibold text-[#313C55] shadow-sm transition hover:bg-[#E4BC30] disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             {action.label}
                                         </button>
@@ -1447,26 +1448,26 @@ function OperationalFlowCards({
                                             type="button"
                                             disabled={disabled}
                                             onClick={() => onChooseAction(flow)}
-                                            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="w-full rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#0097CC] disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             {action.label}
                                         </button>
                                     ) : action.external_url ? (
                                         <a
                                             href={action.external_url}
-                                            className="block w-full rounded-xl bg-slate-950 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                                            className="block w-full rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#0097CC]"
                                         >
                                             {action.label}
                                         </a>
                                     ) : (
-                                        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                        <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] px-4 py-3 text-sm font-semibold text-[#313C55] dark:text-[#D6DCE8]">
                                             {action.label}
                                         </div>
                                     )}
 
                                     {action.vehicle_required && vehicleOpen ? (
-                                        <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3">
-                                            <div className="mb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">Escolha o veículo</div>
+                                        <div className="mt-3 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                                            <div className="mb-2 text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8]">Escolha o veículo</div>
                                             <div className="grid gap-2 sm:grid-cols-2">
                                                 {(action.vehicles || []).map((vehicle) => (
                                                     <button
@@ -1482,7 +1483,7 @@ function OperationalFlowCards({
                                                                 setVehicleBusyId(null);
                                                             }
                                                         }}
-                                                        className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-left text-xs font-semibold text-slate-800 dark:text-slate-200 transition hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-left text-xs font-semibold text-[#313C55] dark:text-[#E8ECF4] transition hover:border-[#00AEEC] dark:hover:border-[#00AEEC]/60 hover:bg-[#E6F7FE] dark:hover:bg-[#00AEEC]/15 disabled:cursor-not-allowed disabled:opacity-50"
                                                     >
                                                         {vehicleBusyId === vehicle.id ? "Preparando..." : vehicle.label}
                                                     </button>
@@ -1492,7 +1493,7 @@ function OperationalFlowCards({
                                     ) : null}
                                 </div>
                             ) : (
-                                <div className="mt-3 text-xs font-medium text-emerald-700 dark:text-emerald-300">Fluxo concluído.</div>
+                                <div className="mt-3 text-xs font-medium text-[#5C7A12] dark:text-[#B3CE52]">Fluxo concluído.</div>
                             )}
                         </div>
                     </div>
@@ -1734,7 +1735,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
                         href={cleanUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="break-all font-semibold text-sky-700 dark:text-sky-300 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:hover:text-sky-300"
+                        className="break-all font-semibold text-[#0086B8] dark:text-[#5CCBF4] underline decoration-[#8FD6F4] underline-offset-2 hover:text-[#0086B8] dark:hover:text-[#5CCBF4]"
                     >
                         Abrir link de pagamento
                     </a>
@@ -1745,7 +1746,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 
         if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
             return (
-                <strong key={key} className="font-semibold text-slate-950 dark:text-slate-50">
+                <strong key={key} className="font-semibold text-[#313C55] dark:text-white">
                     {part.slice(2, -2)}
                 </strong>
             );
@@ -1753,7 +1754,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 
         if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
             return (
-                <code key={key} className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono text-[0.9em] text-slate-700 dark:text-slate-300">
+                <code key={key} className="rounded bg-[#EEF2F7] dark:bg-[#1C2334] px-1 py-0.5 font-mono text-[0.9em] text-[#313C55] dark:text-[#D6DCE8]">
                     {part.slice(1, -1)}
                 </code>
             );
@@ -1838,15 +1839,15 @@ function AssistantContent({ content }: { content: string }) {
             }
 
             blocks.push(
-                <div key={`table-${index}`} className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                <div key={`table-${index}`} className="my-3 overflow-x-auto rounded-xl border border-[#E3E8F0] dark:border-white/[0.12]">
                     <table className="min-w-full border-collapse text-sm">
-                        <thead className="bg-slate-100 dark:bg-slate-800/90">
+                        <thead className="bg-[#EEF2F7] dark:bg-[#1C2334]/90">
                             <tr>
                                 {headers.map((header, columnIndex) => (
                                     <th
                                         key={`table-${index}-head-${columnIndex}`}
                                         className={[
-                                            "border-b border-slate-200 dark:border-slate-700 px-3 py-2 font-semibold text-slate-900 dark:text-slate-100",
+                                            "border-b border-[#E3E8F0] dark:border-white/[0.12] px-3 py-2 font-semibold text-[#313C55] dark:text-white",
                                             alignments[columnIndex] === "right"
                                                 ? "text-right"
                                                 : alignments[columnIndex] === "center"
@@ -1859,14 +1860,14 @@ function AssistantContent({ content }: { content: string }) {
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-900/40">
+                        <tbody className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12] bg-white dark:bg-[#232B3F]/40">
                             {rows.map((row, rowIndex) => (
-                                <tr key={`table-${index}-row-${rowIndex}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <tr key={`table-${index}-row-${rowIndex}`} className="hover:bg-[#EEF2F7] dark:hover:bg-white/5">
                                     {headers.map((_, columnIndex) => (
                                         <td
                                             key={`table-${index}-cell-${rowIndex}-${columnIndex}`}
                                             className={[
-                                                "px-3 py-2 text-slate-700 dark:text-slate-300",
+                                                "px-3 py-2 text-[#313C55] dark:text-[#D6DCE8]",
                                                 alignments[columnIndex] === "right"
                                                     ? "text-right tabular-nums"
                                                     : alignments[columnIndex] === "center"
@@ -1898,7 +1899,7 @@ function AssistantContent({ content }: { content: string }) {
         if (bullet) {
             blocks.push(
                 <div key={`bullet-${index}`} className="flex items-start gap-2 pl-0.5">
-                    <span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                    <span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#7A8396]" />
                     <div className="min-w-0 flex-1">{renderInlineMarkdown(bullet[1], `bullet-${index}`)}</div>
                 </div>
             );
@@ -1910,7 +1911,7 @@ function AssistantContent({ content }: { content: string }) {
         if (numbered) {
             blocks.push(
                 <div key={`number-${index}`} className="flex items-start gap-2">
-                    <span className="min-w-5 shrink-0 font-medium text-slate-500 dark:text-slate-400">{numbered[1]}.</span>
+                    <span className="min-w-5 shrink-0 font-medium text-[#5B6478] dark:text-[#AEB9CF]">{numbered[1]}.</span>
                     <div className="min-w-0 flex-1">{renderInlineMarkdown(numbered[2], `number-${index}`)}</div>
                 </div>
             );
@@ -2041,7 +2042,7 @@ function IconShield({ className = "h-4 w-4" }: { className?: string }) {
 
 function AssistantAvatar() {
     return (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white shadow-sm">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white shadow-sm">
             <IconSparkles className="h-4.5 w-4.5" />
         </div>
     );
@@ -2051,14 +2052,14 @@ function TypingIndicator({ label = "Consultando dados" }: { label?: string }) {
     return (
         <div className="flex items-start gap-3">
             <AssistantAvatar />
-            <div className="rounded-2xl rounded-tl-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm">
+            <div className="rounded-2xl rounded-tl-md border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-3 shadow-sm">
                 <div className="flex items-center gap-2" aria-label={label}>
                     <div className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.25s]" />
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.12s]" />
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-[#7A8396] [animation-delay:-0.25s]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-[#7A8396] [animation-delay:-0.12s]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-[#7A8396]" />
                     </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{label}</span>
+                    <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">{label}</span>
                 </div>
             </div>
         </div>
@@ -2073,15 +2074,15 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
     if (!items.length) return null;
 
     return (
-        <div className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-2.5">
+        <div className="mt-3 border-t border-[#EEF2F7] dark:border-white/[0.08] pt-2.5">
             <button
                 type="button"
                 onClick={() => setExpanded((value) => !value)}
                 aria-expanded={expanded}
-                className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 transition hover:text-slate-600 dark:hover:text-slate-300"
+                className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA] transition hover:text-[#313C55] dark:hover:text-white"
             >
                 <span className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300">
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[#E6F7FE] dark:bg-[#00AEEC]/20 text-[#0086B8] dark:text-[#5CCBF4]">
                         K
                     </span>
                     <span className="truncate">
@@ -2116,17 +2117,17 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
                         return (
                             <div
                                 key={`kb-${source.documento_id}`}
-                                className="rounded-xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/45 dark:bg-indigo-950/35 px-3 py-2.5"
+                                className="rounded-xl border border-[#8FD6F4] dark:border-[#00AEEC]/30 bg-[#E6F7FE]/45 dark:bg-[#00AEEC]/10 px-3 py-2.5"
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">{source.titulo}</div>
+                                        <div className="truncate text-xs font-semibold text-[#313C55] dark:text-[#E8ECF4]">{source.titulo}</div>
                                         {meta.length ? (
-                                            <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{meta.join(" • ")}</div>
+                                            <div className="mt-0.5 text-[10px] text-[#5B6478] dark:text-[#AEB9CF]">{meta.join(" • ")}</div>
                                         ) : null}
                                     </div>
                                     {source.alerta_pendente ? (
-                                        <span className="shrink-0 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200 dark:ring-amber-800">
+                                        <span className="shrink-0 rounded-full bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-[#7A5600] dark:text-[#F2CB3F] ring-1 ring-inset ring-[#F2CB3F]/70 dark:ring-[#F2CB3F]/40">
                                             Conflito pendente
                                         </span>
                                     ) : null}
@@ -2143,11 +2144,11 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
 function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
     return (
         <div className="mx-auto flex min-h-[55vh] w-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
-            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200 dark:shadow-black/30">
+            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white shadow-lg shadow-[#313C55]/15 dark:shadow-black/30">
                 <IconSparkles className="h-7 w-7" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:text-3xl">Aurora</h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400 sm:text-base">
+            <h1 className="text-2xl font-semibold tracking-tight text-[#313C55] dark:text-white sm:text-3xl">Aurora</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[#5B6478] dark:text-[#AEB9CF] sm:text-base">
                 Assistente Administrativo do PAI. Consulta dados, gera arquivos e prepara ações administrativas que só são executadas após sua confirmação.
             </p>
             <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
@@ -2159,8 +2160,8 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                         className={[
                             "rounded-2xl border px-4 py-3 text-left text-sm font-medium shadow-sm transition active:scale-[0.99]",
                             index === 0
-                                ? "border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 text-sky-900 dark:text-sky-200 ring-1 ring-inset ring-sky-100 dark:ring-sky-900/60 hover:bg-sky-100 dark:hover:bg-sky-900/60"
-                                : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800",
+                                ? "border-[#8FD6F4] dark:border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/15 text-[#313C55] dark:text-[#E8ECF4] ring-1 ring-inset ring-[#00AEEC]/20 dark:ring-[#00AEEC]/30 hover:bg-[#D3EFFC] dark:hover:bg-[#00AEEC]/25"
+                                : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:border-[#C9D1DE] dark:hover:border-white/40 hover:bg-[#EEF2F7] dark:hover:bg-white/10",
                         ].join(" ")}
                     >
                         {prompt}
@@ -2168,10 +2169,10 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
                 ))}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                <div className="flex items-center gap-2 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200 dark:ring-emerald-800">
+                <div className="flex items-center gap-2 rounded-full bg-[#EEF5D6] dark:bg-[#B3CE52]/15 px-3 py-1.5 text-xs font-medium text-[#5C7A12] dark:text-[#B3CE52] ring-1 ring-inset ring-[#B3CE52]/60 dark:ring-[#B3CE52]/40">
                     <IconShield /> Consultas controladas
                 </div>
-                <div className="flex items-center gap-2 rounded-full bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-200 dark:ring-amber-800">
+                <div className="flex items-center gap-2 rounded-full bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 px-3 py-1.5 text-xs font-medium text-[#7A5600] dark:text-[#F2CB3F] ring-1 ring-inset ring-[#F2CB3F]/70 dark:ring-[#F2CB3F]/40">
                     <IconShield /> Ações só após confirmação
                 </div>
             </div>
@@ -3263,24 +3264,24 @@ export default function AuroraPage() {
     }
 
     return (
-        <div className="flex min-h-[100dvh] flex-col bg-background text-foreground">
-            <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 backdrop-blur-xl">
+        <div className="flex min-h-[calc(100dvh-var(--header-height,0px))] flex-col bg-background text-foreground">
+            <header className="sticky top-[var(--header-height,0px)] z-30 border-b border-border/80 bg-background/90 backdrop-blur-xl">
                 <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
                     <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
-                            <IconSparkles className="h-4.5 w-4.5" />
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white">
+                            <IconeAurora className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <h1 className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50 sm:text-base">Aurora</h1>
-                                <span className="hidden rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200 dark:ring-emerald-800 sm:inline-flex">
+                                <h1 className="truncate text-sm font-semibold text-[#313C55] dark:text-white sm:text-base">Aurora</h1>
+                                <span className="hidden rounded-full bg-[#EEF5D6] dark:bg-[#B3CE52]/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#5C7A12] dark:text-[#B3CE52] ring-1 ring-inset ring-[#B3CE52]/60 dark:ring-[#B3CE52]/40 sm:inline-flex">
                                     Ações confirmadas
                                 </span>
-                                <span className="hidden rounded-full bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-200 dark:ring-indigo-800 md:inline-flex">
+                                <span className="hidden rounded-full bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#0086B8] dark:text-[#5CCBF4] ring-1 ring-inset ring-[#8FD6F4] dark:ring-[#00AEEC]/40 md:inline-flex">
                                     Base de conhecimento
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-slate-500 dark:text-slate-400">Assistente Administrativo • dados operacionais + Base de Conhecimento</p>
+                            <p className="truncate text-xs text-[#5B6478] dark:text-[#AEB9CF]">Assistente Administrativo • dados operacionais + Base de Conhecimento</p>
                         </div>
                     </div>
 
@@ -3288,7 +3289,7 @@ export default function AuroraPage() {
                         type="button"
                         onClick={clearChat}
                         disabled={loading || recording || transcribing || messages.length === 0}
-                        className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-600 dark:text-slate-400 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF] transition hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
                         title="Iniciar novo chat"
                     >
                         <IconPlus className="h-4 w-4" />
@@ -3302,7 +3303,7 @@ export default function AuroraPage() {
                 style={{ paddingBottom: `${composerHeight + 12}px`, scrollPaddingBottom: `${composerHeight + 20}px` }}
             >
                 {!hydrated ? (
-                    <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-400 dark:text-slate-500">Carregando chat...</div>
+                    <div className="flex flex-1 items-center justify-center py-20 text-sm text-[#7A8396] dark:text-[#8893AA]">Carregando chat...</div>
                 ) : messages.length === 0 ? (
                     <EmptyState onPrompt={(prompt) => void sendMessage(prompt)} />
                 ) : (
@@ -3317,8 +3318,8 @@ export default function AuroraPage() {
                                             className={[
                                                 "break-words px-4 py-3 text-sm leading-6 sm:text-[15px]",
                                                 isUser
-                                                    ? "rounded-2xl rounded-br-md bg-slate-950 text-white shadow-sm"
-                                                    : "rounded-2xl rounded-tl-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-sm",
+                                                    ? "rounded-2xl rounded-br-md bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white shadow-sm"
+                                                    : "rounded-2xl rounded-tl-md border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#E8ECF4] shadow-sm",
                                             ].join(" ")}
                                         >
                                             {isUser ? (
@@ -3402,9 +3403,9 @@ export default function AuroraPage() {
                                                 </>
                                             ) : (
                                                 <div className="flex items-center gap-1.5 py-1">
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.25s]" />
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.12s]" />
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#7A8396] [animation-delay:-0.25s]" />
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#7A8396] [animation-delay:-0.12s]" />
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#7A8396]" />
                                                 </div>
                                             )}
                                         </div>
@@ -3412,7 +3413,7 @@ export default function AuroraPage() {
                                         {!isUser && message.toolsUsed?.length ? (
                                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                                                 {message.toolsUsed.map((tool) => (
-                                                    <span key={`${message.id}-${tool}`} className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                                    <span key={`${message.id}-${tool}`} className="rounded-full bg-[#EEF2F7] dark:bg-[#1C2334] px-2 py-1 text-[10px] font-medium text-[#5B6478] dark:text-[#AEB9CF]">
                                                         {toolLabel(tool)}
                                                     </span>
                                                 ))}
@@ -3430,7 +3431,7 @@ export default function AuroraPage() {
                         ) : null}
 
                         {error ? (
-                            <div className="ml-0 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm leading-5 text-red-700 dark:text-red-300 sm:ml-12">
+                            <div className="ml-0 rounded-2xl border border-[#F4B8B1] dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 px-4 py-3 text-sm leading-5 text-[#B42318] dark:text-[#FF9C92] sm:ml-12">
                                 {error}
                             </div>
                         ) : null}
@@ -3441,7 +3442,7 @@ export default function AuroraPage() {
 
             <div
                 ref={composerRef}
-                className="fixed inset-x-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl"
+                className="fixed inset-x-0 z-40 border-t border-border/70 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:left-[var(--sidebar-width,17rem)]"
                 style={{ bottom: keyboardOpen ? `${keyboardInset}px` : "0px" }}
             >
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
@@ -3452,7 +3453,7 @@ export default function AuroraPage() {
                                     key={prompt}
                                     type="button"
                                     onClick={() => void sendMessage(prompt)}
-                                    className="shrink-0 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    className="shrink-0 rounded-full border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-1.5 text-xs font-medium text-[#5B6478] dark:text-[#AEB9CF] shadow-sm transition hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                 >
                                     {prompt}
                                 </button>
@@ -3534,10 +3535,10 @@ export default function AuroraPage() {
                                 </>
                             ) : null}
                             {recording ? (
-                                <div className="flex min-h-[44px] flex-1 items-center gap-3 px-3 py-2 text-sm text-red-700 dark:text-red-300">
-                                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                                <div className="flex min-h-[44px] flex-1 items-center gap-3 px-3 py-2 text-sm text-[#B42318] dark:text-[#FF9C92]">
+                                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#D93636]" />
                                     <span className="font-semibold">Gravando {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}</span>
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">Solte para enviar</span>
+                                    <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Solte para enviar</span>
                                 </div>
                             ) : (
                                 <textarea
@@ -3557,7 +3558,7 @@ export default function AuroraPage() {
                                 <button
                                     type="submit"
                                     disabled={!canSend}
-                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500"
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white transition hover:bg-[#232B40] dark:hover:bg-[#0097CC] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#E3E8F0] dark:disabled:bg-white/15 disabled:text-[#7A8396] dark:disabled:text-[#8893AA]"
                                     aria-label="Enviar mensagem"
                                 >
                                     <IconSend className="h-4.5 w-4.5" />
@@ -3584,8 +3585,8 @@ export default function AuroraPage() {
                                     }}
                                     onContextMenu={(event) => event.preventDefault()}
                                     className={[
-                                        "flex h-10 w-10 shrink-0 touch-none select-none items-center justify-center rounded-xl text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500",
-                                        recording ? "bg-red-600 hover:bg-red-700" : "bg-slate-950 hover:bg-slate-800",
+                                        "flex h-10 w-10 shrink-0 touch-none select-none items-center justify-center rounded-xl text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-[#E3E8F0] dark:disabled:bg-white/15 disabled:text-[#7A8396] dark:disabled:text-[#8893AA]",
+                                        recording ? "bg-[#D93636] hover:bg-[#B42318]" : "bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#0097CC]",
                                     ].join(" ")}
                                     aria-label={recording ? "Solte para enviar o áudio" : "Segure para gravar uma mensagem"}
                                     title={recording ? "Solte para enviar" : "Segure para falar"}

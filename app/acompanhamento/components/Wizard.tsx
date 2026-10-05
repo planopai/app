@@ -138,12 +138,15 @@ function CheckboxChoiceGroup({
     hasError?: boolean;
     ariaLabel: string;
 }) {
+    // Padrão do mockup (Registro.dc.html): linha em cartão + seletor segmentado Sim | Não.
     return (
         <div
             data-wizard-error={hasError ? "1" : "0"}
             className={[
-                "rounded-lg border px-3 py-2 border-[#E3E8F0] dark:border-white/[0.12]",
-                hasError ? "border-red-500 bg-[#FDECEA]/60 dark:bg-[#FF9C92]/10" : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]",
+                "flex min-h-[68px] items-center gap-3 rounded-[14px] border px-4 py-2.5",
+                hasError
+                    ? "border-red-500 bg-[#FDECEA]/60 dark:bg-[#FF9C92]/10"
+                    : "border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]",
                 disabled ? "opacity-60" : "",
             ].join(" ")}
             role="group"
@@ -152,38 +155,31 @@ function CheckboxChoiceGroup({
             {/* O page.tsx continua lendo o mesmo valor pelo mesmo ID. */}
             <input id={inputId} type="hidden" value={value} readOnly />
 
-            {/* Nome do item e opções ficam dentro da mesma borda e na mesma linha. */}
-            <div className="flex min-h-7 flex-nowrap items-center gap-3">
-                <div className="min-w-0 flex-1 text-sm font-medium leading-tight text-[#313C55] dark:text-white">
-                    {label}
-                </div>
+            <div className="min-w-0 flex-1 text-[15px] font-bold leading-tight text-[#313C55] dark:text-white">{label}</div>
 
-                <div className="flex shrink-0 items-center gap-4">
-                    {options.map((option) => {
-                        const checked = value === option.value;
-
-                        return (
-                            <label
-                                key={option.value}
-                                className={[
-                                    "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm font-medium",
-                                    checked ? "text-[#313C55] dark:text-white" : "text-[#313C55] dark:text-[#D6DCE8]",
-                                    disabled ? "cursor-not-allowed" : "",
-                                ].join(" ")}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={disabled}
-                                    onChange={() => onChange(option.value)}
-                                    className="h-4 w-4 rounded border-[#C9D1DE] dark:border-white/25 accent-[#313C55] dark:accent-[#F2CB3F]"
-                                    aria-label={`${ariaLabel}: ${option.label}`}
-                                />
-                                <span>{option.label}</span>
-                            </label>
-                        );
-                    })}
-                </div>
+            <div className="inline-flex shrink-0 overflow-hidden rounded-xl border-[1.5px] border-[#C9D1DE] dark:border-white/25">
+                {options.map((option, i) => {
+                    const marcado = value === option.value;
+                    return (
+                        <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={marcado}
+                            aria-label={`${ariaLabel}: ${option.label}`}
+                            disabled={disabled}
+                            onClick={() => onChange(option.value)}
+                            className={[
+                                "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
+                                i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
+                                marcado
+                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                    : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                            ].join(" ")}
+                        >
+                            {option.label}
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );
@@ -1135,6 +1131,21 @@ export default function Wizard({
     const grupoIndices = wizardStepIndexes[wizardStep] || [];
     const grupoSteps = useMemo(() => grupoIndices.map((i) => steps[i]), [grupoIndices, steps]);
 
+    // Passo "Itens" no padrão do mockup: uma coluna, ITENS PRINCIPAIS (urna, roupa, coroa de flores)
+    // e depois DEMAIS ITENS E SERVIÇOS. A ordem relativa dentro de cada bloco não muda
+    // (ex.: "Véu" continua antes de "Véu (estoque)"), então a validação e os IDs seguem iguais.
+    const ehPassoItens = useMemo(() => grupoSteps.some((s) => s.id === "urna"), [grupoSteps]);
+    const secaoDoPasso = (id: string): "principais" | "demais" =>
+        id === "urna" || id === "roupa" || id === "coroa_flores" || id.startsWith("coroa") ? "principais" : "demais";
+    const passosOrdenados = useMemo(() => {
+        if (!ehPassoItens) return grupoSteps;
+        const rank = (id: string) => (secaoDoPasso(id) === "principais" ? 0 : 1);
+        return grupoSteps
+            .map((s, i) => ({ s, i }))
+            .sort((a, b) => rank(a.s.id) - rank(b.s.id) || a.i - b.i)
+            .map((x) => x.s);
+    }, [grupoSteps, ehPassoItens]);
+
     const assistenciaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "assistencia"), [grupoSteps]);
     const urnaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "urna"), [grupoSteps]);
     const roupaNoGrupoAtual = useMemo(() => grupoSteps.some((s) => s.id === "roupa"), [grupoSteps]);
@@ -1909,8 +1920,17 @@ export default function Wizard({
                 })}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {grupoSteps.map((step) => {
+            <div
+                className={
+                    ehPassoItens
+                        ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:[&>*]:col-span-2"
+                        : "mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
+                }
+            >
+                {(() => {
+                  let secaoAtual = "";
+                  return passosOrdenados.map((step) => {
+                  const conteudo = ((): React.ReactNode => {
                     if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
                     if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
                     // Os campos legados coroa_tipo/coroa_modelo não são mais renderizados: a configuração
@@ -3385,7 +3405,23 @@ export default function Wizard({
                     }
 
                     return null;
-                })}
+                  })();
+                  if (conteudo == null || conteudo === false) return null;
+                  const secao = ehPassoItens ? secaoDoPasso(step.id) : "";
+                  const abreSecao = ehPassoItens && secao !== secaoAtual;
+                  if (abreSecao) secaoAtual = secao;
+                  return (
+                      <React.Fragment key={step.id}>
+                          {abreSecao ? (
+                              <div className={`text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF] ${secao === "demais" ? "mt-3" : ""}`}>
+                                  {secao === "principais" ? "Itens principais" : "Demais itens e serviços"}
+                              </div>
+                          ) : null}
+                          {conteudo}
+                      </React.Fragment>
+                  );
+                  });
+                })()}
             </div>
 
             {tanatoNoGrupoAtual ? osSlot : null}

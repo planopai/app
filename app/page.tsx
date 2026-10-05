@@ -137,7 +137,7 @@ export default function HomePage() {
             FIXOS.find((f) => f.titulo === "Quadro de Atendimentos")!,
             FIXOS.find((f) => f.titulo === "Minhas OS")!,
             messenger,
-            FIXOS.find((f) => f.titulo === "Chat")!,
+            FIXOS.find((f) => f.titulo === "Aurora")!,
             FIXOS.find((f) => f.titulo === "Avisos")!,
         ];
         return lista.filter((i) => pronto && itemVisivel(i, has));

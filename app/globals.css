@@ -535,3 +535,44 @@ body {
 .hover\:bg-teal-600:hover,
 .hover\:bg-teal-700:hover { background-color: #0094C9; color: #313C55; }
 /* ===== fim da ponte de cores ===== */
+
+/* =====================================================================
+   CELULAR · janelas, datas e rolagem  (05/10/2026)
+   Vale para TODAS as telas, inclusive as que ainda têm janela própria.
+   ===================================================================== */
+@media (max-width: 767.98px) {
+  /* Janela = camada fixa que cobre a tela (.fixed.inset-0).
+     • anula min-h-[100dvh]/100vh, que no iPhone passam da tela visível e cortavam a janela embaixo;
+     • respeita a borda de CIMA (barra de status) e, nas janelas que não são folha de baixo, a de BAIXO. */
+  .fixed.inset-0:not([data-pai-sem-folga]) {
+    min-height: 0 !important;
+    box-sizing: border-box;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+  }
+  .fixed.inset-0:not([data-pai-sem-folga]):not(.items-end) {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  }
+  /* Conteúdo de janela nunca passa da altura útil */
+  .fixed.inset-0:not([data-pai-sem-folga]) > [class*="max-h-"] {
+    max-height: 100%;
+  }
+}
+
+/* Campos de data/hora no iPhone ignoram a largura do contêiner e vazam para fora do cartão. */
+@media (pointer: coarse) {
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+/* Nada empurra a página para o lado (isso desloca a barra fixa e as janelas). */
+body {
+  overflow-x: clip;
+}

@@ -68,20 +68,6 @@ function getFotoAcaoTipo(fase: Fase): FotoAcaoTipo | null {
     return null;
 }
 
-/** true a partir de 1024px (computador). No celular o Registrar ação continua como folha. */
-function useTelaLarga() {
-    const [larga, setLarga] = useState(false);
-    useEffect(() => {
-        if (typeof window === "undefined" || !window.matchMedia) return;
-        const mq = window.matchMedia("(min-width: 1024px)");
-        const upd = () => setLarga(mq.matches);
-        upd();
-        mq.addEventListener("change", upd);
-        return () => mq.removeEventListener("change", upd);
-    }, []);
-    return larga;
-}
-
 export default function AcaoModal({
     open,
     setOpen,
@@ -118,7 +104,6 @@ export default function AcaoModal({
         tipo: FotoAcaoTipo,
     ) => void;
 }) {
-    const telaLarga = useTelaLarga();
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [me, setMe] = useState<OfflineSession | null>(null);
     const [meLoading, setMeLoading] = useState(false);
@@ -389,13 +374,6 @@ export default function AcaoModal({
 
     const conteudo = (
         <>
-                <h2 className="text-xl font-extrabold text-[#313C55] dark:text-white">Registrar ação</h2>
-                {efetivo ? (
-                    <p className="mt-0.5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">
-                        {(efetivo as any).falecido || ""}
-                    </p>
-                ) : null}
-
                 <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                     {!networkOnline && (
                         <span className="font-semibold text-[#313C55] dark:text-white">
@@ -432,7 +410,7 @@ export default function AcaoModal({
                         <p className="mb-2 mt-4 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">
                             Etapas
                         </p>
-                        <div className="grid grid-cols-1 gap-2 sm:landscape:grid-cols-2 lg:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-2">
                             {fasesVisiveis.map((f, idx) => {
                                 const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
                                 const isConservacao = FASES_CONSERVACAO.includes(f);
@@ -513,39 +491,18 @@ export default function AcaoModal({
 
     return (
         <>
-            {telaLarga ? (
-                <aside
-                    aria-label="Registrar ação"
-                    className="sticky top-4 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[18px] border border-[#E3E8F0] bg-white p-4 text-[#313C55] shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white"
-                >
-                    {open && efetivo ? (
-                        <>
-                            <div className="mb-1 flex items-start justify-end">
-                                <button
-                                    type="button"
-                                    onClick={() => setOpen(false)}
-                                    aria-label="Fechar painel"
-                                    className="rounded-xl px-3 py-1.5 text-sm font-bold text-[#5B6478] hover:bg-[#EEF2F7] dark:text-[#AEB9CF] dark:hover:bg-white/10"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-                            {conteudo}
-                        </>
-                    ) : (
-                        <div className="py-10 text-center">
-                            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Registrar uma ação</p>
-                            <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                Toque em <b className="text-[#313C55] dark:text-white">Ações</b> num atendimento para registrar a próxima etapa aqui.
-                            </p>
-                        </div>
-                    )}
-                </aside>
-            ) : (
-                <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
-                    {conteudo}
-                </Modal>
-            )}
+            {/* Janela dinâmica: só existe quando o usuário toca em "Registrar ação". No computador abre pela direita; no celular sobe de baixo. */}
+            <Modal
+                open={open}
+                onClose={() => setOpen(false)}
+                ariaLabel="Registrar ação"
+                variant="drawer"
+                maxWidth={480}
+                eyebrow="Registrar uma ação"
+                title={(efetivo as any)?.falecido || "Atendimento"}
+            >
+                {conteudo}
+            </Modal>
 
             <Modal
                 open={!!estoqueInsuficiente}
