@@ -3,8 +3,8 @@
 import React, { useMemo, useState } from "react";
 import { IconSearch } from "@tabler/icons-react";
 import { Registro } from "./types";
-import { acaoToStatus, capitalizeStatus, proximaFaseDoRegistro } from "./helpers";
-import { fases } from "./constants";
+import { capitalizeStatus } from "./helpers";
+import { proximaEtapaDoRegistro as proximaEtapa } from "./proximaEtapa";
 import { type VisitaStatus } from "./visita";
 import { atendimentoDeveFicarNoQuadro } from "@/components/atendimentos/regrasQuadro";
 
@@ -101,40 +101,6 @@ function chipDoStatus(s?: string): { fundo: string; ponto: string } {
     if (k === "fase11" || k === "fase10" || k === "concluido") return { fundo: "bg-[#EEF5D6] dark:bg-[#B3CE52]/20", ponto: "bg-[#B3CE52]" };
     if (k === "fase00" || k === "") return { fundo: "bg-[#FCF3CC] dark:bg-[#F2CB3F]/16", ponto: "bg-[#F2CB3F]" };
     return { fundo: "bg-[#E6F7FE] dark:bg-[#00AEEC]/20", ponto: "bg-[#00AEEC]" };
-}
-
-function isTerceiro(r: Registro) {
-    return String((r as any).tipo_atendimento ?? "").trim().toLowerCase() === "terceiro";
-}
-
-/** Texto da próxima etapa (mesma regra usada em "Registrar ação"). */
-function proximaEtapa(r: Registro): string {
-    try {
-        if (isTerceiro(r)) {
-            const ordem = ["fase08", "fase09", "fase10"];
-            const i = ordem.indexOf(String(r.status || ""));
-            const prox = i < 0 ? ordem[0] : ordem[i + 1];
-            return prox ? acaoToStatus(prox) : "—";
-        }
-
-        const prox = proximaFaseDoRegistro(
-            {
-                status: (r.status as string) ?? "fase00",
-                local_velorio: (r as any).local_velorio,
-                sala_velorio: (r as any).sala_velorio,
-                tanato: (r as any).tanato,
-                ornamentacao: (r as any).ornamentacao,
-                assistencia: (r as any).assistencia,
-                realiza_velorio: (r as any).realiza_velorio,
-                realiza_sepultamento: (r as any).realiza_sepultamento,
-            },
-            fases as readonly string[],
-        );
-
-        return prox ? acaoToStatus(prox) : "—";
-    } catch {
-        return "—";
-    }
 }
 
 function SyncBadge({ registro }: { registro: Registro }) {

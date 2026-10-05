@@ -57,6 +57,7 @@ export default function Modal({
     variant = "sheet",
     eyebrow,
     title,
+    aside,
 }: {
     open: boolean;
     onClose: () => void;
@@ -72,6 +73,8 @@ export default function Modal({
     /** Cabeçalho padrão do mockup: linha pequena em maiúsculas + título + botão de fechar (44 px). */
     eyebrow?: string;
     title?: React.ReactNode;
+    /** Coluna à direita (a partir de 1024 px; abaixo disso fica embaixo do conteúdo). Usada no "Editar registro". */
+    aside?: React.ReactNode;
 }) {
     const [montado, setMontado] = useState(false);
     useEffect(() => setMontado(true), []);
@@ -149,7 +152,14 @@ export default function Modal({
                     className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 ${footer ? "" : "pb-[calc(1rem+env(safe-area-inset-bottom))]"} ${contentClassName}`}
                     style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
                 >
-                    {children}
+                    {aside ? (
+                        <div className="lg:flex lg:items-start lg:gap-5">
+                            <div className="min-w-0 flex-1">{children}</div>
+                            <aside className="mt-5 w-full shrink-0 lg:sticky lg:top-0 lg:mt-0 lg:w-[300px]">{aside}</aside>
+                        </div>
+                    ) : (
+                        children
+                    )}
                 </div>
 
                 {footer ? (

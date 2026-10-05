@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import CoroasAtendimentoEditor from "./CoroasAtendimentoEditor";
 import { Registro, CoroaAtendimentoItem } from "./types";
+import { proximaEtapaDoRegistro } from "./proximaEtapa";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -842,6 +843,78 @@ function normalizeDepCordao(v: any): DepCordao {
 /* =========================================================================
    Wizard
    ========================================================================= */
+/* =========================================================================
+   Coluna da direita do "Editar registro" (mockup Registro.dc.html):
+   DOCUMENTOS (termos) + PRÓXIMA ETAPA com o botão Registrar ação.
+   ========================================================================= */
+function IcDoc() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><path d="M14 2v6h6" /><path d="M9 13h6" /><path d="M9 17h6" />
+        </svg>
+    );
+}
+
+function PainelEdicao({
+    registro,
+    proxima,
+    onDocumento,
+    onRegistrarAcao,
+}: {
+    registro: Registro;
+    proxima: string;
+    onDocumento?: (tipo: "recebimento" | "requisicao") => void;
+    onRegistrarAcao?: () => void;
+}) {
+    const botaoDoc =
+        "inline-flex h-11 w-full items-center justify-start gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-left text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
+    const baixar =
+        "inline-flex h-9 w-full items-center justify-center rounded-lg bg-[#EEF5D6] px-3 text-xs font-extrabold text-[#313C55] hover:bg-[#E2EDBB] dark:bg-[#B3CE52]/20 dark:text-white";
+    const a: any = registro;
+    return (
+        <div className="flex flex-col gap-4">
+            <section className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
+                <div className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
+                <div className="flex flex-col gap-2.5">
+                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("recebimento")} disabled={!onDocumento}>
+                        <IcDoc />
+                        Termo de recebimento de material
+                    </button>
+                    {a?.assinatura_recebimento_url ? (
+                        <a className={baixar} href={a.assinatura_recebimento_url} target="_blank" rel="noreferrer">
+                            Baixar termo assinado
+                        </a>
+                    ) : null}
+                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("requisicao")} disabled={!onDocumento}>
+                        <IcDoc />
+                        Termo de requisição de veículo
+                    </button>
+                    {a?.assinatura_requisicao_url ? (
+                        <a className={baixar} href={a.assinatura_requisicao_url} target="_blank" rel="noreferrer">
+                            Baixar termo assinado
+                        </a>
+                    ) : null}
+                </div>
+            </section>
+
+            {proxima !== "—" && (
+                <section className="rounded-[18px] bg-[#313C55] p-5 text-white dark:border dark:border-white/[0.12] dark:bg-[#1C2334]" aria-label="Próxima etapa">
+                    <div className="mb-1.5 text-xs font-extrabold uppercase tracking-[0.12em] text-[#B3CE52]">Próxima etapa</div>
+                    <div className="mb-3.5 text-lg font-extrabold leading-tight">{proxima}</div>
+                    <button
+                        type="button"
+                        onClick={onRegistrarAcao}
+                        disabled={!onRegistrarAcao}
+                        className="flex h-12 w-full items-center justify-center rounded-[14px] bg-[#F2CB3F] text-[15px] font-extrabold text-[#313C55] hover:bg-[#E4BC30] disabled:opacity-60"
+                    >
+                        Registrar ação
+                    </button>
+                </section>
+            )}
+        </div>
+    );
+}
+
 export default function Wizard({
     open,
     onClose,
@@ -871,6 +944,9 @@ export default function Wizard({
     concluirWizard,
 
     wizardSubmitting,
+    registroEdicao,
+    onAbrirDocumento,
+    onRegistrarAcaoEdicao,
 }: {
     open: boolean;
     onClose: () => void;
@@ -901,6 +977,11 @@ export default function Wizard({
     concluirWizard: () => Promise<void>;
 
     wizardSubmitting: boolean;
+
+    /** Registro que está sendo editado. Só com ele o "Editar registro" usa o layout do mockup (coluna de documentos). */
+    registroEdicao?: Registro | null;
+    onAbrirDocumento?: (tipo: "recebimento" | "requisicao") => void;
+    onRegistrarAcaoEdicao?: () => void;
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
     const [involVal, setInvolVal] = useState<string>("");
@@ -1824,12 +1905,20 @@ export default function Wizard({
 
     if (!open) return null;
 
+    const editandoCompleto = !!registroEdicao && !isRestrito;
+    const proximaTxt = registroEdicao ? proximaEtapaDoRegistro(registroEdicao) : "—";
+
     return (
         <Modal
             open={open}
             onClose={onClose}
             ariaLabel="Wizard"
-            maxWidth={740}
+            maxWidth={editandoCompleto ? 1140 : 740}
+            aside={
+                editandoCompleto && registroEdicao ? (
+                    <PainelEdicao registro={registroEdicao} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} />
+                ) : undefined
+            }
             footer={
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
@@ -1888,8 +1977,23 @@ export default function Wizard({
                 </div>
             }
         >
-            <div className="flex items-center gap-2">
-                <h2 className="text-xl font-extrabold text-[#313C55] dark:text-white">{wizardTitle}</h2>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div className="min-w-0 flex-1">
+                    <h2 className={editandoCompleto ? "text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white sm:text-[28px]" : "text-xl font-extrabold text-[#313C55] dark:text-white"}>
+                        {wizardTitle}
+                    </h2>
+                    {editandoCompleto && (
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                            {String((registroEdicao as any)?.falecido || "").trim() || "Atendimento"} · preencha as abas e conclua.
+                        </p>
+                    )}
+                </div>
+                {editandoCompleto && proximaTxt !== "—" && (
+                    <span className="inline-flex h-8 items-center gap-2 rounded-2xl bg-[#E6F7FE] px-3.5 text-[13px] font-bold text-[#313C55] dark:bg-[#00AEEC]/20 dark:text-white">
+                        <span className="size-2 rounded-full bg-[#00AEEC]" />
+                        Aguardando {proximaTxt}
+                    </span>
+                )}
                 {wizardSubmitting && (
                     <span
                         className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2 py-0.5 text-xs text-[#313C55] dark:text-white"
@@ -1911,7 +2015,7 @@ export default function Wizard({
                     return (
                         <span
                             key={`${t}-${i}`}
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-[#313C55] dark:bg-[#F2CB3F] text-white" : "bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-[#D6DCE8]"
+                            className={`inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${i === wizardStep ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"
                                 }`}
                         >
                             {t}
