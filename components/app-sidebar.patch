@@ -1,0 +1,76 @@
+--- a/components/app-sidebar.tsx
++++ b/components/app-sidebar.tsx
+@@ -22,7 +22,8 @@
+ } from "@/components/ui/sidebar";
+ 
+ import { usePerms } from "@/app/_perms/PermsProvider";
+-import { LINK_GROUPS } from "@/app/_perms/links";
++import { MODULOS, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
++import { useContadores } from "@/components/shell/useContadores";
+ import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
+ import { IconeAtalho, useBarra } from "@/components/barra/atalhos";
+ import { useNaoLidas } from "@/components/messenger/ContadorMenu";
+@@ -35,14 +36,14 @@
+     return (
+       <span
+         className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-primary"
+-        aria-label={`${texto} não lidas`}
++        aria-label={`${texto} pendente(s)`}
+       />
+     );
+   }
+   return (
+     <span
+       className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-black tabular-nums text-primary-foreground"
+-      aria-label={`${texto} não lidas`}
++      aria-label={`${texto} pendente(s)`}
+     >
+       {texto}
+     </span>
+@@ -142,8 +143,15 @@
+   const temMessenger = perms !== null && has("messenger");
+   const naoLidasMessenger = useNaoLidas(temMessenger);
+   const contMessenger = naoLidasMessenger.total + naoLidasMessenger.fila;
+-  const contadorDe = (href: string) =>
+-    href === "/messenger" ? contMessenger : 0;
++  const numeros = useContadores(perms, has);
++  const contadorDe = (href: string) => {
++    if (href === "/messenger") return contMessenger;
++    if (href === "/acompanhamento") return numeros.aguardando ?? 0;
++    if (href === "/avisos") return numeros.avisos ?? 0;
++    if (href === "/coroa-de-flores") return numeros.coroas ?? 0;
++    if (href === "/estoque" || href === "/geral") return numeros.estoque ?? 0;
++    return 0;
++  };
+ 
+   const [isLoggingOut, setIsLoggingOut] =
+     React.useState(false);
+@@ -333,17 +341,19 @@
+       [displayName]
+     );
+ 
+-  /** Itens visíveis por permissão */
++  /** Módulos do organograma, só com as telas que o usuário pode abrir (mesmas chaves de página de antes). */
+   const visibleGroups =
+     React.useMemo(() => {
+-      return LINK_GROUPS
+-        .map((group) => ({
+-          ...group,
+-          items:
+-            group.items.filter(
+-              (item) =>
+-                has(item.slug)
+-            ),
++      return MODULOS
++        .filter((modulo) => moduloVisivel(modulo, has))
++        .map((modulo) => ({
++          category: modulo.titulo,
++          items: itensVisiveis(modulo, has).map((item) => ({
++            title: item.titulo,
++            href: hrefDoItem(item, has),
++            slug: item.slugs[0],
++            Icon: item.icone as any,
++          })),
+         }))
+         .filter(
+           (group) =>

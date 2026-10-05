@@ -1,0 +1,47 @@
+--- a/components/barra/BarraCelular.tsx
++++ b/components/barra/BarraCelular.tsx
+@@ -16,6 +16,7 @@
+ import { useSidebar } from "@/components/ui/sidebar";
+ import { usePerms } from "@/app/_perms/PermsProvider";
+ import { useNaoLidas } from "@/components/messenger/ContadorMenu";
++import { useContadores } from "@/components/shell/useContadores";
+ import { IconeAtalho, useBarra } from "./atalhos";
+ 
+ export const EVENTO_OCULTAR_BARRA = "pai:ocultar-barra";
+@@ -34,6 +35,7 @@
+     const barra = useBarra();
+     const temMessenger = perms !== null && has("messenger");
+     const naoLidas = useNaoLidas(temMessenger);
++    const numeros = useContadores(perms, has);
+     const [ocultaPelaTela, setOcultaPelaTela] = useState(false);
+ 
+     useEffect(() => {
+@@ -48,6 +50,15 @@
+ 
+     const itens = barra.celular.itens.filter((i) => barra.carregada || !i.pagina || has(i.pagina)).slice(0, 5);
+     const contMsg = naoLidas.total + naoLidas.fila;
++    /* Número no atalho: Messenger (não lidas + fila), Atendimentos (aguardando sua ação), Avisos, Estoque (no mínimo) e Coroas (fila). */
++    const numeroDe = (id: string): number => {
++        if (id === "messenger") return contMsg;
++        if (id === "atendimentos") return numeros.aguardando ?? 0;
++        if (id === "avisos") return numeros.avisos ?? 0;
++        if (id === "estoque") return numeros.estoque ?? 0;
++        if (id === "coroas") return numeros.coroas ?? 0;
++        return 0;
++    };
+     const ativo = (rota: string) => (rota === "/" ? pathname === "/" : pathname === rota || pathname.startsWith(rota + "/"));
+     const abrirMenu = () => {
+         if (typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(true);
+@@ -71,9 +82,9 @@
+                             <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} className={classeItem(on)}>
+                                 <span className="relative">
+                                     <IconeAtalho id={i.id} className="h-[22px] w-[22px]" />
+-                                    {i.id === "messenger" && contMsg > 0 && (
+-                                        <span className="absolute -right-2.5 -top-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-black text-primary-foreground" aria-label={`${contMsg} não lidas`}>
+-                                            {contMsg > 99 ? "99+" : contMsg}
++                                    {numeroDe(i.id) > 0 && (
++                                        <span className="absolute -right-2.5 -top-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-black text-primary-foreground" aria-label={`${numeroDe(i.id)} pendente(s)`}>
++                                            {numeroDe(i.id) > 99 ? "99+" : numeroDe(i.id)}
+                                         </span>
+                                     )}
+                                 </span>
