@@ -35,10 +35,12 @@ export default function AppShell({
 
     return (
         <SidebarProvider
+            /* Barra lateral FIXA no computador (mockup): sempre aberta, sem recolher. `open` controlado e sem onOpenChange
+               ignora o botão e o atalho Ctrl+B. No celular o menu é o Menu do mockup (MenuCelular), não esta barra. */
+            open
             style={
                 {
-                    // ajuste livre
-                    "--sidebar-width": "calc(var(--spacing) * 72)",
+                    "--sidebar-width": "17rem", // 272 px, a largura do mockup
                     "--header-height": "calc(var(--spacing) * 12)",
                 } as React.CSSProperties
             }

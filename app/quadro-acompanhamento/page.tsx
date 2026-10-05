@@ -2815,8 +2815,10 @@ export default function QuadroAtendimentoPage() {
                     box-sizing: border-box;
                 }
                 .qa-page-root {
-                    width: min(calc(100dvw - 132px), 1420px) !important;
-                    max-width: min(calc(100dvw - 132px), 1420px) !important;
+                    /* A largura vem do espaço que sobra ao lado da barra lateral FIXA (272 px), e não de 100dvw - 132px:
+                       aquela conta supunha a barra recolhida em ícones e deixava o quadro 150 px mais largo que a tela. */
+                    width: 100% !important;
+                    max-width: 1420px !important;
                     margin-left: auto !important;
                     margin-right: auto !important;
                     min-width: 0 !important;
@@ -3415,7 +3417,7 @@ export default function QuadroAtendimentoPage() {
                 }
             `}</style>
 
-            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
+            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col md:h-[calc(100dvh-84px)] md:max-h-[calc(100dvh-84px)] gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
                 <div ref={gavetaSentinelaRef} className="hidden" aria-hidden />
                 {/* Celular e tablet: quadro em abas; muda sozinho entre em pé e deitado */}
                 <div className="flex min-h-0 flex-1 flex-col lg:hidden">
@@ -3435,42 +3437,42 @@ export default function QuadroAtendimentoPage() {
 
                 {/* Telas largas: rota da TV = quadro de TV; demais rotas = quadro do desktop (cartões) */}
                 {rotaTv !== null && (
-                    <div className="hidden min-h-0 flex-1 lg:flex">
-                        {!rotaTv ? (
-                            <QuadroDesktop
-                                ativos={ativosOrdenados}
-                                coroas={coroasOrdenadas}
-                                coroasError={coroasTvError}
-                                statusLogsById={statusLogsById}
-                                nowMs={nowMs}
-                                clockTime={clockTime}
-                                clockDate={clockDate}
-                                avisos={avisosParaExibir}
-                                onSelect={showDetail}
-                                onSelectCoroa={setCoroaSel}
-                            />
-                        ) : (
-                            <QuadroTv
-                                layout={layoutTv}
-                                ativos={ativosPagina}
-                                todosAtivos={ativosOrdenados}
-                                paginaAtendimentos={paginaAtualAtendimentos}
-                                totalPaginasAtendimentos={totalPaginasAtendimentos}
-                                coroas={coroasPagina}
-                                todasCoroas={coroasOrdenadas}
-                                paginaCoroas={paginaAtualCoroas}
-                                totalPaginasCoroas={totalPaginasCoroas}
-                                coroasError={coroasTvError}
-                                statusLogsById={statusLogsById}
-                                nowMs={nowMs}
-                                clockTime={clockTime}
-                                clockDate={clockDate}
-                                avisos={avisosParaExibir}
-                                onSelect={showDetail}
-                                onNaoCoube={tvNaoCoube}
-                            />
-                        )}
-                    </div>
+                <div className="hidden min-h-0 flex-1 lg:flex">
+                    {!rotaTv ? (
+                        <QuadroDesktop
+                            ativos={ativosOrdenados}
+                            coroas={coroasOrdenadas}
+                            coroasError={coroasTvError}
+                            statusLogsById={statusLogsById}
+                            nowMs={nowMs}
+                            clockTime={clockTime}
+                            clockDate={clockDate}
+                            avisos={avisosParaExibir}
+                            onSelect={showDetail}
+                            onSelectCoroa={setCoroaSel}
+                        />
+                    ) : (
+                    <QuadroTv
+                        layout={layoutTv}
+                        ativos={ativosPagina}
+                        todosAtivos={ativosOrdenados}
+                        paginaAtendimentos={paginaAtualAtendimentos}
+                        totalPaginasAtendimentos={totalPaginasAtendimentos}
+                        coroas={coroasPagina}
+                        todasCoroas={coroasOrdenadas}
+                        paginaCoroas={paginaAtualCoroas}
+                        totalPaginasCoroas={totalPaginasCoroas}
+                        coroasError={coroasTvError}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                        clockTime={clockTime}
+                        clockDate={clockDate}
+                        avisos={avisosParaExibir}
+                        onSelect={showDetail}
+                        onNaoCoube={tvNaoCoube}
+                    />
+                    )}
+                </div>
                 )}
 
                 {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} />}
@@ -5271,12 +5273,12 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             className={`qm-cr ${atraso ? "qm-cr-late" : ""} ${clicavel ? "qm-cr-click" : ""}`}
             {...(clicavel
                 ? {
-                    role: "button",
-                    tabIndex: 0,
-                    onClick: () => onSelect?.(pedido),
-                    onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
-                    "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
-                }
+                      role: "button",
+                      tabIndex: 0,
+                      onClick: () => onSelect?.(pedido),
+                      onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
+                      "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
+                  }
                 : {})}
         >
             {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}
@@ -6149,7 +6151,7 @@ function DeskStyles() {
             .qd-cor-note { margin-bottom: 10px; text-align: left; }
             .qd-cgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 
-            @media (max-width: 1279px) {
+            @media (max-width: 1435px) {
                 .qd-card { grid-template-columns: minmax(210px, 250px) minmax(0, 1fr) 118px; gap: 18px; padding: 16px 18px; }
                 .qd-c { width: 40px; height: 40px; }
                 .qd-c-svg { width: 19px; height: 19px; }

@@ -23,6 +23,7 @@ import {
 
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { MODULOS, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import { rotaExiste } from "@/components/shell/rotas";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
 import { IconeAtalho, useBarra } from "@/components/barra/atalhos";
@@ -35,14 +36,14 @@ function ContadorItem({ valor, recolhido }: { valor: number; recolhido: boolean 
   if (recolhido) {
     return (
       <span
-        className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-primary"
+        className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-[#F2CB3F]"
         aria-label={`${texto} pendente(s)`}
       />
     );
   }
   return (
     <span
-      className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-black tabular-nums text-primary-foreground"
+      className="ml-auto inline-flex h-[22px] min-w-6 items-center justify-center rounded-full bg-[#F2CB3F] px-2 text-xs font-extrabold tabular-nums text-[#313C55]"
       aria-label={`${texto} pendente(s)`}
     >
       {texto}
@@ -426,14 +427,14 @@ export function AppSidebar(
     setOpenGroup(
       (previous) => {
         /*
-         * Não fecha tudo.
-         * Se já estiver aberto,
-         * mantém aberto.
+         * Um módulo aberto por vez.
+         * Tocar no módulo aberto
+         * RECOLHE (mockup).
          */
         if (
           previous === category
         ) {
-          return previous;
+          return null;
         }
 
         return category;
@@ -465,9 +466,15 @@ export function AppSidebar(
         title={title}
         className={[
           "relative flex gap-3",
-          active
-            ? "bg-accent text-accent-foreground"
-            : "",
+          /* Mockup: selecionado = fundo branco a 14%, texto branco em negrito e barra amarela de 4 px à esquerda.
+             Na gaveta do celular (fundo claro) mantém o destaque claro de antes. */
+          isMobile
+            ? active
+              ? "bg-accent text-accent-foreground"
+              : ""
+            : active
+              ? "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.14] hover:text-white"
+              : "text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white",
         ].join(" ")}
       >
         <Link
@@ -524,7 +531,7 @@ export function AppSidebar(
               <img
                 src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
                 alt="Logo PAI"
-                className="h-8 w-auto"
+                className="h-[52px] w-auto"
               />
 
               <div className="mt-4 border-t" />
@@ -588,7 +595,7 @@ export function AppSidebar(
   const mostrarAtalhos = !sidebar?.isMobile;
   const atalhos = mostrarAtalhos
     ? barra.computador.itens
-        .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
+        .filter((a) => (barra.carregada || !a.pagina || has(a.pagina)) && rotaExiste(a.rota))
         .map((a) => ({
           title: a.rotulo,
           href: a.rota,
@@ -607,7 +614,7 @@ export function AppSidebar(
     <img
       src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
       alt="Logo PAI"
-      className="h-8 w-auto"
+      className="h-[52px] w-auto"
     />
   );
 
@@ -627,6 +634,7 @@ export function AppSidebar(
           ].join(" ")}
         >
           {!isCollapsed && (
+            /* Etiqueta branca da logomarca (mockup): encosta na borda esquerda, cantos direitos arredondados */
             <Link
               href="/"
               onClick={(event) =>
@@ -635,14 +643,10 @@ export function AppSidebar(
                   event
                 )
               }
-              className="inline-flex"
+              className="-ml-5 -mt-1 flex h-[76px] w-[196px] items-center rounded-r-[38px] bg-white pl-7"
             >
               {logoNode}
             </Link>
-          )}
-
-          {!isCollapsed && (
-            <div className="mt-4 border-t" />
           )}
 
           {/* Usuário */}
@@ -674,7 +678,14 @@ export function AppSidebar(
       </SidebarHeader>
 
       {/* sem overflow-hidden: com 8 módulos + Atalhos a lista passa da altura da tela e precisa rolar (o último módulo, Gestão, ficava cortado) */}
-      <SidebarContent className="px-2 overscroll-contain">
+      <SidebarContent
+        className={[
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2",
+          /* Windows: barra fina e invisível; aparece, translúcida, quando o mouse passa na barra. Mac: segue a rolagem nativa (aparece só ao rolar). */
+          "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:rgba(255,255,255,0.28)_transparent]",
+          "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-white/25",
+        ].join(" ")}
+      >
         {isCollapsed ? (
           /*
            * COLAPSADO:

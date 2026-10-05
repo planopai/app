@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { useContadores } from "@/components/shell/useContadores";
+import { rotaExiste } from "@/components/shell/rotas";
 import { abrirMenuCelular, useMenuCelularAberto } from "@/components/shell/MenuCelular";
 import { IconeAtalho, useBarra } from "./atalhos";
 
@@ -48,7 +49,7 @@ export default function BarraCelular() {
     const semBarraNaRota = ROTAS_SEM_BARRA.some((r) => pathname === r || pathname.startsWith(r + "/"));
     if (perms === null || semBarraNaRota || ocultaPelaTela) return null;
 
-    const itens = barra.celular.itens.filter((i) => barra.carregada || !i.pagina || has(i.pagina)).slice(0, 5);
+    const itens = barra.celular.itens.filter((i) => (barra.carregada || !i.pagina || has(i.pagina)) && rotaExiste(i.rota)).slice(0, 5);
     const contMsg = naoLidas.total + naoLidas.fila;
     /* Número no atalho: Messenger (não lidas + fila), Atendimentos (aguardando sua ação), Avisos, Estoque (no mínimo) e Coroas (fila). */
     const numeroDe = (id: string): number => {

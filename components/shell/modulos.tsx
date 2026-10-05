@@ -12,6 +12,7 @@
  */
 
 import React from "react";
+import { rotaExiste } from "./rotas";
 import {
     IconAlertTriangle,
     IconBell,
@@ -68,6 +69,8 @@ export type ItemModulo = {
     alternativas?: { slug: string; href: string }[];
     /** Subtítulo que agrupa itens dentro do módulo (ex.: "Indicadores" em Gestão). Itens da mesma seção devem ficar juntos. */
     secao?: string;
+    /** Endereços reais a tentar, em ordem, se `href` não existir em app/ (ex.: pasta renomeada). */
+    fallbacks?: string[];
     /** Chave do contador (useContadores) mostrado como selo. */
     selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger";
 };
@@ -106,7 +109,7 @@ export const MODULOS: Modulo[] = [
             { titulo: "Memorial", desc: "Salas, homenagens e obituário", href: "/memorial", slugs: ["memorial"], icone: IconHeart },
             { titulo: "Salas", desc: "Acesso às salas de velório", href: "/salas", slugs: ["salas"], icone: IconDoor },
             { titulo: "Homenagens", desc: "Livro de homenagens", href: "/mensagens", slugs: ["mensagens"], icone: IconHeartHandshake },
-            { titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao", "avaliacao"], icone: IconEye },
+            { titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao"], icone: IconEye },
             { titulo: "Coroa de Flores", desc: "Coroas naturais e artificiais", href: "/coroa-de-flores", slugs: ["coroa-de-flores"], icone: IconFlower, selo: "coroas" },
         ],
     },
@@ -198,10 +201,10 @@ export const MODULOS: Modulo[] = [
         icone: IconChartBar,
         hub: { href: "/gestao", slug: "gestao" },
         itens: [
-            { titulo: "Balanço", desc: "Custo, receita e margem", href: "/indicadores/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
-            { titulo: "Dashboard", desc: "Gráficos e tabela do painel", href: "/indicadores/dashboard", slugs: ["dashboard"], icone: IconLayoutDashboard, secao: "Indicadores" },
-            { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/indicadores/desempenho", slugs: ["desempenho"], icone: IconChartBar, secao: "Indicadores" },
-            { titulo: "Painel de gestão do estoque", desc: "Indicadores do estoque", href: "/indicadores/estoque", slugs: ["estoque"], icone: IconBuildingWarehouse, secao: "Indicadores" },
+            { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
+            { titulo: "Dashboard", desc: "Gráficos e tabela do painel", href: "/dashboard", slugs: ["dashboard"], icone: IconLayoutDashboard, secao: "Indicadores" },
+            { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar, secao: "Indicadores" },
+            { titulo: "Painel de gestão do estoque", desc: "Indicadores do estoque", href: "/estoque?aba=gestao", slugs: ["estoque"], icone: IconBuildingWarehouse, secao: "Indicadores" },
             { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog, secao: "Administração" },
             { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Administração" },
             { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Administração" },
@@ -219,17 +222,22 @@ export { IconAlertTriangle, IconMicroscope };
 
 export type TemAcesso = (slug: string) => boolean;
 
-export function itemVisivel(item: ItemModulo, has: TemAcesso): boolean {
-    return item.slugs.includes("*") || item.slugs.some((s) => has(s));
+/** Endereços candidatos do item, na ordem: o escolhido pelas permissões (alternativas) → href → fallbacks. */
+function candidatos(item: ItemModulo, has: TemAcesso): string[] {
+    const alt = item.alternativas?.find((a) => has(a.slug))?.href;
+    return [alt, item.href, ...(item.fallbacks || [])].filter(Boolean) as string[];
 }
 
-/** Rota do item para este usuário (resolve as alternativas, como geral/estoque). */
+/** Item liberado pelas permissões E com tela existente (evita link para 404). */
+export function itemVisivel(item: ItemModulo, has: TemAcesso): boolean {
+    const liberado = item.slugs.includes("*") || item.slugs.some((s) => has(s));
+    return liberado && candidatos(item, has).some(rotaExiste);
+}
+
+/** Rota do item para este usuário: a primeira candidata que existe (senão, o href do item). */
 export function hrefDoItem(item: ItemModulo, has: TemAcesso): string {
-    if (item.alternativas) {
-        const alt = item.alternativas.find((a) => has(a.slug));
-        if (alt) return alt.href;
-    }
-    return item.href;
+    const lista = candidatos(item, has);
+    return lista.find(rotaExiste) ?? item.href;
 }
 
 export function itensVisiveis(m: Modulo, has: TemAcesso): ItemModulo[] {
@@ -242,7 +250,7 @@ export function moduloVisivel(m: Modulo, has: TemAcesso): boolean {
 
 /** Para onde o clique no módulo leva: a página de entrada, se o usuário a tem; senão a primeira tela liberada. */
 export function destinoDoModulo(m: Modulo, has: TemAcesso): string {
-    if (m.paraTodos || has(m.hub.slug)) return m.hub.href;
+    if ((m.paraTodos || has(m.hub.slug)) && rotaExiste(m.hub.href)) return m.hub.href;
     const primeiro = itensVisiveis(m, has)[0];
     return primeiro ? hrefDoItem(primeiro, has) : m.hub.href;
 }
