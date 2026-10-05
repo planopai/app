@@ -437,7 +437,7 @@ function Button({
             : variant === "soft"
                 ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
                 : variant === "danger"
-                    ? "border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FBDAD6] dark:hover:bg-[#FF9C92]/25"
+                    ? "border border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
                     : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
 
     return (
@@ -1681,7 +1681,7 @@ export default function SolicitarProdutoPage() {
                                                                     item.local_id
                                                                 )
                                                             }
-                                                            className="rounded-2xl px-3 py-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FDECEA] dark:hover:bg-[#FF9C92]/15"
+                                                            className="rounded-xl border border-[#B42318] bg-white px-4 py-2 text-xs font-bold text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
                                                         >
                                                             Remover
                                                         </button>
@@ -1738,4 +1738,4 @@ export default function SolicitarProdutoPage() {
             </div>
         </main>
     );
-}
+}

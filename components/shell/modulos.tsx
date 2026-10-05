@@ -26,17 +26,14 @@ import {
     IconClipboardPlus,
     IconCurrencyDollar,
     IconDeviceDesktopAnalytics,
-    IconDoor,
     IconEye,
     IconFileInvoice,
     IconFlower,
     IconGift,
-    IconHeart,
     IconHeartHandshake,
     IconHome,
     IconListDetails,
     IconLayoutDashboard,
-    IconLock,
     IconBuildingWarehouse,
     IconMessageCircle,
     IconMessages,
@@ -246,7 +243,9 @@ export function moduloVisivel(m: Modulo, has: TemAcesso): boolean {
 
 /** Para onde o clique no módulo leva: a página de entrada, se o usuário a tem; senão a primeira tela liberada. */
 export function destinoDoModulo(m: Modulo, has: TemAcesso): string {
-    if ((m.paraTodos || has(m.hub.slug)) && rotaExiste(m.hub.href)) return m.hub.href;
+    /* A página de entrada só lista as telas que o usuário já tem. Por isso NÃO exige a chave própria do módulo
+       (comunicacao, modulo-estoque, financeiro, gestao são novas e ainda não estão liberadas nos cargos). */
+    if (rotaExiste(m.hub.href)) return m.hub.href;
     const primeiro = itensVisiveis(m, has)[0];
     return primeiro ? hrefDoItem(primeiro, has) : m.hub.href;
 }

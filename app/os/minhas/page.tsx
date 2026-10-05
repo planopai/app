@@ -37,7 +37,7 @@ function osPost(acao: string, params: Record<string, any> = {}) {
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
 const hoje = () => new Date().toLocaleDateString("sv-SE");
-const inputCls = "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#00AEEC]";
+const inputCls = "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC]";
 const FORMAS = ["PIX", "DINHEIRO", "CARTAO_DEBITO", "CARTAO_CREDITO", "TRANSFERENCIA", "CHEQUE", "BOLETO", "OUTRO"];
 
 function Tag({ children, bg = "#EEF1F5" }: { children: React.ReactNode; bg?: string }) {
@@ -77,9 +77,9 @@ export default function MinhasOSPage() {
     const assinadas = lista.filter((l) => l.status === "FECHADA");
 
     return (
-        <main className="min-h-screen bg-[#F4F6F9] p-6 text-[#313C55]">
+        <main className="min-h-screen bg-[#F4F6F9] dark:bg-[#161C2A] p-6 text-[#313C55] dark:text-white">
             <div className="mb-5">
-                <div className="text-sm text-[#6B7488]">Você vê apenas as OS que abriu</div>
+                <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Você vê apenas as OS que abriu</div>
                 <h1 className="text-2xl font-extrabold">Minhas OS</h1>
             </div>
 
@@ -89,15 +89,15 @@ export default function MinhasOSPage() {
                     { r: "Assinadas no período", v: String(assinadas.length), s: brl(assinadas.reduce((a, l) => a + (Number(l.valor_total) || 0), 0)), c: "#B3CE52" },
                     { r: "Convertidas", v: String(lista.filter((l) => l.status === "CONVERTIDA").length), s: "Particular → Prefeitura", c: "#C9CFD9" },
                 ].map((k) => (
-                    <div key={k.r} className="flex-1 rounded-xl border border-[#E1E5EC] bg-white p-4" style={{ borderTop: `4px solid ${k.c}` }}>
-                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">{k.r}</div>
+                    <div key={k.r} className="flex-1 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4" style={{ borderTop: `4px solid ${k.c}` }}>
+                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">{k.r}</div>
                         <div className="mt-1 text-2xl font-extrabold">{k.v}</div>
-                        <div className="text-xs text-[#6B7488]">{k.s}</div>
+                        <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{k.s}</div>
                     </div>
                 ))}
             </div>
 
-            <div className="mb-4 grid gap-3 rounded-xl border border-[#E1E5EC] bg-white p-4 md:grid-cols-[160px_160px_1fr] md:items-end">
+            <div className="mb-4 grid gap-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4 md:grid-cols-[160px_160px_1fr] md:items-end">
                 <input type="date" className={inputCls} value={f.data_inicio} onChange={(e) => setF({ ...f, data_inicio: e.target.value })} />
                 <input type="date" className={inputCls} value={f.data_fim} onChange={(e) => setF({ ...f, data_fim: e.target.value })} />
                 <select className={inputCls} value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })}>
@@ -108,25 +108,25 @@ export default function MinhasOSPage() {
 
             {erro && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
 
-            <div className="overflow-x-auto rounded-xl border border-[#E1E5EC] bg-white">
+            <div className="overflow-x-auto rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]">
                 <table className="w-full text-sm">
-                    <thead><tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488]">
+                    <thead><tr className="border-b border-[#E1E5EC] dark:border-white/[0.12] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
                         <th className="px-3 py-3">OS / falecido</th><th className="px-3">Tipo</th><th className="px-3">Situação</th><th className="px-3 text-right">Total</th><th className="px-3">Acompanhamento</th><th></th>
                     </tr></thead>
                     <tbody>
-                        {!loading && lista.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-[#6B7488]">Nenhuma OS no período.</td></tr>}
+                        {!loading && lista.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma OS no período.</td></tr>}
                         {lista.map((l) => (
-                            <tr key={l.os_id} className={`border-b border-[#E1E5EC] ${l.status === "ABERTA" ? "bg-[#FFF8E1]" : ""}`}>
-                                <td className="px-3 py-3"><b>{l.numero_os}</b><div className="text-xs text-[#6B7488]">{l.falecido || "—"}</div></td>
+                            <tr key={l.os_id} className={`border-b border-[#E1E5EC] dark:border-white/[0.12] ${l.status === "ABERTA" ? "bg-[#FFF8E1] dark:bg-[#F2CB3F]/10" : ""}`}>
+                                <td className="px-3 py-3"><b>{l.numero_os}</b><div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{l.falecido || "—"}</div></td>
                                 <td className="px-3 text-xs">{l.tipo_rotulo}</td>
                                 <td className="px-3">{situacao(l)}</td>
                                 <td className="whitespace-nowrap px-3 text-right">{brl(l.valor_total)}</td>
-                                <td className="px-3 text-xs text-[#6B7488]">
-                                    {l.status === "ABERTA" ? <b className="text-[#313C55]">Confirmar valores e colher assinatura</b>
+                                <td className="px-3 text-xs text-[#6B7488] dark:text-[#AEB9CF]">
+                                    {l.status === "ABERTA" ? <b className="text-[#313C55] dark:text-white">Confirmar valores e colher assinatura</b>
                                         : l.saldo ? `saldo ${brl(l.saldo)} (financeiro)` : l.nota_promissoria ? `NP ${brl(l.nota_promissoria.valor)}` : "—"}
                                 </td>
                                 <td className="px-3 text-right">
-                                    <button type="button" onClick={() => setAberta(l.os_id)} className={`rounded-lg px-4 py-2 text-sm font-bold ${l.status === "ABERTA" ? "bg-[#313C55] text-white" : "border border-[#E1E5EC] bg-white"}`}>
+                                    <button type="button" onClick={() => setAberta(l.os_id)} className={`rounded-lg px-4 py-2 text-sm font-bold ${l.status === "ABERTA" ? "bg-[#313C55] text-white dark:bg-[#F2CB3F] dark:text-[#313C55]" : "border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]"}`}>
                                         {l.status === "ABERTA" ? "Continuar" : "Abrir"}
                                     </button>
                                 </td>
@@ -193,37 +193,37 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
 
     return (
         <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(49,60,85,0.45)]" onClick={onFechar}>
-            <div className="h-full w-full max-w-4xl overflow-y-auto bg-[#F4F6F9] p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="h-full w-full max-w-4xl overflow-y-auto bg-[#F4F6F9] dark:bg-[#161C2A] p-6" onClick={(e) => e.stopPropagation()}>
                 <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
-                        <div className="text-sm text-[#6B7488]">Minhas OS</div>
+                        <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Minhas OS</div>
                         <h2 className="text-2xl font-extrabold">OS {os?.numero_os || "…"}</h2>
                     </div>
                     <div className="flex gap-2">
-                        <a className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar`}>Ver folha</a>
-                        <a className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=impressao`}>Imprimir</a>
-                        <button type="button" className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold" onClick={onFechar}>Fechar</button>
+                        <a className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-bold" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar`}>Ver folha</a>
+                        <a className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-bold" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=impressao`}>Imprimir</a>
+                        <button type="button" className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-bold" onClick={onFechar}>Fechar</button>
                     </div>
                 </div>
 
                 {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
                 {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
 
-                <div className="mb-4 rounded-xl border border-[#E1E5EC] bg-white p-4">
+                <div className="mb-4 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
                     <table className="w-full text-sm">
-                        <thead><tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488]">
+                        <thead><tr className="border-b border-[#E1E5EC] dark:border-white/[0.12] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
                             <th className="py-2">Item</th><th className="text-right">Qtd</th><th className="text-right">Tabela</th><th className="text-right">Aplicado</th><th className="text-right">Final</th><th></th>
                         </tr></thead>
                         <tbody>
                             {(d?.itens || []).map((it: any) => (
-                                <tr key={it.id} className="border-b border-[#E1E5EC]">
-                                    <td className="py-2"><b>{it.produto_nome}</b><div className="text-xs text-[#6B7488]">{it.categoria}{it.tipo_item === "DIFERENCA" ? " · diferença" : ""}{Number(it.desconto_percentual) > 0 ? ` · desconto ${it.desconto_percentual}%` : ""}</div></td>
+                                <tr key={it.id} className="border-b border-[#E1E5EC] dark:border-white/[0.12]">
+                                    <td className="py-2"><b>{it.produto_nome}</b><div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{it.categoria}{it.tipo_item === "DIFERENCA" ? " · diferença" : ""}{Number(it.desconto_percentual) > 0 ? ` · desconto ${it.desconto_percentual}%` : ""}</div></td>
                                     <td className="text-right">{it.quantidade}</td>
                                     <td className="whitespace-nowrap text-right">{Number(it.referencia_apenas) ? "—" : brl(it.valor_unitario_travado)}</td>
                                     <td className="whitespace-nowrap text-right">{Number(it.referencia_apenas) ? "—" : brl(it.valor_unitario_aplicado)}</td>
                                     <td className="whitespace-nowrap text-right font-bold">{Number(it.referencia_apenas) ? "contrato" : brl(it.valor_final)}</td>
                                     <td className="text-right">{aberta && particular && !Number(it.referencia_apenas) && (
-                                        <button type="button" className="text-xs font-bold text-[#00AEEC]" onClick={() => setEdit({ item: it, modo: "pct", v: "" })}>Valor / desconto</button>
+                                        <button type="button" className="text-xs font-bold text-[#00AEEC] dark:text-[#66CFF5]" onClick={() => setEdit({ item: it, modo: "pct", v: "" })}>Valor / desconto</button>
                                     )}</td>
                                 </tr>
                             ))}
@@ -233,33 +233,33 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
                 </div>
 
                 {aberta && particular && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E1E5EC] bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
                         <div className="text-sm">{confirmada ? <><b>Valores confirmados.</b> Qualquer alteração desfaz a confirmação.</> : "Confira os itens com a família e confirme os valores antes de assinar."}</div>
                         <div className="flex gap-2">
-                            {!confirmada && <button type="button" disabled={salvando} onClick={() => void run(() => osPost("confirmar_os", { os_id: osId }))} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Confirmar valores</button>}
-                            {confirmada && <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white">Colher assinatura</button>}
+                            {!confirmada && <button type="button" disabled={salvando} onClick={() => void run(() => osPost("confirmar_os", { os_id: osId }))} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55] disabled:opacity-50">Confirmar valores</button>}
+                            {confirmada && <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>}
                         </div>
                     </div>
                 )}
                 {aberta && !particular && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E1E5EC] bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
                         <div className="text-sm">OS de convênio: o responsável assina como ciência{os?.convenio?.startsWith("ASSOCIADO") && !os?.contrato_numero ? " — informe o contrato do titular no atendimento antes." : "."}</div>
-                        <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white">Colher assinatura</button>
+                        <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>
                     </div>
                 )}
 
                 {edit && (
                     <Modal titulo="Valor e desconto" sub={edit.item.produto_nome} onFechar={() => setEdit(null)}>
-                        <div className="mb-3 flex gap-1 rounded-lg bg-[#F4F6F9] p-1 text-sm font-bold">
+                        <div className="mb-3 flex gap-1 rounded-lg bg-[#F4F6F9] dark:bg-[#161C2A] p-1 text-sm font-bold">
                             {[["pct", "Desconto %"], ["reais", "Desconto R$"], ["valor", "Novo valor"]].map(([m, r]) => (
-                                <button key={m} type="button" onClick={() => setEdit({ ...edit, modo: m, v: "" })} className={`flex-1 rounded-md py-1.5 ${edit.modo === m ? "bg-white shadow" : "text-[#6B7488]"}`}>{r}</button>
+                                <button key={m} type="button" onClick={() => setEdit({ ...edit, modo: m, v: "" })} className={`flex-1 rounded-md py-1.5 ${edit.modo === m ? "bg-white dark:bg-[#232B3F] shadow" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{r}</button>
                             ))}
                         </div>
                         <input autoFocus inputMode="decimal" className={inputCls} value={edit.v} placeholder={edit.modo === "pct" ? "ex.: 5" : "ex.: 100,00"} onChange={(e) => setEdit({ ...edit, v: e.target.value })} />
-                        <div className="my-3 text-xs text-[#6B7488]">Tabela {brl(edit.item.valor_unitario_travado)}. Limite do agente: 8% por item e no total da OS (não soma). Acima disso, só o administrador. Aumentar o valor é livre (aparece "Edit" na folha).</div>
+                        <div className="my-3 text-xs text-[#6B7488] dark:text-[#AEB9CF]">Tabela {brl(edit.item.valor_unitario_travado)}. Limite do agente: 8% por item e no total da OS (não soma). Acima disso, só o administrador. Aumentar o valor é livre (aparece "Edit" na folha).</div>
                         <div className="flex justify-end gap-2">
-                            <button type="button" onClick={() => setEdit(null)} className="rounded-lg border border-[#E1E5EC] px-4 py-2 text-sm font-bold">Cancelar</button>
-                            <button type="button" disabled={salvando || !edit.v} onClick={() => void salvarEdicao()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Aplicar</button>
+                            <button type="button" onClick={() => setEdit(null)} className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] px-4 py-2 text-sm font-bold">Cancelar</button>
+                            <button type="button" disabled={salvando || !edit.v} onClick={() => void salvarEdicao()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55] disabled:opacity-50">Aplicar</button>
                         </div>
                     </Modal>
                 )}
@@ -332,8 +332,8 @@ function AssinaturaModal({ os, particular, onFechar, onAssinado }: { os: any; pa
                 <input className={inputCls} placeholder="CPF (opcional)" value={f.cpf} onChange={(e) => setF({ ...f, cpf: e.target.value })} />
             </div>
             {particular && (
-                <div className="mb-3 rounded-xl border border-[#E1E5EC] p-3">
-                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Pagamento no ato (opcional)</div>
+                <div className="mb-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] p-3">
+                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Pagamento no ato (opcional)</div>
                     <div className="grid grid-cols-2 gap-2">
                         <input inputMode="decimal" className={inputCls} placeholder="0,00" value={f.pago} onChange={(e) => setF({ ...f, pago: e.target.value })} />
                         <select className={inputCls} value={f.forma} onChange={(e) => setF({ ...f, forma: e.target.value })}>{FORMAS.map((x) => <option key={x} value={x}>{x.replace("_", " ")}</option>)}</select>
@@ -341,12 +341,12 @@ function AssinaturaModal({ os, particular, onFechar, onAssinado }: { os: any; pa
                     <div className="mt-2 text-sm">Total {brl(total)} · {saldo > 0 ? <>nota promissória à vista de <b>{brl(saldo)}</b></> : <b>quitada no ato, sem nota promissória</b>}</div>
                 </div>
             )}
-            <div className="mb-1 flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]"><span>Assine no quadro</span><button type="button" onClick={limpar} className="normal-case text-[#00AEEC]">Limpar</button></div>
-            <canvas ref={canvas} width={600} height={180} className="mb-3 w-full touch-none rounded-lg border border-dashed border-[#C9CFD9] bg-white"
+            <div className="mb-1 flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]"><span>Assine no quadro</span><button type="button" onClick={limpar} className="normal-case text-[#00AEEC] dark:text-[#66CFF5]">Limpar</button></div>
+            <canvas ref={canvas} width={600} height={180} className="mb-3 w-full touch-none rounded-lg border border-dashed border-[#C9CFD9] dark:border-white/30 bg-white dark:bg-[#232B3F]"
                     onPointerDown={inicio} onPointerMove={move} onPointerUp={() => (desenhando.current = false)} onPointerLeave={() => (desenhando.current = false)} />
             <div className="flex justify-end gap-2">
-                <button type="button" onClick={onFechar} className="rounded-lg border border-[#E1E5EC] px-4 py-2 text-sm font-bold">Cancelar</button>
-                <button type="button" disabled={salvando || !temTraco || !f.nome.trim()} onClick={() => void enviar()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{salvando ? "Assinando…" : "Assinar"}</button>
+                <button type="button" onClick={onFechar} className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] px-4 py-2 text-sm font-bold">Cancelar</button>
+                <button type="button" disabled={salvando || !temTraco || !f.nome.trim()} onClick={() => void enviar()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55] disabled:opacity-50">{salvando ? "Assinando…" : "Assinar"}</button>
             </div>
         </Modal>
     );
@@ -355,9 +355,9 @@ function AssinaturaModal({ os, particular, onFechar, onAssinado }: { os: any; pa
 function Modal({ titulo, sub, children, onFechar }: { titulo: string; sub?: string; children: React.ReactNode; onFechar: () => void }) {
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(49,60,85,0.45)] p-4" onClick={onFechar}>
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 text-[#313C55] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#232B3F] p-6 text-[#313C55] dark:text-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="text-xl font-extrabold">{titulo}</div>
-                {sub && <div className="mb-4 text-sm text-[#6B7488]">{sub}</div>}
+                {sub && <div className="mb-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">{sub}</div>}
                 {children}
             </div>
         </div>

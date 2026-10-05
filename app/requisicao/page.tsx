@@ -65,7 +65,7 @@ type QuickItem = {
     title: string;
     href: string;
     slug: string;
-    icon: React.ElementType<{ size?: number }>;
+    icon: React.ElementType<any>;
 };
 
 async function safeJson<T>(r: Response): Promise<T> {
@@ -241,7 +241,7 @@ function ActionButton({
 }) {
     const cls =
         variant === "danger"
-            ? "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FBDAD6] dark:hover:bg-[#FF9C92]/25"
+            ? "border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
             : "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]";
 
     return (
@@ -712,4 +712,4 @@ export default function RequisicaoPage() {
             />
         </div>
     );
-}
+}

@@ -511,7 +511,7 @@ function Button({
 
     const cls =
         variant === "danger"
-            ? "border border-[#B42318] bg-[#B42318] text-white hover:bg-[#8F1B12]"
+            ? "border border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
             : variant === "ghost"
                 ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-white hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                 : "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]";
@@ -1447,4 +1447,4 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
             </div>
         </Card>
     );
-}
+}

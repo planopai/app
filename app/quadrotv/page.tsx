@@ -4898,7 +4898,7 @@ function TvStyles() {
             .tv-flag-warn { background: var(--warnbg); color: var(--warn); }
 
             .tv-step { display: flex; flex-direction: column; align-items: center; gap: 8px; position: relative; }
-            .tv-step::before { content: ""; position: absolute; top: 30px; left: -50%; width: 100%; height: 4px; background: var(--line2); z-index: 0; }
+            .tv-step::before { content: ""; position: absolute; top: 30px; left: calc(-50% + 36px); width: calc(100% - 72px); height: 4px; background: var(--line2); z-index: 0; }
             .tv-step:first-child::before { display: none; }
             .tv-step-done::before, .tv-step-live::before { background: var(--done-bd); }
             .tv-node { position: relative; z-index: 1; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; border: 3px solid var(--line2); background: var(--sunk); color: var(--text3); }
@@ -4937,7 +4937,7 @@ function TvStyles() {
             .tv-compact .tv-state { font-size: 23px; }
             .tv-compact .tv-flag { margin-top: 4px; font-size: 15px; padding: 3px 10px; }
             .tv-compact .tv-node { width: 48px; height: 48px; } .tv-compact .tv-node-icon { width: 24px; height: 24px; }
-            .tv-compact .tv-step::before { top: 22px; }
+            .tv-compact .tv-step::before { top: 22px; left: calc(-50% + 28px); width: calc(100% - 56px); }
             .tv-compact .tv-t { font-size: 18px; }
             .tv-compact .tv-step-na .tv-t { visibility: hidden; }
             .tv-compact .tv-box { padding: 4px 10px; } .tv-compact .tv-box-ic { width: 24px; height: 24px; } .tv-compact .tv-box b { font-size: 24px; }
@@ -4952,7 +4952,7 @@ function TvStyles() {
             .tv-narrow .tv-track, .tv-narrow .tv-steps-h { grid-template-columns: repeat(6, 1fr) 132px; }
             .tv-narrow .tv-steps-h span { font-size: 11px; letter-spacing: 0; }
             .tv-narrow .tv-node { width: 44px; height: 44px; } .tv-narrow .tv-node-icon { width: 22px; height: 22px; }
-            .tv-narrow .tv-step::before { top: 20px; }
+            .tv-narrow .tv-step::before { top: 20px; left: calc(-50% + 26px); width: calc(100% - 52px); }
             .tv-narrow .tv-t { font-size: 16px; }
 
             /* coroas */

@@ -196,12 +196,12 @@ function mediaPonderada(
 function classNota(n: number | null | undefined) {
     const v = clampNota(n);
 
-    if (v == null) return "bg-slate-100 text-slate-500 border-slate-200";
-    if (v < 2.5) return "bg-red-50 text-red-700 border-red-200";
-    if (v < 3.5) return "bg-amber-50 text-amber-700 border-amber-200";
-    if (v < 4.2) return "bg-blue-50 text-blue-700 border-blue-200";
+    if (v == null) return "bg-slate-100 dark:bg-[#1C2334] text-slate-500 dark:text-[#AEB9CF] border-slate-200 dark:border-white/[0.12]";
+    if (v < 2.5) return "bg-red-50 dark:bg-[#463D4C] text-red-700 dark:text-[#FF9C92] border-red-200 dark:border-[#FF9C92]/40";
+    if (v < 3.5) return "bg-amber-50 dark:bg-[#44453F] text-amber-700 dark:text-[#F2CB3F] border-amber-200 dark:border-[#F2CB3F]/40";
+    if (v < 4.2) return "bg-blue-50 dark:bg-[#1C4562] text-blue-700 dark:text-[#66CFF5] border-blue-200 dark:border-[#66CFF5]/40";
 
-    return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    return "bg-emerald-50 dark:bg-[#404C43] text-emerald-700 dark:text-[#B3CE52] border-emerald-200 dark:border-[#B3CE52]/40";
 }
 
 function Card({
@@ -217,25 +217,25 @@ function Card({
 }) {
     const borda =
         destaque === "bom"
-            ? "border-emerald-200"
+            ? "border-emerald-200 dark:border-[#B3CE52]/40"
             : destaque === "atencao"
-                ? "border-amber-200"
+                ? "border-amber-200 dark:border-[#F2CB3F]/40"
                 : destaque === "ruim"
-                    ? "border-red-200"
-                    : "border-slate-200";
+                    ? "border-red-200 dark:border-[#FF9C92]/40"
+                    : "border-slate-200 dark:border-white/[0.12]";
 
     return (
-        <div className={`rounded-2xl border ${borda} bg-white p-4 shadow-sm`}>
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        <div className={`rounded-2xl border ${borda} bg-white dark:bg-[#232B3F] p-4 shadow-sm`}>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
                 {titulo}
             </div>
 
-            <div className="mt-2 text-2xl font-semibold text-slate-950">
+            <div className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
                 {valor}
             </div>
 
             {subtitulo ? (
-                <div className="mt-1 text-xs text-slate-500">{subtitulo}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-[#AEB9CF]">{subtitulo}</div>
             ) : null}
         </div>
     );
@@ -253,13 +253,13 @@ function BarraNota({
     return (
         <div>
             <div className="mb-1 flex items-center justify-between gap-3 text-xs">
-                <span className="text-slate-600">{label}</span>
-                <strong className="text-slate-900">{formatarNota(valor)}</strong>
+                <span className="text-slate-600 dark:text-[#AEB9CF]">{label}</span>
+                <strong className="text-slate-900 dark:text-white">{formatarNota(valor)}</strong>
             </div>
 
-            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1C2334]">
                 <div
-                    className="h-full rounded-full bg-slate-800 transition-all"
+                    className="h-full rounded-full bg-slate-800 dark:bg-[#00AEEC] transition-all"
                     style={{ width: `${pct}%` }}
                 />
             </div>
@@ -279,12 +279,12 @@ function Secao({
     right?: React.ReactNode;
 }) {
     return (
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <section className="rounded-2xl border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-white/[0.12] px-5 py-4">
                 <div>
-                    <h2 className="text-base font-semibold text-slate-950">{titulo}</h2>
+                    <h2 className="text-base font-semibold text-slate-950 dark:text-white">{titulo}</h2>
                     {descricao ? (
-                        <p className="mt-1 text-sm text-slate-500">{descricao}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-[#AEB9CF]">{descricao}</p>
                     ) : null}
                 </div>
 
@@ -432,15 +432,15 @@ export default function Page() {
     const pesoLabel = `${pesoVisita}% Visita / ${pesoPos}% Pós`;
 
     return (
-        <main className="min-h-screen bg-slate-50">
+        <main className="min-h-screen bg-slate-50 dark:bg-[#161C2A]">
             <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6">
                 <header className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
+                        <h1 className="text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
                             Dashboard de Avaliações
                         </h1>
 
-                        <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                        <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-[#AEB9CF]">
                             Visão consolidada de Visita, Pós-Atendimento, notas por etapa,
                             cobertura das avaliações e desempenho dos colaboradores.
                         </p>
@@ -450,46 +450,46 @@ export default function Page() {
                         type="button"
                         onClick={() => void carregar()}
                         disabled={loading}
-                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                        className="rounded-xl border border-slate-300 dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-medium text-slate-800 dark:text-white shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 disabled:opacity-50"
                     >
                         {loading ? "Atualizando..." : "Atualizar"}
                     </button>
                 </header>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <section className="rounded-2xl border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4 shadow-sm">
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                         <label className="block">
-                            <span className="text-xs font-medium text-slate-600">
+                            <span className="text-xs font-medium text-slate-600 dark:text-[#AEB9CF]">
                                 Data inicial
                             </span>
                             <input
                                 type="date"
                                 value={dataDe}
                                 onChange={(e) => setDataDe(e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                                className="mt-1 w-full rounded-xl border border-slate-300 dark:border-white/[0.12] px-3 py-2 text-sm outline-none focus:border-slate-500 dark:focus:border-white/60"
                             />
                         </label>
 
                         <label className="block">
-                            <span className="text-xs font-medium text-slate-600">
+                            <span className="text-xs font-medium text-slate-600 dark:text-[#AEB9CF]">
                                 Data final
                             </span>
                             <input
                                 type="date"
                                 value={dataAte}
                                 onChange={(e) => setDataAte(e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                                className="mt-1 w-full rounded-xl border border-slate-300 dark:border-white/[0.12] px-3 py-2 text-sm outline-none focus:border-slate-500 dark:focus:border-white/60"
                             />
                         </label>
 
                         <label className="block">
-                            <span className="text-xs font-medium text-slate-600">
+                            <span className="text-xs font-medium text-slate-600 dark:text-[#AEB9CF]">
                                 Tipo de avaliação
                             </span>
                             <select
                                 value={tipo}
                                 onChange={(e) => setTipo(e.target.value as TipoFiltro)}
-                                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                                className="mt-1 w-full rounded-xl border border-slate-300 dark:border-white/[0.12] px-3 py-2 text-sm outline-none focus:border-slate-500 dark:focus:border-white/60"
                             >
                                 <option value="todos">Visita + Pós</option>
                                 <option value="visita">Somente Visita</option>
@@ -500,13 +500,13 @@ export default function Page() {
                         </label>
 
                         <label className="block">
-                            <span className="text-xs font-medium text-slate-600">
+                            <span className="text-xs font-medium text-slate-600 dark:text-[#AEB9CF]">
                                 Avaliador
                             </span>
                             <select
                                 value={avaliadorId}
                                 onChange={(e) => setAvaliadorId(e.target.value)}
-                                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                                className="mt-1 w-full rounded-xl border border-slate-300 dark:border-white/[0.12] px-3 py-2 text-sm outline-none focus:border-slate-500 dark:focus:border-white/60"
                             >
                                 <option value="">Todos</option>
 
@@ -519,11 +519,11 @@ export default function Page() {
                         </label>
 
                         <label className="block">
-                            <span className="text-xs font-medium text-slate-600">
+                            <span className="text-xs font-medium text-slate-600 dark:text-[#AEB9CF]">
                                 Peso consolidado
                             </span>
 
-                            <div className="mt-1 rounded-xl border border-slate-300 px-3 py-2">
+                            <div className="mt-1 rounded-xl border border-slate-300 dark:border-white/[0.12] px-3 py-2">
                                 <div className="mb-1 flex items-center justify-between text-xs">
                                     <span>Visita</span>
                                     <strong>{pesoLabel}</strong>
@@ -546,7 +546,7 @@ export default function Page() {
                 </section>
 
                 {erro ? (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <div className="rounded-2xl border border-red-200 dark:border-[#FF9C92]/40 bg-red-50 dark:bg-[#463D4C] p-4 text-sm text-red-700 dark:text-[#FF9C92]">
                         <strong>Não foi possível carregar os indicadores.</strong>
                         <div className="mt-1">{erro}</div>
                         <div className="mt-2 text-xs">
@@ -641,7 +641,7 @@ export default function Page() {
                         descricao="Compara a percepção durante a cerimônia com a avaliação posterior."
                     >
                         {comparativos.length === 0 ? (
-                            <div className="py-10 text-center text-sm text-slate-500">
+                            <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 Nenhuma nota disponível no período.
                             </div>
                         ) : (
@@ -662,14 +662,14 @@ export default function Page() {
                                     return (
                                         <div
                                             key={item.pergunta_codigo}
-                                            className="rounded-xl border border-slate-200 p-4"
+                                            className="rounded-xl border border-slate-200 dark:border-white/[0.12] p-4"
                                         >
                                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                                 <div>
-                                                    <div className="font-medium text-slate-900">
+                                                    <div className="font-medium text-slate-900 dark:text-white">
                                                         {titulo}
                                                     </div>
-                                                    <div className="text-xs text-slate-500">
+                                                    <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                         {item.visita_quantidade} notas de
                                                         Visita · {item.pos_quantidade} notas
                                                         de Pós
@@ -680,12 +680,12 @@ export default function Page() {
                                                     className={[
                                                         "rounded-full border px-2.5 py-1 text-xs font-semibold",
                                                         diff == null
-                                                            ? "border-slate-200 bg-slate-50 text-slate-500"
+                                                            ? "border-slate-200 dark:border-white/[0.12] bg-slate-50 dark:bg-[#161C2A] text-slate-500 dark:text-[#AEB9CF]"
                                                             : diff < -0.5
-                                                                ? "border-red-200 bg-red-50 text-red-700"
+                                                                ? "border-red-200 dark:border-[#FF9C92]/40 bg-red-50 dark:bg-[#463D4C] text-red-700 dark:text-[#FF9C92]"
                                                                 : diff > 0.5
-                                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                                    : "border-slate-200 bg-slate-50 text-slate-700",
+                                                                    ? "border-emerald-200 dark:border-[#B3CE52]/40 bg-emerald-50 dark:bg-[#404C43] text-emerald-700 dark:text-[#B3CE52]"
+                                                                    : "border-slate-200 dark:border-white/[0.12] bg-slate-50 dark:bg-[#161C2A] text-slate-700 dark:text-white",
                                                     ].join(" ")}
                                                 >
                                                     Δ{" "}
@@ -719,7 +719,7 @@ export default function Page() {
                         descricao="“Não sei” não entra nas médias nem nesta distribuição numérica."
                     >
                         {distribuicao.length === 0 ? (
-                            <div className="py-10 text-center text-sm text-slate-500">
+                            <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 Sem distribuição disponível.
                             </div>
                         ) : (
@@ -738,17 +738,17 @@ export default function Page() {
                                     return (
                                         <div key={item.nota}>
                                             <div className="mb-1 flex items-center justify-between text-sm">
-                                                <span className="font-medium text-slate-800">
+                                                <span className="font-medium text-slate-800 dark:text-white">
                                                     Nota {item.nota}
                                                 </span>
-                                                <span className="text-slate-500">
+                                                <span className="text-slate-500 dark:text-[#AEB9CF]">
                                                     {total}
                                                 </span>
                                             </div>
 
-                                            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                                            <div className="h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1C2334]">
                                                 <div
-                                                    className="h-full bg-slate-800"
+                                                    className="h-full bg-slate-800 dark:bg-[#00AEEC]"
                                                     style={{
                                                         width: `${Math.max(
                                                             0,
@@ -758,7 +758,7 @@ export default function Page() {
                                                 />
                                             </div>
 
-                                            <div className="mt-1 flex gap-4 text-xs text-slate-500">
+                                            <div className="mt-1 flex gap-4 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                 <span>
                                                     Visita: {item.visita}
                                                 </span>
@@ -779,14 +779,14 @@ export default function Page() {
                     descricao={`Nota consolidada usando ${pesoLabel}. Quando existe apenas uma origem, usa-se a média disponível.`}
                 >
                     {colaboradores.length === 0 ? (
-                        <div className="py-10 text-center text-sm text-slate-500">
+                        <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                             Nenhuma nota atribuída a colaboradores no período.
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="min-w-full text-sm">
                                 <thead>
-                                    <tr className="border-b text-left text-xs uppercase tracking-wide text-slate-500">
+                                    <tr className="border-b text-left text-xs uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
                                         <th className="px-3 py-3">Colaborador</th>
                                         <th className="px-3 py-3 text-center">
                                             Notas
@@ -808,14 +808,14 @@ export default function Page() {
                                     {colaboradores.map((item) => (
                                         <tr
                                             key={`${item.usuario_id ?? "sem-id"}-${item.nome}`}
-                                            className="border-b border-slate-100 last:border-b-0"
+                                            className="border-b border-slate-100 dark:border-white/[0.12] last:border-b-0"
                                         >
                                             <td className="px-3 py-3">
-                                                <div className="font-medium text-slate-900">
+                                                <div className="font-medium text-slate-900 dark:text-white">
                                                     {item.nome || "Não identificado"}
                                                 </div>
                                                 {item.cargo ? (
-                                                    <div className="text-xs text-slate-500">
+                                                    <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                         {item.cargo}
                                                     </div>
                                                 ) : null}
@@ -859,7 +859,7 @@ export default function Page() {
                                                 </span>
                                             </td>
 
-                                            <td className="px-3 py-3 text-xs text-slate-500">
+                                            <td className="px-3 py-3 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                 {item.quantidade_visita} Visita ·{" "}
                                                 {item.quantidade_pos} Pós
                                             </td>
@@ -877,7 +877,7 @@ export default function Page() {
                         descricao="Atendimentos em que Visita e Pós apresentaram maior diferença para a mesma etapa."
                     >
                         {divergencias.length === 0 ? (
-                            <div className="py-10 text-center text-sm text-slate-500">
+                            <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 Nenhuma divergência disponível.
                             </div>
                         ) : (
@@ -885,14 +885,14 @@ export default function Page() {
                                 {divergencias.slice(0, 12).map((item) => (
                                     <div
                                         key={`${item.atendimento_id}-${item.pergunta_codigo}`}
-                                        className="rounded-xl border border-slate-200 p-3"
+                                        className="rounded-xl border border-slate-200 dark:border-white/[0.12] p-3"
                                     >
                                         <div className="flex flex-wrap justify-between gap-2">
                                             <div>
-                                                <div className="font-medium text-slate-900">
+                                                <div className="font-medium text-slate-900 dark:text-white">
                                                     {item.falecido}
                                                 </div>
-                                                <div className="text-xs text-slate-500">
+                                                <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                     {item.pergunta_titulo ||
                                                         PERGUNTAS_LABELS[
                                                         item.pergunta_codigo
@@ -902,7 +902,7 @@ export default function Page() {
                                             </div>
 
                                             <div className="text-right">
-                                                <div className="text-sm font-semibold text-slate-900">
+                                                <div className="text-sm font-semibold text-slate-900 dark:text-white">
                                                     Δ{" "}
                                                     {item.diferenca == null
                                                         ? "—"
@@ -910,7 +910,7 @@ export default function Page() {
                                                             .toFixed(2)
                                                             .replace(".", ",")}`}
                                                 </div>
-                                                <div className="text-xs text-slate-500">
+                                                <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                     Visita{" "}
                                                     {formatarNota(item.visita_nota)} ·
                                                     Pós {formatarNota(item.pos_nota)}
@@ -919,7 +919,7 @@ export default function Page() {
                                         </div>
 
                                         {item.responsavel_nome ? (
-                                            <div className="mt-2 text-xs text-slate-500">
+                                            <div className="mt-2 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                 Responsável:{" "}
                                                 <strong>
                                                     {item.responsavel_nome}
@@ -937,7 +937,7 @@ export default function Page() {
                         descricao="Ocorrências com nota 1 ou 2 para acompanhamento."
                     >
                         {alertas.length === 0 ? (
-                            <div className="py-10 text-center text-sm text-slate-500">
+                            <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 Nenhuma nota baixa no período.
                             </div>
                         ) : (
@@ -945,14 +945,14 @@ export default function Page() {
                                 {alertas.slice(0, 15).map((item, index) => (
                                     <div
                                         key={`${item.atendimento_id}-${item.pergunta_codigo}-${index}`}
-                                        className="rounded-xl border border-red-100 bg-red-50/40 p-3"
+                                        className="rounded-xl border border-red-100 bg-red-50/40 dark:bg-[#463D4C] p-3"
                                     >
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <div className="font-medium text-slate-900">
+                                                <div className="font-medium text-slate-900 dark:text-white">
                                                     {item.falecido}
                                                 </div>
-                                                <div className="mt-0.5 text-xs text-slate-500">
+                                                <div className="mt-0.5 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                     {item.tipo_avaliacao === "visita"
                                                         ? "Visita"
                                                         : "Pós-Atendimento"}{" "}
@@ -965,12 +965,12 @@ export default function Page() {
                                                 </div>
                                             </div>
 
-                                            <span className="rounded-lg border border-red-200 bg-red-100 px-2.5 py-1 text-sm font-semibold text-red-700">
+                                            <span className="rounded-lg border border-red-200 dark:border-[#FF9C92]/40 bg-red-100 dark:bg-[#463D4C] px-2.5 py-1 text-sm font-semibold text-red-700 dark:text-[#FF9C92]">
                                                 {item.nota}
                                             </span>
                                         </div>
 
-                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                             {item.responsavel_nome ? (
                                                 <span>
                                                     Responsável:{" "}
@@ -979,7 +979,7 @@ export default function Page() {
                                                     </strong>
                                                 </span>
                                             ) : (
-                                                <span className="text-amber-700">
+                                                <span className="text-amber-700 dark:text-[#F2CB3F]">
                                                     Responsável não identificado
                                                 </span>
                                             )}
@@ -1011,7 +1011,7 @@ export default function Page() {
                     descricao="Acompanhamento temporal de Visita e Pós-Atendimento."
                 >
                     {evolucao.length === 0 ? (
-                        <div className="py-10 text-center text-sm text-slate-500">
+                        <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                             Nenhuma série temporal disponível.
                         </div>
                     ) : (
@@ -1026,16 +1026,16 @@ export default function Page() {
                                             key={item.periodo}
                                             className="min-w-[90px] flex-1"
                                         >
-                                            <div className="flex h-44 items-end justify-center gap-2 rounded-xl bg-slate-50 p-3">
+                                            <div className="flex h-44 items-end justify-center gap-2 rounded-xl bg-slate-50 dark:bg-[#161C2A] p-3">
                                                 <div
                                                     title={`Visita: ${formatarNota(
                                                         v,
                                                     )}`}
-                                                    className="w-5 rounded-t bg-slate-900"
+                                                    className="w-5 rounded-t bg-slate-900 dark:bg-[#00AEEC]"
                                                     style={{
                                                         height: `${v == null
-                                                            ? 0
-                                                            : (v / 5) * 100
+                                                                ? 0
+                                                                : (v / 5) * 100
                                                             }%`,
                                                     }}
                                                 />
@@ -1046,17 +1046,17 @@ export default function Page() {
                                                     className="w-5 rounded-t bg-slate-400"
                                                     style={{
                                                         height: `${p == null
-                                                            ? 0
-                                                            : (p / 5) * 100
+                                                                ? 0
+                                                                : (p / 5) * 100
                                                             }%`,
                                                     }}
                                                 />
                                             </div>
 
-                                            <div className="mt-2 text-center text-xs font-medium text-slate-700">
+                                            <div className="mt-2 text-center text-xs font-medium text-slate-700 dark:text-white">
                                                 {item.periodo}
                                             </div>
-                                            <div className="mt-0.5 text-center text-[11px] text-slate-500">
+                                            <div className="mt-0.5 text-center text-[11px] text-slate-500 dark:text-[#AEB9CF]">
                                                 V {item.visitas} · P {item.pos}
                                             </div>
                                         </div>
@@ -1064,9 +1064,9 @@ export default function Page() {
                                 })}
                             </div>
 
-                            <div className="mt-4 flex items-center gap-5 text-xs text-slate-500">
+                            <div className="mt-4 flex items-center gap-5 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                 <span className="flex items-center gap-2">
-                                    <span className="h-3 w-3 rounded bg-slate-900" />
+                                    <span className="h-3 w-3 rounded bg-slate-900 dark:bg-[#00AEEC]" />
                                     Visita
                                 </span>
                                 <span className="flex items-center gap-2">
@@ -1078,8 +1078,8 @@ export default function Page() {
                     )}
                 </Secao>
 
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-500 shadow-sm">
-                    <strong className="text-slate-700">Regra de cálculo:</strong>{" "}
+                <div className="rounded-2xl border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4 text-xs text-slate-500 dark:text-[#AEB9CF] shadow-sm">
+                    <strong className="text-slate-700 dark:text-white">Regra de cálculo:</strong>{" "}
                     respostas “Não sei” e perguntas não aplicáveis não entram nas médias.
                     A nota consolidada por colaborador nesta página usa o peso configurado
                     no filtro acima e sempre exibe a quantidade de notas que compõe a

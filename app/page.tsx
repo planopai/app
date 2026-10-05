@@ -309,7 +309,7 @@ export default function HomePage() {
                         {!pronto ? (
                             <div className={[CARD, "p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]"].join(" ")}>Carregando acessos disponíveis neste dispositivo...</div>
                         ) : (
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:landscape:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(max(14rem,calc((100%-3rem)/4)),1fr))] lg:gap-4">
                                 {modulos.map((m) => {
                                     const Icon = m.icone;
                                     return (

@@ -23,6 +23,7 @@ import {
 
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { MODULOS, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import LogoPai from "@/components/shell/LogoPai";
 import { rotaExiste } from "@/components/shell/rotas";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
@@ -472,7 +473,9 @@ export function AppSidebar(
         className={[
           "relative flex w-full items-center gap-3 rounded-xl px-3 outline-none transition-colors",
           "focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
-          nivel === "sub" ? "min-h-[34px] pl-[46px] text-sm" : "min-h-10 text-[15px]",
+          nivel === "sub"
+            ? "min-h-[34px] pl-[46px] text-sm [@media(max-height:760px)]:min-h-8"
+            : "min-h-10 text-[15px] [@media(max-height:760px)]:min-h-9",
           /* Mockup: selecionado = fundo branco a 14%, texto branco em negrito e barra amarela de 4 px à esquerda */
           active
             ? "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F]"
@@ -491,6 +494,30 @@ export function AppSidebar(
     );
   };
 
+
+  /**
+   * Dedupe de itens para
+   * modo colapsado.
+   */
+  const collapsedItems =
+    React.useMemo(() => {
+      const all =
+        visibleGroups.flatMap(
+          (group) =>
+            group.items
+        );
+
+      return all.filter(
+        (item, index) =>
+          all.findIndex(
+            (other) =>
+              other.href ===
+              item.href
+          ) === index
+      );
+    }, [visibleGroups]);
+
+  /* Fora desta linha para cima ficam TODOS os hooks. Os "return" antecipados vêm depois: mudar a ordem dos hooks derruba o app. */
   /* No celular o menu é a tela "Menu" (MenuCelular); a gaveta lateral não é mais usada. */
   if (sidebar?.isMobile) return null;
 
@@ -514,11 +541,7 @@ export function AppSidebar(
                   : "pt-3",
               ].join(" ")}
             >
-              <img
-                src="/logo-pai.svg"
-                alt="Logo PAI"
-                className="h-[52px] w-auto"
-              />
+              <LogoPai className="h-[52px] w-auto" />
 
               <div className="mt-4 border-t" />
 
@@ -552,27 +575,6 @@ export function AppSidebar(
     );
   }
 
-  /**
-   * Dedupe de itens para
-   * modo colapsado.
-   */
-  const collapsedItems =
-    React.useMemo(() => {
-      const all =
-        visibleGroups.flatMap(
-          (group) =>
-            group.items
-        );
-
-      return all.filter(
-        (item, index) =>
-          all.findIndex(
-            (other) =>
-              other.href ===
-              item.href
-          ) === index
-      );
-    }, [visibleGroups]);
 
   /*
    * ATALHOS: barra personalizada do computador (Personalizar barra).
@@ -596,13 +598,7 @@ export function AppSidebar(
     ...collapsedItems.filter((item) => !hrefsAtalhos.has(item.href)),
   ];
 
-  const logoNode = (
-    <img
-      src="/logo-pai.svg"
-      alt="Logo PAI"
-      className="h-[52px] w-auto"
-    />
-  );
+  const logoNode = <LogoPai className="h-[52px] w-auto" />;
 
   return (
     <Sidebar
@@ -617,7 +613,8 @@ export function AppSidebar(
               href="/"
               aria-label="PAI - Plano Assistencial Integrado: ir para o Início"
               onClick={(event) => handleNavigate("/", event)}
-              className="-ml-7 flex h-[76px] w-[196px] items-center rounded-r-[38px] bg-white pl-7"
+              style={{ backgroundColor: "rgb(255 255 255)" }}
+              className="-ml-7 flex h-[76px] w-[196px] items-center rounded-r-[38px] pl-7"
             >
               {logoNode}
             </Link>
@@ -703,7 +700,7 @@ export function AppSidebar(
                     onClick={() => toggleGroup(group.category)}
                     aria-expanded={opened}
                     className={[
-                      "flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] outline-none transition-colors",
+                      "flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] outline-none transition-colors [@media(max-height:760px)]:min-h-9",
                       "hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
                       opened ? "font-extrabold text-white" : "font-semibold text-[#E8ECF4]",
                     ].join(" ")}
@@ -750,36 +747,60 @@ export function AppSidebar(
         )}
       </SidebarContent>
 
-      {/* FOOTER FIXO (mockup): usuário + Personalizar barra, Ajuda e Sair da conta */}
-      <SidebarFooter className="px-2 pb-4 pt-0">
-        <div className="mt-1.5 flex flex-col gap-0.5 border-t border-white/[0.18] pt-2.5">
-          <div className="flex items-center gap-3 px-3 py-1.5">
+      {/* FOOTER FIXO, compacto: usuário em uma linha e as três ações lado a lado (sobra mais espaço para os módulos) */}
+      <SidebarFooter className="px-2 pb-3 pt-0">
+        <div className="mt-1 border-t border-white/[0.18] pt-2">
+          <div className="flex items-center gap-2.5 px-2 pb-1.5">
             <div
-              className="grid size-9 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-[15px] font-extrabold text-[#313C55]"
+              className="grid size-8 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-sm font-extrabold text-[#313C55]"
               aria-label="Avatar do usuário"
             >
               {userInitials}
             </div>
-            <div className="min-w-0">
-              <div className="text-[11px] font-extrabold tracking-[0.12em] text-[#AEB9CF]">{badgeText}</div>
-              <div className="truncate text-[15px] font-extrabold text-white">{displayName}</div>
+            <div className="min-w-0 leading-tight">
+              <div className="text-[10px] font-extrabold tracking-[0.12em] text-[#AEB9CF]">{badgeText}</div>
+              <div className="truncate text-sm font-extrabold text-white">{displayName}</div>
             </div>
           </div>
 
-          <MenuItem title="Personalizar barra" href="/personalizar-barra" Icon={IconAdjustmentsHorizontal} />
-          <MenuItem title="Ajuda" href="/help" Icon={IconHelp} />
+          <div className="grid grid-cols-3 gap-1">
+            {[
+              { href: "/personalizar-barra", rotulo: "Personalizar barra", curto: "Personalizar", Icon: IconAdjustmentsHorizontal },
+              { href: "/help", rotulo: "Ajuda", curto: "Ajuda", Icon: IconHelp },
+            ].map(({ href, rotulo, curto, Icon }) => {
+              const ativo = pathname === href;
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  title={rotulo}
+                  aria-label={rotulo}
+                  aria-current={ativo ? "page" : undefined}
+                  onClick={(event) => handleNavigate(href, event)}
+                  className={[
+                    "flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-semibold leading-tight outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
+                    ativo ? "bg-white/[0.14] text-white shadow-[inset_0_-3px_0_#F2CB3F]" : "text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white",
+                  ].join(" ")}
+                >
+                  <Icon className="size-5" />
+                  <span className="max-w-full truncate">{curto}</span>
+                </Link>
+              );
+            })}
 
-          <button
-            type="button"
-            title={isLoggingOut ? "Saindo..." : "Sair da conta"}
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-            aria-busy={isLoggingOut}
-            className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-semibold text-white outline-none transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#F2CB3F] disabled:opacity-60"
-          >
-            <IconLogout className="size-5 shrink-0" />
-            <span className="flex-1">{isLoggingOut ? "Saindo..." : "Sair da conta"}</span>
-          </button>
+            <button
+              type="button"
+              title={isLoggingOut ? "Saindo..." : "Sair da conta"}
+              aria-label={isLoggingOut ? "Saindo..." : "Sair da conta"}
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              aria-busy={isLoggingOut}
+              className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-semibold leading-tight text-white outline-none transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#F2CB3F] disabled:opacity-60"
+            >
+              <IconLogout className="size-5" />
+              <span>{isLoggingOut ? "Saindo..." : "Sair"}</span>
+            </button>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>
