@@ -31,6 +31,7 @@
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import AcaoModal from "./components/AcaoModal";
 
 /* =========================
    Cache rápido (memória + localStorage)
@@ -255,7 +256,6 @@ const API_PHP = ehRotaTv() ? API_DIRETA : "/api/php";
  * deixei como estão abaixo e marquei com  >>> TROCAR AO SUBIR  para você ajustar ao que o app realmente usa.
  * A rota da TV também não está na skill: o padrão abaixo abre este mesmo Quadro em modo TV (?tv=1). */
 const ROTA_ATENDIMENTO = "/atendimento";
-const rotaRegistrarAcao = (id: string) => `${ROTA_ATENDIMENTO}?registrar_acao=${encodeURIComponent(id)}`; // >>> TROCAR AO SUBIR (parâmetro real)
 const rotaEditar = (id: string) => `${ROTA_ATENDIMENTO}?editar=${encodeURIComponent(id)}`; // >>> TROCAR AO SUBIR (parâmetro real)
 const ROTA_TV = "/quadro-acompanhamento?tv=1"; // >>> TROCAR AO SUBIR (endereço da rota da TV)
 const LOGO_PAI_URL = ""; // >>> TROCAR AO SUBIR (caminho do logo do PAI, ex.: "/logo-pai.png"). Vazio = não mostra o logo na TV.
@@ -2001,6 +2001,12 @@ export default function QuadroAtendimentoPage() {
     const [detail, setDetail] = useState<Registro | null>(null);
     const [copied, setCopied] = useState(false);
 
+    // Ação aberta diretamente dentro do Quadro, sem sair para /atendimento.
+    const [acaoOpen, setAcaoOpen] = useState(false);
+    const [acaoId, setAcaoId] = useState<string | number | null>(null);
+    const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [acaoSubmitting, setAcaoSubmitting] = useState(false);
+
     const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
     const [detailLogsLoading, setDetailLogsLoading] = useState(false);
@@ -2641,6 +2647,75 @@ export default function QuadroAtendimentoPage() {
             return nomesAtivos.has(normNome(nome));
         });
     }, [avisos, nomesAtivos]);
+
+    const abrirRegistrarAcao = useCallback((r: Registro) => {
+        const id = getRegistroBackendId(r);
+        if (!id) return;
+
+        setAcaoMsg(null);
+        setAcaoId(id);
+        setAcaoOpen(true);
+
+        // Fecha a gaveta de detalhes; o AcaoModal assume a interface.
+        setOpen(false);
+    }, []);
+
+    /**
+     * AcaoModal exige a função registrarAcao como prop.
+     *
+     * Esta Page do Quadro não contém a implementação de persistência que existe
+     * na página principal de Atendimento. Para não inventar uma API/POST e alterar
+     * dados de forma incorreta, o componente é aberto diretamente aqui e, somente
+     * quando a etapa é confirmada, este bridge encaminha o atendimento + a fase
+     * para o fluxo oficial já existente.
+     *
+     * Quando registrarAcao for extraída da Page de Atendimento para um helper
+     * compartilhado, basta substituir o corpo desta função pela chamada real e
+     * todo o fluxo passará a ocorrer 100% dentro deste Quadro.
+     */
+    const registrarAcaoDoQuadro = useCallback(
+        async (
+            acao: string,
+            opts?: {
+                skipMaterialCheck?: boolean;
+                skipConfirm?: boolean;
+                extra?: Record<string, any>;
+            },
+        ) => {
+            if (acaoId == null) {
+                throw new Error("Atendimento não selecionado.");
+            }
+
+            setAcaoSubmitting(true);
+            setAcaoMsg(null);
+
+            try {
+                const params = new URLSearchParams();
+                params.set("registrar_acao", String(acaoId));
+                params.set("acao", String(acao));
+
+                if (opts?.skipMaterialCheck) {
+                    params.set("skip_material_check", "1");
+                }
+                if (opts?.skipConfirm) {
+                    params.set("skip_confirm", "1");
+                }
+                if (opts?.extra && Object.keys(opts.extra).length > 0) {
+                    params.set("extra", JSON.stringify(opts.extra));
+                }
+
+                window.location.assign(`${ROTA_ATENDIMENTO}?${params.toString()}`);
+                return null;
+            } catch (e: any) {
+                const msg = e?.message || "Não foi possível continuar o registro da ação.";
+                setAcaoMsg({ text: msg, ok: false });
+                throw e;
+            } finally {
+                setAcaoSubmitting(false);
+            }
+        },
+        [acaoId],
+    );
 
     const handleCopy = useCallback(async () => {
         if (!detail) return;
@@ -3437,45 +3512,55 @@ export default function QuadroAtendimentoPage() {
 
                 {/* Telas largas: rota da TV = quadro de TV; demais rotas = quadro do desktop (cartões) */}
                 {rotaTv !== null && (
-                <div className="hidden min-h-0 flex-1 lg:flex">
-                    {!rotaTv ? (
-                        <QuadroDesktop
-                            ativos={ativosOrdenados}
-                            coroas={coroasOrdenadas}
-                            coroasError={coroasTvError}
-                            statusLogsById={statusLogsById}
-                            nowMs={nowMs}
-                            clockTime={clockTime}
-                            clockDate={clockDate}
-                            avisos={avisosParaExibir}
-                            onSelect={showDetail}
-                            onSelectCoroa={setCoroaSel}
-                        />
-                    ) : (
-                    <QuadroTv
-                        layout={layoutTv}
-                        ativos={ativosPagina}
-                        todosAtivos={ativosOrdenados}
-                        paginaAtendimentos={paginaAtualAtendimentos}
-                        totalPaginasAtendimentos={totalPaginasAtendimentos}
-                        coroas={coroasPagina}
-                        todasCoroas={coroasOrdenadas}
-                        paginaCoroas={paginaAtualCoroas}
-                        totalPaginasCoroas={totalPaginasCoroas}
-                        coroasError={coroasTvError}
-                        statusLogsById={statusLogsById}
-                        nowMs={nowMs}
-                        clockTime={clockTime}
-                        clockDate={clockDate}
-                        avisos={avisosParaExibir}
-                        onSelect={showDetail}
-                        onNaoCoube={tvNaoCoube}
-                    />
-                    )}
-                </div>
+                    <div className="hidden min-h-0 flex-1 lg:flex">
+                        {!rotaTv ? (
+                            <QuadroDesktop
+                                ativos={ativosOrdenados}
+                                coroas={coroasOrdenadas}
+                                coroasError={coroasTvError}
+                                statusLogsById={statusLogsById}
+                                nowMs={nowMs}
+                                clockTime={clockTime}
+                                clockDate={clockDate}
+                                avisos={avisosParaExibir}
+                                onSelect={showDetail}
+                                onSelectCoroa={setCoroaSel}
+                            />
+                        ) : (
+                            <QuadroTv
+                                layout={layoutTv}
+                                ativos={ativosPagina}
+                                todosAtivos={ativosOrdenados}
+                                paginaAtendimentos={paginaAtualAtendimentos}
+                                totalPaginasAtendimentos={totalPaginasAtendimentos}
+                                coroas={coroasPagina}
+                                todasCoroas={coroasOrdenadas}
+                                paginaCoroas={paginaAtualCoroas}
+                                totalPaginasCoroas={totalPaginasCoroas}
+                                coroasError={coroasTvError}
+                                statusLogsById={statusLogsById}
+                                nowMs={nowMs}
+                                clockTime={clockTime}
+                                clockDate={clockDate}
+                                avisos={avisosParaExibir}
+                                onSelect={showDetail}
+                                onNaoCoube={tvNaoCoube}
+                            />
+                        )}
+                    </div>
                 )}
 
                 {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} />}
+
+                <AcaoModal
+                    open={acaoOpen}
+                    setOpen={setAcaoOpen}
+                    registros={registros as any}
+                    acaoId={acaoId as any}
+                    registrarAcao={registrarAcaoDoQuadro}
+                    acaoMsg={acaoMsg}
+                    acaoSubmitting={acaoSubmitting}
+                />
 
                 {open && detail && (
                     <div className="qa-drawer-root fixed inset-0 z-50 flex items-stretch justify-end overflow-hidden" data-tema={temaGaveta} aria-modal role="dialog">
@@ -3505,9 +3590,14 @@ export default function QuadroAtendimentoPage() {
                                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                                         {getRegistroBackendId(detail) && (
                                             <>
-                                                <a href={rotaRegistrarAcao(getRegistroBackendId(detail) as string)} className="qa-drawer-btn qa-drawer-btn-main" title="Registrar uma ação neste atendimento">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => abrirRegistrarAcao(detail)}
+                                                    className="qa-drawer-btn qa-drawer-btn-main"
+                                                    title="Registrar uma ação neste atendimento"
+                                                >
                                                     Registrar ação
-                                                </a>
+                                                </button>
                                                 <a href={rotaEditar(getRegistroBackendId(detail) as string)} className="qa-drawer-btn qa-drawer-btn-edit" title="Editar o cadastro deste atendimento">
                                                     Editar
                                                 </a>
@@ -5273,12 +5363,12 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             className={`qm-cr ${atraso ? "qm-cr-late" : ""} ${clicavel ? "qm-cr-click" : ""}`}
             {...(clicavel
                 ? {
-                      role: "button",
-                      tabIndex: 0,
-                      onClick: () => onSelect?.(pedido),
-                      onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
-                      "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
-                  }
+                    role: "button",
+                    tabIndex: 0,
+                    onClick: () => onSelect?.(pedido),
+                    onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
+                    "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
+                }
                 : {})}
         >
             {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}
