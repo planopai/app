@@ -31,7 +31,7 @@
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import AcaoModal from "./components/AcaoModal";
+import AcaoModal from "../acompanhamento/components/AcaoModal";
 
 /* =========================
    Cache rápido (memória + localStorage)
