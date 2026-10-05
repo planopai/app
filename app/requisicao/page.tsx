@@ -10,6 +10,7 @@ import {
     IconTruckDelivery,
 } from "@tabler/icons-react";
 import { usePerms } from "../_perms/PermsProvider";
+import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/requisicoes.php`;
@@ -110,14 +111,7 @@ async function apiPost<T>(body: Record<string, unknown>) {
 function QuickIcon({ children }: { children: React.ReactNode }) {
     return (
         <span
-            className="
-                grid h-11 w-11 place-items-center rounded-full
-                bg-sky-100 text-sky-700
-                transition-colors
-                group-hover:bg-sky-600 group-hover:text-white
-                dark:bg-sky-900/30 dark:text-sky-200
-                dark:group-hover:bg-sky-600
-            "
+            className="grid h-11 w-11 place-items-center rounded-full bg-[#E6F7FE] text-[#313C55] transition-colors group-hover:bg-[#313C55] group-hover:text-white dark:bg-[#00AEEC]/20 dark:text-white dark:group-hover:bg-[#F2CB3F] dark:group-hover:text-[#313C55]"
         >
             {children}
         </span>
@@ -184,27 +178,13 @@ function statusLabel(v: unknown) {
 function statusClass(v: unknown) {
     const s = toStatus(v);
 
-    if (s === "EM_SEPARACAO") {
-        return "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-200";
-    }
+    if (s === "EM_SEPARACAO") return "border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]";
+    if (s === "EM_TRANSITO") return "border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]";
+    if (s === "ENTREGUE") return "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white";
+    if (s === "CANCELADA") return "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]";
+    if (s === "RECUSADA") return "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]";
 
-    if (s === "EM_TRANSITO") {
-        return "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-200";
-    }
-
-    if (s === "ENTREGUE") {
-        return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200";
-    }
-
-    if (s === "CANCELADA") {
-        return "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200";
-    }
-
-    if (s === "RECUSADA") {
-        return "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200";
-    }
-
-    return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200";
+    return "border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white";
 }
 
 function isTruthy(v: unknown) {
@@ -261,8 +241,8 @@ function ActionButton({
 }) {
     const cls =
         variant === "danger"
-            ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200"
-            : "border-sky-700 bg-sky-700 text-white hover:bg-sky-800 dark:border-sky-600 dark:bg-sky-600 dark:hover:bg-sky-500";
+            ? "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FBDAD6] dark:hover:bg-[#FF9C92]/25"
+            : "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]";
 
     return (
         <button
@@ -295,84 +275,82 @@ function RequestCard({
     const canReceive = status === "EM_TRANSITO";
 
     return (
-        <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:col-span-3">
+        <article className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 shadow-sm lg:col-span-3">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-base font-black text-gray-950 dark:text-white">
+                        <span className="text-base font-black text-[#313C55] dark:text-white">
                             {reqCode(row)}
                         </span>
 
                         <RequestStatusBadge status={row.status} />
 
                         {isTruthy(row.atrasada_24h) ? (
-                            <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+                            <span className="rounded-full border border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] px-3 py-1 text-xs font-black">
                                 +24h
                             </span>
                         ) : null}
                     </div>
 
-                    <div className="mt-4 max-w-md rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-950/30">
-                        <p className="text-[11px] font-black uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                    <div className="mt-4 max-w-md rounded-2xl border border-[#00AEEC]/30 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-4 py-3">
+                        <p className="text-[11px] font-black uppercase tracking-wide text-[#313C55] dark:text-white">
                             Solicitante
                         </p>
 
-                        <p className="mt-1 truncate text-2xl font-black tracking-tight text-sky-950 dark:text-white">
+                        <p className="mt-1 truncate text-2xl font-black tracking-tight text-[#313C55] dark:text-white">
                             {solicitante}
                         </p>
                     </div>
                 </div>
 
-                <div className="grid size-12 shrink-0 place-items-center rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                <div className="grid size-12 shrink-0 place-items-center rounded-full bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-[#D6DCE8]">
                     <IconTruckDelivery size={23} />
                 </div>
             </div>
 
-            <div className="mt-4 grid gap-2 text-sm text-gray-600 dark:text-gray-300 sm:grid-cols-2">
-                <p className="line-clamp-2 font-black text-gray-900 dark:text-white sm:col-span-2">
-                    {row.itens_resumo || "Itens não informados"}
-                </p>
+            <div className="mt-4 grid gap-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] sm:grid-cols-2">
+                <ItensTabela resumo={row.itens_resumo} className="sm:col-span-2" />
 
                 <p>
                     Destino:{" "}
-                    <b className="text-gray-900 dark:text-white">{destinationText(row)}</b>
+                    <b className="text-[#313C55] dark:text-white">{destinationText(row)}</b>
                 </p>
 
                 <p>
                     Aberta em:{" "}
-                    <b className="text-gray-900 dark:text-white">{fmtDateTime(row.criado_em)}</b>
+                    <b className="text-[#313C55] dark:text-white">{fmtDateTime(row.criado_em)}</b>
                 </p>
 
                 {row.id_atendimento ? (
                     <p>
                         Atendimento:{" "}
-                        <b className="text-gray-900 dark:text-white">{row.id_atendimento}</b>
+                        <b className="text-[#313C55] dark:text-white">{row.id_atendimento}</b>
                     </p>
                 ) : null}
 
                 {row.deposito_origem_nome ? (
                     <p>
                         Origem:{" "}
-                        <b className="text-gray-900 dark:text-white">{row.deposito_origem_nome}</b>
+                        <b className="text-[#313C55] dark:text-white">{row.deposito_origem_nome}</b>
                     </p>
                 ) : null}
 
                 {row.enviado_em ? (
                     <p>
                         Enviada em:{" "}
-                        <b className="text-gray-900 dark:text-white">{fmtDateTime(row.enviado_em)}</b>
+                        <b className="text-[#313C55] dark:text-white">{fmtDateTime(row.enviado_em)}</b>
                     </p>
                 ) : null}
             </div>
 
             {status === "EM_SEPARACAO" ? (
-                <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-bold text-sky-800 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-200">
+                <div className="mt-4 rounded-xl border border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-3 py-2 text-sm font-bold text-[#313C55] dark:text-white">
                     Sua requisição está sendo separada.
                 </div>
             ) : null}
 
             {status === "EM_TRANSITO" ? (
-                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-800 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-200">
+                <div className="mt-4 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 px-3 py-2 text-sm font-bold text-[#313C55] dark:text-white">
                     O material foi enviado. Somente você, como solicitante, pode confirmar o recebimento.
                 </div>
             ) : null}
@@ -430,15 +408,15 @@ function CancelModal({
         <div
             role="dialog"
             aria-modal="true"
-            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-3 sm:items-center sm:p-4"
+            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-3 sm:items-center sm:p-4"
         >
-            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="w-full max-w-lg rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4 shadow-2xl">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h2 className="text-base font-black text-slate-950 dark:text-white">
+                        <h2 className="text-base font-black text-[#313C55] dark:text-white">
                             Cancelar {row ? reqCode(row) : "requisição"}
                         </h2>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Informe o motivo. O cancelamento ficará registrado no histórico.
                         </p>
                     </div>
@@ -447,7 +425,7 @@ function CancelModal({
                         type="button"
                         onClick={onClose}
                         disabled={saving}
-                        className="rounded-xl px-3 py-2 text-sm font-black text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                        className="rounded-xl px-3 py-2 text-sm font-black text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-50"
                         aria-label="Fechar"
                     >
                         ✕
@@ -460,7 +438,7 @@ function CancelModal({
                     rows={4}
                     autoFocus
                     placeholder="Digite o motivo do cancelamento"
-                    className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    className="mt-4 w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30"
                 />
 
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -468,7 +446,7 @@ function CancelModal({
                         type="button"
                         onClick={onClose}
                         disabled={saving}
-                        className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                        className="min-h-11 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-black text-[#313C55] dark:text-[#D6DCE8] shadow-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-50"
                     >
                         Voltar
                     </button>
@@ -618,31 +596,31 @@ export default function RequisicaoPage() {
     }
 
     return (
-        <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
+        <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] dark:bg-[#161C2A]">
             <div className="mx-auto max-w-6xl px-5 py-5">
                 <header className="mb-5 flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    <div className="flex size-10 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]">
                         <IconPackage className="size-5 text-primary" />
                     </div>
 
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">
+                        <h1 className="text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">
                             Requisição de Material
                         </h1>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Acompanhe as requisições abertas e confirme o recebimento quando o material chegar.
                         </p>
                     </div>
                 </header>
 
                 {error ? (
-                    <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+                    <div className="mb-4 rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">
                         {error}
                     </div>
                 ) : null}
 
                 {okMsg ? (
-                    <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
+                    <div className="mb-4 rounded-2xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-4 text-sm font-bold text-[#313C55] dark:text-white">
                         {okMsg}
                     </div>
                 ) : null}
@@ -650,12 +628,12 @@ export default function RequisicaoPage() {
                 <section className="mb-5">
                     {loading ? (
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                            <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 lg:col-span-3">
+                            <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm lg:col-span-3">
                                 Carregando suas requisições...
                             </div>
                         </div>
                     ) : requisicoesAbertas.length ? (
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+                        <div className="grid grid-cols-1 gap-3 sm:landscape:grid-cols-2 lg:grid-cols-4">
                             {requisicoesAbertas.map((row) => (
                                 <RequestCard
                                     key={row.id}
@@ -668,7 +646,7 @@ export default function RequisicaoPage() {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                            <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 lg:col-span-3">
+                            <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm lg:col-span-3">
                                 Você não possui requisição pendente, em separação ou em trânsito.
                             </div>
                         </div>
@@ -677,7 +655,7 @@ export default function RequisicaoPage() {
 
                 <section>
                     {perms == null ? (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm">
                             Carregando permissões...
                         </div>
                     ) : actions.length ? (
@@ -690,28 +668,28 @@ export default function RequisicaoPage() {
                                         group flex flex-col items-center justify-center
                                         gap-2.5
                                         rounded-2xl
-                                        border border-gray-200
+                                        border border-[#E3E8F0]
                                         bg-white
                                         px-3 py-4
                                         shadow-sm
                                         transition-all
                                         hover:-translate-y-[1px]
                                         hover:shadow-md
-                                        dark:border-gray-800 dark:bg-gray-900
+                                        dark:border-white/[0.12] dark:bg-[#232B3F]
                                     "
                                 >
                                     <QuickIcon>
                                         <Icon size={22} />
                                     </QuickIcon>
 
-                                    <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
+                                    <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-[#313C55] dark:text-white">
                                         {title}
                                     </span>
                                 </Link>
                             ))}
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm">
                             Nenhuma opção disponível para o seu usuário.
                         </div>
                     )}
