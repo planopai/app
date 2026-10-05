@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 type ID = number;
 
@@ -347,7 +348,7 @@ function Card({
     return (
         <section
             className={[
-                "rounded-2xl border border-slate-200 bg-white shadow-sm",
+                "rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm",
                 className,
             ].join(" ")}
         >
@@ -367,14 +368,14 @@ function Field({
 }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-700">
+            <span className="mb-1 block text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8]">
                 {label}
             </span>
 
             {children}
 
             {hint ? (
-                <span className="mt-1 block text-[11px] leading-4 text-slate-500">
+                <span className="mt-1 block text-[11px] leading-4 text-[#5B6478] dark:text-[#AEB9CF]">
                     {hint}
                 </span>
             ) : null}
@@ -392,8 +393,8 @@ const TextInput =
                 ref={ref}
                 {...props}
                 className={[
-                    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
-                    "placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
+                    "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                    "placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
                     props.className || "",
                 ].join(" ")}
             />
@@ -407,8 +408,8 @@ function Select(
         <select
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[16px] text-slate-900 shadow-sm outline-none",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-500",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
                 props.className || "",
             ].join(" ")}
         />
@@ -432,12 +433,12 @@ function Button({
 
     const style =
         variant === "solid"
-            ? "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
             : variant === "soft"
-                ? "border border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200"
+                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
                 : variant === "danger"
-                    ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+                    ? "border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FBDAD6] dark:hover:bg-[#FF9C92]/25"
+                    : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
 
     return (
         <button
@@ -567,9 +568,9 @@ function ProductCombobox({
                 />
 
                 {open ? (
-                    <div className="absolute left-0 right-0 z-30 mt-2 max-h-80 overflow-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <div className="absolute left-0 right-0 z-30 mt-2 max-h-80 overflow-auto rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-2 shadow-xl">
                         {list.length === 0 ? (
-                            <div className="p-4 text-sm text-slate-500">
+                            <div className="p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                 Nenhum produto
                                 encontrado.
                             </div>
@@ -602,16 +603,16 @@ function ProductCombobox({
                                                 false
                                             );
                                         }}
-                                        className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left hover:bg-slate-50"
+                                        className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                     >
                                         <div className="min-w-0">
-                                            <div className="line-clamp-2 text-sm font-bold text-slate-900">
+                                            <div className="line-clamp-2 text-sm font-bold text-[#313C55] dark:text-white">
                                                 {
                                                     p.nome
                                                 }
                                             </div>
 
-                                            <div className="mt-1 text-xs text-slate-500">
+                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                 {p.codigo_barras ||
                                                     "Sem código"}
 
@@ -626,12 +627,12 @@ function ProductCombobox({
                                         </div>
 
                                         <div className="shrink-0 text-right">
-                                            <div className="text-xs text-slate-500">
+                                            <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                 Saldo
                                                 total
                                             </div>
 
-                                            <div className="text-sm font-bold text-slate-900">
+                                            <div className="text-sm font-bold text-[#313C55] dark:text-white">
                                                 {fmtQtd(
                                                     saldo
                                                 )}
@@ -660,12 +661,12 @@ function EmptyState({
     text: string;
 }) {
     return (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-            <p className="text-sm font-bold text-slate-900">
+        <div className="rounded-2xl border border-dashed border-[#C9D1DE] dark:border-white/25 bg-[#F6F8FB] dark:bg-[#1C2334] p-5 text-center">
+            <p className="text-sm font-bold text-[#313C55] dark:text-white">
                 {title}
             </p>
 
-            <p className="mt-1 text-sm leading-5 text-slate-600">
+            <p className="mt-1 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">
                 {text}
             </p>
         </div>
@@ -1289,24 +1290,48 @@ export default function SolicitarProdutoPage() {
             produtoId
         ) || null;
 
+    /* Distribuição do estoque do produto escolhido: só os locais que têm unidade. */
+    const distribuicaoSelecionada = selectedProduto
+        ? saldos
+            .filter(
+                (s) =>
+                    Number(s.produto_id) === Number(selectedProduto.id) &&
+                    parseNum(s.quantidade) > 0
+            )
+            .map((s) => ({
+                nome:
+                    depositos.find((d) => Number(d.id) === Number(s.deposito_id))?.nome ||
+                    `Depósito #${s.deposito_id}`,
+                qtd: fmtQtd(s.quantidade),
+            }))
+            .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+        : [];
+
+    const valorVendaSelecionado = selectedProduto
+        ? parseNum(selectedProduto.valor).toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+        })
+        : "";
+
     /* =====================================================
        RENDER
        ===================================================== */
 
     return (
-        <main className="min-h-[100dvh] bg-gray-50 pb-[calc(2rem+env(safe-area-inset-bottom))] text-slate-900">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:text-white">
             <div className="mx-auto w-full max-w-5xl px-5 py-5">
 
                 {/* HEADER */}
                 <header className="mb-5 flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm">
                             <svg
                                 width="21"
                                 height="21"
                                 viewBox="0 0 24 24"
                                 fill="none"
-                                className="text-sky-700"
+                                className="text-[#313C55] dark:text-white"
                             >
                                 <path
                                     d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
@@ -1331,22 +1356,20 @@ export default function SolicitarProdutoPage() {
                         </div>
 
                         <div className="min-w-0">
-                            <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">
+                            <h1 className="truncate text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">
                                 Solicitar Produto
                             </h1>
                         </div>
                     </div>
 
-                    {me ? (
-                        <div className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-xs shadow-sm sm:block">
-                            <div className="text-slate-500">
+                    {me?.nome ? (
+                        <div className="hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-right text-xs shadow-sm sm:block">
+                            <div className="text-[#5B6478] dark:text-[#AEB9CF]">
                                 Usuário
                             </div>
 
-                            <div className="font-bold text-slate-900">
-                                {me.nome ||
-                                    me.usuario ||
-                                    `#${me.id}`}
+                            <div className="font-bold text-[#313C55] dark:text-white">
+                                {me.nome}
                             </div>
                         </div>
                     ) : null}
@@ -1354,28 +1377,28 @@ export default function SolicitarProdutoPage() {
 
                 {/* ERROS E CARREGAMENTO */}
                 {loadingInit ? (
-                    <Card className="p-6 text-center text-sm text-slate-500">
+                    <Card className="p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                         Carregando dados da requisição...
                     </Card>
                 ) : err ? (
-                    <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">
+                    <div className="mb-4 rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">
                         {err}
                     </div>
                 ) : null}
 
                 {okMsg ? (
-                    <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+                    <div className="mb-4 rounded-2xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-4 text-sm font-semibold text-[#313C55] dark:text-white">
                         {okMsg}
                     </div>
                 ) : null}
 
                 {!loadingInit ? (
-                    <div className="space-y-4">
+                    <div className="grid grid-cols-1 items-start gap-4 sm:landscape:grid-cols-2 lg:grid-cols-1">
 
                         {/* DADOS DA SOLICITAÇÃO */}
                         <Card className="overflow-hidden">
-                            <div className="border-b border-slate-100 p-4">
-                                <h2 className="text-base font-bold text-slate-900">
+                            <div className="border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
+                                <h2 className="text-base font-bold text-[#313C55] dark:text-white">
                                     Dados da solicitação
                                 </h2>
                             </div>
@@ -1424,18 +1447,18 @@ export default function SolicitarProdutoPage() {
                                 </Field>
 
                                 {justificativaSelecionada ? (
-                                    <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-600">
+                                    <div className="rounded-2xl border border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 p-3">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
                                             Tipo definido automaticamente pelos produtos
                                         </div>
 
-                                        <div className="mt-1 text-sm font-bold text-sky-900">
+                                        <div className="mt-1 text-sm font-bold text-[#313C55] dark:text-white">
                                             {
                                                 justificativaSelecionada.label
                                             }
                                         </div>
 
-                                        <div className="mt-1 text-xs text-sky-700">
+                                        <div className="mt-1 text-xs text-[#313C55] dark:text-white">
                                             {justificativaSelecionada.destino_tipo ===
                                                 "DEPOSITO"
                                                 ? "Operação: Transferência"
@@ -1443,7 +1466,7 @@ export default function SolicitarProdutoPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                                    <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-xs leading-5 text-[#5B6478] dark:text-[#AEB9CF]">
                                         O primeiro produto escolhido definirá automaticamente o tipo da solicitação. Depois disso, somente produtos da mesma classificação ficarão disponíveis.
                                     </div>
                                 )}
@@ -1452,14 +1475,14 @@ export default function SolicitarProdutoPage() {
 
                         {/* PRODUTO */}
                         <Card className="overflow-visible">
-                            <div className="border-b border-slate-100 p-4">
+                            <div className="border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
                                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <h2 className="text-base font-bold text-slate-900">
+                                    <h2 className="text-base font-bold text-[#313C55] dark:text-white">
                                         Produto
                                     </h2>
 
                                     {justificativaSelecionada ? (
-                                        <span className="text-xs font-semibold text-slate-500">
+                                        <span className="text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                                             Exibindo somente produtos compatíveis
                                         </span>
                                     ) : null}
@@ -1520,54 +1543,64 @@ export default function SolicitarProdutoPage() {
 
                                 {/* PRODUTO SELECIONADO */}
                                 {selectedProduto ? (
-                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                                        <div className="font-bold text-slate-900">
-                                            {
-                                                selectedProduto.nome
-                                            }
+                                    <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-sm text-[#313C55] dark:text-[#D6DCE8]">
+                                        <div className="text-lg font-extrabold text-[#313C55] dark:text-white">
+                                            {selectedProduto.nome}
                                         </div>
 
-                                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                                            <span>
-                                                Saldo total no sistema:{" "}
-                                                <b>
-                                                    {fmtQtd(
-                                                        saldoTotalByProd.get(
-                                                            selectedProduto.id
-                                                        ) ||
-                                                        0
-                                                    )}
-                                                </b>
-                                            </span>
-
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                             {selectedProduto.classificacao_nome ? (
                                                 <span>
                                                     Classificação:{" "}
-                                                    <b>
-                                                        {
-                                                            selectedProduto.classificacao_nome
-                                                        }
+                                                    <b className="text-[#313C55] dark:text-white">
+                                                        {selectedProduto.classificacao_nome}
                                                     </b>
                                                 </span>
                                             ) : null}
+
+                                            {justificativaDoProduto(selectedProduto) ? (
+                                                <div className="inline-flex rounded-full border border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2.5 py-1 text-[11px] font-bold text-[#313C55] dark:text-white">
+                                                    {justificativaDoProduto(selectedProduto)?.label}
+                                                </div>
+                                            ) : (
+                                                <div className="inline-flex rounded-full border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 px-2.5 py-1 text-[11px] font-bold text-[#B42318] dark:text-[#FF9C92]">
+                                                    Produto sem regra de classificação
+                                                </div>
+                                            )}
                                         </div>
 
-                                        {justificativaDoProduto(
-                                            selectedProduto
-                                        ) ? (
-                                            <div className="mt-2 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
-                                                {
-                                                    justificativaDoProduto(
-                                                        selectedProduto
-                                                    )
-                                                        ?.label
-                                                }
+                                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,240px)_1fr] sm:items-start">
+                                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
+                                                <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2">
+                                                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        Quantidade total
+                                                    </div>
+                                                    <div className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white">
+                                                        {fmtQtd(saldoTotalByProd.get(selectedProduto.id) || 0)}
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2">
+                                                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        Valor de venda
+                                                    </div>
+                                                    <div className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white">
+                                                        {valorVendaSelecionado}
+                                                    </div>
+                                                </div>
                                             </div>
-                                        ) : (
-                                            <div className="mt-2 inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700">
-                                                Produto sem regra de classificação
+
+                                            <div>
+                                                <div className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                                                    Distribuição por local
+                                                </div>
+                                                <ItensTabela
+                                                    cabecalho="Local"
+                                                    itens={distribuicaoSelecionada}
+                                                    vazio="Nenhum local com unidade deste produto."
+                                                />
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
                                 ) : null}
 
@@ -1613,17 +1646,17 @@ export default function SolicitarProdutoPage() {
                                                     key={
                                                         item.local_id
                                                     }
-                                                    className="rounded-2xl border border-slate-200 bg-white p-3"
+                                                    className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3"
                                                 >
                                                     <div className="flex items-start justify-between gap-3">
                                                         <div className="min-w-0">
-                                                            <div className="line-clamp-2 text-sm font-bold text-slate-900">
+                                                            <div className="line-clamp-2 text-sm font-bold text-[#313C55] dark:text-white">
                                                                 {
                                                                     item.produto_nome
                                                                 }
                                                             </div>
 
-                                                            <div className="mt-1 text-xs text-slate-500">
+                                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                                 {item.codigo_barras ||
                                                                     "Sem código"}{" "}
                                                                 • Qtd{" "}
@@ -1633,7 +1666,7 @@ export default function SolicitarProdutoPage() {
                                                             </div>
 
                                                             {item.observacao ? (
-                                                                <div className="mt-2 text-sm text-slate-600">
+                                                                <div className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                                                     {
                                                                         item.observacao
                                                                     }
@@ -1648,7 +1681,7 @@ export default function SolicitarProdutoPage() {
                                                                     item.local_id
                                                                 )
                                                             }
-                                                            className="rounded-2xl px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                                                            className="rounded-2xl px-3 py-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92] hover:bg-[#FDECEA] dark:hover:bg-[#FF9C92]/15"
                                                         >
                                                             Remover
                                                         </button>
@@ -1667,7 +1700,7 @@ export default function SolicitarProdutoPage() {
                         </Card>
 
                         {/* AÇÕES */}
-                        <div className="sticky bottom-0 -mx-5 border-t border-slate-200 bg-gray-50/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
+                        <div className="sticky bottom-0 -mx-5 sm:landscape:col-span-2 border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB]/95 dark:bg-[#161C2A]/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
                                 <Button
                                     type="button"
