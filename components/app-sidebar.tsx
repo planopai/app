@@ -585,14 +585,14 @@ export function AppSidebar(
   const mostrarAtalhos = !sidebar?.isMobile;
   const atalhos = mostrarAtalhos
     ? barra.computador.itens
-        .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
-        .map((a) => ({
-          title: a.rotulo,
-          href: a.rota,
-          Icon: (p: { className?: string }) => (
-            <IconeAtalho id={a.id} className={p.className} />
-          ),
-        }))
+      .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
+      .map((a) => ({
+        title: a.rotulo,
+        href: a.rota,
+        Icon: (p: { className?: string }) => (
+          <IconeAtalho id={a.id} className={p.className} />
+        ),
+      }))
     : [];
   const hrefsAtalhos = new Set(atalhos.map((a) => a.href));
   const itensRecolhidos = [
