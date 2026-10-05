@@ -3,5 +3,5 @@
 import ModuloHub from "@/components/shell/ModuloHub";
 
 export default function Page() {
-    return <ModuloHub moduloId="atendimento" />;
+    return <ModuloHub moduloId="estoque" />;
 }

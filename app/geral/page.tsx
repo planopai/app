@@ -4,6 +4,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
+import PainelGestaoEstoque from "./PainelGestaoEstoque";
 
 type ID = number;
 
@@ -548,6 +549,15 @@ const tabActions: TabAction[] = [
         ),
     },
     {
+        key: "GESTAO",
+        label: "Painel de gestão",
+        icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+            </svg>
+        ),
+    },
+    {
         key: "AVANCADO",
         label: "Avançado",
         icon: (
@@ -560,7 +570,7 @@ const tabActions: TabAction[] = [
 ];
 
 
-type UiTab = "MENU" | "HOME" | "CONFECCAO" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "DASHBOARD" | "AVANCADO";
+type UiTab = "MENU" | "HOME" | "CONFECCAO" | "ENTRADA" | "ESTOQUE" | "CONFERENCIA" | "HISTORICO" | "DASHBOARD" | "GESTAO" | "AVANCADO";
 
 type EntradaItem = {
     id: number;
@@ -621,8 +631,8 @@ const CATALOGO_API_BASE = `${ENDPOINT}/catalogo_api.php`;
      Service Worker que controla esta página são descartados.
    - O middleware.ts pode continuar impedindo cache do HTML/RSC no frontend.
 */
-const APP_BUILD_ID = "ESTOQUE-2026-09-23-CONFECCAO-COROA-PLANO-PAI-V01";
-const APP_BUILD_LABEL = "2026.09.23-CONFECCAO-COROA-PLANO-PAI-V01";
+const APP_BUILD_ID = "ESTOQUE-2026-09-25-PAINEL-GESTAO-V01";
+const APP_BUILD_LABEL = "2026.09.25-PAINEL-GESTAO-V01";
 const APP_BUILD_STORAGE_KEY = "estoque-app-build-id-v1";
 
 function applyCacheBuster(url: URL) {
@@ -8291,7 +8301,7 @@ export default function Page() {
                         </div>
 
                         <Card className="hidden p-2 sm:block">
-                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 lg:grid-cols-9">
                                 {tabActions.map((a) => (
                                     <button
                                         key={a.key}
@@ -9999,6 +10009,17 @@ export default function Page() {
                             </FilterPanelModal>
 
                         </div>
+                    ) : null}
+
+                    {/* PAINEL DE GESTÃO DO ESTOQUE */}
+                    {tab === "GESTAO" ? (
+                        <PainelGestaoEstoque
+                            produtos={produtos}
+                            saldos={saldos}
+                            depositos={depositos}
+                            categorias={categorias}
+                            classificacoes={classificacoes}
+                        />
                     ) : null}
 
                     {/* AVANÇADO */}

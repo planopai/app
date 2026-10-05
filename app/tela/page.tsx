@@ -96,18 +96,18 @@ function statusColor(s?: string) {
 const sanitize = (t?: string) =>
   t
     ? t
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
     : "";
 
 const formatDateBr = (d?: string) =>
   !d
     ? ""
     : d.split("-").length === 3
-    ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
-    : d;
+      ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}`
+      : d;
 
 // Chaves Estáveis Para Detectar “Novos”
 const keyOfRegistro = (r: Registro) =>
@@ -223,12 +223,12 @@ export default function PainelTV() {
         audioRegRef.current
           ?.play()
           .then(() => audioRegRef.current?.pause())
-          .catch(() => {});
+          .catch(() => { });
         audioAvisoRef.current
           ?.play()
           .then(() => audioAvisoRef.current?.pause())
-          .catch(() => {});
-      } catch {}
+          .catch(() => { });
+      } catch { }
     };
     const opts: AddEventListenerOptions = { once: true, passive: true };
     window.addEventListener("click", unlock, opts);
@@ -250,12 +250,12 @@ export default function PainelTV() {
         audioRegRef.current
           ?.play()
           .then(() => audioRegRef.current?.pause())
-          .catch(() => {});
+          .catch(() => { });
         audioAvisoRef.current
           ?.play()
           .then(() => audioAvisoRef.current?.pause())
-          .catch(() => {});
-      } catch {}
+          .catch(() => { });
+      } catch { }
     }
   }, [soundEnabled]);
 
@@ -263,14 +263,14 @@ export default function PainelTV() {
     if (!soundEnabled || !el) return;
     try {
       el.currentTime = 0;
-      el.play().catch(() => {});
-    } catch {}
+      el.play().catch(() => { });
+    } catch { }
   };
 
   // conjuntos de vistos para detectar novidades (sem depender do render)
   const seenReg = useRef<Set<string>>(new Set());
   const firstRegLoad = useRef(true);
-  
+
 
   const seenAviso = useRef<Set<string>>(new Set());
   const firstAvisoLoad = useRef(true);
@@ -541,11 +541,10 @@ export default function PainelTV() {
                                       {label}
                                     </span>
                                     <span
-                                      className={`h-4 w-4 rounded-full border ${
-                                        preenchidas[k]
+                                      className={`h-4 w-4 rounded-full border ${preenchidas[k]
                                           ? "bg-emerald-500 border-emerald-600"
                                           : "bg-transparent border-[#cfd7e3]"
-                                      }`}
+                                        }`}
                                     />
                                   </div>
                                 ))}
@@ -618,11 +617,10 @@ export default function PainelTV() {
                                     {label}
                                   </span>
                                   <span
-                                    className={`h-3.5 w-3.5 rounded-full border ${
-                                      preenchidas[k]
+                                    className={`h-3.5 w-3.5 rounded-full border ${preenchidas[k]
                                         ? "bg-emerald-500 border-emerald-600"
                                         : "bg-transparent border-[#cfd7e3]"
-                                    }`}
+                                      }`}
                                   />
                                 </div>
                               ))}

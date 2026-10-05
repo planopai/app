@@ -406,7 +406,7 @@ function CancelModal({
 
     return (
         <div
-            role="dialog"
+            role="dialog" data-pai-overlay
             aria-modal="true"
             className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-3 sm:items-center sm:p-4"
         >

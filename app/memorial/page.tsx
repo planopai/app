@@ -67,7 +67,7 @@ export default function MemorialPage() {
                             Memorial
                         </h1>
 
-                        
+
                     </div>
                 </header>
 

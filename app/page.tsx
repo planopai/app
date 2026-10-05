@@ -1,642 +1,72 @@
 "use client";
+
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { IconFlower, IconHome, IconSearch } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconBuildingSkyscraper,
+  IconChevronRight,
+  IconFlower,
+  IconPackageExport,
+  IconPlus,
+  IconSearch,
+  IconTruckDelivery,
+  IconUserCheck,
+  IconX,
+} from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
-/* =========================================================
-   CONFIGURAÇÃO DOS CONTADORES
-   ========================================================= */
-const COUNTS_REFRESH_MS = 15_000;
-const SERVICOS_API =
-  "https\\://api.planoassistencialintegrado.com.br/informativo.php";
-const COROAS_API =
-  "https\\://api.planoassistencialintegrado.com.br/coroas.php";
-const REQUISICOES_API =
-  "https\\://api.planoassistencialintegrado.com.br/requisicoes.php";
-const STATUS_REQUISICOES =
-  "PENDENTE,EM_SEPARACAO,EM_TRANSITO";
-/* =========================================================
-   TIPOS
-   ========================================================= */
-type CounterKey =
-  | "servicos"
-  | "coroas"
-  | "requisicoes";
-type DashboardCounts = Record<
-  CounterKey,
-  number | null
->;
-type RegistroFunerario = {
-  status?: string;
-  assistencia?: string;
-  realiza_velorio?: string;
-  realiza_sepultamento?: string;
-  tipo_atendimento?: string;
-  [key: string]: any;
+import { useNaoLidas } from "@/components/messenger/ContadorMenu";
+import { FIXOS, MODULOS, destinoDoModulo, hrefDoItem, itemVisivel, moduloVisivel, type Icone } from "@/components/shell/modulos";
+import { formatarSelo, useContadores } from "@/components/shell/useContadores";
+
+/**
+ * Tela inicial (rota "/"): junta o visual aprovado da repaginada com o que a home anterior já tinha.
+ *
+ * Da home anterior ficaram: o relógio, a pesquisa de funções (só entram páginas permitidas; casa pelo começo do título),
+ * o contador do Messenger (não lidas + fila de clientes) e o filtro por permissões (`usePerms`).
+ * Novos: boas-vindas com o nome, resumo de números, "Acesso rápido" (Quadro, Minhas OS, Messenger, Chat e Avisos) e os
+ * módulos do organograma.
+ *
+ * Os números vêm de useContadores (mesmas consultas da home anterior; atendimentos pela regra do Quadro, concluídos não contam).
+ * Quando a consulta falha, mostra "—". Não existe mais a rota /inicio: o Início é esta tela.
+ */
+
+type Tom = "azul" | "verde" | "amarelo";
+
+const CHIP: Record<Tom, string> = {
+  azul: "bg-[#E6F7FE] dark:bg-[#00AEEC]/20",
+  verde: "bg-[#EEF5D6] dark:bg-[#B3CE52]/20",
+  amarelo: "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15",
 };
-type CoroasResponse = {
-  sucesso?: boolean;
-  dados?: Array<{
-    id?: number;
-    status?: string | null;
-  }>;
-  meta?: {
-    total?: number | string;
-  };
-  msg?: string;
+
+const CARD =
+  "rounded-2xl border border-[#E3E8F0] bg-white shadow-sm transition hover:border-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:border-white/50";
+
+const TOM_MODULO: Record<string, Tom> = {
+  atendimento: "azul",
+  comunicacao: "azul",
+  requisicoes: "amarelo",
+  estoque: "amarelo",
+  financeiro: "verde",
+  plano: "verde",
+  administrativo: "verde",
+  gestao: "verde",
 };
-type RequisicoesResponse = {
-  ok?: boolean;
-  rows?: any[];
-  msg?: string;
-};
-/* =========================================================
-   REGRAS DO QUADRO DE SERVIÇOS FUNERÁRIOS
-   ========================================================= */
-const ROTULO_PARA_FASE: Record<string, string> = {
-  removendo: "fase01",
-  "aguardando procedimento": "fase02",
-  preparando: "fase03",
-  "aguardando ornamentacao": "fase04",
-  ornamentando: "fase05",
-  "fim da ornamentacao": "fase06",
-  "aguardando corpo pronto": "fase06",
-  "corpo pronto": "fase12",
-  transportando: "fase07",
-  "transportando obito p/velorio": "fase07",
-  "transportando obito para velorio": "fase07",
-  "transportando p/ velorio": "fase07",
-  "transportando p/ velório": "fase07",
-  velando: "fase08",
-  sepultando: "fase09",
-  "transportando p/ sepultamento": "fase09",
-  "sepultamento concluido": "fase10",
-  "sepultamento concluído": "fase10",
-  "material recolhido": "fase11",
-  concluido: "fase11",
-  concluído: "fase11",
-};
-function normalizeKey(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-function normalizarStatus(
-  status?: string
-): string | undefined {
-  if (!status) {
-    return undefined;
-  }
-  const s = String(status).trim();
-  if (s.toLowerCase().startsWith("fase")) {
-    const digits = s.replace(
-      /[^0-9]/g,
-      ""
-    );
-    if (!digits) {
-      return s.toLowerCase();
-    }
-    return `fase${digits.padStart(
-      2,
-      "0"
-    )}`.toLowerCase();
-  }
-  const mapeado =
-    ROTULO_PARA_FASE[normalizeKey(s)];
-  return (mapeado || s).toLowerCase();
-}
-function isNao(value?: string) {
-  const s = String(value ?? "")
-    .trim()
-    .toLowerCase();
-  return (
-    s === "não" ||
-    s === "nao" ||
-    s === "n"
-  );
-}
-function isSim(value?: string) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase() === "sim";
-}
-function isTerceiroRegistro(
-  registro: RegistroFunerario
-) {
-  // Não inferir pelo conteúdo dos campos. Um atendimento funerário normal
-  // também pode ter Assistência, Tanato e Ornamentação marcados como Não.
-  return (
-    String(
-      registro.tipo_atendimento ?? ""
-    )
-      .trim()
-      .toLowerCase() === "terceiro"
-  );
-}
-function registroEstaNoQuadro(
-  registro: RegistroFunerario
-) {
-  const status = normalizarStatus(
-    registro.status
-  );
-  // Mesma regra usada pela TabelaAtendimentos da tela de Serviços Funerários.
-  if (status === "fase11") {
-    return false;
-  }
-  if (isTerceiroRegistro(registro)) {
-    return status !== "fase10";
-  }
-  // Com assistência, o atendimento continua visível até Material Recolhido.
-  if (isSim(registro.assistencia)) {
-    return true;
-  }
-  const semVelorio = isNao(
-    registro.realiza_velorio
-  );
-  const semSepultamento = isNao(
-    registro.realiza_sepultamento
-  );
-  // Com sepultamento, encerra em fase10.
-  if (!semSepultamento) {
-    return status !== "fase10";
-  }
-  // Sem sepultamento, mas com velório, encerra na entrega do corpo (fase08).
-  if (!semVelorio) {
-    return status !== "fase08";
-  }
-  // Sem velório e sem sepultamento, encerra em Corpo Pronto (fase12).
-  return status !== "fase12";
-}
-/* =========================================================
-   CONSULTAS
-   ========================================================= */
-async function buscarQuantidadeServicos() {
-  const url = new URL(SERVICOS_API);
-  url.searchParams.set("listar", "1");
-  url.searchParams.set(
-    "_nocache",
-    String(Date.now())
-  );
-  const response = await fetch(
-    url.toString(),
-    {
-      cache: "no-store",
-      credentials: "include",
-    }
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Erro ao consultar serviços funerários: ${response.status}`
-    );
-  }
-  const json = await response.json();
-  const registros: RegistroFunerario[] =
-    Array.isArray(json) ? json : [];
-  return registros.filter(
-    registroEstaNoQuadro
-  ).length;
-}
-async function buscarQuantidadeCoroas() {
-  const url = new URL(COROAS_API);
-  url.searchParams.set("listar", "1");
-  url.searchParams.set(
-    "grupo",
-    "confeccao"
-  );
-  url.searchParams.set("page", "1");
-  url.searchParams.set(
-    "per_page",
-    "100"
-  );
-  url.searchParams.set(
-    "fresh",
-    String(Date.now())
-  );
-  const response = await fetch(
-    url.toString(),
-    {
-      cache: "no-store",
-      credentials: "include",
-    }
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Erro ao consultar coroas: ${response.status}`
-    );
-  }
-  const json: CoroasResponse =
-    await response.json();
-  if (!json?.sucesso) {
-    throw new Error(
-      json?.msg ||
-      "Não foi possível consultar as coroas."
-    );
-  }
-  const total = Number(
-    json.meta?.total
-  );
-  if (
-    Number.isFinite(total) &&
-    total >= 0
-  ) {
-    return total;
-  }
-  const pedidos = Array.isArray(
-    json.dados
-  )
-    ? json.dados
-    : [];
-  return pedidos.filter((pedido) => {
-    const status = String(
-      pedido.status ?? ""
-    )
-      .trim()
-      .toLowerCase();
-    return (
-      status === "novo" ||
-      status === "coroa" ||
-      status === "faixa"
-    );
-  }).length;
-}
-async function buscarQuantidadeRequisicoes() {
-  const url = new URL(
-    REQUISICOES_API
-  );
-  url.searchParams.set(
-    "action",
-    "fila"
-  );
-  url.searchParams.set(
-    "status",
-    STATUS_REQUISICOES
-  );
-  url.searchParams.set(
-    "limit",
-    "200"
-  );
-  url.searchParams.set(
-    "_ts",
-    String(Date.now())
-  );
-  const response = await fetch(
-    url.toString(),
-    {
-      cache: "no-store",
-      credentials: "include",
-    }
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Erro ao consultar requisições: ${response.status}`
-    );
-  }
-  const json: RequisicoesResponse =
-    await response.json();
-  if (!json?.ok) {
-    throw new Error(
-      json?.msg ||
-      "Não foi possível consultar as requisições."
-    );
-  }
-  return Array.isArray(json.rows)
-    ? json.rows.length
-    : 0;
-}
-/* =========================================================
-   CONTADOR VISUAL
-   ========================================================= */
-function formatCount(
-  value: number | null | undefined
-) {
-  if (value == null) {
-    return "...";
-  }
-  return String(value).padStart(
-    2,
-    "0"
-  );
-}
-/* =========================================================
-   ÍCONE CIRCULAR
-   ========================================================= */
-function QuickIcon({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className="
-        grid h-11 w-11 place-items-center rounded-full
-        bg-sky-100 text-sky-700
-        transition-colors
-        group-hover:bg-sky-600
-        group-hover:text-white
-        dark:bg-sky-900/30
-        dark:text-sky-200
-        dark:group-hover:bg-sky-600
-      "
-    >
-      {children}
-    </span>
-  );
-}
-/* =========================================================
-   BOTÕES
-   ========================================================= */
-type QuickAction = {
-  label: string;
-  href: string;
-  slug: string;
-  icon: React.ReactNode;
-  counterKey?: CounterKey;
-};
-const quickActions: QuickAction[] = [
-  {
-    label: "Chat",
-    href: "/chat",
-    slug: "chat",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M5 5.5A2.5 2.5 0 017.5 3h9A2.5 2.5 0 0119 5.5v7a2.5 2.5 0 01-2.5 2.5H11l-4.5 4v-4H7.5A2.5 2.5 0 015 12.5v-7z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M9 8h6M9 11h4"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Serviços Funerários",
-    href: "/servicos-funerarios",
-    slug: "servicos-funerarios",
-    counterKey: "servicos",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M7 7h10M8.5 10h7M10 14h4"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M6 19V7a2 2 0 012-2h8a2 2 0 012 2v12"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M8 19h8"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Coroa de Flores",
-    href: "/coroa-de-flores",
-    slug: "coroa-de-flores",
-    counterKey: "coroas",
-    icon: (
-      <IconFlower size={22} />
-    ),
-  },
-  {
-    label: "Plano",
-    href: "/plano",
-    slug: "plano",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M8 8h8M8 12h8M8 16h6"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Minhas OS",
-    href: "/os/minhas",
-    slug: "os-minhas",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-        <path
-          d="M7 4h10a2 2 0 012 2v14H5V6a2 2 0 012-2z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M8 9h8M8 13h8M8 17h5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Administrativo",
-    href: "/administrativo",
-    slug: "administrativo",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M4 20V9a2 2 0 012-2h12a2 2 0 012 2v11"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M4 13h16"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Estoque",
-    href: "/estoque",
-    slug: "estoque",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M7 8l5 3 5-3"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M12 11v10"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Consulta",
-    href: "/produtos",
-    slug: "produtos",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M7 8l5-3 5 3v10l-5 3-5-3V8z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M7 8l5 3 5-3"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M12 11v10"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "Requisição de Material",
-    href: "/requisicao",
-    slug: "requisicao",
-    counterKey: "requisicoes",
-    icon: (
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path
-          d="M8 4h8a2 2 0 012 2v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6a2 2 0 012-2z"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        />
-        <path
-          d="M9 8h6M9 12h6M9 16h3"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M14 17l2 2 4-5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-  },
+
+/** Nomes que as pessoas já usavam na pesquisa (a pesquisa continua achando por eles). */
+const APELIDOS: { title: string; href: string; slug: string; group: string }[] = [
+  { title: "Quadro de Acompanhamento", href: "/quadro-acompanhamento", slug: "quadro-acompanhamento", group: "Atendimento" },
+  { title: "Serviços Funerários", href: "/servicos-funerarios", slug: "servicos-funerarios", group: "Atendimento" },
+  { title: "Descontos", href: "/parceiros", slug: "parceiros", group: "Plano" },
+  { title: "Enviar Notícias", href: "/noticias", slug: "noticias", group: "Plano" },
+  { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano" },
+  { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Administrativo" },
+  { title: "Dashboard", href: "/desempenho", slug: "desempenho", group: "Gestão" },
+  { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Estoque" },
+  { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Gestão" },
+  { title: "Requisição de Material", href: "/requisicao", slug: "requisicao", group: "Requisições" },
 ];
-/* =========================================================
-   PAGE
-   ========================================================= */
-/* =========================================================
-   PESQUISA GLOBAL DE FUNÇÕES
-   ========================================================= */
-type SearchAction = {
-  title: string;
-  href: string;
-  slug: string;
-  group: string;
-  keywords?: string[];
-};
-const SEARCH_ACTIONS: SearchAction[] = [
-  { title: "Chat", href: "/chat", slug: "chat", group: "Início", keywords: ["aurora", "assistente", "ia"] },
-  { title: "Quadro de Acompanhamento", href: "/quadro-acompanhamento", slug: "quadro-acompanhamento", group: "Serviços Funerários", keywords: ["quadro", "atendimentos"] },
-  { title: "Atendimentos", href: "/acompanhamento", slug: "acompanhamento", group: "Serviços Funerários", keywords: ["atendimento", "falecido"] },
-  { title: "Catálogo", href: "/catalogo", slug: "catalogo", group: "Serviços Funerários", keywords: ["urna", "produto"] },
-  { title: "Obituário", href: "/obituario", slug: "obituario", group: "Serviços Funerários", keywords: ["óbito", "falecido"] },
-  { title: "Memorial", href: "/memorial", slug: "memorial", group: "Serviços Funerários" },
-  { title: "Avisos", href: "/avisos", slug: "avisos", group: "Serviços Funerários", keywords: ["aviso", "comunicado"] },
-  { title: "Associados", href: "/associados", slug: "associados", group: "Plano", keywords: ["associado", "cliente"] },
-  { title: "Descontos", href: "/parceiros", slug: "parceiros", group: "Plano", keywords: ["parceiros", "desconto", "clube"] },
-  { title: "Enviar Notícias", href: "/noticias", slug: "noticias", group: "Plano", keywords: ["notícia", "noticias"] },
-  { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano", keywords: ["médico", "consulta", "clínica"] },
-  { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Plano", keywords: ["guia", "consulta", "relatório"] },
-  { title: "Sorteios", href: "/sorteios", slug: "sorteios", group: "Plano" },
-  { title: "Minhas OS", href: "/os/minhas", slug: "os-minhas", group: "Ordens de Serviço", keywords: ["os", "ordem", "serviço", "minhas"] },
-  { title: "Usuários", href: "/usuarios", slug: "usuarios", group: "Administrativo", keywords: ["usuário", "acesso"] },
-  { title: "Permissões", href: "/permissoes", slug: "permissoes", group: "Administrativo", keywords: ["permissão", "cargo", "acesso"] },
-  { title: "Conhecimento IA", href: "/conhecimento", slug: "conhecimento", group: "Administrativo", keywords: ["ia", "base", "conhecimento"] },
-  { title: "Configurações do Catálogo", href: "/config-catalogo", slug: "config-catalogo", group: "Administrativo", keywords: ["catálogo", "configuração"] },
-  { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Administrativo", keywords: ["relatório", "histórico"] },
-  { title: "Dashboard", href: "/desempenho", slug: "desempenho", group: "Administrativo", keywords: ["dashboard", "desempenho", "indicadores"] },
-  { title: "Balanço", href: "/balanco", slug: "balanco", group: "Administrativo", keywords: ["balanço", "financeiro"] },
-  { title: "Leads", href: "/leads", slug: "leads", group: "Administrativo" },
-  { title: "Telemetria", href: "/telemetria", slug: "telemetria", group: "Administrativo", keywords: ["carro", "veículo", "motorista", "gps"] },
-  { title: "Estoque", href: "/estoque", slug: "estoque", group: "Estoque", keywords: ["estoque", "depósito", "produto", "urna"] },
-  { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Estoque", keywords: ["produto", "consulta", "urna", "preço"] },
-  { title: "Solicitar Produto", href: "/solicitar-produto", slug: "solicitar-produto", group: "Requisição de Material", keywords: ["solicitar", "produto", "material"] },
-  { title: "Minhas Solicitações", href: "/minhas-solicitacoes", slug: "minhas-solicitacoes", group: "Requisição de Material", keywords: ["solicitações", "pedidos"] },
-  { title: "Requisições", href: "/requisicoes", slug: "requisicoes", group: "Requisição de Material", keywords: ["requisição", "pedidos", "material"] },
-  { title: "Dashboard Requisições", href: "/dashboard-requisicoes", slug: "dashboard-requisicoes", group: "Requisição de Material", keywords: ["dashboard", "requisições"] },
-];
+
 function normalizeSearch(value: string) {
   return value
     .normalize("NFD")
@@ -644,370 +74,261 @@ function normalizeSearch(value: string) {
     .toLowerCase()
     .trim();
 }
+
+function saudacao(h: number) {
+  if (h < 5) return "Boa madrugada";
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+function dataExtenso(d: Date) {
+  const dias = ["DOMINGO", "SEGUNDA-FEIRA", "TERÇA-FEIRA", "QUARTA-FEIRA", "QUINTA-FEIRA", "SEXTA-FEIRA", "SÁBADO"];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dias[d.getDay()]}, ${dd}/${mm}/${d.getFullYear()}`;
+}
+
+function dois(n: number | null) {
+  return n == null ? "—" : String(n).padStart(2, "0");
+}
+
+/** Itens do módulo que o usuário pode abrir (mesma regra do menu). */
+function itensVisiveisDe<T extends { slugs: string[] }>(itens: T[], has: (s: string) => boolean): T[] {
+  return itens.filter((i) => i.slugs.includes("*") || i.slugs.some((s) => has(s)));
+}
+
 export default function HomePage() {
   const { perms, has } = usePerms();
-  const [now, setNow] =
-    useState("");
-  const [dateStr, setDateStr] =
-    useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [counts, setCounts] =
-    useState<DashboardCounts>({
-      servicos: null,
-      coroas: null,
-      requisicoes: null,
-    });
-  /* =======================================================
-     RELÓGIO
-     ======================================================= */
+  const c = useContadores(perms, has);
+  const [agora, setAgora] = useState<Date | null>(null);
+  const [busca, setBusca] = useState("");
+
+  /* Messenger: não lidas + fila de clientes (tempo real) */
+  const temMessenger = perms !== null && has("messenger");
+  const naoLidas = useNaoLidas(temMessenger);
+  const contMessenger = naoLidas.carregado ? naoLidas.total + naoLidas.fila : null;
+
   useEffect(() => {
-    const tick = () => {
-      const dt = new Date();
-      setNow(
-        dt.toLocaleTimeString(
-          "pt-BR",
-          {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          }
-        )
-      );
-      const days = [
-        "Domingo",
-        "Segunda-feira",
-        "Terça-feira",
-        "Quarta-feira",
-        "Quinta-feira",
-        "Sexta-feira",
-        "Sábado",
-      ];
-      setDateStr(
-        `${days[dt.getDay()]}, ${String(
-          dt.getDate()
-        ).padStart(2, "0")}/${String(
-          dt.getMonth() + 1
-        ).padStart(
-          2,
-          "0"
-        )}/${dt.getFullYear()}`
-      );
-    };
-    tick();
-    const timer =
-      window.setInterval(
-        tick,
-        1000
-      );
-    return () => {
-      window.clearInterval(timer);
-    };
+    setAgora(new Date());
+    const t = window.setInterval(() => setAgora(new Date()), 1000);
+    return () => window.clearInterval(t);
   }, []);
-  /* =======================================================
-     CONTADORES
-     ======================================================= */
-  useEffect(() => {
-    let alive = true;
-    let loading = false;
-    async function carregarContadores() {
-      if (loading) {
-        return;
-      }
-      // Neste primeiro teste offline, os contadores não devem tentar APIs sem rede.
-      // A ausência desses dados não pode impedir a Home/layout de abrir.
-      if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        return;
-      }
-      loading = true;
-      try {
-        const [
-          servicosResult,
-          coroasResult,
-          requisicoesResult,
-        ] = await Promise.allSettled([
-          buscarQuantidadeServicos(),
-          buscarQuantidadeCoroas(),
-          buscarQuantidadeRequisicoes(),
-        ]);
-        if (!alive) {
-          return;
-        }
-        setCounts((current) => ({
-          servicos:
-            servicosResult.status ===
-              "fulfilled"
-              ? servicosResult.value
-              : current.servicos,
-          coroas:
-            coroasResult.status ===
-              "fulfilled"
-              ? coroasResult.value
-              : current.coroas,
-          requisicoes:
-            requisicoesResult.status ===
-              "fulfilled"
-              ? requisicoesResult.value
-              : current.requisicoes,
-        }));
-        if (
-          servicosResult.status ===
-          "rejected"
-        ) {
-          console.error(
-            "Erro no contador de Serviços Funerários:",
-            servicosResult.reason
-          );
-        }
-        if (
-          coroasResult.status ===
-          "rejected"
-        ) {
-          console.error(
-            "Erro no contador de Coroas:",
-            coroasResult.reason
-          );
-        }
-        if (
-          requisicoesResult.status ===
-          "rejected"
-        ) {
-          console.error(
-            "Erro no contador de Requisições:",
-            requisicoesResult.reason
-          );
-        }
-      } finally {
-        loading = false;
-      }
-    }
-    void carregarContadores();
-    const timer =
-      window.setInterval(() => {
-        if (!document.hidden) {
-          void carregarContadores();
-        }
-      }, COUNTS_REFRESH_MS);
-    const handleVisibilityChange =
-      () => {
-        if (!document.hidden) {
-          void carregarContadores();
-        }
-      };
-    const handleOnline = () => {
-      if (!document.hidden) {
-        void carregarContadores();
-      }
-    };
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange
-    );
-    window.addEventListener("online", handleOnline);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange
-      );
-      window.removeEventListener("online", handleOnline);
-    };
-  }, []);
-  const permissionsReady = perms !== null;
-  const actions = useMemo(
-    () =>
-      permissionsReady
-        ? quickActions.filter((action) => has(action.slug))
-        : [],
-    [permissionsReady, has]
-  );
-  const filteredActions = useMemo(() => {
-    const q = normalizeSearch(searchQuery);
-    if (!q) {
-      return actions.map((action) => ({
-        label: action.label,
-        href: action.href,
-        slug: action.slug,
-        icon: action.icon,
-        counterKey: action.counterKey,
-        group: "",
-      }));
-    }
-    const matched = SEARCH_ACTIONS
-      .filter((item) => has(item.slug))
-      .filter((item) => {
-        const title = normalizeSearch(item.title);
-        return title.startsWith(q);
-      });
-    return matched.map((item) => {
-      const mainAction = quickActions.find(
-        (action) =>
-          action.slug === item.slug ||
-          action.href === item.href
-      );
-      return {
-        label: item.title,
-        href: item.href,
-        slug: item.slug,
-        icon: mainAction?.icon ?? <IconSearch size={22} />,
-        counterKey: mainAction?.counterKey,
-        group: item.group,
-      };
+
+  const pronto = perms !== null;
+  const nome = c.nome ? c.nome.trim().split(/\s+/)[0] : "";
+
+  const resumo = useMemo(() => {
+    const itens: { label: string; valor: number | null; href: string; tom: Tom; icon: Icone; mostrar: boolean }[] = [
+      { label: "Serviços funerários", valor: c.servicos, href: "/quadro-acompanhamento", tom: "azul", icon: IconBuildingSkyscraper, mostrar: true },
+      { label: "Coroas de flores", valor: c.coroas, href: "/coroa-de-flores", tom: "verde", icon: IconFlower, mostrar: pronto && has("coroa-de-flores") },
+      { label: "Requisições de material", valor: c.requisicoes, href: has("requisicoes") ? "/requisicoes" : "/requisicao", tom: "azul", icon: IconTruckDelivery, mostrar: pronto && (has("requisicoes") || has("requisicao")) },
+      { label: "Alertas de estoque", valor: c.estoque, href: has("estoque") ? "/estoque" : "/produtos", tom: "amarelo", icon: IconAlertTriangle, mostrar: pronto && (has("geral") || has("estoque") || has("produtos")) },
+      { label: "Material a recolher", valor: c.recolher, href: "/acompanhamento", tom: "azul", icon: IconPackageExport, mostrar: pronto && has("acompanhamento") },
+      { label: "Aguardando sua ação", valor: c.aguardando, href: "/acompanhamento", tom: "amarelo", icon: IconUserCheck, mostrar: pronto && has("acompanhamento") },
+    ];
+    return itens.filter((i) => i.mostrar);
+  }, [c, pronto, has]);
+
+  /* Acesso rápido: Quadro, Minhas OS, Messenger (só com a página), Chat e Avisos */
+  const rapidos = useMemo(() => {
+    const messenger = MODULOS.find((m) => m.id === "comunicacao")!.itens.find((i) => i.href === "/messenger")!;
+    const lista = [
+      FIXOS.find((f) => f.titulo === "Quadro de Atendimentos")!,
+      FIXOS.find((f) => f.titulo === "Minhas OS")!,
+      messenger,
+      FIXOS.find((f) => f.titulo === "Chat")!,
+      FIXOS.find((f) => f.titulo === "Avisos")!,
+    ];
+    return lista.filter((i) => pronto && itemVisivel(i, has));
+  }, [pronto, has]);
+
+  const modulos = pronto ? MODULOS.filter((m) => moduloVisivel(m, has)) : [];
+
+  /* Pesquisa de funções: só páginas permitidas; casa pelo começo do título (como antes) */
+  const resultados = useMemo(() => {
+    const q = normalizeSearch(busca);
+    if (!q || !pronto) return [];
+    const base: { title: string; href: string; group: string; icone: Icone }[] = [
+      ...MODULOS.flatMap((m) =>
+        itensVisiveisDe(m.itens, has).map((i) => ({ title: i.titulo, href: hrefDoItem(i, has), group: m.titulo, icone: i.icone as Icone })),
+      ),
+      ...FIXOS.filter((f) => itemVisivel(f, has)).map((f) => ({ title: f.titulo, href: f.href, group: "Início", icone: f.icone as Icone })),
+      ...APELIDOS.filter((a) => has(a.slug)).map((a) => ({ title: a.title, href: a.href, group: a.group, icone: IconSearch as Icone })),
+    ];
+    const vistos = new Set<string>();
+    return base.filter((i) => {
+      if (!normalizeSearch(i.title).startsWith(q)) return false;
+      const k = `${i.title}|${i.href}`;
+      if (vistos.has(k)) return false;
+      vistos.add(k);
+      return true;
     });
-  }, [actions, has, searchQuery]);
+  }, [busca, pronto, has]);
+
+  const pesquisando = busca.trim() !== "";
+  const horas = agora ? agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+
   return (
-    <div className="min-h-[calc(100vh-1px)] bg-gray-50 dark:bg-gray-950">
-      <div className="mx-auto max-w-6xl px-5 py-5">
-        {/* HEADER */}
-        <header className="mb-5">
-          <div className="flex items-center gap-2">
-            <IconHome className="size-6 text-primary" />
-            <h1 className="text-2xl font-bold tracking-tight">Início</h1>
-          </div>
-          {/*
-            MOBILE:
-            1ª linha = data/hora
-            2ª linha = pesquisa
-            DESKTOP (sm+):
-            pesquisa à esquerda e data/hora à direita,
-            preservando o layout atual.
-          */}
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
-            <div className="order-2 min-w-0 w-full sm:order-1 sm:flex-1">
-              <div className="flex h-[54px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-950">
-                <IconSearch
-                  size={19}
-                  className="shrink-0 text-gray-400 dark:text-gray-500"
-                />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={
-                    permissionsReady
-                      ? "Pesquise"
-                      : "Carregando acessos..."
-                  }
-                  disabled={!permissionsReady}
-                  aria-label="Pesquisar funções do sistema"
-                  autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-base font-medium text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-60 sm:text-sm dark:text-white dark:placeholder:text-gray-500"
-                />
-                {searchQuery.trim() !== "" && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-                    aria-label="Limpar pesquisa"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
+    <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
+        {/* BOAS-VINDAS */}
+        <section className="relative overflow-hidden rounded-[20px] bg-[#313C55] px-5 py-5 text-white sm:px-7">
+          <span aria-hidden className="absolute -right-[70px] -top-[110px] size-[200px] rounded-full bg-[#F2CB3F]" />
+          <span aria-hidden className="absolute -bottom-[70px] right-[62px] size-[116px] rounded-full bg-[#00AEEC]" />
+          <span aria-hidden className="absolute -bottom-[34px] -right-2 size-[70px] rounded-full bg-[#B3CE52]" />
+
+          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-extrabold tracking-[0.12em] text-[#B3CE52]">{agora ? dataExtenso(agora) : "\u00A0"}</div>
+              <h1 className="mt-1 text-2xl font-extrabold leading-tight sm:text-[28px]">
+                {agora ? saudacao(agora.getHours()) : "Olá"}
+                {nome ? `, ${nome}` : ""}
+              </h1>
+              <p className="mt-1 text-sm tabular-nums text-[#D6DCE8]">
+                <span className="lg:hidden">Este é o resumo do seu dia. </span>
+                <b className="text-white">{horas}</b>
+              </p>
             </div>
-            <div className="order-1 flex h-[54px] w-full shrink-0 flex-col justify-center rounded-xl border border-gray-200 bg-white px-4 text-right shadow-sm sm:order-2 sm:w-auto sm:min-w-[150px] dark:border-gray-800 dark:bg-gray-900">
-              <div className="text-sm font-bold tabular-nums">{now}</div>
-              <div className="text-[11px] text-muted-foreground">{dateStr}</div>
+
+            <div className="relative flex flex-wrap gap-3 pr-20 sm:pr-28 lg:mr-44 lg:pr-0">
+              {pronto && has("acompanhamento") ? (
+                <Link href="/acompanhamento" className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[14px] bg-[#F2CB3F] px-5 text-[15px] font-extrabold text-[#313C55]">
+                  <IconPlus size={18} />
+                  Novo atendimento
+                </Link>
+              ) : null}
+              <Link href="/quadro-acompanhamento" className="hidden h-11 items-center whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-sm font-bold text-white lg:inline-flex">
+                Quadro de Atendimentos
+              </Link>
             </div>
           </div>
-        </header>
-        {/* BOTÕES */}
-        <section className="mb-6">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {!permissionsReady && (
-              <div className="col-span-2 rounded-2xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-muted-foreground shadow-sm sm:col-span-4 dark:border-gray-800 dark:bg-gray-900">
-                Carregando acessos disponíveis neste dispositivo...
+        </section>
+
+        {/* PESQUISA DE FUNÇÕES */}
+        <div className="mt-5 flex h-[54px] items-center gap-2 rounded-xl border border-[#E3E8F0] bg-white px-3 shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F]">
+          <IconSearch size={19} className="shrink-0 text-[#7A8396]" />
+          <input
+            type="search"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder={pronto ? "Pesquise" : "Carregando acessos..."}
+            disabled={!pronto}
+            aria-label="Pesquisar funções do sistema"
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent text-base font-medium text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white"
+          />
+          {pesquisando ? (
+            <button
+              type="button"
+              onClick={() => setBusca("")}
+              aria-label="Limpar pesquisa"
+              className="grid size-9 shrink-0 place-items-center rounded-lg text-[#5B6478] hover:bg-[#EEF2F7] dark:text-[#AEB9CF] dark:hover:bg-white/10"
+            >
+              <IconX size={18} />
+            </button>
+          ) : null}
+        </div>
+
+        {pesquisando ? (
+          /* RESULTADO DA PESQUISA */
+          <section aria-label="Resultado da pesquisa" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+            {pronto && resultados.length === 0 ? (
+              <div className={[CARD, "col-span-full border-dashed p-8 text-center"].join(" ")}>
+                <IconSearch size={24} className="mx-auto text-[#7A8396]" />
+                <div className="mt-3 text-sm font-black">Nenhuma função encontrada</div>
+                <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Não há páginas permitidas que correspondam a “{busca.trim()}”.</div>
               </div>
-            )}
-            {permissionsReady &&
-              searchQuery.trim() !== "" &&
-              filteredActions.length === 0 && (
-                <div className="col-span-2 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center shadow-sm sm:col-span-4 dark:border-gray-700 dark:bg-gray-900">
-                  <IconSearch
-                    size={24}
-                    className="mx-auto text-gray-400 dark:text-gray-500"
-                  />
-                  <div className="mt-3 text-sm font-black text-gray-900 dark:text-white">
-                    Nenhuma função encontrada
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Não há páginas permitidas que correspondam a “{searchQuery.trim()}”.
-                  </div>
-                </div>
-              )}
-            {filteredActions.map((action) => {
-              const count =
-                action.counterKey
-                  ? counts[
-                  action.counterKey
-                  ]
-                  : undefined;
+            ) : null}
+            {resultados.map((r) => {
+              const Icon = r.icone;
               return (
-                <Link
-                  key={`${action.slug}-${action.href}`}
-                  href={action.href}
-                  className="
-                    group relative
-                    flex flex-col
-                    items-center
-                    justify-center
-                    gap-2.5
-                    rounded-2xl
-                    border border-gray-200
-                    bg-white
-                    px-3 py-4
-                    shadow-sm
-                    transition-all
-                    hover:-translate-y-[1px]
-                    hover:shadow-md
-                    dark:border-gray-800
-                    dark:bg-gray-900
-                  "
-                >
-                  {/* CONTADOR */}
-                  {action.counterKey && (
-                    <span
-                      className="
-                        absolute
-                        right-2.5 top-2.5
-                        inline-flex
-                        min-w-8
-                        items-center
-                        justify-center
-                        rounded-full
-                        bg-sky-100
-                        px-2 py-1
-                        text-[11px]
-                        font-black
-                        tabular-nums
-                        leading-none
-                        text-sky-700
-                        transition-colors
-                        group-hover:bg-sky-600
-                        group-hover:text-white
-                        dark:bg-sky-900/40
-                        dark:text-sky-200
-                      "
-                    >
-                      {formatCount(count)}
-                    </span>
-                  )}
-                  <QuickIcon>
-                    {action.icon}
-                  </QuickIcon>
-                  <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-gray-900 dark:text-white">
-                    {action.label}
+                <Link key={`${r.title}-${r.href}`} href={r.href} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
+                  <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP.azul].join(" ")}>
+                    <Icon size={22} />
                   </span>
-                  {searchQuery.trim() !== "" && action.group ? (
-                    <span className="-mt-1 text-center text-[10px] font-semibold leading-tight text-gray-400 dark:text-gray-500">
-                      {action.group}
-                    </span>
-                  ) : null}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] font-extrabold">{r.title}</span>
+                    <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{r.group}</span>
+                  </span>
+                  <IconChevronRight size={18} className="shrink-0 text-[#7A8396]" />
                 </Link>
               );
             })}
-          </div>
-        </section>
+          </section>
+        ) : (
+          <>
+            {/* RESUMO */}
+            {resumo.length ? (
+              <section aria-label="Resumo" className="mt-5 grid grid-cols-2 gap-3 sm:landscape:grid-cols-3 lg:grid-cols-4 lg:gap-4">
+                {resumo.map((r) => {
+                  const Icon = r.icon;
+                  return (
+                    <Link key={r.label} href={r.href} className={[CARD, "flex items-center gap-3 p-3.5 lg:gap-3.5 lg:p-4"].join(" ")}>
+                      <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP[r.tom]].join(" ")}>
+                        <Icon size={22} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[26px] font-extrabold leading-none tabular-nums lg:text-[30px]">{dois(r.valor)}</span>
+                        <span className="mt-1 block text-[13px] font-semibold leading-tight text-[#5B6478] dark:text-[#AEB9CF]">{r.label}</span>
+                      </span>
+                      <IconChevronRight size={18} className="hidden shrink-0 text-[#7A8396] lg:block" />
+                    </Link>
+                  );
+                })}
+              </section>
+            ) : null}
+
+            {/* ACESSO RÁPIDO */}
+            <h2 className="mb-3 mt-8 text-xl font-extrabold lg:mb-4 lg:mt-9">Acesso rápido</h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+              {rapidos.map((f) => {
+                const Icon = f.icone;
+                const selo =
+                  f.selo === "avisos" ? formatarSelo(c.avisos) : f.selo === "messenger" ? formatarSelo(contMessenger) : "";
+                return (
+                  <Link key={f.href} href={f.href} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
+                    <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP.azul].join(" ")}>
+                      <Icon size={22} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] font-extrabold">{f.titulo}</span>
+                      <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{f.desc}</span>
+                    </span>
+                    {selo ? (
+                      <span className="inline-flex h-[22px] min-w-6 items-center justify-center rounded-full bg-[#F2CB3F] px-2 text-xs font-extrabold text-[#313C55]">{selo}</span>
+                    ) : null}
+                    <IconChevronRight size={18} className="shrink-0 text-[#7A8396]" />
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* MÓDULOS */}
+            <h2 className="mb-3 mt-8 text-xl font-extrabold lg:mb-4 lg:mt-9">Módulos</h2>
+            {!pronto ? (
+              <div className={[CARD, "p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]"].join(" ")}>Carregando acessos disponíveis neste dispositivo...</div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:landscape:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+                {modulos.map((m) => {
+                  const Icon = m.icone;
+                  return (
+                    <Link key={m.id} href={destinoDoModulo(m, has)} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
+                      <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP[TOM_MODULO[m.id] || "azul"]].join(" ")}>
+                        <Icon size={22} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[15px] font-extrabold">{m.titulo}</span>
+                        <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{m.desc}</span>
+                      </span>
+                      <IconChevronRight size={18} className="shrink-0 text-[#7A8396]" />
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

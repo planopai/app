@@ -1034,8 +1034,8 @@ export default function Page() {
                                                     className="w-5 rounded-t bg-slate-900"
                                                     style={{
                                                         height: `${v == null
-                                                                ? 0
-                                                                : (v / 5) * 100
+                                                            ? 0
+                                                            : (v / 5) * 100
                                                             }%`,
                                                     }}
                                                 />
@@ -1046,8 +1046,8 @@ export default function Page() {
                                                     className="w-5 rounded-t bg-slate-400"
                                                     style={{
                                                         height: `${p == null
-                                                                ? 0
-                                                                : (p / 5) * 100
+                                                            ? 0
+                                                            : (p / 5) * 100
                                                             }%`,
                                                     }}
                                                 />

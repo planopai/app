@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
+  IconAdjustmentsHorizontal,
   IconChevronDown,
   IconHelp,
   IconLogout,
@@ -21,8 +22,33 @@ import {
 } from "@/components/ui/sidebar";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { LINK_GROUPS } from "@/app/_perms/links";
+import { MODULOS, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
+import { IconeAtalho, useBarra } from "@/components/barra/atalhos";
+import { useNaoLidas } from "@/components/messenger/ContadorMenu";
+
+/** Número de não lidas ao lado do item (aberto) ou bolinha no ícone (recolhido). */
+function ContadorItem({ valor, recolhido }: { valor: number; recolhido: boolean }) {
+  if (!valor) return null;
+  const texto = valor > 99 ? "99+" : String(valor);
+  if (recolhido) {
+    return (
+      <span
+        className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-primary"
+        aria-label={`${texto} pendente(s)`}
+      />
+    );
+  }
+  return (
+    <span
+      className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-black tabular-nums text-primary-foreground"
+      aria-label={`${texto} pendente(s)`}
+    >
+      {texto}
+    </span>
+  );
+}
 
 /** Detecta mobile (<= 1024px) */
 function useIsMobile() {
@@ -111,6 +137,21 @@ export function AppSidebar(
   const { perms, has } = usePerms();
 
   const isMobile = useIsMobile();
+
+  /* Barra personalizável (atalhos do computador) e contador do Messenger */
+  const barra = useBarra();
+  const temMessenger = perms !== null && has("messenger");
+  const naoLidasMessenger = useNaoLidas(temMessenger);
+  const contMessenger = naoLidasMessenger.total + naoLidasMessenger.fila;
+  const numeros = useContadores(perms, has);
+  const contadorDe = (href: string) => {
+    if (href === "/messenger") return contMessenger;
+    if (href === "/acompanhamento") return numeros.aguardando ?? 0;
+    if (href === "/avisos") return numeros.avisos ?? 0;
+    if (href === "/coroa-de-flores") return numeros.coroas ?? 0;
+    if (href === "/estoque" || href === "/geral") return numeros.estoque ?? 0;
+    return 0;
+  };
 
   const [isLoggingOut, setIsLoggingOut] =
     React.useState(false);
@@ -300,17 +341,19 @@ export function AppSidebar(
       [displayName]
     );
 
-  /** Itens visíveis por permissão */
+  /** Módulos do organograma, só com as telas que o usuário pode abrir (mesmas chaves de página de antes). */
   const visibleGroups =
     React.useMemo(() => {
-      return LINK_GROUPS
-        .map((group) => ({
-          ...group,
-          items:
-            group.items.filter(
-              (item) =>
-                has(item.slug)
-            ),
+      return MODULOS
+        .filter((modulo) => moduloVisivel(modulo, has))
+        .map((modulo) => ({
+          category: modulo.titulo,
+          items: itensVisiveis(modulo, has).map((item) => ({
+            title: item.titulo,
+            href: hrefDoItem(item, has),
+            slug: item.slugs[0],
+            Icon: item.icone as any,
+          })),
         }))
         .filter(
           (group) =>
@@ -403,10 +446,12 @@ export function AppSidebar(
     title,
     href,
     Icon,
+    badge = 0,
   }: {
     title: string;
     href: string;
     Icon: any;
+    badge?: number;
   }) => {
     const active =
       pathname === href;
@@ -416,7 +461,7 @@ export function AppSidebar(
         asChild
         title={title}
         className={[
-          "flex gap-3",
+          "relative flex gap-3",
           active
             ? "bg-accent text-accent-foreground"
             : "",
@@ -443,6 +488,11 @@ export function AppSidebar(
               {title}
             </span>
           )}
+
+          <ContadorItem
+            valor={badge}
+            recolhido={isCollapsed}
+          />
         </Link>
       </SidebarMenuButton>
     );
@@ -528,6 +578,28 @@ export function AppSidebar(
       );
     }, [visibleGroups]);
 
+  /*
+   * ATALHOS: barra personalizada do computador (Personalizar barra).
+   * No celular a barra fica embaixo (BarraCelular), então aqui só aparece fora do modo gaveta.
+   */
+  const mostrarAtalhos = !sidebar?.isMobile;
+  const atalhos = mostrarAtalhos
+    ? barra.computador.itens
+        .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
+        .map((a) => ({
+          title: a.rotulo,
+          href: a.rota,
+          Icon: (p: { className?: string }) => (
+            <IconeAtalho id={a.id} className={p.className} />
+          ),
+        }))
+    : [];
+  const hrefsAtalhos = new Set(atalhos.map((a) => a.href));
+  const itensRecolhidos = [
+    ...atalhos,
+    ...collapsedItems.filter((item) => !hrefsAtalhos.has(item.href)),
+  ];
+
   const logoNode = (
     <img
       src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
@@ -606,7 +678,7 @@ export function AppSidebar(
            */
           <div className="space-y-2 pt-2">
             <SidebarMenu className="space-y-1">
-              {collapsedItems.map(
+              {itensRecolhidos.map(
                 (item) => (
                   <SidebarMenuItem
                     key={
@@ -623,6 +695,7 @@ export function AppSidebar(
                       Icon={
                         item.Icon
                       }
+                      badge={contadorDe(item.href)}
                     />
                   </SidebarMenuItem>
                 )
@@ -643,6 +716,27 @@ export function AppSidebar(
                 : "mt-4 space-y-2"
             }
           >
+            {atalhos.length > 0 && (
+              <div>
+                <div className="flex w-full items-center px-3 py-2 text-xs font-bold uppercase opacity-70">
+                  Atalhos
+                </div>
+                <SidebarMenu className="space-y-1 pl-1">
+                  {atalhos.map((item) => (
+                    <SidebarMenuItem key={`atalho-${item.href}`}>
+                      <MenuItem
+                        title={item.title}
+                        href={item.href}
+                        Icon={item.Icon}
+                        badge={contadorDe(item.href)}
+                      />
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+                <div className="mx-3 mt-2 border-t" />
+              </div>
+            )}
+
             {visibleGroups.map(
               (group) => {
                 const opened =
@@ -700,6 +794,7 @@ export function AppSidebar(
                                 Icon={
                                   item.Icon
                                 }
+                                badge={contadorDe(item.href)}
                               />
                             </SidebarMenuItem>
                           )
@@ -720,6 +815,33 @@ export function AppSidebar(
           <div className="border-t pt-3" />
 
           <SidebarMenu className="space-y-1">
+            {/* Personalizar barra */}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                title="Personalizar barra"
+                className="flex gap-3"
+              >
+                <Link
+                  href="/personalizar-barra"
+                  onClick={(event) =>
+                    handleNavigate(
+                      "/personalizar-barra",
+                      event
+                    )
+                  }
+                >
+                  <IconAdjustmentsHorizontal className="!size-5" />
+
+                  {!isCollapsed && (
+                    <span>
+                      Personalizar barra
+                    </span>
+                  )}
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
             {/* Ajuda */}
             <SidebarMenuItem>
               <SidebarMenuButton

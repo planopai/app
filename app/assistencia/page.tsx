@@ -617,13 +617,13 @@ export default function MateriaisAdminPage() {
 
                     {view === "materiais" ? (
                         <>
-                            
-                            
+
+
                         </>
                     ) : (
                         <>
-                            
-                            
+
+
                         </>
                     )}
                 </div>

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header"; // remova se não usar
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import BarraCelular from "@/components/barra/BarraCelular";
 
 type Props = {
     children: React.ReactNode;
@@ -46,6 +47,8 @@ export default function AppShell({
                 {/* Header global (remova se não quiser) */}
                 <SiteHeader />
                 <div className="flex flex-1 flex-col">{children}</div>
+                {/* Barra de baixo do celular (5 atalhos + Menu); some no computador */}
+                <BarraCelular />
             </SidebarInset>
         </SidebarProvider>
     );

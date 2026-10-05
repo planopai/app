@@ -36,6 +36,7 @@ import {
     IconListDetails,
     IconLock,
     IconMessageCircle,
+    IconMessages,
     IconMicroscope,
     IconNews,
     IconPackage,
@@ -64,7 +65,7 @@ export type ItemModulo = {
     /** Quando a mesma tela tem duas chaves/rotas (ex.: geral e estoque), a rota segue a chave que o usuário tem. */
     alternativas?: { slug: string; href: string }[];
     /** Chave do contador (useContadores) mostrado como selo. */
-    selo?: "aguardando" | "coroas" | "estoque" | "avisos";
+    selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger";
 };
 
 export type Modulo = {
@@ -81,7 +82,7 @@ export type Modulo = {
 };
 
 export const FIXOS: ItemModulo[] = [
-    { titulo: "Início", desc: "Resumo do dia", href: "/inicio", slugs: ["*"], icone: IconHome },
+    { titulo: "Início", desc: "Resumo do dia", href: "/", slugs: ["*"], icone: IconHome },
     { titulo: "Quadro de Atendimentos", desc: "Andamento em tempo real", href: "/quadro-acompanhamento", slugs: ["*"], icone: IconDeviceDesktopAnalytics },
     { titulo: "Minhas OS", desc: "Ordens que você abriu", href: "/os/minhas", slugs: ["*"], icone: IconFileInvoice },
     { titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
@@ -113,8 +114,9 @@ export const MODULOS: Modulo[] = [
         paraTodos: true,
         hub: { href: "/comunicacao", slug: "comunicacao" },
         itens: [
-            { titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
-            { titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["*"], icone: IconBell, selo: "avisos" },
+            { titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
+            { titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
+            { titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
     },
     {
@@ -138,7 +140,7 @@ export const MODULOS: Modulo[] = [
         selo: "estoque",
         hub: { href: "/modulo-estoque", slug: "modulo-estoque" },
         itens: [
-            { titulo: "Estoque", desc: "Produtos, entradas e conferência", href: "/geral", slugs: ["geral", "estoque"], icone: IconPackage, selo: "estoque", alternativas: [{ slug: "geral", href: "/geral" }, { slug: "estoque", href: "/estoque" }] },
+            { titulo: "Estoque", desc: "Produtos, entradas e conferência", href: "/estoque", slugs: ["estoque", "geral"], icone: IconPackage, selo: "estoque", alternativas: [{ slug: "estoque", href: "/estoque" }, { slug: "geral", href: "/geral" }] },
             { titulo: "Consulta", desc: "Pesquisa rápida de itens", href: "/produtos", slugs: ["produtos"], icone: IconSearch },
             { titulo: "Assistência", desc: "Administração de materiais", href: "/assistencia", slugs: ["assistencia"], icone: IconBuildingStore },
             { titulo: "Catálogo", desc: "Itens e valores", href: "/catalogo", slugs: ["catalogo"], icone: IconBook },
@@ -197,6 +199,7 @@ export const MODULOS: Modulo[] = [
             { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails },
             { titulo: "Segurança", desc: "Acessos e proteção de dados", href: "/seguranca", slugs: ["seguranca"], icone: IconLock },
             { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar },
+            { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages },
             { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },
             { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar },
             { titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar },

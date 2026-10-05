@@ -195,7 +195,7 @@ function Card({
     return (
         <section
             className={[
-                "rounded-2xl border border-slate-200 bg-white shadow-sm",
+                "rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm",
                 className,
             ].join(" ")}
         >
@@ -215,12 +215,12 @@ function Field({
 }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-medium text-slate-700">
+            <span className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">
                 {label}
             </span>
             {children}
             {hint ? (
-                <span className="mt-1 block text-[11px] text-slate-500">{hint}</span>
+                <span className="mt-1 block text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">{hint}</span>
             ) : null}
         </label>
     );
@@ -235,8 +235,8 @@ const TextInput = React.forwardRef<
             ref={ref}
             {...props}
             className={[
-                "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 shadow-sm outline-none sm:text-sm",
-                "focus:border-slate-400 focus:ring-2 focus:ring-slate-200",
+                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none sm:text-sm",
+                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
                 className,
             ].join(" ")}
         />
@@ -304,22 +304,22 @@ function MultiSelectDropdown({
                 <button
                     type="button"
                     onClick={() => setOpen((v) => !v)}
-                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] text-slate-900 shadow-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200 sm:text-sm"
+                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 sm:text-sm"
                 >
                     <span
                         className={[
                             "truncate",
-                            !selectedIds.length ? "text-slate-600" : "text-slate-900",
+                            !selectedIds.length ? "text-[#5B6478] dark:text-[#AEB9CF]" : "text-[#313C55] dark:text-white",
                         ].join(" ")}
                     >
                         {displayText || placeholder}
                     </span>
-                    <span className="text-slate-500">▾</span>
+                    <span className="text-[#5B6478] dark:text-[#AEB9CF]">▾</span>
                 </button>
 
                 {open ? (
-                    <div className="absolute left-0 z-30 mt-2 w-full min-w-[300px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-                        <div className="border-b border-slate-100 p-2">
+                    <div className="absolute left-0 z-30 mt-2 w-full min-w-[300px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-lg">
+                        <div className="border-b border-[#E3E8F0] dark:border-white/[0.12] p-2">
                             <TextInput
                                 value={q}
                                 onChange={(e) => setQ(e.target.value)}
@@ -331,34 +331,34 @@ function MultiSelectDropdown({
                                     onChangeIds([]);
                                     setQ("");
                                 }}
-                                className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                className="mt-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                             >
                                 Limpar
                             </button>
                         </div>
 
                         <div className="max-h-64 overflow-auto p-2">
-                            <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50">
+                            <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10">
                                 <input
                                     type="checkbox"
                                     checked={!selectedIds.length}
                                     onChange={() => onChangeIds([])}
                                     className="h-4 w-4"
                                 />
-                                <span className="text-sm text-slate-700">{allLabel}</span>
+                                <span className="text-sm text-[#313C55] dark:text-[#D6DCE8]">{allLabel}</span>
                             </label>
 
-                            <div className="my-2 border-t border-slate-100" />
+                            <div className="my-2 border-t border-[#E3E8F0] dark:border-white/[0.12]" />
 
                             {filtered.length === 0 ? (
-                                <div className="p-2 text-sm text-slate-600">
+                                <div className="p-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                     Nenhum encontrado.
                                 </div>
                             ) : (
                                 filtered.map((o) => (
                                     <label
                                         key={o.id}
-                                        className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"
+                                        className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                     >
                                         <input
                                             type="checkbox"
@@ -366,7 +366,7 @@ function MultiSelectDropdown({
                                             onChange={() => toggle(o.id)}
                                             className="h-4 w-4"
                                         />
-                                        <span className="whitespace-nowrap text-sm text-slate-900">
+                                        <span className="whitespace-nowrap text-sm text-[#313C55] dark:text-white">
                                             {o.nome}
                                         </span>
                                     </label>
@@ -389,14 +389,14 @@ function Button({
     variant?: "solid" | "ghost" | "soft";
 }) {
     const base =
-        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[16px] font-medium shadow-sm outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm";
+        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[16px] font-medium shadow-sm outline-none focus:ring-2 focus:ring-[#00AEEC]/30 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm";
 
     const cls =
         variant === "solid"
-            ? "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
             : variant === "soft"
-                ? "border border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200"
-                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
+                : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
 
     return (
         <button {...props} className={[base, cls, className].join(" ")}>
@@ -474,23 +474,23 @@ function FilterModal({
 
     return (
         <div
-            role="dialog"
+            role="dialog" data-pai-overlay
             aria-modal="true"
-            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4"
+            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-0 sm:items-center sm:p-4"
         >
-            <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:max-w-5xl sm:rounded-3xl">
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
+            <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl sm:max-w-5xl sm:rounded-3xl">
+                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:p-5">
                     <div className="min-w-0">
-                        <h2 className="text-lg font-bold text-slate-900">
+                        <h2 className="text-lg font-bold text-[#313C55] dark:text-white">
                             Filtros de produtos
                         </h2>
-                        <p className="mt-1 text-sm text-slate-600">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Busque e refine a consulta. Ao aplicar, o modal fecha e a lista
                             fica filtrada.
                         </p>
                     </div>
                     <button
-                        className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                        className="rounded-xl px-3 py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                         onClick={onClose}
                         type="button"
                         aria-label="Fechar filtros"
@@ -511,8 +511,8 @@ function FilterModal({
                         </Field>
 
                         <Field label="Filtros rápidos">
-                            <div className="grid min-h-[42px] grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:grid-cols-2">
-                                <label className="flex items-center gap-2 text-sm text-slate-700">
+                            <div className="grid min-h-[42px] grid-cols-1 gap-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 shadow-sm sm:grid-cols-2">
+                                <label className="flex items-center gap-2 text-sm text-[#313C55] dark:text-[#D6DCE8]">
                                     <input
                                         type="checkbox"
                                         checked={onlyLow}
@@ -521,7 +521,7 @@ function FilterModal({
                                     />
                                     Somente alerta
                                 </label>
-                                <label className="flex items-center gap-2 text-sm text-slate-700">
+                                <label className="flex items-center gap-2 text-sm text-[#313C55] dark:text-[#D6DCE8]">
                                     <input
                                         type="checkbox"
                                         checked={onlyPositive}
@@ -564,9 +564,9 @@ function FilterModal({
                     </div>
                 </div>
 
-                <div className="border-t border-slate-100 bg-slate-50 p-4 sm:p-5">
-                    <div className="mb-3 text-xs text-slate-600">
-                        Resultado atual: <b>{totalResultados}</b> linha(s)
+                <div className="border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 sm:p-5">
+                    <div className="mb-3 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                        Resultado atual: <b>{totalResultados}</b> produto(s)
                     </div>
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <Button
@@ -594,76 +594,6 @@ function FilterModal({
     );
 }
 
-function ImagePreviewModal({
-    open,
-    onClose,
-    url,
-    title,
-}: {
-    open: boolean;
-    onClose: () => void;
-    url?: string | null;
-    title?: string;
-}) {
-    const cleanUrl = normalizeImgUrl(url);
-
-    useEffect(() => {
-        if (!open) return;
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => {
-            document.body.style.overflow = prev;
-        };
-    }, [open]);
-
-    if (!open) return null;
-
-    return (
-        <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-[60] flex min-h-[100dvh] items-center justify-center bg-black/70 p-4"
-        >
-            <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
-                    <div className="min-w-0">
-                        <h2 className="truncate text-base font-semibold text-slate-900">
-                            {title || "Imagem do produto"}
-                        </h2>
-                        <p className="mt-1 text-sm text-slate-600">
-                            Feche pelo ✕ no canto superior direito.
-                        </p>
-                    </div>
-                    <button
-                        className="rounded-xl px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
-                        onClick={onClose}
-                        type="button"
-                    >
-                        ✕
-                    </button>
-                </div>
-
-                <div className="max-h-[82dvh] overflow-auto p-4">
-                    {cleanUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                            src={cleanUrl}
-                            alt={title || "Imagem do produto"}
-                            className="mx-auto h-auto max-h-[76dvh] w-full rounded-2xl border border-slate-200 object-contain"
-                        />
-                    ) : (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-                            Produto sem imagem.
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-
-
 type DepositoSaldoRow = {
     deposito: Deposito;
     quantidade: number;
@@ -673,7 +603,7 @@ type DepositoSaldoRow = {
     hasMinMax: boolean;
 };
 
-function ProdutoDepositosModal({
+function ProdutoDetalhesModal({
     open,
     onClose,
     produto,
@@ -684,85 +614,265 @@ function ProdutoDepositosModal({
     produto?: Produto | null;
     rows: DepositoSaldoRow[];
 }) {
+    const [idx, setIdx] = useState(0);
+    const [full, setFull] = useState(false);
+
+    const fotos = useMemo(
+        () =>
+            getProdutoFotos(produto)
+                .map((f) => resolveProdutoFotoUrl(f))
+                .filter((u): u is string => !!u),
+        [produto],
+    );
+
+    useEffect(() => {
+        if (open) {
+            setIdx(0);
+            setFull(false);
+        }
+    }, [open, produto?.id]);
+
     useEffect(() => {
         if (!open) return;
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
+            if (e.key === "Escape") {
+                if (full) setFull(false);
+                else onClose();
+            }
+            if (fotos.length > 1 && e.key === "ArrowLeft") {
+                setIdx((i) => (i + fotos.length - 1) % fotos.length);
+            }
+            if (fotos.length > 1 && e.key === "ArrowRight") {
+                setIdx((i) => (i + 1) % fotos.length);
+            }
         };
         window.addEventListener("keydown", onKey);
         return () => {
             window.removeEventListener("keydown", onKey);
             document.body.style.overflow = prev;
         };
-    }, [open, onClose]);
+    }, [open, onClose, full, fotos.length]);
 
     if (!open || !produto) return null;
 
     const total = rows.reduce((acc, r) => acc + r.quantidade, 0);
+    const foto = fotos.length ? fotos[Math.min(idx, fotos.length - 1)] : null;
+    const prev = () => setIdx((i) => (i + fotos.length - 1) % fotos.length);
+    const next = () => setIdx((i) => (i + 1) % fotos.length);
+
+    const arrowCls =
+        "absolute top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-[#C9D1DE] dark:border-white/25 bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-white shadow";
 
     return (
-        <div
-            role="dialog"
-            aria-modal="true"
-            className="fixed inset-0 z-[55] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-slate-950/55 p-4"
-        >
-            <div className="flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 sm:p-5">
-                    <div className="min-w-0">
-                        <h2 className="line-clamp-2 text-lg font-bold text-slate-900">
-                            {produto.nome}
-                        </h2>
-                        <p className="mt-1 text-sm text-slate-600">
-                            Depósitos com saldo deste produto. Total: <b>{total}</b>
-                        </p>
-                    </div>
-                    <button
-                        className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
-                        onClick={onClose}
-                        type="button"
-                        aria-label="Fechar depósitos"
-                    >
-                        ✕
-                    </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
-                    {rows.length === 0 ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
-                            Nenhum depósito com saldo encontrado para este produto.
+        <>
+            <div
+                role="dialog" data-pai-overlay
+                aria-modal="true"
+                aria-label="Detalhes do produto"
+                className="fixed inset-0 z-[55] flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-0 sm:items-center sm:p-4"
+            >
+                <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:landscape:max-w-4xl">
+                    <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:p-5">
+                        <div className="min-w-0">
+                            <h2 className="line-clamp-2 text-lg font-bold text-[#313C55] dark:text-white">
+                                {produto.nome}
+                            </h2>
+                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                                Quantidade total:{" "}
+                                <b className="text-[#313C55] dark:text-white">{total}</b>
+                            </p>
                         </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {rows.map((r) => (
-                                <div
-                                    key={r.deposito.id}
-                                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-                                >
-                                    <div className="min-w-0">
-                                        <p className="truncate font-semibold text-slate-900">
-                                            {r.deposito.nome}
-                                        </p>
-                                        {r.hasMinMax ? (
-                                            <p className="mt-0.5 text-xs text-slate-500">
-                                                Min {r.min} • Rep {r.rep}
-                                            </p>
+                        <button
+                            className="rounded-xl px-3 py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
+                            onClick={onClose}
+                            type="button"
+                            aria-label="Fechar detalhes"
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
+                        <div className="grid grid-cols-1 gap-5 sm:landscape:grid-cols-2 lg:grid-cols-2">
+                            {/* FOTOS */}
+                            <div className="min-w-0">
+                                <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                                    Fotos do produto
+                                </div>
+
+                                {foto ? (
+                                    <>
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setFull(true)}
+                                                aria-label="Ampliar foto em tela cheia"
+                                                className="block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334]"
+                                            >
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={foto}
+                                                    alt={produto.nome}
+                                                    className="h-56 w-full object-contain sm:h-72"
+                                                />
+                                            </button>
+
+                                            <span className="pointer-events-none absolute bottom-2 right-2 rounded-full border border-[#C9D1DE] dark:border-white/25 bg-white dark:bg-[#232B3F] px-3 py-1 text-xs font-extrabold text-[#313C55] dark:text-white">
+                                                Tela cheia
+                                            </span>
+
+                                            {fotos.length > 1 ? (
+                                                <>
+                                                    <button type="button" onClick={prev} aria-label="Foto anterior" className={arrowCls + " left-2"}>
+                                                        ‹
+                                                    </button>
+                                                    <button type="button" onClick={next} aria-label="Próxima foto" className={arrowCls + " right-2"}>
+                                                        ›
+                                                    </button>
+                                                </>
+                                            ) : null}
+                                        </div>
+
+                                        {fotos.length > 1 ? (
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                {fotos.map((u, i) => (
+                                                    <button
+                                                        key={`${u}-${i}`}
+                                                        type="button"
+                                                        onClick={() => setIdx(i)}
+                                                        aria-label={`Ver foto ${i + 1}`}
+                                                        className={[
+                                                            "h-14 w-[76px] overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334]",
+                                                            i === idx
+                                                                ? "border-2 border-[#313C55] dark:border-[#F2CB3F]"
+                                                                : "border-[#E3E8F0] dark:border-white/[0.12]",
+                                                        ].join(" ")}
+                                                    >
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img src={u} alt="" className="h-full w-full object-cover" />
+                                                    </button>
+                                                ))}
+                                            </div>
                                         ) : null}
+                                    </>
+                                ) : (
+                                    <div className="grid h-56 place-items-center rounded-2xl border border-dashed border-[#C9D1DE] dark:border-white/25 text-sm text-[#5B6478] dark:text-[#AEB9CF] sm:h-72">
+                                        Produto sem fotos
                                     </div>
-                                    <div className="text-right">
-                                        <p className="text-xs text-slate-500">Saldo</p>
-                                        <p className="text-xl font-bold text-slate-900">
-                                            {r.quantidade}
-                                        </p>
+                                )}
+                            </div>
+
+                            {/* PREÇO E DISTRIBUIÇÃO */}
+                            <div className="min-w-0 space-y-4">
+                                <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] px-4 py-3">
+                                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                                        Preço de venda
+                                    </div>
+                                    <div className="text-3xl font-extrabold leading-tight text-[#313C55] dark:text-white">
+                                        {moneyBRL(Number(produto.valor) || 0)}
                                     </div>
                                 </div>
-                            ))}
+
+                                <div>
+                                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                                        Distribuição do estoque
+                                    </div>
+
+                                    {rows.length === 0 ? (
+                                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                                            Nenhum local com unidade deste produto.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {rows.map((r) => (
+                                                <div
+                                                    key={r.deposito.id}
+                                                    className="flex items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3 shadow-sm"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="truncate font-semibold text-[#313C55] dark:text-white">
+                                                            {r.deposito.nome}
+                                                        </p>
+                                                        {r.hasMinMax ? (
+                                                            <p className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                                                Min {r.min} • Rep {r.rep}
+                                                            </p>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Quantidade</p>
+                                                        <p className="text-xl font-bold text-[#313C55] dark:text-white">
+                                                            {r.quantidade}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                    )}
+                    </div>
+
+                    <div className="border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 sm:flex sm:justify-end sm:p-5">
+                        <Button variant="ghost" type="button" onClick={onClose} className="w-full sm:w-auto">
+                            Fechar
+                        </Button>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            {full && foto ? (
+                <div
+                    role="dialog" data-pai-overlay
+                    aria-modal="true"
+                    aria-label="Foto em tela cheia"
+                    className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col bg-[#0E1320] text-white"
+                >
+                    <div className="flex items-center gap-2 py-2.5 pl-4 pr-3">
+                        <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold">
+                            {produto.nome}
+                            {fotos.length > 1 ? ` · Foto ${idx + 1} de ${fotos.length}` : ""}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setFull(false)}
+                            className="h-11 rounded-xl border border-white/40 px-4 text-sm font-extrabold text-white hover:bg-white/10"
+                        >
+                            Sair da tela cheia
+                        </button>
+                    </div>
+
+                    <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={foto} alt={produto.nome} className="max-h-full max-w-full object-contain" />
+
+                        {fotos.length > 1 ? (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={prev}
+                                    aria-label="Foto anterior"
+                                    className="absolute left-4 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-white/40 bg-[#0E1320] text-xl text-white"
+                                >
+                                    ‹
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={next}
+                                    aria-label="Próxima foto"
+                                    className="absolute right-4 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-white/40 bg-[#0E1320] text-xl text-white"
+                                >
+                                    ›
+                                </button>
+                            </>
+                        ) : null}
+                    </div>
+                </div>
+            ) : null}
+        </>
     );
 }
 
@@ -783,9 +893,9 @@ function PhotoThumb({
             type="button"
             onClick={clickable ? onClick : undefined}
             className={[
-                "relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 sm:h-24 sm:w-24",
+                "relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] text-[#5B6478] dark:text-[#AEB9CF] sm:h-24 sm:w-24",
                 clickable
-                    ? "cursor-zoom-in hover:ring-2 hover:ring-slate-200"
+                    ? "cursor-zoom-in hover:ring-2 hover:ring-[#00AEEC]/30"
                     : "cursor-default",
                 className,
             ].join(" ")}
@@ -804,7 +914,7 @@ function PhotoThumb({
             )}
 
             {clickable ? (
-                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] shadow ring-1 ring-slate-200">
+                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white dark:bg-[#232B3F] px-1.5 py-0.5 text-[10px] shadow ring-1 ring-[#00AEEC]/30">
                     🔍
                 </span>
             ) : null}
@@ -831,10 +941,6 @@ export default function Page() {
     const [onlyLow, setOnlyLow] = useState(false);
     const [onlyPositive, setOnlyPositive] = useState(false);
     const [filterOpen, setFilterOpen] = useState(false);
-
-    const [imgOpen, setImgOpen] = useState(false);
-    const [imgUrl, setImgUrl] = useState<string | null>(null);
-    const [imgTitle, setImgTitle] = useState("");
 
     const [produtoDepositosOpen, setProdutoDepositosOpen] = useState(false);
     const [selectedProduto, setSelectedProduto] = useState<Produto | null>(null);
@@ -894,36 +1000,13 @@ export default function Page() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const showMinRepColumns = useMemo(() => {
-        const depSet = depFiltroEstoque.length
-            ? new Set(depFiltroEstoque.map(Number))
-            : null;
-
-        for (const s of saldos) {
-            if (depSet && !depSet.has(Number(s.deposito_id))) continue;
-
-            const min = clampInt((s as any).minimo ?? 0);
-            const max = clampInt((s as any).maximo ?? 0);
-
-            if (min > 0 || max > 0) return true;
-        }
-
-        return false;
-    }, [saldos, depFiltroEstoque]);
-
-    const estoqueRows = useMemo(() => {
+    /**
+     * Um lançamento por produto: a quantidade é a soma dos locais (respeitando o
+     * filtro de depósito). A busca olha somente o nome do produto.
+     * "Alerta" = algum local está no mínimo ou abaixo.
+     */
+    const produtosAgregados = useMemo(() => {
         const qq = qEstoque.trim().toLowerCase();
-
-        const rows: Array<{
-            p: Produto;
-            d: Deposito;
-            qtd: number;
-            s?: Saldo;
-            min: number;
-            max: number;
-            rep: number;
-            hasMinMax: boolean;
-        }> = [];
 
         const depSet = depFiltroEstoque.length
             ? new Set(depFiltroEstoque.map(Number))
@@ -938,48 +1021,37 @@ export default function Page() {
             ? new Set(classFiltroEstoque.map(Number))
             : null;
 
+        const porProduto = new Map<ID, { p: Produto; total: number; low: boolean }>();
+
         for (const s of saldos) {
             const p = prodById.get(s.produto_id);
             const d = depById.get(s.deposito_id);
             if (!p || !d) continue;
 
             if (depSet && !depSet.has(d.id)) continue;
-
-            if (catSet) {
-                const pid = Number(p.categoria_id || 0);
-                if (!catSet.has(pid)) continue;
-            }
-
-            if (fabSet) {
-                const fid = Number(p.fabricante_id || 0);
-                if (!fabSet.has(fid)) continue;
-            }
-
-            if (clsSet) {
-                const cid = Number(p.classificacao_id || 0);
-                if (!clsSet.has(cid)) continue;
-            }
+            if (catSet && !catSet.has(Number(p.categoria_id || 0))) continue;
+            if (fabSet && !fabSet.has(Number(p.fabricante_id || 0))) continue;
+            if (clsSet && !clsSet.has(Number(p.classificacao_id || 0))) continue;
 
             const qtd = clampInt(s.quantidade);
-            if (onlyPositive && qtd <= 0) continue;
-
             const min = clampInt((s as any).minimo ?? 0);
             const max = clampInt((s as any).maximo ?? 0);
             const hasMinMax = min > 0 && max > 0;
-            const rep = hasMinMax ? Math.max(0, max - qtd) : 0;
 
-            if (onlyLow && !(hasMinMax && qtd <= min)) continue;
-
-            if (qq && !p.nome.toLowerCase().includes(qq)) continue;
-
-            rows.push({ p, d, qtd, s, min, max, rep, hasMinMax });
+            const atual = porProduto.get(p.id) || { p, total: 0, low: false };
+            atual.total += qtd;
+            if (hasMinMax && qtd <= min) atual.low = true;
+            porProduto.set(p.id, atual);
         }
 
-        rows.sort(
-            (a, b) =>
-                a.p.nome.localeCompare(b.p.nome, "pt-BR") ||
-                a.d.nome.localeCompare(b.d.nome, "pt-BR"),
+        const rows = Array.from(porProduto.values()).filter(
+            (r) =>
+                (!qq || r.p.nome.toLowerCase().includes(qq)) &&
+                (!onlyLow || r.low) &&
+                (!onlyPositive || r.total > 0),
         );
+
+        rows.sort((x, y) => x.p.nome.localeCompare(y.p.nome, "pt-BR"));
         return rows;
     }, [
         saldos,
@@ -992,9 +1064,6 @@ export default function Page() {
         classFiltroEstoque,
         onlyLow,
         onlyPositive,
-        catById,
-        fabById,
-        classById,
     ]);
 
     const selectedProdutoDepositos = useMemo<DepositoSaldoRow[]>(() => {
@@ -1039,17 +1108,17 @@ export default function Page() {
     }
 
     return (
-        <main className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-6">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] p-4 text-[#313C55] dark:text-white sm:p-6">
             <div className="mx-auto w-full max-w-7xl space-y-4">
                 {initErr ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                    <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">
                         {initErr}
                     </div>
                 ) : null}
 
                 <div className="flex items-center gap-2">
                     <div className="relative flex-1">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7A8396] dark:text-[#8893AA]">
                             🔎
                         </span>
                         <TextInput
@@ -1063,7 +1132,7 @@ export default function Page() {
                     <button
                         type="button"
                         onClick={() => setFilterOpen(true)}
-                        className="inline-flex h-[42px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-xl text-slate-700 shadow-sm outline-none hover:bg-slate-50 focus:ring-2 focus:ring-slate-200"
+                        className="inline-flex h-[42px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-xl text-[#313C55] dark:text-[#D6DCE8] shadow-sm outline-none hover:bg-[#EEF2F7] dark:hover:bg-white/10 focus:ring-2 focus:ring-[#00AEEC]/30"
                         aria-label="Abrir filtros"
                         title="Abrir filtros"
                     >
@@ -1083,53 +1152,44 @@ export default function Page() {
                 </div>
 
                 <Card className="overflow-hidden">
-                    <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4">
+                    <div className="flex items-center justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
                         <div>
-                            <h2 className="text-base font-semibold text-slate-900">
+                            <h2 className="text-base font-semibold text-[#313C55] dark:text-white">
                                 Produtos em estoque
                             </h2>
-                            <p className="mt-1 text-sm text-slate-600">
+                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                 {loading
                                     ? "Carregando..."
-                                    : `${estoqueRows.length} linha(s) encontrada(s).`}
+                                    : `${produtosAgregados.length} produto(s) encontrado(s).`}
                             </p>
                         </div>
                     </div>
 
                     <div className="hidden overflow-x-auto lg:block">
-                        <table className="min-w-full divide-y divide-slate-100 text-left text-sm">
-                            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <table className="min-w-full divide-y divide-[#E3E8F0] dark:divide-white/[0.12] text-left text-sm">
+                            <thead className="bg-[#F6F8FB] dark:bg-[#1C2334] text-xs uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
                                 <tr>
                                     <th className="w-28 px-4 py-3">Foto</th>
                                     <th className="px-4 py-3">Produto</th>
-                                    <th className="px-4 py-3">Código</th>
-                                    <th className="px-4 py-3">Depósito</th>
                                     <th className="px-4 py-3">Categoria</th>
                                     <th className="px-4 py-3">Fabricante</th>
-                                    <th className="px-4 py-3">Classificação</th>
                                     <th className="px-4 py-3 text-right">Qtd</th>
-                                    {showMinRepColumns ? (
-                                        <th className="px-4 py-3 text-right">Min</th>
-                                    ) : null}
-                                    {showMinRepColumns ? (
-                                        <th className="px-4 py-3 text-right">Rep</th>
-                                    ) : null}
                                     <th className="px-4 py-3 text-right">Valor un.</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
-                                {!loading && estoqueRows.length === 0 ? (
+                            <tbody className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12] bg-white dark:bg-[#232B3F]">
+                                {!loading && produtosAgregados.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={showMinRepColumns ? 11 : 9}
-                                            className="px-4 py-8 text-center text-sm text-slate-600"
+                                            colSpan={6}
+                                            className="px-4 py-8 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]"
                                         >
                                             Nenhum produto encontrado com os filtros atuais.
                                         </td>
                                     </tr>
                                 ) : null}
 
-                                {estoqueRows.map(({ p, d, qtd, min, rep, hasMinMax }) => {
+                                {produtosAgregados.map(({ p, total, low }) => {
                                     const img = getProdutoFotoPrincipal(p);
                                     const cat =
                                         p.categoria_nome ||
@@ -1141,58 +1201,46 @@ export default function Page() {
                                             ? fabById.get(p.fabricante_id)?.nome
                                             : "") ||
                                         "—";
-                                    const cls =
-                                        p.classificacao_nome ||
-                                        (p.classificacao_id
-                                            ? classById.get(p.classificacao_id)?.nome
-                                            : "") ||
-                                        "—";
-                                    const low = hasMinMax && qtd <= min;
 
                                     return (
                                         <tr
-                                            key={`${p.id}-${d.id}`}
-                                            className={low ? "bg-amber-50/60" : ""}
+                                            key={p.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => abrirDepositosDoProduto(p)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" || e.key === " ") {
+                                                    e.preventDefault();
+                                                    abrirDepositosDoProduto(p);
+                                                }
+                                            }}
+                                            className={[
+                                                "cursor-pointer outline-none hover:bg-[#EEF2F7] dark:hover:bg-white/10 focus:ring-2 focus:ring-inset focus:ring-[#00AEEC]/30",
+                                                low ? "bg-[#FCF3CC]/70 dark:bg-[#F2CB3F]/10" : "",
+                                            ].join(" ")}
                                         >
                                             <td className="px-4 py-3 align-top">
-                                                <PhotoThumb
-                                                    url={img}
-                                                    className="h-24 w-24"
-                                                    onClick={
-                                                        img
-                                                            ? () => {
-                                                                setImgUrl(img);
-                                                                setImgTitle(p.nome);
-                                                                setImgOpen(true);
-                                                            }
-                                                            : undefined
-                                                    }
-                                                />
+                                                <PhotoThumb url={img} className="h-24 w-24" />
                                             </td>
-                                            <td className="px-4 py-3 font-medium text-slate-900">
-                                                {p.nome}
+                                            <td className="px-4 py-3 font-medium text-[#313C55] dark:text-white">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className="font-bold">{p.nome}</span>
+                                                    {low ? (
+                                                        <span className="rounded-full bg-[#F2CB3F] px-2.5 py-0.5 text-xs font-extrabold text-[#313C55]">
+                                                            alerta
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <div className="mt-0.5 text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">
+                                                    CB: {p.codigo_barras || "—"}
+                                                </div>
                                             </td>
-                                            <td className="px-4 py-3 text-slate-600">
-                                                {p.codigo_barras || "—"}
+                                            <td className="px-4 py-3 text-[#5B6478] dark:text-[#AEB9CF]">{cat}</td>
+                                            <td className="px-4 py-3 text-[#5B6478] dark:text-[#AEB9CF]">{fab}</td>
+                                            <td className="px-4 py-3 text-right text-lg font-extrabold text-[#313C55] dark:text-white">
+                                                {total}
                                             </td>
-                                            <td className="px-4 py-3 text-slate-700">{d.nome}</td>
-                                            <td className="px-4 py-3 text-slate-600">{cat}</td>
-                                            <td className="px-4 py-3 text-slate-600">{fab}</td>
-                                            <td className="px-4 py-3 text-slate-600">{cls}</td>
-                                            <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                                                {qtd}
-                                            </td>
-                                            {showMinRepColumns ? (
-                                                <td className="px-4 py-3 text-right text-slate-600">
-                                                    {hasMinMax ? min : "—"}
-                                                </td>
-                                            ) : null}
-                                            {showMinRepColumns ? (
-                                                <td className="px-4 py-3 text-right text-slate-600">
-                                                    {hasMinMax ? rep : "—"}
-                                                </td>
-                                            ) : null}
-                                            <td className="px-4 py-3 text-right text-slate-700">
+                                            <td className="px-4 py-3 text-right text-[#313C55] dark:text-[#D6DCE8]">
                                                 {moneyBRL(Number(p.valor) || 0)}
                                             </td>
                                         </tr>
@@ -1203,23 +1251,22 @@ export default function Page() {
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 p-4 lg:hidden">
-                        {!loading && estoqueRows.length === 0 ? (
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
+                        {!loading && produtosAgregados.length === 0 ? (
+                            <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                 Nenhum produto encontrado com os filtros atuais.
                             </div>
                         ) : null}
 
-                        {estoqueRows.map(({ p, d, qtd, min, rep, hasMinMax }) => {
+                        {produtosAgregados.map(({ p, total, low }) => {
                             const img = getProdutoFotoPrincipal(p);
                             const cat =
                                 p.categoria_nome ||
                                 (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
                                 "—";
-                            const low = hasMinMax && qtd <= min;
 
                             return (
                                 <div
-                                    key={`${p.id}-${d.id}`}
+                                    key={p.id}
                                     role="button"
                                     tabIndex={0}
                                     onClick={() => abrirDepositosDoProduto(p)}
@@ -1230,44 +1277,33 @@ export default function Page() {
                                         }
                                     }}
                                     className={[
-                                        "cursor-pointer rounded-2xl border p-3 outline-none transition hover:border-slate-300 hover:shadow-sm focus:ring-2 focus:ring-slate-200",
+                                        "cursor-pointer rounded-2xl border p-3 outline-none transition hover:border-[#C9D1DE] dark:hover:border-white/25 hover:shadow-sm focus:ring-2 focus:ring-[#00AEEC]/30",
                                         low
-                                            ? "border-amber-200 bg-amber-50"
-                                            : "border-slate-200 bg-white",
+                                            ? "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"
+                                            : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]",
                                     ].join(" ")}
                                 >
                                     <div className="flex gap-4">
-                                        <div onClick={(e) => e.stopPropagation()}>
-                                            <PhotoThumb
-                                                url={img}
-                                                onClick={
-                                                    img
-                                                        ? () => {
-                                                            setImgUrl(img);
-                                                            setImgTitle(p.nome);
-                                                            setImgOpen(true);
-                                                        }
-                                                        : undefined
-                                                }
-                                            />
-                                        </div>
+                                        <PhotoThumb url={img} />
                                         <div className="min-w-0 flex-1">
-                                            <p className="line-clamp-2 font-semibold text-slate-900">
+                                            <p className="line-clamp-2 font-semibold text-[#313C55] dark:text-white">
                                                 {p.nome}
                                             </p>
-                                            <p className="mt-1 truncate text-xs font-medium text-slate-600">
+                                            <p className="mt-1 truncate text-xs font-medium text-[#5B6478] dark:text-[#AEB9CF]">
                                                 {cat}
                                             </p>
-                                            <p className="mt-0.5 truncate text-xs text-slate-600">
-                                                {d.nome}
-                                            </p>
-                                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-900">
+                                            <p className="mt-0.5 flex items-center gap-2 truncate text-xs font-semibold text-[#313C55] dark:text-white">
                                                 {moneyBRL(Number(p.valor) || 0)}
+                                                {low ? (
+                                                    <span className="rounded-full bg-[#F2CB3F] px-2 py-0.5 text-[11px] font-extrabold text-[#313C55]">
+                                                        alerta
+                                                    </span>
+                                                ) : null}
                                             </p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-xs text-slate-500">Qtd</p>
-                                            <p className="text-xl font-bold text-slate-900">{qtd}</p>
+                                            <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Qtd</p>
+                                            <p className="text-xl font-bold text-[#313C55] dark:text-white">{total}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -1299,21 +1335,14 @@ export default function Page() {
                 onlyPositive={onlyPositive}
                 setOnlyPositive={setOnlyPositive}
                 limparFiltros={limparFiltros}
-                totalResultados={estoqueRows.length}
+                totalResultados={produtosAgregados.length}
             />
 
-            <ProdutoDepositosModal
+            <ProdutoDetalhesModal
                 open={produtoDepositosOpen}
                 onClose={() => setProdutoDepositosOpen(false)}
                 produto={selectedProduto}
                 rows={selectedProdutoDepositos}
-            />
-
-            <ImagePreviewModal
-                open={imgOpen}
-                onClose={() => setImgOpen(false)}
-                url={imgUrl}
-                title={imgTitle}
             />
         </main>
     );

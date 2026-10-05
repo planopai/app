@@ -81,7 +81,7 @@ export default function AcessoCompartilhamentoPage() {
             {/* Título */}
             <header className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight">Acesso e Compartilhamento</h1>
-                
+
             </header>
 
             {/* Grid de Salas */}
@@ -159,8 +159,8 @@ export default function AcessoCompartilhamentoPage() {
             {msg && (
                 <div
                     className={`mt-6 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${msg.type === "success"
-                            ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                            : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                        ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
+                        : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
                         }`}
                     role="status"
                 >

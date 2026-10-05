@@ -621,7 +621,7 @@ function Modal({
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-[#313C55]/45 p-3 pt-5 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-[#313C55]/45 p-3 pt-5 sm:items-center sm:p-4" role="dialog" data-pai-overlay aria-modal="true">
             <div className={["flex max-h-[calc(100dvh-2.5rem)] w-full flex-col overflow-hidden rounded-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl", maxWidth].join(" ")}>
                 <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
                     <h2 className="truncate text-lg font-black text-[#313C55] dark:text-white">{title}</h2>

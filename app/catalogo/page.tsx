@@ -1833,9 +1833,9 @@ export default function Page() {
                                     CONCLUIR
                                 </button>
                             ) : (
-                                    <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps || !canAdvanceStep}>
-                                        PRÓXIMO PASSO
-                                    </button>
+                                <button type="button" className="flowBtn" onClick={nextStep} disabled={loadingSteps || !canAdvanceStep}>
+                                    PRÓXIMO PASSO
+                                </button>
                             )
                         ) : null}
                     </div>
@@ -1876,53 +1876,53 @@ export default function Page() {
                 ) : (
                     <div className="detailLayout">
                         <div className="detailLeft">
-                                <div className="detailImgCard">
-                                    <img
-                                        src={selectedFoto || selected.thumb || LOGO_URL_UI}
-                                        alt={selected.nome}
-                                        className="detailImg"
-                                    />
-                                    <button
-                                        type="button"
-                                        className="zoomBtn"
-                                        onClick={() => setOpenZoom(true)}
-                                        aria-label="Ampliar imagem"
-                                        title="Ampliar"
-                                    >
-                                        🔍
-                                    </button>
+                            <div className="detailImgCard">
+                                <img
+                                    src={selectedFoto || selected.thumb || LOGO_URL_UI}
+                                    alt={selected.nome}
+                                    className="detailImg"
+                                />
+                                <button
+                                    type="button"
+                                    className="zoomBtn"
+                                    onClick={() => setOpenZoom(true)}
+                                    aria-label="Ampliar imagem"
+                                    title="Ampliar"
+                                >
+                                    🔍
+                                </button>
+                            </div>
+
+                            {selected.fotos?.length > 0 ? (
+                                <div className="thumbsRow">
+                                    {selected.fotos.map((foto, idx) => {
+                                        const ativa = (selectedFoto || selected.thumb) === foto.url;
+                                        return (
+                                            <button
+                                                key={`${foto.id || idx}-${foto.url}`}
+                                                type="button"
+                                                className={cn("thumbMiniBtn", ativa && "thumbMiniBtnActive")}
+                                                onClick={() => setSelectedFoto(foto.url)}
+                                                title={foto.legenda || `Foto ${idx + 1}`}
+                                            >
+                                                <img
+                                                    src={foto.url}
+                                                    alt={foto.legenda || `${selected.nome} ${idx + 1}`}
+                                                    className="thumbMiniImg"
+                                                />
+                                            </button>
+                                        );
+                                    })}
                                 </div>
+                            ) : null}
 
-                                {selected.fotos?.length > 0 ? (
-                                    <div className="thumbsRow">
-                                        {selected.fotos.map((foto, idx) => {
-                                            const ativa = (selectedFoto || selected.thumb) === foto.url;
-                                            return (
-                                                <button
-                                                    key={`${foto.id || idx}-${foto.url}`}
-                                                    type="button"
-                                                    className={cn("thumbMiniBtn", ativa && "thumbMiniBtnActive")}
-                                                    onClick={() => setSelectedFoto(foto.url)}
-                                                    title={foto.legenda || `Foto ${idx + 1}`}
-                                                >
-                                                    <img
-                                                        src={foto.url}
-                                                        alt={foto.legenda || `${selected.nome} ${idx + 1}`}
-                                                        className="thumbMiniImg"
-                                                    />
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ) : null}
-
-                                <div className="detailMeta">
-                                    <div className="metaPill">
-                                        <b>Saldo:</b> {selected.saldo}
-                                    </div>
+                            <div className="detailMeta">
+                                <div className="metaPill">
+                                    <b>Saldo:</b> {selected.saldo}
                                 </div>
+                            </div>
 
-                            
+
                         </div>
 
                         <div className="detailRight">
@@ -1974,9 +1974,9 @@ export default function Page() {
                                             Concluir
                                         </button>
                                     ) : (
-                                                <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps || !canAdvanceStep}>
-                                                    PRÓXIMO PASSO
-                                                </button>
+                                        <button type="button" className="stepBtn" onClick={nextStep} disabled={loadingSteps || !canAdvanceStep}>
+                                            PRÓXIMO PASSO
+                                        </button>
                                     )
                                 ) : (
                                     <button type="button" className="stepBtn" onClick={openConcluirModal}>
@@ -2233,77 +2233,77 @@ export default function Page() {
                                 <div style={{ textAlign: "right" }}>Valor</div>
                             </div>
 
-                                    {orcamentoSelecionado.itens.map((it, idx) => {
-                                        const emEdicao = editingItemIdx === idx;
+                            {orcamentoSelecionado.itens.map((it, idx) => {
+                                const emEdicao = editingItemIdx === idx;
 
-                                        const salvar = () => {
-                                            const novoValor = parseBRL(editingValue);
+                                const salvar = () => {
+                                    const novoValor = parseBRL(editingValue);
 
-                                            setOrcamentos(prev =>
-                                                prev.map(orc => {
-                                                    if (orc.id !== orcamentoSelecionado.id) return orc;
+                                    setOrcamentos(prev =>
+                                        prev.map(orc => {
+                                            if (orc.id !== orcamentoSelecionado.id) return orc;
 
-                                                    const itens = [...orc.itens];
+                                            const itens = [...orc.itens];
 
-                                                    itens[idx] = {
-                                                        ...itens[idx],
-                                                        valorUnit: novoValor
-                                                    };
+                                            itens[idx] = {
+                                                ...itens[idx],
+                                                valorUnit: novoValor
+                                            };
 
-                                                    const valorTotal = itens.reduce(
-                                                        (acc, i) => acc + clampInt(i.qtd) * (Number(i.valorUnit) || 0),
-                                                        0
-                                                    );
-
-                                                    return {
-                                                        ...orc,
-                                                        itens,
-                                                        valorTotal
-                                                    };
-                                                })
+                                            const valorTotal = itens.reduce(
+                                                (acc, i) => acc + clampInt(i.qtd) * (Number(i.valorUnit) || 0),
+                                                0
                                             );
 
-                                            setEditingItemIdx(null);
-                                            setEditingValue("");
-                                        };
+                                            return {
+                                                ...orc,
+                                                itens,
+                                                valorTotal
+                                            };
+                                        })
+                                    );
 
-                                        return (
-                                            <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
-                                                <div className="resumoItemName">{it.nome}</div>
+                                    setEditingItemIdx(null);
+                                    setEditingValue("");
+                                };
 
-                                                <div style={{ textAlign: "right" }}>
-                                                    {emEdicao ? (
-                                                        <div className="valorEditWrap">
-                                                            <input
-                                                                className="valorEditInput"
-                                                                value={editingValue}
-                                                                onChange={(e) => setEditingValue(e.target.value)}
-                                                                inputMode="decimal"
-                                                                autoFocus
-                                                            />
+                                return (
+                                    <div key={`${it.produtoId}-${idx}`} className="resumoRow2 resumoRow2Cols">
+                                        <div className="resumoItemName">{it.nome}</div>
 
-                                                            <button
-                                                                className="valorEditBtn"
-                                                                onClick={salvar}
-                                                            >
-                                                                Salvar
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            className="valorInlineBtn"
-                                                            onClick={() => {
-                                                                setEditingItemIdx(idx);
-                                                                setEditingValue(formatBRLInput(Number(it.valorUnit) || 0));
-                                                            }}
-                                                        >
-                                                            {formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}
-                                                        </button>
-                                                    )}
+                                        <div style={{ textAlign: "right" }}>
+                                            {emEdicao ? (
+                                                <div className="valorEditWrap">
+                                                    <input
+                                                        className="valorEditInput"
+                                                        value={editingValue}
+                                                        onChange={(e) => setEditingValue(e.target.value)}
+                                                        inputMode="decimal"
+                                                        autoFocus
+                                                    />
+
+                                                    <button
+                                                        className="valorEditBtn"
+                                                        onClick={salvar}
+                                                    >
+                                                        Salvar
+                                                    </button>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
+                                            ) : (
+                                                <button
+                                                    className="valorInlineBtn"
+                                                    onClick={() => {
+                                                        setEditingItemIdx(idx);
+                                                        setEditingValue(formatBRLInput(Number(it.valorUnit) || 0));
+                                                    }}
+                                                >
+                                                    {formatBRL((Number(it.valorUnit) || 0) * clampInt(it.qtd))}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         <div className="resumoBottom resumoBottomOnlyTotal">

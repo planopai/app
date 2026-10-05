@@ -4,7 +4,7 @@
  * Números mostrados como selo no menu e na barra de baixo (e no resumo do Início).
  *
  * Usa dados que o sistema já tem; cada número falha em silêncio (null = não mostra). A consulta é única para a tela
- * inteira (menu + Início usam o mesmo resultado) e se atualiza a cada 60 s e quando a janela volta ao foco.
+ * inteira (menu, barra de baixo e Início usam o mesmo resultado) e se atualiza a cada 15 s (aba visível, com rede) e quando a janela volta ao foco.
  *
  *  - servicos / recolher / aguardando: informativo.php?listar=1, com a MESMA regra do Quadro (concluídos não contam)
  *  - coroas: coroas.php?listar=1&grupo=confeccao (fila de confecção)
@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { aguardaAcaoDe, aguardandoRecolhimento, atendimentoDeveFicarNoQuadro, type RegistroRegra } from "@/components/atendimentos/regrasQuadro";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
-const INTERVALO_MS = 60_000;
+const INTERVALO_MS = 15_000; // igual à home antiga; só consulta com a aba visível e com rede
 
 export type Contadores = {
     nome: string;
@@ -58,6 +58,8 @@ function publicar(parcial: Partial<Contadores>) {
 
 async function atualizar() {
     if (emAndamento) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     emAndamento = true;
     ctl?.abort();
     ctl = new AbortController();
@@ -87,14 +89,23 @@ async function atualizar() {
         }
 
         if (has("coroa-de-flores")) {
-            const j = await getJson<{ sucesso?: boolean; meta?: { total?: number } }>(`${ENDPOINT}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=1`, sig);
-            if (j?.sucesso && typeof j.meta?.total === "number") publicar({ coroas: j.meta.total });
+            const j = await getJson<{ sucesso?: boolean; dados?: { status?: string | null }[]; meta?: { total?: number | string } }>(
+                `${ENDPOINT}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100&fresh=${t}`,
+                sig,
+            );
+            if (j?.sucesso) {
+                const total = Number(j.meta?.total);
+                if (Number.isFinite(total) && total >= 0) publicar({ coroas: total });
+                else if (Array.isArray(j.dados)) {
+                    publicar({ coroas: j.dados.filter((p) => ["novo", "coroa", "faixa"].includes(String(p.status ?? "").trim().toLowerCase())).length });
+                }
+            }
         }
 
         if (has("requisicoes") || has("requisicao")) {
             const operador = has("requisicoes");
             const url = operador
-                ? `${ENDPOINT}/requisicoes.php?action=fila&_=${t}`
+                ? `${ENDPOINT}/requisicoes.php?action=fila&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=200&_ts=${t}`
                 : `${ENDPOINT}/requisicoes.php?action=minhas&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=50&_=${t}`;
             const j = await getJson<{ ok?: boolean; rows?: unknown[] }>(url, sig);
             if (j?.ok && Array.isArray(j.rows)) publicar({ requisicoes: j.rows.length });
@@ -146,8 +157,12 @@ export function useContadores(perms: unknown, has: (slug: string) => boolean): C
         }
         const aoFocar = () => void atualizar();
         window.addEventListener("focus", aoFocar);
+        window.addEventListener("online", aoFocar);
+        document.addEventListener("visibilitychange", aoFocar);
         return () => {
             window.removeEventListener("focus", aoFocar);
+            window.removeEventListener("online", aoFocar);
+            document.removeEventListener("visibilitychange", aoFocar);
             if (ouvintes.size === 0 && timer !== undefined) {
                 window.clearInterval(timer);
                 timer = undefined;
