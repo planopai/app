@@ -40,7 +40,10 @@ import {
   salvarEsincronizarOS,
   tipoConvenio,
   validarCamposOS,
-  type OsCampos,
+  type OsCampos, type ParteOS,
+  ConvenioVinculo,
+  resolverVinculo,
+  useOpcoesConvenio,
 } from "./components/OsAtendimento";
 import Visita, {
   consultarAcessoVisita,
@@ -672,6 +675,8 @@ export default function AcompanhamentoPage() {
   const [osCampos, setOsCampos] = useState<OsCampos>(OS_CAMPOS_VAZIO);
   const [osColunasFaltando, setOsColunasFaltando] = useState<string[]>([]);
   const [osVersao, setOsVersao] = useState(0);
+  // Convênios e pacotes do cadastro (os_previa.php). Uma busca só, compartilhada com o campo Convênio e a prévia da OS.
+  const opcoesConv = useOpcoesConvenio(wizardOpen);
 
   // Materiais
   const [materiaisOpen, setMateriaisOpen] = useState(false);
@@ -2917,7 +2922,7 @@ export default function AcompanhamentoPage() {
         if (
           atendimentoId != null &&
           (dataAtualizada as any).tipo_atendimento !== "terceiro" &&
-          tipoConvenio(String((dataAtualizada as any).convenio ?? "")) !== "outro"
+          tipoConvenio(String((dataAtualizada as any).convenio ?? ""), osCampos.convenio_tipo) !== "outro"
         ) {
           try {
             const r = await salvarEsincronizarOS(
@@ -4035,6 +4040,15 @@ export default function AcompanhamentoPage() {
     [registrarAcao, definirTeleRegistroId],
   );
 
+  // Mantém o vínculo com o cadastro em dia: id, tipo (Particular/Associado/Prefeitura), plano e pacote do convênio escolhido.
+  // Em registro antigo (só o nome do convênio gravado) acha o convênio pelo nome.
+  const convenioTextoWizard = String((wizardData as any)?.convenio ?? "");
+  useEffect(() => {
+    if (!wizardOpen || !opcoesConv.convenios.length) return;
+    const novo = resolverVinculo(opcoesConv.convenios, convenioTextoWizard, osCampos);
+    if (novo) setOsCampos((c) => ({ ...c, ...novo }));
+  }, [wizardOpen, opcoesConv.convenios, convenioTextoWizard, osCampos]);
+
   const wizardRegistroId = (wizardData as any)?.id ?? null;
   useEffect(() => {
     if (!wizardOpen) return;
@@ -4104,6 +4118,22 @@ export default function AcompanhamentoPage() {
     [registros],
   );
 
+  /* Seção da OS dividida em partes: procedimento (depois de Tanatopraxia), translado (depois de Invol) e resumo (no fim). */
+  const renderOs = (parte: ParteOS) =>
+    (wizardData as any)?.tipo_atendimento === "terceiro" ? null : (
+      <SecaoOSAtendimento
+        parte={parte}
+        convenio={String((wizardData as any)?.convenio ?? "")}
+        tanato={tanatoVal || String((wizardData as any)?.tanato ?? "")}
+        valores={osCampos}
+        onChange={(p) => setOsCampos((c) => ({ ...c, ...p }))}
+        colunasFaltando={osColunasFaltando}
+        atendimentoId={wizardEditing ? (wizardData as any)?.id ?? null : null}
+        versao={osVersao}
+        disabled={wizardSubmitting}
+      />
+    );
+
   /* -------------------- Render -------------------- */
   return (
     <div className="min-h-[100dvh] bg-[#F6F8FB] p-4 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6 lg:px-10 lg:py-8">
@@ -4145,7 +4175,6 @@ export default function AcompanhamentoPage() {
         selecionadoId={acaoOpen ? acaoId : null}
         registros={registros}
         onAcao={(id) => abrirPopupAcaoPorId(id)}
-        onInfo={(id) => abrirInfoPorId(id)}
         onEditar={editarPorId}
         onCompartilhar={(id) => abrirCompartilharPorId(id)}
         visitaPermitida={visitaPermitida}
@@ -4175,20 +4204,21 @@ export default function AcompanhamentoPage() {
         wizardStep={wizardStep}
         setWizardStep={setWizardStep}
         wizardRestrictGroup={wizardRestrictGroup}
-        osSlot={
-          (wizardData as any)?.tipo_atendimento === "terceiro" ? null : (
-            <SecaoOSAtendimento
-              convenio={String((wizardData as any)?.convenio ?? "")}
-              tanato={tanatoVal || String((wizardData as any)?.tanato ?? "")}
-              valores={osCampos}
-              onChange={(p) => setOsCampos((c) => ({ ...c, ...p }))}
-              colunasFaltando={osColunasFaltando}
-              atendimentoId={wizardEditing ? (wizardData as any)?.id ?? null : null}
-              versao={osVersao}
-              disabled={wizardSubmitting}
-            />
-          )
+        convenioSlot={
+          <ConvenioVinculo
+            valorTexto={convenioTextoWizard}
+            valores={osCampos}
+            onChange={(p) => setOsCampos((c) => ({ ...c, ...p }))}
+            onTexto={(nome) => setWizardData((prev: any) => ({ ...prev, convenio: nome }))}
+            obrigatorio={obrigatoriosForTipo.includes("convenio")}
+            disabled={wizardSubmitting}
+            nomesAntigos={(((stepsForTipo as unknown as any[]).find((s) => s?.id === "convenio")?.options ?? []) as string[]).filter(Boolean)}
+          />
         }
+        osCampos={osCampos}
+        osSlot={renderOs("resumo")}
+        osProcedimentoSlot={renderOs("procedimento")}
+        osTransladoSlot={renderOs("translado")}
         wizardData={wizardData}
         setWizardData={setWizardData}
         obrigatorios={obrigatoriosForTipo}

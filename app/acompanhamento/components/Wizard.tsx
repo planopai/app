@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import CoroasAtendimentoEditor from "./CoroasAtendimentoEditor";
 import { Registro, CoroaAtendimentoItem } from "./types";
 import { proximaEtapaDoRegistro } from "./proximaEtapa";
+import { RascunhoOSContext, PreviaOS, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -883,6 +884,8 @@ function PainelEdicao({
     const novo = !registro;
     return (
         <div className={`flex-col gap-4 ${novo ? "hidden lg:flex" : "flex"}`}>
+            <PreviaOS compacto />
+
             <section className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
                 <div className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
                 <div className="flex flex-col gap-2.5">
@@ -936,6 +939,8 @@ export default function Wizard({
     osSlot,
     osProcedimentoSlot,
     osTransladoSlot,
+    convenioSlot,
+    osCampos,
     wizardData,
     setWizardData,
     obrigatorios,
@@ -973,6 +978,10 @@ export default function Wizard({
     osProcedimentoSlot?: React.ReactNode;
     /** Item Translado: aparece logo depois de Invol, antes de Velório. */
     osTransladoSlot?: React.ReactNode;
+    /** Campo Convênio ligado ao cadastro (convênio, pacote e autorização da Prefeitura). Substitui o seletor simples. */
+    convenioSlot?: React.ReactNode;
+    /** Campos da OS em edição (convênio, pacote, procedimento, translado...): alimentam a prévia da OS em tempo real. */
+    osCampos?: OsCampos;
     wizardData: Registro;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     obrigatorios: string[];
@@ -1928,6 +1937,17 @@ export default function Wizard({
         }
     };
 
+    // Rascunho do registro para a prévia da OS em tempo real: tudo o que está na tela agora, sem consultar o banco.
+    const rascunhoOS = useMemo(
+        () =>
+            montarRascunhoOS(wizardData as any, osCampos ?? OS_CAMPOS_VAZIO, {
+                urnaUso: urnaUsoVal, roupaUso: roupaUsoVal, veu: veuVal, cordao: cordaoVal, invol: involVal, kitLanche: kitLancheVal,
+                assistencia: assistenciaVal, tanato: tanatoVal, ornamentacao: ornamentacaoVal, coroaFlores: coroaFloresVal,
+                realizaVelorio: realizaVelorioVal, realizaSepultamento: realizaSepultamentoVal,
+            }),
+        [wizardData, osCampos, urnaUsoVal, roupaUsoVal, veuVal, cordaoVal, involVal, kitLancheVal, assistenciaVal, tanatoVal, ornamentacaoVal, coroaFloresVal, realizaVelorioVal, realizaSepultamentoVal],
+    );
+
     if (!open) return null;
 
     const editandoCompleto = !isRestrito; // layout do mockup: Novo registro e Editar registro
@@ -1939,6 +1959,7 @@ export default function Wizard({
     const proximaTxt = registroAtual ? proximaEtapaDoRegistro(registroAtual) : "—";
 
     return (
+        <RascunhoOSContext.Provider value={rascunhoOS}>
         <Modal
             open={open}
             onClose={onClose}
@@ -2080,6 +2101,15 @@ export default function Wizard({
                     // Os campos legados coroa_tipo/coroa_modelo não são mais renderizados: a configuração
                     // completa de 1..20 coroas fica no editor abaixo de Coroa de Flores.
                     if (step.id === "coroa_tipo" || step.id === "coroa_modelo" || step.id === "coroas_itens") return null;
+
+                    // Convênio ligado ao cadastro de Convênios (pacote + autorização da Prefeitura).
+                    if (step.id === "convenio" && convenioSlot) {
+                        return (
+                            <div key={step.id} className="sm:col-span-2">
+                                {convenioSlot}
+                            </div>
+                        );
+                    }
 
                     /* ===========================
                        URNA (checkbox Sim/Não + seletor async)
@@ -3582,5 +3612,6 @@ export default function Wizard({
             {tanatoNoGrupoAtual ? osSlot : null}
 
         </Modal>
+        </RascunhoOSContext.Provider>
     );
 }
