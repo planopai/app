@@ -12,10 +12,10 @@ import type { Registro } from "./types";
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
 
 const btnClass =
-    "w-full inline-flex items-center justify-center gap-2 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white " +
-    "hover:bg-amber-700 disabled:opacity-60 disabled:pointer-events-none";
+    "w-full inline-flex items-center justify-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] px-3 py-2 text-sm font-medium " +
+    "disabled:opacity-60 disabled:pointer-events-none";
 
-const alertBase = "mt-2 flex items-start gap-2 rounded-md border px-3 py-2 text-xs";
+const alertBase = "mt-2 flex items-start gap-2 rounded-md border px-3 py-2 text-xs border-[#E3E8F0] dark:border-white/[0.12]";
 
 function getNomeFalecido(registro?: Registro | null) {
     return String(
@@ -201,8 +201,8 @@ export default function EnviarLegadoLuz({
             {msg && (
                 <div
                     className={`${alertBase} ${msg.type === "success"
-                        ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                        : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                        ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white"
+                        : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
                         }`}
                     role="status"
                 >

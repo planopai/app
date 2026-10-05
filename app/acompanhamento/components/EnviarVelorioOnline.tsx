@@ -11,10 +11,10 @@ import type { Registro } from "./types";
 type SalaKey = "sala_01" | "sala_02" | "sala_03";
 
 const btnClass =
-    "w-full inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white " +
-    "hover:bg-emerald-700 disabled:opacity-60 disabled:pointer-events-none";
+    "w-full inline-flex items-center justify-center gap-2 rounded-md bg-[#7BA11A] px-3 py-2 text-sm font-medium text-white" +
+    "hover:bg-[#5C7A12] disabled:opacity-60 disabled:pointer-events-none";
 
-const alertBase = "mt-2 flex items-start gap-2 rounded-md border px-3 py-2 text-xs";
+const alertBase = "mt-2 flex items-start gap-2 rounded-md border px-3 py-2 text-xs border-[#E3E8F0] dark:border-white/[0.12]";
 
 function normalizarTextoSenha(texto?: string) {
     const normalizado = String(texto ?? "")
@@ -191,8 +191,8 @@ export default function EnviarVelorioOnline({
             {msg && (
                 <div
                     className={`${alertBase} ${msg.type === "success"
-                            ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                            : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                            ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white"
+                            : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
                         }`}
                     role="status"
                 >

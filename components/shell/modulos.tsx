@@ -105,9 +105,6 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/servicos-funerarios", slug: "servicos-funerarios" },
         itens: [
             { titulo: "Atendimentos", desc: "Registro e histórico", href: "/acompanhamento", slugs: ["acompanhamento"], icone: IconClipboardList, selo: "aguardando" },
-            { titulo: "Obituário", desc: "Peças para redes sociais", href: "/obituario", slugs: ["obituario"], icone: IconFileInvoice },
-            { titulo: "Memorial", desc: "Salas, homenagens e obituário", href: "/memorial", slugs: ["memorial"], icone: IconHeart },
-            { titulo: "Salas", desc: "Acesso às salas de velório", href: "/salas", slugs: ["salas"], icone: IconDoor },
             { titulo: "Homenagens", desc: "Livro de homenagens", href: "/mensagens", slugs: ["mensagens"], icone: IconHeartHandshake },
             { titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao"], icone: IconEye },
             { titulo: "Coroa de Flores", desc: "Coroas naturais e artificiais", href: "/coroa-de-flores", slugs: ["coroa-de-flores"], icone: IconFlower, selo: "coroas" },
@@ -208,7 +205,6 @@ export const MODULOS: Modulo[] = [
             { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog, secao: "Administração" },
             { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Administração" },
             { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Administração" },
-            { titulo: "Segurança", desc: "Acessos e proteção de dados", href: "/seguranca", slugs: ["seguranca"], icone: IconLock, secao: "Administração" },
             { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics, secao: "Administração" },
             { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages, secao: "Administração" },
             { titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar, secao: "Administração" },

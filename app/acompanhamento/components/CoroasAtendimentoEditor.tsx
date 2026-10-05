@@ -265,7 +265,7 @@ export default function CoroasAtendimentoEditor({
     };
 
     return (
-        <div data-wizard-error={hasError ? "1" : "0"} className={`mt-3 rounded-xl border p-3 ${hasError ? "border-red-500" : ""}`}>
+        <div data-wizard-error={hasError ? "1" : "0"} className={`mt-3 rounded-xl border p-3 border-[#E3E8F0] dark:border-white/[0.12] ${hasError ? "border-red-500" : ""}`}>
             <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <div className="text-sm font-semibold">Coroas deste atendimento</div>
@@ -281,7 +281,7 @@ export default function CoroasAtendimentoEditor({
                         onChange={(e) => alterarQuantidadeDigitada(e.target.value)}
                         onBlur={normalizarQuantidadeAoSair}
                         aria-label="Quantidade de coroas"
-                        className="ml-2 w-20 rounded-md border bg-background px-2 py-1.5 text-base"
+                        className="ml-2 w-20 rounded-md border bg-[#F1F4F8] dark:bg-[#1C2334] px-2 py-1.5 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                     />
                 </label>
             </div>
@@ -290,10 +290,10 @@ export default function CoroasAtendimentoEditor({
                 {items.map((item, index) => {
                     const foto = normalizarFoto(item.foto_produto_url);
                     return (
-                        <div key={index} className="rounded-xl border bg-muted/10 p-3">
+                        <div key={index} className="rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
                             <div className="mb-3 flex items-center justify-between gap-2">
                                 <div className="font-semibold">Coroa {index + 1}</div>
-                                <span className="text-xs text-muted-foreground">{index + 1} de {items.length}</span>
+                                <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">{index + 1} de {items.length}</span>
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -314,7 +314,7 @@ export default function CoroasAtendimentoEditor({
                                                 foto_produto_url: "",
                                             });
                                         }}
-                                        className="w-full rounded-md border bg-background px-3 py-2 text-base"
+                                        className="w-full rounded-md border bg-[#F1F4F8] dark:bg-[#1C2334] px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                                     >
                                         <option value="">Selecione</option>
                                         <option value="natural">Natural</option>
@@ -336,7 +336,7 @@ export default function CoroasAtendimentoEditor({
                                                 valor: null,
                                                 foto_produto_url: "",
                                             })}
-                                            className="w-full rounded-md border bg-background px-3 py-2 text-base"
+                                            className="w-full rounded-md border bg-[#F1F4F8] dark:bg-[#1C2334] px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                                         >
                                             <option value="">Selecione</option>
                                             {DEPOSITOS_ARTIFICIAIS.map((dep) => <option key={dep.value} value={dep.value}>{dep.label}</option>)}
@@ -352,24 +352,24 @@ export default function CoroasAtendimentoEditor({
                                         type="button"
                                         disabled={disabled}
                                         onClick={() => abrirModelos(index)}
-                                        className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left disabled:opacity-60"
+                                        className="flex w-full items-center gap-3 rounded-xl border bg-[#F1F4F8] dark:bg-[#1C2334] p-3 text-left disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     >
-                                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                            {foto ? <img src={foto} alt={item.modelo_coroa} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">Sem foto</div>}
+                                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] border-[#E3E8F0] dark:border-white/[0.12]">
+                                            {foto ? <img src={foto} alt={item.modelo_coroa} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-[#5B6478] dark:text-[#AEB9CF]">Sem foto</div>}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="truncate font-medium">{item.modelo_coroa}</div>
-                                            <div className="mt-1 text-xs text-muted-foreground">{tipoLabel(item.tipo_coroa)}{item.deposito_nome ? ` • ${item.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : item.deposito_nome}` : ""}</div>
+                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{tipoLabel(item.tipo_coroa)}{item.deposito_nome ? ` • ${item.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : item.deposito_nome}` : ""}</div>
                                             <div className="mt-1 font-semibold">{dinheiroBRL(item.valor)}</div>
                                         </div>
-                                        <span className="text-xs text-blue-600">Alterar</span>
+                                        <span className="text-xs text-[#313C55] dark:text-white">Alterar</span>
                                     </button>
                                 ) : (
                                     <button
                                         type="button"
                                         disabled={disabled || !item.tipo_coroa || (item.tipo_coroa === "artificial" && !item.deposito_nome)}
                                         onClick={() => abrirModelos(index)}
-                                        className="w-full rounded-md border border-dashed px-3 py-3 text-sm disabled:opacity-50"
+                                        className="w-full rounded-md border border-dashed px-3 py-3 text-sm disabled:opacity-50 border-[#E3E8F0] dark:border-white/[0.12]"
                                     >
                                         {!item.tipo_coroa
                                             ? "Selecione primeiro o tipo"
@@ -386,7 +386,7 @@ export default function CoroasAtendimentoEditor({
                                     disabled={disabled}
                                     value=""
                                     onChange={(e) => e.target.value && patchItem(index, { frase: e.target.value })}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-base"
+                                    className="w-full rounded-md border bg-[#F1F4F8] dark:bg-[#1C2334] px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                                 >
                                     <option value="">Selecione uma sugestão ou escreva abaixo</option>
                                     {FRASES_SUGERIDAS.map((frase, i) => <option key={i} value={frase}>{i + 1} — {frase}</option>)}
@@ -397,7 +397,7 @@ export default function CoroasAtendimentoEditor({
                                     disabled={disabled}
                                     onChange={(e) => patchItem(index, { frase: e.target.value })}
                                     placeholder={`Frase da Coroa ${index + 1}`}
-                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-base"
+                                    className="min-h-24 w-full rounded-md border bg-[#F1F4F8] dark:bg-[#1C2334] px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                                 />
                             </div>
                         </div>
@@ -407,29 +407,29 @@ export default function CoroasAtendimentoEditor({
 
             <Modal open={modalItem != null} onClose={() => setModalItem(null)} ariaLabel="Selecionar modelo de coroa" maxWidth={980}>
                 <h3 className="text-lg font-semibold">Selecionar Coroa {itemModal ? tipoLabel(itemModal.tipo_coroa) : ""}</h3>
-                {itemModal?.tipo_coroa === "artificial" && <p className="mt-1 text-xs text-muted-foreground">Depósito: <b>{itemModal.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : itemModal.deposito_nome}</b>. Somente modelos com saldo neste depósito são exibidos.</p>}
+                {itemModal?.tipo_coroa === "artificial" && <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Depósito: <b>{itemModal.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : itemModal.deposito_nome}</b>. Somente modelos com saldo neste depósito são exibidos.</p>}
                 <input
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
                     placeholder="Pesquisar modelo pelo nome ou código..."
-                    className="mt-4 w-full rounded-xl border bg-background px-3 py-2 text-base"
+                    className="mt-4 w-full rounded-xl border bg-[#F1F4F8] dark:bg-[#1C2334] px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                 />
 
-                <div className="mt-3 max-h-[65vh] overflow-auto rounded-xl border">
-                    {loading ? <div className="p-6 text-center text-sm text-muted-foreground">Carregando modelos...</div> : erro ? <div className="p-4 text-sm text-red-600">{erro}</div> : rows.length === 0 ? <div className="p-6 text-center text-sm text-muted-foreground">Nenhum modelo disponível.</div> : (
+                <div className="mt-3 max-h-[65vh] overflow-auto rounded-xl border border-[#E3E8F0] dark:border-white/[0.12]">
+                    {loading ? <div className="p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando modelos...</div> : erro ? <div className="p-4 text-sm text-[#B42318] dark:text-[#FF9C92]">{erro}</div> : rows.length === 0 ? <div className="p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Nenhum modelo disponível.</div> : (
                         <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
                             {rows.map((row) => {
                                 const foto = fotoPrincipal(row);
                                 return (
-                                    <button key={`${row.id}|${row.deposito_nome || ""}`} type="button" onClick={() => selecionarProduto(row)} className="flex gap-3 rounded-2xl border bg-background p-3 text-left hover:bg-muted/30">
-                                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                            {foto ? <img src={foto} alt={row.nome} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">Sem foto</div>}
+                                    <button key={`${row.id}|${row.deposito_nome || ""}`} type="button" onClick={() => selecionarProduto(row)} className="flex gap-3 rounded-2xl border bg-[#F1F4F8] dark:bg-[#1C2334] p-3 text-left hover:bg-[#F6F8FB] dark:bg-[#1C2334] border-[#E3E8F0] dark:border-white/[0.12]">
+                                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] border-[#E3E8F0] dark:border-white/[0.12]">
+                                            {foto ? <img src={foto} alt={row.nome} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-[#5B6478] dark:text-[#AEB9CF]">Sem foto</div>}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="line-clamp-2 font-semibold">{row.nome}</div>
-                                            {row.codigo_barras ? <div className="mt-1 text-xs text-muted-foreground">CB: {row.codigo_barras}</div> : null}
+                                            {row.codigo_barras ? <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">CB: {row.codigo_barras}</div> : null}
                                             <div className="mt-1 font-semibold">{dinheiroBRL(row.valor)}</div>
-                                            {itemModal?.tipo_coroa === "artificial" ? <div className="mt-1 text-xs text-muted-foreground">Estoque: <b>{Number(row.saldo_total || 0)}</b></div> : <div className="mt-1 text-xs text-muted-foreground">Natural • sem baixa de estoque</div>}
+                                            {itemModal?.tipo_coroa === "artificial" ? <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Estoque: <b>{Number(row.saldo_total || 0)}</b></div> : <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Natural • sem baixa de estoque</div>}
                                         </div>
                                     </button>
                                 );

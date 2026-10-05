@@ -1,153 +1,131 @@
 "use client";
 
+/**
+ * Cabeçalho do app (mockup "Repaginada do app PAI").
+ *  - Computador (72 px): caminho "Módulo > Tela", pesquisa (Ctrl/⌘ K), pílula Online, sino e tema.
+ *  - Celular (60 px): título da tela, pílula Online, tema e sino. O menu é a barra de baixo; o botão ☰ só aparece
+ *    nas telas em que a barra de baixo não está (ex.: Chat da Aurora).
+ * Não há mais os botões de Início e de Chat (já estão nos atalhos), a seta de voltar nem o seletor de cores.
+ */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Home, MessageCircle } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { IconBell, IconChevronRight } from "@tabler/icons-react";
 
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { BotaoMenuCelular } from "@/components/shell/MenuCelular";
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { ThemeSelector } from "./theme-selector";
+import { BotaoMenuCelular, useBarraVisivel } from "@/components/shell/MenuCelular";
+import BuscaGlobal from "@/components/shell/BuscaGlobal";
+import { acharModuloPorRota, destinoDoModulo } from "@/components/shell/modulos";
+import { rotaExiste } from "@/components/shell/rotas";
+import { useContadores } from "@/components/shell/useContadores";
 import { ModeSwitcher } from "./mode-switcher";
 
-export function SiteHeader() {
-  const router = useRouter();
-  const { perms, has } = usePerms();
+const TITULOS_EXTRA: Record<string, string> = {
+  "/help": "Ajuda",
+  "/personalizar-barra": "Personalizar barra",
+  "/tela": "Tela inicial",
+  "/geral": "Estoque",
+  "/quadrotv": "Quadro de Atendimentos (TV)",
+};
 
+function tituloDaRota(pathname: string): string {
+  if (pathname === "/") return "Início";
+  if (TITULOS_EXTRA[pathname]) return TITULOS_EXTRA[pathname];
+  const ultimo = pathname.split("/").filter(Boolean).pop() || "";
+  const texto = decodeURIComponent(ultimo).replace(/-/g, " ");
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+export function SiteHeader() {
+  const pathname = (usePathname() || "/").replace(/\/+$/, "") || "/";
+  const { perms, has } = usePerms();
+  const numeros = useContadores(perms, has);
+  const barraVisivel = useBarraVisivel();
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
-  const permissionsReady = perms !== null;
-  const canAccessChat = permissionsReady && has("chat");
-
   useEffect(() => {
-    const atualizarStatus = () => {
-      setIsOnline(navigator.onLine);
-    };
-
-    atualizarStatus();
-
-    window.addEventListener("online", atualizarStatus);
-    window.addEventListener("offline", atualizarStatus);
-
+    const atualizar = () => setIsOnline(navigator.onLine);
+    atualizar();
+    window.addEventListener("online", atualizar);
+    window.addEventListener("offline", atualizar);
     return () => {
-      window.removeEventListener("online", atualizarStatus);
-      window.removeEventListener("offline", atualizarStatus);
+      window.removeEventListener("online", atualizar);
+      window.removeEventListener("offline", atualizar);
     };
   }, []);
+
+  const { modulo, item, fixo } = acharModuloPorRota(pathname);
+  const titulo = item?.titulo ?? fixo?.titulo ?? modulo?.titulo ?? tituloDaRota(pathname);
+  const pronto = perms !== null;
+  const temAvisos = pronto && has("avisos") && rotaExiste("/avisos");
+  const pendentes = temAvisos ? numeros.avisos ?? 0 : 0;
+
+  const pilula = [
+    "inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 text-[13px] font-bold",
+    "h-[30px] md:h-9",
+    isOnline === false
+      ? "bg-[#FDECEA] text-[#B42318] dark:bg-[#463D4C] dark:text-[#FF9C92]"
+      : "bg-[#EEF5D6] text-[#313C55] dark:bg-[#404C43] dark:text-white",
+  ].join(" ");
 
   return (
     <header
       className="
         sticky top-0 z-50 isolate
-        flex h-(--header-height) shrink-0 items-center gap-2
-        border-b
-        bg-background
-        shadow-sm
-        transition-[width,height]
-        ease-linear
-        group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)
+        flex h-(--header-height) shrink-0 items-center
+        border-b bg-background shadow-sm
       "
     >
-      <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-        {/* celular: abre o Menu do mockup. No computador a barra lateral é fixa (não há botão de recolher). */}
-        <BotaoMenuCelular />
+      <div className="flex w-full items-center gap-2 px-4 md:gap-4 md:px-10">
+        {!barraVisivel && <BotaoMenuCelular />}
 
-        {/* Home */}
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-        >
-          <Link
-            href="/"
-            aria-label="Início"
-            title="Início"
-          >
-            <Home className="h-4 w-4" />
-          </Link>
-        </Button>
-
-        {/* Chat — somente para quem possui a permissão "chat" */}
-        {canAccessChat && (
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-          >
-            <Link
-              href="/chat"
-              aria-label="Chat"
-              title="Chat"
-            >
-              <MessageCircle className="h-4 w-4" />
-            </Link>
-          </Button>
-        )}
-
-        <Separator
-          orientation="vertical"
-          className="mx-2 data-[orientation=vertical]:h-4"
-        />
-
-        <h1 className="text-base font-medium" />
-
-        {/* Direita */}
-        <div className="ml-auto flex items-center gap-2">
-          {/* Status da conexão */}
-          {isOnline !== null && (
-            <div
-              className="flex items-center gap-1.5 text-xs font-medium"
-              aria-live="polite"
-              title={
-                isOnline
-                  ? "Dispositivo conectado à internet"
-                  : "Dispositivo sem conexão com a internet"
-              }
-            >
-              <span
-                className={[
-                  "h-2.5 w-2.5 rounded-full",
-                  isOnline
-                    ? "bg-green-500"
-                    : "bg-orange-500",
-                ].join(" ")}
-              />
-
-              <span
-                className={
-                  isOnline
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-orange-600 dark:text-orange-400"
-                }
+        {/* computador: caminho */}
+        <nav aria-label="Você está em" className="hidden items-center gap-1.5 text-[15px] md:flex">
+          {modulo && item ? (
+            <>
+              <Link
+                href={destinoDoModulo(modulo, has)}
+                className="font-semibold text-[#5B6478] hover:text-[#313C55] dark:text-[#AEB9CF] dark:hover:text-white"
               >
-                {isOnline ? "Online" : "Offline"}
-              </span>
-            </div>
+                {modulo.titulo}
+              </Link>
+              <IconChevronRight size={16} className="shrink-0 text-[#7A8396]" />
+              <span className="font-extrabold">{item.titulo}</span>
+            </>
+          ) : (
+            <span className="font-extrabold">{titulo}</span>
           )}
+        </nav>
 
-          {/* Voltar */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => router.back()}
-            aria-label="Voltar"
-            title="Voltar"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+        {/* celular: título da tela */}
+        <div className="min-w-0 flex-1 truncate text-[22px] font-extrabold md:hidden">{titulo}</div>
 
-          <Separator
-            orientation="vertical"
-            className="mx-1 data-[orientation=vertical]:h-4"
-          />
+        {/* computador: pesquisa */}
+        <BuscaGlobal className="ml-4 hidden md:block" />
 
-          <ThemeSelector />
-          <ModeSwitcher />
+        <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
+          <span className={pilula} role="status">
+            <span className={`size-2 rounded-full ${isOnline === false ? "bg-[#B42318] dark:bg-[#FF9C92]" : "bg-[#7BA11A]"}`} />
+            {isOnline === false ? "Offline" : "Online"}
+          </span>
+
+          <span className="[&_button]:size-11 [&_svg]:size-5">
+            <ModeSwitcher />
+          </span>
+
+          {temAvisos && (
+            <Link
+              href="/avisos"
+              aria-label={pendentes > 0 ? `Avisos: ${pendentes} pendentes` : "Avisos"}
+              title="Avisos"
+              className="relative grid size-11 place-items-center rounded-lg hover:bg-accent"
+            >
+              <IconBell size={20} />
+              {pendentes > 0 && (
+                <span className="absolute right-[11px] top-[10px] size-[9px] rounded-full border-2 border-background bg-[#F2CB3F]" />
+              )}
+            </Link>
+          )}
         </div>
       </div>
     </header>

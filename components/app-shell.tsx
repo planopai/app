@@ -38,10 +38,11 @@ export default function AppShell({
             /* Barra lateral FIXA no computador (mockup): sempre aberta, sem recolher. `open` controlado e sem onOpenChange
                ignora o botão e o atalho Ctrl+B. No celular o menu é o Menu do mockup (MenuCelular), não esta barra. */
             open
+            /* cabeçalho do mockup: 60 px no celular, 72 px no computador */
+            className="[--header-height:3.75rem] md:[--header-height:4.5rem]"
             style={
                 {
                     "--sidebar-width": "17rem", // 272 px, a largura do mockup
-                    "--header-height": "calc(var(--spacing) * 12)",
                 } as React.CSSProperties
             }
         >

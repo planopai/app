@@ -145,7 +145,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h3 className="text-lg font-semibold">Conferência de Materiais</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                         Para confirmar <span className="font-medium">Material Recolhido</span>, marque{" "}
                         <span className="font-medium">OK</span> ou <span className="font-medium">Não Conforme</span> em cada item.
                         {(!itens || itens.length === 0) ? (
@@ -157,20 +157,20 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 </div>
 
                 <div className="shrink-0 text-right">
-                    <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground whitespace-nowrap">
+                    <div className="rounded-md bg-[#EEF2F7] dark:bg-white/10 px-2 py-1 text-xs text-[#5B6478] dark:text-[#AEB9CF] whitespace-nowrap">
                         {totals.ok}/{totals.total} OK
                     </div>
                     {totals.nc > 0 && (
-                        <div className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 border border-amber-200 whitespace-nowrap">
+                        <div className="mt-1 rounded-md bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 px-2 py-1 text-xs text-[#313C55] dark:text-white border border-[#F2CB3F] whitespace-nowrap">
                             {totals.nc} Não Conforme
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border">
+            <div className="mt-4 max-h-[45vh] overflow-auto rounded-lg border border-[#E3E8F0] dark:border-white/[0.12]">
                 {(!itens || itens.length === 0) && (
-                    <div className="p-4 text-sm text-muted-foreground">
+                    <div className="p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                         Nenhum material selecionado para conferência.
                     </div>
                 )}
@@ -180,15 +180,15 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                     const st = states[k] ?? { ok: false, naoConforme: false };
 
                     const pill = st.ok ? (
-                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                        <span className="inline-flex rounded-full bg-[#EEF5D6] dark:bg-[#B3CE52]/20 px-2 py-0.5 text-xs font-medium text-[#313C55] dark:text-white">
                             OK
                         </span>
                     ) : st.naoConforme ? (
-                        <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        <span className="inline-flex rounded-full bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 px-2 py-0.5 text-xs font-medium text-[#313C55] dark:text-white">
                             Não Conforme
                         </span>
                     ) : (
-                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        <span className="inline-flex rounded-full bg-[#EEF2F7] dark:bg-white/10 px-2 py-0.5 text-xs font-medium text-[#5B6478] dark:text-[#AEB9CF]">
                             Pendente
                         </span>
                     );
@@ -204,8 +204,8 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                                         {pill}
                                     </div>
 
-                                    <div className="mt-0.5 text-sm text-muted-foreground">
-                                        Qtd: <span className="font-medium text-foreground">{Number(it.qtd ?? 0)}</span>
+                                    <div className="mt-0.5 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                                        Qtd: <span className="font-medium text-[#313C55] dark:text-white">{Number(it.qtd ?? 0)}</span>
                                     </div>
                                 </div>
 
@@ -214,8 +214,8 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                                         type="button"
                                         onClick={() => toggleOk(k)}
                                         className={[
-                                            "rounded-md border px-3 py-2 text-sm font-medium transition",
-                                            st.ok ? "bg-emerald-600 text-white border-emerald-700" : "hover:bg-muted",
+                                            "rounded-md border px-3 py-2 text-sm font-medium transition border-[#E3E8F0] dark:border-white/[0.12]",
+                                            st.ok ? "bg-[#7BA11A] text-white border-[#5C7A12]" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10",
                                         ].join(" ")}
                                         aria-pressed={st.ok}
                                     >
@@ -226,8 +226,8 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                                         type="button"
                                         onClick={() => toggleNaoConforme(k)}
                                         className={[
-                                            "rounded-md border px-3 py-2 text-sm font-medium transition",
-                                            st.naoConforme ? "bg-amber-500 text-white border-amber-600" : "hover:bg-muted",
+                                            "rounded-md border px-3 py-2 text-sm font-medium transition border-[#E3E8F0] dark:border-white/[0.12]",
+                                            st.naoConforme ? "bg-[#F2CB3F] text-[#313C55] border-[#E4BC30]" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10",
                                         ].join(" ")}
                                         aria-pressed={st.naoConforme}
                                     >
@@ -240,24 +240,24 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
                 })}
             </div>
 
-            <div className="mt-4 rounded-lg border p-3">
+            <div className="mt-4 rounded-lg border p-3 border-[#E3E8F0] dark:border-white/[0.12]">
                 <label className="block text-sm font-medium" htmlFor="mat-conf-obs">
                     Observação{" "}
-                    {anyNaoConforme ? <span className="text-xs text-muted-foreground">(há itens não conformes)</span> : null}
+                    {anyNaoConforme ? <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">(há itens não conformes)</span> : null}
                 </label>
 
                 <textarea
                     id="mat-conf-obs"
                     ref={obsRef}
-                    className="mt-2 w-full min-h-[92px] resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    className="mt-2 w-full min-h-[92px] resize-y rounded-md border bg-[#F1F4F8] dark:bg-[#1C2334] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary border-[#E3E8F0] dark:border-white/[0.12]"
                     placeholder="Descreva observações gerais (ex.: item faltando, quantidade divergente, avaria...)"
                     value={observacao}
                     onChange={(e) => setObservacao(e.target.value)}
                     maxLength={700}
                 />
 
-                <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className={erro ? "text-destructive" : ""}>{erro ? erro : " "}</span>
+                <div className="mt-1 flex items-center justify-between text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                    <span className={erro ? "text-[#B42318] dark:text-[#FF9C92]" : ""}>{erro ? erro : " "}</span>
                     <span>{observacao.trim().length}/700</span>
                 </div>
             </div>
@@ -265,7 +265,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
             <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                    className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                     onClick={onClose}
                     disabled={submitting}
                 >
@@ -274,7 +274,7 @@ export default function MateriaisConferenciaModal({ open, itens, onClose, onConf
 
                 <button
                     type="button"
-                    className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                    className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                     onClick={handleConfirm}
                     disabled={!allResolved || submitting}
                     aria-busy={submitting}

@@ -18,19 +18,19 @@ const PORTAL_FAMILIA_URL = "https://planoassistencialintegrado.com.br/portal-da-
 const LEGADO_LUZ_URL = "https://planoassistencialintegrado.com.br/legado-de-luz/";
 
 const mainBtn =
-    "w-full rounded-xl border border-[#9edcff] bg-white px-4 py-4 text-center text-base font-bold text-[#001f5b] " +
+    "w-full rounded-xl border border-[#9edcff] bg-white dark:bg-[#232B3F] px-4 py-4 text-center text-base font-bold text-[#313C55] dark:text-white" +
     "shadow-sm transition hover:border-[#039adc] hover:bg-[#eef9ff] hover:shadow-md " +
     "disabled:opacity-60 disabled:pointer-events-none";
 
 const actionBtn =
-    "w-full rounded-lg bg-[#039adc] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-95 " +
+    "w-full rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-95" +
     "disabled:opacity-60 disabled:pointer-events-none";
 
 const outlineBtn =
-    "w-full rounded-lg border border-[#039adc] bg-[#eef9ff] px-4 py-3 text-sm font-bold text-[#001f5b] transition hover:bg-[#dff4ff] " +
+    "w-full rounded-lg border border-[#039adc] bg-[#eef9ff] px-4 py-3 text-sm font-bold text-[#313C55] dark:text-white transition hover:bg-[#dff4ff]" +
     "disabled:opacity-60 disabled:pointer-events-none";
 
-const alertBase = "rounded-md border px-3 py-2 text-xs";
+const alertBase = "rounded-md border px-3 py-2 text-xs border-[#E3E8F0] dark:border-white/[0.12]";
 
 function removerAcentos(texto: string) {
     return String(texto || "")
@@ -405,14 +405,14 @@ export default function CompartilharModal({
                             Compartilhar
                         </h2>
 
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Escolha uma opção
                         </p>
                     </div>
 
                     <button
                         type="button"
-                        className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        className="shrink-0 rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
                         onClick={fecharTudo}
                         title="Fechar"
                         aria-label="Fechar"
@@ -421,7 +421,7 @@ export default function CompartilharModal({
                     </button>
                 </div>
 
-                <div className="mt-5 rounded-lg border bg-card/60 px-3 py-3 text-center">
+                <div className="mt-5 rounded-lg border bg-white dark:bg-[#232B3F] px-3 py-3 text-center border-[#E3E8F0] dark:border-white/[0.12]">
                     <div className="break-words text-sm font-bold uppercase tracking-wide">
                         {nomeFalecido || "Nenhum atendimento selecionado"}
                     </div>
@@ -462,8 +462,8 @@ export default function CompartilharModal({
                     {msg && (
                         <div
                             className={`${alertBase} ${msg.type === "success"
-                                ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                                : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                                ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white"
+                                : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
                                 }`}
                             role="status"
                         >
@@ -485,14 +485,14 @@ export default function CompartilharModal({
                             {modalOpcaoTitulo}
                         </h2>
 
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Escolha uma ação
                         </p>
                     </div>
 
                     <button
                         type="button"
-                        className="shrink-0 rounded-md px-2 py-1 text-xl leading-none text-muted-foreground hover:text-foreground"
+                        className="shrink-0 rounded-md px-2 py-1 text-xl leading-none text-[#5B6478] dark:text-[#AEB9CF] hover:text-foreground"
                         onClick={() => setOpcaoAberta(null)}
                         title="Fechar"
                         aria-label="Fechar"
@@ -501,7 +501,7 @@ export default function CompartilharModal({
                     </button>
                 </div>
 
-                <div className="mt-5 rounded-lg border bg-card/60 px-3 py-3 text-center">
+                <div className="mt-5 rounded-lg border bg-white dark:bg-[#232B3F] px-3 py-3 text-center border-[#E3E8F0] dark:border-white/[0.12]">
                     <div className="break-words text-sm font-bold uppercase tracking-wide">
                         {nomeFalecido || "Nenhum atendimento selecionado"}
                     </div>
@@ -578,8 +578,8 @@ export default function CompartilharModal({
                 {msg && (
                     <div
                         className={`mt-4 ${alertBase} ${msg.type === "success"
-                            ? "border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200"
-                            : "border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200"
+                            ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white"
+                            : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
                             }`}
                         role="status"
                     >

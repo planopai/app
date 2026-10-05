@@ -45,9 +45,9 @@ function getTitulo(tipo?: FotoAcaoTipo | null) {
 function SubtituloFoto({ tipo }: { tipo?: FotoAcaoTipo | null }) {
     if (tipo === "fim_ornamentacao") {
         return (
-            <div className="mt-1 text-sm text-muted-foreground">
+            <div className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                 <div>ANEXE A FOTO DA ORNAMENTAÇÃO</div>
-                <div className="mt-1 font-bold uppercase text-red-600">
+                <div className="mt-1 font-bold uppercase text-[#B42318] dark:text-[#FF9C92]">
                     SEM MOSTRAR O ROSTO DO FALECIDO
                 </div>
             </div>
@@ -56,14 +56,14 @@ function SubtituloFoto({ tipo }: { tipo?: FotoAcaoTipo | null }) {
 
     if (tipo === "entrega_corpo") {
         return (
-            <div className="mt-1 text-sm text-muted-foreground">
+            <div className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                 ANEXE UMA FOTO DA PARAMENTAÇÃO
             </div>
         );
     }
 
     return (
-        <div className="mt-1 text-sm text-muted-foreground">
+        <div className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
             Foto obrigatória para confirmar esta ação.
         </div>
     );
@@ -724,7 +724,7 @@ export default function FotoAcaoModal({
                 />
 
                 <div className="mt-4">
-                    <div className={cameraOpen ? "overflow-hidden rounded-xl border bg-black" : "hidden"}>
+                    <div className={cameraOpen ? "overflow-hidden rounded-xl border bg-black border-[#E3E8F0] dark:border-white/[0.12]" : "hidden"}>
                         <video
                             ref={videoRef}
                             autoPlay
@@ -735,18 +735,18 @@ export default function FotoAcaoModal({
                     </div>
 
                     {!cameraOpen && (previewUrl ? (
-                        <div className="overflow-hidden rounded-xl border bg-muted/30">
+                        <div className="overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] border-[#E3E8F0] dark:border-white/[0.12]">
                             <img
                                 src={previewUrl}
                                 alt="Miniatura da foto anexada"
                                 className="max-h-[240px] w-full object-contain"
                             />
-                            <div className="border-t px-3 py-2 text-center text-xs text-muted-foreground">
+                            <div className="border-t px-3 py-2 text-center text-xs text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                 Foto otimizada: {formatBytes(fotoBlob?.size ?? 0)}
                             </div>
                         </div>
                     ) : (
-                        <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                        <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed bg-[#F6F8FB] dark:bg-[#1C2334] p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                             {cameraStarting || processing ? (
                                 <span>Preparando foto...</span>
                             ) : (
@@ -764,7 +764,7 @@ export default function FotoAcaoModal({
                     <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         <button
                             type="button"
-                            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+                            className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                             disabled={busy}
                             onClick={tirarFoto}
                         >
@@ -773,7 +773,7 @@ export default function FotoAcaoModal({
 
                         <button
                             type="button"
-                            className="rounded-md border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            className="rounded-md border px-4 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             disabled={busy}
                             onClick={pararCamera}
                         >
@@ -784,7 +784,7 @@ export default function FotoAcaoModal({
                     <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                         <button
                             type="button"
-                            className="rounded-md border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            className="rounded-md border px-4 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             disabled={busy}
                             onClick={abrirCamera}
                         >
@@ -793,7 +793,7 @@ export default function FotoAcaoModal({
 
                         <button
                             type="button"
-                            className="rounded-md border px-4 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                            className="rounded-md border px-4 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             disabled={busy}
                             onClick={onClose}
                         >
@@ -802,7 +802,7 @@ export default function FotoAcaoModal({
 
                         <button
                             type="button"
-                            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+                            className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                             disabled={busy || !fotoBlob}
                             onClick={handleSalvar}
                         >

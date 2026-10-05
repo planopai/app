@@ -142,8 +142,8 @@ function CheckboxChoiceGroup({
         <div
             data-wizard-error={hasError ? "1" : "0"}
             className={[
-                "rounded-lg border px-3 py-2",
-                hasError ? "border-red-500 bg-red-50/40" : "border-slate-200 bg-white",
+                "rounded-lg border px-3 py-2 border-[#E3E8F0] dark:border-white/[0.12]",
+                hasError ? "border-red-500 bg-[#FDECEA]/60 dark:bg-[#FF9C92]/10" : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]",
                 disabled ? "opacity-60" : "",
             ].join(" ")}
             role="group"
@@ -154,7 +154,7 @@ function CheckboxChoiceGroup({
 
             {/* Nome do item e opções ficam dentro da mesma borda e na mesma linha. */}
             <div className="flex min-h-7 flex-nowrap items-center gap-3">
-                <div className="min-w-0 flex-1 text-sm font-medium leading-tight text-slate-800">
+                <div className="min-w-0 flex-1 text-sm font-medium leading-tight text-[#313C55] dark:text-white">
                     {label}
                 </div>
 
@@ -167,7 +167,7 @@ function CheckboxChoiceGroup({
                                 key={option.value}
                                 className={[
                                     "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm font-medium",
-                                    checked ? "text-blue-700" : "text-slate-700",
+                                    checked ? "text-[#313C55] dark:text-white" : "text-[#313C55] dark:text-[#D6DCE8]",
                                     disabled ? "cursor-not-allowed" : "",
                                 ].join(" ")}
                             >
@@ -176,7 +176,7 @@ function CheckboxChoiceGroup({
                                     checked={checked}
                                     disabled={disabled}
                                     onChange={() => onChange(option.value)}
-                                    className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                                    className="h-4 w-4 rounded border-[#C9D1DE] dark:border-white/25 accent-[#313C55] dark:accent-[#F2CB3F]"
                                     aria-label={`${ariaLabel}: ${option.label}`}
                                 />
                                 <span>{option.label}</span>
@@ -411,10 +411,10 @@ function EstoqueCombobox({
         <div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[200px_1fr] sm:gap-2">
                 <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-700">{depositoLabel}</label>
+                    <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">{depositoLabel}</label>
 
                     <select
-                        className="w-full rounded-md border px-2 py-2 text-base disabled:opacity-60"
+                        className="w-full rounded-md border px-2 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                         value={depositoValue}
                         onChange={(e) => {
                             onChangeDeposito(e.target.value);
@@ -441,8 +441,8 @@ function EstoqueCombobox({
                 </div>
 
                 <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-700">
-                        {label} {required && <span className="text-red-600">*</span>}
+                    <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">
+                        {label} {required && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
                     </label>
 
                     <div className="flex gap-2">
@@ -457,7 +457,7 @@ function EstoqueCombobox({
                             onClick={() => {
                                 if (!disabled) setPickerOpen(true);
                             }}
-                            className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${errorText ? "border-red-500" : ""
+                            className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${errorText ? "border-red-500" : ""
                                 }`}
                             disabled={disabled}
                             autoComplete="off"
@@ -466,7 +466,7 @@ function EstoqueCombobox({
 
                         <button
                             type="button"
-                            className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-muted disabled:opacity-60"
+                            className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             disabled={disabled}
                             onClick={() => setPickerOpen(true)}
                         >
@@ -474,12 +474,12 @@ function EstoqueCombobox({
                         </button>
                     </div>
 
-                    {errorText ? <div className="mt-1 text-xs text-red-600">{errorText}</div> : null}
+                    {errorText ? <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{errorText}</div> : null}
 
                     <div className="mt-2 flex flex-wrap gap-2">
                         <button
                             type="button"
-                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             disabled={disabled}
                             onClick={limparSelecao}
                         >
@@ -491,21 +491,21 @@ function EstoqueCombobox({
 
 
 
-            {footerHint ? <div className="mt-1 text-[11px] text-slate-400">{footerHint}</div> : null}
+            {footerHint ? <div className="mt-1 text-[11px] text-[#7A8396] dark:text-[#8893AA]">{footerHint}</div> : null}
 
             {/* MODAL / POPUP */}
             <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} ariaLabel={`Selecionar ${label}`} maxWidth={720}>
                 <div className="flex items-center justify-between gap-2">
                     <div>
                         <h3 className="text-lg font-semibold">Selecionar {label}</h3>
-                        <div className="mt-1 text-xs text-muted-foreground">
+                        <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                             Depósito: <b>{depositoValue}</b>
                         </div>
                     </div>
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-base hover:bg-muted"
+                        className="rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
                         onClick={() => setPickerOpen(false)}
                     >
                         Fechar
@@ -525,13 +525,13 @@ function EstoqueCombobox({
                             // NÃO mexe na seleção
                         }}
                         placeholder="(Opcional) filtrar por nome ou código…"
-                        className="w-full rounded-md border px-3 py-2 text-base"
+                        className="w-full rounded-md border px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                         autoComplete="off"
                     />
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-base hover:bg-muted"
+                        className="rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
                         onClick={() => setQ("")}
                         title="Limpar filtro"
                     >
@@ -539,13 +539,13 @@ function EstoqueCombobox({
                     </button>
                 </div>
 
-                <div className="mt-3 rounded-xl border bg-white">
+                <div className="mt-3 rounded-xl border bg-white dark:bg-[#232B3F] border-[#E3E8F0] dark:border-white/[0.12]">
                     {loading ? (
-                        <div className="p-3 text-base text-slate-600">Carregando itens do depósito…</div>
+                        <div className="p-3 text-base text-[#5B6478] dark:text-[#AEB9CF]">Carregando itens do depósito…</div>
                     ) : err ? (
-                        <div className="p-3 text-sm text-red-600">{err}</div>
+                        <div className="p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">{err}</div>
                     ) : rows.length === 0 ? (
-                        <div className="p-3 text-base text-slate-600">Nenhum item encontrado no estoque ({depositoValue}).</div>
+                        <div className="p-3 text-base text-[#5B6478] dark:text-[#AEB9CF]">Nenhum item encontrado no estoque ({depositoValue}).</div>
                     ) : (
                         <ul
                             className="max-h-[65vh] overflow-auto py-1"
@@ -557,17 +557,17 @@ function EstoqueCombobox({
                                     <li key={k}>
                                         <button
                                             type="button"
-                                            className="w-full px-3 py-3 text-left text-base hover:bg-slate-50"
+                                            className="w-full px-3 py-3 text-left text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                             onClick={() => applySelection(it)}
                                             onPointerUp={() => applySelection(it)} // ✅ melhora toque no iOS dentro de overflow
                                         >
                                             <div className="flex items-center justify-between gap-2">
-                                                <span className="truncate font-medium text-slate-900">{it.nome}</span>
-                                                <span className="shrink-0 text-xs text-slate-600">
+                                                <span className="truncate font-medium text-[#313C55] dark:text-white">{it.nome}</span>
+                                                <span className="shrink-0 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                     estoque: <b>{Number(it.saldo_total) || 0}</b>
                                                 </span>
                                             </div>
-                                            <div className="mt-0.5 truncate text-xs text-slate-600">
+                                            <div className="mt-0.5 truncate text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                 CB: <b>{(it as any).codigo_barras || ""}</b>
                                             </div>
                                         </button>
@@ -578,7 +578,7 @@ function EstoqueCombobox({
                     )}
                 </div>
 
-                <div className="mt-3 text-[11px] text-slate-500">Toque no item para selecionar. (Sem digitar, a lista já vem do depósito.)</div>
+                <div className="mt-3 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">Toque no item para selecionar. (Sem digitar, a lista já vem do depósito.)</div>
             </Modal>
         </div>
     );
@@ -689,8 +689,8 @@ function CoroaCombobox({
 
     return (
         <div>
-            <label className="mb-1 block text-xs font-medium text-slate-700">
-                Modelo da Coroa {required && <span className="text-red-600">*</span>}
+            <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">
+                Modelo da Coroa {required && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
             </label>
 
             <div className="flex gap-2">
@@ -700,13 +700,13 @@ function CoroaCombobox({
                     value={value}
                     readOnly
                     placeholder={`Selecione uma Coroa ${tipo}...`}
-                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${errorText ? "border-red-500" : ""}`}
+                    className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${errorText ? "border-red-500" : ""}`}
                     disabled={disabled}
                     onClick={() => !disabled && setOpen(true)}
                 />
                 <button
                     type="button"
-                    className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-muted disabled:opacity-60"
+                    className="shrink-0 rounded-md border px-3 py-2 text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                     disabled={disabled}
                     onClick={() => setOpen(true)}
                 >
@@ -717,7 +717,7 @@ function CoroaCombobox({
             <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                    className="rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                     disabled={disabled}
                     onClick={() => {
                         setValue("");
@@ -727,25 +727,25 @@ function CoroaCombobox({
                     Limpar
                 </button>
                 {tipo === "Natural" ? (
-                    <span className="text-[11px] text-slate-500">Natural: registrada sem baixa de estoque.</span>
+                    <span className="text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">Natural: registrada sem baixa de estoque.</span>
                 ) : (
-                    <span className="text-[11px] text-slate-500">Artificial: baixa de 1 unidade no Corpo Pronto.</span>
+                    <span className="text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">Artificial: baixa de 1 unidade no Corpo Pronto.</span>
                 )}
             </div>
 
-            {errorText && <div className="mt-1 text-xs text-red-600">{errorText}</div>}
+            {errorText && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{errorText}</div>}
 
             <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Selecionar Coroa de Flores" maxWidth={760}>
                 <div className="flex items-center justify-between gap-3">
                     <div>
                         <h3 className="text-lg font-semibold">Selecionar Coroa {tipo}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                             {tipo === "Natural"
                                 ? "A seleção será registrada no atendimento e não movimentará estoque."
                                 : "São exibidos somente modelos com saldo disponível, identificados pelo depósito."}
                         </p>
                     </div>
-                    <button type="button" className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => setOpen(false)}>
+                    <button type="button" className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]" onClick={() => setOpen(false)}>
                         Fechar
                     </button>
                 </div>
@@ -755,17 +755,17 @@ function CoroaCombobox({
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Filtrar por nome ou código..."
-                    className="mt-4 w-full rounded-md border px-3 py-2 text-base"
+                    className="mt-4 w-full rounded-md border px-3 py-2 text-base border-[#E3E8F0] dark:border-white/[0.12]"
                     autoComplete="off"
                 />
 
-                <div className="mt-3 rounded-xl border bg-white">
+                <div className="mt-3 rounded-xl border bg-white dark:bg-[#232B3F] border-[#E3E8F0] dark:border-white/[0.12]">
                     {loading ? (
-                        <div className="p-3 text-base text-slate-600">Carregando modelos...</div>
+                        <div className="p-3 text-base text-[#5B6478] dark:text-[#AEB9CF]">Carregando modelos...</div>
                     ) : err ? (
-                        <div className="p-3 text-sm text-red-600">{err}</div>
+                        <div className="p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">{err}</div>
                     ) : rows.length === 0 ? (
-                        <div className="p-3 text-base text-slate-600">Nenhum modelo disponível.</div>
+                        <div className="p-3 text-base text-[#5B6478] dark:text-[#AEB9CF]">Nenhum modelo disponível.</div>
                     ) : (
                         <ul className="max-h-[65vh] overflow-auto py-1" style={{ WebkitOverflowScrolling: "touch" }}>
                             {rows.map((row) => {
@@ -776,18 +776,18 @@ function CoroaCombobox({
                                     <li key={key}>
                                         <button
                                             type="button"
-                                            className="w-full px-3 py-3 text-left text-base hover:bg-slate-50"
+                                            className="w-full px-3 py-3 text-left text-base hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                             onClick={() => aplicar(row)}
                                         >
                                             <div className="flex items-center justify-between gap-3">
-                                                <span className="font-medium text-slate-900">{row.nome}</span>
+                                                <span className="font-medium text-[#313C55] dark:text-white">{row.nome}</span>
                                                 {tipo === "Artificial" && (
-                                                    <span className="shrink-0 text-xs text-slate-600">
+                                                    <span className="shrink-0 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                         estoque: <b>{Number(row.saldo_total) || 0}</b>
                                                     </span>
                                                 )}
                                             </div>
-                                            <div className="mt-1 text-xs text-slate-600">
+                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                                 CB: <b>{row.codigo_barras || ""}</b>
                                                 {tipo === "Artificial" && dep ? <> · Depósito: <b>{dep}</b></> : null}
                                             </div>
@@ -853,6 +853,7 @@ export default function Wizard({
     wizardStep,
     setWizardStep,
     wizardRestrictGroup,
+    osSlot,
     wizardData,
     setWizardData,
     obrigatorios,
@@ -881,6 +882,8 @@ export default function Wizard({
     wizardStep: number;
     setWizardStep: (n: number) => void;
     wizardRestrictGroup: number | null;
+    /** Bloco "Dados da OS" (campos da OS, resumo e folha). Aparece no grupo em que está a Tanatopraxia (Itens). */
+    osSlot?: React.ReactNode;
     wizardData: Registro;
     setWizardData: React.Dispatch<React.SetStateAction<Registro>>;
     obrigatorios: string[];
@@ -1818,7 +1821,7 @@ export default function Wizard({
             maxWidth={740}
             footer={
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                         {isRestrito && (
                             <>
                                 Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
@@ -1827,13 +1830,13 @@ export default function Wizard({
                     </div>
 
                     <div className="flex w-full justify-end gap-2 sm:w-auto">
-                        <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={wizardSubmitting}>
+                        <button className="rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold disabled:opacity-60 border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10" onClick={onClose} disabled={wizardSubmitting}>
                             Cancelar
                         </button>
 
                         {isRestrito ? (
                             <button
-                                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                                className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                 onClick={tentarConcluir}
                                 disabled={wizardSubmitting || bloqueiaPorAssistencia}
                                 aria-busy={wizardSubmitting}
@@ -1844,13 +1847,13 @@ export default function Wizard({
                         ) : (
                             <>
                                 {wizardStep > 0 && (
-                                    <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={goPrev} disabled={wizardSubmitting}>
+                                    <button className="rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold disabled:opacity-60 border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10" onClick={goPrev} disabled={wizardSubmitting}>
                                         Anterior
                                     </button>
                                 )}
                                 {isLastStep ? (
                                     <button
-                                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                                        className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                         onClick={tentarConcluir}
                                         disabled={wizardSubmitting || bloqueiaPorAssistencia}
                                         aria-busy={wizardSubmitting}
@@ -1860,7 +1863,7 @@ export default function Wizard({
                                     </button>
                                 ) : (
                                     <button
-                                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                                        className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                         onClick={goNext}
                                         disabled={wizardSubmitting || bloqueiaPorAssistencia}
                                         title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
@@ -1875,13 +1878,13 @@ export default function Wizard({
             }
         >
             <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold">{wizardTitle}</h2>
+                <h2 className="text-xl font-extrabold text-[#313C55] dark:text-white">{wizardTitle}</h2>
                 {wizardSubmitting && (
                     <span
-                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2 py-0.5 text-xs text-[#313C55] dark:text-white"
                         aria-live="polite"
                     >
-                        <svg className="h-3 w-3 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
+                        <svg className="h-3 w-3 animate-spin text-[#313C55] dark:text-white" viewBox="0 0 24 24" fill="none">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                         </svg>
@@ -1897,7 +1900,7 @@ export default function Wizard({
                     return (
                         <span
                             key={`${t}-${i}`}
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
+                            className={`rounded-full px-3 py-1 text-xs font-medium ${i === wizardStep ? "bg-[#313C55] dark:bg-[#F2CB3F] text-white" : "bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-[#D6DCE8]"
                                 }`}
                         >
                             {t}
@@ -1924,7 +1927,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             Urna
-                                            {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
+                                            {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId="wizard-urna-uso"
@@ -1957,7 +1960,7 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {urnaUsoErro && <div className="mt-1 text-xs text-red-600">{urnaUsoErro}</div>}
+                                {urnaUsoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{urnaUsoErro}</div>}
 
                                 {urnaUsoVal === "Sim" && (
                                     <div className="mt-3">
@@ -2034,7 +2037,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             Roupa
-                                            {obrigatoriedadeAtiva && <span className="text-red-600"> *</span>}
+                                            {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId="wizard-roupa-uso"
@@ -2070,7 +2073,7 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {roupaUsoErro && <div className="mt-1 text-xs text-red-600">{roupaUsoErro}</div>}
+                                {roupaUsoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{roupaUsoErro}</div>}
 
                                 {roupaUsoVal === "Sim" && (
                                     <div className="mt-3">
@@ -2147,7 +2150,7 @@ export default function Wizard({
                                                 <>
                                                     <button
                                                         type="button"
-                                                        className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                                        className="rounded-md border px-2 py-1 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                                         disabled={wizardSubmitting}
                                                         onClick={() => {
                                                             setWizardData((prev: any) => ({
@@ -2175,7 +2178,7 @@ export default function Wizard({
                                                     </button>
 
                                                     {isPropria ? (
-                                                        <span className="self-center text-[11px] text-slate-500">
+                                                        <span className="self-center text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                                             Roupa própria não usa estoque.
                                                         </span>
                                                     ) : null}
@@ -2198,7 +2201,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -2228,8 +2231,8 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {veuSelectErro && <div className="mt-1 text-xs text-red-600">{veuSelectErro}</div>}
-                                {veuErro && <div className="mt-1 text-xs text-red-600">{veuErro}</div>}
+                                {veuSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{veuSelectErro}</div>}
+                                {veuErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{veuErro}</div>}
                             </div>
                         );
                     }
@@ -2310,7 +2313,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -2340,8 +2343,8 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {cordaoSelectErro && <div className="mt-1 text-xs text-red-600">{cordaoSelectErro}</div>}
-                                {cordaoErro && <div className="mt-1 text-xs text-red-600">{cordaoErro}</div>}
+                                {cordaoSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{cordaoSelectErro}</div>}
+                                {cordaoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{cordaoErro}</div>}
                             </div>
                         );
                     }
@@ -2359,7 +2362,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId="wizard-kit_lanche"
@@ -2379,7 +2382,7 @@ export default function Wizard({
                                 />
 
                                 {kitLancheSelectErro && (
-                                    <div className="mt-1 text-xs text-red-600">{kitLancheSelectErro}</div>
+                                    <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{kitLancheSelectErro}</div>
                                 )}
                             </div>
                         );
@@ -2399,7 +2402,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId="wizard-coroa_flores"
@@ -2447,7 +2450,7 @@ export default function Wizard({
                                         }));
                                     }}
                                 />
-                                {coroaFloresSelectErro && <div className="mt-1 text-xs text-red-600">{coroaFloresSelectErro}</div>}
+                                {coroaFloresSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaFloresSelectErro}</div>}
 
                                 {coroaFloresVal === "Sim" && (
                                     <>
@@ -2479,7 +2482,7 @@ export default function Wizard({
                                                 setCoroaModeloErro("");
                                             }}
                                         />
-                                        {coroaModeloErro && <div className="mt-1 text-xs text-red-600">{coroaModeloErro}</div>}
+                                        {coroaModeloErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaModeloErro}</div>}
                                     </>
                                 )}
                             </div>
@@ -2496,7 +2499,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             Velório
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId="wizard-realiza_velorio"
@@ -2533,7 +2536,7 @@ export default function Wizard({
                                         }));
                                     }}
                                 />
-                                {realizaVelorioErro && <div className="mt-1 text-xs text-red-600">{realizaVelorioErro}</div>}
+                                {realizaVelorioErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{realizaVelorioErro}</div>}
                             </div>
                         );
                     }
@@ -2545,7 +2548,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             Sepultamento
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId="wizard-realiza_sepultamento"
@@ -2564,7 +2567,7 @@ export default function Wizard({
                                         }));
                                     }}
                                 />
-                                {realizaSepultamentoErro && <div className="mt-1 text-xs text-red-600">{realizaSepultamentoErro}</div>}
+                                {realizaSepultamentoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{realizaSepultamentoErro}</div>}
                             </div>
                         );
                     }
@@ -2665,7 +2668,7 @@ export default function Wizard({
                         return (
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">
-                                    {step.label} {obrigatoriedadeAtiva && <span className="text-red-600">*</span>}
+                                    {step.label} {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
                                 </label>
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -2676,14 +2679,14 @@ export default function Wizard({
                                         list={listId}
                                         placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
                                         defaultValue={currentText}
-                                        className="w-full flex-1 rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                        className="w-full flex-1 rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                         disabled={wizardSubmitting}
                                     />
 
                                     <div className="flex flex-wrap gap-2">
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                                            className="rounded-md border px-3 py-2 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                             onClick={preencherLocalVelorioComGPS}
                                             disabled={wizardSubmitting || gpsLoading}
                                             title="Capturar localização e gerar link de rota"
@@ -2693,7 +2696,7 @@ export default function Wizard({
 
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                                            className="rounded-md border px-3 py-2 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                             onClick={() => {
                                                 if (localVelorioRef.current) localVelorioRef.current.value = "";
                                                 setGpsMsg(null);
@@ -2713,7 +2716,7 @@ export default function Wizard({
                                 </datalist>
 
                                 {gpsMsg && (
-                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-emerald-700" : "text-red-600"}`}>
+                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-[#313C55] dark:text-white" : "text-[#B42318] dark:text-[#FF9C92]"}`}>
                                         {gpsMsg}
                                     </div>
                                 )}
@@ -2722,9 +2725,9 @@ export default function Wizard({
                                 <input id="wizard-sala_velorio" type="hidden" value={salaAtual} readOnly />
                                 <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />
 
-                                <div className="mt-4 rounded-xl border bg-slate-50 p-3">
+                                <div className="mt-4 rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
                                     <label className="block text-sm font-medium">
-                                        Sala do Velório <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                                        Sala do Velório <span className="text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">(opcional)</span>
                                     </label>
 
                                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -2735,9 +2738,9 @@ export default function Wizard({
                                                     key={sala}
                                                     type="button"
                                                     data-wizard-error={velorioOnlineErro ? "1" : "0"}
-                                                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition disabled:opacity-60 ${checked
-                                                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                                                        : "bg-white text-slate-700 hover:bg-slate-100"
+                                                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${checked
+                                                        ? "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white shadow-sm"
+                                                        : "bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                                         }`}
                                                     disabled={wizardSubmitting}
                                                     aria-pressed={checked}
@@ -2752,11 +2755,11 @@ export default function Wizard({
                                     {mostraVelorioOnline && (
                                         <div className="mt-4">
                                             <label className="mb-1 block text-sm font-medium">
-                                                Velório Online <span className="text-red-600">*</span>
+                                                Velório Online <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
                                             </label>
 
                                             <select
-                                                className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 ${velorioOnlineErro ? "border-red-500" : ""
+                                                className={`w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${velorioOnlineErro ? "border-red-500" : ""
                                                     }`}
                                                 value={onlineAtual}
                                                 onChange={(e) => {
@@ -2782,12 +2785,12 @@ export default function Wizard({
                                                 ))}
                                             </select>
 
-                                            {velorioOnlineErro && <div className="mt-1 text-xs text-red-600">{velorioOnlineErro}</div>}
+                                            {velorioOnlineErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{velorioOnlineErro}</div>}
                                         </div>
                                     )}
 
                                     {!mostraVelorioOnline && (
-                                        <p className="mt-2 text-xs text-slate-500">
+                                        <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                             {obrigatoriedadeAtiva
                                                 ? "Ao marcar uma sala, será obrigatório informar se terá Velório Online."
                                                 : "Velório Online ficará obrigatório somente após Corpo na Clínica."}
@@ -2814,13 +2817,13 @@ export default function Wizard({
                                 <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                                     <button
                                         type="button"
-                                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                                        className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                         onClick={() => setArrumacaoOpen(true)}
                                         disabled={wizardSubmitting}
                                     >
                                         Selecionar Itens…
                                     </button>
-                                    <span className="text-sm text-muted-foreground">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
+                                    <span className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
                                 </div>
                                 <input id="wizard-arrumacao" type="hidden" defaultValue="__custom__" />
                             </div>
@@ -2839,7 +2842,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {showRequiredStar && <span className="text-red-600"> *</span>}
+                                            {showRequiredStar && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -2861,19 +2864,19 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {assistenciaErro && <div className="mt-1 text-xs text-red-600">{assistenciaErro}</div>}
+                                {assistenciaErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{assistenciaErro}</div>}
 
                                 {assistenciaVal === "Sim" && (
                                     <div className="mt-2 flex items-center gap-2">
                                         <button
                                             type="button"
-                                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                                            className="rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                             onClick={() => setMateriaisOpen(true)}
                                             disabled={wizardSubmitting}
                                         >
                                             Selecionar Materiais…
                                         </button>
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                             {materiaisSelecionadosResumo || "Nenhum material selecionado"}
                                         </span>
                                     </div>
@@ -2892,7 +2895,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -2913,7 +2916,7 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {tanatoSelectErro && <div className="mt-1 text-xs text-red-600">{tanatoSelectErro}</div>}
+                                {tanatoSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{tanatoSelectErro}</div>}
                             </div>
                         );
                     }
@@ -2928,7 +2931,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -2952,7 +2955,7 @@ export default function Wizard({
                                 />
 
                                 {ornamentacaoSelectErro && (
-                                    <div className="mt-1 text-xs text-red-600">{ornamentacaoSelectErro}</div>
+                                    <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{ornamentacaoSelectErro}</div>
                                 )}
                             </div>
                         );
@@ -2968,7 +2971,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -2998,7 +3001,7 @@ export default function Wizard({
                                     }}
                                 />
 
-                                {involSelectErro && <div className="mt-1 text-xs text-red-600">{involSelectErro}</div>}
+                                {involSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{involSelectErro}</div>}
                             </div>
                         );
                     }
@@ -3079,7 +3082,7 @@ export default function Wizard({
                                     label={
                                         <>
                                             {step.label}
-                                            {isRequired("ornamentacao") && <span className="text-red-600"> *</span>}
+                                            {isRequired("ornamentacao") && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                         </>
                                     }
                                     inputId={`wizard-${step.id}`}
@@ -3098,7 +3101,7 @@ export default function Wizard({
                                 />
 
                                 {ornamentacaoTipoErro && (
-                                    <div className="mt-1 text-xs text-red-600">{ornamentacaoTipoErro}</div>
+                                    <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{ornamentacaoTipoErro}</div>
                                 )}
                             </div>
                         );
@@ -3119,11 +3122,11 @@ export default function Wizard({
                             <div key={step.id} className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">
                                     {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
 
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
-                                    <div className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-xl border bg-slate-50">
+                                    <div className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] border-[#E3E8F0] dark:border-white/[0.12]">
                                         {previewSrc ? (
                                             <img
                                                 src={previewSrc}
@@ -3131,7 +3134,7 @@ export default function Wizard({
                                                 className="h-full w-full object-cover"
                                             />
                                         ) : (
-                                            <span className="px-2 text-center text-xs text-slate-500">Sem foto</span>
+                                            <span className="px-2 text-center text-xs text-[#5B6478] dark:text-[#AEB9CF]">Sem foto</span>
                                         )}
                                     </div>
 
@@ -3148,7 +3151,7 @@ export default function Wizard({
                                             id={`wizard-${step.id}_file`}
                                             type="file"
                                             accept={step.accept || "image/*"}
-                                            className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                            className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                             disabled={wizardSubmitting}
                                             onChange={async (e) => {
                                                 const file = e.target.files?.[0];
@@ -3185,7 +3188,7 @@ export default function Wizard({
                                             }}
                                         />
 
-                                        <div className="mt-2 text-xs text-slate-500">
+                                        <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                             {fotoNome ? (
                                                 <>
                                                     Nova foto selecionada: <b>{fotoNome}</b>
@@ -3202,7 +3205,7 @@ export default function Wizard({
                                         {(fotoAtual || fotoBase64) && (
                                             <button
                                                 type="button"
-                                                className="mt-2 rounded-md border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-60"
+                                                className="mt-2 rounded-md border px-3 py-1.5 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                                 disabled={wizardSubmitting}
                                                 onClick={() => {
                                                     setWizardData((prev: any) => ({
@@ -3222,7 +3225,7 @@ export default function Wizard({
                                             </button>
                                         )}
 
-                                        <p className="mt-2 text-[11px] text-slate-400">
+                                        <p className="mt-2 text-[11px] text-[#7A8396] dark:text-[#8893AA]">
                                             ATENÇÃO: Essa foto será usada no obituário, painel e página de homenagens.
                                         </p>
                                     </div>
@@ -3241,7 +3244,7 @@ export default function Wizard({
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">
                                     {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
                                 <input
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step (defaultValue confiável)
@@ -3267,7 +3270,7 @@ export default function Wizard({
                                             cpf_responsavel: somenteNumeros,
                                         }));
                                     }}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -3283,7 +3286,7 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     rows={3}
                                     disabled={wizardSubmitting}
                                 />
@@ -3298,13 +3301,13 @@ export default function Wizard({
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">
                                     {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
 
                                 <select
                                     key={`${wizardStep}-${step.id}`} // ✅ remount por step
                                     id={`wizard-${step.id}`}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
                                     disabled={wizardSubmitting}
                                 >
@@ -3327,7 +3330,7 @@ export default function Wizard({
                             <div key={step.id}>
                                 <label className="mb-1 block text-sm font-medium">
                                     {step.label}
-                                    {isRequired(step.id) && <span className="text-red-600"> *</span>}
+                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                 </label>
 
                                 <input
@@ -3335,7 +3338,7 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="date"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -3351,7 +3354,7 @@ export default function Wizard({
                                     id={`wizard-${step.id}`}
                                     type="time"
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     disabled={wizardSubmitting}
                                 />
                             </div>
@@ -3369,7 +3372,7 @@ export default function Wizard({
                                     list={listId}
                                     placeholder={step.placeholder || ""}
                                     defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-base disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     disabled={wizardSubmitting}
                                 />
                                 <datalist id={listId}>
@@ -3384,6 +3387,8 @@ export default function Wizard({
                     return null;
                 })}
             </div>
+
+            {tanatoNoGrupoAtual ? osSlot : null}
 
         </Modal>
     );

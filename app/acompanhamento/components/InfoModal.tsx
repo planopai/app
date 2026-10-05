@@ -38,7 +38,7 @@ export default function InfoModal({
                     return (
                         <button
                             key={`${t}-${i}`}
-                            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-muted"
+                            className="w-full rounded-md border px-3 py-2 text-sm text-left hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
                             onClick={() => {
                                 setOpen(false);
                                 if (infoIdx != null) abrirWizard("editar", infoIdx, i);
@@ -50,12 +50,12 @@ export default function InfoModal({
                 })}
             </div>
 
-            <div className="my-4 h-px bg-slate-200" />
+            <div className="my-4 h-px bg-[#E3E8F0] dark:bg-white/15" />
 
             {/* AÇÕES DE ASSINATURA */}
             <div className="grid gap-2">
                 <button
-                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#059de0]/90"
+                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                     onClick={() => {
                         if (infoIdx != null) {
                             setOpen(false);
@@ -68,7 +68,7 @@ export default function InfoModal({
 
                 {registro?.assinatura_recebimento_url && (
                     <a
-                        className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm text-white text-center"
+                        className="w-full rounded-md bg-[#7BA11A] px-3 py-2 text-sm text-white text-center"
                         href={registro.assinatura_recebimento_url}
                         target="_blank"
                         rel="noreferrer"
@@ -78,7 +78,7 @@ export default function InfoModal({
                 )}
 
                 <button
-                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#059de0]/90"
+                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                     onClick={() => {
                         if (infoIdx != null) {
                             setOpen(false);
@@ -91,7 +91,7 @@ export default function InfoModal({
 
                 {registro?.assinatura_requisicao_url && (
                     <a
-                        className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm text-white text-center"
+                        className="w-full rounded-md bg-[#7BA11A] px-3 py-2 text-sm text-white text-center"
                         href={registro.assinatura_requisicao_url}
                         target="_blank"
                         rel="noreferrer"

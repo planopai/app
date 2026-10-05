@@ -591,19 +591,19 @@ export default function ArrumacaoModal({
                 ))}
             </div>
 
-            <div className="mt-6 rounded-xl border p-4">
+            <div className="mt-6 rounded-xl border p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <div className="text-sm font-semibold">
                             Insumos Tanatopraxia
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                             As quantidades são limitadas ao saldo atual e a baixa é
                             confirmada em <b>Corpo Pronto (fase12)</b>.
                         </div>
                     </div>
 
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                         {selectedCount > 0 ? (
                             <>
                                 Selecionados: <b>{selectedCount}</b>
@@ -616,26 +616,26 @@ export default function ArrumacaoModal({
 
                 <div className="mt-3">
                     {loadingMe || loadingItens ? (
-                        <div className="rounded-md border p-3 text-sm text-slate-600">
+                        <div className="rounded-md border p-3 text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                             Carregando itens…
                         </div>
                     ) : err ? (
-                        <div className="rounded-md border p-3 text-sm text-red-600">
+                        <div className="rounded-md border p-3 text-sm text-[#B42318] dark:text-[#FF9C92] border-[#E3E8F0] dark:border-white/[0.12]">
                             {err}
                         </div>
                     ) : rows.length === 0 ? (
-                        <div className="rounded-md border p-3 text-sm text-slate-600">
+                        <div className="rounded-md border p-3 text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                             Nenhum insumo com saldo disponível.
                         </div>
                     ) : (
-                        <div className="max-h-72 overflow-auto rounded-md border">
-                            <div className="grid grid-cols-[1fr_92px_72px] gap-2 border-b bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+                        <div className="max-h-72 overflow-auto rounded-md border border-[#E3E8F0] dark:border-white/[0.12]">
+                            <div className="grid grid-cols-[1fr_92px_72px] gap-2 border-b bg-[#F6F8FB] dark:bg-[#1C2334] px-3 py-2 text-xs font-medium text-[#313C55] dark:text-[#D6DCE8] border-[#E3E8F0] dark:border-white/[0.12]">
                                 <div>Produto</div>
                                 <div className="text-right">Estoque</div>
                                 <div className="text-right">Qtd</div>
                             </div>
 
-                            <ul className="divide-y">
+                            <ul className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">
                                 {rows.map((item) => {
                                     const pid = getPidFromRow(item);
                                     if (!pid) return null;
@@ -744,10 +744,10 @@ export default function ArrumacaoModal({
                                                 />
 
                                                 <div className="min-w-0">
-                                                    <div className="truncate text-sm font-medium text-slate-900">
+                                                    <div className="truncate text-sm font-medium text-[#313C55] dark:text-white">
                                                         {item.nome}
                                                     </div>
-                                                    <div className="truncate text-[11px] text-slate-500">
+                                                    <div className="truncate text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                                         CB:{" "}
                                                         <b>
                                                             {String(
@@ -762,7 +762,7 @@ export default function ArrumacaoModal({
                                                 </div>
                                             </label>
 
-                                            <div className="text-right text-sm text-slate-700">
+                                            <div className="text-right text-sm text-[#313C55] dark:text-[#D6DCE8]">
                                                 <b>
                                                     {Number(
                                                         item.saldo_total,
@@ -780,8 +780,8 @@ export default function ArrumacaoModal({
                                                             : 1
                                                     }
                                                     step={1}
-                                                    className={`w-full rounded-md border px-2 py-1 text-sm ${quantidadeExcedeSaldo
-                                                        ? "border-red-500 text-red-700"
+                                                    className={`w-full rounded-md border px-2 py-1 text-sm border-[#E3E8F0] dark:border-white/[0.12] ${quantidadeExcedeSaldo
+                                                        ? "border-red-500 text-[#B42318] dark:text-[#FF9C92]"
                                                         : ""
                                                         }`}
                                                     value={qtdInputValue}
@@ -915,8 +915,8 @@ export default function ArrumacaoModal({
                                                 />
                                                 <div
                                                     className={`mt-1 text-[10px] ${quantidadeExcedeSaldo
-                                                        ? "font-semibold text-red-600"
-                                                        : "text-slate-500"
+                                                        ? "font-semibold text-[#B42318] dark:text-[#FF9C92]"
+                                                        : "text-[#5B6478] dark:text-[#AEB9CF]"
                                                         }`}
                                                 >
                                                     Máx. {saldoDisponivel}
@@ -930,7 +930,7 @@ export default function ArrumacaoModal({
                     )}
 
                     {selectedStockIssues.length > 0 && (
-                        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <div className="mt-3 rounded-md border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">
                             <div className="font-semibold">
                                 Ajuste a quantidade antes de salvar.
                             </div>
@@ -946,7 +946,7 @@ export default function ArrumacaoModal({
                     )}
 
                     {validationErr && (
-                        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+                        <div className="mt-3 rounded-md border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm font-medium text-[#B42318] dark:text-[#FF9C92]">
                             {validationErr}
                         </div>
                     )}
@@ -956,7 +956,7 @@ export default function ArrumacaoModal({
             <div className="mt-5 flex justify-end gap-2">
                 <button
                     type="button"
-                    className="rounded-md border px-3 py-2 text-sm"
+                    className="rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
                     onClick={() => setOpen(false)}
                 >
                     Cancelar
@@ -965,7 +965,7 @@ export default function ArrumacaoModal({
                 <button
                     type="button"
                     disabled={!podeSalvar}
-                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm text-white dark:text-[#313C55] disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => {
                         const estoqueError = validarEstoqueAntesDeSalvar();
                         if (estoqueError) {

@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   IconAdjustmentsHorizontal,
   IconChevronDown,
+  IconChevronRight,
   IconHelp,
   IconLogout,
 } from "@tabler/icons-react";
@@ -16,7 +17,6 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -451,62 +451,48 @@ export function AppSidebar(
     href,
     Icon,
     badge = 0,
+    nivel = "fixo",
   }: {
     title: string;
     href: string;
     Icon: any;
     badge?: number;
+    /** "fixo" = atalho ou rodapé (com ícone); "sub" = tela dentro de um módulo (recuada, sem ícone) */
+    nivel?: "fixo" | "sub";
   }) => {
-    const active =
-      pathname === href;
+    /* link com ?aba=... nunca fica marcado: só o caminho não distingue as duas telas */
+    const active = !href.includes("?") && pathname === href;
 
     return (
-      <SidebarMenuButton
-        asChild
+      <Link
+        href={href}
         title={title}
+        aria-current={active ? "page" : undefined}
+        onClick={(event) => handleNavigate(href, event)}
         className={[
-          "relative flex gap-3",
-          /* Mockup: selecionado = fundo branco a 14%, texto branco em negrito e barra amarela de 4 px à esquerda.
-             Na gaveta do celular (fundo claro) mantém o destaque claro de antes. */
-          isMobile
-            ? active
-              ? "bg-accent text-accent-foreground"
-              : ""
-            : active
-              ? "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.14] hover:text-white"
-              : "text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white",
+          "relative flex w-full items-center gap-3 rounded-xl px-3 outline-none transition-colors",
+          "focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
+          nivel === "sub" ? "min-h-[34px] pl-[46px] text-sm" : "min-h-10 text-[15px]",
+          /* Mockup: selecionado = fundo branco a 14%, texto branco em negrito e barra amarela de 4 px à esquerda */
+          active
+            ? "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F]"
+            : [
+                "font-semibold hover:bg-white/[0.08] hover:text-white",
+                nivel === "sub" ? "text-[#D6DCE8]" : "text-[#E8ECF4]",
+              ].join(" "),
         ].join(" ")}
       >
-        <Link
-          href={href}
-          aria-current={
-            active
-              ? "page"
-              : undefined
-          }
-          onClick={(event) =>
-            handleNavigate(
-              href,
-              event
-            )
-          }
-        >
-          <Icon className="!size-5" />
+        {nivel === "fixo" && <Icon className="size-5 shrink-0" />}
 
-          {!isCollapsed && (
-            <span>
-              {title}
-            </span>
-          )}
+        {!isCollapsed && <span className="min-w-0 flex-1 truncate">{title}</span>}
 
-          <ContadorItem
-            valor={badge}
-            recolhido={isCollapsed}
-          />
-        </Link>
-      </SidebarMenuButton>
+        <ContadorItem valor={badge} recolhido={isCollapsed} />
+      </Link>
     );
   };
+
+  /* No celular o menu é a tela "Menu" (MenuCelular); a gaveta lateral não é mais usada. */
+  if (sidebar?.isMobile) return null;
 
   /**
    * Enquanto permissões ainda
@@ -529,7 +515,7 @@ export function AppSidebar(
               ].join(" ")}
             >
               <img
-                src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+                src="/logo-pai.svg"
                 alt="Logo PAI"
                 className="h-[52px] w-auto"
               />
@@ -612,7 +598,7 @@ export function AppSidebar(
 
   const logoNode = (
     <img
-      src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1-scaled.png?fit=300%2C75&ssl=1"
+      src="/logo-pai.svg"
       alt="Logo PAI"
       className="h-[52px] w-auto"
     />
@@ -623,56 +609,18 @@ export function AppSidebar(
       collapsible="icon"
       {...props}
     >
-      {/* HEADER */}
+      {/* HEADER: etiqueta branca da logomarca, encostada na borda esquerda (mockup: 196 x 76 px) */}
       <SidebarHeader>
-        <div
-          className={[
-            "px-3",
-            isMobile
-              ? "pt-6"
-              : "pt-3",
-          ].join(" ")}
-        >
+        <div className="px-3 pt-3">
           {!isCollapsed && (
-            /* Etiqueta branca da logomarca (mockup): encosta na borda esquerda, cantos direitos arredondados */
             <Link
               href="/"
-              onClick={(event) =>
-                handleNavigate(
-                  "/",
-                  event
-                )
-              }
-              className="-ml-5 -mt-1 flex h-[76px] w-[196px] items-center rounded-r-[38px] bg-white pl-7"
+              aria-label="PAI - Plano Assistencial Integrado: ir para o Início"
+              onClick={(event) => handleNavigate("/", event)}
+              className="-ml-7 flex h-[76px] w-[196px] items-center rounded-r-[38px] bg-white pl-7"
             >
               {logoNode}
             </Link>
-          )}
-
-          {/* Usuário */}
-          {!isCollapsed && (
-            <div className="mt-4 flex items-center gap-3">
-              <div
-                className={[
-                  "grid h-10 w-10 shrink-0 place-items-center rounded-full",
-                  "bg-sky-600 text-white",
-                  "text-sm font-extrabold",
-                ].join(" ")}
-                aria-label="Avatar do usuário"
-              >
-                {userInitials}
-              </div>
-
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {badgeText}
-                </div>
-
-                <div className="truncate text-sm font-semibold">
-                  {displayName}
-                </div>
-              </div>
-            </div>
           )}
         </div>
       </SidebarHeader>
@@ -719,213 +667,119 @@ export function AppSidebar(
           </div>
         ) : (
           /*
-           * ABERTO:
-           * PC e celular iguais,
-           * usando sanfona com
-           * um grupo por vez.
+           * ABERTO (mockup): atalhos fixos, rótulo MÓDULOS e um módulo aberto por vez.
+           * Tocar no módulo aberto RECOLHE.
            */
-          <div
-            className={
-              isMobile
-                ? "pt-5 space-y-3"
-                : "mt-4 space-y-2"
-            }
-          >
+          <div className="mt-3 flex flex-col gap-0.5">
             {atalhos.length > 0 && (
-              <div>
-                <div className="flex w-full items-center px-3 py-2 text-xs font-bold uppercase opacity-70">
-                  Atalhos
-                </div>
-                <SidebarMenu className="space-y-1 pl-1">
-                  {atalhos.map((item) => (
-                    <SidebarMenuItem key={`atalho-${item.href}`}>
-                      <MenuItem
-                        title={item.title}
-                        href={item.href}
-                        Icon={item.Icon}
-                        badge={contadorDe(item.href)}
-                      />
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-                <div className="mx-3 mt-2 border-t" />
+              <SidebarMenu className="gap-0.5">
+                {atalhos.map((item) => (
+                  <SidebarMenuItem key={`atalho-${item.href}`}>
+                    <MenuItem
+                      title={item.title}
+                      href={item.href}
+                      Icon={item.Icon}
+                      badge={contadorDe(item.href)}
+                    />
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            )}
+
+            {visibleGroups.length > 0 && (
+              <div className="px-3 pb-1.5 pt-[18px] text-[11px] font-extrabold tracking-[0.12em] text-[#AEB9CF]">
+                MÓDULOS
               </div>
             )}
 
-            {visibleGroups.map(
-              (group) => {
-                const opened =
-                  openGroup ===
-                  group.category;
+            {visibleGroups.map((group) => {
+              const opened = openGroup === group.category;
+              const GIcon = group.hub.Icon;
 
-                return (
-                  <div
-                    key={
-                      group.category
-                    }
+              return (
+                <div key={group.category}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.category)}
+                    aria-expanded={opened}
+                    className={[
+                      "flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] outline-none transition-colors",
+                      "hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
+                      opened ? "font-extrabold text-white" : "font-semibold text-[#E8ECF4]",
+                    ].join(" ")}
                   >
-                    <button
-                      onClick={() =>
-                        toggleGroup(
-                          group.category
-                        )
-                      }
-                      className="flex w-full items-center justify-between px-3 py-2 text-xs font-bold uppercase opacity-70"
-                      type="button"
-                    >
-                      <span>
-                        {
-                          group.category
-                        }
-                      </span>
-
-                      <IconChevronDown
-                        size={16}
-                        className={`transition ${opened
-                          ? "rotate-180"
-                          : ""
-                          }`}
-                      />
-                    </button>
-
-                    {opened && (
-                      <SidebarMenu className="space-y-1 pl-1">
-                        <SidebarMenuItem key={`hub-${group.category}`}>
-                          <MenuItem
-                            title={group.hub.title}
-                            href={group.hub.href}
-                            Icon={group.hub.Icon}
-                          />
-                        </SidebarMenuItem>
-                        {group.items.map(
-                          (
-                            item,
-                            posicao
-                          ) => (
-                            <React.Fragment key={item.href}>
-                              {item.secao && item.secao !== group.items[posicao - 1]?.secao ? (
-                                <li className="px-3 pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                                  {item.secao}
-                                </li>
-                              ) : null}
-                              <SidebarMenuItem>
-                                <MenuItem
-                                  title={
-                                    item.title
-                                  }
-                                  href={
-                                    item.href
-                                  }
-                                  Icon={
-                                    item.Icon
-                                  }
-                                  badge={contadorDe(item.href)}
-                                />
-                              </SidebarMenuItem>
-                            </React.Fragment>
-                          )
-                        )}
-                      </SidebarMenu>
+                    <GIcon className="size-5 shrink-0" />
+                    <span className="flex-1">{group.category}</span>
+                    {opened ? (
+                      <IconChevronDown size={16} className="shrink-0" />
+                    ) : (
+                      <IconChevronRight size={16} className="shrink-0" />
                     )}
-                  </div>
-                );
-              }
-            )}
+                  </button>
+
+                  {opened && (
+                    <SidebarMenu className="mt-0.5 gap-0.5">
+                      <SidebarMenuItem>
+                        <MenuItem nivel="sub" title="Visão geral" href={group.hub.href} Icon={GIcon} />
+                      </SidebarMenuItem>
+
+                      {group.items.map((item, posicao) => (
+                        <React.Fragment key={item.href}>
+                          {item.secao && item.secao !== group.items[posicao - 1]?.secao ? (
+                            <li className="pb-0.5 pl-[46px] pt-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">
+                              {item.secao}
+                            </li>
+                          ) : null}
+                          <SidebarMenuItem>
+                            <MenuItem
+                              nivel="sub"
+                              title={item.title}
+                              href={item.href}
+                              Icon={item.Icon}
+                              badge={contadorDe(item.href)}
+                            />
+                          </SidebarMenuItem>
+                        </React.Fragment>
+                      ))}
+                    </SidebarMenu>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </SidebarContent>
 
-      {/* FOOTER FIXO */}
-      <SidebarFooter>
-        <div className="px-2 pb-5">
-          <div className="border-t pt-3" />
+      {/* FOOTER FIXO (mockup): usuário + Personalizar barra, Ajuda e Sair da conta */}
+      <SidebarFooter className="px-2 pb-4 pt-0">
+        <div className="mt-1.5 flex flex-col gap-0.5 border-t border-white/[0.18] pt-2.5">
+          <div className="flex items-center gap-3 px-3 py-1.5">
+            <div
+              className="grid size-9 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-[15px] font-extrabold text-[#313C55]"
+              aria-label="Avatar do usuário"
+            >
+              {userInitials}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-extrabold tracking-[0.12em] text-[#AEB9CF]">{badgeText}</div>
+              <div className="truncate text-[15px] font-extrabold text-white">{displayName}</div>
+            </div>
+          </div>
 
-          <SidebarMenu className="space-y-1">
-            {/* Personalizar barra */}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                title="Personalizar barra"
-                className="flex gap-3"
-              >
-                <Link
-                  href="/personalizar-barra"
-                  onClick={(event) =>
-                    handleNavigate(
-                      "/personalizar-barra",
-                      event
-                    )
-                  }
-                >
-                  <IconAdjustmentsHorizontal className="!size-5" />
+          <MenuItem title="Personalizar barra" href="/personalizar-barra" Icon={IconAdjustmentsHorizontal} />
+          <MenuItem title="Ajuda" href="/help" Icon={IconHelp} />
 
-                  {!isCollapsed && (
-                    <span>
-                      Personalizar barra
-                    </span>
-                  )}
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-
-            {/* Ajuda */}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                title="Ajuda"
-                className="flex gap-3"
-              >
-                <Link
-                  href="/help"
-                  onClick={(event) =>
-                    handleNavigate(
-                      "/help",
-                      event
-                    )
-                  }
-                >
-                  <IconHelp className="!size-5" />
-
-                  {!isCollapsed && (
-                    <span>
-                      Ajuda
-                    </span>
-                  )}
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-
-            {/* Logout */}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                title={
-                  isLoggingOut
-                    ? "Saindo..."
-                    : "Sair da Conta"
-                }
-                className="flex gap-3 text-red-600 hover:text-red-600"
-                onClick={
-                  handleLogout
-                }
-                disabled={
-                  isLoggingOut
-                }
-                aria-busy={
-                  isLoggingOut
-                }
-              >
-                <IconLogout className="!size-5" />
-
-                {!isCollapsed && (
-                  <span>
-                    {isLoggingOut
-                      ? "Saindo..."
-                      : "Sair da Conta"}
-                  </span>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <button
+            type="button"
+            title={isLoggingOut ? "Saindo..." : "Sair da conta"}
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            aria-busy={isLoggingOut}
+            className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] font-semibold text-white outline-none transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#F2CB3F] disabled:opacity-60"
+          >
+            <IconLogout className="size-5 shrink-0" />
+            <span className="flex-1">{isLoggingOut ? "Saindo..." : "Sair da conta"}</span>
+          </button>
         </div>
       </SidebarFooter>
     </Sidebar>

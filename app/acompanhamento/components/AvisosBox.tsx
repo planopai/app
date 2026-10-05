@@ -45,11 +45,11 @@ function TagChip({ kind }: { kind: "Serviço" | "Geral" }) {
     // ✅ Geral = vermelho | Serviço = amarelo
     const cls =
         kind === "Serviço"
-            ? "bg-yellow-100 text-yellow-900 border-yellow-200"
-            : "bg-red-100 text-red-800 border-red-200";
+            ? "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white border-[#F2CB3F]"
+            : "bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92] border-[#B42318]/40 dark:border-[#FF9C92]/40";
 
     return (
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] ${cls}`}>
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] border-[#E3E8F0] dark:border-white/[0.12] ${cls}`}>
             {kind}
         </span>
     );
@@ -79,15 +79,15 @@ function Modal({
                 onClick={disableClose ? undefined : onClose}
                 aria-hidden
             />
-            <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-background shadow-2xl overflow-hidden">
-                <div className="border-b px-4 py-3 sm:px-5 sm:py-4 bg-muted/40">
+            <div className="relative z-10 w-full max-w-lg rounded-2xl border bg-[#F1F4F8] dark:bg-[#1C2334] shadow-2xl overflow-hidden border-[#E3E8F0] dark:border-white/[0.12]">
+                <div className="border-b px-4 py-3 sm:px-5 sm:py-4 bg-[#F6F8FB] dark:bg-[#1C2334]">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                             <h3 className="text-base sm:text-lg font-semibold leading-tight break-words [overflow-wrap:anywhere]">
                                 {title}
                             </h3>
                             {subtitle ? (
-                                <p className="mt-1 text-[14px] text-muted-foreground break-words [overflow-wrap:anywhere]">
+                                <p className="mt-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF] break-words [overflow-wrap:anywhere]">
                                     {subtitle}
                                 </p>
                             ) : null}
@@ -95,7 +95,7 @@ function Modal({
 
                         <button
                             type="button"
-                            className="shrink-0 rounded-full border px-3 py-1.5 text-[14px] hover:bg-muted disabled:opacity-60"
+                            className="shrink-0 rounded-full border px-3 py-1.5 text-[14px] hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             onClick={onClose}
                             disabled={!!disableClose}
                             aria-label="Fechar"
@@ -194,31 +194,31 @@ export default function AvisosBox({
     return (
         <section className="space-y-4">
             {/* Atendimentos */}
-            <div className="rounded-2xl border bg-card/60 p-4 sm:p-5">
+            <div className="rounded-2xl border bg-white dark:bg-[#232B3F] p-4 sm:p-5 border-[#E3E8F0] dark:border-white/[0.12]">
                 <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-semibold">Atendimentos</h2>
-                    <span className="text-sm text-muted-foreground">{registros?.length ?? 0} ativo(s)</span>
+                    <span className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">{registros?.length ?? 0} ativo(s)</span>
                 </div>
 
                 <div className="mt-3 space-y-2">
                     {(registros ?? []).map((r: any) => (
                         <div
                             key={String(r?.id)}
-                            className="rounded-xl border bg-background/60 p-3 sm:p-4"
+                            className="rounded-xl border bg-[#F1F4F8]/60 dark:bg-[#1C2334]/60 p-3 sm:p-4 border-[#E3E8F0] dark:border-white/[0.12]"
                         >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="min-w-0">
                                     <div className="font-semibold break-words [overflow-wrap:anywhere]">
                                         {String(r?.falecido ?? "")}
                                     </div>
-                                    <div className="mt-1 text-[14px] text-muted-foreground">
+                                    <div className="mt-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">
                                         Status: {String(r?.status ?? "")}
                                     </div>
                                 </div>
 
                                 <button
                                     type="button"
-                                    className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                                    className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                     onClick={() => onAddObservacao(String(r?.id))}
                                 >
                                     Adicionar Observação
@@ -230,7 +230,7 @@ export default function AvisosBox({
             </div>
 
             {/* Enviar Aviso Geral */}
-            <div className="rounded-2xl border bg-card/60 p-4 sm:p-5">
+            <div className="rounded-2xl border bg-white dark:bg-[#232B3F] p-4 sm:p-5 border-[#E3E8F0] dark:border-white/[0.12]">
                 <h2 className="text-lg font-semibold">Aviso Geral</h2>
 
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -239,7 +239,7 @@ export default function AvisosBox({
                         type="text"
                         maxLength={255}
                         placeholder="Digite um aviso..."
-                        className="w-full flex-1 rounded-xl border px-3 py-2 text-[16px]"
+                        className="w-full flex-1 rounded-xl border px-3 py-2 text-[16px] border-[#E3E8F0] dark:border-white/[0.12]"
                         onKeyDown={(e) => {
                             if (e.key === "Enter") enviarAviso();
                         }}
@@ -247,7 +247,7 @@ export default function AvisosBox({
 
                     <button
                         type="button"
-                        className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                        className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                         onClick={enviarAviso}
                     >
                         Enviar
@@ -264,12 +264,12 @@ export default function AvisosBox({
             </div>
 
             {/* Avisos */}
-            <div className="rounded-2xl border bg-card/60 p-4 sm:p-5">
+            <div className="rounded-2xl border bg-white dark:bg-[#232B3F] p-4 sm:p-5 border-[#E3E8F0] dark:border-white/[0.12]">
                 <h2 className="text-lg font-semibold">Avisos Ativos</h2>
 
                 <div className="mt-3 space-y-2">
                     {avisosAtivos.length === 0 ? (
-                        <div className="rounded-xl border bg-background/60 p-4 text-sm text-muted-foreground">
+                        <div className="rounded-xl border bg-[#F1F4F8]/60 dark:bg-[#1C2334]/60 p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                             Nenhum aviso no momento.
                         </div>
                     ) : (
@@ -279,17 +279,17 @@ export default function AvisosBox({
                             const criadoEm = a?.criado_em ? new Date(a.criado_em).toLocaleString() : "";
 
                             return (
-                                <div key={String(a?.id)} className="rounded-xl border bg-background/60 p-3 sm:p-4">
+                                <div key={String(a?.id)} className="rounded-xl border bg-[#F1F4F8]/60 dark:bg-[#1C2334]/60 p-3 sm:p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <TagChip kind={tag} />
                                         {usuario ? (
-                                            <span className="rounded-full border bg-muted/30 px-2 py-0.5 text-[12px]">
+                                            <span className="rounded-full border bg-[#F6F8FB] dark:bg-[#1C2334] px-2 py-0.5 text-[12px] border-[#E3E8F0] dark:border-white/[0.12]">
                                                 {usuario}
                                             </span>
                                         ) : null}
 
                                         {criadoEm ? (
-                                            <span className="text-[12px] text-muted-foreground">{criadoEm}</span>
+                                            <span className="text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">{criadoEm}</span>
                                         ) : null}
                                     </div>
 
@@ -300,7 +300,7 @@ export default function AvisosBox({
                                     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
                                         <button
                                             type="button"
-                                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                                            className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                             onClick={() => openEdit(a)}
                                         >
                                             Editar
@@ -308,7 +308,7 @@ export default function AvisosBox({
 
                                         <button
                                             type="button"
-                                            className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600"
+                                            className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                             onClick={() => excluirAviso(a?.id)}
                                         >
                                             Excluir
@@ -329,20 +329,20 @@ export default function AvisosBox({
                 onClose={closeEdit}
                 disableClose={editLoading}
             >
-                <label className="block text-[14px] font-medium text-muted-foreground">Texto</label>
+                <label className="block text-[14px] font-medium text-[#5B6478] dark:text-[#AEB9CF]">Texto</label>
                 <textarea
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
                     rows={5}
                     maxLength={255}
-                    className="mt-2 w-full rounded-xl border px-3 py-2 text-[16px] outline-none focus:ring-2 focus:ring-sky-200"
+                    className="mt-2 w-full rounded-xl border px-3 py-2 text-[16px] outline-none focus:ring-2 focus:ring-[#00AEEC]/30 border-[#E3E8F0] dark:border-white/[0.12]"
                     placeholder="Digite o aviso..."
                 />
 
                 <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
                     <button
                         type="button"
-                        className="w-full sm:w-auto rounded-xl border px-4 py-2 text-[14px] hover:bg-muted disabled:opacity-60"
+                        className="w-full sm:w-auto rounded-xl border px-4 py-2 text-[14px] hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                         onClick={closeEdit}
                         disabled={editLoading}
                     >
@@ -351,7 +351,7 @@ export default function AvisosBox({
 
                     <button
                         type="button"
-                        className="w-full sm:w-auto rounded-xl bg-sky-500 px-4 py-2 text-[14px] font-semibold text-white hover:bg-sky-600 disabled:opacity-60"
+                        className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                         onClick={submitEdit}
                         disabled={editLoading}
                     >

@@ -53,10 +53,10 @@ export default function EditableText({
                     }
                 }}
                 maxLength={255}
-                className="min-w-[220px] flex-1 rounded-md border px-2 py-1 text-sm"
+                className="min-w-[220px] flex-1 rounded-md border px-2 py-1 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
             />
             <button
-                className="rounded-md border px-2 py-1 text-xs"
+                className="rounded-md border px-2 py-1 text-xs border-[#E3E8F0] dark:border-white/[0.12]"
                 onClick={() => {
                     if (!val.trim()) return;
                     onSave(val.trim());
@@ -66,7 +66,7 @@ export default function EditableText({
                 Salvar
             </button>
             <button
-                className="rounded-md border px-2 py-1 text-xs"
+                className="rounded-md border px-2 py-1 text-xs border-[#E3E8F0] dark:border-white/[0.12]"
                 onClick={() => setEditing(false)}
             >
                 Cancelar

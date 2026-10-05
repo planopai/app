@@ -33,6 +33,15 @@ import {
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
+import {
+  OS_CAMPOS_VAZIO,
+  SecaoOSAtendimento,
+  carregarCamposOS,
+  salvarEsincronizarOS,
+  tipoConvenio,
+  validarCamposOS,
+  type OsCampos,
+} from "./components/OsAtendimento";
 import Visita, {
   consultarAcessoVisita,
   consultarStatusVisitas,
@@ -658,6 +667,11 @@ export default function AcompanhamentoPage() {
   // selects
   const [assistenciaVal, setAssistenciaVal] = useState<string>("");
   const [tanatoVal, setTanatoVal] = useState<string>("");
+
+  /* -------------------- OS no atendimento (Editar registro) -------------------- */
+  const [osCampos, setOsCampos] = useState<OsCampos>(OS_CAMPOS_VAZIO);
+  const [osColunasFaltando, setOsColunasFaltando] = useState<string[]>([]);
+  const [osVersao, setOsVersao] = useState(0);
 
   // Materiais
   const [materiaisOpen, setMateriaisOpen] = useState(false);
@@ -2832,6 +2846,22 @@ export default function AcompanhamentoPage() {
         payload.roupa_propria = 0;
       }
 
+      // OS: o que ela precisa para ser montada (plano, tipo de procedimento, autorização da Prefeitura, translado).
+      if (
+        (dataAtualizada as any).tipo_atendimento !== "terceiro" &&
+        (!wizardRestrictIds || escopoTemAlgum(["tanato", "convenio"]))
+      ) {
+        const msgOS = validarCamposOS(
+          String((dataAtualizada as any).convenio ?? ""),
+          String((dataAtualizada as any).tanato ?? ""),
+          osCampos,
+        );
+        if (msgOS) {
+          setWizardMsg({ text: msgOS, ok: false });
+          return;
+        }
+      }
+
       // Em edição, sincroniza a Ordem de Serviço ANTES de gravar o atendimento.
       // Assim, se o pedido já entrou em produção ou o estoque artificial não
       // comportar a alteração, o próprio atendimento não fica divergente.
@@ -2883,9 +2913,29 @@ export default function AcompanhamentoPage() {
           };
         }
 
+        let textoOS = "";
+        if (
+          atendimentoId != null &&
+          (dataAtualizada as any).tipo_atendimento !== "terceiro" &&
+          tipoConvenio(String((dataAtualizada as any).convenio ?? "")) !== "outro"
+        ) {
+          try {
+            const r = await salvarEsincronizarOS(
+              atendimentoId,
+              String((dataAtualizada as any).convenio ?? ""),
+              String((dataAtualizada as any).tanato ?? ""),
+              osCampos,
+            );
+            setOsVersao((n) => n + 1);
+            textoOS = r.alteracoes.length ? " OS atualizada." : " OS em dia.";
+          } catch (osError: any) {
+            textoOS = ` Mas a OS não foi atualizada: ${osError?.message || "erro desconhecido"}.`;
+          }
+        }
+
         setWizardMsg({
-          text: options?.mensagemSucesso || "Registro salvo!",
-          ok: true,
+          text: (options?.mensagemSucesso || "Registro salvo!") + textoOS,
+          ok: !textoOS.includes("não foi atualizada"),
         });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
@@ -3064,6 +3114,7 @@ export default function AcompanhamentoPage() {
     fetchRegistros,
     flushOfflineQueue,
     sincronizarCoroasAtendimento,
+    osCampos,
   ]);
 
   // Salva imediatamente a Arrumação/Insumos quando estamos EDITANDO um
@@ -3957,6 +4008,27 @@ export default function AcompanhamentoPage() {
     [registrarAcao, definirTeleRegistroId],
   );
 
+  const wizardRegistroId = (wizardData as any)?.id ?? null;
+  useEffect(() => {
+    if (!wizardOpen) return;
+    let vivo = true;
+    setOsCampos(OS_CAMPOS_VAZIO);
+    setOsColunasFaltando([]);
+    if (!wizardEditing || wizardRegistroId == null || String(wizardRegistroId).startsWith("local")) return;
+    carregarCamposOS(wizardRegistroId)
+      .then((r) => {
+        if (!vivo) return;
+        setOsCampos(r.campos);
+        setOsColunasFaltando(r.faltando);
+      })
+      .catch(() => {
+        /* sem OS disponível: a tela segue sem os campos preenchidos */
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [wizardOpen, wizardEditing, wizardRegistroId]);
+
   /* -------------------- Resumos -------------------- */
   const materiaisSelecionadosResumo = useMemo(() => {
     const matsPrefer = (wizardData as any)?.materiais;
@@ -4007,20 +4079,33 @@ export default function AcompanhamentoPage() {
 
   /* -------------------- Render -------------------- */
   return (
-    <div className="p-6">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Atendimentos</h1>
+    <div className="min-h-[100dvh] bg-[#F6F8FB] p-4 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6 lg:px-10 lg:py-8">
+      <header className="mb-5 flex flex-col gap-3 sm:mb-7 sm:flex-row sm:items-center sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-extrabold leading-tight sm:text-[32px]">Atendimentos</h1>
+          <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF] sm:text-[15px]">
+            Registre cada etapa e mantenha as informações do atendimento em dia.
+          </p>
         </div>
-        <button
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          onClick={() => iniciarNovoRegistro("funerario")}
-        >
-          Novo Registro
-        </button>
+        <div className="flex gap-2.5">
+          <a
+            href="/os/minhas"
+            className="inline-flex h-12 flex-1 items-center justify-center rounded-[14px] border-[1.5px] border-[#313C55] bg-white dark:bg-[#232B3F] px-5 text-[15px] font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10 sm:flex-none"
+          >
+            Minhas OS
+          </a>
+          <button
+            className="inline-flex h-12 flex-1 items-center justify-center rounded-[14px] bg-[#313C55] px-5 text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30] sm:flex-none"
+            onClick={() => iniciarNovoRegistro("funerario")}
+          >
+            Novo registro
+          </button>
+        </div>
       </header>
 
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-5">
       <TabelaAtendimentos
+        selecionadoId={acaoOpen ? acaoId : null}
         registros={registros}
         onAcao={(id) => abrirPopupAcaoPorId(id)}
         onInfo={(id) => abrirInfoPorId(id)}
@@ -4030,6 +4115,20 @@ export default function AcompanhamentoPage() {
         onVisita={abrirVisitaPorId}
         ocultarAgente={visitaPermitida}
       />
+      <AcaoModal
+        open={acaoOpen}
+        setOpen={setAcaoOpen}
+        registros={registros}
+        acaoId={acaoId}
+        registrarAcao={registrarAcao}
+        acaoMsg={acaoMsg}
+        acaoSubmitting={acaoSubmitting}
+        estoqueInsuficiente={estoqueInsuficiente}
+        onCloseEstoqueInsuficiente={() => setEstoqueInsuficiente(null)}
+        onVeiculoRequired={handleVeiculoRequired}
+        onFotoAcaoRequired={handleFotoAcaoRequired}
+      />
+      </div>
 
       <Wizard
         open={wizardOpen}
@@ -4038,6 +4137,20 @@ export default function AcompanhamentoPage() {
         wizardStep={wizardStep}
         setWizardStep={setWizardStep}
         wizardRestrictGroup={wizardRestrictGroup}
+        osSlot={
+          (wizardData as any)?.tipo_atendimento === "terceiro" ? null : (
+            <SecaoOSAtendimento
+              convenio={String((wizardData as any)?.convenio ?? "")}
+              tanato={tanatoVal || String((wizardData as any)?.tanato ?? "")}
+              valores={osCampos}
+              onChange={(p) => setOsCampos((c) => ({ ...c, ...p }))}
+              colunasFaltando={osColunasFaltando}
+              atendimentoId={wizardEditing ? (wizardData as any)?.id ?? null : null}
+              versao={osVersao}
+              disabled={wizardSubmitting}
+            />
+          )
+        }
         wizardData={wizardData}
         setWizardData={setWizardData}
         obrigatorios={obrigatoriosForTipo}
@@ -4074,19 +4187,6 @@ export default function AcompanhamentoPage() {
         onSave={salvarArrumacaoPersistida}
       />
 
-      <AcaoModal
-        open={acaoOpen}
-        setOpen={setAcaoOpen}
-        registros={registros}
-        acaoId={acaoId}
-        registrarAcao={registrarAcao}
-        acaoMsg={acaoMsg}
-        acaoSubmitting={acaoSubmitting}
-        estoqueInsuficiente={estoqueInsuficiente}
-        onCloseEstoqueInsuficiente={() => setEstoqueInsuficiente(null)}
-        onVeiculoRequired={handleVeiculoRequired}
-        onFotoAcaoRequired={handleFotoAcaoRequired}
-      />
 
       <FotoAcaoModal
         open={fotoAcaoOpen}
@@ -4263,10 +4363,10 @@ export default function AcompanhamentoPage() {
       />
 
       {matCheckSaving ? (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4">
-          <div className="rounded-xl bg-background p-4 shadow-xl border">
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-[#313C55]/45 p-4">
+          <div className="rounded-xl bg-[#F1F4F8] dark:bg-[#1C2334] p-4 shadow-xl border border-[#E3E8F0] dark:border-white/[0.12]">
             <div className="text-sm font-medium">Salvando conferência...</div>
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
               Aguarde um instante.
             </div>
           </div>
@@ -4276,9 +4376,9 @@ export default function AcompanhamentoPage() {
       {wizardMsg ? (
         <div className="mt-4">
           <div
-            className={`rounded-lg border p-3 text-sm ${wizardMsg.ok
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800"
+            className={`rounded-lg border p-3 text-sm border-[#E3E8F0] dark:border-white/[0.12] ${wizardMsg.ok
+              ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white"
+              : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
               }`}
           >
             {wizardMsg.text}

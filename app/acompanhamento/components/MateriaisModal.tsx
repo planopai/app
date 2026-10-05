@@ -275,26 +275,26 @@ export default function MateriaisModal({
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h3 className="text-lg font-semibold">Materiais para Assistência</h3>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                         Selecione a categoria e marque os itens com quantidade. Selecionados: {selectedCount}
                     </p>
                 </div>
 
-                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => setOpen(false)}>
+                <button className="rounded-md border px-3 py-2 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]" onClick={() => setOpen(false)}>
                     Fechar
                 </button>
             </div>
 
             {msg ? (
                 <div
-                    className={`mt-3 rounded-md border px-3 py-2 text-sm ${needLogin ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-800"
+                    className={`mt-3 rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12] ${needLogin ? "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white" : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
                         }`}
                 >
                     {msg}
                     {needLogin ? (
                         <div className="mt-2">
                             <button
-                                className="rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground hover:opacity-90"
+                                className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-xs text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                 onClick={() => (window.location.href = LOGIN_ABSOLUTE)}
                             >
                                 Ir para login
@@ -309,7 +309,7 @@ export default function MateriaisModal({
                 <div className="grid gap-1">
                     <label className="text-sm font-medium">Categoria</label>
                     <select
-                        className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                        className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                         value={catId}
                         onChange={(e) => setCatId(e.target.value)}
                         disabled={loading || cats.length === 0 || needLogin}
@@ -324,13 +324,13 @@ export default function MateriaisModal({
                 </div>
 
                 {/* LISTA DE ITENS/SUBITENS */}
-                <div className="rounded-lg border p-3">
+                <div className="rounded-lg border p-3 border-[#E3E8F0] dark:border-white/[0.12]">
                     {loading ? (
-                        <div className="text-sm text-muted-foreground">Carregando itens…</div>
+                        <div className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando itens…</div>
                     ) : needLogin ? (
-                        <div className="text-sm text-muted-foreground">Faça login para carregar os materiais.</div>
+                        <div className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">Faça login para carregar os materiais.</div>
                     ) : items.length === 0 ? (
-                        <div className="text-sm text-muted-foreground">Esta categoria não tem itens.</div>
+                        <div className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">Esta categoria não tem itens.</div>
                     ) : (
                         <div className="space-y-3">
                             {items.map((it) => {
@@ -339,7 +339,7 @@ export default function MateriaisModal({
                                 // Se tiver subitens: renderiza subitens
                                 if (hasSubs) {
                                     return (
-                                        <div key={`itemwrap:${String(it.id)}`} className="rounded-md border p-2">
+                                        <div key={`itemwrap:${String(it.id)}`} className="rounded-md border p-2 border-[#E3E8F0] dark:border-white/[0.12]">
                                             <div className="text-sm font-medium">{it.nome}</div>
 
                                             <div className="mt-2 space-y-2 pl-2">
@@ -372,7 +372,7 @@ export default function MateriaisModal({
                                                                 type="number"
                                                                 min={1}
                                                                 inputMode="numeric"
-                                                                className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50"
+                                                                className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50 border-[#E3E8F0] dark:border-white/[0.12]"
                                                                 disabled={!state.checked}
                                                                 value={state.checked ? String(state.qtd ?? 1) : ""}
                                                                 onChange={(e) =>
@@ -417,7 +417,7 @@ export default function MateriaisModal({
                                             type="number"
                                             min={1}
                                             inputMode="numeric"
-                                            className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50"
+                                            className="w-28 rounded-md border px-2 py-1 text-sm disabled:opacity-50 border-[#E3E8F0] dark:border-white/[0.12]"
                                             disabled={!state.checked}
                                             value={state.checked ? String(state.qtd ?? 1) : ""}
                                             onChange={(e) => setQty(key, it.nome, it.categoria_id, it.id, "item", it.id, e.target.value)}
@@ -432,12 +432,12 @@ export default function MateriaisModal({
 
                 {/* BOTÕES */}
                 <div className="mt-1 flex justify-end gap-2">
-                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted" onClick={() => setOpen(false)}>
+                    <button className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]" onClick={() => setOpen(false)}>
                         Cancelar
                     </button>
 
                     <button
-                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                        className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                         disabled={needLogin}
                         onClick={() => {
                             const materiaisJson = buildMateriaisJson(materiais);

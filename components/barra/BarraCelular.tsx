@@ -17,7 +17,7 @@ import { usePerms } from "@/app/_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { rotaExiste } from "@/components/shell/rotas";
-import { abrirMenuCelular, useMenuCelularAberto } from "@/components/shell/MenuCelular";
+import { EVENTO_BARRA_ESTADO, abrirMenuCelular, useMenuCelularAberto } from "@/components/shell/MenuCelular";
 import { IconeAtalho, useBarra } from "./atalhos";
 
 export const EVENTO_OCULTAR_BARRA = "pai:ocultar-barra";
@@ -47,7 +47,13 @@ export default function BarraCelular() {
     }, []);
 
     const semBarraNaRota = ROTAS_SEM_BARRA.some((r) => pathname === r || pathname.startsWith(r + "/"));
-    if (perms === null || semBarraNaRota || ocultaPelaTela) return null;
+    const barraNaTela = !(perms === null || semBarraNaRota || ocultaPelaTela);
+    useEffect(() => {
+        (window as any).__paiBarraVisivel = barraNaTela;
+        window.dispatchEvent(new CustomEvent(EVENTO_BARRA_ESTADO, { detail: barraNaTela }));
+    }, [barraNaTela]);
+
+    if (!barraNaTela) return null;
 
     const itens = barra.celular.itens.filter((i) => (barra.carregada || !i.pagina || has(i.pagina)) && rotaExiste(i.rota)).slice(0, 5);
     const contMsg = naoLidas.total + naoLidas.fila;

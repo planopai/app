@@ -68,6 +68,20 @@ function getFotoAcaoTipo(fase: Fase): FotoAcaoTipo | null {
     return null;
 }
 
+/** true a partir de 1024px (computador). No celular o Registrar ação continua como folha. */
+function useTelaLarga() {
+    const [larga, setLarga] = useState(false);
+    useEffect(() => {
+        if (typeof window === "undefined" || !window.matchMedia) return;
+        const mq = window.matchMedia("(min-width: 1024px)");
+        const upd = () => setLarga(mq.matches);
+        upd();
+        mq.addEventListener("change", upd);
+        return () => mq.removeEventListener("change", upd);
+    }, []);
+    return larga;
+}
+
 export default function AcaoModal({
     open,
     setOpen,
@@ -104,6 +118,7 @@ export default function AcaoModal({
         tipo: FotoAcaoTipo,
     ) => void;
 }) {
+    const telaLarga = useTelaLarga();
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [me, setMe] = useState<OfflineSession | null>(null);
     const [meLoading, setMeLoading] = useState(false);
@@ -372,26 +387,30 @@ export default function AcaoModal({
         }
     }
 
-    return (
+    const conteudo = (
         <>
-            <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
-                <h2 className="text-xl font-semibold">Registrar uma ação</h2>
+                <h2 className="text-xl font-extrabold text-[#313C55] dark:text-white">Registrar ação</h2>
+                {efetivo ? (
+                    <p className="mt-0.5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">
+                        {(efetivo as any).falecido || ""}
+                    </p>
+                ) : null}
 
-                <div className="mt-2 text-xs text-muted-foreground">
+                <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                     {!networkOnline && (
-                        <span className="font-semibold text-amber-700">
+                        <span className="font-semibold text-[#313C55] dark:text-white">
                             Modo offline. Somente as etapas operacionais autorizadas ficam disponíveis.
                         </span>
                     )}
                     {networkOnline && loadingOnline && "Sincronizando status com o servidor..."}
                     {networkOnline && !loadingOnline && online && !onlineError && "Status sincronizado com o servidor."}
                     {networkOnline && !loadingOnline && onlineError && (
-                        <span className="text-red-600">{onlineError}. Exibindo dados locais como fallback.</span>
+                        <span className="text-[#B42318] dark:text-[#FF9C92]">{onlineError}. Exibindo dados locais como fallback.</span>
                     )}
                 </div>
 
                 {efetivo && !networkOnline && (
-                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    <div className="mt-3 rounded-lg border border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 p-3 text-xs text-[#313C55] dark:text-white">
                         <div>Usuário: <b>{me?.userName || "não identificado"}</b></div>
                         {efetivo.responsavel_velorio_nome && (
                             <div>Responsável pelo velório: <b>{efetivo.responsavel_velorio_nome}</b></div>
@@ -403,48 +422,85 @@ export default function AcaoModal({
                 )}
 
                 {!efetivo && (
-                    <p className="mt-4 text-sm text-muted-foreground">
+                    <p className="mt-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                         Nenhum registro selecionado. Selecione um registro para continuar.
                     </p>
                 )}
 
                 {efetivo && fasesVisiveis.length > 0 && (
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {fasesVisiveis.map((f) => {
-                            const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
-                            const isConservacao = FASES_CONSERVACAO.includes(f);
-                            const bloqueadoPorCargo = isConservacao && !meLoading && !!me && !podeConservacao();
-                            const reason = habilitar ? offlineBlockReason(f) : null;
-                            const disabled = !habilitar || bloqueadoPorCargo || !!reason;
-                            const exigeFoto = FASES_COM_FOTO.includes(f);
+                    <>
+                        <p className="mb-2 mt-4 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">
+                            Etapas
+                        </p>
+                        <div className="grid grid-cols-1 gap-2 sm:landscape:grid-cols-2 lg:grid-cols-2">
+                            {fasesVisiveis.map((f, idx) => {
+                                const habilitar = prox === f && !acaoSubmitting && !loadingOnline && !concluido;
+                                const isConservacao = FASES_CONSERVACAO.includes(f);
+                                const bloqueadoPorCargo = isConservacao && !meLoading && !!me && !podeConservacao();
+                                const reason = habilitar ? offlineBlockReason(f) : null;
+                                const disabled = !habilitar || bloqueadoPorCargo || !!reason;
+                                const exigeFoto = FASES_COM_FOTO.includes(f);
 
-                            return (
-                                <button
-                                    key={f}
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => handleClickFase(f)}
-                                    className={`rounded-md border px-3 py-2 text-left text-sm ${!disabled ? "hover:bg-muted" : "opacity-50"}`}
-                                    title={
-                                        reason ||
-                                        (bloqueadoPorCargo
-                                            ? "Usuário sem permissão para conservação"
-                                            : habilitar && exigeFoto
-                                                ? "Anexar foto para confirmar esta etapa"
-                                                : habilitar
-                                                    ? "Confirmar próxima etapa"
-                                                    : "Aguardando etapas anteriores")
-                                    }
-                                >
-                                    {acaoToStatus(f)}
-                                </button>
-                            );
-                        })}
-                    </div>
+                                const posProx = prox ? (fasesVisiveis as readonly Fase[]).indexOf(prox) : -1;
+                                const feita = concluido || (posProx >= 0 && idx < posProx);
+                                const atual = !concluido && prox === f;
+
+                                return (
+                                    <button
+                                        key={f}
+                                        type="button"
+                                        disabled={disabled}
+                                        onClick={() => handleClickFase(f)}
+                                        className={[
+                                            "flex min-h-[52px] items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-bold outline-none transition focus:ring-2 focus:ring-[#00AEEC]/30 border-[#E3E8F0] dark:border-white/[0.12]",
+                                            atual
+                                                ? "border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]"
+                                                : feita
+                                                    ? "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white"
+                                                    : "border-[#E3E8F0] bg-white dark:bg-[#232B3F] text-[#5B6478] opacity-70 dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-[#AEB9CF]",
+                                            atual && disabled ? "opacity-70" : "",
+                                        ].join(" ")}
+                                        title={
+                                            reason ||
+                                            (bloqueadoPorCargo
+                                                ? "Usuário sem permissão para conservação"
+                                                : habilitar && exigeFoto
+                                                    ? "Anexar foto para confirmar esta etapa"
+                                                    : habilitar
+                                                        ? "Confirmar próxima etapa"
+                                                        : feita
+                                                            ? "Etapa já registrada"
+                                                            : "Aguardando etapas anteriores")
+                                        }
+                                    >
+                                        <span
+                                            aria-hidden
+                                            className={[
+                                                "grid size-7 shrink-0 place-items-center rounded-full text-xs font-extrabold",
+                                                atual
+                                                    ? "bg-[#313C55] text-white"
+                                                    : feita
+                                                        ? "bg-[#7BA11A] text-white"
+                                                        : "bg-[#EEF2F7] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]",
+                                            ].join(" ")}
+                                        >
+                                            {feita ? "✓" : idx + 1}
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            {acaoToStatus(f)}
+                                            {atual && exigeFoto ? (
+                                                <span className="mt-0.5 block text-[11px] font-semibold opacity-80">exige foto</span>
+                                            ) : null}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </>
                 )}
 
                 {concluido && (
-                    <p className="mt-2 text-sm text-muted-foreground">Fluxo concluído para este registro.</p>
+                    <p className="mt-3 rounded-xl border border-[#7BA11A] bg-[#EEF5D6] px-3 py-2 text-sm font-bold text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white">Todas as etapas registradas.</p>
                 )}
 
                 {meError && !networkOnline && (
@@ -452,7 +508,44 @@ export default function AcaoModal({
                 )}
                 {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
                 {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
-            </Modal>
+        </>
+    );
+
+    return (
+        <>
+            {telaLarga ? (
+                <aside
+                    aria-label="Registrar ação"
+                    className="sticky top-4 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[18px] border border-[#E3E8F0] bg-white p-4 text-[#313C55] shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white"
+                >
+                    {open && efetivo ? (
+                        <>
+                            <div className="mb-1 flex items-start justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setOpen(false)}
+                                    aria-label="Fechar painel"
+                                    className="rounded-xl px-3 py-1.5 text-sm font-bold text-[#5B6478] hover:bg-[#EEF2F7] dark:text-[#AEB9CF] dark:hover:bg-white/10"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            {conteudo}
+                        </>
+                    ) : (
+                        <div className="py-10 text-center">
+                            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Registrar uma ação</p>
+                            <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                                Toque em <b className="text-[#313C55] dark:text-white">Ações</b> num atendimento para registrar a próxima etapa aqui.
+                            </p>
+                        </div>
+                    )}
+                </aside>
+            ) : (
+                <Modal open={open} onClose={() => setOpen(false)} ariaLabel="Registrar ação">
+                    {conteudo}
+                </Modal>
+            )}
 
             <Modal
                 open={!!estoqueInsuficiente}
@@ -464,15 +557,15 @@ export default function AcaoModal({
                 closeOnBackdrop={false}
             >
                 <div className="text-center" aria-live="assertive">
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-3xl font-bold text-red-700">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-3xl font-bold text-[#B42318] dark:text-[#FF9C92]">
                         !
                     </div>
 
-                    <h2 className="mt-4 text-2xl font-bold text-red-700">
+                    <h2 className="mt-4 text-2xl font-bold text-[#B42318] dark:text-[#FF9C92]">
                         {estoqueInsuficiente?.titulo || "Estoque insuficiente"}
                     </h2>
 
-                    <p className="mt-3 text-base font-semibold text-red-700">
+                    <p className="mt-3 text-base font-semibold text-[#B42318] dark:text-[#FF9C92]">
                         {estoqueInsuficiente?.mensagem ||
                             "Não é possível avançar para Corpo Pronto."}
                     </p>
@@ -483,29 +576,29 @@ export default function AcaoModal({
                         {estoqueInsuficiente.itens.map((item, index) => (
                             <div
                                 key={`${item.produto_id}-${item.deposito_nome}-${index}`}
-                                className="rounded-xl border-2 border-red-200 bg-red-50 p-4"
+                                className="rounded-xl border-2 border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4"
                             >
-                                <div className="text-base font-bold text-red-800">
+                                <div className="text-base font-bold text-[#B42318] dark:text-[#FF9C92]">
                                     {item.produto_nome || `Produto ${item.produto_id}`}
                                 </div>
 
-                                <div className="mt-1 text-sm text-red-700">
+                                <div className="mt-1 text-sm text-[#B42318] dark:text-[#FF9C92]">
                                     Depósito:{" "}
                                     <b>{item.deposito_nome || "não informado"}</b>
                                 </div>
 
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                                    <div className="rounded-lg bg-white p-2 text-red-800">
+                                    <div className="rounded-lg bg-white dark:bg-[#232B3F] p-2 text-[#B42318] dark:text-[#FF9C92]">
                                         Disponível:{" "}
                                         <b>{item.disponivel}</b>
                                     </div>
-                                    <div className="rounded-lg bg-white p-2 text-red-800">
+                                    <div className="rounded-lg bg-white dark:bg-[#232B3F] p-2 text-[#B42318] dark:text-[#FF9C92]">
                                         Necessário:{" "}
                                         <b>{item.necessario}</b>
                                     </div>
                                 </div>
 
-                                <p className="mt-3 text-sm font-semibold text-red-700">
+                                <p className="mt-3 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">
                                     É necessário repor este item
                                     {item.faltante > 0
                                         ? ` em pelo menos ${item.faltante} unidade${item.faltante === 1 ? "" : "s"}`
@@ -517,8 +610,8 @@ export default function AcaoModal({
                     </div>
                 )}
 
-                <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-center">
-                    <p className="text-sm font-bold text-red-800">
+                <div className="mt-5 rounded-xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-center">
+                    <p className="text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">
                         Faça a reposição do estoque e tente novamente o comando
                         Corpo Pronto.
                     </p>
@@ -529,7 +622,7 @@ export default function AcaoModal({
                         type="button"
                         autoFocus
                         onClick={() => onCloseEstoqueInsuficiente?.()}
-                        className="min-w-40 rounded-lg bg-red-700 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                        className="min-w-40 rounded-lg bg-[#B42318] px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#8F1B12] focus:outline-none focus:ring-2 focus:ring-[#B42318] focus:ring-offset-2"
                     >
                         Entendi
                     </button>

@@ -52,13 +52,13 @@ export default function Modal({
 
     return (
         <div
-            className="fixed inset-0 flex items-center justify-center overflow-hidden bg-black/50 p-3 sm:p-4"
+            className="fixed inset-0 flex items-end justify-center overflow-hidden bg-[#313C55]/45 p-0 sm:items-center sm:p-4"
             style={{
                 zIndex,
                 width: "100vw",
                 height: "100dvh",
             }}
-            role={role}
+            role={role} data-pai-overlay
             aria-modal="true"
             aria-label={ariaLabel}
             onClick={(e) => {
@@ -68,11 +68,11 @@ export default function Modal({
             }}
         >
             <div
-                className="flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl outline-none sm:max-h-[calc(100dvh-2rem)]"
+                className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] bg-white dark:bg-[#232B3F] text-[#313C55] shadow-2xl outline-none dark:border-white/[0.12] dark:text-white sm:max-h-[calc(100dvh-2rem)] sm:rounded-3xl"
                 style={{ maxWidth: maxWidth ?? 720 }}
             >
                 <div
-                    className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 ${contentClassName}`}
+                    className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 ${contentClassName}`}
                     style={{
                         WebkitOverflowScrolling: "touch",
                         touchAction: "pan-y",
@@ -82,7 +82,7 @@ export default function Modal({
                 </div>
 
                 {footer ? (
-                    <div className="shrink-0 border-t bg-white px-4 py-3 sm:px-5 sm:py-4">
+                    <div className="shrink-0 border-t border-[#E3E8F0] bg-[#F6F8FB] px-4 py-3 dark:border-white/[0.12] dark:bg-[#1C2334] sm:px-5 sm:py-4">
                         {footer}
                     </div>
                 ) : null}

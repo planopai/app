@@ -261,10 +261,10 @@ const ROTA_TV = "/quadro-acompanhamento?tv=1"; // >>> TROCAR AO SUBIR (endereço
 const LOGO_PAI_URL = ""; // >>> TROCAR AO SUBIR (caminho do logo do PAI, ex.: "/logo-pai.png"). Vazio = não mostra o logo na TV.
 
 const COROAS_TV_LOCAL =
-    `${API_DIRETA}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
+    `${API_PHP}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
 
 const COROAS_TV_REMOTA =
-    `${API_DIRETA}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100`;
+    "https://api.planoassistencialintegrado.com.br/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100";
 
 /* =========================
    Helpers comuns
@@ -1336,120 +1336,42 @@ function coroaDataHora(v?: string | null): string {
 }
 
 /* Foto da coroa = foto do CADASTRO DO PRODUTO (modelo da coroa no estoque).
- * Usa a mesma normalização de URL da tela de Coroas:
- * - URL absoluta/data/blob: mantém como veio;
- * - caminho /uploads/... ou uploads/...: aponta direto para a API pública;
- * - somente nome do arquivo: usa /uploads/produtos/<arquivo>.
- */
+ * O pedido guarda só o nome do modelo (ex.: "MOD 03 (1,10MT)"); a foto vem do produto de mesmo nome:
+ *   materiais_gerais.php?action=coroas_buscar&tipo=natural|artificial&q=<modelo>  →  { ok, rows:[{ nome, foto_url, fotos:[{arquivo,is_principal}] }] }
+ * O cadastro guarda só o NOME do arquivo (ex.: "prod_20260327_103510_4e71705e.webp").
+ * >>> TROCAR AO SUBIR: pasta onde o sistema publica as fotos de produto (a skill não mostra esse endereço). */
+const FOTO_PRODUTO_BASE = `${API_DIRETA}/uploads/produtos/`; // >>> TROCAR AO SUBIR
+
 function urlFotoProduto(arquivo?: string | null): string {
-    const raw = String(arquivo ?? "").trim();
-    if (!raw || raw === "null" || raw === "undefined") return "";
-
-    if (
-        /^data:image\//i.test(raw) ||
-        /^blob:/i.test(raw) ||
-        /^https?:\/\//i.test(raw)
-    ) {
-        return raw;
-    }
-
-    const clean = raw.startsWith("/") ? raw : `/${raw}`;
-
-    if (clean.startsWith("/uploads/")) {
-        return `${API_DIRETA}${clean}`;
-    }
-
-    return `${API_DIRETA}/uploads/produtos/${raw.replace(/^\/+/, "")}`;
+    const t = String(arquivo ?? "").trim();
+    if (!t) return "";
+    if (/^(https?:|data:|blob:)/i.test(t)) return t;
+    if (t.startsWith("/")) return `${API_DIRETA}${t}`;
+    return `${FOTO_PRODUTO_BASE}${t}`;
 }
 
-const normNomeProduto = (v: unknown) =>
-    String(v ?? "")
-        .trim()
-        .toLocaleLowerCase("pt-BR")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, " ");
-
+const normNomeProduto = (v: unknown) => String(v ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 const FOTOS_MODELO_COROA = new Map<string, Promise<string>>();
-let PRODUTOS_COROAS_PROMISE: Promise<any[]> | null = null;
 
-async function carregarProdutosCoroas(): Promise<any[]> {
-    if (PRODUTOS_COROAS_PROMISE) return PRODUTOS_COROAS_PROMISE;
-
-    PRODUTOS_COROAS_PROMISE = (async () => {
-        try {
-            // Mesmo endpoint/fluxo usado na segunda Page.tsx.
-            const url = `${API_DIRETA}/materiais_gerais.php?init=1&_ts=${Date.now()}`;
-            const j = await fetchJsonFast<any>(url, {
-                ttlMs: 60_000,
-                cacheKey: "qa_produtos_coroas_init",
-            });
-
-            const produtos: any[] = Array.isArray(j?.produtos) ? j.produtos : [];
-            return produtos;
-        } catch (e) {
-            PRODUTOS_COROAS_PROMISE = null;
-            throw e;
-        }
-    })();
-
-    return PRODUTOS_COROAS_PROMISE;
-}
-
-function arquivoFotoPrincipalProduto(prod: any): string {
-    if (!prod) return "";
-
-    const fotos: any[] = Array.isArray(prod?.fotos) ? [...prod.fotos] : [];
-
-    if (fotos.length) {
-        fotos.sort((a, b) => {
-            const principalA = Number(a?.is_principal || 0) === 1 ? 0 : 1;
-            const principalB = Number(b?.is_principal || 0) === 1 ? 0 : 1;
-            if (principalA !== principalB) return principalA - principalB;
-            return Number(a?.ordem || 0) - Number(b?.ordem || 0);
-        });
-
-        const primeira = fotos[0];
-        return String(primeira?.foto_url || primeira?.arquivo || "").trim();
-    }
-
-    return String(prod?.foto_url || "").trim();
-}
-
-function buscarFotoModeloCoroa(
-    modelo: string,
-    tipo: "natural" | "artificial",
-): Promise<string> {
+function buscarFotoModeloCoroa(modelo: string, tipo: "natural" | "artificial"): Promise<string> {
     const chave = `${tipo}|${normNomeProduto(modelo)}`;
     const guardada = FOTOS_MODELO_COROA.get(chave);
     if (guardada) return guardada;
-
     const p = (async () => {
         try {
-            const produtos = await carregarProdutosCoroas();
+            const url = `${API_PHP}/materiais_gerais.php?action=coroas_buscar&tipo=${tipo}&q=${encodeURIComponent(modelo)}&limit=20&_ts=${Date.now()}`;
+            const j = await fetchJsonFast<any>(url, { ttlMs: 60_000, cacheKey: `foto_coroa_${chave}` });
+            const rows: any[] = Array.isArray(j?.rows) ? j.rows : [];
             const alvo = normNomeProduto(modelo);
-            const categoriaEsperada =
-                tipo === "artificial" ? "coroas artificiais" : "coroas naturais";
-
-            // Primeiro tenta casar nome + categoria. Se não houver categoria no retorno,
-            // cai para o mesmo nome independentemente dela.
-            const prod =
-                produtos.find(
-                    (r) =>
-                        normNomeProduto(r?.nome) === alvo &&
-                        normNomeProduto(r?.categoria_nome) === categoriaEsperada,
-                ) ??
-                produtos.find((r) => normNomeProduto(r?.nome) === alvo);
-
-            if (!prod) return "";
-
-            return urlFotoProduto(arquivoFotoPrincipalProduto(prod));
+            const prod = rows.find((r) => normNomeProduto(r?.nome) === alvo) ?? rows[0];
+            const fotos: any[] = Array.isArray(prod?.fotos) ? prod.fotos : [];
+            const arq = prod?.foto_url || fotos.find((f) => f?.is_principal)?.arquivo || fotos[0]?.arquivo;
+            return urlFotoProduto(arq);
         } catch {
-            FOTOS_MODELO_COROA.delete(chave);
+            FOTOS_MODELO_COROA.delete(chave); // tenta de novo na próxima abertura
             return "";
         }
     })();
-
     FOTOS_MODELO_COROA.set(chave, p);
     return p;
 }
@@ -3495,7 +3417,7 @@ export default function QuadroAtendimentoPage() {
                 }
             `}</style>
 
-            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] min-w-0 flex-col md:h-[calc(100dvh-84px)] md:max-h-[calc(100dvh-84px)] gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
+            <div className="qa-page-root qa-no-scrollbar mx-auto flex h-[calc(100dvh-var(--header-height)-56px)] max-h-[calc(100dvh-var(--header-height)-56px)] min-w-0 flex-col md:h-[calc(100dvh-var(--header-height)-36px)] md:max-h-[calc(100dvh-var(--header-height)-36px)] gap-4 overflow-hidden px-2 pt-5 pb-2 sm:px-3 sm:pt-6">
                 <div ref={gavetaSentinelaRef} className="hidden" aria-hidden />
                 {/* Celular e tablet: quadro em abas; muda sozinho entre em pé e deitado */}
                 <div className="flex min-h-0 flex-1 flex-col lg:hidden">
@@ -3515,42 +3437,42 @@ export default function QuadroAtendimentoPage() {
 
                 {/* Telas largas: rota da TV = quadro de TV; demais rotas = quadro do desktop (cartões) */}
                 {rotaTv !== null && (
-                    <div className="hidden min-h-0 flex-1 lg:flex">
-                        {!rotaTv ? (
-                            <QuadroDesktop
-                                ativos={ativosOrdenados}
-                                coroas={coroasOrdenadas}
-                                coroasError={coroasTvError}
-                                statusLogsById={statusLogsById}
-                                nowMs={nowMs}
-                                clockTime={clockTime}
-                                clockDate={clockDate}
-                                avisos={avisosParaExibir}
-                                onSelect={showDetail}
-                                onSelectCoroa={setCoroaSel}
-                            />
-                        ) : (
-                            <QuadroTv
-                                layout={layoutTv}
-                                ativos={ativosPagina}
-                                todosAtivos={ativosOrdenados}
-                                paginaAtendimentos={paginaAtualAtendimentos}
-                                totalPaginasAtendimentos={totalPaginasAtendimentos}
-                                coroas={coroasPagina}
-                                todasCoroas={coroasOrdenadas}
-                                paginaCoroas={paginaAtualCoroas}
-                                totalPaginasCoroas={totalPaginasCoroas}
-                                coroasError={coroasTvError}
-                                statusLogsById={statusLogsById}
-                                nowMs={nowMs}
-                                clockTime={clockTime}
-                                clockDate={clockDate}
-                                avisos={avisosParaExibir}
-                                onSelect={showDetail}
-                                onNaoCoube={tvNaoCoube}
-                            />
-                        )}
-                    </div>
+                <div className="hidden min-h-0 flex-1 lg:flex">
+                    {!rotaTv ? (
+                        <QuadroDesktop
+                            ativos={ativosOrdenados}
+                            coroas={coroasOrdenadas}
+                            coroasError={coroasTvError}
+                            statusLogsById={statusLogsById}
+                            nowMs={nowMs}
+                            clockTime={clockTime}
+                            clockDate={clockDate}
+                            avisos={avisosParaExibir}
+                            onSelect={showDetail}
+                            onSelectCoroa={setCoroaSel}
+                        />
+                    ) : (
+                    <QuadroTv
+                        layout={layoutTv}
+                        ativos={ativosPagina}
+                        todosAtivos={ativosOrdenados}
+                        paginaAtendimentos={paginaAtualAtendimentos}
+                        totalPaginasAtendimentos={totalPaginasAtendimentos}
+                        coroas={coroasPagina}
+                        todasCoroas={coroasOrdenadas}
+                        paginaCoroas={paginaAtualCoroas}
+                        totalPaginasCoroas={totalPaginasCoroas}
+                        coroasError={coroasTvError}
+                        statusLogsById={statusLogsById}
+                        nowMs={nowMs}
+                        clockTime={clockTime}
+                        clockDate={clockDate}
+                        avisos={avisosParaExibir}
+                        onSelect={showDetail}
+                        onNaoCoube={tvNaoCoube}
+                    />
+                    )}
+                </div>
                 )}
 
                 {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} />}
@@ -5351,12 +5273,12 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             className={`qm-cr ${atraso ? "qm-cr-late" : ""} ${clicavel ? "qm-cr-click" : ""}`}
             {...(clicavel
                 ? {
-                    role: "button",
-                    tabIndex: 0,
-                    onClick: () => onSelect?.(pedido),
-                    onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
-                    "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
-                }
+                      role: "button",
+                      tabIndex: 0,
+                      onClick: () => onSelect?.(pedido),
+                      onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), onSelect?.(pedido)) : undefined),
+                      "aria-label": `Ver informações da coroa de ${shown(pedido.falecido, "a definir")}`,
+                  }
                 : {})}
         >
             {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}

@@ -597,13 +597,13 @@ export default forwardRef<
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <h2 className="text-lg font-semibold">Selecionar veículo</h2>
-                        <div className="mt-1 text-xs text-muted-foreground">{titulo}</div>
+                        <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{titulo}</div>
                     </div>
                 </div>
 
                 <div>
                     <select
-                        className="w-full rounded-md border px-3 py-2 text-sm"
+                        className="w-full rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
                         value={veiculo}
                         disabled={saving || starting}
                         onChange={async (e) => {
@@ -631,7 +631,7 @@ export default forwardRef<
 
                 {msg && (
                     <div
-                        className={`rounded-md border px-3 py-2 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
+                        className={`rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12] ${msg.ok ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white" : "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]"
                             }`}
                     >
                         {msg.text}
@@ -643,7 +643,7 @@ export default forwardRef<
                         type="button"
                         onClick={onClose}
                         disabled={saving || starting}
-                        className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                        className="rounded-md border px-3 py-2 text-sm disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                     >
                         Fechar
                     </button>

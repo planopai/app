@@ -338,14 +338,14 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h3 className="text-lg font-semibold">Selecionar Roupa e Cordão</h3>
-                    <div className="mt-1 text-xs text-muted-foreground">
+                    <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                         Escolha o <b>armário</b> da roupa para listar. Cordão é só marcar e escolher o armário. A baixa ocorre na{" "}
                         <b>fase05</b>.
                     </div>
                 </div>
 
                 <button
-                    className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+                    className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                     onClick={onClose}
                     disabled={!!disabled}
                     type="button"
@@ -355,9 +355,9 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
             </div>
 
             {/* RESUMO */}
-            <div className="mt-4 rounded-xl border bg-slate-50 p-3">
-                <div className="text-xs font-semibold text-slate-700">Resumo atual</div>
-                <div className="mt-1 text-sm text-slate-800">
+            <div className="mt-4 rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
+                <div className="text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8]">Resumo atual</div>
+                <div className="mt-1 text-sm text-[#313C55] dark:text-white">
                     <div>
                         <b>Roupa:</b> {roupaResumo}
                     </div>
@@ -368,16 +368,16 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
             </div>
 
             {uiErr ? (
-                <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uiErr}</div>
+                <div className="mt-3 rounded-md border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">{uiErr}</div>
             ) : null}
 
             <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {/* ========================= ROUPA ========================= */}
-                <div className="rounded-xl border p-4">
+                <div className="rounded-xl border p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                     <div className="flex items-end justify-between gap-2">
                         <div>
                             <div className="text-sm font-semibold">Roupa</div>
-                            <div className="text-[11px] text-slate-500">
+                            <div className="text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 Selecione o <b>armário</b> e escolha uma roupa da lista, ou clique em <b>ROUPA PRÓPRIA</b>.
                             </div>
                         </div>
@@ -385,7 +385,7 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                         <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
-                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                className="rounded-md border px-2 py-1 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                 onClick={escolherRoupaPropria}
                                 disabled={!!disabled}
                             >
@@ -393,7 +393,7 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                             </button>
                             <button
                                 type="button"
-                                className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                                className="rounded-md border px-2 py-1 text-xs hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                 onClick={limparRoupa}
                                 disabled={!!disabled}
                                 title="Limpar seleção"
@@ -405,9 +405,9 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
 
                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[220px_1fr]">
                         <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-700">Armário/Depósito</label>
+                            <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">Armário/Depósito</label>
                             <select
-                                className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                 value={depRoupa}
                                 onChange={(e) => {
                                     const next = normalizeDep(e.target.value) || "ARMARIO SANDRO";
@@ -423,44 +423,44 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                             </select>
 
                             <div className="mt-3">
-                                <label className="mb-1 block text-xs font-medium text-slate-700">Buscar</label>
+                                <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">Buscar</label>
                                 <input
-                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                                    className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     placeholder="Filtrar por nome (opcional)"
                                     value={qRoupa}
                                     onChange={(e) => setQRoupa(e.target.value)}
                                     disabled={!!disabled}
                                 />
-                                <div className="mt-1 text-[11px] text-slate-500">Dica: deixe vazio para listar todas do armário.</div>
+                                <div className="mt-1 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">Dica: deixe vazio para listar todas do armário.</div>
                             </div>
                         </div>
 
                         <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-700">Lista</label>
+                            <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">Lista</label>
 
                             {/* mantém lista e mostra loading (sem piscar) */}
                             {errRoupa ? (
-                                <div className="rounded-md border p-3 text-sm text-red-600">{errRoupa}</div>
+                                <div className="rounded-md border p-3 text-sm text-[#B42318] dark:text-[#FF9C92] border-[#E3E8F0] dark:border-white/[0.12]">{errRoupa}</div>
                             ) : !hasLoadedRoupa && loadingRoupa ? (
-                                <div className="rounded-md border p-3 text-sm text-slate-600">Carregando…</div>
+                                <div className="rounded-md border p-3 text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">Carregando…</div>
                             ) : rowsRoupa.length === 0 ? (
-                                <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">
+                                <div className="rounded-md border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                     Nenhuma roupa encontrada com saldo em <b>{depRoupa}</b>.
                                 </div>
                             ) : (
-                                <div className="relative max-h-80 overflow-auto rounded-md border">
+                                <div className="relative max-h-80 overflow-auto rounded-md border border-[#E3E8F0] dark:border-white/[0.12]">
                                     {loadingRoupa ? (
-                                        <div className="absolute inset-x-0 top-0 z-10 border-b bg-white/80 px-3 py-2 text-xs text-slate-600">
+                                        <div className="absolute inset-x-0 top-0 z-10 border-b bg-white/80 px-3 py-2 text-xs text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                             Atualizando lista…
                                         </div>
                                     ) : null}
 
-                                    <div className={`grid grid-cols-[1fr_88px] gap-2 border-b bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 ${loadingRoupa ? "pt-9" : ""}`}>
+                                    <div className={`grid grid-cols-[1fr_88px] gap-2 border-b bg-[#F6F8FB] dark:bg-[#1C2334] px-3 py-2 text-xs font-medium text-[#313C55] dark:text-[#D6DCE8] border-[#E3E8F0] dark:border-white/[0.12] ${loadingRoupa ? "pt-9" : ""}`}>
                                         <div>Produto</div>
                                         <div className="text-right">Estoque</div>
                                     </div>
 
-                                    <ul className="divide-y">
+                                    <ul className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">
                                         {rowsRoupa.map((it) => {
                                             const pid = getPidFromRow(it);
                                             const selected = selRoupa.kind === "estoque" && selRoupa.produto_id === pid;
@@ -469,19 +469,19 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                                                 <li key={pid || it.nome}>
                                                     <button
                                                         type="button"
-                                                        className={`w-full px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-60 ${selected ? "bg-blue-50" : ""
+                                                        className={`w-full px-3 py-2 text-left hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 ${selected ? "bg-[#E6F7FE] dark:bg-[#00AEEC]/20" : ""
                                                             }`}
                                                         disabled={!!disabled}
                                                         onClick={() => escolherRoupaEstoque(it)}
                                                     >
                                                         <div className="flex items-center justify-between gap-2">
                                                             <div className="min-w-0">
-                                                                <div className="truncate text-sm font-medium text-slate-900">{it.nome}</div>
-                                                                <div className="truncate text-[11px] text-slate-500">
+                                                                <div className="truncate text-sm font-medium text-[#313C55] dark:text-white">{it.nome}</div>
+                                                                <div className="truncate text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                                                     CB: <b>{String((it as any).codigo_barras || "")}</b>
                                                                 </div>
                                                             </div>
-                                                            <div className="text-right text-sm text-slate-700">
+                                                            <div className="text-right text-sm text-[#313C55] dark:text-[#D6DCE8]">
                                                                 <b>{Number(it.saldo_total) || 0}</b>
                                                             </div>
                                                         </div>
@@ -493,7 +493,7 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                                 </div>
                             )}
 
-                            <div className="mt-2 text-[11px] text-slate-500">
+                            <div className="mt-2 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 * Ao confirmar, a roupa escolhida será salva no atendimento (e baixada na fase05).
                             </div>
                         </div>
@@ -501,11 +501,11 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                 </div>
 
                 {/* ========================= CORDÃO ========================= */}
-                <div className="rounded-xl border p-4">
+                <div className="rounded-xl border p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                     <div className="flex items-start justify-between gap-2">
                         <div>
                             <div className="text-sm font-semibold">Cordão</div>
-                            <div className="text-[11px] text-slate-500">
+                            <div className="text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 Só marque <b>Usar cordão</b> e escolha o armário. Será descontada <b>1 unidade</b> (CB {CORDAO_FIXO_CB}).
                             </div>
                         </div>
@@ -525,9 +525,9 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                     </div>
 
                     <div className="mt-4">
-                        <label className="mb-1 block text-xs font-medium text-slate-700">Armário/Depósito do Cordão</label>
+                        <label className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">Armário/Depósito do Cordão</label>
                         <select
-                            className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+                            className="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                             value={depCordao}
                             onChange={(e) => {
                                 const next = normalizeDep(e.target.value) || "ARMARIO SANDRO";
@@ -541,14 +541,14 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
                             <option value="FUNERARIA">FUNERARIA</option>
                         </select>
 
-                        <div className="mt-2 rounded-md border bg-slate-50 p-3 text-sm text-slate-700">
+                        <div className="mt-2 rounded-md border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-sm text-[#313C55] dark:text-[#D6DCE8] border-[#E3E8F0] dark:border-white/[0.12]">
                             <div>
                                 <b>Produto:</b> {CORDAO_FIXO_NOME}
                             </div>
                             <div className="mt-1">
                                 <b>Código de barras:</b> {CORDAO_FIXO_CB}
                             </div>
-                            <div className="mt-1 text-[11px] text-slate-500">* A baixa será feita na fase05 junto com os demais itens.</div>
+                            <div className="mt-1 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">* A baixa será feita na fase05 junto com os demais itens.</div>
                         </div>
                     </div>
                 </div>
@@ -556,12 +556,12 @@ export default function RoupaPickerModal({ open, onClose, disabled, initial, onC
 
             {/* Ações */}
             <div className="mt-5 flex justify-end gap-2">
-                <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60" onClick={onClose} disabled={!!disabled} type="button">
+                <button className="rounded-md border px-3 py-2 text-sm disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]" onClick={onClose} disabled={!!disabled} type="button">
                     Cancelar
                 </button>
 
                 <button
-                    className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                    className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm text-white dark:text-[#313C55] disabled:opacity-60"
                     onClick={confirmar}
                     disabled={!!disabled}
                     type="button"

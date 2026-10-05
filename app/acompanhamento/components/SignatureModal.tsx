@@ -717,7 +717,7 @@ export default function SignatureModal({
                 {tipo === "recebimento" ? "Assinar Termo de Recebimento" : "Assinar Termo de Requisição de Veículo"}
             </h3>
 
-            <div className="mt-2 text-xs text-muted-foreground">
+            <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                 {step === 0 && "Passo 1 de 3 - Identificação: Nome"}
                 {step === 1 && "Passo 2 de 3 - Identificação: CPF"}
                 {step === 2 && "Passo 3 de 3 - Assinatura"}
@@ -738,7 +738,7 @@ export default function SignatureModal({
                             Cancelar
                         </button>
                         <button
-                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                            className="rounded-xl bg-[#313C55] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
                             disabled={nome.trim().length < 3}
                             onClick={() => setStep(1)}
                         >
@@ -765,7 +765,7 @@ export default function SignatureModal({
                             Voltar
                         </button>
                         <button
-                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                            className="rounded-xl bg-[#313C55] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
                             disabled={cpfDigits.length !== 11}
                             onClick={() => setStep(2)}
                         >
@@ -777,7 +777,7 @@ export default function SignatureModal({
 
             {step === 2 && (
                 <>
-                    <p className="mt-3 text-sm text-muted-foreground">Assine dentro do quadro abaixo.</p>
+                    <p className="mt-3 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Assine dentro do quadro abaixo.</p>
                     <div className="mt-4 overflow-auto rounded-lg border bg-white">
                         <canvas
                             ref={canvasRef}
@@ -800,7 +800,7 @@ export default function SignatureModal({
                             Limpar
                         </button>
                         <button
-                            className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
+                            className="rounded-xl bg-[#313C55] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
                             disabled={saving}
                             onClick={saveSignature}
                         >

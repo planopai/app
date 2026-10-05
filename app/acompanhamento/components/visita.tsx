@@ -380,34 +380,45 @@ export function VisitaBotao({
     onClick,
     disabled,
     className = "",
+    somenteIcone = false,
 }: {
     status: VisitaStatus;
     onClick: () => void;
     disabled?: boolean;
     className?: string;
+    /** Celular: mostra só o ícone (o texto fica no aria-label e no title). */
+    somenteIcone?: boolean;
 }) {
     const classes =
         status === "visitado"
-            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+            ? "bg-[#7BA11A] hover:bg-[#5C7A12] text-white"
             : status === "em_andamento"
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                ? "bg-[#313C55] dark:bg-[#F2CB3F] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] text-white"
                 : status === "visitar"
-                    ? "bg-amber-500 hover:bg-amber-600 text-white"
-                    : "bg-slate-200 text-slate-500";
+                    ? "bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30] text-white"
+                    : "bg-[#E3E8F0] dark:bg-white/15 text-[#5B6478] dark:text-[#AEB9CF]";
 
     return (
         <button
             type="button"
             onClick={onClick}
             disabled={disabled || status === "indisponivel"}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${classes} ${className}`}
+            aria-label={somenteIcone ? `Visita: ${statusLabel(status)}` : undefined}
+            className={`${somenteIcone ? "grid size-11 place-items-center rounded-xl" : "rounded-md px-3 py-1.5 text-xs font-semibold"} transition disabled:cursor-not-allowed disabled:opacity-60 ${classes} ${className}`}
             title={
                 status === "indisponivel"
                     ? "Visita disponível somente durante o velório."
                     : "Abrir visita de avaliação"
             }
         >
-            {statusLabel(status)}
+            {somenteIcone ? (
+                <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            ) : (
+                statusLabel(status)
+            )}
         </button>
     );
 }
@@ -893,10 +904,10 @@ export default function Visita({
                     <div>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                                <h2 className="text-xl font-semibold text-slate-950">
+                                <h2 className="text-xl font-semibold text-[#313C55] dark:text-white">
                                     Visita durante a cerimônia
                                 </h2>
-                                <p className="mt-1 text-sm text-slate-600">
+                                <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                     Falecido(a):{" "}
                                     <strong>{falecido || "Não informado"}</strong>
                                 </p>
@@ -907,8 +918,8 @@ export default function Visita({
                                     className={[
                                         "rounded-full px-3 py-1 text-xs font-semibold",
                                         concluida
-                                            ? "bg-emerald-100 text-emerald-800"
-                                            : "bg-blue-100 text-blue-800",
+                                            ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white"
+                                            : "bg-[#E6F7FE] dark:bg-[#00AEEC]/20 text-[#313C55] dark:text-white",
                                     ].join(" ")}
                                 >
                                     {concluida ? "Visitado" : "Em andamento"}
@@ -919,31 +930,31 @@ export default function Visita({
                     </div>
 
                     {loading ? (
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Carregando visita...
                         </p>
                     ) : null}
 
                     {erro ? (
-                        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <div className="rounded-lg border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">
                             {erro}
                         </div>
                     ) : null}
 
                     {sucesso ? (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+                        <div className="rounded-lg border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-3 text-sm text-[#313C55] dark:text-white">
                             {sucesso}
                         </div>
                     ) : null}
 
                     {!loading && !dados && !erro ? (
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Visita indisponível.
                         </p>
                     ) : null}
 
                     {!loading && dados && !visita ? (
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 p-4">
                             <button
                                 type="button"
                                 onClick={iniciarVisita}
@@ -953,7 +964,7 @@ export default function Visita({
                                         dados?.atendimento?.status,
                                     ) !== "fase08"
                                 }
-                                className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-lg bg-[#F2CB3F] text-[#313C55] px-4 py-2 text-sm font-semibold text-white hover:bg-[#E4BC30] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {saving ? "Iniciando..." : "Iniciar Visita"}
                             </button>
@@ -962,9 +973,9 @@ export default function Visita({
 
                     {visita ? (
                         <>
-                            <div className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-3">
+                            <div className="grid gap-3 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:grid-cols-3">
                                 <div>
-                                    <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    <div className="text-xs font-medium uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
                                         Início
                                     </div>
                                     <div className="mt-1 text-sm font-semibold">
@@ -972,7 +983,7 @@ export default function Visita({
                                     </div>
                                 </div>
                                 <div>
-                                    <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    <div className="text-xs font-medium uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
                                         Visitante
                                     </div>
                                     <div className="mt-1 text-sm font-semibold">
@@ -980,7 +991,7 @@ export default function Visita({
                                     </div>
                                 </div>
                                 <div>
-                                    <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    <div className="text-xs font-medium uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
                                         Progresso
                                     </div>
                                     <div className="mt-1 text-sm font-semibold">
@@ -990,10 +1001,10 @@ export default function Visita({
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
+                            <div className="grid gap-4 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:grid-cols-2">
                                 <label className="block">
                                     <span className="text-sm font-medium">
-                                        Responsável <span className="text-red-600">*</span>
+                                        Responsável <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
                                     </span>
                                     <input
                                         ref={responsavelRef}
@@ -1004,14 +1015,14 @@ export default function Visita({
                                         disabled={concluida}
                                         maxLength={180}
                                         required
-                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-[#EEF2F7] border-[#E3E8F0] dark:border-white/[0.12]"
                                         placeholder="Nome do responsável"
                                     />
                                 </label>
 
                                 <label className="block">
                                     <span className="text-sm font-medium">
-                                        Grau de parentesco <span className="text-red-600">*</span>
+                                        Grau de parentesco <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
                                     </span>
                                     <select
                                         ref={parentescoRef}
@@ -1021,7 +1032,7 @@ export default function Visita({
                                         }
                                         disabled={concluida}
                                         required
-                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-[#EEF2F7] border-[#E3E8F0] dark:border-white/[0.12]"
                                     >
                                         <option value="">
                                             Selecione...
@@ -1048,22 +1059,22 @@ export default function Visita({
                                                 perguntaRefs.current[pergunta.numero] = el;
                                             }}
                                             className={[
-                                                "rounded-xl border p-4",
+                                                "rounded-xl border p-4 border-[#E3E8F0] dark:border-white/[0.12]",
                                                 pergunta.aplicavel
-                                                    ? "border-slate-200"
-                                                    : "border-slate-200 bg-slate-50 opacity-75",
+                                                    ? "border-[#E3E8F0] dark:border-white/[0.12]"
+                                                    : "border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] opacity-75",
                                             ].join(" ")}
                                         >
                                             <div className="flex items-start gap-3">
-                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#313C55] dark:bg-[#F2CB3F] text-sm font-bold text-white dark:text-[#313C55]">
                                                     {pergunta.numero}
                                                 </div>
 
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className="font-semibold text-slate-950">
+                                                    <h3 className="font-semibold text-[#313C55] dark:text-white">
                                                         {pergunta.titulo}
                                                     </h3>
-                                                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                                                    <p className="mt-1 text-sm leading-6 text-[#5B6478] dark:text-[#AEB9CF]">
                                                         {pergunta.descricao}
                                                     </p>
                                                 </div>
@@ -1086,7 +1097,7 @@ export default function Visita({
                                                                 )
                                                             }
                                                             disabled={concluida}
-                                                            className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                            className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-[#EEF2F7] border-[#E3E8F0] dark:border-white/[0.12]"
                                                         >
                                                             <option value="">
                                                                 Selecione a nota...
@@ -1119,7 +1130,7 @@ export default function Visita({
                                                             disabled={concluida}
                                                             maxLength={2000}
                                                             rows={3}
-                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-[#EEF2F7] border-[#E3E8F0] dark:border-white/[0.12]"
                                                             placeholder="Observação deste item"
                                                         />
                                                     </label>
@@ -1132,14 +1143,14 @@ export default function Visita({
 
                             <div
                                 ref={registrosRef}
-                                className="rounded-xl border border-slate-200 p-4"
+                                className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] p-4"
                             >
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
-                                        <h3 className="font-semibold text-slate-950">
+                                        <h3 className="font-semibold text-[#313C55] dark:text-white">
                                             Registros
                                         </h3>
-                                        <p className="mt-1 text-sm text-slate-600">
+                                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                                             Você pode adicionar fotos da visita e incluir uma legenda em cada registro.
                                         </p>
                                     </div>
@@ -1148,7 +1159,7 @@ export default function Visita({
                                         <button
                                             type="button"
                                             onClick={() => void abrirCamera()}
-                                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                            className="rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
                                         >
                                             Adicionar registro
                                         </button>
@@ -1160,7 +1171,7 @@ export default function Visita({
                                         {registrosFotos.map((item, index) => (
                                             <div
                                                 key={item.localId}
-                                                className="rounded-xl border border-slate-200 p-3"
+                                                className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] p-3"
                                             >
                                                 <img
                                                     src={item.fotoPreview || item.fotoUrl}
@@ -1183,7 +1194,7 @@ export default function Visita({
                                                         disabled={concluida}
                                                         maxLength={500}
                                                         rows={2}
-                                                        className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                        className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-[#EEF2F7] border-[#E3E8F0] dark:border-white/[0.12]"
                                                         placeholder="Legenda do registro"
                                                     />
                                                 </label>
@@ -1197,7 +1208,7 @@ export default function Visita({
                                                                     item.localId,
                                                                 )
                                                             }
-                                                            className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                                            className="rounded-lg border border-[#B42318]/40 dark:border-[#FF9C92]/40 px-3 py-2 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92] hover:bg-red-50"
                                                         >
                                                             Remover
                                                         </button>
@@ -1207,13 +1218,13 @@ export default function Visita({
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
+                                    <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                         Nenhum registro adicionado.
                                     </div>
                                 )}
                             </div>
 
-                            <label className="block rounded-xl border border-slate-200 p-4">
+                            <label className="block rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] p-4">
                                 <span className="text-sm font-medium">
                                     Conclusão
                                 </span>
@@ -1225,7 +1236,7 @@ export default function Visita({
                                     disabled={concluida}
                                     maxLength={4000}
                                     rows={5}
-                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-[#EEF2F7] border-[#E3E8F0] dark:border-white/[0.12]"
                                     placeholder="Registre a conclusão geral da visita..."
                                 />
                             </label>
@@ -1236,7 +1247,7 @@ export default function Visita({
                                         type="button"
                                         onClick={() => void salvar(false)}
                                         disabled={saving}
-                                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                        className="rounded-lg border border-[#C9D1DE] dark:border-white/25 px-4 py-2 text-sm font-semibold hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-50"
                                     >
                                         {saving
                                             ? "Salvando..."
@@ -1247,7 +1258,7 @@ export default function Visita({
                                         type="button"
                                         onClick={() => void salvar(true)}
                                         disabled={saving}
-                                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                        className="rounded-lg bg-[#7BA11A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#5C7A12] disabled:opacity-50"
                                     >
                                         {saving
                                             ? "Salvando..."
@@ -1255,7 +1266,7 @@ export default function Visita({
                                     </button>
                                 </div>
                             ) : (
-                                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+                                <div className="rounded-xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-4 text-sm font-medium text-[#313C55] dark:text-white">
                                     Visita concluída em{" "}
                                     {formatarDataHora(visita.fim_em)}.
                                 </div>
@@ -1277,13 +1288,13 @@ export default function Visita({
                     <h3 className="text-lg font-semibold">
                         Novo registro fotográfico
                     </h3>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                         A foto será registrada diretamente pela câmera com
                         data/hora e o nome do falecido. Depois você poderá adicionar uma legenda.
                     </p>
 
                     {cameraErro ? (
-                        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <div className="mt-3 rounded-lg border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">
                             {cameraErro}
                         </div>
                     ) : null}
@@ -1301,7 +1312,7 @@ export default function Visita({
                             type="button"
                             onClick={pararCamera}
                             disabled={cameraLoading}
-                            className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                            className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50 border-[#E3E8F0] dark:border-white/[0.12]"
                         >
                             Cancelar
                         </button>
@@ -1309,7 +1320,7 @@ export default function Visita({
                             type="button"
                             onClick={() => void capturarFoto()}
                             disabled={cameraLoading || !streamRef.current}
-                            className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                            className="rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-50"
                         >
                             {cameraLoading ? "Aguarde..." : "Capturar foto"}
                         </button>

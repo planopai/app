@@ -401,74 +401,9 @@ body {
 .theme-default,
 .theme-default-scaled {}
 
-/* "Azul": ciano da marca como cor principal. */
-.theme-blue,
-.theme-blue-scaled {
-  --primary: #00aeec;
-  --primary-foreground: #0f1626;
+/* Temas de cor "Azul", "Verde", "Âmbar" e "Mono" removidos (05/10/2026): o app segue só a identidade visual da marca.
+   O seletor de cores saiu do cabeçalho; sem estas regras um cookie `active_theme` antigo não muda mais as cores. */
 
-  @variant dark {
-    --primary: #00aeec;
-    --primary-foreground: #0f1626;
-  }
-}
-
-.theme-green,
-.theme-green-scaled {
-  --primary: #22c55e;
-  --primary-foreground: #052e16;
-
-  @variant dark {
-    --primary: #34d399;
-    --primary-foreground: #052e16;
-  }
-}
-
-.theme-amber,
-.theme-amber-scaled {
-  --primary: #f59e0b;
-  --primary-foreground: #3b2f06;
-
-  @variant dark {
-    --primary: #fbbf24;
-    --primary-foreground: #3b2f06;
-  }
-}
-
-/* Modo mono (se precisar) */
-.theme-mono,
-.theme-mono-scaled {
-  --font-sans: var(--font-mono);
-  --primary: #6b7280;
-  --primary-foreground: #f9fafb;
-
-  @variant dark {
-    --primary: #9ca3af;
-    --primary-foreground: #111827;
-  }
-
-  .rounded-xs,
-  .rounded-sm,
-  .rounded-md,
-  .rounded-lg,
-  .rounded-xl {
-    @apply !rounded-none;
-    border-radius: 0;
-  }
-
-  .shadow-xs,
-  .shadow-sm,
-  .shadow-md,
-  .shadow-lg,
-  .shadow-xl {
-    @apply !shadow-none;
-  }
-
-  [data-slot="toggle-group"],
-  [data-slot="toggle-group-item"] {
-    @apply !rounded-none !shadow-none;
-  }
-}
 
 /* =====================================================================================
    PONTE DE CORES (05/10/2026) — telas que ainda não foram redesenhadas
@@ -524,4 +459,79 @@ body {
   --color-red-50: var(--pai-red-50);       --color-red-100: var(--pai-red-100);       --color-red-200: var(--pai-red-200);       --color-red-300: var(--pai-red-300);       --color-red-400: var(--pai-red-400);       --color-red-500: var(--pai-red-500);       --color-red-600: var(--pai-red-600);       --color-red-700: var(--pai-red-700);       --color-red-800: var(--pai-red-800);       --color-red-900: var(--pai-red-900);       --color-red-950: var(--pai-red-950);
   --color-rose-50: var(--pai-red-50);      --color-rose-100: var(--pai-red-100);      --color-rose-200: var(--pai-red-200);      --color-rose-300: var(--pai-red-300);      --color-rose-400: var(--pai-red-400);      --color-rose-500: var(--pai-red-500);      --color-rose-600: var(--pai-red-600);      --color-rose-700: var(--pai-red-700);      --color-rose-800: var(--pai-red-800);      --color-rose-900: var(--pai-red-900);      --color-rose-950: var(--pai-red-950);
 }
+
+/* ---- Preenchimentos sólidos (botões, etiquetas, indicadores) nas cores da MARCA ----------------------------
+   Antes: verde-oliva e amarelo escuro com texto branco ("verde esquisito"). Agora, como no mockup:
+   verde = lima #B3CE52, amarelo = #F2CB3F, ciano = #00AEEC, sempre com texto azul-escuro #313C55.
+   Só vale para a classe de fundo SÓLIDO (bg-emerald-600...); tons claros (50-200) e textos continuam pelas escalas acima.
+   Fica fora de qualquer @layer de propósito: assim vence as classes do Tailwind. */
+.bg-emerald-400,
+.bg-emerald-500,
+.bg-emerald-600,
+.bg-emerald-700,
+.bg-emerald-800,
+.bg-green-400,
+.bg-green-500,
+.bg-green-600,
+.bg-green-700,
+.bg-green-800,
+.bg-lime-400,
+.bg-lime-500,
+.bg-lime-600,
+.bg-lime-700,
+.bg-lime-800 { background-color: #B3CE52; color: #313C55; }
+.hover\:bg-emerald-500:hover,
+.hover\:bg-emerald-600:hover,
+.hover\:bg-emerald-700:hover,
+.hover\:bg-emerald-800:hover,
+.hover\:bg-green-500:hover,
+.hover\:bg-green-600:hover,
+.hover\:bg-green-700:hover,
+.hover\:bg-green-800:hover,
+.hover\:bg-lime-500:hover,
+.hover\:bg-lime-600:hover,
+.hover\:bg-lime-700:hover,
+.hover\:bg-lime-800:hover { background-color: #A3BF45; color: #313C55; }
+.bg-amber-400,
+.bg-amber-500,
+.bg-amber-600,
+.bg-amber-700,
+.bg-yellow-400,
+.bg-yellow-500,
+.bg-yellow-600,
+.bg-yellow-700,
+.bg-orange-400,
+.bg-orange-500,
+.bg-orange-600,
+.bg-orange-700 { background-color: #F2CB3F; color: #313C55; }
+.hover\:bg-amber-500:hover,
+.hover\:bg-amber-600:hover,
+.hover\:bg-amber-700:hover,
+.hover\:bg-yellow-500:hover,
+.hover\:bg-yellow-600:hover,
+.hover\:bg-yellow-700:hover,
+.hover\:bg-orange-500:hover,
+.hover\:bg-orange-600:hover,
+.hover\:bg-orange-700:hover { background-color: #E4BC30; color: #313C55; }
+.bg-sky-400,
+.bg-sky-500,
+.bg-sky-600,
+.bg-sky-700,
+.bg-cyan-400,
+.bg-cyan-500,
+.bg-cyan-600,
+.bg-cyan-700,
+.bg-teal-400,
+.bg-teal-500,
+.bg-teal-600,
+.bg-teal-700 { background-color: #00AEEC; color: #313C55; }
+.hover\:bg-sky-500:hover,
+.hover\:bg-sky-600:hover,
+.hover\:bg-sky-700:hover,
+.hover\:bg-cyan-500:hover,
+.hover\:bg-cyan-600:hover,
+.hover\:bg-cyan-700:hover,
+.hover\:bg-teal-500:hover,
+.hover\:bg-teal-600:hover,
+.hover\:bg-teal-700:hover { background-color: #0094C9; color: #313C55; }
 /* ===== fim da ponte de cores ===== */

@@ -1679,7 +1679,7 @@ export default function EnviarObituario({
         <>
             <button
                 type="button"
-                className="w-full rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                className="w-full rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                 onClick={() => setOpen(true)}
             >
                 Enviar Obituário
@@ -1694,14 +1694,14 @@ export default function EnviarObituario({
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <h2 className="text-xl font-semibold">Enviar Obituário</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             {dados.nome || "Atendimento selecionado"}
                         </p>
                     </div>
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
                         onClick={() => setOpen(false)}
                     >
                         <IconX className="size-4" />
@@ -1710,7 +1710,7 @@ export default function EnviarObituario({
 
                 <div className="mt-5 grid gap-5 lg:grid-cols-[360px_1fr]">
                     <div className="space-y-4">
-                        <div className="rounded-xl border bg-card/60 p-4">
+                        <div className="rounded-xl border bg-white dark:bg-[#232B3F] p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                             <h3 className="font-semibold">Dados puxados do atendimento</h3>
 
                             <div className="mt-3 space-y-2 text-sm">
@@ -1751,7 +1751,7 @@ export default function EnviarObituario({
                                     <img
                                         src={dados.foto_falecido}
                                         alt="Foto do falecido"
-                                        className="h-16 w-16 rounded-lg border object-cover"
+                                        className="h-16 w-16 rounded-lg border object-cover border-[#E3E8F0] dark:border-white/[0.12]"
                                         onError={(e) => {
                                             console.warn(
                                                 "Erro ao carregar miniatura:",
@@ -1760,19 +1760,19 @@ export default function EnviarObituario({
                                             e.currentTarget.style.display = "none";
                                         }}
                                     />
-                                    <div className="text-xs text-muted-foreground">
+                                    <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                         <IconPhoto className="mb-1 size-4" />
                                         Foto carregada do atendimento.
                                     </div>
                                 </div>
                             ) : (
-                                <div className="mt-4 rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                                <div className="mt-4 rounded-md border border-dashed p-3 text-xs text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                     Este atendimento não possui foto cadastrada.
                                 </div>
                             )}
                         </div>
 
-                        <div className="rounded-xl border bg-card/60 p-4">
+                        <div className="rounded-xl border bg-white dark:bg-[#232B3F] p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                             <h3 className="font-semibold">Modelos</h3>
 
                             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1780,8 +1780,8 @@ export default function EnviarObituario({
                                     <button
                                         key={m.value}
                                         type="button"
-                                        className={`rounded-lg border p-2 text-left text-xs transition hover:bg-muted ${modelo === m.value
-                                            ? "border-blue-600 ring-2 ring-blue-200"
+                                        className={`rounded-lg border p-2 text-left text-xs transition hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12] ${modelo === m.value
+                                            ? "border-[#313C55] dark:border-[#F2CB3F] ring-2 ring-[#00AEEC]/30"
                                             : ""
                                             }`}
                                         onClick={() => setModelo(m.value)}
@@ -1789,7 +1789,7 @@ export default function EnviarObituario({
                                         <img
                                             src={getModeloSrc(m.value, incluirQrLegado && !!legadoLuzUrl)}
                                             alt={m.label}
-                                            className="mb-2 aspect-[9/16] w-full rounded-md border object-cover"
+                                            className="mb-2 aspect-[9/16] w-full rounded-md border object-cover border-[#E3E8F0] dark:border-white/[0.12]"
                                         />
                                         <span className="font-medium">{m.label}</span>
                                     </button>
@@ -1797,7 +1797,7 @@ export default function EnviarObituario({
                             </div>
                         </div>
 
-                        <div className="rounded-xl border bg-card/60 p-4">
+                        <div className="rounded-xl border bg-white dark:bg-[#232B3F] p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                             <h3 className="font-semibold">Ajustes</h3>
 
                             <label className="mt-3 flex items-center gap-2 text-sm">
@@ -1822,13 +1822,13 @@ export default function EnviarObituario({
                             </label>
 
                             {legadoLuzUrl && (
-                                <p className="mt-1 text-xs text-muted-foreground">
+                                <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                     Marque para usar os modelos QR1 a QR8 e mostrar o QR Code no obituário e no A4.
                                 </p>
                             )}
 
                             {!legadoLuzUrl && (
-                                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                <div className="mt-2 rounded-md border border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 px-3 py-2 text-xs text-[#313C55] dark:text-white">
                                     O QR Code só aparece quando o atendimento retorna ID ou
                                     link do Legado de Luz.
                                 </div>
@@ -1837,7 +1837,7 @@ export default function EnviarObituario({
                             <label className="mt-3 block text-sm">
                                 Fonte
                                 <select
-                                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
                                     value={fontName}
                                     onChange={(e) => setFontName(e.target.value)}
                                 >
@@ -1854,12 +1854,12 @@ export default function EnviarObituario({
                             <label className="mt-3 block text-sm">
                                 Cor da Fonte
                                 <div className="mt-1 flex items-center gap-2">
-                                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-md border">
+                                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[#E3E8F0] dark:border-white/[0.12]">
                                         <IconPalette className="size-5 opacity-70" />
                                     </span>
                                     <input
                                         type="color"
-                                        className="h-10 w-full cursor-pointer rounded-md border bg-transparent p-1"
+                                        className="h-10 w-full cursor-pointer rounded-md border bg-transparent p-1 border-[#E3E8F0] dark:border-white/[0.12]"
                                         value={fontColor}
                                         onChange={(e) => setFontColor(e.target.value)}
                                     />
@@ -1868,7 +1868,7 @@ export default function EnviarObituario({
 
                             <button
                                 type="button"
-                                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                 onClick={gerarObituario}
                                 disabled={loading}
                             >
@@ -1880,14 +1880,14 @@ export default function EnviarObituario({
                         </div>
                     </div>
 
-                    <div className="rounded-xl border bg-card/60 p-4">
+                    <div className="rounded-xl border bg-white dark:bg-[#232B3F] p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                             <h3 className="font-semibold">Pré-visualização</h3>
 
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
-                                    className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+                                    className="inline-flex items-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                     onClick={baixarObituario}
                                     disabled={!previewBlob || loading}
                                 >
@@ -1897,7 +1897,7 @@ export default function EnviarObituario({
 
                                 <button
                                     type="button"
-                                    className="inline-flex items-center gap-2 rounded-md bg-[#039adc] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                                    className="inline-flex items-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
                                     onClick={abrirModalA4}
                                     disabled={!registro}
                                 >
@@ -1908,23 +1908,23 @@ export default function EnviarObituario({
                         </div>
 
                         {erro ? (
-                            <div className="mb-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                            <div className="mb-3 rounded-md border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 px-3 py-2 text-sm text-[#B42318] dark:text-[#FF9C92]">
                                 {erro}
                             </div>
                         ) : null}
 
                         {loading ? (
-                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
+                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                 Gerando obituário...
                             </div>
                         ) : previewSrc ? (
                             <img
                                 src={previewSrc}
                                 alt="Pré-visualização do obituário"
-                                className="mx-auto block w-full max-w-[430px] rounded-md border object-contain"
+                                className="mx-auto block w-full max-w-[430px] rounded-md border object-contain border-[#E3E8F0] dark:border-white/[0.12]"
                             />
                         ) : (
-                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                 A pré-visualização será gerada automaticamente.
                             </div>
                         )}
@@ -1941,14 +1941,14 @@ export default function EnviarObituario({
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <h2 className="text-xl font-semibold">Baixar A4</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             {dados.nome || "Atendimento selecionado"}
                         </p>
                     </div>
 
                     <button
                         type="button"
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 border-[#E3E8F0] dark:border-white/[0.12]"
                         onClick={() => setOpenA4(false)}
                     >
                         <IconX className="size-4" />
@@ -1957,9 +1957,9 @@ export default function EnviarObituario({
 
                 <div className="mt-5 grid gap-5 lg:grid-cols-[420px_1fr]">
                     <div className="space-y-4">
-                        <div className="rounded-xl border bg-card/60 p-4">
+                        <div className="rounded-xl border bg-white dark:bg-[#232B3F] p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                             <h3 className="font-semibold">Mensagem do A4</h3>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                 Escolha uma frase predefinida ou use uma mensagem personalizada.
                             </p>
 
@@ -1975,11 +1975,11 @@ export default function EnviarObituario({
                             </label>
 
                             {legadoLuzUrl ? (
-                                <p className="mt-1 text-xs text-muted-foreground">
+                                <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                     Marque para usar o A4QR1 e mostrar o QR Code no A4.
                                 </p>
                             ) : (
-                                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                <div className="mt-2 rounded-md border border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 px-3 py-2 text-xs text-[#313C55] dark:text-white">
                                     O QR Code só aparece quando o atendimento retorna ID ou
                                     link do Legado de Luz.
                                 </div>
@@ -1988,7 +1988,7 @@ export default function EnviarObituario({
                             <label className="mt-4 block text-sm">
                                 Frase
                                 <select
-                                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
                                     value={fraseA4Selecionada}
                                     onChange={(e) => setFraseA4Selecionada(e.target.value)}
                                 >
@@ -2005,20 +2005,20 @@ export default function EnviarObituario({
                                 <label className="mt-4 block text-sm">
                                     Escreva a mensagem personalizada
                                     <textarea
-                                        className="mt-1 min-h-[170px] w-full rounded-md border px-3 py-2 text-sm"
+                                        className="mt-1 min-h-[170px] w-full rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
                                         value={fraseA4Personalizada}
                                         onChange={(e) => setFraseA4Personalizada(e.target.value)}
                                         placeholder="Digite a mensagem que aparecerá abaixo da logo."
                                     />
                                 </label>
                             ) : (
-                                <div className="mt-4 rounded-md border bg-background/60 px-3 py-2 text-sm leading-relaxed">
+                                <div className="mt-4 rounded-md border bg-[#F1F4F8]/60 dark:bg-[#1C2334]/60 px-3 py-2 text-sm leading-relaxed border-[#E3E8F0] dark:border-white/[0.12]">
                                     {fraseA4Final}
                                 </div>
                             )}
 
                             {erroA4 ? (
-                                <div className="mt-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                                <div className="mt-4 rounded-md border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 px-3 py-2 text-sm text-[#B42318] dark:text-[#FF9C92]">
                                     {erroA4}
                                 </div>
                             ) : null}
@@ -2026,7 +2026,7 @@ export default function EnviarObituario({
                             <div className="mt-4 grid gap-2 sm:grid-cols-2">
                                 <button
                                     type="button"
-                                    className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                                    className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12]"
                                     onClick={gerarObituarioA4}
                                     disabled={loadingA4}
                                 >
@@ -2036,7 +2036,7 @@ export default function EnviarObituario({
 
                                 <button
                                     type="button"
-                                    className="inline-flex items-center justify-center gap-2 rounded-md bg-[#039adc] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                                    className="inline-flex items-center justify-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
                                     onClick={baixarObituarioA4}
                                     disabled={!previewA4PdfBlob || loadingA4}
                                 >
@@ -2047,13 +2047,13 @@ export default function EnviarObituario({
                         </div>
                     </div>
 
-                    <div className="rounded-xl border bg-card/60 p-4">
+                    <div className="rounded-xl border bg-white dark:bg-[#232B3F] p-4 border-[#E3E8F0] dark:border-white/[0.12]">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                             <h3 className="font-semibold">Pré-visualização A4</h3>
                         </div>
 
                         {loadingA4 && (
-                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
+                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                 Gerando A4...
                             </div>
                         )}
@@ -2062,12 +2062,12 @@ export default function EnviarObituario({
                             <img
                                 src={previewA4Src}
                                 alt="Pré-visualização do obituário A4"
-                                className="mx-auto block w-full max-w-[520px] rounded-md border object-contain"
+                                className="mx-auto block w-full max-w-[520px] rounded-md border object-contain border-[#E3E8F0] dark:border-white/[0.12]"
                             />
                         )}
 
                         {!loadingA4 && !previewA4Src && (
-                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                            <div className="grid min-h-[620px] place-items-center rounded-xl border border-dashed p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF] border-[#E3E8F0] dark:border-white/[0.12]">
                                 A pré-visualização A4 será gerada automaticamente.
                             </div>
                         )}
@@ -2086,8 +2086,8 @@ function InfoLinha({
     value?: string;
 }) {
     return (
-        <div className="rounded-md border bg-background/60 px-3 py-2">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className="rounded-md border bg-[#F1F4F8]/60 dark:bg-[#1C2334]/60 px-3 py-2 border-[#E3E8F0] dark:border-white/[0.12]">
+            <div className="text-[11px] uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
                 {label}
             </div>
             <div className="mt-0.5 break-words text-sm font-medium">

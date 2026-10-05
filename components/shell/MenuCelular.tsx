@@ -32,6 +32,19 @@ import { formatarSelo, useContadores } from "./useContadores";
 
 export const EVENTO_ABRIR_MENU = "pai:abrir-menu";
 export const EVENTO_ESTADO_MENU = "pai:estado-menu";
+export const EVENTO_BARRA_ESTADO = "pai:barra-estado";
+
+/** A barra de baixo do celular está na tela? (o cabeçalho só mostra o botão ☰ quando ela não está) */
+export function useBarraVisivel(): boolean {
+    const [visivel, setVisivel] = useState(true);
+    useEffect(() => {
+        setVisivel((window as any).__paiBarraVisivel !== false);
+        const f = (e: Event) => setVisivel(Boolean((e as CustomEvent).detail));
+        window.addEventListener(EVENTO_BARRA_ESTADO, f);
+        return () => window.removeEventListener(EVENTO_BARRA_ESTADO, f);
+    }, []);
+    return visivel;
+}
 
 /** Abre (ou fecha, se já estiver aberto) o menu do celular. */
 export function abrirMenuCelular() {
