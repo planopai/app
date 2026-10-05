@@ -55,7 +55,9 @@
 }
 
 /* =========================================================================
-   Paleta BRAND
+   Paleta BRAND (identidade visual PAI: azul escuro #313C55, amarelo #F2CB3F, ciano #00AEEC, verde #B3CE52)
+   Azul escuro = texto e botão principal; no tema escuro o botão principal vira amarelo.
+   Fluxo de status em azul; verde = concluído; amarelo = só alerta; vermelho = só recusa/erro.
    ========================================================================= */
 :root {
   --radius: 0.625rem;
@@ -66,94 +68,175 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   /* Base (claro) */
-  --background: #ffffff;
-  --foreground: #22334f;
+  --background: #F6F8FB;
+  --foreground: #313C55;
 
-  --card: #ffffff;
-  --card-foreground: #22334f;
+  --card: #FFFFFF;
+  --card-foreground: #313C55;
 
-  --popover: #ffffff;
-  --popover-foreground: #22334f;
+  --popover: #FFFFFF;
+  --popover-foreground: #313C55;
 
-  --primary: #059de0;
-  --primary-foreground: #ffffff;
+  --primary: #313C55;
+  --primary-foreground: #FFFFFF;
 
-  --secondary: #22334f;
-  --secondary-foreground: #ffffff;
+  --secondary: #EEF2F7;
+  --secondary-foreground: #313C55;
 
-  --muted: #f5f8fc;
-  --muted-foreground: #6b7a90;
+  --muted: #EEF2F7;
+  --muted-foreground: #5B6478;
 
-  --accent: #e8f6ff;
-  --accent-foreground: #22334f;
+  --accent: #E6F7FE;
+  --accent-foreground: #313C55;
 
-  --destructive: #ef4444;
-  --border: #d6dee8;
-  --input: #d6dee8;
-  --ring: #059de0;
+  --destructive: #B42318;
+  --border: #E3E8F0;
+  --input: #C9D1DE;
+  --ring: #00AEEC;
 
-  --chart-1: #059de0;
-  --chart-2: #22c55e;
-  --chart-3: #f59e0b;
-  --chart-4: #8b5cf6;
-  --chart-5: #ef4444;
+  --chart-1: #313C55;
+  --chart-2: #00AEEC;
+  --chart-3: #B3CE52;
+  --chart-4: #F2CB3F;
+  --chart-5: #7BA11A;
 
   /* Sidebar (claro) */
-  --sidebar: #ffffff;
-  --sidebar-foreground: #22334f;
-  --sidebar-primary: #059de0;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f0f6fb;
-  --sidebar-accent-foreground: #22334f;
-  --sidebar-border: #d6dee8;
-  --sidebar-ring: #059de0;
+  --sidebar: #313C55;
+  --sidebar-foreground: #D6DCE8;
+  --sidebar-primary: #F2CB3F;
+  --sidebar-primary-foreground: #313C55;
+  --sidebar-accent: #4A5672;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #4F5B76;
+  --sidebar-ring: #F2CB3F;
 
   --header-height: 64px;
+
+  /* Tokens da marca PAI (status, estados) — usados pelas telas novas */
+  --pai-azul: #313C55;
+  --pai-amarelo: #F2CB3F;
+  --pai-verde: #B3CE52;
+  --pai-verde-escuro: #7BA11A;
+  --pai-ciano: #00AEEC;
+
+  --pai-page: #F6F8FB;
+  --pai-card: #FFFFFF;
+  --pai-sunk: #F6F8FB;
+  --pai-field: #F1F4F8;
+  --pai-line: #E3E8F0;
+  --pai-line-2: #C9D1DE;
+  --pai-text: #313C55;
+  --pai-text-2: #5B6478;
+  --pai-text-3: #7A8396;
+  --pai-hover: #EEF2F7;
+
+  /* estados (fundos suaves) */
+  --pai-info-bg: #E6F7FE;
+  --pai-ok-bg: #EEF5D6;
+  --pai-alerta-bg: #FCF3CC;
+  --pai-erro: #B42318;
+  --pai-erro-bg: #FDECEA;
+
+  /* status das requisições */
+  --pai-st-pendente-bg: #E6F7FE;
+  --pai-st-pendente-bd: #8FD6F4;
+  --pai-st-pendente-fg: #313C55;
+  --pai-st-separacao-bg: #00AEEC;
+  --pai-st-separacao-bd: #00AEEC;
+  --pai-st-separacao-fg: #0F1626;
+  --pai-st-transito-bg: #313C55;
+  --pai-st-transito-bd: #313C55;
+  --pai-st-transito-fg: #FFFFFF;
+  --pai-st-entregue-bg: #EEF5D6;
+  --pai-st-entregue-bd: #7BA11A;
+  --pai-st-entregue-fg: #313C55;
+  --pai-st-cancelada-bg: #EEF2F7;
+  --pai-st-cancelada-bd: #C9D1DE;
+  --pai-st-cancelada-fg: #5B6478;
+  --pai-st-recusada-bg: #FDECEA;
+  --pai-st-recusada-bd: #B42318;
+  --pai-st-recusada-fg: #B42318;
+  --pai-st-atraso-bg: #F2CB3F;
+  --pai-st-atraso-bd: #F2CB3F;
+  --pai-st-atraso-fg: #313C55;
 }
 
 /* ========================== Dark Mode ========================== */
 .dark {
-  --background: #0f172a;
+  --background: #161C2A;
   /* slate-900 */
-  --foreground: #e7ecf5;
+  --foreground: #FFFFFF;
 
-  --card: #131c2e;
-  --card-foreground: #e7ecf5;
+  --card: #232B3F;
+  --card-foreground: #FFFFFF;
 
-  --popover: #131c2e;
-  --popover-foreground: #e7ecf5;
+  --popover: #232B3F;
+  --popover-foreground: #FFFFFF;
 
-  --primary: #059de0;
-  --primary-foreground: #ffffff;
+  --primary: #F2CB3F;
+  --primary-foreground: #313C55;
 
-  --secondary: #22334f;
-  --secondary-foreground: #ffffff;
+  --secondary: #1C2334;
+  --secondary-foreground: #FFFFFF;
 
-  --muted: #1b2841;
-  --muted-foreground: #a3b1c6;
+  --muted: #1C2334;
+  --muted-foreground: #AEB9CF;
 
-  --accent: #0b2036;
-  --accent-foreground: #e7ecf5;
+  --accent: #14344A;
+  --accent-foreground: #FFFFFF;
 
-  --destructive: #ef4444;
+  --destructive: #FF9C92;
   --border: rgba(255, 255, 255, .12);
   --input: rgba(255, 255, 255, .16);
-  --ring: #059de0;
+  --ring: #00AEEC;
 
-  --chart-1: #4cc3f1;
-  --chart-2: #34d399;
-  --chart-3: #fbbf24;
-  --chart-4: #a78bfa;
-  --chart-5: #fb7185;
+  --chart-1: #00AEEC;
+  --chart-2: #F2CB3F;
+  --chart-3: #B3CE52;
+  --chart-4: #7BA11A;
+  --chart-5: #D6DCE8;
 
-  --sidebar: #111a2b;
-  --sidebar-foreground: #e7ecf5;
-  --sidebar-primary: #059de0;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #0f1a2b;
-  --sidebar-accent-foreground: #e7ecf5;
+  --sidebar: #232B3F;
+  --sidebar-foreground: #D6DCE8;
+  --sidebar-primary: #F2CB3F;
+  --sidebar-primary-foreground: #313C55;
+  --sidebar-accent: #2F3850;
+  --sidebar-accent-foreground: #FFFFFF;
   --sidebar-border: rgba(255, 255, 255, .12);
-  --sidebar-ring: #059de0;
+  --sidebar-ring: #F2CB3F;
+
+  /* Tokens da marca PAI (status, estados) — usados pelas telas novas */
+  --pai-page: #161C2A;
+  --pai-card: #232B3F;
+  --pai-sunk: #1C2334;
+  --pai-field: #1C2334;
+  --pai-line: #3D4456;
+  --pai-line-2: #5C6271;
+  --pai-text: #FFFFFF;
+  --pai-text-2: #AEB9CF;
+  --pai-text-3: #8893AA;
+  --pai-hover: #353C4E;
+
+  --pai-info-bg: #1C4562;
+  --pai-ok-bg: #404C43;
+  --pai-alerta-bg: #44453F;
+  --pai-erro: #FF9C92;
+  --pai-erro-bg: #463D4C;
+
+  --pai-st-pendente-bg: #1C4562;
+  --pai-st-pendente-bd: #00AEEC;
+  --pai-st-pendente-fg: #FFFFFF;
+  --pai-st-transito-bg: #51607F;
+  --pai-st-transito-bd: #51607F;
+  --pai-st-entregue-bg: #404C43;
+  --pai-st-entregue-bd: #B3CE52;
+  --pai-st-entregue-fg: #FFFFFF;
+  --pai-st-cancelada-bg: #394052;
+  --pai-st-cancelada-bd: #5C6271;
+  --pai-st-cancelada-fg: #AEB9CF;
+  --pai-st-recusada-bg: #463D4C;
+  --pai-st-recusada-bd: #FF9C92;
+  --pai-st-recusada-fg: #FF9C92;
 }
 
 /* ============================ Base Layer ============================ */
@@ -223,7 +306,7 @@ body {
 @layer components {
 
   /* Superfícies flutuantes usam tokens de popover */
-  [role="dialog"],
+  [role="dialog"]:not([data-pai-overlay]),
   .DialogContent,
   .SheetContent,
   .PopoverContent,
@@ -314,25 +397,19 @@ body {
 }
 
 /* ============================ Temas auxiliares (opcionais) ============================ */
+/* "Padrão" usa a paleta da marca definida acima (sem sobrescrever nada). */
 .theme-default,
-.theme-default-scaled {
-  --primary: var(--primary);
-  --primary-foreground: var(--primary-foreground);
+.theme-default-scaled {}
 
-  @variant dark {
-    --primary: var(--primary);
-    --primary-foreground: var(--primary-foreground);
-  }
-}
-
+/* "Azul": ciano da marca como cor principal. */
 .theme-blue,
 .theme-blue-scaled {
-  --primary: var(--primary);
-  --primary-foreground: var(--primary-foreground);
+  --primary: #00aeec;
+  --primary-foreground: #0f1626;
 
   @variant dark {
-    --primary: var(--primary);
-    --primary-foreground: var(--primary-foreground);
+    --primary: #00aeec;
+    --primary-foreground: #0f1626;
   }
 }
 

@@ -143,7 +143,7 @@ export const MODULOS: Modulo[] = [
             { titulo: "Assistência", desc: "Administração de materiais", href: "/assistencia", slugs: ["assistencia"], icone: IconBuildingStore },
             { titulo: "Catálogo", desc: "Itens e valores", href: "/catalogo", slugs: ["catalogo"], icone: IconBook },
             { titulo: "Configurações do catálogo", desc: "Etapas e obrigatoriedade", href: "/config-catalogo", slugs: ["config-catalogo"], icone: IconSettings },
-            { titulo: "Relatório sintético", desc: "Estoque por depósito", href: "/relatorio-sintetico", slugs: ["relatorio-sintetico"], icone: IconListDetails },
+            { titulo: "Relatório sintético", desc: "Estoque por depósito", href: "/relatorio-sintetico", slugs: ["relatorio-sintetico", "geral", "estoque"], icone: IconListDetails },
         ],
     },
     {
@@ -194,7 +194,7 @@ export const MODULOS: Modulo[] = [
         itens: [
             { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog },
             { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock },
-            { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria"], icone: IconListDetails },
+            { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails },
             { titulo: "Segurança", desc: "Acessos e proteção de dados", href: "/seguranca", slugs: ["seguranca"], icone: IconLock },
             { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar },
             { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },

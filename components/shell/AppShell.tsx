@@ -13,8 +13,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
+    IconArrowLeft,
     IconBell,
     IconChevronDown,
     IconChevronRight,
@@ -31,6 +32,8 @@ import {
     IconX,
 } from "@tabler/icons-react";
 import { usePerms } from "@/app/_perms/PermsProvider";
+import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
+import AlternarTema from "./AlternarTema";
 import MenuModulos, { Selo } from "./MenuModulos";
 import { FIXOS, MODULOS, acharModuloPorRota, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel, itemVisivel, type ItemModulo, type Icone } from "./modulos";
 import { formatarSelo, useContadores, type Contadores } from "./useContadores";
@@ -40,12 +43,14 @@ const SEM_SHELL = ["/login", "/quadrotv", "/tela", "/offline", "/obituario/publi
 
 type Props = {
     children: React.ReactNode;
-    /** Slot para os controles que o app já tem (paleta de cores, tema claro/escuro, etc.). */
+    /** Rotas sem o layout (somam-se às padrão). Mesmo nome da prop do AppShell antigo. */
+    hideOnRoutes?: string[];
+    /** Controles à direita do cabeçalho. Se não vier, mostra o botão de tema claro/escuro (next-themes). */
     headerRight?: React.ReactNode;
     /** Imagem do logo colorido (se não vier, mostra "PAI"). */
     logoSrc?: string;
-    /** Endereço de "Sair da conta". Se não vier, o botão não aparece. */
-    sairHref?: string;
+    /** Opcional: trocar o "Sair da conta". Por padrão faz o mesmo que o menu antigo (limpa o contexto offline, POST /api/auth/logout, vai para /login). */
+    aoSair?: () => void | Promise<void>;
 };
 
 function valorSelo(c: Contadores, selo?: ItemModulo["selo"]): number | null {
@@ -84,7 +89,8 @@ function Barra({
     perms,
     contadores,
     logoSrc,
-    sairHref,
+    onSair,
+    saindo,
 }: {
     recolhido: boolean;
     pathname: string;
@@ -92,7 +98,8 @@ function Barra({
     perms: unknown;
     contadores: Contadores;
     logoSrc?: string;
-    sairHref?: string;
+    onSair: () => void;
+    saindo: boolean;
 }) {
     const { modulo: moduloAtivo, item: itemAtivo, fixo } = acharModuloPorRota(pathname);
     const [abertos, setAbertos] = useState<Record<string, boolean>>({});
@@ -199,12 +206,10 @@ function Barra({
                     <IconHelpCircle size={20} className="shrink-0" />
                     {recolhido ? null : <span className="flex-1">Ajuda</span>}
                 </Link>
-                {sairHref ? (
-                    <a href={sairHref} title="Sair da conta" className={[NAV_BASE, "text-white"].join(" ")}>
-                        <IconLogout size={20} className="shrink-0" />
-                        {recolhido ? null : <span className="flex-1">Sair da conta</span>}
-                    </a>
-                ) : null}
+                <button type="button" onClick={onSair} disabled={saindo} title="Sair da conta" className={[NAV_BASE, "w-full text-left text-white disabled:opacity-60"].join(" ")}>
+                    <IconLogout size={20} className="shrink-0" />
+                    {recolhido ? null : <span className="flex-1">{saindo ? "Saindo…" : "Sair da conta"}</span>}
+                </button>
             </div>
         </aside>
     );
@@ -261,13 +266,42 @@ function BarraCelular({ abas, menuAberto, onMenu }: { abas: Aba[]; menuAberto: b
 
 /* ------------------------------------------------------------- shell ------------------------------------------------------------- */
 
-export default function AppShell({ children, headerRight, logoSrc, sairHref }: Props) {
+export default function AppShell({ children, hideOnRoutes = [], headerRight, logoSrc, aoSair }: Props) {
     const pathname = usePathname() || "/";
+    const router = useRouter();
     const { perms, has } = usePerms();
     const contadores = useContadores(perms, has);
     const online = useOnline();
     const [recolhido, setRecolhido] = useState(false);
     const [menuAberto, setMenuAberto] = useState(false);
+    const [saindo, setSaindo] = useState(false);
+
+    /* Igual ao "Sair" do menu antigo: 1) limpa o contexto offline do usuário, 2) encerra a sessão no servidor
+       (mesmo sem internet segue), 3) vai para /login. */
+    const sair = async () => {
+        if (saindo) return;
+        if (aoSair) {
+            await aoSair();
+            return;
+        }
+        setSaindo(true);
+        try {
+            try {
+                await clearOfflineContextOnLogout();
+            } catch (e) {
+                console.error("[Logout] Falha ao limpar contexto offline:", e);
+            }
+            try {
+                await fetch("/api/auth/logout", { method: "POST", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } });
+            } catch (e) {
+                console.warn("[Logout] Não foi possível confirmar o logout no servidor:", e);
+            }
+        } finally {
+            setMenuAberto(false);
+            router.replace("/login");
+            setSaindo(false);
+        }
+    };
 
     useEffect(() => {
         try {
@@ -293,7 +327,7 @@ export default function AppShell({ children, headerRight, logoSrc, sairHref }: P
         };
     }, [menuAberto]);
 
-    const semShell = SEM_SHELL.some((r) => pathname === r || pathname.startsWith(r + "/"));
+    const semShell = [...SEM_SHELL, ...hideOnRoutes].some((r) => pathname === r || pathname.startsWith(r + "/"));
     const { modulo, item, fixo } = acharModuloPorRota(pathname);
 
     const estoqueItem = MODULOS.find((m) => m.id === "estoque")!.itens[0];
@@ -320,11 +354,11 @@ export default function AppShell({ children, headerRight, logoSrc, sairHref }: P
     const titulo = item?.titulo || fixo?.titulo || modulo?.titulo || "";
 
     return (
-        <div className="flex min-h-[100dvh] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
-            <Barra recolhido={recolhido} pathname={pathname} has={has} perms={perms} contadores={contadores} logoSrc={logoSrc} sairHref={sairHref} />
+        <div className="flex min-h-[100dvh] bg-[#F6F8FB] text-[#313C55] [--header-height:48px] dark:bg-[#161C2A] dark:text-white">
+            <Barra recolhido={recolhido} pathname={pathname} has={has} perms={perms} contadores={contadores} logoSrc={logoSrc} onSair={sair} saindo={saindo} />
 
             <div className="flex min-w-0 flex-1 flex-col max-lg:landscape:pl-[84px]">
-                <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-[#E3E8F0] bg-white px-2 dark:border-white/[0.12] dark:bg-[#232B3F] lg:h-[72px] lg:gap-4 lg:px-10">
+                <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-[#E3E8F0] bg-white px-2 dark:border-white/[0.12] dark:bg-[#232B3F] lg:gap-4 lg:px-6">
                     <button
                         type="button"
                         onClick={() => {
@@ -337,10 +371,21 @@ export default function AppShell({ children, headerRight, logoSrc, sairHref }: P
                             }
                         }}
                         aria-label={recolhido ? "Expandir menu lateral" : "Recolher menu lateral"}
-                        className="hidden size-11 place-items-center rounded-xl hover:bg-[#EEF2F7] dark:hover:bg-white/10 lg:grid"
+                        className="hidden size-10 place-items-center rounded-xl hover:bg-[#EEF2F7] dark:hover:bg-white/10 lg:grid"
                     >
                         {recolhido ? <IconLayoutSidebarLeftExpand size={22} /> : <IconLayoutSidebarLeftCollapse size={22} />}
                     </button>
+
+                    {pathname !== "/inicio" && pathname !== "/" ? (
+                        <button
+                            type="button"
+                            onClick={() => router.back()}
+                            aria-label="Voltar"
+                            className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-[#EEF2F7] dark:hover:bg-white/10 lg:hidden"
+                        >
+                            <IconArrowLeft size={22} />
+                        </button>
+                    ) : null}
 
                     <nav aria-label="Você está em" className="flex min-w-0 flex-1 items-center gap-1.5 pl-2 text-[15px] lg:pl-0">
                         {modulo ? (
@@ -363,16 +408,16 @@ export default function AppShell({ children, headerRight, logoSrc, sairHref }: P
                         <span className={["size-2 rounded-full", online ? "bg-[#7BA11A]" : "bg-[#F2CB3F]"].join(" ")} />
                         {online ? "Online" : "Offline"}
                     </span>
-                    {headerRight}
+                    {headerRight ?? <AlternarTema />}
                 </header>
 
-                <main className="min-w-0 flex-1 pb-[calc(72px+env(safe-area-inset-bottom))] lg:pb-0 max-lg:landscape:pb-0">{children}</main>
+                <main className="flex min-w-0 flex-1 flex-col pb-[calc(72px+env(safe-area-inset-bottom))] lg:pb-0 max-lg:landscape:pb-0">{children}</main>
             </div>
 
             <BarraCelular abas={abas} menuAberto={menuAberto} onMenu={() => setMenuAberto((v) => !v)} />
 
             {menuAberto ? (
-                <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#313C55]/45 lg:hidden max-lg:landscape:pl-[84px]" role="dialog" aria-modal="true" aria-label="Menu">
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#313C55]/45 lg:hidden max-lg:landscape:pl-[84px]" role="dialog" data-pai-overlay aria-modal="true" aria-label="Menu">
                     <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] bg-[#F6F8FB] shadow-2xl dark:border-white/[0.12] dark:bg-[#161C2A] max-lg:landscape:max-w-3xl">
                         <div className="flex items-center gap-2 border-b border-[#E3E8F0] bg-white px-4 py-2.5 dark:border-white/[0.12] dark:bg-[#232B3F]">
                             <h2 className="flex-1 text-lg font-extrabold">Menu</h2>
@@ -382,6 +427,15 @@ export default function AppShell({ children, headerRight, logoSrc, sairHref }: P
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom)+72px)]">
                             <MenuModulos has={has} contadores={contadores} moduloAberto={modulo?.id ?? null} onNavegar={() => setMenuAberto(false)} />
+                            <button
+                                type="button"
+                                onClick={sair}
+                                disabled={saindo}
+                                className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-[#E3E8F0] bg-white text-[15px] font-extrabold text-[#313C55] disabled:opacity-60 dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white"
+                            >
+                                <IconLogout size={20} />
+                                {saindo ? "Saindo…" : "Sair da conta"}
+                            </button>
                         </div>
                     </div>
                 </div>

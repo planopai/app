@@ -6,12 +6,27 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ActiveThemeProvider } from "@/components/active-theme";
-import AppShell from "@/components/app-shell";
+import AppShellAntigo from "@/components/app-shell";
+import PaiShell from "@/components/shell/AppShell";
+import AlternarTema from "@/components/shell/AlternarTema";
+import { ThemeSelector } from "@/components/theme-selector";
 import OneSignalInit from "@/components/OneSignalInit";
 import RegisterSW from "@/components/RegisterSW";
 
 import { PermsProvider } from "./_perms/PermsProvider";
 import { getInitialPerms } from "./_perms/getPermsServer";
+
+/* ===========================
+   Layout novo (repaginada)
+   true  = menu por módulos + barra de baixo (components/shell/AppShell)
+   false = volta ao layout antigo (components/app-shell), sem apagar nada
+=========================== */
+const MENU_NOVO = true;
+const Shell = (MENU_NOVO ? PaiShell : AppShellAntigo) as React.ComponentType<{
+  hideOnRoutes?: string[];
+  headerRight?: React.ReactNode;
+  children: React.ReactNode;
+}>;
 
 /* ===========================
    ✅ Fonte Nunito (GLOBAL)
@@ -59,6 +74,7 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const cookieStore = await cookies();
+
   const activeThemeValue = cookieStore.get("active_theme")?.value;
   const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
 
@@ -108,9 +124,17 @@ export default async function RootLayout({
               userKey={uidCookie}
               initialPerms={initialPerms}
             >
-              <AppShell hideOnRoutes={["/login"]}>
+              <Shell
+                hideOnRoutes={["/login"]}
+                headerRight={
+                  <>
+                    <ThemeSelector />
+                    <AlternarTema />
+                  </>
+                }
+              >
                 {children}
-              </AppShell>
+              </Shell>
             </PermsProvider>
           </ActiveThemeProvider>
         </ThemeProvider>
