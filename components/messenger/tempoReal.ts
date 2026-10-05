@@ -1,29 +1,59 @@
 /**
- * Tempo real do Messenger: UMA conexão Ably por aba do navegador, usada pela tela e pelo contador do menu.
+ * Atualização do Messenger SEM a Ably (decisão de 05/10/2026: a Ably não será usada).
  *
- * - Escuta o canal do próprio usuário (pai-msg:usuario:<id>). A credencial vem do messenger.php (ably_token).
- * - Modo de segurança: se a Ably ficar fora por mais de 10 s (ou não estiver configurada), consulta
- *   messenger.php?action=novidades a cada 5 s (30 s com o app em segundo plano) e entrega os mesmos eventos.
- * - Ao reconectar, ao voltar ao app e ao entrar no modo de segurança, ressincroniza pelo MySQL.
+ * Substitui o tempoReal.ts anterior mantendo os MESMOS nomes exportados (EventoTempoReal, sincronizar, ouvir,
+ * ouvirSeguranca, registrarId), então ContadorMenu.tsx, app/messenger/page.tsx e os demais arquivos NÃO mudam.
+ * Não importa nenhum pacote externo: não precisa de `npm install ably`.
  *
- * Eventos entregues aos ouvintes: mensagem, mensagem_apagada, leitura, digitando, status_envio, conversa.
+ * Como funciona
+ *  - Consulta messenger.php?action=novidades a cada 5 s com a tela visível e a cada 30 s em segundo plano,
+ *    e entrega aos ouvintes os eventos "mensagem" e "mensagem_apagada" (os mesmos de antes).
+ *  - Com a tela visível, a cada 30 s também entrega um evento "conversa": a lista de conversas e o contador do menu
+ *    recarregam (cobre leituras feitas em outro aparelho, transferências e mudanças na fila).
+ *  - Ao voltar para a aba, ao voltar a internet e ao abrir a tela, consulta na hora.
+ *  - Só consulta enquanto houver alguém ouvindo (o contador do menu só ouve para quem tem a página `messenger`) e para
+ *    sozinho quando o último ouvinte sai.
+ *  - Se a consulta falhar várias vezes seguidas (sem sessão, sem permissão, servidor fora), espaça para 30 s e avisa uma vez no console.
+ *  - `ouvirSeguranca` sempre informa `false`: não há mais "modo de segurança", então as faixas amarelas de "tempo real indisponível" não aparecem.
+ *
+ * O que muda para quem usa
+ *  - As mensagens chegam com até ~5 s de atraso (antes eram instantâneas com a Ably).
+ *  - "digitando…" e o "Lida" em tempo real não funcionam (eram eventos da Ably); a leitura aparece quando a conversa recarrega.
+ *  - Carga no servidor: ~12 consultas leves por minuto por pessoa com a tela aberta. Ajuste com definirIntervalos() se precisar.
+ *
+ * Back-end: sem `ably_api_key` no pai-chaves.php o messenger.php não chama a Ably. Se a chave existir, remova a linha.
  */
-import * as Ably from "ably";
 import { msgGet } from "./api";
 
 export type EventoTempoReal = { nome: string; dados: any };
 type Ouvinte = (e: EventoTempoReal) => void;
 
+let INTERVALO_VISIVEL_MS = 5000;
+let INTERVALO_FUNDO_MS = 30000;
+let INTERVALO_LISTAS_MS = 30000;
+const INTERVALO_APOS_FALHAS_MS = 30000;
+const FALHAS_PARA_ESPACAR = 3;
+const CARENCIA_PARAR_MS = 2000;
+
 const ouvintes = new Set<Ouvinte>();
 const ouvintesSeguranca = new Set<(ativo: boolean) => void>();
 let iniciado = false;
-let cliente: any = null;
 let ultimoId = 0;
 let servidorEm = "";
-let seguranca = false;
-let timerQueda: ReturnType<typeof setTimeout> | null = null;
 let timerConsulta: ReturnType<typeof setTimeout> | null = null;
+let timerParar: ReturnType<typeof setTimeout> | null = null;
 let sincronizando = false;
+let falhas = 0;
+let avisouFalha = false;
+let ultimaListaEm = 0;
+let ligacoes = false;
+
+/** Ajusta os intervalos (ms). Útil para aliviar o servidor ou para testes. */
+export function definirIntervalos(visivel: number, fundo: number, listas: number = INTERVALO_LISTAS_MS) {
+    INTERVALO_VISIVEL_MS = visivel;
+    INTERVALO_FUNDO_MS = fundo;
+    INTERVALO_LISTAS_MS = listas;
+}
 
 function emitir(nome: string, dados: any) {
     if (nome === "mensagem" && dados?.id && dados.id > ultimoId) ultimoId = dados.id;
@@ -36,23 +66,33 @@ function emitir(nome: string, dados: any) {
     });
 }
 
-function definirSeguranca(ativo: boolean) {
-    if (seguranca === ativo) return;
-    seguranca = ativo;
-    ouvintesSeguranca.forEach((f) => f(ativo));
-    if (ativo) agendarConsulta(0);
-    else if (timerConsulta) {
-        clearTimeout(timerConsulta);
-        timerConsulta = null;
-    }
+function visivel(): boolean {
+    return typeof document === "undefined" || document.visibilityState === "visible";
 }
 
-function agendarConsulta(ms: number) {
+function proximoIntervalo(): number {
+    if (falhas >= FALHAS_PARA_ESPACAR) return INTERVALO_APOS_FALHAS_MS;
+    return visivel() ? INTERVALO_VISIVEL_MS : INTERVALO_FUNDO_MS;
+}
+
+function agendar(ms: number) {
     if (timerConsulta) clearTimeout(timerConsulta);
-    timerConsulta = setTimeout(async () => {
-        await sincronizar();
-        if (seguranca) agendarConsulta(document.visibilityState === "visible" ? 5000 : 30000);
-    }, ms);
+    timerConsulta = setTimeout(ciclo, ms);
+}
+
+async function ciclo() {
+    if (!iniciado) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        agendar(INTERVALO_FUNDO_MS);
+        return;
+    }
+    await sincronizar();
+    // a cada 30 s com a tela visível: faz as listas e o contador recarregarem
+    if (iniciado && visivel() && Date.now() - ultimaListaEm >= INTERVALO_LISTAS_MS) {
+        ultimaListaEm = Date.now();
+        emitir("conversa", { conversa_id: 0, sintetico: true });
+    }
+    if (iniciado) agendar(proximoIntervalo());
 }
 
 /** Busca no MySQL tudo o que chegou depois do último id conhecido e entrega como eventos. */
@@ -68,65 +108,75 @@ export async function sincronizar() {
             if (d.ultimo_id > ultimoId) ultimoId = d.ultimo_id;
             if (!d.tem_mais) break;
         }
+        falhas = 0;
+        avisouFalha = false;
     } catch (e) {
-        console.warn("[messenger] falha ao sincronizar:", e);
+        falhas++;
+        if (falhas >= FALHAS_PARA_ESPACAR && !avisouFalha) {
+            avisouFalha = true;
+            console.warn("[messenger] não consegui atualizar; vou tentar de novo a cada 30 s:", e);
+        }
     } finally {
         sincronizando = false;
     }
 }
 
+function aoVoltarParaAba() {
+    if (iniciado && visivel()) {
+        sincronizar();
+        agendar(proximoIntervalo());
+    }
+}
+
+function aoVoltarInternet() {
+    if (iniciado) {
+        falhas = 0;
+        sincronizar();
+        agendar(proximoIntervalo());
+    }
+}
+
 async function iniciar() {
-    if (iniciado || typeof window === "undefined") return;
+    if (typeof window === "undefined") return;
+    if (timerParar) {
+        clearTimeout(timerParar);
+        timerParar = null;
+    }
+    if (iniciado) return;
     iniciado = true;
+    if (!ligacoes) {
+        ligacoes = true;
+        document.addEventListener("visibilitychange", aoVoltarParaAba);
+        window.addEventListener("online", aoVoltarInternet);
+    }
     try {
         const marco: any = await msgGet("novidades", { desde_id: -1 }, false);
-        ultimoId = marco.ultimo_id || 0;
-        servidorEm = marco.servidor_em || "";
+        if (!ultimoId) ultimoId = marco.ultimo_id || 0;
+        servidorEm = marco.servidor_em || servidorEm;
     } catch {
         /* segue; a primeira consulta acerta o marcador */
     }
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") sincronizar();
-    });
-    let perfil: any = null;
-    try {
-        perfil = await msgGet("perfil", {}, false);
-    } catch {
-        definirSeguranca(true);
-        return;
-    }
-    if (!perfil?.tempo_real) {
-        definirSeguranca(true); // Ably não configurada: só consulta ao MySQL
-        return;
-    }
-    cliente = new Ably.Realtime({
-        authCallback: async (_params: any, callback: any) => {
-            try {
-                callback(null, await msgGet("ably_token", {}, false));
-            } catch (e: any) {
-                callback(e?.message || "Falha na credencial", null);
-            }
-        },
-    } as any);
-    const canal = cliente.channels.get(`pai-msg:usuario:${perfil.id}`);
-    canal.subscribe((m: any) => emitir(m.name, m.data));
-    cliente.connection.on((mudanca: any) => {
-        if (mudanca.current === "connected") {
-            if (timerQueda) {
-                clearTimeout(timerQueda);
-                timerQueda = null;
-            }
-            sincronizar(); // cobre o que chegou enquanto estava desconectado
-            definirSeguranca(false);
-        } else if (["disconnected", "suspended", "failed"].includes(mudanca.current)) {
-            if (!timerQueda && !seguranca) {
-                timerQueda = setTimeout(() => {
-                    timerQueda = null;
-                    definirSeguranca(true);
-                }, 10000);
-            }
+    ultimaListaEm = Date.now();
+    if (iniciado) agendar(proximoIntervalo());
+}
+
+function pararSeNinguemOuve() {
+    if (ouvintes.size > 0 || ouvintesSeguranca.size > 0) return;
+    if (timerParar) clearTimeout(timerParar);
+    timerParar = setTimeout(() => {
+        timerParar = null;
+        if (ouvintes.size > 0 || ouvintesSeguranca.size > 0) return;
+        iniciado = false;
+        if (timerConsulta) {
+            clearTimeout(timerConsulta);
+            timerConsulta = null;
         }
-    });
+        if (ligacoes) {
+            ligacoes = false;
+            document.removeEventListener("visibilitychange", aoVoltarParaAba);
+            window.removeEventListener("online", aoVoltarInternet);
+        }
+    }, CARENCIA_PARAR_MS);
 }
 
 /** Recebe os eventos do Messenger. Devolve a função para parar de ouvir. */
@@ -135,16 +185,18 @@ export function ouvir(fn: Ouvinte): () => void {
     iniciar();
     return () => {
         ouvintes.delete(fn);
+        pararSeNinguemOuve();
     };
 }
 
-/** Avisa quando entra ou sai do modo de segurança (Ably fora do ar). */
+/** Compatibilidade: antes avisava o "modo de segurança" da Ably. Sem a Ably, informa sempre `false` (nenhuma faixa de aviso). */
 export function ouvirSeguranca(fn: (ativo: boolean) => void): () => void {
     ouvintesSeguranca.add(fn);
-    fn(seguranca);
+    fn(false);
     iniciar();
     return () => {
         ouvintesSeguranca.delete(fn);
+        pararSeNinguemOuve();
     };
 }
 
