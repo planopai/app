@@ -306,7 +306,8 @@ body {
 @layer components {
 
   /* Superfícies flutuantes usam tokens de popover */
-  [role="dialog"]:not([data-pai-overlay]),
+  /* O menu lateral do celular também é um role="dialog", mas mantém as cores do menu (definição de 06/10/2026). */
+  [role="dialog"]:not([data-pai-overlay]):not([data-sidebar]),
   .DialogContent,
   .SheetContent,
   .PopoverContent,
@@ -375,7 +376,7 @@ body {
 /* ============================ Correções defensivas ============================ */
 @layer utilities {
 
-  .dark .bg-white,
+  .dark .bg-white:not([data-pai-logo-capsula]),
   .dark [style*="background-color: #fff"],
   .dark [style*="background-color:#fff"],
   .dark [style*="background: white"],
@@ -578,10 +579,33 @@ body {
 }
 
 /* =====================================================================
-   MENU LATERAL (05/10/2026)
-   • Fixo no computador: o botão de recolher do cabeçalho não aparece a partir de 1024 px.
+   MENU LATERAL — definição de 06/10/2026 (vale sobre qualquer anotação anterior)
+   • Barra fixa no computador: não recolhe; o botão de recolher do cabeçalho não aparece a partir de 1024 px.
+   • Celular/tablet (< 1024 px): o Menu da barra de baixo abre o menu em TELA INTEIRA e o mesmo botão recolhe.
+   • Cores do menu iguais nos dois temas: fundo azul (--sidebar: #313C55 no claro, #232B3F no escuro), textos claros,
+     logomarca em cápsula branca (também no escuro).
+   • Módulos expandem e recolhem (um aberto por vez).
    • Rolagem discreta quando o menu não cabe na tela.
    ===================================================================== */
+[data-sidebar="sidebar"] {
+  background-color: var(--sidebar);
+  color: var(--sidebar-foreground);
+}
+@media (max-width: 1023.98px) {
+  [data-sidebar="sidebar"][data-mobile="true"] {
+    --sidebar-width: 100vw !important;
+    width: 100% !important;
+    max-width: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  /* Com a barra de baixo na tela, o menu termina acima dela (a barra fica visível e o Menu recolhe). */
+  body:has([data-pai-barra-celular]) [data-sidebar="sidebar"][data-mobile="true"] {
+    top: 0 !important;
+    height: auto !important;
+    bottom: calc(4.25rem + env(safe-area-inset-bottom)) !important;
+  }
+}
 @media (min-width: 1024px) {
   [data-sidebar="trigger"] { display: none !important; }
 }

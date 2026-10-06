@@ -271,15 +271,17 @@ export function AppSidebar(
     return found ?? visibleGroups[0]?.category ?? null;
   }, [visibleGroups, pathname]);
 
-  /** Sempre 1 grupo aberto */
+  /**
+   * Módulos expandem e recolhem (definição de 06/10/2026): um aberto por vez;
+   * clicar no módulo aberto recolhe; ao trocar de tela abre o módulo dela.
+   */
   const [openGroup, setOpenGroup] = React.useState<GroupKey | null>(defaultOpenOne);
 
   React.useEffect(() => {
     setOpenGroup(defaultOpenOne);
   }, [defaultOpenOne]);
 
-  /* Não fecha tudo: clicar no grupo aberto mantém aberto. */
-  const toggleGroup = (category: GroupKey) => setOpenGroup(category);
+  const toggleGroup = (category: GroupKey) => setOpenGroup((atual) => (atual === category ? null : category));
 
   /*
    * ATALHOS: barra personalizada do computador (Personalizar barra).
@@ -311,14 +313,23 @@ export function AppSidebar(
   };
 
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
-      {/* LOGO: etiqueta branca encostada na esquerda, como no mockup */}
-      <SidebarHeader className={isMobile ? "pt-6" : "pt-5"}>
+    /*
+     * Barra fixa (definição de 06/10/2026): no computador não recolhe (o AppShell mantém open=true).
+     * No celular/tablet (< 1024 px) o Menu da barra de baixo abre o menu em tela inteira e o mesmo botão recolhe.
+     * As cores são sempre as do menu azul (#313C55 no claro, #232B3F no escuro), nos dois temas.
+     */
+    <Sidebar collapsible="offcanvas" data-pai-menu {...props}>
+      {/*
+        LOGO: cápsula branca encostada na esquerda, nos DOIS temas (definição de 06/10/2026).
+        Usa bg-[#FFFFFF] e não bg-white: o globals.css troca .bg-white pela cor do cartão no tema escuro.
+      */}
+      <SidebarHeader className={isMobile ? "pt-[calc(1.5rem+env(safe-area-inset-top))]" : "pt-5"}>
         <Link
           href="/"
           onClick={(event) => handleNavigate("/", event)}
           aria-label="Plano PAI — Início"
-          className="-ml-2 flex h-[68px] w-[188px] shrink-0 items-center rounded-r-[34px] bg-white pl-6"
+          data-pai-logo-capsula
+          className="-ml-2 flex h-[68px] w-[188px] shrink-0 items-center rounded-r-[34px] bg-[#FFFFFF] pl-6"
         >
           <img src="/logo-pai-horizontal.svg" alt="Plano PAI" className="h-10 w-auto" />
         </Link>

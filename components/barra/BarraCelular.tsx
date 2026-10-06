@@ -2,8 +2,10 @@
 
 /**
  * Barra de baixo do celular (abaixo de 1024 px, onde o menu lateral vira gaveta). Vale também com o celular na horizontal.
- * 5 atalhos personalizáveis (barra_atalhos.php, aparelho "celular") + o Menu, sempre por último,
- * que abre o menu lateral. Contador de não lidas no atalho do Messenger.
+ * 5 atalhos personalizáveis (barra_atalhos.php, aparelho "celular") + o Menu, sempre por último.
+ * Menu (definição de 06/10/2026): abre o menu em tela inteira; tocar de novo no Menu recolhe.
+ * Com o menu aberto a barra continua visível por cima (z-[60]) e um atalho tocado fecha o menu e abre a tela.
+ * Contador de não lidas no atalho do Messenger.
  *
  * Fica dentro do AppShell (precisa do SidebarProvider). Ocupa o próprio espaço no fim da página
  * (não cobre o conteúdo) e some:
@@ -60,9 +62,17 @@ export default function BarraCelular() {
         return 0;
     };
     const ativo = (rota: string) => (rota === "/" ? pathname === "/" : pathname === rota || pathname.startsWith(rota + "/"));
-    const abrirMenu = () => {
-        if (typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(true);
+    const menuAberto = Boolean(sidebar?.openMobile);
+    const alternarMenu = () => {
+        if (typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(!menuAberto);
         else sidebar?.toggleSidebar?.();
+    };
+    const fecharMenu = () => {
+        if (menuAberto && typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(false);
+    };
+    /* Com o menu aberto, o toque na barra não pode contar como "clique fora" do menu (senão o Menu fecharia e reabriria). */
+    const naoContarComoFora = (e: React.PointerEvent) => {
+        if (menuAberto) e.stopPropagation();
     };
     const classeItem = (on: boolean) =>
         `relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[10.5px] font-bold leading-tight ${on ? "text-primary" : "text-muted-foreground"}`;
@@ -73,13 +83,15 @@ export default function BarraCelular() {
             <div aria-hidden="true" className="h-[calc(4.25rem+env(safe-area-inset-bottom))] lg:hidden" />
             <nav
                 aria-label="Atalhos"
-                className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+                data-pai-barra-celular
+                onPointerDownCapture={naoContarComoFora}
+                className={`fixed inset-x-0 bottom-0 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden ${menuAberto ? "pointer-events-auto z-[60]" : "z-40"}`}
             >
                 <div className="mx-auto flex h-[4.25rem] max-w-xl items-stretch px-1">
                     {itens.map((i) => {
                         const on = ativo(i.rota);
                         return (
-                            <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} className={classeItem(on)}>
+                            <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} className={classeItem(on)} onClick={fecharMenu}>
                                 <span className="relative">
                                     <IconeAtalho id={i.id} className="h-[22px] w-[22px]" />
                                     {numeroDe(i.id) > 0 && (
@@ -92,7 +104,13 @@ export default function BarraCelular() {
                             </Link>
                         );
                     })}
-                    <button type="button" onClick={abrirMenu} className={classeItem(false)} aria-label="Abrir o menu">
+                    <button
+                        type="button"
+                        onClick={alternarMenu}
+                        className={classeItem(menuAberto)}
+                        aria-label={menuAberto ? "Recolher o menu" : "Abrir o menu"}
+                        aria-expanded={menuAberto}
+                    >
                         <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
                             <path d="M4 12h16M4 6h16M4 18h16" />
                         </svg>
