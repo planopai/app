@@ -23,7 +23,7 @@ const mainBtn =
     "disabled:opacity-60 disabled:pointer-events-none";
 
 const actionBtn =
-    "w-full rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-95" +
+    "w-full rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-3 text-sm font-bold text-white dark:text-[#313C55] shadow-sm transition hover:brightness-95" +
     "disabled:opacity-60 disabled:pointer-events-none";
 
 const outlineBtn =

@@ -26,6 +26,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
+import { classeOpcaoSimNao, MarcaSimNao } from "@/app/acompanhamento/components/simNaoCores";
 import {
     IconCamera,
     IconCheck,
@@ -3728,8 +3729,9 @@ export default function Page() {
                                                     disabled={newSaving}
                                                     aria-pressed={newCoroaAut === v}
                                                     onClick={() => setNewCoroaAut(v)}
-                                                    className={`h-9 min-w-[60px] rounded-md border px-3 text-sm font-semibold ${newCoroaAut === v ? "border-[#313C55] bg-[#313C55] text-white" : "bg-background"}`}
+                                                    className={`h-9 min-w-[60px] rounded-md border px-3 text-sm font-semibold ${newCoroaAut === v ? "border-transparent" : "border-[#C9D1DE] dark:border-white/25"} ${classeOpcaoSimNao(v, newCoroaAut === v)}`}
                                                 >
+                                                    <MarcaSimNao valor={v} marcado={newCoroaAut === v} />
                                                     {v}
                                                 </button>
                                             ))}

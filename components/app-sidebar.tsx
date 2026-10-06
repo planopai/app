@@ -130,6 +130,9 @@ type GroupKey = string;
 /* Cores do menu (mockup da repaginada): fundo azul escuro (--sidebar), item ativo com faixa amarela à esquerda. */
 const ITEM_BASE =
   "relative flex min-h-10 gap-3 rounded-xl px-3 text-[15px] font-semibold text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white";
+/* Botões pequenos do rodapé do menu (Personalizar barra, Ajuda, Sair da conta). */
+const RODAPE_BTN =
+  "flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1.5 text-[12px] font-bold text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white disabled:opacity-60";
 const ITEM_ATIVO =
   "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.14]";
 
@@ -284,10 +287,10 @@ export function AppSidebar(
   const toggleGroup = (category: GroupKey) => setOpenGroup((atual) => (atual === category ? null : category));
 
   /*
-   * ATALHOS: barra personalizada do computador (Personalizar barra).
-   * No celular a barra fica embaixo (BarraCelular), então aqui só aparece fora do modo gaveta.
+   * ATALHOS: barra personalizada do menu (Personalizar barra), no topo do menu.
+   * Aparece no computador e também no Menu do celular (definição de 06/10/2026).
    */
-  const mostrarAtalhos = !sidebar?.isMobile && !carregando;
+  const mostrarAtalhos = !carregando;
   const atalhos = mostrarAtalhos
     ? barra.computador.itens
         .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
@@ -387,42 +390,57 @@ export function AppSidebar(
         )}
       </SidebarContent>
 
-      {/* RODAPÉ FIXO: usuário, Personalizar barra, Ajuda e Sair da conta */}
-      <SidebarFooter>
-        <div className="border-t border-white/[0.18] px-2 pb-4 pt-2.5">
-          <div className="flex items-center gap-3 px-3 py-1.5">
+      {/*
+        RODAPÉ COMPACTO (06/10/2026): ocupa pouco espaço para dar prioridade aos módulos.
+        Uma linha com o usuário e uma linha com três botões pequenos: Personalizar barra, Ajuda e Sair da conta (sem vermelho).
+      */}
+      <SidebarFooter className="p-0">
+        <div className="border-t border-white/[0.18] px-3 pb-2 pt-2">
+          <div className="flex items-center gap-2 px-1">
             <div
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-[15px] font-extrabold text-[#313C55]"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-[12px] font-extrabold text-[#313C55]"
               aria-hidden="true"
             >
               {carregando ? "U" : userInitials}
             </div>
-            <div className="min-w-0">
-              <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">Usuário</div>
-              <div className="truncate text-[15px] font-extrabold text-white">{carregando ? "Carregando…" : displayName}</div>
+            <div className="min-w-0 truncate text-[13px] font-extrabold text-white" title="Usuário">
+              {carregando ? "Carregando…" : displayName}
             </div>
           </div>
 
-          <SidebarMenu className="mt-1 space-y-0.5">
-            <SidebarMenuItem>
-              <MenuItem title="Personalizar barra" href="/personalizar-barra" Icon={IconAdjustmentsHorizontal} />
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <MenuItem title="Ajuda" href="/help" Icon={IconHelp} />
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                title={isLoggingOut ? "Saindo..." : "Sair da conta"}
-                className={ITEM_BASE}
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                aria-busy={isLoggingOut}
-              >
-                <IconLogout className="!size-5" />
-                <span>{isLoggingOut ? "Saindo..." : "Sair da conta"}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <div className="mt-1.5 grid grid-cols-3 gap-1">
+            <Link
+              href="/personalizar-barra"
+              title="Personalizar barra"
+              aria-current={pathname === "/personalizar-barra" ? "page" : undefined}
+              onClick={(event) => handleNavigate("/personalizar-barra", event)}
+              className={[RODAPE_BTN, pathname === "/personalizar-barra" ? "bg-white/[0.14] text-white" : ""].join(" ")}
+            >
+              <IconAdjustmentsHorizontal className="size-4 shrink-0" />
+              <span className="truncate">Barra</span>
+            </Link>
+            <Link
+              href="/help"
+              title="Ajuda"
+              aria-current={pathname === "/help" ? "page" : undefined}
+              onClick={(event) => handleNavigate("/help", event)}
+              className={[RODAPE_BTN, pathname === "/help" ? "bg-white/[0.14] text-white" : ""].join(" ")}
+            >
+              <IconHelp className="size-4 shrink-0" />
+              <span className="truncate">Ajuda</span>
+            </Link>
+            <button
+              type="button"
+              title={isLoggingOut ? "Saindo..." : "Sair da conta"}
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              aria-busy={isLoggingOut}
+              className={RODAPE_BTN}
+            >
+              <IconLogout className="size-4 shrink-0" />
+              <span className="truncate">{isLoggingOut ? "Saindo" : "Sair"}</span>
+            </button>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>

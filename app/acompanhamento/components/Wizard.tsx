@@ -8,7 +8,7 @@ import { Registro, CoroaAtendimentoItem } from "./types";
 import { proximaEtapaDoRegistro } from "./proximaEtapa";
 import { RascunhoOSContext, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
 import { situacaoTermo } from "./termos";
-import { LOCAL_MEMORIAL, locaisCerimonia, localCerimoniaEfetivo } from "./constants";
+import { classeOpcaoSimNao, MarcaSimNao } from "./simNaoCores";
 import { getLatestOfflineSignature } from "@/lib/offline/signatures";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
@@ -49,6 +49,7 @@ type EstoqueRow = {
 const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
 
 const SALAS_VELORIO = ["Sala 01", "Sala 02", "Sala 03"] as const;
+const VELORIO_ONLINE_OPCOES = ["Sim", "Não"] as const;
 
 /* -------------------- helpers -------------------- */
 function normUpper(v: any) {
@@ -175,11 +176,10 @@ function CheckboxChoiceGroup({
                             className={[
                                 "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
                                 i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
-                                marcado
-                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
-                                    : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                                classeOpcaoSimNao(option.value, marcado),
                             ].join(" ")}
                         >
+                            <MarcaSimNao valor={option.value} marcado={marcado} />
                             {option.label}
                         </button>
                     );
@@ -2245,7 +2245,7 @@ export default function Wizard({
                     const t = wizardStepTitles[i];
                     if (!t) return null;
                     const ativa = i === wizardStep;
-                    const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
+                    const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
                     // Editando: a aba é um botão (troca livre). Novo registro: continua só indicando a etapa (a validação segue no Próximo).
                     return emEdicao && editandoCompleto ? (
                         <button
@@ -2899,7 +2899,6 @@ export default function Wizard({
                                             realiza_velorio: v,
                                             ...(v === "Não"
                                                 ? {
-                                                    local_cerimonia: "",
                                                     local_velorio: "",
                                                     sala_velorio: "",
                                                     velorio_online: "",
@@ -3026,30 +3025,6 @@ export default function Wizard({
                         const salaAtual = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
                         const onlineAtual = String(velorioOnlineVal || (wizardData as any).velorio_online || "").trim();
                         const mostraVelorioOnline = !!salaAtual;
-                        // Local do velório (lista fixa). A sala do Memorial só aparece com o Memorial escolhido.
-                        const localCerimonia = localCerimoniaEfetivo(wizardData as any);
-                        const ehMemorial = localCerimonia === LOCAL_MEMORIAL;
-                        const localForaDaLista = !!localCerimonia && !(locaisCerimonia as readonly string[]).includes(localCerimonia);
-
-                        const selecionarLocalCerimonia = (local: string) => {
-                            const saiDoMemorial = local !== LOCAL_MEMORIAL;
-                            if (saiDoMemorial) {
-                                setSalaVelorioVal("");
-                                setVelorioOnlineVal("");
-                                setVelorioOnlineErro("");
-                            }
-                            setWizardData((prev: any) => {
-                                const enderecoAtual = String(prev?.local_velorio ?? "").trim();
-                                const enderecoEraMemorial = enderecoAtual.toLowerCase().startsWith("memorial");
-                                return {
-                                    ...prev,
-                                    local_cerimonia: local,
-                                    // Memorial: o endereço não é digitado (é a própria empresa); grava o nome do Memorial.
-                                    ...(local === LOCAL_MEMORIAL ? { local_velorio: LOCAL_MEMORIAL } : {}),
-                                    ...(saiDoMemorial ? { sala_velorio: "", velorio_online: "", ...(enderecoEraMemorial ? { local_velorio: "" } : {}) } : {}),
-                                };
-                            });
-                        };
 
                         const selecionarSala = (sala: string) => {
                             const nextSala = salaAtual === sala ? "" : sala;
@@ -3068,39 +3043,13 @@ export default function Wizard({
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
-                                <label htmlFor="wizard-local_cerimonia" className="mb-1.5 block text-[13px] font-bold">
-                                    Local do Velório {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
-                                </label>
-                                <select
-                                    id="wizard-local_cerimonia"
-                                    className={`${CAMPO_CLS} mb-4`}
-                                    value={localCerimonia}
-                                    onChange={(e) => selecionarLocalCerimonia(e.target.value)}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-                                    {localForaDaLista && <option value={localCerimonia}>{localCerimonia}</option>}
-                                    {locaisCerimonia.map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                {ehMemorial ? (
-                                    /* Memorial Senhor do Bonfim: é a própria empresa, o endereço não aparece. Grava o nome do Memorial. */
-                                    <input id={`wizard-${step.id}`} type="hidden" value={LOCAL_MEMORIAL} readOnly />
-                                ) : (
-                                <>
                                 <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label} {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
                                 </label>
 
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                     <input
-                                        key={`${wizardStep}-${step.id}-${localCerimonia}`} // ✅ força remount do defaultValue por step e por local (evita “travadas”)
+                                        key={`${wizardStep}-${step.id}`} // ✅ força remount do defaultValue por step (evita “travadas”)
                                         ref={localVelorioRef}
                                         id={`wizard-${step.id}`}
                                         list={listId}
@@ -3147,22 +3096,17 @@ export default function Wizard({
                                         {gpsMsg}
                                     </div>
                                 )}
-                                </>
-                                )}
 
-                                {/* ✅ Campos reais/ocultos para o salvarGrupoWizard ler pelo DOM.
-                                    Com sala marcada, o hidden de Velório Online vem do grupo de botões Sim | Não abaixo. */}
+                                {/* ✅ Campos reais/ocultos para o salvarGrupoWizard ler pelo DOM */}
                                 <input id="wizard-sala_velorio" type="hidden" value={salaAtual} readOnly />
-                                {!mostraVelorioOnline && <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />}
+                                <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />
 
-                                {ehMemorial && (
-                                <div className="rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
+                                <div className="mt-4 rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
                                     <label className="block text-sm font-medium">
                                         Sala do Velório <span className="text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">(opcional)</span>
                                     </label>
 
-                                    {/* As 3 salas sempre na mesma linha, em cartões altos (quase quadrados). */}
-                                    <div className="mt-2 grid grid-cols-3 gap-2 sm:gap-3">
+                                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                                         {SALAS_VELORIO.map((sala) => {
                                             const checked = salaAtual === sala;
                                             return (
@@ -3170,7 +3114,7 @@ export default function Wizard({
                                                     key={sala}
                                                     type="button"
                                                     data-wizard-error={velorioOnlineErro ? "1" : "0"}
-                                                    className={`flex min-h-[84px] items-center justify-center rounded-[14px] border-[1.5px] px-2 text-[15px] font-extrabold transition disabled:opacity-60 sm:min-h-[104px] sm:text-base border-[#E3E8F0] dark:border-white/[0.12] ${checked
+                                                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${checked
                                                         ? "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white dark:text-[#313C55] shadow-sm"
                                                         : "bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
                                                         }`}
@@ -3186,20 +3130,16 @@ export default function Wizard({
 
                                     {mostraVelorioOnline && (
                                         <div className="mt-4">
-                                            {/* Mesmo seletor Sim | Não das outras perguntas; o hidden wizard-velorio_online vem dele. */}
-                                            <CheckboxChoiceGroup
-                                                label={
-                                                    <>
-                                                        Velório Online <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
-                                                    </>
-                                                }
-                                                inputId="wizard-velorio_online"
-                                                ariaLabel="Velório Online"
+                                            <label className="mb-1.5 block text-[13px] font-bold">
+                                                Velório Online <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
+                                            </label>
+
+                                            <select
+                                                className={`${CAMPO_CLS} ${velorioOnlineErro ? "border-red-500!" : ""
+                                                    }`}
                                                 value={onlineAtual}
-                                                options={SIM_NAO_OPTIONS}
-                                                disabled={wizardSubmitting}
-                                                hasError={!!velorioOnlineErro}
-                                                onChange={(v) => {
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
                                                     setVelorioOnlineVal(v);
                                                     setWizardData((prev: any) => ({
                                                         ...prev,
@@ -3208,7 +3148,18 @@ export default function Wizard({
                                                     }));
                                                     if (v === "Sim" || v === "Não") setVelorioOnlineErro("");
                                                 }}
-                                            />
+                                                onBlur={() => validarVelorioOnlineSeNecessario()}
+                                                disabled={wizardSubmitting}
+                                            >
+                                                <option value="" disabled>
+                                                    Selecione…
+                                                </option>
+                                                {VELORIO_ONLINE_OPCOES.map((op) => (
+                                                    <option key={op} value={op}>
+                                                        {op}
+                                                    </option>
+                                                ))}
+                                            </select>
 
                                             {velorioOnlineErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{velorioOnlineErro}</div>}
                                         </div>
@@ -3222,7 +3173,6 @@ export default function Wizard({
                                         </p>
                                     )}
                                 </div>
-                                )}
                             </div>
                         );
                     }

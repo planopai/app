@@ -15,6 +15,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { carregarItensOS } from "@/app/os/components/ItensOSAjuste";
 import OSDoAtendimento from "@/app/os/components/OSDoAtendimento";
+import { classeOpcaoSimNao, MarcaSimNao } from "./simNaoCores";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -116,7 +117,7 @@ async function osChamar(flag: string, params: Record<string, string | number | u
     return json;
 }
 
-type CamposLidos = { campos: OsCampos; faltando: string[]; convenioTexto: string; localCerimonia: string };
+type CamposLidos = { campos: OsCampos; faltando: string[]; convenioTexto: string };
 
 export async function carregarCamposOS(atendimentoId: number | string): Promise<CamposLidos> {
     const r = await osChamar("dados_os_atendimento", { atendimento_id: atendimentoId });
@@ -126,17 +127,7 @@ export async function carregarCamposOS(atendimentoId: number | string): Promise<
         const v = c[k];
         (campos as any)[k] = v == null ? "" : String(v).replace(".", k === "translado_km" ? "," : ".");
     });
-    return {
-        campos,
-        faltando: r.dados?.colunas_faltando || [],
-        convenioTexto: String(r.dados?.convenio_texto || ""),
-        localCerimonia: String(c.local_cerimonia ?? "").trim(),
-    };
-}
-
-/** Grava só o Local do velório (sepultamentos.local_cerimonia). Vale para qualquer convênio, com ou sem OS. */
-export async function salvarLocalCerimonia(atendimentoId: number | string, local: string): Promise<void> {
-    await osChamar("salvar_dados_os_atendimento", { atendimento_id: atendimentoId, local_cerimonia: local.trim() }, true);
+    return { campos, faltando: r.dados?.colunas_faltando || [], convenioTexto: String(r.dados?.convenio_texto || "") };
 }
 
 export async function listarModelosTanato(): Promise<{ produto_id: number; nome: string }[]> {
@@ -263,11 +254,11 @@ function SimNaoBotoes({ valor, onChange, disabled }: { valor: SimNao; onChange: 
                     aria-pressed={valor === v}
                     className={[
                         "h-10 min-w-[64px] rounded-xl border-[1.5px] px-4 text-sm font-extrabold disabled:opacity-60",
-                        valor === v
-                            ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
-                            : "border-[#E3E8F0] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
+                        valor === v ? "border-transparent" : "border-[#C9D1DE] dark:border-white/25",
+                        classeOpcaoSimNao(v, valor === v),
                     ].join(" ")}
                 >
+                    <MarcaSimNao valor={v} marcado={valor === v} />
                     {v}
                 </button>
             ))}
@@ -347,11 +338,10 @@ function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: 
                             className={[
                                 "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
                                 i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
-                                valor === v
-                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
-                                    : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                                classeOpcaoSimNao(v, valor === v),
                             ].join(" ")}
                         >
+                            <MarcaSimNao valor={v} marcado={valor === v} />
                             {v}
                         </button>
                     ))}
@@ -568,7 +558,7 @@ export function ConvenioVinculo({
                                         className={[
                                             "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
                                             marcado
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white"
                                                 : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                                         ].join(" ")}
                                     >
@@ -642,8 +632,6 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         translado_autorizado_prefeitura: os.translado_autorizado_prefeitura,
         coroa_autorizada_prefeitura: os.coroa_autorizada_prefeitura,
         realiza_velorio: sim(s.realizaVelorio), realiza_sepultamento: sim(s.realizaSepultamento),
-        // Sala do Memorial (produto na OS): só com velório = Sim.
-        sala_velorio: sim(s.realizaVelorio) === "Sim" ? String(wd.sala_velorio ?? "").trim() : "",
     };
 }
 
@@ -651,7 +639,7 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
     if (!r) return false;
     if (Number(r.convenio_id) > 0) return true;
     return !!(r.urna_produto_id || r.roupa_produto_id || r.roupa_propria || r.veu === "Sim" || r.cordao === "Sim" || r.invol === "Sim" ||
-        (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim" || !!r.sala_velorio);
+        (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim");
 }
 
 type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
@@ -859,7 +847,7 @@ export function SecaoOSAtendimento({
                                         className={[
                                             "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
                                             marcado
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white"
                                                 : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                                         ].join(" ")}
                                     >

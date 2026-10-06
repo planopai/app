@@ -4003,7 +4003,7 @@ function DetalheAtendimentoDrawer({
                 <div className="flex shrink-0 gap-2.5 border-t border-[var(--d-line)] px-5 pt-3.5 sm:px-6" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
                     {backendId ? (
                         <>
-                            <button type="button" onClick={onRegistrarAcao} title="Registrar uma ação neste atendimento" className="flex h-12 flex-1 items-center justify-center rounded-xl bg-[#313C55] text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]">
+                            <button type="button" onClick={onRegistrarAcao} title="Registrar uma ação neste atendimento" className="flex h-12 flex-1 items-center justify-center rounded-xl bg-[#313C55] text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#3D6A99] dark:text-white dark:hover:bg-[#355D86]">
                                 Registrar ação
                             </button>
                             <a href={rotaEditar(backendId)} className="flex h-12 items-center justify-center rounded-xl border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] px-5 text-[15px] font-extrabold text-[#313C55] no-underline hover:bg-[#E4BC30]">

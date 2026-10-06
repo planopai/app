@@ -218,7 +218,7 @@ export default function AvisosBox({
 
                                 <button
                                     type="button"
-                                    className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                                    className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                     onClick={() => onAddObservacao(String(r?.id))}
                                 >
                                     Adicionar Observação
@@ -247,7 +247,7 @@ export default function AvisosBox({
 
                     <button
                         type="button"
-                        className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                        className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                         onClick={enviarAviso}
                     >
                         Enviar
@@ -300,7 +300,7 @@ export default function AvisosBox({
                                     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
                                         <button
                                             type="button"
-                                            className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                                            className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                             onClick={() => openEdit(a)}
                                         >
                                             Editar
@@ -308,7 +308,7 @@ export default function AvisosBox({
 
                                         <button
                                             type="button"
-                                            className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                                            className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                                             onClick={() => excluirAviso(a?.id)}
                                         >
                                             Excluir
@@ -351,7 +351,7 @@ export default function AvisosBox({
 
                     <button
                         type="button"
-                        className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
+                        className="w-full sm:w-auto rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-[14px] font-semibold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                         onClick={submitEdit}
                         disabled={editLoading}
                     >

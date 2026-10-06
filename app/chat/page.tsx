@@ -625,7 +625,7 @@ function ExportCards({ cards }: { cards?: ExportCard[] }) {
 
                             <a
                                 href={exportDownloadUrl(card)}
-                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#0097CC]"
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#355D86]"
                                 title={`Baixar ${card.filename}`}
                             >
                                 <IconDownload className="h-4 w-4" />
@@ -1270,7 +1270,7 @@ function AttendanceEditFormCard({
                     type="button"
                     onClick={() => void submit()}
                     disabled={disabled || busy}
-                    className="mt-4 w-full rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#232B40] dark:hover:bg-[#0097CC] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-4 w-full rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#232B40] dark:hover:bg-[#355D86] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     {busy ? "Preparando..." : "Revisar alterações"}
                 </button>
@@ -1448,14 +1448,14 @@ function OperationalFlowCards({
                                             type="button"
                                             disabled={disabled}
                                             onClick={() => onChooseAction(flow)}
-                                            className="w-full rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#0097CC] disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="w-full rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#355D86] disabled:cursor-not-allowed disabled:opacity-50"
                                         >
                                             {action.label}
                                         </button>
                                     ) : action.external_url ? (
                                         <a
                                             href={action.external_url}
-                                            className="block w-full rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#0097CC]"
+                                            className="block w-full rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white px-4 py-3 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-[#232B40] dark:hover:bg-[#355D86]"
                                         >
                                             {action.label}
                                         </a>
@@ -2042,7 +2042,7 @@ function IconShield({ className = "h-4 w-4" }: { className?: string }) {
 
 function AssistantAvatar() {
     return (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white shadow-sm">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white shadow-sm">
             <IconSparkles className="h-4.5 w-4.5" />
         </div>
     );
@@ -2144,7 +2144,7 @@ function KnowledgeSources({ sources }: { sources?: KnowledgeSource[] }) {
 function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
     return (
         <div className="mx-auto flex min-h-[55vh] w-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
-            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white shadow-lg shadow-[#313C55]/15 dark:shadow-black/30">
+            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white shadow-lg shadow-[#313C55]/15 dark:shadow-black/30">
                 <IconSparkles className="h-7 w-7" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-[#313C55] dark:text-white sm:text-3xl">Aurora</h1>
@@ -3268,7 +3268,7 @@ export default function AuroraPage() {
             <header className="sticky top-[var(--header-height,0px)] z-30 border-b border-border/80 bg-background/90 backdrop-blur-xl">
                 <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
                     <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white">
                             <IconeAurora className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
@@ -3318,7 +3318,7 @@ export default function AuroraPage() {
                                             className={[
                                                 "break-words px-4 py-3 text-sm leading-6 sm:text-[15px]",
                                                 isUser
-                                                    ? "rounded-2xl rounded-br-md bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white shadow-sm"
+                                                    ? "rounded-2xl rounded-br-md bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white shadow-sm"
                                                     : "rounded-2xl rounded-tl-md border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#E8ECF4] shadow-sm",
                                             ].join(" ")}
                                         >
@@ -3558,7 +3558,7 @@ export default function AuroraPage() {
                                 <button
                                     type="submit"
                                     disabled={!canSend}
-                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] text-white transition hover:bg-[#232B40] dark:hover:bg-[#0097CC] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#E3E8F0] dark:disabled:bg-white/15 disabled:text-[#7A8396] dark:disabled:text-[#8893AA]"
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white transition hover:bg-[#232B40] dark:hover:bg-[#355D86] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#E3E8F0] dark:disabled:bg-white/15 disabled:text-[#7A8396] dark:disabled:text-[#8893AA]"
                                     aria-label="Enviar mensagem"
                                 >
                                     <IconSend className="h-4.5 w-4.5" />
@@ -3586,7 +3586,7 @@ export default function AuroraPage() {
                                     onContextMenu={(event) => event.preventDefault()}
                                     className={[
                                         "flex h-10 w-10 shrink-0 touch-none select-none items-center justify-center rounded-xl text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-[#E3E8F0] dark:disabled:bg-white/15 disabled:text-[#7A8396] dark:disabled:text-[#8893AA]",
-                                        recording ? "bg-[#D93636] hover:bg-[#B42318]" : "bg-[#313C55] dark:bg-[#00AEEC] dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#0097CC]",
+                                        recording ? "bg-[#D93636] hover:bg-[#B42318]" : "bg-[#313C55] dark:bg-[#3D6A99] dark:text-white hover:bg-[#232B40] dark:hover:bg-[#355D86]",
                                     ].join(" ")}
                                     aria-label={recording ? "Solte para enviar o áudio" : "Segure para gravar uma mensagem"}
                                     title={recording ? "Solte para enviar" : "Segure para falar"}

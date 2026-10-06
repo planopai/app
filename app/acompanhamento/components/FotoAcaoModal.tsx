@@ -764,7 +764,7 @@ export default function FotoAcaoModal({
                     <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         <button
                             type="button"
-                            className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
+                            className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                             disabled={busy}
                             onClick={tirarFoto}
                         >
@@ -802,7 +802,7 @@ export default function FotoAcaoModal({
 
                         <button
                             type="button"
-                            className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
+                            className="rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                             disabled={busy || !fotoBlob}
                             onClick={handleSalvar}
                         >

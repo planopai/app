@@ -1679,7 +1679,7 @@ export default function EnviarObituario({
         <>
             <button
                 type="button"
-                className="w-full rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                className="w-full rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
                 onClick={() => setOpen(true)}
             >
                 Enviar Obituário
@@ -1887,7 +1887,7 @@ export default function EnviarObituario({
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
-                                    className="inline-flex items-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
+                                    className="inline-flex items-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                     onClick={baixarObituario}
                                     disabled={!previewBlob || loading}
                                 >
@@ -1897,7 +1897,7 @@ export default function EnviarObituario({
 
                                 <button
                                     type="button"
-                                    className="inline-flex items-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                                    className="inline-flex items-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:brightness-95 disabled:opacity-60"
                                     onClick={abrirModalA4}
                                     disabled={!registro}
                                 >
@@ -2036,7 +2036,7 @@ export default function EnviarObituario({
 
                                 <button
                                     type="button"
-                                    className="inline-flex items-center justify-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white hover:brightness-95 disabled:opacity-60"
+                                    className="inline-flex items-center justify-center gap-2 rounded-md bg-[#313C55] dark:bg-[#F2CB3F] px-3 py-2 text-sm font-medium text-white dark:text-[#313C55] hover:brightness-95 disabled:opacity-60"
                                     onClick={baixarObituarioA4}
                                     disabled={!previewA4PdfBlob || loadingA4}
                                 >

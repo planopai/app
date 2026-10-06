@@ -393,9 +393,9 @@ export function VisitaBotao({
         status === "visitado"
             ? "bg-[#7BA11A] hover:bg-[#5C7A12] text-white"
             : status === "em_andamento"
-                ? "bg-[#313C55] dark:bg-[#F2CB3F] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] text-white"
+                ? "bg-[#313C55] dark:bg-[#F2CB3F] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] text-white dark:text-[#313C55]"
                 : status === "visitar"
-                    ? "bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30] text-white"
+                    ? "bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]"
                     : "bg-[#E3E8F0] dark:bg-white/15 text-[#5B6478] dark:text-[#AEB9CF]";
 
     return (
@@ -964,7 +964,7 @@ export default function Visita({
                                         dados?.atendimento?.status,
                                     ) !== "fase08"
                                 }
-                                className="rounded-lg bg-[#F2CB3F] text-[#313C55] px-4 py-2 text-sm font-semibold text-white hover:bg-[#E4BC30] disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-lg bg-[#F2CB3F] text-[#313C55] px-4 py-2 text-sm font-semibold hover:bg-[#E4BC30] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {saving ? "Iniciando..." : "Iniciar Visita"}
                             </button>
@@ -1320,7 +1320,7 @@ export default function Visita({
                             type="button"
                             onClick={() => void capturarFoto()}
                             disabled={cameraLoading || !streamRef.current}
-                            className="rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-50"
+                            className="rounded-lg bg-[#313C55] dark:bg-[#F2CB3F] px-4 py-2 text-sm font-semibold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-50"
                         >
                             {cameraLoading ? "Aguarde..." : "Capturar foto"}
                         </button>

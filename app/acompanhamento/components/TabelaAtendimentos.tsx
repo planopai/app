@@ -59,7 +59,7 @@ const IcMais = () => (
    • Visita ................. contorno (visitar) · ciano (em andamento) · verde (finalizada) · apagado (indisponível)
    ===================================================================================== */
 const BASE = "inline-flex h-11 shrink-0 items-center justify-center rounded-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00AEEC]";
-export const BTN_ACAO = `${BASE} w-11 bg-[#313C55] text-white hover:bg-[#232B40] dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]`;
+export const BTN_ACAO = `${BASE} w-11 bg-[#313C55] text-white hover:bg-[#232B40] dark:bg-[#3D6A99] dark:text-white dark:hover:bg-[#355D86]`;
 export const BTN_EDITAR = `${BASE} w-11 border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]`;
 export const BTN_COMPARTILHAR = `${BASE} w-11 border-[1.5px] border-[#B3CE52] bg-[#B3CE52] text-[#313C55] hover:bg-[#A3BE45]`;
 

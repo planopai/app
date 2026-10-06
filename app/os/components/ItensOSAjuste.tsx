@@ -85,7 +85,7 @@ const qtdTxt = (it: ItemOSTela) => (it.unidade === "km" ? `${String(it.quantidad
 const BTN_SEC =
     "inline-flex h-11 items-center justify-center rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10";
 const BTN_PRI =
-    "inline-flex h-11 items-center justify-center rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-50 dark:bg-[#00AEEC] dark:text-[#313C55]";
+    "inline-flex h-11 items-center justify-center rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-50 dark:bg-[#3D6A99] dark:text-white";
 const CAMPO =
     "w-full rounded-xl border border-[#E3E8F0] bg-white px-3 py-2.5 text-[16px] text-[#313C55] outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-white sm:text-sm";
 const ROTULO = "mb-1.5 mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -424,7 +424,7 @@ export default function ItensOSAjuste({
                                     type="button"
                                     aria-pressed={gModo === m}
                                     onClick={() => setGModo(m)}
-                                    className={`h-11 min-w-[52px] px-3 text-sm font-extrabold ${gModo === m ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]" : "bg-white text-[#313C55] dark:bg-transparent dark:text-white"}`}
+                                    className={`h-11 min-w-[52px] px-3 text-sm font-extrabold ${gModo === m ? "bg-[#313C55] text-white dark:bg-[#3D6A99] dark:text-white" : "bg-white text-[#313C55] dark:bg-transparent dark:text-white"}`}
                                 >
                                     {m}
                                 </button>

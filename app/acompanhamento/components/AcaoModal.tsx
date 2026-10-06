@@ -596,7 +596,7 @@ export default function AcaoModal({
                                     await handleClickFase("fase12" as Fase, true);
                                 }}
                                 disabled={acaoSubmitting}
-                                className="h-12 flex-[1.4] rounded-xl bg-[#313C55] text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#00AEEC] dark:text-[#313C55] dark:hover:bg-[#0097CC]"
+                                className="h-12 flex-[1.4] rounded-xl bg-[#313C55] text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#3D6A99] dark:text-white dark:hover:bg-[#355D86]"
                             >
                                 Confirmar Corpo Pronto
                             </button>
