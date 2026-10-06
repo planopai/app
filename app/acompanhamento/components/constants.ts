@@ -14,8 +14,8 @@ export const wizardStepTitles = ["Atendimento", "Itens", "Velório", "Sepultamen
  * depósito são fixos no backend e não são exibidos no Wizard.
  */
 export const wizardStepIndexes = [
-    // Atendimento
-    [0, 29, 27, 28, 2, 3, 30, 31, 1, 23],
+    // Atendimento — Convênio (3) é o primeiro campo, antes do nome do falecido (decisão de 06/10/2026)
+    [3, 0, 29, 27, 28, 2, 30, 31, 1, 23],
 
     // Itens
     // urna, roupa, veu, veu_item, cordao, cordao_item, kit_lanche,
