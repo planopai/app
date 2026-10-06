@@ -6,7 +6,6 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   IconAdjustmentsHorizontal,
   IconChevronDown,
-  IconChevronRight,
   IconHelp,
   IconLogout,
 } from "@tabler/icons-react";
@@ -17,14 +16,13 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { MODULOS, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
-import LogoPai from "@/components/shell/LogoPai";
-import { rotaExiste } from "@/components/shell/rotas";
+import { MODULOS, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
 import { IconeAtalho, useBarra } from "@/components/barra/atalhos";
@@ -44,7 +42,7 @@ function ContadorItem({ valor, recolhido }: { valor: number; recolhido: boolean 
   }
   return (
     <span
-      className="ml-auto inline-flex h-[22px] min-w-6 items-center justify-center rounded-full bg-[#F2CB3F] px-2 text-xs font-extrabold tabular-nums text-[#313C55]"
+      className="ml-auto inline-flex h-[22px] min-w-6 items-center justify-center rounded-full bg-[#F2CB3F] px-2 text-[12px] font-extrabold tabular-nums text-[#313C55]"
       aria-label={`${texto} pendente(s)`}
     >
       {texto}
@@ -52,12 +50,12 @@ function ContadorItem({ valor, recolhido }: { valor: number; recolhido: boolean 
   );
 }
 
-/** Detecta mobile (<= 1024px) */
+/** Celular/tablet (abaixo de 1024 px): menu em gaveta e barra de baixo. Mesmo ponto de quebra do hooks/use-mobile e da BarraCelular. */
 function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState(false);
 
   React.useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1024px)");
+    const mq = window.matchMedia("(max-width: 1023.98px)");
 
     const update = () => {
       setIsMobile(mq.matches);
@@ -129,6 +127,12 @@ function initialsFromName(name: string) {
 
 type GroupKey = string;
 
+/* Cores do menu (mockup da repaginada): fundo azul escuro (--sidebar), item ativo com faixa amarela à esquerda. */
+const ITEM_BASE =
+  "relative flex min-h-10 gap-3 rounded-xl px-3 text-[15px] font-semibold text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white";
+const ITEM_ATIVO =
+  "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.14]";
+
 export function AppSidebar(
   props: React.ComponentProps<typeof Sidebar>
 ) {
@@ -137,6 +141,7 @@ export function AppSidebar(
   const sidebar = useSidebar() as any;
 
   const { perms, has } = usePerms();
+  const carregando = perms == null;
 
   const isMobile = useIsMobile();
 
@@ -155,588 +160,212 @@ export function AppSidebar(
     return 0;
   };
 
-  const [isLoggingOut, setIsLoggingOut] =
-    React.useState(false);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
-  const isCollapsed = Boolean(
-    sidebar?.state === "collapsed"
-  );
+  const closeMobileNow = React.useCallback(() => {
+    if (typeof sidebar?.setOpenMobile === "function") {
+      sidebar.setOpenMobile(false);
+    }
+  }, [sidebar]);
 
-  const closeMobileNow =
-    React.useCallback(() => {
-      if (
-        typeof sidebar?.setOpenMobile ===
-        "function"
-      ) {
-        sidebar.setOpenMobile(false);
+  const handleNavigate = React.useCallback(
+    (href: string, e?: React.MouseEvent) => {
+      // Mantém comportamento normal para abrir em nova aba/janela.
+      if (e?.metaKey || e?.ctrlKey || e?.shiftKey || e?.altKey || e?.button === 1) {
         return;
       }
-
-      if (
-        typeof sidebar?.setOpen ===
-        "function"
-      ) {
-        sidebar.setOpen(false);
+      e?.preventDefault?.();
+      if (isMobile) {
+        closeMobileNow();
       }
-    }, [sidebar]);
+      router.push(href);
+    },
+    [router, isMobile, closeMobileNow]
+  );
 
-  const handleNavigate =
-    React.useCallback(
-      (
-        href: string,
-        e?: React.MouseEvent
-      ) => {
-        // Mantém comportamento normal para abrir em nova aba/janela.
-        // @ts-ignore
-        if (
-          e?.metaKey ||
-          e?.ctrlKey ||
-          e?.shiftKey ||
-          e?.altKey ||
-          e?.button === 1
-        ) {
-          return;
+  const handleLogout = React.useCallback(
+    async (e?: React.MouseEvent) => {
+      e?.preventDefault?.();
+      if (isLoggingOut) {
+        return;
+      }
+      setIsLoggingOut(true);
+      try {
+        /*
+         * 1. Remove o contexto offline ativo antes de trocar de usuário
+         *    (identidade offline, HTML/RSC autenticado do CacheStorage, snapshot legado qa_registros,
+         *    fila antiga acomp_offline_queue_v1 → quarentena). Os dados user-scoped do IndexedDB ficam com o usuário certo.
+         */
+        try {
+          await clearOfflineContextOnLogout();
+        } catch (error) {
+          console.error("[Logout] Falha ao limpar contexto offline:", error);
         }
-
-        e?.preventDefault?.();
-
+        /*
+         * 2. Encerra a sessão no servidor. Sem internet a chamada pode falhar; o contexto local já foi removido.
+         */
+        try {
+          await fetch("/api/auth/logout", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          });
+        } catch (error) {
+          console.warn("[Logout] Não foi possível confirmar o logout no servidor:", error);
+        }
+      } finally {
         if (isMobile) {
           closeMobileNow();
         }
-
-        router.push(href);
-      },
-      [
-        router,
-        isMobile,
-        closeMobileNow,
-      ]
-    );
-
-  const handleLogout =
-    React.useCallback(
-      async (
-        e?: React.MouseEvent
-      ) => {
-        e?.preventDefault?.();
-
-        if (isLoggingOut) {
-          return;
-        }
-
-        setIsLoggingOut(true);
-
-        try {
-          /*
-           * 1. Remove o contexto offline ativo antes de trocar de usuário.
-           *
-           * Isso limpa:
-           * - identidade offline ativa;
-           * - HTML/RSC autenticado do CacheStorage;
-           * - snapshot legado qa_registros;
-           * - fila antiga acomp_offline_queue_v1,
-           *   movendo-a para quarentena quando existir.
-           *
-           * Os dados modernos user-scoped no IndexedDB
-           * permanecem vinculados ao usuário correto.
-           */
-          try {
-            await clearOfflineContextOnLogout();
-          } catch (error) {
-            console.error(
-              "[Logout] Falha ao limpar contexto offline:",
-              error
-            );
-          }
-
-          /*
-           * 2. Encerra a sessão normal no servidor.
-           *
-           * Se o aparelho estiver sem internet, a chamada pode falhar.
-           * Mesmo assim o contexto local já foi removido, evitando que
-           * outro usuário veja os dados/caches autenticados anteriores.
-           */
-          try {
-            await fetch(
-              "/api/auth/logout",
-              {
-                method: "POST",
-                credentials: "include",
-                cache: "no-store",
-                headers: {
-                  Accept:
-                    "application/json",
-                },
-              }
-            );
-          } catch (error) {
-            console.warn(
-              "[Logout] Não foi possível confirmar o logout no servidor:",
-              error
-            );
-          }
-        } finally {
-          if (isMobile) {
-            closeMobileNow();
-          }
-
-          /*
-           * Navega para a tela de login mesmo se a rede estiver indisponível.
-           * /login não deve fazer parte do cache autenticado offline.
-           */
-          router.replace("/login");
-
-          setIsLoggingOut(false);
-        }
-      },
-      [
-        isLoggingOut,
-        isMobile,
-        closeMobileNow,
-        router,
-      ]
-    );
+        /* Vai para o login mesmo sem rede; /login não faz parte do cache autenticado offline. */
+        router.replace("/login");
+        setIsLoggingOut(false);
+      }
+    },
+    [isLoggingOut, isMobile, closeMobileNow, router]
+  );
 
   /**
    * Nome do usuário.
-   *
-   * IMPORTANTE:
-   * o primeiro render precisa ser idêntico no servidor e no navegador
-   * para evitar hydration mismatch (React #418).
-   *
-   * Por isso começamos sempre com "Usuário" e só lemos document.cookie
-   * depois que o componente já montou no cliente.
+   * O primeiro render precisa ser idêntico no servidor e no navegador (evita hydration mismatch, React #418):
+   * começa com "Usuário" e só lê document.cookie depois de montar.
    */
-  const [displayName, setDisplayName] =
-    React.useState("Usuário");
+  const [displayName, setDisplayName] = React.useState("Usuário");
 
   React.useEffect(() => {
-    const raw =
-      readCookie("pai_name") ||
-      readCookie("pai_user") ||
-      "Usuário";
-
-    const cleaned = raw
-      .trim()
-      .replace(/\s+/g, " ");
-
+    const raw = readCookie("pai_name") || readCookie("pai_user") || "Usuário";
+    const cleaned = raw.trim().replace(/\s+/g, " ");
     const formatted = cleaned
       .split(" ")
-      .map((word, index) =>
-        index === 0
-          ? capitalizeFirstLetter(word)
-          : word
-      )
+      .map((word, index) => (index === 0 ? capitalizeFirstLetter(word) : word))
       .join(" ");
-
     setDisplayName(formatted);
   }, []);
 
-  const badgeText = "USUÁRIO";
-
-  const userInitials =
-    React.useMemo(
-      () =>
-        initialsFromName(
-          displayName
-        ),
-      [displayName]
-    );
+  const userInitials = React.useMemo(() => initialsFromName(displayName).slice(0, 1), [displayName]);
 
   /** Módulos do organograma, só com as telas que o usuário pode abrir (mesmas chaves de página de antes). */
-  const visibleGroups =
-    React.useMemo(() => {
-      return MODULOS
-        .filter((modulo) => moduloVisivel(modulo, has))
-        .map((modulo) => ({
-          category: modulo.titulo,
-          /* página de entrada do módulo ("Visão geral"), como no mockup */
-          hub: { title: "Visão geral", href: destinoDoModulo(modulo, has), Icon: modulo.icone as any },
-          items: itensVisiveis(modulo, has).map((item) => ({
-            title: item.titulo,
-            href: hrefDoItem(item, has),
-            slug: item.slugs[0],
-            Icon: item.icone as any,
-            secao: item.secao,
-          })),
-        }))
-        .filter(
-          (group) =>
-            group.items.length > 0
-        );
-    }, [has]);
+  const visibleGroups = React.useMemo(() => {
+    if (carregando) return [];
+    return MODULOS
+      .filter((modulo) => moduloVisivel(modulo, has))
+      .map((modulo) => ({
+        category: modulo.titulo,
+        items: itensVisiveis(modulo, has).map((item) => ({
+          title: item.titulo,
+          href: hrefDoItem(item, has),
+          slug: item.slugs[0],
+          Icon: item.icone as any,
+        })),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [has, carregando]);
 
-  /**
-   * Abre por padrão o grupo
-   * da rota atual, senão o primeiro.
-   */
-  const defaultOpenOne =
-    React.useMemo(
-      (): GroupKey | null => {
-        if (
-          !visibleGroups.length
-        ) {
-          return null;
-        }
-
-        const found =
-          visibleGroups.find(
-            (group) =>
-              group.items.some(
-                (item) =>
-                  item.href ===
-                  pathname
-              )
-          )?.category;
-
-        return (
-          found ??
-          visibleGroups[0]
-            ?.category ??
-          null
-        );
-      },
-      [
-        visibleGroups,
-        pathname,
-      ]
-    );
+  /** Abre por padrão o grupo da rota atual, senão o primeiro. */
+  const defaultOpenOne = React.useMemo((): GroupKey | null => {
+    if (!visibleGroups.length) {
+      return null;
+    }
+    const found = visibleGroups.find((group) => group.items.some((item) => item.href === pathname))?.category;
+    return found ?? visibleGroups[0]?.category ?? null;
+  }, [visibleGroups, pathname]);
 
   /** Sempre 1 grupo aberto */
-  const [
-    openGroup,
-    setOpenGroup,
-  ] =
-    React.useState<
-      GroupKey | null
-    >(defaultOpenOne);
+  const [openGroup, setOpenGroup] = React.useState<GroupKey | null>(defaultOpenOne);
 
   React.useEffect(() => {
-    if (!isCollapsed) {
-      setOpenGroup(
-        defaultOpenOne
-      );
-    }
-  }, [
-    defaultOpenOne,
-    isCollapsed,
-  ]);
+    setOpenGroup(defaultOpenOne);
+  }, [defaultOpenOne]);
 
-  const toggleGroup = (
-    category: GroupKey
-  ) => {
-    setOpenGroup(
-      (previous) => {
-        /*
-         * Um módulo aberto por vez.
-         * Tocar no módulo aberto
-         * RECOLHE (mockup).
-         */
-        if (
-          previous === category
-        ) {
-          return null;
-        }
-
-        return category;
-      }
-    );
-  };
-
-  /**
-   * Render de item
-   * com tooltip no colapsado.
-   */
-  const MenuItem = ({
-    title,
-    href,
-    Icon,
-    badge = 0,
-    nivel = "fixo",
-  }: {
-    title: string;
-    href: string;
-    Icon: any;
-    badge?: number;
-    /** "fixo" = atalho ou rodapé (com ícone); "sub" = tela dentro de um módulo (recuada, sem ícone) */
-    nivel?: "fixo" | "sub";
-  }) => {
-    /* link com ?aba=... nunca fica marcado: só o caminho não distingue as duas telas */
-    const active = !href.includes("?") && pathname === href;
-
-    return (
-      <Link
-        href={href}
-        title={title}
-        aria-current={active ? "page" : undefined}
-        onClick={(event) => handleNavigate(href, event)}
-        className={[
-          "relative flex w-full items-center gap-3 rounded-xl px-3 outline-none transition-colors",
-          "focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
-          nivel === "sub"
-            ? "min-h-[34px] pl-[46px] text-sm [@media(max-height:760px)]:min-h-8"
-            : "min-h-10 text-[15px] [@media(max-height:760px)]:min-h-9",
-          /* Mockup: selecionado = fundo branco a 14%, texto branco em negrito e barra amarela de 4 px à esquerda */
-          active
-            ? "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F]"
-            : [
-                "font-semibold hover:bg-white/[0.08] hover:text-white",
-                nivel === "sub" ? "text-[#D6DCE8]" : "text-[#E8ECF4]",
-              ].join(" "),
-        ].join(" ")}
-      >
-        {nivel === "fixo" && <Icon className="size-5 shrink-0" />}
-
-        {!isCollapsed && <span className="min-w-0 flex-1 truncate">{title}</span>}
-
-        <ContadorItem valor={badge} recolhido={isCollapsed} />
-      </Link>
-    );
-  };
-
-
-  /**
-   * Dedupe de itens para
-   * modo colapsado.
-   */
-  const collapsedItems =
-    React.useMemo(() => {
-      const all =
-        visibleGroups.flatMap(
-          (group) =>
-            group.items
-        );
-
-      return all.filter(
-        (item, index) =>
-          all.findIndex(
-            (other) =>
-              other.href ===
-              item.href
-          ) === index
-      );
-    }, [visibleGroups]);
-
-  /* Fora desta linha para cima ficam TODOS os hooks. Os "return" antecipados vêm depois: mudar a ordem dos hooks derruba o app. */
-  /* No celular o menu é a tela "Menu" (MenuCelular); a gaveta lateral não é mais usada. */
-  if (sidebar?.isMobile) return null;
-
-  /**
-   * Enquanto permissões ainda
-   * estão sendo resolvidas.
-   */
-  if (perms == null) {
-    return (
-      <Sidebar
-        collapsible="icon"
-        {...props}
-      >
-        <SidebarHeader>
-          {!isCollapsed && (
-            <div
-              className={[
-                "px-3",
-                isMobile
-                  ? "pt-6"
-                  : "pt-3",
-              ].join(" ")}
-            >
-              <LogoPai className="h-[52px] w-auto" />
-
-              <div className="mt-4 border-t" />
-
-              <div className="mt-4 flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-muted text-sm font-extrabold">
-                  U
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    USUÁRIO
-                  </div>
-
-                  <div className="truncate text-sm font-semibold">
-                    Carregando…
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </SidebarHeader>
-
-        <SidebarContent className="px-2 overflow-hidden">
-          <div className="p-3 text-sm opacity-60">
-            Carregando…
-          </div>
-        </SidebarContent>
-
-        <SidebarFooter />
-      </Sidebar>
-    );
-  }
-
+  /* Não fecha tudo: clicar no grupo aberto mantém aberto. */
+  const toggleGroup = (category: GroupKey) => setOpenGroup(category);
 
   /*
    * ATALHOS: barra personalizada do computador (Personalizar barra).
    * No celular a barra fica embaixo (BarraCelular), então aqui só aparece fora do modo gaveta.
    */
-  const mostrarAtalhos = !sidebar?.isMobile;
+  const mostrarAtalhos = !sidebar?.isMobile && !carregando;
   const atalhos = mostrarAtalhos
     ? barra.computador.itens
-        .filter((a) => (barra.carregada || !a.pagina || has(a.pagina)) && rotaExiste(a.rota))
+        .filter((a) => barra.carregada || !a.pagina || has(a.pagina))
         .map((a) => ({
           title: a.rotulo,
           href: a.rota,
-          Icon: (p: { className?: string }) => (
-            <IconeAtalho id={a.id} className={p.className} />
-          ),
+          Icon: (p: { className?: string }) => <IconeAtalho id={a.id} className={p.className} />,
         }))
     : [];
-  const hrefsAtalhos = new Set(atalhos.map((a) => a.href));
-  const itensRecolhidos = [
-    ...atalhos,
-    ...collapsedItems.filter((item) => !hrefsAtalhos.has(item.href)),
-  ];
 
-  const logoNode = <LogoPai className="h-[52px] w-auto" />;
+  /** Item do menu (ativo = faixa amarela à esquerda). */
+  const MenuItem = ({ title, href, Icon, badge = 0 }: { title: string; href: string; Icon: any; badge?: number }) => {
+    const active = pathname === href;
+    return (
+      <SidebarMenuButton asChild title={title} className={[ITEM_BASE, active ? ITEM_ATIVO : ""].join(" ")}>
+        <Link href={href} aria-current={active ? "page" : undefined} onClick={(event) => handleNavigate(href, event)}>
+          <Icon className="!size-5" />
+          <span className="flex-1 truncate">{title}</span>
+          <ContadorItem valor={badge} recolhido={false} />
+        </Link>
+      </SidebarMenuButton>
+    );
+  };
 
   return (
-    <Sidebar
-      collapsible="icon"
-      {...props}
-    >
-      {/* HEADER: etiqueta branca da logomarca, encostada na borda esquerda (mockup: 196 x 76 px) */}
-      <SidebarHeader>
-        <div className="px-3 pt-3">
-          {!isCollapsed && (
-            <Link
-              href="/"
-              aria-label="PAI - Plano Assistencial Integrado: ir para o Início"
-              onClick={(event) => handleNavigate("/", event)}
-              style={{ backgroundColor: "rgb(255 255 255)" }}
-              className="-ml-7 flex h-[76px] w-[196px] items-center rounded-r-[38px] pl-7"
-            >
-              {logoNode}
-            </Link>
-          )}
-        </div>
+    <Sidebar collapsible="offcanvas" {...props}>
+      {/* LOGO: etiqueta branca encostada na esquerda, como no mockup */}
+      <SidebarHeader className={isMobile ? "pt-6" : "pt-5"}>
+        <Link
+          href="/"
+          onClick={(event) => handleNavigate("/", event)}
+          aria-label="Plano PAI — Início"
+          className="-ml-2 flex h-[68px] w-[188px] shrink-0 items-center rounded-r-[34px] bg-white pl-6"
+        >
+          <img src="/logo-pai-horizontal.svg" alt="Plano PAI" className="h-10 w-auto" />
+        </Link>
       </SidebarHeader>
 
-      {/* sem overflow-hidden: com 8 módulos + Atalhos a lista passa da altura da tela e precisa rolar (o último módulo, Gestão, ficava cortado) */}
-      <SidebarContent
-        className={[
-          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2",
-          /* Windows: barra fina e invisível; aparece, translúcida, quando o mouse passa na barra. Mac: segue a rolagem nativa (aparece só ao rolar). */
-          "[scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:rgba(255,255,255,0.28)_transparent]",
-          "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-white/25",
-        ].join(" ")}
-      >
-        {isCollapsed ? (
-          /*
-           * COLAPSADO:
-           * lista única de ícones.
-           */
-          <div className="space-y-2 pt-2">
-            <SidebarMenu className="space-y-1">
-              {itensRecolhidos.map(
-                (item) => (
-                  <SidebarMenuItem
-                    key={
-                      item.href
-                    }
-                  >
-                    <MenuItem
-                      title={
-                        item.title
-                      }
-                      href={
-                        item.href
-                      }
-                      Icon={
-                        item.Icon
-                      }
-                      badge={contadorDe(item.href)}
-                    />
-                  </SidebarMenuItem>
-                )
-              )}
-            </SidebarMenu>
-          </div>
+      {/* Rolagem discreta (fina) quando o menu não cabe na tela */}
+      <SidebarContent className="pai-menu-rolagem overflow-y-auto px-2">
+        {carregando ? (
+          <div className="p-3 text-sm text-[#AEB9CF]">Carregando…</div>
         ) : (
-          /*
-           * ABERTO (mockup): atalhos fixos, rótulo MÓDULOS e um módulo aberto por vez.
-           * Tocar no módulo aberto RECOLHE.
-           */
-          <div className="mt-3 flex flex-col gap-0.5">
+          <div className={isMobile ? "space-y-3 pt-3" : "space-y-2 pt-2"}>
             {atalhos.length > 0 && (
-              <SidebarMenu className="gap-0.5">
-                {atalhos.map((item) => (
-                  <SidebarMenuItem key={`atalho-${item.href}`}>
-                    <MenuItem
-                      title={item.title}
-                      href={item.href}
-                      Icon={item.Icon}
-                      badge={contadorDe(item.href)}
-                    />
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            )}
-
-            {visibleGroups.length > 0 && (
-              <div className="px-3 pb-1.5 pt-[18px] text-[11px] font-extrabold tracking-[0.12em] text-[#AEB9CF]">
-                MÓDULOS
+              <div>
+                <div className="flex w-full items-center px-3 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">
+                  Atalhos
+                </div>
+                <SidebarMenu className="space-y-0.5">
+                  {atalhos.map((item) => (
+                    <SidebarMenuItem key={`atalho-${item.href}`}>
+                      <MenuItem title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+                <div className="mx-3 mt-2 border-t border-white/[0.18]" />
               </div>
             )}
 
             {visibleGroups.map((group) => {
               const opened = openGroup === group.category;
-              const GIcon = group.hub.Icon;
-
               return (
                 <div key={group.category}>
                   <button
-                    type="button"
                     onClick={() => toggleGroup(group.category)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF] hover:text-white"
+                    type="button"
                     aria-expanded={opened}
-                    className={[
-                      "flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-[15px] outline-none transition-colors [@media(max-height:760px)]:min-h-9",
-                      "hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
-                      opened ? "font-extrabold text-white" : "font-semibold text-[#E8ECF4]",
-                    ].join(" ")}
                   >
-                    <GIcon className="size-5 shrink-0" />
-                    <span className="flex-1">{group.category}</span>
-                    {opened ? (
-                      <IconChevronDown size={16} className="shrink-0" />
-                    ) : (
-                      <IconChevronRight size={16} className="shrink-0" />
-                    )}
+                    <span>{group.category}</span>
+                    <IconChevronDown size={16} className={`transition ${opened ? "rotate-180" : ""}`} />
                   </button>
 
                   {opened && (
-                    <SidebarMenu className="mt-0.5 gap-0.5">
-                      <SidebarMenuItem>
-                        <MenuItem nivel="sub" title="Visão geral" href={group.hub.href} Icon={GIcon} />
-                      </SidebarMenuItem>
-
-                      {group.items.map((item, posicao) => (
-                        <React.Fragment key={item.href}>
-                          {item.secao && item.secao !== group.items[posicao - 1]?.secao ? (
-                            <li className="pb-0.5 pl-[46px] pt-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">
-                              {item.secao}
-                            </li>
-                          ) : null}
-                          <SidebarMenuItem>
-                            <MenuItem
-                              nivel="sub"
-                              title={item.title}
-                              href={item.href}
-                              Icon={item.Icon}
-                              badge={contadorDe(item.href)}
-                            />
-                          </SidebarMenuItem>
-                        </React.Fragment>
+                    <SidebarMenu className="space-y-0.5">
+                      {group.items.map((item) => (
+                        <SidebarMenuItem key={item.href}>
+                          <MenuItem title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
+                        </SidebarMenuItem>
                       ))}
                     </SidebarMenu>
                   )}
@@ -747,60 +376,42 @@ export function AppSidebar(
         )}
       </SidebarContent>
 
-      {/* FOOTER FIXO, compacto: usuário em uma linha e as três ações lado a lado (sobra mais espaço para os módulos) */}
-      <SidebarFooter className="px-2 pb-3 pt-0">
-        <div className="mt-1 border-t border-white/[0.18] pt-2">
-          <div className="flex items-center gap-2.5 px-2 pb-1.5">
+      {/* RODAPÉ FIXO: usuário, Personalizar barra, Ajuda e Sair da conta */}
+      <SidebarFooter>
+        <div className="border-t border-white/[0.18] px-2 pb-4 pt-2.5">
+          <div className="flex items-center gap-3 px-3 py-1.5">
             <div
-              className="grid size-8 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-sm font-extrabold text-[#313C55]"
-              aria-label="Avatar do usuário"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#00AEEC] text-[15px] font-extrabold text-[#313C55]"
+              aria-hidden="true"
             >
-              {userInitials}
+              {carregando ? "U" : userInitials}
             </div>
-            <div className="min-w-0 leading-tight">
-              <div className="text-[10px] font-extrabold tracking-[0.12em] text-[#AEB9CF]">{badgeText}</div>
-              <div className="truncate text-sm font-extrabold text-white">{displayName}</div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">Usuário</div>
+              <div className="truncate text-[15px] font-extrabold text-white">{carregando ? "Carregando…" : displayName}</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1">
-            {[
-              { href: "/personalizar-barra", rotulo: "Personalizar barra", curto: "Personalizar", Icon: IconAdjustmentsHorizontal },
-              { href: "/help", rotulo: "Ajuda", curto: "Ajuda", Icon: IconHelp },
-            ].map(({ href, rotulo, curto, Icon }) => {
-              const ativo = pathname === href;
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  title={rotulo}
-                  aria-label={rotulo}
-                  aria-current={ativo ? "page" : undefined}
-                  onClick={(event) => handleNavigate(href, event)}
-                  className={[
-                    "flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-semibold leading-tight outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#F2CB3F]",
-                    ativo ? "bg-white/[0.14] text-white shadow-[inset_0_-3px_0_#F2CB3F]" : "text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white",
-                  ].join(" ")}
-                >
-                  <Icon className="size-5" />
-                  <span className="max-w-full truncate">{curto}</span>
-                </Link>
-              );
-            })}
-
-            <button
-              type="button"
-              title={isLoggingOut ? "Saindo..." : "Sair da conta"}
-              aria-label={isLoggingOut ? "Saindo..." : "Sair da conta"}
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-              aria-busy={isLoggingOut}
-              className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-semibold leading-tight text-white outline-none transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-[#F2CB3F] disabled:opacity-60"
-            >
-              <IconLogout className="size-5" />
-              <span>{isLoggingOut ? "Saindo..." : "Sair"}</span>
-            </button>
-          </div>
+          <SidebarMenu className="mt-1 space-y-0.5">
+            <SidebarMenuItem>
+              <MenuItem title="Personalizar barra" href="/personalizar-barra" Icon={IconAdjustmentsHorizontal} />
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <MenuItem title="Ajuda" href="/help" Icon={IconHelp} />
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                title={isLoggingOut ? "Saindo..." : "Sair da conta"}
+                className={ITEM_BASE}
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                aria-busy={isLoggingOut}
+              >
+                <IconLogout className="!size-5" />
+                <span>{isLoggingOut ? "Saindo..." : "Sair da conta"}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </div>
       </SidebarFooter>
     </Sidebar>

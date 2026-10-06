@@ -7,7 +7,6 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header"; // remova se não usar
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import BarraCelular from "@/components/barra/BarraCelular";
-import MenuCelularHost from "@/components/shell/MenuCelular";
 
 type Props = {
     children: React.ReactNode;
@@ -35,14 +34,14 @@ export default function AppShell({
 
     return (
         <SidebarProvider
-            /* Barra lateral FIXA no computador (mockup): sempre aberta, sem recolher. `open` controlado e sem onOpenChange
-               ignora o botão e o atalho Ctrl+B. No celular o menu é o Menu do mockup (MenuCelular), não esta barra. */
+            /* Menu lateral fixo no computador (não recolhe). No celular/tablet (< 1024 px) ele vira gaveta, aberta pelo Menu da barra de baixo. */
             open
-            /* cabeçalho do mockup: 60 px no celular, 72 px no computador */
-            className="[--header-height:3.75rem] md:[--header-height:4.5rem]"
+            onOpenChange={() => undefined}
             style={
                 {
-                    "--sidebar-width": "17rem", // 272 px, a largura do mockup
+                    // ajuste livre
+                    "--sidebar-width": "calc(var(--spacing) * 72)",
+                    "--header-height": "calc(var(--spacing) * 12)",
                 } as React.CSSProperties
             }
         >
@@ -53,8 +52,6 @@ export default function AppShell({
                 <div className="flex flex-1 flex-col">{children}</div>
                 {/* Barra de baixo do celular (5 atalhos + Menu); some no computador */}
                 <BarraCelular />
-                {/* Menu do celular (como no mockup); abre pela barra de baixo e pelo botão do cabeçalho */}
-                <MenuCelularHost />
             </SidebarInset>
         </SidebarProvider>
     );

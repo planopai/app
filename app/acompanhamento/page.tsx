@@ -4240,6 +4240,7 @@ export default function AcompanhamentoPage() {
         osProcedimentoSlot={renderOs("procedimento")}
         osTransladoSlot={renderOs("translado")}
         osCoroaSlot={renderOs("coroa")}
+        osLateralSlot={renderOs("lateral")}
         wizardData={wizardData}
         setWizardData={setWizardData}
         obrigatorios={obrigatoriosForTipo}

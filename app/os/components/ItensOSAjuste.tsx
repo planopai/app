@@ -127,6 +127,8 @@ export default function ItensOSAjuste({
     versao = 0,
     onMudou,
     mostrarTitulo = false,
+    semTabela = false,
+    pedido = null,
 }: {
     osId: number | string;
     /** OS Particular ABERTA: mostra o ícone de ajuste e o desconto geral. */
@@ -135,6 +137,10 @@ export default function ItensOSAjuste({
     /** Chamado depois de cada ajuste gravado (para a tela recarregar totais). */
     onMudou?: (d: Dados) => void;
     mostrarTitulo?: boolean;
+    /** Só as janelas de ajuste (a tabela é a própria folha da OS, com os ícones; ver "Ver OS"). */
+    semTabela?: boolean;
+    /** Pedido vindo da folha: "item:<id>" ou "geral". n muda a cada clique (abre de novo o mesmo item). */
+    pedido?: { alvo: string; n: number } | null;
 }) {
     const [d, setD] = useState<Dados | null>(null);
     const [erro, setErro] = useState("");
@@ -184,6 +190,19 @@ export default function ItensOSAjuste({
         setErroJanela("");
         setGeral(true);
     };
+
+    // Clique no ícone da folha (janela "Ver OS") abre a janela certa
+    useEffect(() => {
+        if (!pedido || !d) return;
+        if (pedido.alvo === "geral") {
+            abrirGeral();
+            return;
+        }
+        const id = Number(String(pedido.alvo).replace("item:", ""));
+        const it = d.itens.find((x) => x.id === id && !x.referencia_apenas);
+        if (it) abrirItem(it);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pedido?.n, d]);
 
     const gravar = async (fn: () => Promise<void>, fechar: () => void) => {
         if (salvando) return;
@@ -241,10 +260,12 @@ export default function ItensOSAjuste({
         );
 
     if (erro) return <p className="rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</p>;
-    if (!d || !res) return <p className="py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando os itens…</p>;
+    if (!d || !res) return semTabela ? null : <p className="py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando os itens…</p>;
 
     return (
         <div>
+            {semTabela ? null : (
+            <>
             {mostrarTitulo ? <h4 className="mb-2 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Itens</h4> : null}
             {!d.colunas_desconto && editavel ? (
                 <p className="mb-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-xs font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
@@ -350,6 +371,9 @@ export default function ItensOSAjuste({
                     </div>
                 </div>
             ) : null}
+
+            </>
+            )}
 
             {item && pItem ? (
                 <Janela titulo="Valor e desconto do item" onFechar={() => !salvando && setItem(null)}>

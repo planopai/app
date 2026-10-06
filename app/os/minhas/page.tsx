@@ -59,8 +59,15 @@ export default function MinhasOSPage() {
     const [erro, setErro] = useState("");
     const [loading, setLoading] = useState(true);
     const [aberta, setAberta] = useState<number | null>(null);
+    /* Janela "Ver OS" do Editar registro: /os/minhas?atendimento=<id> mostra só as OS daquele atendimento. */
+    const [atendimentoDaUrl, setAtendimentoDaUrl] = useState<string | null>(null);
+    useEffect(() => {
+        const a = new URLSearchParams(window.location.search).get("atendimento");
+        if (a && /^\d+$/.test(a)) setAtendimentoDaUrl(a);
+    }, []);
 
     const carregar = useCallback(async () => {
+        if (new URLSearchParams(window.location.search).get("atendimento")) return;   // janela do atendimento não carrega a lista
         setLoading(true);
         setErro("");
         try {
@@ -74,6 +81,7 @@ export default function MinhasOSPage() {
     useEffect(() => { void carregar(); }, [carregar]);
 
     const lista: any[] = dados?.os || [];
+    if (atendimentoDaUrl) return <OSDoAtendimento atendimentoId={atendimentoDaUrl} />;
     const emAberto = lista.filter((l) => l.status === "ABERTA").length;
     const assinadas = lista.filter((l) => l.status === "FECHADA");
 
@@ -138,6 +146,141 @@ export default function MinhasOSPage() {
             </div>
 
             {aberta && <OSAgente osId={aberta} onFechar={() => { setAberta(null); void carregar(); }} />}
+        </main>
+    );
+}
+
+
+/* ====================================================================== */
+/* OS do atendimento (janela "Ver OS" do Editar registro): as folhas das duas OS, com ajuste de valor e desconto pelo ícone
+   da própria folha, confirmação e assinatura ali mesmo, sem ir para a lista de Minhas OS. Aberta por /os/minhas?atendimento=<id>. */
+
+const ORIGEM_API = new URL(API_BASE).origin;
+
+function FolhaOS({ os, versao, onAjuste }: { os: any; versao: number; onAjuste: (alvo: string) => void }) {
+    const ref = useRef<HTMLIFrameElement>(null);
+    const [altura, setAltura] = useState(1100);
+    useEffect(() => {
+        const ouvir = (e: MessageEvent) => {
+            if (e.origin !== ORIGEM_API || e.source !== ref.current?.contentWindow) return;
+            const d = e.data || {};
+            if (d.pai === "os-altura" && Number(d.altura) > 200) setAltura(Number(d.altura) + 24);
+            if (d.pai === "os-ajuste" && typeof d.alvo === "string") onAjuste(d.alvo);
+        };
+        window.addEventListener("message", ouvir);
+        return () => window.removeEventListener("message", ouvir);
+    }, [onAjuste]);
+    return (
+        <iframe
+            ref={ref}
+            title={`Folha da OS ${os.numero_os}`}
+            src={`${OS_API}?documento_os=1&os_id=${os.id}&formato=visualizar&ajuste=1&_=${versao}`}
+            style={{ height: altura }}
+            className="w-full rounded-xl border border-[#E1E5EC] bg-white dark:border-white/[0.12]"
+        />
+    );
+}
+
+function CartaoOSAtendimento({ osId, onMudou }: { osId: number; onMudou: () => void }) {
+    const [os, setOs] = useState<any>(null);
+    const [erro, setErro] = useState("");
+    const [msg, setMsg] = useState("");
+    const [salvando, setSalvando] = useState(false);
+    const [assinar, setAssinar] = useState(false);
+    const [versao, setVersao] = useState(0);
+    const [pedido, setPedido] = useState<{ alvo: string; n: number } | null>(null);
+
+    const carregar = useCallback(async () => {
+        try {
+            setOs((await osGet("listar", { os_id: osId })).dados?.os ?? null);
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível abrir a OS.");
+        }
+    }, [osId]);
+    useEffect(() => { void carregar(); }, [carregar]);
+    const atualizar = () => { setVersao((v) => v + 1); void carregar(); onMudou(); };
+
+    const onAjuste = useCallback((alvo: string) => setPedido((p) => ({ alvo, n: (p?.n ?? 0) + 1 })), []);
+
+    if (!os) return erro ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div> : null;
+    const aberta = os.status === "ABERTA";
+    const particular = os.natureza === "PARTICULAR";
+    const confirmada = !!os.confirmada_em;
+    const prefeitura = !particular && String(os.convenio || "").startsWith("PREFEITURA");
+
+    const confirmar = async () => {
+        if (salvando) return;
+        setSalvando(true); setErro(""); setMsg("");
+        try {
+            const r = await osPost("confirmar_os", { os_id: osId });
+            setMsg(r?.msg || "Valores confirmados.");
+            atualizar();
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível confirmar.");
+        } finally {
+            setSalvando(false);
+        }
+    };
+
+    return (
+        <section className="rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/[0.12] dark:bg-[#232B3F]">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1">
+                    <div className="text-lg font-extrabold">OS {os.numero_os}</div>
+                    <div className="mt-0.5">{situacao({ ...os, os_id: os.id })}</div>
+                </div>
+                <a className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/[0.12] dark:bg-[#232B3F]" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=impressao`}>Imprimir</a>
+                {aberta && particular && !confirmada && (
+                    <button type="button" disabled={salvando} onClick={() => void confirmar()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white disabled:opacity-50 dark:bg-[#F2CB3F] dark:text-[#313C55]">Confirmar valores</button>
+                )}
+                {aberta && (!particular || confirmada) && (
+                    <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>
+                )}
+            </div>
+            {aberta && particular && (
+                <div className="mb-3 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
+                    {confirmada ? "Valores confirmados. Qualquer ajuste desfaz a confirmação." : "Ajuste valor e desconto pelo ícone de cada item e do desconto geral; depois confirme os valores e colha a assinatura."}
+                </div>
+            )}
+            {aberta && prefeitura && <div className="mb-3 text-sm text-[#6B7488] dark:text-[#AEB9CF]">OS da Prefeitura: sem valores. O responsável assina como ciência dos serviços.</div>}
+            {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+            {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
+
+            <FolhaOS os={os} versao={versao} onAjuste={onAjuste} />
+
+            {particular && aberta && <ItensOSAjuste osId={osId} editavel semTabela pedido={pedido} versao={versao} onMudou={() => atualizar()} />}
+            {assinar && <AssinaturaModal os={os} particular={particular} onFechar={() => setAssinar(false)} onAssinado={() => { setAssinar(false); setMsg("OS assinada."); atualizar(); }} />}
+        </section>
+    );
+}
+
+function OSDoAtendimento({ atendimentoId }: { atendimentoId: string }) {
+    const [ids, setIds] = useState<number[] | null>(null);
+    const [erro, setErro] = useState("");
+    useEffect(() => {
+        osGet("os_do_atendimento", { atendimento_id: atendimentoId })
+            .then((r) => setIds([r.dados?.os_convenio?.id, r.dados?.os_particular?.id].filter(Boolean).map(Number)))
+            .catch((e) => setErro(e?.message || "Não foi possível carregar as OS do atendimento."));
+    }, [atendimentoId]);
+    const avisarJanelaDeOrigem = () => {
+        try { window.opener?.postMessage({ pai: "os-atualizada", atendimento_id: atendimentoId }, window.location.origin); } catch { /* janela fechada */ }
+    };
+    return (
+        <main className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <div className="mx-auto max-w-4xl">
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Atendimento nº {atendimentoId}</div>
+                        <h1 className="text-2xl font-extrabold">OS do atendimento</h1>
+                    </div>
+                    <button type="button" onClick={() => window.close()} className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/[0.12] dark:bg-[#232B3F]">Fechar janela</button>
+                </div>
+                {erro && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+                {ids && ids.length === 0 && <div className="rounded-xl border border-[#E1E5EC] bg-white p-6 text-center text-sm dark:border-white/[0.12] dark:bg-[#232B3F]">Este atendimento ainda não tem OS. Salve o registro para gerar.</div>}
+                <div className="flex flex-col gap-5">
+                    {(ids || []).map((id) => <CartaoOSAtendimento key={id} osId={id} onMudou={avisarJanelaDeOrigem} />)}
+                </div>
+            </div>
         </main>
     );
 }

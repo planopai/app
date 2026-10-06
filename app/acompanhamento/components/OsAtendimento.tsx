@@ -13,7 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import ItensOSAjuste, { carregarItensOS } from "@/app/os/components/ItensOSAjuste";
+import { carregarItensOS } from "@/app/os/components/ItensOSAjuste";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -347,32 +347,36 @@ function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: 
 }
 
 /* =========================================================================================================
-   Vínculo com o cadastro de Convênios + prévia da OS em tempo real  (os_previa.php)
+   Vínculo com o cadastro de Convênios + prévia da OS em tempo real  (os_principal.php)
    A prévia NÃO grava nada: a OS só entra no banco quando o registro é salvo.
    ========================================================================================================= */
-const PREVIA_API = `${API_BASE}/os_previa.php`;
 
 export type ItemPacoteOpcao = { chave: string; rotulo: string; quantidade: number; tipo: string; produtos: { produto_id: number; nome: string }[]; valor_contrato?: number | null };
 export type PacoteOpcao = { id: number; nome: string; padrao: boolean; itens: ItemPacoteOpcao[]; realiza_velorio: boolean; realiza_sepultamento: boolean };
 /** pacotes = só os pacotes de ATENDIMENTO, na ordem do cadastro. tem_pacote_coroa: Prefeitura com pacote de Produto de coroa. */
 export type ConvenioOpcao = { id: number; nome: string; tipo: TipoCadastro; codigo: string; pacotes: PacoteOpcao[]; aditivos_permitidos: string[]; tem_pacote_coroa?: boolean };
 
+/**
+ * Convênios/pacotes e prévia da OS pelo os_principal.php (convenios_opcoes / previa_os_atendimento), as mesmas regras do
+ * motor que grava a OS. (Antes chamava o os_previa.php, que tinha cópia própria das regras e ficou para trás: mostrava os
+ * pacotes de Produto na escolha do pacote e não fazia a pergunta da coroa.)
+ */
 async function previaChamar(acao: "opcoes" | "previa", corpo?: unknown, signal?: AbortSignal) {
-    const res = await fetch(`${PREVIA_API}?acao=${acao}&_=${Date.now()}`, {
-        method: corpo === undefined ? "GET" : "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: corpo === undefined ? undefined : { "Content-Type": "application/json" },
-        body: corpo === undefined ? undefined : JSON.stringify(corpo),
-        signal,
-    });
+    const res =
+        acao === "opcoes"
+            ? await fetch(`${OS_API}?convenios_opcoes=1&_=${Date.now()}`, { credentials: "include", cache: "no-store", signal })
+            : await fetch(OS_API, {
+                  method: "POST",
+                  credentials: "include",
+                  cache: "no-store",
+                  headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                  body: new URLSearchParams({ previa_os_atendimento: "1", rascunho: JSON.stringify(corpo ?? {}) }),
+                  signal,
+              });
     const json = await res.json().catch(() => null);
     if (res.status === 401 || json?.need_login || json?.code === "NEED_LOGIN") {
         if (typeof window !== "undefined") window.location.href = LOGIN_URL;
         throw new Error("Sessão expirada.");
-    }
-    if (res.status === 404 || (!json && !res.ok)) {
-        throw new Error("Prévia indisponível: o arquivo os_previa.php ainda não está no servidor.");
     }
     if (!res.ok || json?.erro || json?.sucesso === false) throw new Error(json?.msg || `Falha na requisição (${res.status}).`);
     return json.dados ?? json.data;
@@ -635,7 +639,7 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
 type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
 
 /**
- * Cálculo da OS com o que está na tela agora (os_previa.php; nada é gravado).
+ * Cálculo da OS com o que está na tela agora (os_principal.php?previa_os_atendimento; nada é gravado).
  * Alimenta o "Resumo da OS": os valores mudam conforme os itens, o pacote e a autorização são marcados.
  * A OS só é gravada (e o resumo passa a bater com a OS salva) quando o registro é salvo.
  */
@@ -671,13 +675,14 @@ export function usePreviaOS(ativo = true) {
     return { ...s, temBase };
 }
 
-export type ParteOS = "tudo" | "procedimento" | "translado" | "resumo" | "coroa";
+export type ParteOS = "tudo" | "procedimento" | "translado" | "resumo" | "coroa" | "lateral";
 
 /**
  * Seção da OS no "Editar registro". Pode ser desenhada em partes, cada uma no seu lugar do assistente:
  *  - "procedimento": Tipo de procedimento (logo depois de Tanatopraxia, quando Sim) + Reconstituição facial (Sim/Não);
  *  - "translado": item Translado (entre Invol e Velório);
- *  - "resumo": plano do associado, Resumo da OS e Visualização da OS (no fim);
+ *  - "resumo": plano do associado e aviso de colunas faltando (no fim do formulário);
+ *  - "lateral": Resumo da OS (Prefeitura e família) e o botão "Ver OS", na coluna fixa ao lado, abaixo dos Documentos;
  *  - "coroa": "A Prefeitura autorizou a coroa?" (logo abaixo da Coroa de flores; só Prefeitura com pacote de coroa);
  *  - "tudo" (padrão): procedimento, translado e resumo em sequência.
  */
@@ -711,15 +716,17 @@ export function SecaoOSAtendimento({
     const planoDoCadastro = !!valores.convenio_id && valores.convenio_os.startsWith("ASSOCIADO_");
     const mostraProc = parte === "tudo" || parte === "procedimento";
     const mostraTransl = parte === "tudo" || parte === "translado";
-    const mostraResumo = parte === "tudo" || parte === "resumo";
+    const mostraDados = parte === "tudo" || parte === "resumo";
+    /** Resumo da OS e "Ver OS" (coluna lateral). */
+    const mostraResumo = parte === "tudo" || parte === "lateral";
     const negado = pacoteNegado(valores);
 
     const [modelos, setModelos] = useState<{ produto_id: number; nome: string }[]>([]);
     const [modelosErro, setModelosErro] = useState("");
     const [resumo, setResumo] = useState<OsResumo | null>(null);
     const [resumoErro, setResumoErro] = useState("");
-    const [folhaAberta, setFolhaAberta] = useState(false);
-    const [osAba, setOsAba] = useState<number | null>(null);
+    /** Recarrega o resumo quando a janela "Ver OS" avisa que ajustou valores ou colheu assinatura. */
+    const [recarga, setRecarga] = useState(0);
     /** Ajustes já gravados na OS da família (acréscimos − descontos): somados ao valor calculado com a tela. */
     const [ajusteFamilia, setAjusteFamilia] = useState(0);
 
@@ -747,7 +754,23 @@ export function SecaoOSAtendimento({
 
     useEffect(() => {
         void carregarResumo();
-    }, [carregarResumo, versao]);
+    }, [carregarResumo, versao, recarga]);
+
+    /** "Ver OS": as folhas das OS do atendimento numa janela nova, com ajuste de valores e assinatura (Minhas OS). */
+    const abrirJanelaOS = () => {
+        if (atendimentoId == null || atendimentoId === "") return;
+        window.open(`/os/minhas?atendimento=${encodeURIComponent(String(atendimentoId))}`, `pai-os-${atendimentoId}`);
+    };
+    useEffect(() => {
+        if (!mostraResumo) return;
+        const ouvir = (e: MessageEvent) => {
+            if (e.origin === window.location.origin && e.data?.pai === "os-atualizada" && String(e.data?.atendimento_id) === String(atendimentoId)) {
+                setRecarga((n) => n + 1);
+            }
+        };
+        window.addEventListener("message", ouvir);
+        return () => window.removeEventListener("message", ouvir);
+    }, [mostraResumo, atendimentoId]);
 
     const os = [resumo?.os_convenio, resumo?.os_particular].filter(Boolean) as any[];
     const ehPref = tipo === "prefeitura";
@@ -767,7 +790,7 @@ export function SecaoOSAtendimento({
         return () => {
             vivo = false;
         };
-    }, [mostraResumo, osPartId, versao, calcularAjuste]);
+    }, [mostraResumo, osPartId, versao, recarga, calcularAjuste]);
     const opcoes = modelosProcedimento(modelos);
 
     /* Resumo da OS: valores do cálculo com a tela atual; sem cálculo, os valores da OS salva. */
@@ -879,8 +902,8 @@ export function SecaoOSAtendimento({
                 </div>
             ) : null}
 
-            {/* ---------------- PLANO DO ASSOCIADO + RESUMO + VISUALIZAÇÃO ---------------- */}
-            {mostraResumo ? (
+            {/* ---------------- PLANO DO ASSOCIADO + AVISO DE COLUNAS (fim do formulário) ---------------- */}
+            {mostraDados && (tipo === "associado" || colunasFaltando.length > 0) ? (
                 <section aria-label="Dados da OS" className="mt-5 rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] p-3 dark:border-white/[0.12] dark:bg-[#1C2334] sm:p-4">
                     {(tipo === "associado" && !planoDoCadastro) || colunasFaltando.length ? (
                         <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Dados da OS</h3>
@@ -915,9 +938,14 @@ export function SecaoOSAtendimento({
                         </div>
                     ) : null}
 
+                </section>
+            ) : null}
+
+            {/* ---------------- RESUMO DA OS + VER OS (coluna lateral, abaixo dos Documentos) ---------------- */}
+            {mostraResumo && ((atendimentoId != null && atendimentoId !== "") || previa.temBase) ? (
+                <section aria-label="Resumo da OS" className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]">
                     {/* RESUMO DA OS: valores calculados com o que está na tela; a OS é gravada ao salvar o registro */}
-                    {atendimentoId != null && atendimentoId !== "" || previa.temBase ? (
-                        <div className={(tipo === "associado" && !planoDoCadastro) || colunasFaltando.length ? "mt-5" : ""}>
+                        <div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
                                 {previa.carregando ? (
@@ -939,7 +967,7 @@ export function SecaoOSAtendimento({
                             {!temConvenioAgora && familiaAgora == null && os.length === 0 ? (
                                 <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Escolha o convênio e os itens: os valores da OS aparecem aqui.</p>
                             ) : (
-                                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div className="mt-2 grid grid-cols-1 gap-3">
                                     {temConvenioAgora ? (
                                         <CartaoResumo
                                             rotulo={prefAgora ? "Faturar à Prefeitura" : "Coberto pelo plano"}
@@ -959,85 +987,21 @@ export function SecaoOSAtendimento({
                                                 (pendFamilia > 0 ? `+ ${pendFamilia} ${pendFamilia === 1 ? "item" : "itens"} com valor definido ao salvar. ` : "") +
                                                 (familiaDiverge && salvoFamilia != null
                                                     ? `OS salva: ${brl(salvoFamilia)} — salve o registro para atualizar.`
-                                                    : "Confirme os valores e colha a assinatura em Minhas OS.")
+                                                    : "Confira os valores e colha a assinatura em Ver OS.")
                                             }
                                         />
                                     ) : null}
                                 </div>
                             )}
                         </div>
-                    ) : null}
-
-                    {/* VISUALIZAÇÃO DA OS: recolhida; só aparece quando pedida. Na OS da família, ajuste de valor e desconto pelo ícone. */}
                     {os.length ? (
-                        <div className="mt-5">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Visualização da OS</h3>
-                                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                                    {os.length === 1 ? "1 OS" : `${os.length} OS`} · {os.map((o) => o.numero_os).join(" · ")}
-                                </span>
-                                <button
-                                    type="button"
-                                    aria-expanded={folhaAberta}
-                                    onClick={() => setFolhaAberta((v) => !v)}
-                                    className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
-                                >
-                                    {folhaAberta ? "Ocultar OS" : "Ver OS"}
-                                </button>
-                            </div>
-
-                            {folhaAberta ? (() => {
-                                const sel = os.find((o) => o.id === osAba) ?? os[os.length - 1];
-                                const url = `${OS_API}?documento_os=1&os_id=${sel.id}&formato=visualizar&_=${versao}`;
-                                const daFamilia = sel.natureza === "PARTICULAR";
-                                return (
-                                    <div className="mt-2">
-                                        {os.length > 1 ? (
-                                            <div role="tablist" aria-label="OS do atendimento" className="mb-2 flex flex-wrap gap-2">
-                                                {os.map((o) => (
-                                                    <button
-                                                        key={o.id}
-                                                        type="button"
-                                                        role="tab"
-                                                        aria-selected={o.id === sel.id}
-                                                        onClick={() => setOsAba(o.id)}
-                                                        className={[
-                                                            "h-9 rounded-full border-[1.5px] px-4 text-xs font-extrabold",
-                                                            o.id === sel.id
-                                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
-                                                                : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-white",
-                                                        ].join(" ")}
-                                                    >
-                                                        {o.numero_os}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        ) : null}
-                                        <div className={CARTAO}>
-                                            <div className="mb-2 flex items-center gap-2">
-                                                <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">OS nº {sel.numero_os}</span>
-                                                <a href={url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#313C55] underline dark:text-white">
-                                                    Abrir folha
-                                                </a>
-                                            </div>
-                                            {daFamilia ? (
-                                                <ItensOSAjuste
-                                                    osId={sel.id}
-                                                    editavel={sel.status === "ABERTA"}
-                                                    versao={versao}
-                                                    onMudou={(dd) => {
-                                                        calcularAjuste(dd);
-                                                        void carregarResumo();
-                                                    }}
-                                                />
-                                            ) : (
-                                                <iframe title={`Folha da OS ${sel.numero_os}`} src={url} className="h-[420px] w-full rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]" />
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })() : null}
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => abrirJanelaOS()}
+                            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#313C55] text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
+                        >
+                            Ver OS e colher assinatura
+                        </button>
                     ) : null}
                 </section>
             ) : null}

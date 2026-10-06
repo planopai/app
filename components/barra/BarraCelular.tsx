@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Barra de baixo do celular (abaixo de 768 px, onde o menu lateral vira gaveta).
+ * Barra de baixo do celular (abaixo de 1024 px, onde o menu lateral vira gaveta). Vale também com o celular na horizontal.
  * 5 atalhos personalizáveis (barra_atalhos.php, aparelho "celular") + o Menu, sempre por último,
- * que abre o MENU DO CELULAR do mockup (components/shell/MenuCelular.tsx), não a gaveta lateral. Contador de não lidas no atalho do Messenger.
+ * que abre o menu lateral. Contador de não lidas no atalho do Messenger.
  *
  * Fica dentro do AppShell (precisa do SidebarProvider). Ocupa o próprio espaço no fim da página
  * (não cobre o conteúdo) e some:
@@ -11,14 +11,12 @@
  *  - quando a tela pede (evento "pai:ocultar-barra", ex.: conversa aberta no Messenger).
  */
 import React, { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSidebar } from "@/components/ui/sidebar";
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { useContadores } from "@/components/shell/useContadores";
-import { rotaExiste } from "@/components/shell/rotas";
-import { EVENTO_BARRA_ESTADO, abrirMenuCelular, useMenuCelularAberto } from "@/components/shell/MenuCelular";
 import { IconeAtalho, useBarra } from "./atalhos";
 
 export const EVENTO_OCULTAR_BARRA = "pai:ocultar-barra";
@@ -32,13 +30,13 @@ const ROTAS_SEM_BARRA = ["/chat", "/tela", "/quadrotv", "/login"];
 
 export default function BarraCelular() {
     const pathname = usePathname() || "/";
+    const sidebar = useSidebar() as any;
     const { perms, has } = usePerms();
     const barra = useBarra();
     const temMessenger = perms !== null && has("messenger");
     const naoLidas = useNaoLidas(temMessenger);
     const numeros = useContadores(perms, has);
     const [ocultaPelaTela, setOcultaPelaTela] = useState(false);
-    const menuAberto = useMenuCelularAberto();
 
     useEffect(() => {
         const aoPedir = (e: Event) => setOcultaPelaTela(Boolean((e as CustomEvent).detail));
@@ -48,55 +46,9 @@ export default function BarraCelular() {
     }, []);
 
     const semBarraNaRota = ROTAS_SEM_BARRA.some((r) => pathname === r || pathname.startsWith(r + "/"));
-    /* A barra é montada direto no <body> (portal): assim nenhum contêiner da página muda a posição dela
-     * ao rolar. Enquanto existir uma janela aberta (modal), ela sai da frente. */
-    const [montada, setMontada] = useState(false);
-    const [janelaAberta, setJanelaAberta] = useState(false);
-    useEffect(() => setMontada(true), []);
-    useEffect(() => {
-        let quadro = 0;
-        const procurar = () => setJanelaAberta(!!document.querySelector('[data-pai-overlay], .fixed.inset-0[role="dialog"]'));
-        const agendar = () => {
-            if (quadro) return;
-            quadro = window.requestAnimationFrame(() => {
-                quadro = 0;
-                procurar();
-            });
-        };
-        procurar();
-        const obs = new MutationObserver(agendar);
-        obs.observe(document.body, { childList: true, subtree: true });
-        return () => {
-            obs.disconnect();
-            if (quadro) window.cancelAnimationFrame(quadro);
-        };
-    }, []);
-    /* iPhone: depois do teclado/seletor de data a área visível às vezes fica deslocada e deixa um vão embaixo.
-     * Ao sair de um campo, pede ao navegador para recalcular a posição. */
-    useEffect(() => {
-        let t: number | undefined;
-        const aoSair = (e: Event) => {
-            const el = e.target as HTMLElement | null;
-            if (!el || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
-            window.clearTimeout(t);
-            t = window.setTimeout(() => window.scrollTo(window.scrollX, window.scrollY), 120);
-        };
-        document.addEventListener("focusout", aoSair);
-        return () => {
-            window.clearTimeout(t);
-            document.removeEventListener("focusout", aoSair);
-        };
-    }, []);
+    if (perms === null || semBarraNaRota || ocultaPelaTela) return null;
 
-    const barraNaTela = !(perms === null || semBarraNaRota || ocultaPelaTela);
-    useEffect(() => {
-        (window as any).__paiBarraVisivel = barraNaTela;
-        window.dispatchEvent(new CustomEvent(EVENTO_BARRA_ESTADO, { detail: barraNaTela }));
-    }, [barraNaTela]);
-
-    if (!barraNaTela) return null;
-
-    const itens = barra.celular.itens.filter((i) => (barra.carregada || !i.pagina || has(i.pagina)) && rotaExiste(i.rota)).slice(0, 5);
+    const itens = barra.celular.itens.filter((i) => barra.carregada || !i.pagina || has(i.pagina)).slice(0, 5);
     const contMsg = naoLidas.total + naoLidas.fila;
     /* Número no atalho: Messenger (não lidas + fila), Atendimentos (aguardando sua ação), Avisos, Estoque (no mínimo) e Coroas (fila). */
     const numeroDe = (id: string): number => {
@@ -108,49 +60,46 @@ export default function BarraCelular() {
         return 0;
     };
     const ativo = (rota: string) => (rota === "/" ? pathname === "/" : pathname === rota || pathname.startsWith(rota + "/"));
+    const abrirMenu = () => {
+        if (typeof sidebar?.setOpenMobile === "function") sidebar.setOpenMobile(true);
+        else sidebar?.toggleSidebar?.();
+    };
     const classeItem = (on: boolean) =>
         `relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[10.5px] font-bold leading-tight ${on ? "text-primary" : "text-muted-foreground"}`;
-
-    const barraEl = (
-                <nav
-                    aria-label="Atalhos"
-                    data-pai-barra="true"
-                    hidden={janelaAberta}
-                    className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
-                    style={{ transform: "translateZ(0)", WebkitTransform: "translateZ(0)" }}
-                >
-                    <div className="mx-auto flex h-[4.25rem] max-w-xl items-stretch px-1">
-                        {itens.map((i) => {
-                            const on = ativo(i.rota);
-                            return (
-                                <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} className={classeItem(on)}>
-                                    <span className="relative">
-                                        <IconeAtalho id={i.id} className="h-[22px] w-[22px]" />
-                                        {numeroDe(i.id) > 0 && (
-                                            <span className="absolute -right-2.5 -top-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-black text-primary-foreground" aria-label={`${numeroDe(i.id)} pendente(s)`}>
-                                                {numeroDe(i.id) > 99 ? "99+" : numeroDe(i.id)}
-                                            </span>
-                                        )}
-                                    </span>
-                                    <span className="max-w-full truncate">{i.curto}</span>
-                                </Link>
-                            );
-                        })}
-                        <button type="button" onClick={abrirMenuCelular} className={classeItem(menuAberto)} aria-label="Abrir o menu" aria-expanded={menuAberto}>
-                            <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
-                                <path d="M4 12h16M4 6h16M4 18h16" />
-                            </svg>
-                            <span>Menu</span>
-                        </button>
-                    </div>
-                </nav>
-        );
 
     return (
         <>
             {/* reserva o espaço da barra no fim da página */}
-            <div aria-hidden="true" className="h-[calc(4.25rem+env(safe-area-inset-bottom))] md:hidden" />
-{montada ? createPortal(barraEl, document.body) : barraEl}
+            <div aria-hidden="true" className="h-[calc(4.25rem+env(safe-area-inset-bottom))] lg:hidden" />
+            <nav
+                aria-label="Atalhos"
+                className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+            >
+                <div className="mx-auto flex h-[4.25rem] max-w-xl items-stretch px-1">
+                    {itens.map((i) => {
+                        const on = ativo(i.rota);
+                        return (
+                            <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} className={classeItem(on)}>
+                                <span className="relative">
+                                    <IconeAtalho id={i.id} className="h-[22px] w-[22px]" />
+                                    {numeroDe(i.id) > 0 && (
+                                        <span className="absolute -right-2.5 -top-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-black text-primary-foreground" aria-label={`${numeroDe(i.id)} pendente(s)`}>
+                                            {numeroDe(i.id) > 99 ? "99+" : numeroDe(i.id)}
+                                        </span>
+                                    )}
+                                </span>
+                                <span className="max-w-full truncate">{i.curto}</span>
+                            </Link>
+                        );
+                    })}
+                    <button type="button" onClick={abrirMenu} className={classeItem(false)} aria-label="Abrir o menu">
+                        <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+                            <path d="M4 12h16M4 6h16M4 18h16" />
+                        </svg>
+                        <span>Menu</span>
+                    </button>
+                </div>
+            </nav>
         </>
     );
 }

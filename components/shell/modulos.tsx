@@ -4,7 +4,9 @@
  * Estrutura de módulos do app PAI (organograma aprovado).
  *
  * Só agrupa o que já existe: cada item aponta para uma tela e para a chave de página (slug) que já controla o acesso
- * no pai_api.php. Nada aqui altera permissões. slug "*" = todos os usuários (Quadro, Minhas OS, Chat e Avisos).
+ * no pai_api.php. Nada aqui altera permissões. slug "*" = todos os usuários (Início, Quadro, Minhas OS e Chat).
+ * 05/10/2026: Obituário, Memorial, Salas e Segurança saíram do app; Avisos saiu dos fixos (fica no sino e em Comunicação)
+ * e o Messenger entrou nos fixos (só para quem tem a página "messenger").
  *
  * Chaves NOVAS (só das páginas de entrada dos módulos; ver PAGINAS_NOVAS.md): comunicacao, modulo-estoque, financeiro, gestao.
  * Enquanto uma chave nova não estiver no pai_api.php, o módulo continua aparecendo (pelas telas que o usuário já tem)
@@ -12,7 +14,6 @@
  */
 
 import React from "react";
-import { rotaExiste } from "./rotas";
 import {
     IconAlertTriangle,
     IconBell,
@@ -33,8 +34,6 @@ import {
     IconHeartHandshake,
     IconHome,
     IconListDetails,
-    IconLayoutDashboard,
-    IconBuildingWarehouse,
     IconMessageCircle,
     IconMessages,
     IconMicroscope,
@@ -53,7 +52,6 @@ import {
     IconUsersGroup,
 } from "@tabler/icons-react";
 
-import { IconeAurora } from "@/components/shell/IconeAurora";
 export type Icone = React.ElementType<any>;
 
 export type ItemModulo = {
@@ -65,10 +63,6 @@ export type ItemModulo = {
     icone: Icone;
     /** Quando a mesma tela tem duas chaves/rotas (ex.: geral e estoque), a rota segue a chave que o usuário tem. */
     alternativas?: { slug: string; href: string }[];
-    /** Subtítulo que agrupa itens dentro do módulo (ex.: "Indicadores" em Gestão). Itens da mesma seção devem ficar juntos. */
-    secao?: string;
-    /** Endereços reais a tentar, em ordem, se `href` não existir em app/ (ex.: pasta renomeada). */
-    fallbacks?: string[];
     /** Chave do contador (useContadores) mostrado como selo. */
     selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger";
 };
@@ -90,21 +84,21 @@ export const FIXOS: ItemModulo[] = [
     { titulo: "Início", desc: "Resumo do dia", href: "/", slugs: ["*"], icone: IconHome },
     { titulo: "Quadro de Atendimentos", desc: "Andamento em tempo real", href: "/quadro-acompanhamento", slugs: ["*"], icone: IconDeviceDesktopAnalytics },
     { titulo: "Minhas OS", desc: "Ordens que você abriu", href: "/os/minhas", slugs: ["*"], icone: IconFileInvoice },
-    { titulo: "Aurora", desc: "Chat com a assistente de IA", href: "/chat", slugs: ["*"], icone: IconeAurora },
-    { titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["*"], icone: IconBell, selo: "avisos" },
+    { titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
+    { titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
 ];
 
 export const MODULOS: Modulo[] = [
     {
         id: "atendimento",
         titulo: "Atendimento",
-        desc: "Registro, velório e memorial",
+        desc: "Registro, homenagens e coroas",
         icone: IconClipboardList,
         hub: { href: "/servicos-funerarios", slug: "servicos-funerarios" },
         itens: [
             { titulo: "Atendimentos", desc: "Registro e histórico", href: "/acompanhamento", slugs: ["acompanhamento"], icone: IconClipboardList, selo: "aguardando" },
             { titulo: "Homenagens", desc: "Livro de homenagens", href: "/mensagens", slugs: ["mensagens"], icone: IconHeartHandshake },
-            { titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao"], icone: IconEye },
+            { titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao", "avaliacao"], icone: IconEye },
             { titulo: "Coroa de Flores", desc: "Coroas naturais e artificiais", href: "/coroa-de-flores", slugs: ["coroa-de-flores"], icone: IconFlower, selo: "coroas" },
         ],
     },
@@ -117,7 +111,7 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/comunicacao", slug: "comunicacao" },
         itens: [
             { titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
-            { titulo: "Aurora", desc: "Chat com a assistente de IA", href: "/chat", slugs: ["chat"], icone: IconeAurora },
+            { titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
             { titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
     },
@@ -192,21 +186,19 @@ export const MODULOS: Modulo[] = [
     {
         id: "gestao",
         titulo: "Gestão",
-        desc: "Pessoas, segurança e indicadores",
+        desc: "Pessoas, permissões e indicadores",
         icone: IconChartBar,
         hub: { href: "/gestao", slug: "gestao" },
         itens: [
-            { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
-            { titulo: "Dashboard", desc: "Gráficos e tabela do painel", href: "/dashboard", slugs: ["dashboard"], icone: IconLayoutDashboard, secao: "Indicadores" },
-            { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar, secao: "Indicadores" },
-            { titulo: "Painel de gestão do estoque", desc: "Indicadores do estoque", href: "/estoque?aba=gestao", slugs: ["estoque"], icone: IconBuildingWarehouse, secao: "Indicadores" },
-            { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog, secao: "Administração" },
-            { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Administração" },
-            { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Administração" },
-            { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics, secao: "Administração" },
-            { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages, secao: "Administração" },
-            { titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar, secao: "Administração" },
-            { titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain, secao: "Administração" },
+            { titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog },
+            { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock },
+            { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails },
+            { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar },
+            { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages },
+            { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },
+            { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar },
+            { titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar },
+            { titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain },
         ],
     },
 ];
@@ -216,22 +208,17 @@ export { IconAlertTriangle, IconMicroscope };
 
 export type TemAcesso = (slug: string) => boolean;
 
-/** Endereços candidatos do item, na ordem: o escolhido pelas permissões (alternativas) → href → fallbacks. */
-function candidatos(item: ItemModulo, has: TemAcesso): string[] {
-    const alt = item.alternativas?.find((a) => has(a.slug))?.href;
-    return [alt, item.href, ...(item.fallbacks || [])].filter(Boolean) as string[];
-}
-
-/** Item liberado pelas permissões E com tela existente (evita link para 404). */
 export function itemVisivel(item: ItemModulo, has: TemAcesso): boolean {
-    const liberado = item.slugs.includes("*") || item.slugs.some((s) => has(s));
-    return liberado && candidatos(item, has).some(rotaExiste);
+    return item.slugs.includes("*") || item.slugs.some((s) => has(s));
 }
 
-/** Rota do item para este usuário: a primeira candidata que existe (senão, o href do item). */
+/** Rota do item para este usuário (resolve as alternativas, como geral/estoque). */
 export function hrefDoItem(item: ItemModulo, has: TemAcesso): string {
-    const lista = candidatos(item, has);
-    return lista.find(rotaExiste) ?? item.href;
+    if (item.alternativas) {
+        const alt = item.alternativas.find((a) => has(a.slug));
+        if (alt) return alt.href;
+    }
+    return item.href;
 }
 
 export function itensVisiveis(m: Modulo, has: TemAcesso): ItemModulo[] {
@@ -244,9 +231,7 @@ export function moduloVisivel(m: Modulo, has: TemAcesso): boolean {
 
 /** Para onde o clique no módulo leva: a página de entrada, se o usuário a tem; senão a primeira tela liberada. */
 export function destinoDoModulo(m: Modulo, has: TemAcesso): string {
-    /* A página de entrada só lista as telas que o usuário já tem. Por isso NÃO exige a chave própria do módulo
-       (comunicacao, modulo-estoque, financeiro, gestao são novas e ainda não estão liberadas nos cargos). */
-    if (rotaExiste(m.hub.href)) return m.hub.href;
+    if (m.paraTodos || has(m.hub.slug)) return m.hub.href;
     const primeiro = itensVisiveis(m, has)[0];
     return primeiro ? hrefDoItem(primeiro, has) : m.hub.href;
 }

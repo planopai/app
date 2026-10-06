@@ -916,12 +916,15 @@ function PainelEdicao({
     proxima,
     onDocumento,
     onRegistrarAcao,
+    resumoOS,
 }: {
     /** null = novo registro (ainda não existe atendimento: documentos e próxima etapa só depois de salvar). */
     registro: Registro | null;
     proxima: string;
     onDocumento?: (tipo: "recebimento" | "requisicao") => void;
     onRegistrarAcao?: () => void;
+    /** Resumo da OS (Prefeitura e família) e "Ver OS", abaixo dos Documentos. */
+    resumoOS?: React.ReactNode;
 }) {
     const novo = !registro;
     const { servidor, noAparelho } = useSituacaoTermos(registro);
@@ -969,6 +972,8 @@ function PainelEdicao({
                 {novo && <p className="mt-3 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
             </section>
 
+            {resumoOS}
+
             {!novo && proxima !== "—" && (
                 <section className="rounded-[18px] bg-[#313C55] p-5 text-white dark:border dark:border-white/[0.12] dark:bg-[#1C2334]" aria-label="Próxima etapa">
                     <div className="mb-1.5 text-xs font-extrabold uppercase tracking-[0.12em] text-[#B3CE52]">Próxima etapa</div>
@@ -998,6 +1003,7 @@ export default function Wizard({
     osProcedimentoSlot,
     osTransladoSlot,
     osCoroaSlot,
+    osLateralSlot,
     convenioSlot,
     osCampos,
     wizardData,
@@ -1039,6 +1045,8 @@ export default function Wizard({
     osTransladoSlot?: React.ReactNode;
     /** "A Prefeitura autorizou a coroa?" (Prefeitura com pacote de coroa), logo abaixo da Coroa de flores. */
     osCoroaSlot?: React.ReactNode;
+    /** Resumo da OS e "Ver OS", na coluna fixa ao lado, abaixo dos Documentos. */
+    osLateralSlot?: React.ReactNode;
     /** Campo Convênio ligado ao cadastro (convênio, pacote e autorização da Prefeitura). Substitui o seletor simples. */
     convenioSlot?: React.ReactNode;
     /** Campos da OS em edição (convênio, pacote, procedimento, translado...): alimentam a prévia da OS em tempo real. */
@@ -2028,7 +2036,7 @@ export default function Wizard({
             maxWidth={editandoCompleto ? 1140 : 740}
             aside={
                 editandoCompleto ? (
-                    <PainelEdicao registro={registroAtual} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} />
+                    <PainelEdicao registro={registroAtual} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} resumoOS={osLateralSlot} />
                 ) : undefined
             }
             footer={
