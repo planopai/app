@@ -51,7 +51,7 @@ import Visita, {
   type VisitaStatus,
 } from "./components/visita";
 
-import Wizard from "./components/Wizard";
+import Wizard, { type CampoFaltando } from "./components/Wizard";
 import MateriaisModal from "./components/MateriaisModal";
 import ArrumacaoModal from "./components/ArrumacaoModal";
 import AcaoModal, {
@@ -660,6 +660,8 @@ export default function AcompanhamentoPage() {
   const [wizardMsg, setWizardMsg] = useState<{
     text: string;
     ok: boolean;
+    /** Campos obrigatórios que impediram o salvamento (aparecem no rodapé do Wizard, com atalho para a aba). */
+    faltando?: CampoFaltando[];
   } | null>(null);
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
   // ✅ snapshot do registro original (para não revalidar / não reenviar roupa no EDITAR)
@@ -2040,6 +2042,24 @@ export default function AcompanhamentoPage() {
     [registros, iniciarNovoRegistro, tipoAtendimento, carregarCoroasAtendimento],
   );
 
+  /** Nome do campo e a aba onde ele está, para o aviso de campos obrigatórios. */
+  const avisarFaltando = useCallback(
+    (ids: string[]) => {
+      const lista: CampoFaltando[] = ids.map((id) => {
+        const idx = (stepsForTipo as unknown as any[]).findIndex((st: any) => st?.id === id);
+        const aba = idx >= 0 ? wizardStepIndexesForTipo.findIndex((g) => g.includes(idx)) : -1;
+        const rotulo = String((idx >= 0 ? (stepsForTipo as any)[idx]?.label : "") || id).replace(/\s*\*$/, "");
+        return { id, rotulo, aba: aba >= 0 ? aba : null, abaTitulo: aba >= 0 ? String(wizardStepTitlesForTipo[aba] ?? "") : "" };
+      });
+      setWizardMsg({
+        text: "Não foi possível salvar. Preencha: " + lista.map((c) => (c.abaTitulo ? `${c.rotulo} (aba ${c.abaTitulo})` : c.rotulo)).join(", ") + ".",
+        ok: false,
+        faltando: lista,
+      });
+    },
+    [stepsForTipo, wizardStepIndexesForTipo, wizardStepTitlesForTipo],
+  );
+
   const salvarGrupoWizard = useCallback((): Registro | null => {
     const grupo = wizardStepIndexesForTipo[wizardStep];
     const next: any = { ...wizardData };
@@ -2054,6 +2074,7 @@ export default function AcompanhamentoPage() {
 
     const deveValidarCampoObrigatorio = (id: string) =>
       !modalRestrictIdsForSave || modalRestrictIdsForSave.includes(id);
+    const faltandoGrupo: string[] = [];
 
     for (const idx of grupo) {
       const s = (stepsForTipo as any)[idx] as any;
@@ -2086,25 +2107,25 @@ export default function AcompanhamentoPage() {
         v = (el?.value ?? "").trim();
 
         if (deveValidarCampoObrigatorio(s.id) && obrigatoriosForTipo.includes(s.id) && !v) {
-          el?.focus?.();
-          setWizardMsg({
-            text: "Preencha todos campos obrigatórios.",
-            ok: false,
-          });
-          return null;
+          if (!faltandoGrupo.length) el?.focus?.();
+          faltandoGrupo.push(s.id);
+          continue;
         }
       }
 
       // valida obrigatórios também para async
       if (deveValidarCampoObrigatorio(s.id) && obrigatoriosForTipo.includes(s.id) && !v) {
-        setWizardMsg({
-          text: "Preencha todos campos obrigatórios.",
-          ok: false,
-        });
-        return null;
+        faltandoGrupo.push(s.id);
+        continue;
       }
 
       next[s.id] = v;
+    }
+
+    // Todos os obrigatórios vazios da aba de uma vez (o operador vê a lista e não precisa procurar).
+    if (faltandoGrupo.length) {
+      avisarFaltando(faltandoGrupo);
+      return null;
     }
 
     if ((wizardData as any).id != null) next.id = (wizardData as any).id;
@@ -2358,6 +2379,7 @@ export default function AcompanhamentoPage() {
     stepsForTipo,
     obrigatoriosForTipo,
     tipoAtendimento,
+    avisarFaltando,
   ]);
 
   const concluirWizard = useCallback(async (options?: {
@@ -2419,14 +2441,10 @@ export default function AcompanhamentoPage() {
       });
     }
 
-    for (const id of grupoObrigatorios) {
-      if (!dataAtualizada[id] || String(dataAtualizada[id]).trim() === "") {
-        setWizardMsg({
-          text: "Preencha todos campos obrigatórios.",
-          ok: false,
-        });
-        return;
-      }
+    const faltandoTodos = grupoObrigatorios.filter((id) => !dataAtualizada[id] || String(dataAtualizada[id]).trim() === "");
+    if (faltandoTodos.length) {
+      avisarFaltando(faltandoTodos);
+      return;
     }
 
     const obrigatoriedadeAtiva = obrigatoriosForTipo.length > 0;
@@ -4261,6 +4279,8 @@ export default function AcompanhamentoPage() {
         registroEdicao={wizardEditing && wizardIdx != null ? (registros[wizardIdx] ?? null) : null}
         onAbrirDocumento={abrirDocumentoDoWizard}
         onRegistrarAcaoEdicao={registrarAcaoDoWizard}
+        aviso={wizardMsg}
+        onFecharAviso={() => setWizardMsg(null)}
       />
 
       <MateriaisModal

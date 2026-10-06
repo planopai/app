@@ -14,6 +14,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { carregarItensOS } from "@/app/os/components/ItensOSAjuste";
+import OSDoAtendimento from "@/app/os/components/OSDoAtendimento";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -278,14 +279,19 @@ function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatop
     );
 }
 
+/** Cartão compacto do Resumo da OS (coluna lateral): rótulo e número à esquerda, valor à direita, nota curta embaixo. */
 function CartaoResumo({ rotulo, os, texto, valor, tom }: { rotulo: string; os: any; texto?: string; valor?: string; tom: "azul" | "verde" | "amarelo" }) {
     const fundo = tom === "azul" ? "bg-[#E6F7FE] dark:bg-[#00AEEC]/20" : tom === "verde" ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/20" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15";
     return (
-        <div className={["rounded-2xl p-3.5", fundo].join(" ")}>
-            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{rotulo}</div>
-            <div className="text-xs font-bold text-[#313C55] dark:text-white">{os?.numero_os}</div>
-            {valor ? <div className="mt-1 text-2xl font-extrabold text-[#313C55] dark:text-white">{valor}</div> : null}
-            {texto ? <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{texto}</div> : null}
+        <div className={["rounded-xl px-3 py-2", fundo].join(" ")}>
+            <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                    <div className="text-[10px] font-extrabold uppercase leading-tight tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{rotulo}</div>
+                    <div className="text-xs font-bold leading-tight text-[#313C55] dark:text-white">{os?.numero_os}</div>
+                </div>
+                {valor ? <div className="whitespace-nowrap text-lg font-extrabold leading-tight text-[#313C55] dark:text-white">{valor}</div> : null}
+            </div>
+            {texto ? <div className="mt-0.5 text-[11px] leading-snug text-[#5B6478] dark:text-[#AEB9CF]">{texto}</div> : null}
         </div>
     );
 }
@@ -756,10 +762,11 @@ export function SecaoOSAtendimento({
         void carregarResumo();
     }, [carregarResumo, versao, recarga]);
 
-    /** "Ver OS": as folhas das OS do atendimento numa janela nova, com ajuste de valores e assinatura (Minhas OS). */
+    /** "Ver OS": as folhas das OS do atendimento por cima desta tela, com ajuste de valores, confirmação e assinatura. */
+    const [verOS, setVerOS] = useState(false);
     const abrirJanelaOS = () => {
         if (atendimentoId == null || atendimentoId === "") return;
-        window.open(`/os/minhas?atendimento=${encodeURIComponent(String(atendimentoId))}`, `pai-os-${atendimentoId}`);
+        setVerOS(true);
     };
     useEffect(() => {
         if (!mostraResumo) return;
@@ -943,11 +950,11 @@ export function SecaoOSAtendimento({
 
             {/* ---------------- RESUMO DA OS + VER OS (coluna lateral, abaixo dos Documentos) ---------------- */}
             {mostraResumo && ((atendimentoId != null && atendimentoId !== "") || previa.temBase) ? (
-                <section aria-label="Resumo da OS" className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]">
+                <section aria-label="Resumo da OS" className="rounded-[18px] border border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F]">
                     {/* RESUMO DA OS: valores calculados com o que está na tela; a OS é gravada ao salvar o registro */}
                         <div>
                             <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
+                                <h3 className="flex-1 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
                                 {previa.carregando ? (
                                     <span className="text-[11px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">atualizando…</span>
                                 ) : pendenteDeSalvar ? (
@@ -967,14 +974,14 @@ export function SecaoOSAtendimento({
                             {!temConvenioAgora && familiaAgora == null && os.length === 0 ? (
                                 <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Escolha o convênio e os itens: os valores da OS aparecem aqui.</p>
                             ) : (
-                                <div className="mt-2 grid grid-cols-1 gap-3">
+                                <div className="mt-2 grid grid-cols-1 gap-1.5">
                                     {temConvenioAgora ? (
                                         <CartaoResumo
                                             rotulo={prefAgora ? "Faturar à Prefeitura" : "Coberto pelo plano"}
                                             os={resumo?.os_convenio ?? { numero_os: "Nova OS ao salvar" }}
                                             tom={prefAgora ? "azul" : "verde"}
-                                            valor={prefAgora ? undefined : "Total a pagar R$ 0,00"}
-                                            texto={prefAgora ? "O valor do contrato fica no financeiro." : undefined}
+                                            valor={prefAgora ? undefined : brl(0)}
+                                            texto={prefAgora ? "O valor do contrato fica no financeiro." : "Total a pagar pela família."}
                                         />
                                     ) : null}
                                     {familiaMostrar != null ? (
@@ -987,7 +994,7 @@ export function SecaoOSAtendimento({
                                                 (pendFamilia > 0 ? `+ ${pendFamilia} ${pendFamilia === 1 ? "item" : "itens"} com valor definido ao salvar. ` : "") +
                                                 (familiaDiverge && salvoFamilia != null
                                                     ? `OS salva: ${brl(salvoFamilia)} — salve o registro para atualizar.`
-                                                    : "Confira os valores e colha a assinatura em Ver OS.")
+                                                    : "Confira e colha a assinatura em Ver OS.")
                                             }
                                         />
                                     ) : null}
@@ -998,10 +1005,13 @@ export function SecaoOSAtendimento({
                         <button
                             type="button"
                             onClick={() => abrirJanelaOS()}
-                            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#313C55] text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
+                            className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#313C55] text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
                         >
                             Ver OS e colher assinatura
                         </button>
+                    ) : null}
+                    {verOS && atendimentoId != null && atendimentoId !== "" ? (
+                        <OSDoAtendimento sobreposto atendimentoId={atendimentoId} onFechar={() => setVerOS(false)} onMudou={() => setRecarga((n) => n + 1)} />
                     ) : null}
                 </section>
             ) : null}

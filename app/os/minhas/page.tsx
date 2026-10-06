@@ -1,16 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import ItensOSAjuste from "../components/ItensOSAjuste";
+import OSDoAtendimento, { AssinaturaModal } from "../components/OSDoAtendimento";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
 const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
-/**
- * AJUSTAR: endpoint de upload de assinatura que o app já usa na Despedida (fase08).
- * Recebe POST multipart com o campo "arquivo" (PNG) e deve devolver o caminho salvo, ex.: { url: "/uploads/assinaturas/xxx.png" }.
- */
-const UPLOAD_ASSINATURA_API = `${API_BASE}/upload_assinatura.php`;
 
 async function apiJson(url: string, init?: RequestInit) {
     const res = await fetch(url, { credentials: "include", cache: "no-store", ...init });
@@ -36,10 +32,8 @@ function osPost(acao: string, params: Record<string, any> = {}) {
 }
 
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const inputCls = "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC]";
-const FORMAS = ["PIX", "DINHEIRO", "CARTAO_DEBITO", "CARTAO_CREDITO", "TRANSFERENCIA", "CHEQUE", "BOLETO", "OUTRO"];
 
 function Tag({ children, bg = "#EEF1F5" }: { children: React.ReactNode; bg?: string }) {
     return <span className="inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-extrabold text-[#313C55]" style={{ background: bg }}>{children}</span>;
@@ -81,7 +75,12 @@ export default function MinhasOSPage() {
     useEffect(() => { void carregar(); }, [carregar]);
 
     const lista: any[] = dados?.os || [];
-    if (atendimentoDaUrl) return <OSDoAtendimento atendimentoId={atendimentoDaUrl} />;
+    if (atendimentoDaUrl) {
+        const avisarJanelaDeOrigem = () => {
+            try { window.opener?.postMessage({ pai: "os-atualizada", atendimento_id: atendimentoDaUrl }, window.location.origin); } catch { /* janela fechada */ }
+        };
+        return <OSDoAtendimento atendimentoId={atendimentoDaUrl} onFechar={() => window.close()} onMudou={avisarJanelaDeOrigem} />;
+    }
     const emAberto = lista.filter((l) => l.status === "ABERTA").length;
     const assinadas = lista.filter((l) => l.status === "FECHADA");
 
@@ -150,140 +149,6 @@ export default function MinhasOSPage() {
     );
 }
 
-
-/* ====================================================================== */
-/* OS do atendimento (janela "Ver OS" do Editar registro): as folhas das duas OS, com ajuste de valor e desconto pelo ícone
-   da própria folha, confirmação e assinatura ali mesmo, sem ir para a lista de Minhas OS. Aberta por /os/minhas?atendimento=<id>. */
-
-const ORIGEM_API = new URL(API_BASE).origin;
-
-function FolhaOS({ os, versao, onAjuste }: { os: any; versao: number; onAjuste: (alvo: string) => void }) {
-    const ref = useRef<HTMLIFrameElement>(null);
-    const [altura, setAltura] = useState(1100);
-    useEffect(() => {
-        const ouvir = (e: MessageEvent) => {
-            if (e.origin !== ORIGEM_API || e.source !== ref.current?.contentWindow) return;
-            const d = e.data || {};
-            if (d.pai === "os-altura" && Number(d.altura) > 200) setAltura(Number(d.altura) + 24);
-            if (d.pai === "os-ajuste" && typeof d.alvo === "string") onAjuste(d.alvo);
-        };
-        window.addEventListener("message", ouvir);
-        return () => window.removeEventListener("message", ouvir);
-    }, [onAjuste]);
-    return (
-        <iframe
-            ref={ref}
-            title={`Folha da OS ${os.numero_os}`}
-            src={`${OS_API}?documento_os=1&os_id=${os.id}&formato=visualizar&ajuste=1&_=${versao}`}
-            style={{ height: altura }}
-            className="w-full rounded-xl border border-[#E1E5EC] bg-white dark:border-white/[0.12]"
-        />
-    );
-}
-
-function CartaoOSAtendimento({ osId, onMudou }: { osId: number; onMudou: () => void }) {
-    const [os, setOs] = useState<any>(null);
-    const [erro, setErro] = useState("");
-    const [msg, setMsg] = useState("");
-    const [salvando, setSalvando] = useState(false);
-    const [assinar, setAssinar] = useState(false);
-    const [versao, setVersao] = useState(0);
-    const [pedido, setPedido] = useState<{ alvo: string; n: number } | null>(null);
-
-    const carregar = useCallback(async () => {
-        try {
-            setOs((await osGet("listar", { os_id: osId })).dados?.os ?? null);
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível abrir a OS.");
-        }
-    }, [osId]);
-    useEffect(() => { void carregar(); }, [carregar]);
-    const atualizar = () => { setVersao((v) => v + 1); void carregar(); onMudou(); };
-
-    const onAjuste = useCallback((alvo: string) => setPedido((p) => ({ alvo, n: (p?.n ?? 0) + 1 })), []);
-
-    if (!os) return erro ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div> : null;
-    const aberta = os.status === "ABERTA";
-    const particular = os.natureza === "PARTICULAR";
-    const confirmada = !!os.confirmada_em;
-    const prefeitura = !particular && String(os.convenio || "").startsWith("PREFEITURA");
-
-    const confirmar = async () => {
-        if (salvando) return;
-        setSalvando(true); setErro(""); setMsg("");
-        try {
-            const r = await osPost("confirmar_os", { os_id: osId });
-            setMsg(r?.msg || "Valores confirmados.");
-            atualizar();
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível confirmar.");
-        } finally {
-            setSalvando(false);
-        }
-    };
-
-    return (
-        <section className="rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/[0.12] dark:bg-[#232B3F]">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-                <div className="min-w-0 flex-1">
-                    <div className="text-lg font-extrabold">OS {os.numero_os}</div>
-                    <div className="mt-0.5">{situacao({ ...os, os_id: os.id })}</div>
-                </div>
-                <a className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/[0.12] dark:bg-[#232B3F]" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=impressao`}>Imprimir</a>
-                {aberta && particular && !confirmada && (
-                    <button type="button" disabled={salvando} onClick={() => void confirmar()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white disabled:opacity-50 dark:bg-[#F2CB3F] dark:text-[#313C55]">Confirmar valores</button>
-                )}
-                {aberta && (!particular || confirmada) && (
-                    <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>
-                )}
-            </div>
-            {aberta && particular && (
-                <div className="mb-3 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
-                    {confirmada ? "Valores confirmados. Qualquer ajuste desfaz a confirmação." : "Ajuste valor e desconto pelo ícone de cada item e do desconto geral; depois confirme os valores e colha a assinatura."}
-                </div>
-            )}
-            {aberta && prefeitura && <div className="mb-3 text-sm text-[#6B7488] dark:text-[#AEB9CF]">OS da Prefeitura: sem valores. O responsável assina como ciência dos serviços.</div>}
-            {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
-            {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
-
-            <FolhaOS os={os} versao={versao} onAjuste={onAjuste} />
-
-            {particular && aberta && <ItensOSAjuste osId={osId} editavel semTabela pedido={pedido} versao={versao} onMudou={() => atualizar()} />}
-            {assinar && <AssinaturaModal os={os} particular={particular} onFechar={() => setAssinar(false)} onAssinado={() => { setAssinar(false); setMsg("OS assinada."); atualizar(); }} />}
-        </section>
-    );
-}
-
-function OSDoAtendimento({ atendimentoId }: { atendimentoId: string }) {
-    const [ids, setIds] = useState<number[] | null>(null);
-    const [erro, setErro] = useState("");
-    useEffect(() => {
-        osGet("os_do_atendimento", { atendimento_id: atendimentoId })
-            .then((r) => setIds([r.dados?.os_convenio?.id, r.dados?.os_particular?.id].filter(Boolean).map(Number)))
-            .catch((e) => setErro(e?.message || "Não foi possível carregar as OS do atendimento."));
-    }, [atendimentoId]);
-    const avisarJanelaDeOrigem = () => {
-        try { window.opener?.postMessage({ pai: "os-atualizada", atendimento_id: atendimentoId }, window.location.origin); } catch { /* janela fechada */ }
-    };
-    return (
-        <main className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
-            <div className="mx-auto max-w-4xl">
-                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Atendimento nº {atendimentoId}</div>
-                        <h1 className="text-2xl font-extrabold">OS do atendimento</h1>
-                    </div>
-                    <button type="button" onClick={() => window.close()} className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/[0.12] dark:bg-[#232B3F]">Fechar janela</button>
-                </div>
-                {erro && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
-                {ids && ids.length === 0 && <div className="rounded-xl border border-[#E1E5EC] bg-white p-6 text-center text-sm dark:border-white/[0.12] dark:bg-[#232B3F]">Este atendimento ainda não tem OS. Salve o registro para gerar.</div>}
-                <div className="flex flex-col gap-5">
-                    {(ids || []).map((id) => <CartaoOSAtendimento key={id} osId={id} onMudou={avisarJanelaDeOrigem} />)}
-                </div>
-            </div>
-        </main>
-    );
-}
 
 /* ====================================================================== */
 /* OS do agente: itens (valor e desconto), confirmação e assinatura com pagamento no ato */
@@ -369,100 +234,6 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
                 )}
 
                 {assinar && os && <AssinaturaModal os={os} particular={particular} onFechar={() => setAssinar(false)} onAssinado={() => { setAssinar(false); setMsg("OS assinada."); void carregar(); }} />}
-            </div>
-        </div>
-    );
-}
-
-function AssinaturaModal({ os, particular, onFechar, onAssinado }: { os: any; particular: boolean; onFechar: () => void; onAssinado: () => void }) {
-    const canvas = useRef<HTMLCanvasElement>(null);
-    const desenhando = useRef(false);
-    const [temTraco, setTemTraco] = useState(false);
-    const [f, setF] = useState({ nome: "", cpf: "", pago: "", forma: "PIX" });
-    const [erro, setErro] = useState("");
-    const [salvando, setSalvando] = useState(false);
-
-    const total = Number(os.valor_total) || 0;
-    const saldo = Math.max(0, total - num(f.pago));
-
-    const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        return [((e.clientX - r.left) * e.currentTarget.width) / r.width, ((e.clientY - r.top) * e.currentTarget.height) / r.height];
-    };
-    const inicio = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        const ctx = canvas.current!.getContext("2d")!;
-        ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.strokeStyle = "#313C55";
-        const [x, y] = pos(e);
-        ctx.beginPath(); ctx.moveTo(x, y);
-        desenhando.current = true;
-    };
-    const move = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!desenhando.current) return;
-        const ctx = canvas.current!.getContext("2d")!;
-        const [x, y] = pos(e);
-        ctx.lineTo(x, y); ctx.stroke();
-        setTemTraco(true);
-    };
-    const limpar = () => { canvas.current!.getContext("2d")!.clearRect(0, 0, 600, 180); setTemTraco(false); };
-
-    const enviar = async () => {
-        if (salvando) return;
-        setSalvando(true);
-        setErro("");
-        try {
-            const blob: Blob = await new Promise((ok) => canvas.current!.toBlob((b) => ok(b!), "image/png"));
-            const fd = new FormData();
-            fd.append("arquivo", blob, `assinatura_os_${os.id}.png`);
-            const up = await apiJson(UPLOAD_ASSINATURA_API, { method: "POST", body: fd });
-            const caminho = up?.url || up?.dados?.url || up?.caminho;
-            if (!caminho) throw new Error("O upload da assinatura não devolveu o caminho do arquivo.");
-            await osPost("assinar", {
-                os_id: os.id, nome_responsavel: f.nome.trim(), cpf_responsavel: f.cpf, arquivo_assinatura: caminho,
-                ...(particular && num(f.pago) > 0 ? { pagamento_valor: num(f.pago), pagamento_forma: f.forma, pagamento_data: hoje() } : {}),
-            });
-            onAssinado();
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível assinar.");
-        } finally {
-            setSalvando(false);
-        }
-    };
-
-    return (
-        <Modal titulo="Assinatura da OS" sub={`OS ${os.numero_os} · uma assinatura vale para a OS${particular ? ", o pagamento e a nota promissória do saldo" : ""}`} onFechar={onFechar}>
-            {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
-            <div className="mb-3 grid grid-cols-2 gap-2">
-                <input className={inputCls} placeholder="Nome do responsável" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} />
-                <input className={inputCls} placeholder="CPF (opcional)" value={f.cpf} onChange={(e) => setF({ ...f, cpf: e.target.value })} />
-            </div>
-            {particular && (
-                <div className="mb-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] p-3">
-                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Pagamento no ato (opcional)</div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <input inputMode="decimal" className={inputCls} placeholder="0,00" value={f.pago} onChange={(e) => setF({ ...f, pago: e.target.value })} />
-                        <select className={inputCls} value={f.forma} onChange={(e) => setF({ ...f, forma: e.target.value })}>{FORMAS.map((x) => <option key={x} value={x}>{x.replace("_", " ")}</option>)}</select>
-                    </div>
-                    <div className="mt-2 text-sm">Total {brl(total)} · {saldo > 0 ? <>nota promissória à vista de <b>{brl(saldo)}</b></> : <b>quitada no ato, sem nota promissória</b>}</div>
-                </div>
-            )}
-            <div className="mb-1 flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]"><span>Assine no quadro</span><button type="button" onClick={limpar} className="normal-case text-[#00AEEC] dark:text-[#66CFF5]">Limpar</button></div>
-            <canvas ref={canvas} width={600} height={180} className="mb-3 w-full touch-none rounded-lg border border-dashed border-[#C9CFD9] dark:border-white/30 bg-white dark:bg-[#232B3F]"
-                    onPointerDown={inicio} onPointerMove={move} onPointerUp={() => (desenhando.current = false)} onPointerLeave={() => (desenhando.current = false)} />
-            <div className="flex justify-end gap-2">
-                <button type="button" onClick={onFechar} className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] px-4 py-2 text-sm font-bold">Cancelar</button>
-                <button type="button" disabled={salvando || !temTraco || !f.nome.trim()} onClick={() => void enviar()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55] disabled:opacity-50">{salvando ? "Assinando…" : "Assinar"}</button>
-            </div>
-        </Modal>
-    );
-}
-
-function Modal({ titulo, sub, children, onFechar }: { titulo: string; sub?: string; children: React.ReactNode; onFechar: () => void }) {
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(49,60,85,0.45)] p-4" onClick={onFechar}>
-            <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#232B3F] p-6 text-[#313C55] dark:text-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                <div className="text-xl font-extrabold">{titulo}</div>
-                {sub && <div className="mb-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">{sub}</div>}
-                {children}
             </div>
         </div>
     );

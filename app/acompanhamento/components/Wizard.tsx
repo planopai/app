@@ -854,6 +854,63 @@ const AREA_CLS =
 const BTN_SEC_CLS =
     "inline-flex h-11 items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] transition hover:bg-[#EEF2F7] disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
 
+/** Campo obrigatório que impediu o salvamento: nome, aba (índice e título) para levar o operador até ele. */
+export type CampoFaltando = { id: string; rotulo: string; aba: number | null; abaTitulo: string };
+
+/** Aviso fixo no rodapé do Wizard (sempre visível, sem precisar rolar a tela). */
+function AvisoRodape({
+    aviso,
+    onFechar,
+    onIr,
+}: {
+    aviso: { text: string; ok: boolean; faltando?: CampoFaltando[] };
+    onFechar?: () => void;
+    onIr: (c: CampoFaltando) => void;
+}) {
+    const lista = aviso.faltando ?? [];
+    return (
+        <div
+            role={aviso.ok ? "status" : "alert"}
+            className={[
+                "mb-3 flex items-start gap-3 rounded-xl border px-3 py-2.5 text-sm",
+                aviso.ok
+                    ? "border-[#7BA11A]/50 bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/20 dark:text-white"
+                    : "border-[#B42318]/40 bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]",
+            ].join(" ")}
+        >
+            <div className="min-w-0 flex-1">
+                {lista.length ? (
+                    <>
+                        <div className="font-extrabold">Não foi possível salvar. Falta preencher:</div>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {lista.map((c) => (
+                                <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => onIr(c)}
+                                    className="rounded-full border border-[#B42318]/40 bg-white px-2.5 py-1 text-xs font-extrabold text-[#B42318] hover:bg-[#FFF5F4] dark:border-[#FF9C92]/40 dark:bg-transparent dark:text-[#FF9C92]"
+                                >
+                                    {c.rotulo}
+                                    {c.abaTitulo ? <span className="font-semibold opacity-80"> · {c.abaTitulo}</span> : null}
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                ) : (
+                    <div className="font-semibold">{aviso.text}</div>
+                )}
+            </div>
+            {onFechar ? (
+                <button type="button" onClick={onFechar} aria-label="Fechar aviso" className="-mr-1 grid size-8 shrink-0 place-items-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10">
+                    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            ) : null}
+        </div>
+    );
+}
+
 /* =========================================================================
    Coluna da direita do "Editar registro" (mockup Registro.dc.html):
    DOCUMENTOS (termos) + PRÓXIMA ETAPA com o botão Registrar ação.
@@ -933,10 +990,11 @@ function PainelEdicao({
         { tipo: "requisicao" as const, titulo: "Termo de requisição de veículo" },
     ];
     return (
-        <div className={`flex-col gap-4 ${novo ? "hidden lg:flex" : "flex"}`}>
-            <section className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
-                <div className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
-                <div className="flex flex-col gap-2.5">
+        <div className={`flex-col gap-2.5 ${novo ? "hidden lg:flex" : "flex"}`}>
+            {/* Coluna compacta: Documentos, Resumo da OS e Próxima etapa cabem numa tela, sem rolagem. */}
+            <section className="rounded-[18px] border border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
+                <div className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
+                <div className="flex flex-col gap-1.5">
                     {termos.map(({ tipo, titulo }) => {
                         const sv = servidor[tipo];
                         const local = !sv.assinado && noAparelho[tipo];
@@ -954,7 +1012,7 @@ function PainelEdicao({
                                 disabled={!onDocumento || novo}
                                 aria-label={`${titulo}: ${sub}`}
                                 className={[
-                                    "flex min-h-[56px] w-full items-center gap-3 rounded-xl border-[1.5px] px-4 py-2.5 text-left disabled:opacity-50",
+                                    "flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border-[1.5px] px-3 py-1.5 text-left disabled:opacity-50",
                                     feito
                                         ? "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] hover:bg-[#E2EDBB] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/15 dark:text-white"
                                         : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
@@ -962,27 +1020,27 @@ function PainelEdicao({
                             >
                                 <span className={feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : ""}>{feito ? <IcOk /> : <IcDoc />}</span>
                                 <span className="min-w-0 flex-1">
-                                    <span className="block text-sm font-bold leading-tight">{titulo}</span>
-                                    <span className={`mt-0.5 block text-xs font-semibold ${feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{sub}</span>
+                                    <span className="block text-[13px] font-bold leading-tight">{titulo}</span>
+                                    <span className={`block text-[11px] font-semibold leading-tight ${feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{sub}</span>
                                 </span>
                             </button>
                         );
                     })}
                 </div>
-                {novo && <p className="mt-3 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
+                {novo && <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
             </section>
 
             {resumoOS}
 
             {!novo && proxima !== "—" && (
-                <section className="rounded-[18px] bg-[#313C55] p-5 text-white dark:border dark:border-white/[0.12] dark:bg-[#1C2334]" aria-label="Próxima etapa">
-                    <div className="mb-1.5 text-xs font-extrabold uppercase tracking-[0.12em] text-[#B3CE52]">Próxima etapa</div>
-                    <div className="mb-3.5 text-lg font-extrabold leading-tight">{proxima}</div>
+                <section className="rounded-[18px] bg-[#313C55] px-4 py-3 text-white dark:border dark:border-white/[0.12] dark:bg-[#1C2334]" aria-label="Próxima etapa">
+                    <div className="mb-0.5 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#B3CE52]">Próxima etapa</div>
+                    <div className="mb-2 text-base font-extrabold leading-tight">{proxima}</div>
                     <button
                         type="button"
                         onClick={onRegistrarAcao}
                         disabled={!onRegistrarAcao}
-                        className="flex h-12 w-full items-center justify-center rounded-[14px] bg-[#F2CB3F] text-[15px] font-extrabold text-[#313C55] hover:bg-[#E4BC30] disabled:opacity-60"
+                        className="flex h-10 w-full items-center justify-center rounded-xl bg-[#F2CB3F] text-sm font-extrabold text-[#313C55] hover:bg-[#E4BC30] disabled:opacity-60"
                     >
                         Registrar ação
                     </button>
@@ -1030,6 +1088,8 @@ export default function Wizard({
     registroEdicao,
     onAbrirDocumento,
     onRegistrarAcaoEdicao,
+    aviso,
+    onFecharAviso,
 }: {
     open: boolean;
     onClose: () => void;
@@ -1077,6 +1137,9 @@ export default function Wizard({
     registroEdicao?: Registro | null;
     onAbrirDocumento?: (tipo: "recebimento" | "requisicao") => void;
     onRegistrarAcaoEdicao?: () => void;
+    /** Aviso do salvamento (campos obrigatórios que faltam, erro da OS ou sucesso): mostrado no rodapé, acima dos botões. */
+    aviso?: { text: string; ok: boolean; faltando?: CampoFaltando[] } | null;
+    onFecharAviso?: () => void;
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
     const [involVal, setInvolVal] = useState<string>("");
@@ -1840,77 +1903,107 @@ export default function Wizard({
         }
     };
 
+
+    /** Validação da aba atual que falhou: aviso no rodapé com o nome do campo, além do destaque e da rolagem até ele. */
+    const ROTULO_VALIDACAO: Record<string, [string, string]> = {
+        validarAssistencia: ["Assistência", "assistencia"],
+        validarTanatoSelect: ["Tanatopraxia", "tanato"],
+        validarOrnamentacaoSelect: ["Ornamentação", "ornamentacao"],
+        validarOrnamentacaoTipoSeNecessario: ["Tipo de ornamentação", "ornamentacao_tipo"],
+        validarInvolSelect: ["Invol", "invol"],
+        validarVeuSelect: ["Véu", "veu"],
+        validarCordaoSelect: ["Cordão", "cordao"],
+        validarKitLancheSelect: ["Kit lanche", "kit_lanche"],
+        validarCoroaSeNecessario: ["Coroa de flores", "coroa_flores"],
+        validarRealizaVelorio: ["Velório (Sim ou Não)", "realiza_velorio"],
+        validarRealizaSepultamento: ["Sepultamento (Sim ou Não)", "realiza_sepultamento"],
+        validarVelorioOnlineSeNecessario: ["Velório online", "velorio_online"],
+        validarUrnaSeNecessario: ["Urna", "urna"],
+        validarRoupaSeNecessario: ["Roupa", "roupa"],
+        validarVeuSeNecessario: ["Véu (item do estoque)", "veu_item"],
+        validarCordaoSeNecessario: ["Cordão (item do estoque)", "cordao_item"],
+        validarInvolSeNecessario: ["Invol (item do estoque)", "invol_item"],
+    };
+    const [avisoLocal, setAvisoLocal] = useState<{ text: string; ok: boolean; faltando?: CampoFaltando[] } | null>(null);
+    const avisarCampo = (validador: string) => {
+        const [rotulo, id] = ROTULO_VALIDACAO[validador] ?? ["Campo obrigatório", ""];
+        const abaTitulo = String(wizardStepTitles[wizardStep] ?? "");
+        setAvisoLocal({ text: `Não foi possível salvar. Falta preencher: ${rotulo}.`, ok: false, faltando: [{ id, rotulo, aba: wizardStep, abaTitulo }] });
+        scrollToFirstError();
+    };
+
     const goNext = () => {
         if (wizardSubmitting) return;
+        setAvisoLocal(null);
 
         if (assistenciaNoGrupoAtual && !validarAssistencia()) {
-            scrollToFirstError();
+            avisarCampo("validarAssistencia");
             return;
         }
 
         if (!validarTanatoSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarTanatoSelect");
             return;
         }
         if (!validarOrnamentacaoSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarOrnamentacaoSelect");
             return;
         }
         if (!validarOrnamentacaoTipoSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarOrnamentacaoTipoSeNecessario");
             return;
         }
         if (!validarInvolSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarInvolSelect");
             return;
         }
         if (!validarVeuSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarVeuSelect");
             return;
         }
         if (!validarCordaoSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarCordaoSelect");
             return;
         }
         if (!validarKitLancheSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarKitLancheSelect");
             return;
         }
         if (!validarCoroaSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarCoroaSeNecessario");
             return;
         }
         if (!validarRealizaVelorio()) {
-            scrollToFirstError();
+            avisarCampo("validarRealizaVelorio");
             return;
         }
         if (!validarRealizaSepultamento()) {
-            scrollToFirstError();
+            avisarCampo("validarRealizaSepultamento");
             return;
         }
         if (!validarVelorioOnlineSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarVelorioOnlineSeNecessario");
             return;
         }
 
         if (!validarUrnaSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarUrnaSeNecessario");
             return;
         }
         if (!validarRoupaSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarRoupaSeNecessario");
             return;
         }
         if (!validarVeuSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarVeuSeNecessario");
             return;
         }
         if (!validarCordaoSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarCordaoSeNecessario");
             return;
         }
         if (!validarInvolSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarInvolSeNecessario");
             return;
         }
 
@@ -1925,76 +2018,78 @@ export default function Wizard({
 
     const tentarConcluir = async () => {
         if (wizardSubmitting) return;
+        setAvisoLocal(null);
+        onFecharAviso?.();
 
         if (assistenciaNoGrupoAtual && !validarAssistencia()) {
-            scrollToFirstError();
+            avisarCampo("validarAssistencia");
             return;
         }
 
         if (!validarTanatoSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarTanatoSelect");
             return;
         }
         if (!validarOrnamentacaoSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarOrnamentacaoSelect");
             return;
         }
         if (!validarOrnamentacaoTipoSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarOrnamentacaoTipoSeNecessario");
             return;
         }
 
         if (!validarInvolSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarInvolSelect");
             return;
         }
         if (!validarVeuSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarVeuSelect");
             return;
         }
         if (!validarCordaoSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarCordaoSelect");
             return;
         }
         if (!validarKitLancheSelect()) {
-            scrollToFirstError();
+            avisarCampo("validarKitLancheSelect");
             return;
         }
         if (!validarCoroaSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarCoroaSeNecessario");
             return;
         }
         if (!validarRealizaVelorio()) {
-            scrollToFirstError();
+            avisarCampo("validarRealizaVelorio");
             return;
         }
         if (!validarRealizaSepultamento()) {
-            scrollToFirstError();
+            avisarCampo("validarRealizaSepultamento");
             return;
         }
         if (!validarVelorioOnlineSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarVelorioOnlineSeNecessario");
             return;
         }
 
         if (!validarUrnaSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarUrnaSeNecessario");
             return;
         }
         if (!validarRoupaSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarRoupaSeNecessario");
             return;
         }
         if (!validarVeuSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarVeuSeNecessario");
             return;
         }
         if (!validarCordaoSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarCordaoSeNecessario");
             return;
         }
         if (!validarInvolSeNecessario()) {
-            scrollToFirstError();
+            avisarCampo("validarInvolSeNecessario");
             return;
         }
 
@@ -2040,6 +2135,22 @@ export default function Wizard({
                 ) : undefined
             }
             footer={
+                <>
+                {avisoLocal || aviso ? (
+                    <AvisoRodape
+                        aviso={(avisoLocal || aviso)!}
+                        onFechar={() => (avisoLocal ? setAvisoLocal(null) : onFecharAviso?.())}
+                        onIr={(c) => {
+                            if (!isRestrito && c.aba != null) setWizardStep(c.aba);
+                            // espera a aba aparecer e leva o operador até o campo
+                            window.setTimeout(() => {
+                                const el = document.getElementById("wizard-" + c.id) || document.querySelector<HTMLElement>(`[data-campo="${c.id}"]`);
+                                el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                (el as HTMLElement | null)?.focus?.({ preventScroll: true });
+                            }, 80);
+                        }}
+                    />
+                ) : null}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                         {isRestrito && (
@@ -2095,6 +2206,7 @@ export default function Wizard({
                         )}
                     </div>
                 </div>
+                </>
             }
         >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">

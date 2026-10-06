@@ -107,7 +107,7 @@ function Janela({ titulo, children, onFechar }: { titulo: string; children: Reac
         return () => window.removeEventListener("keydown", esc);
     }, [onFechar]);
     return (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[rgba(49,60,85,0.45)] p-0 sm:items-center sm:p-4" onClick={onFechar}>
+        <div data-os-janela-interna className="fixed inset-0 z-[80] flex items-end justify-center bg-[rgba(49,60,85,0.45)] p-0 sm:items-center sm:p-4" onClick={onFechar}>
             <div
                 role="dialog"
                 aria-modal="true"
