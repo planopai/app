@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
     IconChartBar,
+    IconChevronRight,
     IconClipboardList,
     IconClipboardPlus,
-    IconPackage,
     IconTruckDelivery,
+    IconX,
 } from "@tabler/icons-react";
 import { usePerms } from "../_perms/PermsProvider";
 import ItensTabela from "@/components/requisicoes/ItensTabela";
@@ -66,6 +68,8 @@ type QuickItem = {
     href: string;
     slug: string;
     icon: React.ElementType<any>;
+    /** Cor do chip do ícone, igual ao mockup (c1 azul claro, c2 verde claro, c3 amarelo claro). */
+    chip: string;
 };
 
 async function safeJson<T>(r: Response): Promise<T> {
@@ -108,15 +112,9 @@ async function apiPost<T>(body: Record<string, unknown>) {
     return safeJson<T>(r);
 }
 
-function QuickIcon({ children }: { children: React.ReactNode }) {
-    return (
-        <span
-            className="grid h-11 w-11 place-items-center rounded-full bg-[#E6F7FE] text-[#313C55] transition-colors group-hover:bg-[#313C55] group-hover:text-white dark:bg-[#00AEEC]/20 dark:text-white dark:group-hover:bg-[#F2CB3F] dark:group-hover:text-[#313C55]"
-        >
-            {children}
-        </span>
-    );
-}
+const CHIP_C1 = "bg-[#E9EFF6] dark:bg-[#3D6A99]/20";
+const CHIP_C2 = "bg-[#EEF5D6] dark:bg-[#B3CE52]/[0.18]";
+const CHIP_C3 = "bg-[#FCF3CC] dark:bg-[#F2CB3F]/[0.16]";
 
 const items: QuickItem[] = [
     {
@@ -124,26 +122,42 @@ const items: QuickItem[] = [
         href: "/solicitar-produto",
         slug: "solicitar-produto",
         icon: IconClipboardPlus,
+        chip: CHIP_C1,
     },
     {
         title: "Minhas Solicitações",
         href: "/minhas-solicitacoes",
         slug: "minhas-solicitacoes",
         icon: IconClipboardList,
+        chip: CHIP_C2,
     },
     {
         title: "Requisições",
         href: "/requisicoes",
         slug: "requisicoes",
-        icon: IconClipboardList,
+        icon: IconTruckDelivery,
+        chip: CHIP_C3,
     },
     {
         title: "Dashboard Requisições",
         href: "/dashboard-requisicoes",
         slug: "dashboard-requisicoes",
         icon: IconChartBar,
+        chip: CHIP_C1,
     },
 ];
+
+/* Classes visuais do mockup (06/10/2026). Celular: botões de 48px; computador (lg): 44px. */
+const BTN_BASE =
+    "inline-flex h-12 items-center justify-center gap-2 rounded-xl border-[1.5px] px-[18px] text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45 lg:h-11 lg:border lg:text-sm";
+const BTN_SEC =
+    "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]";
+const BTN_PRI =
+    "border-[#313C55] bg-[#313C55] font-extrabold text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]";
+const BTN_DNG =
+    "border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15";
+const BOX = "rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]";
+const LBL_SECAO = "mb-3 hidden text-xs font-extrabold uppercase tracking-[.12em] text-[#5B6478] dark:text-[#AEB9CF] lg:block";
 
 function toStatus(v: unknown): StatusId {
     const s = String(v || "").toUpperCase();
@@ -178,13 +192,13 @@ function statusLabel(v: unknown) {
 function statusClass(v: unknown) {
     const s = toStatus(v);
 
-    if (s === "EM_SEPARACAO") return "border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]";
+    if (s === "EM_SEPARACAO") return "border-[#3D6A99] bg-[#3D6A99] text-white";
     if (s === "EM_TRANSITO") return "border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]";
     if (s === "ENTREGUE") return "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white";
     if (s === "CANCELADA") return "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]";
     if (s === "RECUSADA") return "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]";
 
-    return "border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white";
+    return "border-[#A9BED6] bg-[#E9EFF6] text-[#313C55] dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-white";
 }
 
 function isTruthy(v: unknown) {
@@ -223,7 +237,7 @@ function RequestStatusBadge({ status }: { status: unknown }) {
     return (
         <span
             className={[
-                "inline-flex items-center rounded-full border px-3 py-1 text-xs font-black",
+                "inline-flex h-[26px] items-center whitespace-nowrap rounded-full border-[1.5px] px-3 text-[12.5px] font-extrabold",
                 statusClass(status),
             ].join(" ")}
         >
@@ -237,25 +251,25 @@ function ActionButton({
     variant = "primary",
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: "primary" | "danger";
+    variant?: "primary" | "danger" | "secondary";
 }) {
-    const cls =
-        variant === "danger"
-            ? "border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
-            : "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]";
+    const cls = variant === "danger" ? BTN_DNG : variant === "secondary" ? BTN_SEC : BTN_PRI;
 
     return (
-        <button
-            {...props}
-            className={[
-                "inline-flex min-h-11 w-full items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-black shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50",
-                cls,
-                props.className || "",
-            ].join(" ")}
-        >
+        <button {...props} className={[BTN_BASE, cls, props.className || ""].join(" ")}>
             {children}
         </button>
     );
+}
+
+/**
+ * Janela aberta direto no <body> (06/10/2026). A página rola dentro de um contêiner e, no iPhone,
+ * a barra de baixo (z-40) ficava por cima. Só chama createPortal depois de montar no cliente.
+ */
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [montado, setMontado] = useState(false);
+    useEffect(() => setMontado(true), []);
+    return montado ? createPortal(children, document.body) : null;
 }
 
 function RequestCard({
@@ -275,42 +289,42 @@ function RequestCard({
     const canReceive = status === "EM_TRANSITO";
 
     return (
-        <article className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 shadow-sm lg:col-span-3">
-            <div className="flex items-start justify-between gap-4">
+        <article className={[BOX, "p-3.5 lg:px-6 lg:py-5"].join(" ")}>
+            <div className="flex items-start gap-4">
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-base font-black text-[#313C55] dark:text-white">
+                        <span className="text-base font-extrabold text-[#313C55] dark:text-white lg:text-lg">
                             {reqCode(row)}
                         </span>
 
                         <RequestStatusBadge status={row.status} />
 
                         {isTruthy(row.atrasada_24h) ? (
-                            <span className="rounded-full border border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] px-3 py-1 text-xs font-black">
+                            <span className="inline-flex h-[26px] items-center rounded-full border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] px-2.5 text-[12.5px] font-extrabold text-[#313C55]">
                                 +24h
                             </span>
                         ) : null}
                     </div>
 
-                    <div className="mt-4 max-w-md rounded-2xl border border-[#00AEEC]/30 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-4 py-3">
-                        <p className="text-[11px] font-black uppercase tracking-wide text-[#313C55] dark:text-white">
+                    <div className="mt-2.5 rounded-xl bg-[#E9EFF6] px-3 py-2 dark:bg-[#3D6A99]/20 lg:mt-3.5 lg:inline-block lg:min-w-[320px] lg:max-w-full lg:rounded-[14px] lg:px-4 lg:py-2.5">
+                        <p className="text-[11px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF] lg:text-xs">
                             Solicitante
                         </p>
 
-                        <p className="mt-1 truncate text-2xl font-black tracking-tight text-[#313C55] dark:text-white">
+                        <p className="break-words text-lg font-extrabold text-[#313C55] dark:text-white lg:mt-0.5 lg:text-[22px]">
                             {solicitante}
                         </p>
                     </div>
                 </div>
 
-                <div className="grid size-12 shrink-0 place-items-center rounded-full bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-[#D6DCE8]">
-                    <IconTruckDelivery size={23} />
+                <div className="hidden size-12 shrink-0 place-items-center rounded-full bg-[#EEF2F7] text-[#313C55] dark:bg-white/[0.08] dark:text-white lg:grid">
+                    <IconTruckDelivery size={20} stroke={1.8} />
                 </div>
             </div>
 
-            <div className="mt-4 grid gap-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] sm:grid-cols-2">
-                <ItensTabela resumo={row.itens_resumo} className="sm:col-span-2" />
+            <ItensTabela resumo={row.itens_resumo} className="mt-2.5 lg:mt-4" />
 
+            <div className="mt-1.5 flex flex-col gap-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-2.5 lg:grid lg:grid-cols-3 lg:gap-x-6 lg:gap-y-2 lg:text-sm">
                 <p>
                     Destino:{" "}
                     <b className="text-[#313C55] dark:text-white">{destinationText(row)}</b>
@@ -344,19 +358,19 @@ function RequestCard({
             </div>
 
             {status === "EM_SEPARACAO" ? (
-                <div className="mt-4 rounded-xl border border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-3 py-2 text-sm font-bold text-[#313C55] dark:text-white">
+                <div className="mt-2.5 rounded-xl border border-[#E3E8F0] bg-[#E9EFF6] px-3 py-2 text-[13px] font-bold text-[#313C55] dark:border-white/[0.12] dark:bg-[#3D6A99]/20 dark:text-white lg:mt-3.5 lg:px-3.5 lg:py-2.5 lg:text-sm">
                     Sua requisição está sendo separada.
                 </div>
             ) : null}
 
             {status === "EM_TRANSITO" ? (
-                <div className="mt-4 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 px-3 py-2 text-sm font-bold text-[#313C55] dark:text-white">
+                <div className="mt-2.5 rounded-xl border border-[#E3E8F0] bg-[#EEF2F7] px-3 py-2 text-[13px] font-bold text-[#313C55] dark:border-white/[0.12] dark:bg-white/[0.08] dark:text-white lg:mt-3.5 lg:px-3.5 lg:py-2.5 lg:text-sm">
                     O material foi enviado. Somente você, como solicitante, pode confirmar o recebimento.
                 </div>
             ) : null}
 
             {canCancel || canReceive ? (
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <div className="mt-3 flex flex-col gap-2 lg:mt-4 lg:flex-row lg:gap-3">
                     {canReceive ? (
                         <ActionButton type="button" onClick={() => onReceive(row)} disabled={saving}>
                             Confirmar recebimento
@@ -374,6 +388,9 @@ function RequestCard({
     );
 }
 
+/**
+ * Janela de cancelamento. Computador (lg): diálogo centralizado. Celular: folha que sobe de baixo.
+ */
 function CancelModal({
     open,
     row,
@@ -397,73 +414,82 @@ function CancelModal({
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
 
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+
         return () => {
             document.body.style.overflow = prev;
+            window.removeEventListener("keydown", onKey);
         };
-    }, [open]);
+    }, [open, onClose]);
 
     if (!open) return null;
 
     return (
-        <div
-            role="dialog" data-pai-overlay
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-3 sm:items-center sm:p-4"
-        >
-            <div className="w-full max-w-lg rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4 shadow-2xl">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h2 className="text-base font-black text-[#313C55] dark:text-white">
-                            Cancelar {row ? reqCode(row) : "requisição"}
-                        </h2>
-                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                            Informe o motivo. O cancelamento ficará registrado no histórico.
-                        </p>
+        <NoCorpo>
+            <div
+                role="dialog" data-pai-overlay
+                aria-modal="true"
+                aria-label="Cancelar requisição"
+                className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6"
+            >
+                <div className="flex max-h-[90dvh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:max-w-[520px] lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]">
+                    <div className="flex items-start gap-2 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:gap-3 lg:px-6 lg:py-5">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-[19px] font-extrabold leading-tight lg:text-xl">
+                                Cancelar {row ? reqCode(row) : "requisição"}
+                            </h2>
+                            <p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1 lg:text-sm">
+                                Informe o motivo. O cancelamento ficará registrado no histórico.
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={saving}
+                            className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:text-white dark:hover:bg-white/[0.08]"
+                            aria-label="Fechar"
+                        >
+                            <IconX size={20} stroke={1.8} />
+                        </button>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        disabled={saving}
-                        className="rounded-xl px-3 py-2 text-sm font-black text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-50"
-                        aria-label="Fechar"
-                    >
-                        ✕
-                    </button>
-                </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3.5 lg:px-6 lg:py-5">
+                        <textarea
+                            value={motivo}
+                            onChange={(e) => onChange(e.target.value)}
+                            rows={4}
+                            autoFocus
+                            placeholder="Digite o motivo do cancelamento"
+                            aria-label="Motivo do cancelamento"
+                            className="block w-full resize-y rounded-xl border border-transparent bg-[#F1F4F8] px-3.5 py-3 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white dark:placeholder:text-[#8893AA]"
+                        />
+                    </div>
 
-                <textarea
-                    value={motivo}
-                    onChange={(e) => onChange(e.target.value)}
-                    rows={4}
-                    autoFocus
-                    placeholder="Digite o motivo do cancelamento"
-                    className="mt-4 w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30"
-                />
+                    <div className="flex gap-2 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:justify-end lg:gap-3 lg:px-6 lg:py-4">
+                        <ActionButton type="button" variant="secondary" onClick={onClose} disabled={saving} className="flex-1 lg:flex-none">
+                            Voltar
+                        </ActionButton>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        disabled={saving}
-                        className="min-h-11 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-black text-[#313C55] dark:text-[#D6DCE8] shadow-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10 disabled:opacity-50"
-                    >
-                        Voltar
-                    </button>
-
-                    <ActionButton
-                        type="button"
-                        variant="danger"
-                        onClick={onConfirm}
-                        disabled={saving || !motivo.trim()}
-                    >
-                        {saving ? "Cancelando..." : "Confirmar cancelamento"}
-                    </ActionButton>
+                        <ActionButton
+                            type="button"
+                            variant="danger"
+                            onClick={onConfirm}
+                            disabled={saving || !motivo.trim()}
+                            className="flex-1 lg:flex-none"
+                        >
+                            {saving ? "Cancelando..." : "Confirmar cancelamento"}
+                        </ActionButton>
+                    </div>
                 </div>
             </div>
-        </div>
+        </NoCorpo>
     );
 }
+
 
 export default function RequisicaoPage() {
     const { perms, has } = usePerms();
@@ -518,6 +544,13 @@ export default function RequisicaoPage() {
     }, [rows]);
 
     const actions = perms == null ? [] : items.filter((item) => has(item.slug));
+
+    const closeCancel = useCallback(() => {
+        if (saving) return;
+        setCancelOpen(false);
+        setCancelRow(null);
+        setCancelMotivo("");
+    }, [saving]);
 
     function askCancel(row: ReqListRow) {
         setError("");
@@ -596,44 +629,38 @@ export default function RequisicaoPage() {
     }
 
     return (
-        <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] dark:bg-[#161C2A]">
-            <div className="mx-auto max-w-6xl px-5 py-5">
-                <header className="mb-5 flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]">
-                        <IconPackage className="size-5 text-primary" />
-                    </div>
-
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">
-                            Requisição de Material
-                        </h1>
-                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                            Acompanhe as requisições abertas e confirme o recebimento quando o material chegar.
-                        </p>
-                    </div>
+        <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
+            <div className="mx-auto flex max-w-[1120px] flex-col gap-3.5 px-4 pb-5 pt-4 lg:block lg:px-10 lg:pb-12 lg:pt-8">
+                <header className="lg:mb-6">
+                    <h1 className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white lg:text-[28px]">
+                        Requisição de Material
+                    </h1>
+                    <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                        Acompanhe as requisições abertas e confirme o recebimento quando o material chegar.
+                    </p>
                 </header>
 
                 {error ? (
-                    <div className="mb-4 rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">
+                    <div role="alert" className="rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] lg:mb-4">
                         {error}
                     </div>
                 ) : null}
 
                 {okMsg ? (
-                    <div className="mb-4 rounded-2xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-4 text-sm font-bold text-[#313C55] dark:text-white">
+                    <div role="status" className="rounded-[14px] border border-[#B3CE52] bg-[#EEF5D6] px-4 py-3 text-sm font-bold text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white lg:mb-4">
                         {okMsg}
                     </div>
                 ) : null}
 
-                <section className="mb-5">
+                <section>
+                    <h2 className={LBL_SECAO}>Suas requisições abertas</h2>
+
                     {loading ? (
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                            <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm lg:col-span-3">
-                                Carregando suas requisições...
-                            </div>
+                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6 lg:text-[15px]"].join(" ")}>
+                            Carregando suas requisições...
                         </div>
                     ) : requisicoesAbertas.length ? (
-                        <div className="grid grid-cols-1 gap-3 sm:landscape:grid-cols-2 lg:grid-cols-4">
+                        <div className="grid grid-cols-1 items-start gap-3 max-lg:landscape:grid-cols-2 lg:gap-4">
                             {requisicoesAbertas.map((row) => (
                                 <RequestCard
                                     key={row.id}
@@ -645,51 +672,39 @@ export default function RequisicaoPage() {
                             ))}
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                            <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm lg:col-span-3">
-                                Você não possui requisição pendente, em separação ou em trânsito.
-                            </div>
+                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6 lg:text-[15px]"].join(" ")}>
+                            Você não possui requisição pendente, em separação ou em trânsito.
                         </div>
                     )}
                 </section>
 
-                <section>
+                <section className="lg:mt-9">
+                    <h2 className={LBL_SECAO}>O que você quer fazer?</h2>
+
                     {perms == null ? (
-                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm">
+                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6"].join(" ")}>
                             Carregando permissões...
                         </div>
                     ) : actions.length ? (
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                            {actions.map(({ title, href, icon: Icon }) => (
+                        <div className="overflow-hidden rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F] max-lg:divide-y max-lg:divide-[#E3E8F0] max-lg:dark:divide-white/[0.12] lg:grid lg:grid-cols-2 lg:gap-4 lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:dark:bg-transparent">
+                            {actions.map(({ title, href, icon: Icon, chip }) => (
                                 <Link
                                     key={href}
                                     href={href}
-                                    className="
-                                        group flex flex-col items-center justify-center
-                                        gap-2.5
-                                        rounded-2xl
-                                        border border-[#E3E8F0]
-                                        bg-white
-                                        px-3 py-4
-                                        shadow-sm
-                                        transition-all
-                                        hover:-translate-y-[1px]
-                                        hover:shadow-md
-                                        dark:border-white/[0.12] dark:bg-[#232B3F]
-                                    "
+                                    className="flex min-h-[60px] items-center gap-3.5 px-4 text-[#313C55] transition-colors hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08] lg:min-h-0 lg:rounded-2xl lg:border lg:border-[#E3E8F0] lg:bg-white lg:p-4 lg:hover:border-[#313C55] lg:hover:bg-white lg:dark:border-white/[0.12] lg:dark:bg-[#232B3F] lg:dark:hover:border-white lg:dark:hover:bg-[#232B3F]"
                                 >
-                                    <QuickIcon>
-                                        <Icon size={22} />
-                                    </QuickIcon>
-
-                                    <span className="text-center text-[13px] font-extrabold leading-tight tracking-tight text-[#313C55] dark:text-white">
-                                        {title}
+                                    <span className={["grid size-10 shrink-0 place-items-center rounded-xl text-[#313C55] dark:text-white lg:size-11 lg:rounded-[14px]", chip].join(" ")}>
+                                        <Icon size={20} stroke={1.8} />
                                     </span>
+
+                                    <span className="min-w-0 flex-1 text-[15px] font-extrabold">{title}</span>
+
+                                    <IconChevronRight size={20} stroke={1.8} className="shrink-0 text-[#5B6478] dark:text-[#AEB9CF]" />
                                 </Link>
                             ))}
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] shadow-sm">
+                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6"].join(" ")}>
                             Nenhuma opção disponível para o seu usuário.
                         </div>
                     )}
@@ -702,14 +717,9 @@ export default function RequisicaoPage() {
                 motivo={cancelMotivo}
                 saving={saving}
                 onChange={setCancelMotivo}
-                onClose={() => {
-                    if (saving) return;
-                    setCancelOpen(false);
-                    setCancelRow(null);
-                    setCancelMotivo("");
-                }}
+                onClose={closeCancel}
                 onConfirm={confirmCancel}
             />
         </div>
     );
-}
+}

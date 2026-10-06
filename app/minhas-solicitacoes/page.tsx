@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 /**
@@ -344,15 +345,25 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
     return await safeJson<T>(r);
 }
 
+/* =========================================================
+   VISUAL (mockups MinhasSolicitacoes / Celular / CelularH, 06/10/2026)
+   ========================================================= */
+
+/** Rótulo de campo do mockup: maiúsculas, 12px, extra-negrito. */
+const LABEL_CLS = "mb-2 block text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
+/** Rótulo pequeno de informação (.kv do mockup). */
+const KV_CLS = "text-[11px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
+/** Campo do mockup: 48px, sem borda visível, fundo "field". */
+const FIELD_CLS =
+    "h-12 w-full rounded-xl border border-transparent bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 disabled:opacity-60 dark:bg-[#1C2334] dark:text-white dark:placeholder:text-[#8893AA]";
+
 /**
- * Componente base para cartões visuais da página.
- *
- * Centraliza o estilo comum de borda, fundo, sombra e arredondamento. Isso evita
- * repetir classes Tailwind em todos os blocos e facilita mudanças futuras no
- * visual dos cards.
+ * Componente base para cartões visuais da página (.box do mockup).
  */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]", className].join(" ")}>{children}</section>;
 }
 
 /**
@@ -363,76 +374,56 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8]">{label}</span>
+            <span className={LABEL_CLS}>{label}</span>
             {children}
         </label>
     );
 }
 
 /**
- * Input de texto padronizado.
- *
- * Aceita todas as props normais de um `<input>` e acrescenta classes visuais
- * comuns. A prop `className` continua disponível para customizações pontuais.
+ * Select padronizado (filtro de status no computador).
  */
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-    return (
-        <input
-            {...props}
-            className={[
-                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
-                "placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
-                props.className || "",
-            ].join(" ")}
-        />
-    );
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+    return <select {...props} className={[FIELD_CLS, props.className || ""].join(" ")} />;
 }
 
 /**
- * Select padronizado.
- *
- * Usado principalmente no filtro de status. Mantém consistência visual com os
- * demais campos de formulário da página.
+ * Campo de busca com lupa, como no mockup.
  */
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+function SearchInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     return (
-        <select
-            {...props}
-            className={[
-                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
-                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
-                props.className || "",
-            ].join(" ")}
-        />
+        <span className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF] lg:px-3.5">
+            <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+                type="search"
+                {...props}
+                className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white dark:placeholder:text-[#8893AA] lg:text-[15px]"
+            />
+        </span>
     );
 }
 
 /**
  * Botão reutilizável da página.
  *
- * A prop `variant` controla o estilo visual:
- * `solid` para ação principal,
- * `soft` para ação secundária destacada,
- * `ghost` para ação neutra,
- * `danger` para ação destrutiva ou sensível, como cancelamento.
+ * `solid` = ação principal; `ghost` = botão neutro do mockup (fundo do cartão, borda line2).
  */
 function Button({
     children,
-    variant = "solid",
+    variant = "ghost",
     className = "",
     ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "soft" | "ghost" | "danger" }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" }) {
     const base =
-        "inline-flex min-h-10 items-center justify-center rounded-xl px-4 py-2 text-[15px] font-bold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
+        "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-[18px] text-[15px] font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-[#3D6A99]/30 disabled:cursor-not-allowed disabled:opacity-45 lg:min-h-11 lg:text-[14px]";
 
     const style =
         variant === "solid"
-            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
-            : variant === "soft"
-                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
-                : variant === "danger"
-                    ? "border border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
-                    : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
+            ? "border-[1.5px] border-[#313C55] bg-[#313C55] font-extrabold text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30] lg:border"
+            : "border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08] lg:border";
 
     return (
         <button {...props} className={[base, style, className].join(" ")}>
@@ -441,61 +432,78 @@ function Button({
     );
 }
 
-/**
- * Pequeno marcador visual em formato de cápsula.
- *
- * Serve como base para status, alerta de atraso e indicação de tipo da
- * solicitação.
- */
-function Pill({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <span className={["inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold", className].join(" ")}>{children}</span>;
+/** Ícone de atualizar (botão Atualizar discreto, 44–48px). */
+function IconRefresh({ spinning = false }: { spinning?: boolean }) {
+    return (
+        <svg viewBox="0 0 24 24" className={["size-5", spinning ? "animate-spin" : ""].join(" ")} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+        </svg>
+    );
 }
 
 /**
- * Badge colorido de status.
- *
- * Traduz o status técnico para texto amigável e aplica cores diferentes para
- * facilitar identificação visual rápida na listagem e nos detalhes.
+ * Pequeno marcador visual em formato de cápsula (.sp do mockup: 26px).
+ */
+function Pill({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+    return <span className={["inline-flex h-[26px] items-center whitespace-nowrap rounded-full border-[1.5px] px-3 text-[12.5px] font-extrabold", className].join(" ")}>{children}</span>;
+}
+
+/**
+ * Badge colorido de status (cores de 06/10/2026).
  */
 function StatusBadge({ status, options }: { status: string; options: StatusOption[] }) {
     const cls =
         status === "PENDENTE"
-            ? "border border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white"
+            ? "border-[#A9BED6] bg-[#E9EFF6] text-[#313C55] dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-white"
             : status === "EM_SEPARACAO"
-                ? "border border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]"
+                ? "border-[#3D6A99] bg-[#3D6A99] text-white"
                 : status === "EM_TRANSITO"
-                    ? "border border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]"
+                    ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]"
                     : status === "ENTREGUE"
-                        ? "border border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white"
+                        ? "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white"
                         : status === "RECUSADA"
-                            ? "border border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
-                            : "border border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]";
+                            ? "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
+                            : "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]";
 
     return <Pill className={cls}>{statusLabel(status, options)}</Pill>;
 }
 
+/** Alerta de atraso: amarelo sempre com texto #313C55. */
+function LatePill() {
+    return <Pill className="border-[#F2CB3F] bg-[#F2CB3F] px-2.5 text-[#313C55]">+24h</Pill>;
+}
+
 /**
- * Modal genérico reutilizável.
+ * Janelas abertas direto no <body> (06/10/2026). A página rola dentro de um contêiner e, no iPhone,
+ * a barra de baixo (z-40) ficava por cima. Só chama createPortal depois de montar no cliente.
+ */
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [montado, setMontado] = useState(false);
+    useEffect(() => setMontado(true), []);
+    return montado ? createPortal(children, document.body) : null;
+}
+
+/**
+ * Janela reutilizável.
  *
- * Responsabilidades principais:
- * 1. Renderizar uma camada escura sobre a tela.
- * 2. Exibir título, subtítulo opcional, botão de fechar e conteúdo.
- * 3. Bloquear o scroll do body enquanto o modal estiver aberto.
- *
- * O bloqueio de scroll melhora a experiência em mobile, evitando que o fundo
- * role enquanto o usuário interage com o modal.
+ * Computador (lg): diálogo centralizado com cabeçalho, corpo que rola e rodapé fixo
+ * (botões à direita). Celular: folha que sobe de baixo, com os botões lado a lado no rodapé.
+ * Esc fecha. O scroll do body fica bloqueado enquanto está aberta.
  */
 function Modal({
     open,
     title,
     subtitle,
     onClose,
+    footer,
     children,
 }: {
     open: boolean;
     title: string;
     subtitle?: string;
     onClose: () => void;
+    footer: React.ReactNode;
     children: React.ReactNode;
 }) {
     useEffect(() => {
@@ -504,50 +512,71 @@ function Modal({
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
 
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+
         return () => {
             document.body.style.overflow = prev;
+            window.removeEventListener("keydown", onKey);
         };
-    }, [open]);
+    }, [open, onClose]);
 
     if (!open) return null;
 
     return (
-        <div role="dialog" data-pai-overlay aria-modal="true" className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-3 sm:items-center sm:p-4">
-            <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl">
-                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
-                    <div className="min-w-0">
-                        <h2 className="text-base font-bold text-[#313C55] dark:text-white">{title}</h2>
-                        {subtitle ? <p className="mt-1 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{subtitle}</p> : null}
+        <NoCorpo>
+            <div role="dialog" data-pai-overlay aria-modal="true" aria-label={title} className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6">
+                <div className="flex max-h-[90dvh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:max-w-[720px] lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]">
+                    <div className="flex items-start gap-2 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:gap-3 lg:px-6 lg:py-5">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-[19px] font-extrabold leading-tight lg:text-xl">{title}</h2>
+                            {subtitle ? <p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1 lg:text-sm">{subtitle}</p> : null}
+                        </div>
+
+                        <button type="button" onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08]" aria-label="Fechar">
+                            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+                                <path d="M18 6 6 18" />
+                                <path d="m6 6 12 12" />
+                            </svg>
+                        </button>
                     </div>
 
-                    <button type="button" onClick={onClose} className="rounded-2xl px-3 py-2 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10" aria-label="Fechar">
-                        ✕
-                    </button>
-                </div>
+                    <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 py-3.5 lg:gap-4 lg:px-6 lg:py-5">{children}</div>
 
-                <div className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">{children}</div>
+                    <div className="flex gap-2 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:justify-end lg:gap-3 lg:px-6 lg:py-4 [&>*]:flex-1 lg:[&>*]:flex-none">
+                        {footer}
+                    </div>
+                </div>
             </div>
-        </div>
+        </NoCorpo>
     );
 }
 
 /**
  * Estado vazio padronizado.
- *
- * Usado quando não há requisições na listagem, quando a API não retorna itens
- * no detalhe ou quando não há eventos de linha do tempo.
  */
-function EmptyState({ title, text }: { title: string; text: string }) {
+function EmptyState({ title, text, className = "" }: { title: string; text: string; className?: string }) {
     return (
-        <div className="rounded-2xl border border-dashed border-[#C9D1DE] dark:border-white/25 bg-[#F6F8FB] dark:bg-[#1C2334] p-5 text-center">
-            <p className="text-sm font-bold text-[#313C55] dark:text-white">{title}</p>
-            <p className="mt-1 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{text}</p>
+        <div className={["rounded-2xl border border-[#E3E8F0] bg-white p-6 text-center dark:border-white/[0.12] dark:bg-[#232B3F]", className].join(" ")}>
+            <p className="font-extrabold text-[#313C55] dark:text-white lg:text-base">{title}</p>
+            <p className="mt-1 text-[13px] leading-5 text-[#5B6478] dark:text-[#AEB9CF] lg:text-sm">{text}</p>
         </div>
     );
 }
 
+/** "1 item" / "N itens" (o total continua vindo de total_itens, como antes). */
+function itensLabel(row: ReqListRow) {
+    const n = Number(row.total_itens || 0) || 1;
+    return n === 1 ? "1 item" : `${n} itens`;
+}
+
 /**
  * Card individual do histórico de solicitações.
+ *
+ * Computador: cartão com botão "Ver", Destino/Origem e justificativa.
+ * Celular (em pé e deitado): o cartão inteiro é tocável e mostra um resumo compacto.
  *
  * Esta tela é somente consulta. Alterações de estado, cancelamento e confirmação
  * de recebimento ficam na página /requisicao.
@@ -564,72 +593,93 @@ function RequestCard({
     const status = String(row.status);
     const atrasada = Number(row.atrasada_24h || 0) === 1;
 
+    const motivos = (
+        <>
+            {status === "RECUSADA" && row.motivo_recusa ? (
+                <div className="mt-2 rounded-xl border border-[#B42318] bg-[#FDECEA] px-3 py-2 text-[13px] font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] lg:mt-0 lg:px-3.5 lg:py-2.5 lg:text-[13.5px]">{row.motivo_recusa}</div>
+            ) : null}
+
+            {status === "CANCELADA" && row.motivo_cancelamento ? (
+                <div className="mt-2 rounded-xl border border-[#C9D1DE] bg-[#EEF2F7] px-3 py-2 text-[13px] text-[#313C55] dark:border-white/[0.26] dark:bg-white/[0.08] dark:text-[#D6DCE8] lg:mt-0 lg:px-3.5 lg:py-2.5 lg:text-[13.5px]">{row.motivo_cancelamento}</div>
+            ) : null}
+        </>
+    );
+
     return (
-        <Card className="overflow-hidden">
-            <div className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+        <>
+            {/* CELULAR: cartão inteiro tocável */}
+            <button
+                type="button"
+                onClick={() => onOpen(row.id)}
+                aria-label={`Ver detalhes de ${reqCode(row)}`}
+                className="block w-full rounded-2xl border border-[#E3E8F0] bg-white px-3.5 py-3 text-left text-[#313C55] active:bg-[#EEF2F7] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white dark:active:bg-white/[0.08] lg:hidden"
+            >
+                <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-[15px] font-extrabold">{reqCode(row)}</span>
+                    <StatusBadge status={status} options={statusOptions} />
+                    {atrasada ? <LatePill /> : null}
+                </span>
+                <span className="mt-0.5 block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Aberta em {fmtDateTime(row.criado_em)}</span>
+                <span className="mt-2 block">
+                    <ItensTabela resumo={row.itens_resumo} vazio="Itens não carregados" />
+                </span>
+                <span className="mt-1 block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                    {itensLabel(row)}, total {fmtQtd(row.total_quantidade || 0)} · Destino: {destinoLabel(row)}
+                </span>
+                {motivos}
+            </button>
+
+            {/* COMPUTADOR */}
+            <article className="hidden flex-col gap-3 rounded-2xl border border-[#E3E8F0] bg-white px-5 py-[18px] text-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white lg:flex">
+                <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-bold text-[#313C55] dark:text-white">{reqCode(row)}</h3>
+                            <h3 className="text-[17px] font-extrabold">{reqCode(row)}</h3>
                             <StatusBadge status={status} options={statusOptions} />
-                            {atrasada ? <Pill className="border border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]">+24h</Pill> : null}
+                            {atrasada ? <LatePill /> : null}
                         </div>
-                        <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Aberta em {fmtDateTime(row.criado_em)}</p>
+                        <p className="mt-0.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Aberta em {fmtDateTime(row.criado_em)}</p>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => onOpen(row.id)}
-                        className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-xs font-bold text-[#313C55] dark:text-[#D6DCE8] shadow-sm hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                    >
+                    <Button type="button" onClick={() => onOpen(row.id)} className="shrink-0">
                         Ver
-                    </button>
+                    </Button>
                 </div>
 
                 <div>
                     <ItensTabela resumo={row.itens_resumo} vazio="Itens não carregados" />
-                    <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                        {Number(row.total_itens || 0) || 1} item(ns), total solicitado: <b className="text-[#313C55] dark:text-white">{fmtQtd(row.total_quantidade || 0)}</b>
+                    <p className="mt-1.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                        {itensLabel(row)}, total solicitado: <b className="text-[#313C55] dark:text-white">{fmtQtd(row.total_quantidade || 0)}</b>
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 text-sm text-[#313C55] dark:text-[#D6DCE8] sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                     <div>
-                        <span className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Destino</span>
-                        <div className="font-bold text-[#313C55] dark:text-white">{destinoLabel(row)}</div>
+                        <div className={KV_CLS}>Destino</div>
+                        <div className="text-sm font-extrabold">{destinoLabel(row)}</div>
                     </div>
 
                     {row.deposito_origem_nome ? (
                         <div>
-                            <span className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Origem</span>
-                            <div className="font-bold text-[#313C55] dark:text-white">{row.deposito_origem_nome}</div>
+                            <div className={KV_CLS}>Origem</div>
+                            <div className="text-sm font-extrabold">{row.deposito_origem_nome}</div>
                         </div>
                     ) : null}
                 </div>
 
-                {row.justificativa ? <p className="line-clamp-2 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{row.justificativa}</p> : null}
+                {row.justificativa ? <p className="line-clamp-2 text-[13.5px] leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{row.justificativa}</p> : null}
 
-                {status === "RECUSADA" && row.motivo_recusa ? (
-                    <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">{row.motivo_recusa}</div>
-                ) : null}
-
-                {status === "CANCELADA" && row.motivo_cancelamento ? (
-                    <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-sm text-[#313C55] dark:text-[#D6DCE8]">{row.motivo_cancelamento}</div>
-                ) : null}
-            </div>
-        </Card>
+                {motivos}
+            </article>
+        </>
     );
 }
 
 /**
- * Modal de detalhes da requisição.
+ * Janela de detalhes da requisição.
  *
- * Mostra uma visão completa da solicitação selecionada, incluindo:
- * dados gerais, justificativa, motivos de recusa ou cancelamento, itens e linha
- * do tempo.
- *
- * O componente recebe `row` como `null` enquanto os dados ainda estão sendo
- * carregados, exibindo uma mensagem de carregamento nesse período.
+ * Mostra dados gerais, justificativa, motivos de recusa ou cancelamento, itens e linha
+ * do tempo. Recebe `row` como `null` enquanto os dados ainda estão sendo carregados.
  */
 function DetailModal({
     open,
@@ -642,118 +692,115 @@ function DetailModal({
     statusOptions: StatusOption[];
     onClose: () => void;
 }) {
+    const info = (label: string, value: React.ReactNode) => (
+        <div className="min-w-0">
+            <div className={KV_CLS}>{label}</div>
+            <div className="break-words font-extrabold">{value}</div>
+        </div>
+    );
+
     return (
-        <Modal open={open} title={row ? reqCode(row) : "Detalhes"} subtitle={row ? destinoLabel(row) : undefined} onClose={onClose}>
+        <Modal
+            open={open}
+            title={row ? reqCode(row) : "Detalhes"}
+            subtitle={row ? destinoLabel(row) : undefined}
+            onClose={onClose}
+            footer={
+                <Button type="button" onClick={onClose}>
+                    Fechar
+                </Button>
+            }
+        >
             {!row ? (
                 <div className="p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando...</div>
             ) : (
-                <div className="space-y-4">
+                <>
                     <div className="flex flex-wrap gap-2">
                         <StatusBadge status={String(row.status)} options={statusOptions} />
-                        <Pill className="bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-[#D6DCE8]">{row.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</Pill>
+                        <Pill className="border-[#C9D1DE] bg-[#EEF2F7] text-[#313C55] dark:border-white/[0.26] dark:bg-white/[0.08] dark:text-white">{row.destino_tipo === "DEPOSITO" ? "Transferência" : "Saída"}</Pill>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-sm sm:grid-cols-2">
-                        <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Solicitante</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{row.solicitante_nome || "-"}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Criada em</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.criado_em)}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Separada em</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.separado_em)}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Enviada em</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.enviado_em)}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Recebida em</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{fmtDateTime(row.recebido_em)}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Origem</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{row.deposito_origem_nome || "-"}</div>
-                        </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-[14px] border border-[#E3E8F0] bg-[#F6F8FB] px-4 py-3.5 text-sm dark:border-white/[0.12] dark:bg-[#1C2334]">
+                        {info("Solicitante", row.solicitante_nome || "-")}
+                        {info("Criada em", fmtDateTime(row.criado_em))}
+                        {info("Separada em", fmtDateTime(row.separado_em))}
+                        {info("Enviada em", fmtDateTime(row.enviado_em))}
+                        {info("Recebida em", fmtDateTime(row.recebido_em))}
+                        {info("Origem", row.deposito_origem_nome || "-")}
                     </div>
 
                     {row.justificativa ? (
-                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Justificativa</div>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-[#313C55] dark:text-white">{row.justificativa}</p>
+                        <div>
+                            <div className={[KV_CLS, "mb-1"].join(" ")}>Justificativa</div>
+                            <div className="text-sm">{row.justificativa}</div>
                         </div>
                     ) : null}
 
                     {row.motivo_recusa ? (
-                        <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#B42318] dark:text-[#FF9C92]">Motivo da recusa</div>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-[#B42318] dark:text-[#FF9C92]">{row.motivo_recusa}</p>
+                        <div className="rounded-[14px] border border-[#E3E8F0] bg-[#FDECEA] px-4 py-3 dark:border-white/[0.12] dark:bg-[#FF9C92]/15">
+                            <div className={KV_CLS}>Motivo da recusa</div>
+                            <div className="mt-0.5 text-sm">{row.motivo_recusa}</div>
                         </div>
                     ) : null}
 
                     {row.motivo_cancelamento ? (
-                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-[#7A8396] dark:text-[#8893AA]">Motivo do cancelamento</div>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-[#313C55] dark:text-[#D6DCE8]">{row.motivo_cancelamento}</p>
+                        <div className="rounded-[14px] border border-[#E3E8F0] bg-[#EEF2F7] px-4 py-3 dark:border-white/[0.12] dark:bg-white/[0.08]">
+                            <div className={KV_CLS}>Motivo do cancelamento</div>
+                            <div className="mt-0.5 text-sm">{row.motivo_cancelamento}</div>
                         </div>
                     ) : null}
 
                     <div>
-                        <h3 className="mb-2 text-sm font-bold text-[#313C55] dark:text-white">Itens</h3>
-                        <div className="space-y-2">
+                        <h3 className="mb-2 text-[15px] font-extrabold">Itens</h3>
+                        <div className="flex flex-col gap-2">
                             {row.items?.length ? (
-                                row.items.map((item) => (
-                                    <div key={item.id} className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
-                                        <div className="text-sm font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot}</div>
-                                        <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Código: {item.codigo_barras_snapshot || "sem código"}</div>
-                                        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                                            <div className="rounded-2xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
-                                                <div className="text-[#5B6478] dark:text-[#AEB9CF]">Solicitada</div>
-                                                <div className="font-bold text-[#313C55] dark:text-white">{fmtQtd(item.quantidade_solicitada)}</div>
+                                row.items.map((item) => {
+                                    const extras = [
+                                        item.quantidade_enviada == null ? "" : `Enviada ${fmtQtd(item.quantidade_enviada)}`,
+                                        item.quantidade_recebida == null ? "" : `Recebida ${fmtQtd(item.quantidade_recebida)}`,
+                                    ].filter(Boolean);
+
+                                    return (
+                                        <div key={item.id} className="rounded-xl border border-[#E3E8F0] px-3.5 py-2.5 dark:border-white/[0.12]">
+                                            <div className="flex items-center gap-3">
+                                                <span className="min-w-0 flex-1 break-words text-sm font-bold">{item.produto_nome_snapshot}</span>
+                                                <span className="shrink-0 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                                    Qtd <b className="text-[15px] text-[#313C55] dark:text-white">{fmtQtd(item.quantidade_solicitada)}</b>
+                                                </span>
                                             </div>
-                                            <div className="rounded-2xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
-                                                <div className="text-[#5B6478] dark:text-[#AEB9CF]">Enviada</div>
-                                                <div className="font-bold text-[#313C55] dark:text-white">{item.quantidade_enviada == null ? "-" : fmtQtd(item.quantidade_enviada)}</div>
-                                            </div>
-                                            <div className="rounded-2xl bg-[#F6F8FB] dark:bg-[#1C2334] p-2">
-                                                <div className="text-[#5B6478] dark:text-[#AEB9CF]">Recebida</div>
-                                                <div className="font-bold text-[#313C55] dark:text-white">{item.quantidade_recebida == null ? "-" : fmtQtd(item.quantidade_recebida)}</div>
-                                            </div>
+                                            {extras.length ? <div className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">{extras.join(" · ")}</div> : null}
+                                            {item.observacao ? <p className="mt-1 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{item.observacao}</p> : null}
                                         </div>
-                                        {item.observacao ? <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">{item.observacao}</p> : null}
-                                    </div>
-                                ))
+                                    );
+                                })
                             ) : (
-                                <EmptyState title="Sem itens" text="Os itens não foram retornados pela API." />
+                                <EmptyState title="Sem itens" text="Os itens não foram retornados pela API." className="!border-dashed !p-5" />
                             )}
                         </div>
                     </div>
 
                     <div>
-                        <h3 className="mb-2 text-sm font-bold text-[#313C55] dark:text-white">Linha do tempo</h3>
-                        <div className="space-y-2">
+                        <h3 className="mb-2 text-[15px] font-extrabold">Linha do tempo</h3>
+                        <div className="flex flex-col gap-2">
                             {row.eventos?.length ? (
                                 row.eventos.map((ev) => (
-                                    <div key={ev.id} className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <div className="text-sm font-bold text-[#313C55] dark:text-white">{ev.evento.replace(/_/g, " ")}</div>
-                                                <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">{ev.usuario_nome || `Usuário #${ev.usuario_id}`}</div>
+                                    <div key={ev.id} className="rounded-xl border border-[#E3E8F0] px-3.5 py-2.5 dark:border-white/[0.12]">
+                                        <div className="flex gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-sm font-extrabold">{ev.evento.replace(/_/g, " ")}</div>
+                                                <div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{ev.usuario_nome || `Usuário #${ev.usuario_id}`}</div>
                                             </div>
-                                            <div className="shrink-0 text-right text-xs text-[#5B6478] dark:text-[#AEB9CF]">{fmtDateTime(ev.criado_em)}</div>
+                                            <div className="shrink-0 text-right text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{fmtDateTime(ev.criado_em)}</div>
                                         </div>
-                                        {ev.observacao ? <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">{ev.observacao}</p> : null}
+                                        {ev.observacao ? <p className="mt-1.5 text-[13px]">{ev.observacao}</p> : null}
                                     </div>
                                 ))
                             ) : (
-                                <EmptyState title="Sem eventos" text="A linha do tempo ainda não foi registrada." />
+                                <EmptyState title="Sem eventos" text="A linha do tempo ainda não foi registrada." className="!border-dashed !p-5" />
                             )}
                         </div>
                     </div>
-                </div>
+                </>
             )}
         </Modal>
     );
@@ -780,6 +827,12 @@ export default function MinhasSolicitacoesPage() {
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detail, setDetail] = useState<ReqDetalhe | null>(null);
+
+    /**
+     * Pedido de recarga depois de mudar o filtro de status ou limpar os filtros.
+     * A carga roda no efeito abaixo, já com os filtros novos (mesma função loadMinhas).
+     */
+    const [recarga, setRecarga] = useState(0);
 
     const loadInit = useCallback(async () => {
         setLoadingInit(true);
@@ -829,6 +882,14 @@ export default function MinhasSolicitacoesPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    useEffect(() => {
+        if (recarga === 0) return;
+        void loadMinhas();
+
+        // Só reage ao pedido de recarga (status/Limpar); a busca continua manual.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [recarga]);
+
     async function openDetail(id: ID) {
         setDetailOpen(true);
         setDetailLoading(true);
@@ -851,86 +912,120 @@ export default function MinhasSolicitacoesPage() {
         }
     }
 
+    const closeDetail = useCallback(() => setDetailOpen(false), []);
+
+    /** Status do select (computador) e dos chips (celular): o MESMO filtro. */
+    function changeStatus(value: string) {
+        setFiltroStatus(value);
+        setRecarga((n) => n + 1);
+    }
+
     function clearFilters() {
         setFiltroStatus("");
         setFiltroQ("");
+        setRecarga((n) => n + 1);
     }
 
+    const chips = [{ id: "", nome: "Todas" }, ...statusOptions];
+
+    const searchProps = {
+        value: filtroQ,
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFiltroQ(e.target.value),
+        onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+            if (e.key === "Enter") void loadMinhas();
+        },
+        placeholder: "Produto, código ou destino",
+        "aria-label": "Busca",
+    };
+
+    const refreshButton = (
+        <Button type="button" onClick={loadMinhas} disabled={loadingRows} aria-label="Atualizar" title="Atualizar" className="!min-h-12 !w-12 shrink-0 !px-0">
+            <IconRefresh spinning={loadingRows} />
+        </Button>
+    );
+
     return (
-        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:text-white">
-            <div className="mx-auto w-full max-w-5xl px-5 py-5">
-                <header className="mb-5 flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm">
-                            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" className="text-[#313C55] dark:text-white">
-                                <path d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" stroke="currentColor" strokeWidth="1.8" />
-                                <path d="M8.5 9h7M8.5 13h7M8.5 17h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                            </svg>
-                        </div>
-
-                        <div className="min-w-0">
-                            <h1 className="truncate text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">Minhas Solicitações</h1>
-                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Histórico das suas requisições.</p>
-                        </div>
-                    </div>
-
-                    {me?.nome ? (
-                        <div className="hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-right text-xs shadow-sm sm:block">
-                            <div className="text-[#5B6478] dark:text-[#AEB9CF]">Usuário</div>
-                            <div className="font-bold text-[#313C55] dark:text-white">{me.nome}</div>
-                        </div>
-                    ) : null}
+        <main className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:pb-12">
+            <div className="mx-auto w-full max-w-[1120px] lg:px-10 lg:pt-8">
+                <header className="px-4 pb-3 pt-4 lg:mb-6 lg:p-0">
+                    <h1 className="text-[22px] font-extrabold leading-tight text-[#313C55] dark:text-white lg:text-[28px]">Minhas Solicitações</h1>
+                    <p className="mt-1 hidden text-sm text-[#5B6478] dark:text-[#AEB9CF] lg:block">
+                        Histórico das suas requisições. Para cancelar ou confirmar recebimento, use Requisição de Material.
+                    </p>
                 </header>
 
-                {loadingInit ? <Card className="mb-4 p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando dados...</Card> : null}
-
-                {err ? (
-                    <div className="mb-4 rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">
-                        {err}
+                {/* FILTROS · CELULAR (em pé e deitado): busca + chips de status roláveis */}
+                <div className="border-y border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F] lg:hidden">
+                    <div className="flex gap-2">
+                        <SearchInput {...searchProps} />
+                        {refreshButton}
                     </div>
-                ) : null}
 
-                <div className="space-y-4">
-                    <Card className="p-4">
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[180px_1fr_auto_auto] sm:items-end">
-                            <Field label="Status">
-                                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-                                    <option value="">Todos</option>
-                                    {statusOptions.map((s) => (
-                                        <option key={s.id} value={s.id}>
-                                            {s.nome}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Field>
+                    <div className="-mx-4 mt-2.5 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]" role="group" aria-label="Status">
+                        {chips.map((c) => {
+                            const on = c.id === filtroStatus;
+                            return (
+                                <button
+                                    key={c.id || "todas"}
+                                    type="button"
+                                    aria-pressed={on}
+                                    onClick={() => changeStatus(c.id)}
+                                    className={[
+                                        "h-11 shrink-0 whitespace-nowrap rounded-full border-[1.5px] px-3.5 text-sm font-bold",
+                                        on
+                                            ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                                            : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white",
+                                    ].join(" ")}
+                                >
+                                    {c.nome}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
 
-                            <Field label="Busca">
-                                <TextInput
-                                    value={filtroQ}
-                                    onChange={(e) => setFiltroQ(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") void loadMinhas();
-                                    }}
-                                    placeholder="Produto, código ou destino"
-                                />
-                            </Field>
+                {/* FILTROS · COMPUTADOR */}
+                <Card className="mb-5 hidden px-5 py-4 lg:block">
+                    <div className="grid grid-cols-[200px_minmax(0,1fr)_auto_auto] items-end gap-4">
+                        <Field label="Status">
+                            <Select value={filtroStatus} onChange={(e) => changeStatus(e.target.value)}>
+                                <option value="">Todos</option>
+                                {statusOptions.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
 
-                            <Button type="button" variant="soft" onClick={loadMinhas} disabled={loadingRows} className="w-full sm:w-auto">
-                                {loadingRows ? "Atualizando..." : "Atualizar"}
-                            </Button>
+                        <label className="block">
+                            <span className={LABEL_CLS}>Busca</span>
+                            <SearchInput {...searchProps} />
+                        </label>
 
-                            <Button type="button" variant="ghost" onClick={clearFilters} disabled={loadingRows} className="w-full sm:w-auto">
-                                Limpar
-                            </Button>
+                        {refreshButton}
+
+                        <Button type="button" onClick={clearFilters} disabled={loadingRows} className="lg:!min-h-12">
+                            Limpar
+                        </Button>
+                    </div>
+                </Card>
+
+                <div className="px-4 pb-5 pt-3 lg:p-0">
+                    {loadingInit ? <Card className="mb-3 p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando dados...</Card> : null}
+
+                    {err ? (
+                        <div role="alert" className="mb-3 rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] lg:mb-4">
+                            {err}
                         </div>
-                    </Card>
+                    ) : null}
 
                     {loadingRows ? (
                         <Card className="p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando seu histórico...</Card>
                     ) : rows.length === 0 ? (
-                        <EmptyState title="Nenhuma requisição" text="Não há registros para mostrar." />
+                        <EmptyState title="Nenhuma requisição" text="Não há registros para mostrar." className="lg:p-8" />
                     ) : (
-                        <div className="grid grid-cols-1 items-start gap-3 sm:landscape:grid-cols-2 lg:grid-cols-2">
+                        <div className="grid grid-cols-1 items-start gap-2.5 max-lg:landscape:grid-cols-2 lg:grid-cols-2 lg:gap-4">
                             {rows.map((row) => (
                                 <RequestCard
                                     key={row.id}
@@ -948,8 +1043,8 @@ export default function MinhasSolicitacoesPage() {
                 open={detailOpen}
                 row={detailLoading ? null : detail}
                 statusOptions={statusOptions}
-                onClose={() => setDetailOpen(false)}
+                onClose={closeDetail}
             />
         </main>
     );
-}
+}

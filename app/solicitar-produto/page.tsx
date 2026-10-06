@@ -336,7 +336,33 @@ async function apiPost<T>(
 
 /* =========================================================
    COMPONENTES
+   (visual do mockup "Solicitar Produto", 06/10/2026)
    ========================================================= */
+
+/** Rótulo de campo do mockup: maiúsculas, 12px, extra-negrito. */
+const LABEL_CLS =
+    "mb-2 block text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
+/** Campo do mockup: 48px, sem borda visível, fundo "field". */
+const FIELD_CLS =
+    "h-12 w-full rounded-xl border border-transparent bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 disabled:opacity-60 dark:bg-[#1C2334] dark:text-white dark:placeholder:text-[#8893AA]";
+
+/** Computador = largura >= 1024px (ponto de quebra lg do app). */
+function useIsDesktop() {
+    const [desktop, setDesktop] = useState(false);
+
+    useEffect(() => {
+        const mq = window.matchMedia("(min-width: 1024px)");
+        const sync = () => setDesktop(mq.matches);
+
+        sync();
+        mq.addEventListener("change", sync);
+
+        return () => mq.removeEventListener("change", sync);
+    }, []);
+
+    return desktop;
+}
 
 function Card({
     children,
@@ -348,12 +374,21 @@ function Card({
     return (
         <section
             className={[
-                "rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm",
+                "rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]",
                 className,
             ].join(" ")}
         >
             {children}
         </section>
+    );
+}
+
+/** Cabeçalho de seção: no celular fica dentro do bloco; no computador ganha faixa com borda. */
+function SectionHeader({ children }: { children: React.ReactNode }) {
+    return (
+        <div className="flex items-center gap-2 px-3.5 pt-3.5 lg:gap-3 lg:border-b lg:border-[#E3E8F0] lg:px-6 lg:py-[18px] lg:dark:border-white/[0.12]">
+            {children}
+        </div>
     );
 }
 
@@ -368,9 +403,7 @@ function Field({
 }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-[#313C55] dark:text-[#D6DCE8]">
-                {label}
-            </span>
+            <span className={LABEL_CLS}>{label}</span>
 
             {children}
 
@@ -392,11 +425,7 @@ const TextInput =
             <input
                 ref={ref}
                 {...props}
-                className={[
-                    "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
-                    "placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
-                    props.className || "",
-                ].join(" ")}
+                className={[FIELD_CLS, props.className || ""].join(" ")}
             />
         );
     });
@@ -407,11 +436,7 @@ function Select(
     return (
         <select
             {...props}
-            className={[
-                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2.5 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
-                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:bg-[#EEF2F7] disabled:text-[#7A8396]",
-                props.className || "",
-            ].join(" ")}
+            className={[FIELD_CLS, props.className || ""].join(" ")}
         />
     );
 }
@@ -428,17 +453,18 @@ function Button({
     | "ghost"
     | "danger";
 }) {
+    /* Mockup: 48px no celular, 44px no computador. */
     const base =
-        "inline-flex min-h-10 items-center justify-center rounded-xl px-4 py-2 text-[15px] font-bold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
+        "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-[18px] text-[15px] font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-[#3D6A99]/30 disabled:cursor-not-allowed disabled:opacity-45 lg:min-h-11 lg:text-[14px]";
 
     const style =
         variant === "solid"
-            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
+            ? "border-[1.5px] border-[#313C55] bg-[#313C55] font-extrabold text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30] lg:border"
             : variant === "soft"
-                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
+                ? "border-[1.5px] border-[#E3E8F0] bg-[#EEF2F7] text-[#313C55] hover:bg-[#E3E8F0] dark:border-white/[0.12] dark:bg-white/10 dark:text-white dark:hover:bg-white/15 lg:border"
                 : variant === "danger"
-                    ? "border border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
-                    : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
+                    ? "border-[1.5px] border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15 lg:border"
+                    : "border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08] lg:border";
 
     return (
         <button
@@ -451,6 +477,24 @@ function Button({
         >
             {children}
         </button>
+    );
+}
+
+function IconSearch() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+        </svg>
+    );
+}
+
+function IconPlus() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+        </svg>
     );
 }
 
@@ -527,28 +571,17 @@ function ProductCombobox({
             );
     }, []);
 
-    const selected =
-        produtos.find(
-            (p) => p.id === valueId
-        ) || null;
-
     return (
-        <Field
-            label={label}
-            hint={
-                selected
-                    ? `Código: ${selected.codigo_barras ||
-                    "sem código"
-                    }`
-                    : undefined
-            }
-        >
-            <div
-                ref={wrapRef}
-                className="relative"
-            >
-                <TextInput
+        <div ref={wrapRef} className="relative">
+            <span className={LABEL_CLS}>{label}</span>
+
+            <label className="flex h-12 items-center gap-2.5 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF] lg:px-3.5">
+                <IconSearch />
+
+                <input
+                    type="search"
                     value={query}
+                    aria-label={label}
                     onFocus={() =>
                         setOpen(true)
                     }
@@ -565,87 +598,71 @@ function ProductCombobox({
                         placeholder ||
                         "Busque por nome ou código"
                     }
+                    className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white dark:placeholder:text-[#8893AA] lg:text-[15px]"
                 />
+            </label>
 
-                {open ? (
-                    <div className="absolute left-0 right-0 z-30 mt-2 max-h-80 overflow-auto rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-2 shadow-xl">
-                        {list.length === 0 ? (
-                            <div className="p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                Nenhum produto
-                                encontrado.
-                            </div>
-                        ) : (
-                            list.map((p) => {
-                                const saldo =
-                                    saldoTotalByProd.get(
-                                        p.id
-                                    ) || 0;
+            {open ? (
+                /* Celular: lista logo abaixo, dentro do bloco. Computador: lista flutuante. */
+                <div className="mt-1.5 max-h-80 overflow-auto rounded-[14px] border border-[#C9D1DE] bg-white dark:border-white/[0.26] dark:bg-[#232B3F] lg:absolute lg:left-0 lg:right-0 lg:z-30 lg:mt-2 lg:shadow-[0_12px_32px_rgba(0,0,0,.18)]">
+                    {list.length === 0 ? (
+                        <div className="p-3.5 text-[#5B6478] dark:text-[#AEB9CF] lg:p-4">
+                            Nenhum produto
+                        </div>
+                    ) : (
+                        list.map((p) => {
+                            const saldo =
+                                saldoTotalByProd.get(
+                                    p.id
+                                ) || 0;
 
-                                return (
-                                    <button
-                                        key={p.id}
-                                        type="button"
-                                        onMouseDown={(
-                                            e
-                                        ) =>
-                                            e.preventDefault()
-                                        }
-                                        onClick={() => {
-                                            onChangeId(
-                                                p.id
-                                            );
+                            return (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onMouseDown={(
+                                        e
+                                    ) =>
+                                        e.preventDefault()
+                                    }
+                                    onClick={() => {
+                                        onChangeId(
+                                            p.id
+                                        );
 
-                                            setQuery(
-                                                p.nome
-                                            );
+                                        setQuery(
+                                            p.nome
+                                        );
 
-                                            setOpen(
-                                                false
-                                            );
-                                        }}
-                                        className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                                    >
-                                        <div className="min-w-0">
-                                            <div className="line-clamp-2 text-sm font-bold text-[#313C55] dark:text-white">
-                                                {
-                                                    p.nome
-                                                }
-                                            </div>
+                                        setOpen(
+                                            false
+                                        );
+                                    }}
+                                    className="flex min-h-[52px] w-full items-center gap-2.5 border-b border-[#E3E8F0] bg-white px-3.5 py-2 text-left text-[#313C55] last:border-b-0 hover:bg-[#EEF2F7] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08] lg:gap-3 lg:px-4"
+                                >
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-sm font-extrabold">
+                                            {p.nome}
+                                        </span>
 
-                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                                {p.codigo_barras ||
-                                                    "Sem código"}
+                                        <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                            CB: {p.codigo_barras || "Sem código"}
+                                        </span>
+                                    </span>
 
-                                                {p.categoria_nome
-                                                    ? ` • ${p.categoria_nome}`
-                                                    : ""}
-
-                                                {p.classificacao_nome
-                                                    ? ` • ${p.classificacao_nome}`
-                                                    : ""}
-                                            </div>
-                                        </div>
-
-                                        <div className="shrink-0 text-right">
-                                            <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                                Saldo
-                                                total
-                                            </div>
-
-                                            <div className="text-sm font-bold text-[#313C55] dark:text-white">
-                                                {fmtQtd(
-                                                    saldo
-                                                )}
-                                            </div>
-                                        </div>
-                                    </button>
-                                );
-                            })
-                        )}
-                    </div>
-                ) : null}
-            </div>
-        </Field>
+                                    <span className="shrink-0 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:text-[13px]">
+                                        Total{" "}
+                                        <b className="text-[15px] text-[#313C55] dark:text-white">
+                                            {fmtQtd(saldo)}
+                                        </b>
+                                    </span>
+                                </button>
+                            );
+                        })
+                    )}
+                </div>
+            ) : null}
+        </div>
     );
 }
 
@@ -661,23 +678,24 @@ function EmptyState({
     text: string;
 }) {
     return (
-        <div className="rounded-2xl border border-dashed border-[#C9D1DE] dark:border-white/25 bg-[#F6F8FB] dark:bg-[#1C2334] p-5 text-center">
-            <p className="text-sm font-bold text-[#313C55] dark:text-white">
+        <div className="rounded-[14px] border border-dashed border-[#C9D1DE] p-[18px] text-center dark:border-white/[0.26] lg:p-6">
+            <p className="font-extrabold text-[#313C55] dark:text-white">
                 {title}
             </p>
 
-            <p className="mt-1 text-sm leading-5 text-[#5B6478] dark:text-[#AEB9CF]">
+            <p className="mt-1 text-[12.5px] leading-5 text-[#5B6478] dark:text-[#AEB9CF] lg:text-[13px]">
                 {text}
             </p>
         </div>
     );
 }
-
 /* =========================================================
    PAGE
    ========================================================= */
 
 export default function SolicitarProdutoPage() {
+    const isDesktop = useIsDesktop();
+
     const [me, setMe] =
         useState<Me | null>(null);
 
@@ -1266,9 +1284,10 @@ export default function SolicitarProdutoPage() {
             }
 
             setOkMsg(
-                `${data.codigo ||
-                "Requisição"
-                } criada com sucesso.`
+                `${data.codigo
+                    ? `Requisição ${data.codigo} enviada.`
+                    : "Requisição enviada."
+                } Acompanhe em Minhas Solicitações.`
             );
 
             setDestinoDepositoId(0);
@@ -1316,59 +1335,37 @@ export default function SolicitarProdutoPage() {
 
     /* =====================================================
        RENDER
+       (mockups SolicitarProduto / Celular / CelularH)
        ===================================================== */
 
+    const justificativaProduto =
+        selectedProduto
+            ? justificativaDoProduto(selectedProduto)
+            : null;
+
     return (
-        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:text-white">
-            <div className="mx-auto w-full max-w-5xl px-5 py-5">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:pb-12">
+            <div className="mx-auto w-full max-w-[1120px] px-4 pt-4 lg:px-10 lg:pt-8">
 
                 {/* HEADER */}
-                <header className="mb-5 flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm">
-                            <svg
-                                width="21"
-                                height="21"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                className="text-[#313C55] dark:text-white"
-                            >
-                                <path
-                                    d="M7 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
-                                    stroke="currentColor"
-                                    strokeWidth="1.8"
-                                />
+                <header className="mb-3.5 flex items-start gap-4 lg:mb-6">
+                    <div className="min-w-0 flex-1">
+                        <h1 className="text-[22px] font-extrabold leading-tight text-[#313C55] dark:text-white lg:text-[28px]">
+                            Solicitar Produto
+                        </h1>
 
-                                <path
-                                    d="M8.5 9h7M8.5 13h4.5"
-                                    stroke="currentColor"
-                                    strokeWidth="1.8"
-                                    strokeLinecap="round"
-                                />
-
-                                <path
-                                    d="M15 16h5M17.5 13.5v5"
-                                    stroke="currentColor"
-                                    strokeWidth="1.8"
-                                    strokeLinecap="round"
-                                />
-                            </svg>
-                        </div>
-
-                        <div className="min-w-0">
-                            <h1 className="truncate text-2xl font-bold tracking-tight text-[#313C55] dark:text-white">
-                                Solicitar Produto
-                            </h1>
-                        </div>
+                        <p className="mt-1 hidden text-sm text-[#5B6478] dark:text-[#AEB9CF] lg:block">
+                            Escolha o destino, adicione os produtos e envie a requisição.
+                        </p>
                     </div>
 
                     {me?.nome ? (
-                        <div className="hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-right text-xs shadow-sm sm:block">
-                            <div className="text-[#5B6478] dark:text-[#AEB9CF]">
+                        <div className="hidden rounded-xl border border-[#E3E8F0] bg-white px-3.5 py-2 text-right dark:border-white/[0.12] dark:bg-[#232B3F] lg:block">
+                            <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                 Usuário
                             </div>
 
-                            <div className="font-bold text-[#313C55] dark:text-white">
+                            <div className="text-sm font-extrabold text-[#313C55] dark:text-white">
                                 {me.nome}
                             </div>
                         </div>
@@ -1381,29 +1378,29 @@ export default function SolicitarProdutoPage() {
                         Carregando dados da requisição...
                     </Card>
                 ) : err ? (
-                    <div className="mb-4 rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-4 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">
+                    <div role="alert" className="mb-3.5 rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] lg:mb-4">
                         {err}
                     </div>
                 ) : null}
 
                 {okMsg ? (
-                    <div className="mb-4 rounded-2xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-4 text-sm font-semibold text-[#313C55] dark:text-white">
+                    <div role="status" className="mb-3.5 rounded-[14px] border border-[#B3CE52] bg-[#EEF5D6] px-4 py-3 text-sm font-bold text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white lg:mb-4">
                         {okMsg}
                     </div>
                 ) : null}
 
                 {!loadingInit ? (
-                    <div className="grid grid-cols-1 items-start gap-4 sm:landscape:grid-cols-2 lg:grid-cols-1">
+                    <div className="grid grid-cols-1 items-start gap-3 max-lg:landscape:grid-cols-2 lg:gap-5">
 
                         {/* DADOS DA SOLICITAÇÃO */}
                         <Card className="overflow-hidden">
-                            <div className="border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
-                                <h2 className="text-base font-bold text-[#313C55] dark:text-white">
+                            <SectionHeader>
+                                <h2 className="text-base font-extrabold text-[#313C55] dark:text-white lg:text-lg">
                                     Dados da solicitação
                                 </h2>
-                            </div>
+                            </SectionHeader>
 
-                            <div className="space-y-4 p-4">
+                            <div className="grid grid-cols-1 items-start gap-3 p-3.5 lg:grid-cols-2 lg:gap-5 lg:px-6 lg:py-5">
                                 <Field label="Destino ou Setor">
                                     <Select
                                         value={
@@ -1447,18 +1444,18 @@ export default function SolicitarProdutoPage() {
                                 </Field>
 
                                 {justificativaSelecionada ? (
-                                    <div className="rounded-2xl border border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 p-3">
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
+                                    <div className="rounded-[14px] border border-[#3D6A99] bg-[#E9EFF6] px-3.5 py-2.5 dark:bg-[#3D6A99]/20 lg:px-4 lg:py-3">
+                                        <div className="text-[11px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]">
                                             Tipo definido automaticamente pelos produtos
                                         </div>
 
-                                        <div className="mt-1 text-sm font-bold text-[#313C55] dark:text-white">
+                                        <div className="mt-0.5 text-sm font-extrabold text-[#313C55] dark:text-white lg:text-[15px]">
                                             {
                                                 justificativaSelecionada.label
                                             }
                                         </div>
 
-                                        <div className="mt-1 text-xs text-[#313C55] dark:text-white">
+                                        <div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-0.5 lg:text-[13px]">
                                             {justificativaSelecionada.destino_tipo ===
                                                 "DEPOSITO"
                                                 ? "Operação: Transferência"
@@ -1466,8 +1463,8 @@ export default function SolicitarProdutoPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3 text-xs leading-5 text-[#5B6478] dark:text-[#AEB9CF]">
-                                        O primeiro produto escolhido definirá automaticamente o tipo da solicitação. Depois disso, somente produtos da mesma classificação ficarão disponíveis.
+                                    <div className="rounded-[14px] border border-[#E3E8F0] bg-[#F6F8FB] px-3.5 py-2.5 text-[12.5px] leading-normal text-[#5B6478] dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-[#AEB9CF] lg:px-4 lg:py-3 lg:text-[13px]">
+                                        O primeiro produto escolhido definirá automaticamente o tipo da solicitação. Depois disso, somente produtos da mesma classificação poderão ser adicionados.
                                     </div>
                                 )}
                             </div>
@@ -1475,50 +1472,116 @@ export default function SolicitarProdutoPage() {
 
                         {/* PRODUTO */}
                         <Card className="overflow-visible">
-                            <div className="border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
-                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <h2 className="text-base font-bold text-[#313C55] dark:text-white">
-                                        Produto
-                                    </h2>
+                            <SectionHeader>
+                                <h2 className="flex-1 text-base font-extrabold text-[#313C55] dark:text-white lg:text-lg">
+                                    Produto
+                                </h2>
 
-                                    {justificativaSelecionada ? (
-                                        <span className="text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                                            Exibindo somente produtos compatíveis
-                                        </span>
-                                    ) : null}
-                                </div>
-                            </div>
+                                {justificativaSelecionada ? (
+                                    <span className="text-xs font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:text-[13px]">
+                                        <span className="lg:hidden">Somente compatíveis</span>
+                                        <span className="hidden lg:inline">Exibindo somente produtos compatíveis</span>
+                                    </span>
+                                ) : null}
+                            </SectionHeader>
 
-                            <div className="space-y-4 p-4">
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
+                            {/*
+                             * Celular: Produto → ficha do produto → Quantidade → Observação.
+                             * Computador: Produto | Quantidade (180px) na 1ª linha; o resto ocupa as 2 colunas.
+                             */}
+                            <div className="grid grid-cols-1 gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_180px] lg:gap-4 lg:px-6 lg:py-5">
+                                <ProductCombobox
+                                    label="Produto"
+                                    produtos={
+                                        produtosDisponiveis
+                                    }
+                                    valueId={
+                                        produtoId
+                                    }
+                                    onChangeId={
+                                        handleProdutoChange
+                                    }
+                                    query={
+                                        produtoQuery
+                                    }
+                                    setQuery={
+                                        setProdutoQuery
+                                    }
+                                    saldoTotalByProd={
+                                        saldoTotalByProd
+                                    }
+                                    placeholder={
+                                        isDesktop
+                                            ? "Busque qualquer produto por nome ou código"
+                                            : "Busque por nome ou código"
+                                    }
+                                />
 
-                                    <ProductCombobox
-                                        label="Produto"
-                                        produtos={
-                                            produtosDisponiveis
-                                        }
-                                        valueId={
-                                            produtoId
-                                        }
-                                        onChangeId={
-                                            handleProdutoChange
-                                        }
-                                        query={
-                                            produtoQuery
-                                        }
-                                        setQuery={
-                                            setProdutoQuery
-                                        }
-                                        saldoTotalByProd={
-                                            saldoTotalByProd
-                                        }
-                                        placeholder={
-                                            justificativaSelecionada
-                                                ? "Busque outro produto da mesma classificação"
-                                                : "Busque qualquer produto por nome ou código"
-                                        }
-                                    />
+                                {/* PRODUTO SELECIONADO */}
+                                {selectedProduto ? (
+                                    <div className="rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] px-3.5 py-3 text-[#313C55] dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-white lg:col-span-2 lg:px-5 lg:py-[18px]">
+                                        <div className="text-base font-extrabold lg:text-[19px]">
+                                            {selectedProduto.nome}
+                                        </div>
 
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1.5 lg:gap-x-4 lg:gap-y-2 lg:text-[13px]">
+                                            {selectedProduto.classificacao_nome ? (
+                                                <span>
+                                                    Classificação:{" "}
+                                                    <b className="text-[#313C55] dark:text-white">
+                                                        {selectedProduto.classificacao_nome}
+                                                    </b>
+                                                </span>
+                                            ) : null}
+
+                                            {justificativaProduto ? (
+                                                <span className="inline-flex h-6 items-center rounded-xl border border-[#3D6A99] bg-[#E9EFF6] px-2.5 text-xs font-extrabold text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">
+                                                    {justificativaProduto.label}
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex h-6 items-center rounded-xl border border-[#B42318] bg-[#FDECEA] px-2.5 text-xs font-extrabold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                                                    Produto sem regra de classificação
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="mt-3 grid grid-cols-1 items-start gap-3 lg:mt-3.5 lg:grid-cols-2 lg:gap-4">
+                                            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-1 lg:gap-3">
+                                                <div className="rounded-xl border border-[#E3E8F0] bg-white px-3 py-2 dark:border-white/[0.12] dark:bg-[#232B3F] lg:px-3.5 lg:py-2.5">
+                                                    <div className="text-[10.5px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF] lg:text-[11px]">
+                                                        Quantidade total
+                                                    </div>
+                                                    <div className="text-2xl font-extrabold leading-tight lg:text-[28px]">
+                                                        {fmtQtd(saldoTotalByProd.get(selectedProduto.id) || 0)}
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-xl border border-[#E3E8F0] bg-white px-3 py-2 dark:border-white/[0.12] dark:bg-[#232B3F] lg:px-3.5 lg:py-2.5">
+                                                    <div className="text-[10.5px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF] lg:text-[11px]">
+                                                        Valor de venda
+                                                    </div>
+                                                    <div className="text-[19px] font-extrabold leading-[1.55] lg:text-[28px] lg:leading-tight">
+                                                        {valorVendaSelecionado}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF] lg:text-[11px]">
+                                                    Distribuição por local
+                                                </div>
+                                                <ItensTabela
+                                                    cabecalho="Local"
+                                                    itens={distribuicaoSelecionada}
+                                                    vazio="Nenhum local com unidade deste produto."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : null}
+
+                                {/* QUANTIDADE (computador: ao lado do Produto) */}
+                                <div className="lg:col-start-2 lg:row-start-1">
                                     <Field label="Quantidade">
                                         <TextInput
                                             value={
@@ -1541,104 +1604,44 @@ export default function SolicitarProdutoPage() {
                                     </Field>
                                 </div>
 
-                                {/* PRODUTO SELECIONADO */}
-                                {selectedProduto ? (
-                                    <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-sm text-[#313C55] dark:text-[#D6DCE8]">
-                                        <div className="text-lg font-extrabold text-[#313C55] dark:text-white">
-                                            {selectedProduto.nome}
-                                        </div>
-
-                                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                            {selectedProduto.classificacao_nome ? (
-                                                <span>
-                                                    Classificação:{" "}
-                                                    <b className="text-[#313C55] dark:text-white">
-                                                        {selectedProduto.classificacao_nome}
-                                                    </b>
-                                                </span>
-                                            ) : null}
-
-                                            {justificativaDoProduto(selectedProduto) ? (
-                                                <div className="inline-flex rounded-full border border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2.5 py-1 text-[11px] font-bold text-[#313C55] dark:text-white">
-                                                    {justificativaDoProduto(selectedProduto)?.label}
-                                                </div>
-                                            ) : (
-                                                <div className="inline-flex rounded-full border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 px-2.5 py-1 text-[11px] font-bold text-[#B42318] dark:text-[#FF9C92]">
-                                                    Produto sem regra de classificação
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,240px)_1fr] sm:items-start">
-                                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
-                                                <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2">
-                                                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
-                                                        Quantidade total
-                                                    </div>
-                                                    <div className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white">
-                                                        {fmtQtd(saldoTotalByProd.get(selectedProduto.id) || 0)}
-                                                    </div>
-                                                </div>
-
-                                                <div className="rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2">
-                                                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
-                                                        Valor de venda
-                                                    </div>
-                                                    <div className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white">
-                                                        {valorVendaSelecionado}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div>
-                                                <div className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
-                                                    Distribuição por local
-                                                </div>
-                                                <ItensTabela
-                                                    cabecalho="Local"
-                                                    itens={distribuicaoSelecionada}
-                                                    vazio="Nenhum local com unidade deste produto."
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : null}
-
                                 {/* OBSERVAÇÃO */}
-                                <Field label="Observação">
-                                    <TextInput
-                                        value={
-                                            itemObs
-                                        }
-                                        onChange={(
-                                            e
-                                        ) =>
-                                            setItemObs(
+                                <div className="lg:col-span-2">
+                                    <Field label="Observação">
+                                        <TextInput
+                                            value={
+                                                itemObs
+                                            }
+                                            onChange={(
                                                 e
-                                                    .target
-                                                    .value
-                                            )
-                                        }
-                                        placeholder="Opcional"
-                                    />
-                                </Field>
+                                            ) =>
+                                                setItemObs(
+                                                    e
+                                                        .target
+                                                        .value
+                                                )
+                                            }
+                                            placeholder="Opcional"
+                                        />
+                                    </Field>
+                                </div>
 
                                 {/* ADICIONAR */}
                                 <Button
                                     type="button"
-                                    variant="soft"
+                                    variant="ghost"
                                     onClick={
                                         addItem
                                     }
-                                    className="w-full sm:w-auto"
+                                    className="mt-0.5 w-full lg:col-span-2 lg:mt-0"
                                 >
+                                    <IconPlus />
                                     Adicionar item
                                 </Button>
 
                                 {/* ITENS */}
-                                {itens.length ? (
-                                    <div className="space-y-2">
-                                        {itens.map(
+                                <div className="mt-0.5 flex flex-col gap-2 lg:col-span-2 lg:mt-0 lg:gap-2.5">
+                                    {itens.length ? (
+                                        itens.map(
                                             (
                                                 item
                                             ) => (
@@ -1646,62 +1649,68 @@ export default function SolicitarProdutoPage() {
                                                     key={
                                                         item.local_id
                                                     }
-                                                    className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3"
+                                                    className="flex items-center gap-2 rounded-[14px] border border-[#E3E8F0] px-3 py-2.5 dark:border-white/[0.12] lg:gap-3 lg:px-4 lg:py-3"
                                                 >
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <div className="line-clamp-2 text-sm font-bold text-[#313C55] dark:text-white">
-                                                                {
-                                                                    item.produto_nome
-                                                                }
-                                                            </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="text-sm font-extrabold text-[#313C55] dark:text-white lg:text-[15px]">
+                                                            {
+                                                                item.produto_nome
+                                                            }
+                                                        </div>
 
-                                                            <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                                                {item.codigo_barras ||
-                                                                    "Sem código"}{" "}
-                                                                • Qtd{" "}
+                                                        <div className="mt-0.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:text-[13px]">
+                                                            {item.codigo_barras ||
+                                                                "Sem código"}{" "}
+                                                            • Qtd{" "}
+                                                            <b className="text-[#313C55] dark:text-white">
                                                                 {fmtQtd(
                                                                     item.quantidade
                                                                 )}
-                                                            </div>
-
-                                                            {item.observacao ? (
-                                                                <div className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                                                    {
-                                                                        item.observacao
-                                                                    }
-                                                                </div>
-                                                            ) : null}
+                                                            </b>
                                                         </div>
 
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                removeItem(
-                                                                    item.local_id
-                                                                )
-                                                            }
-                                                            className="rounded-xl border border-[#B42318] bg-white px-4 py-2 text-xs font-bold text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
-                                                        >
-                                                            Remover
-                                                        </button>
+                                                        {item.observacao ? (
+                                                            <div className="mt-1 text-[12.5px] text-[#313C55] dark:text-[#D6DCE8] lg:text-[13px]">
+                                                                {
+                                                                    item.observacao
+                                                                }
+                                                            </div>
+                                                        ) : null}
                                                     </div>
+
+                                                    <Button
+                                                        type="button"
+                                                        variant="danger"
+                                                        onClick={() =>
+                                                            removeItem(
+                                                                item.local_id
+                                                            )
+                                                        }
+                                                        className="!min-h-11 shrink-0 !px-3 !text-sm lg:!px-[18px]"
+                                                    >
+                                                        Remover
+                                                    </Button>
                                                 </div>
                                             )
-                                        )}
-                                    </div>
-                                ) : (
-                                    <EmptyState
-                                        title="Nenhum item"
-                                        text="Adicione o primeiro produto. A classificação dele definirá automaticamente o tipo da requisição."
-                                    />
-                                )}
+                                        )
+                                    ) : (
+                                        <EmptyState
+                                            title="Nenhum item"
+                                            text="Adicione o primeiro produto. A classificação dele definirá automaticamente o tipo da requisição."
+                                        />
+                                    )}
+                                </div>
                             </div>
                         </Card>
 
-                        {/* AÇÕES */}
-                        <div className="sticky bottom-0 -mx-5 sm:landscape:col-span-2 border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB]/95 dark:bg-[#161C2A]/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                        {/*
+                         * AÇÕES
+                         * Celular (em pé e deitado): barra fixa logo ACIMA da barra de baixo do app
+                         * (BarraCelular: fixed, 4.25rem + área segura, z-40), botões lado a lado.
+                         * Computador: linha normal no fim da página.
+                         */}
+                        <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 -mx-4 border-t border-[#E3E8F0] bg-white px-4 py-2.5 dark:border-white/[0.12] dark:bg-[#232B3F] max-lg:landscape:col-span-2 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:dark:bg-transparent">
+                            <div className="flex gap-2 lg:grid lg:grid-cols-[1fr_auto] lg:gap-3">
                                 <Button
                                     type="button"
                                     onClick={
@@ -1711,7 +1720,7 @@ export default function SolicitarProdutoPage() {
                                         saving ||
                                         loadingInit
                                     }
-                                    className="w-full"
+                                    className="flex-1 lg:!min-h-[52px] lg:!text-base"
                                 >
                                     {saving
                                         ? "Enviando..."
@@ -1727,7 +1736,7 @@ export default function SolicitarProdutoPage() {
                                     disabled={
                                         saving
                                     }
-                                    className="w-full sm:w-auto"
+                                    className="lg:!min-h-[52px]"
                                 >
                                     Limpar
                                 </Button>
@@ -1738,4 +1747,4 @@ export default function SolicitarProdutoPage() {
             </div>
         </main>
     );
-}
+}

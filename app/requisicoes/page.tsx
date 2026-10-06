@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { IconRefresh, IconX } from "@tabler/icons-react";
 import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 /**
@@ -220,8 +222,8 @@ const STATUS_LABEL: Record<StatusId, string> = {
  * consistente em toda a tela.
  */
 const STATUS_BADGE_CLASS: Record<StatusId, string> = {
-    PENDENTE: "border-[#8FD6F4] bg-[#E6F7FE] text-[#313C55] dark:border-[#00AEEC]/50 dark:bg-[#00AEEC]/20 dark:text-white",
-    EM_SEPARACAO: "border-[#00AEEC] bg-[#00AEEC] text-[#0F1626]",
+    PENDENTE: "border-[#A9BED6] bg-[#E9EFF6] text-[#313C55] dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-white",
+    EM_SEPARACAO: "border-[#3D6A99] bg-[#3D6A99] text-white",
     EM_TRANSITO: "border-[#313C55] bg-[#313C55] text-white dark:border-[#51607F] dark:bg-[#51607F]",
     ENTREGUE: "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white",
     CANCELADA: "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]",
@@ -482,14 +484,25 @@ async function apiPost<T>(body: Record<string, unknown>) {
     return safeJson<T>(r);
 }
 
+/* =========================================================
+   Peças visuais (mockup Requisições, 06/10/2026)
+   Celular: botões e campos de 48px; computador (lg): botões de 44px.
+   ========================================================= */
+
+const BTN_BASE =
+    "inline-flex h-12 items-center justify-center gap-2 rounded-xl border-[1.5px] font-bold outline-none transition disabled:cursor-not-allowed disabled:opacity-45 lg:h-11 lg:border";
+/** Tamanho normal e o compacto do botão principal do card (texto longo "Aguardando recebimento"). */
+const BTN_TAM = "px-[18px] text-[15px] lg:text-sm";
+const BTN_TAM_COMPACTO = "px-2 text-center text-sm leading-tight";
+
 /**
- * Componente base para blocos em formato de cartão.
+ * Card base da página.
  *
- * Centraliza borda, fundo, sombra e arredondamento. Assim, qualquer mudança
+ * Centraliza borda, fundo e arredondamento. Assim, qualquer mudança
  * visual nos cards pode ser feita em um único lugar.
  */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]", className].join(" ")}>{children}</section>;
 }
 
 /**
@@ -503,21 +516,19 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 function Button({
     children,
     variant = "solid",
+    compacto = false,
     className = "",
     ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" | "danger" }) {
-    const base =
-        "inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2 text-[15px] font-bold shadow-sm outline-none transition disabled:cursor-not-allowed disabled:opacity-50";
-
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" | "danger"; compacto?: boolean }) {
     const cls =
         variant === "danger"
-            ? "border border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
+            ? "border-[#B42318] bg-white text-[#B42318] hover:bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#232B3F] dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
             : variant === "ghost"
-                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-white hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                : "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]";
+                ? "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]"
+                : "border-[#313C55] bg-[#313C55] font-extrabold text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]";
 
     return (
-        <button {...props} className={[base, cls, className].join(" ")}>
+        <button {...props} className={[BTN_BASE, compacto ? BTN_TAM_COMPACTO : BTN_TAM, cls, className].join(" ")}>
             {children}
         </button>
     );
@@ -526,84 +537,76 @@ function Button({
 /**
  * Wrapper para campos de formulário.
  *
- * Renderiza um label padronizado acima do campo recebido em `children`.
+ * Renderiza um rótulo padronizado (maiúsculas, como no mockup) acima do campo.
  */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="mb-1 block text-xs font-bold text-[#313C55] dark:text-[#D6DCE8]">{label}</span>
+            <span className="mb-2 block text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]">{label}</span>
             {children}
         </label>
     );
 }
 
+const CAMPO =
+    "block w-full rounded-xl border border-transparent bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 disabled:opacity-70 dark:bg-[#1C2334] dark:text-white dark:placeholder:text-[#8893AA]";
+
 /**
- * Select padronizado.
- *
- * Usado no modal de envio para escolher o depósito de origem. Aceita todas as
- * props nativas de um `<select>`.
+ * Select padronizado (48px, sem borda, fundo de campo).
  */
 function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-    return (
-        <select
-            {...props}
-            className={[
-                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
-                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
-                props.className || "",
-            ].join(" ")}
-        />
-    );
+    return <select {...props} className={[CAMPO, "h-12", props.className || ""].join(" ")} />;
 }
 
 /**
- * Textarea padronizado.
- *
- * Usado para observação de envio e motivo de recusa. Aceita todas as props
- * nativas de um `<textarea>`.
+ * Textarea padronizado. Usado para observação e motivo de recusa.
  */
 function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-    return (
-        <textarea
-            {...props}
-            className={[
-                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none",
-                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
-                props.className || "",
-            ].join(" ")}
-        />
-    );
+    return <textarea {...props} className={[CAMPO, "resize-y py-3", props.className || ""].join(" ")} />;
 }
 
 /**
  * Badge visual para status.
- *
- * Usa as funções `statusLabel` e `statusClass` para transformar o status técnico
- * em texto amigável e cor correspondente.
  */
 function Badge({ status }: { status: unknown }) {
-    return <span className={["inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold", statusClass(status)].join(" ")}>{statusLabel(status)}</span>;
+    return (
+        <span className={["inline-flex h-[26px] items-center whitespace-nowrap rounded-full border-[1.5px] px-3 text-[12.5px] font-extrabold", statusClass(status)].join(" ")}>
+            {statusLabel(status)}
+        </span>
+    );
 }
 
 /**
- * Modal reutilizável.
+ * Janelas abertas direto no <body> (06/10/2026). A página rola dentro de um contêiner e, no iPhone,
+ * a barra de baixo (z-40) ficava por cima. Só chama createPortal depois de montar no cliente.
+ */
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [montado, setMontado] = useState(false);
+    useEffect(() => setMontado(true), []);
+    return montado ? createPortal(children, document.body) : null;
+}
+
+/**
+ * Janela reutilizável.
  *
- * Responsabilidades:
- * 1. Criar a camada escura sobre a tela.
- * 2. Exibir título, botão de fechar e conteúdo.
- * 3. Bloquear o scroll do body enquanto estiver aberto.
- * 4. Permitir ajuste de largura máxima via `maxWidth`.
+ * Computador (lg): diálogo centralizado com cabeçalho, corpo que rola e rodapé fixo
+ * (botões à direita, Voltar → ação). Celular: folha que sobe de baixo, com os botões
+ * lado a lado no rodapé. Esc fecha.
  */
 function Modal({
     open,
     title,
+    subtitle,
     onClose,
+    footer,
     children,
-    maxWidth = "max-w-xl",
+    maxWidth = "lg:max-w-[520px]",
 }: {
     open: boolean;
     title: string;
+    subtitle?: React.ReactNode;
     onClose: () => void;
+    footer: React.ReactNode;
     children: React.ReactNode;
     maxWidth?: string;
 }) {
@@ -613,25 +616,59 @@ function Modal({
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
 
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+
         return () => {
             document.body.style.overflow = prev;
+            window.removeEventListener("keydown", onKey);
         };
-    }, [open]);
+    }, [open, onClose]);
 
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex min-h-[100dvh] items-start justify-center bg-[#313C55]/45 p-3 pt-5 sm:items-center sm:p-4" role="dialog" data-pai-overlay aria-modal="true">
-            <div className={["flex max-h-[calc(100dvh-2.5rem)] w-full flex-col overflow-hidden rounded-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl", maxWidth].join(" ")}>
-                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
-                    <h2 className="truncate text-lg font-black text-[#313C55] dark:text-white">{title}</h2>
-                    <button className="rounded-xl px-3 py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10" type="button" onClick={onClose} aria-label="Fechar">
-                        ✕
-                    </button>
-                </div>
+        <NoCorpo>
+            <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6" role="dialog" data-pai-overlay aria-modal="true" aria-label={title}>
+                <div className={["flex max-h-[90dvh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]", maxWidth].join(" ")}>
+                    <div className="flex items-start gap-2 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:gap-3 lg:px-6 lg:py-5">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-[19px] font-extrabold leading-tight lg:text-xl">{title}</h2>
+                            {subtitle ? <p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1 lg:text-sm">{subtitle}</p> : null}
+                        </div>
+                        <button className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08]" type="button" onClick={onClose} aria-label="Fechar">
+                            <IconX size={20} stroke={1.8} />
+                        </button>
+                    </div>
 
-                <div className="flex-1 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">{children}</div>
+                    <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 py-3.5 lg:gap-4 lg:px-6 lg:py-5">{children}</div>
+
+                    <div className="flex gap-2 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:justify-end lg:gap-3 lg:px-6 lg:py-4 [&>*]:flex-1 lg:[&>*]:flex-none">
+                        {footer}
+                    </div>
+                </div>
             </div>
+        </NoCorpo>
+    );
+}
+
+/**
+ * Linha de item dentro das janelas de separação e envio.
+ */
+function ItemLinhaJanela({ nome, invalid = false, children }: { nome: string; invalid?: boolean; children: React.ReactNode }) {
+    return (
+        <div
+            className={[
+                "rounded-[14px] border px-3.5 py-2.5 lg:px-4 lg:py-3",
+                invalid
+                    ? "border-[#B42318] bg-[#FDECEA] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15"
+                    : "border-[#E3E8F0] bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#1C2334]",
+            ].join(" ")}
+        >
+            <p className="text-sm font-extrabold text-[#313C55] dark:text-white lg:text-base">{nome}</p>
+            <p className="mt-0.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] [&_b]:text-[#313C55] dark:[&_b]:text-white">{children}</p>
         </div>
     );
 }
@@ -645,9 +682,9 @@ function Modal({
  */
 function EmptyState() {
     return (
-        <Card className="p-6 text-center">
-            <h3 className="font-black text-[#313C55] dark:text-white">Nenhuma requisição em andamento</h3>
-            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Quando uma requisição for concluída, recusada ou cancelada, ela sai automaticamente desta tela.</p>
+        <Card className="p-5 text-center lg:p-8">
+            <h3 className="text-[15px] font-extrabold text-[#313C55] dark:text-white lg:text-base">Nenhuma requisição em andamento</h3>
+            <p className="mt-1.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:text-sm">Quando uma requisição for concluída, recusada ou cancelada, ela sai automaticamente desta tela.</p>
         </Card>
     );
 }
@@ -1047,7 +1084,7 @@ export default function OperarRequisicoesPage() {
             }
         }
 
-        return { ok: true, msg: "Pronto para enviar." };
+        return { ok: true, msg: "Saldo suficiente para todos os itens. Pode enviar." };
     }, [saldoMap, sendDepositoId, sendDepositosPermitidos, sendReq]);
 
     /**
@@ -1170,30 +1207,51 @@ export default function OperarRequisicoesPage() {
         }
     }
 
+    const closeSeparation = useCallback(() => setSeparationOpen(false), []);
+    const closeSend = useCallback(() => setSendOpen(false), []);
+    const closeReject = useCallback(() => setRejectOpen(false), []);
+
+    /** Origem já registrada na separação: no envio ela aparece como campo só de leitura (mockup). */
+    const sendOrigemTravada = Number(sendReq?.deposito_origem_id || 0) > 0;
+    const sendOrigemNome =
+        sendDepositosPermitidos.find((d) => Number(d.id) === Number(sendDepositoId))?.nome || sendReq?.deposito_origem_nome || "-";
+
     return (
-        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] px-3 py-4 text-[#313C55] dark:text-white sm:px-6 lg:px-8">
-            <div className="mx-auto w-full max-w-5xl space-y-4">
-                <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-black tracking-tight text-[#313C55] dark:text-white">Requisições</h1>
+        <main className="min-h-[100dvh] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
+            <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-4 pb-5 pt-4 lg:gap-4 lg:px-10 lg:pb-12 lg:pt-8">
+                <header className="flex items-start gap-3 lg:mb-2 lg:gap-4">
+                    <div className="min-w-0 flex-1">
+                        <h1 className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white lg:text-[28px]">Requisições</h1>
                         <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Separe e envie os materiais. Requisições em trânsito aguardam confirmação do solicitante.</p>
-                        {me?.nome ? <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Operador: {me.nome}</p> : null}
+                        {me?.nome ? <p className="mt-1 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Operador: {me.nome}</p> : null}
                     </div>
 
-                    <Button type="button" variant="ghost" onClick={refreshAll} disabled={loading || busy}>
+                    {/* Celular: o mockup não tem o botão; mantido discreto (ícone 44px) para não perder a função. */}
+                    <button
+                        type="button"
+                        onClick={refreshAll}
+                        disabled={loading || busy}
+                        aria-label="Atualizar"
+                        className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-45 dark:text-white dark:hover:bg-white/[0.08] lg:hidden"
+                    >
+                        <IconRefresh size={20} stroke={1.8} />
+                    </button>
+
+                    <Button type="button" variant="ghost" onClick={refreshAll} disabled={loading || busy} className="max-lg:hidden">
+                        <IconRefresh size={20} stroke={1.8} />
                         Atualizar
                     </Button>
                 </header>
 
-                {error ? <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">{error}</div> : null}
-                {okMsg ? <div className="rounded-2xl border border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 p-3 text-sm font-bold text-[#313C55] dark:text-white">{okMsg}</div> : null}
+                {error ? <div role="alert" className="rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{error}</div> : null}
+                {okMsg ? <div role="status" className="rounded-[14px] border border-[#B3CE52] bg-[#EEF5D6] px-4 py-3 text-sm font-bold text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white">{okMsg}</div> : null}
 
                 {loading ? (
-                    <Card className="p-6 text-center text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Carregando...</Card>
+                    <Card className="p-5 text-center text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-8">Carregando...</Card>
                 ) : rows.length === 0 ? (
                     <EmptyState />
                 ) : (
-                    <div className="grid grid-cols-1 gap-3 sm:landscape:grid-cols-2 lg:grid-cols-1">
+                    <div className="grid grid-cols-1 items-start gap-3 max-lg:landscape:grid-cols-2 lg:gap-4">
                         {rows.map((row) => (
                             <RequestCard
                                 key={row.id}
@@ -1210,14 +1268,26 @@ export default function OperarRequisicoesPage() {
             <Modal
                 open={separationOpen}
                 title={separationReq ? `Iniciar separação ${reqCode(separationReq)}` : "Iniciar separação"}
-                onClose={() => setSeparationOpen(false)}
-                maxWidth="max-w-2xl"
+                subtitle={
+                    <>
+                        <span className="lg:hidden">Escolha o estoque de origem. Só aparecem estoques com saldo suficiente para toda a requisição.</span>
+                        <span className="hidden lg:inline">Selecione de qual estoque os itens serão separados. São exibidos somente estoques com saldo suficiente para atender integralmente a requisição.</span>
+                    </>
+                }
+                onClose={closeSeparation}
+                maxWidth="lg:max-w-[640px]"
+                footer={
+                    <>
+                        <Button type="button" variant="ghost" onClick={closeSeparation}>
+                            Voltar
+                        </Button>
+                        <Button type="button" onClick={confirmStartSeparation} disabled={busy || !separationValidation.ok}>
+                            Iniciar separação
+                        </Button>
+                    </>
+                }
             >
-                <div className="space-y-4">
-                    <p className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                        Selecione de qual estoque os itens serão separados. São exibidos somente estoques com saldo suficiente para atender integralmente a requisição.
-                    </p>
-
+                <div>
                     <Field label="Estoque de origem">
                         <Select
                             value={separationDepositoId || ""}
@@ -1231,138 +1301,160 @@ export default function OperarRequisicoesPage() {
                                 </option>
                             ))}
                         </Select>
-
-                        {separationDestinationDepositoId > 0 ? (
-                            <span className="mt-1 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                                Destino: <b>{destinationText(separationReq)}</b>. O estoque de destino não pode ser usado como origem.
-                            </span>
-                        ) : null}
                     </Field>
 
-                    {separationDepositosDisponiveis.length === 0 ? (
-                        <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">
-                            Nenhum estoque possui saldo suficiente para atender todos os itens desta requisição.
-                        </div>
+                    {separationDestinationDepositoId > 0 ? (
+                        <p className="mt-1.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                            Destino: <b className="text-[#313C55] dark:text-white">{destinationText(separationReq)}</b>.{" "}
+                            <span className="lg:hidden">O destino não pode ser a origem.</span>
+                            <span className="hidden lg:inline">O estoque de destino não pode ser usado como origem.</span>
+                        </p>
                     ) : null}
+                </div>
 
-                    <div className="space-y-2">
-                        {(separationReq?.items || []).map((item) => {
-                            const disponivel = separationDepositoId ? saldoMap.get(`${Number(item.produto_id)}:${separationDepositoId}`) || 0 : 0;
-
-                            return (
-                                <div key={item.id} className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
-                                    <p className="font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
-                                    <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                        Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b>
-                                        {separationDepositoId ? <> | Disponível: <b>{numberBR(disponivel)}</b></> : null}
-                                    </p>
-                                </div>
-                            );
-                        })}
+                {separationDepositosDisponiveis.length === 0 ? (
+                    <div role="alert" className="rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                        Nenhum estoque possui saldo suficiente para atender todos os itens desta requisição.
                     </div>
+                ) : null}
 
-                    <Field label="Observação, opcional">
-                        <TextArea rows={3} value={separationObs} onChange={(e) => setSeparationObs(e.target.value)} />
-                    </Field>
+                <div className="flex flex-col gap-2">
+                    {(separationReq?.items || []).map((item) => {
+                        const disponivel = separationDepositoId ? saldoMap.get(`${Number(item.produto_id)}:${separationDepositoId}`) || 0 : 0;
 
-                    <div className={[
-                        "rounded-2xl border p-3 text-sm font-bold",
-                        separationValidation.ok ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white" : "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white",
-                    ].join(" ")}>
+                        return (
+                            <ItemLinhaJanela key={item.id} nome={item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}>
+                                Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b>
+                                {separationDepositoId ? <> | Disponível: <b>{numberBR(disponivel)}</b></> : null}
+                            </ItemLinhaJanela>
+                        );
+                    })}
+                </div>
+
+                <Field label="Observação, opcional">
+                    <TextArea rows={3} value={separationObs} onChange={(e) => setSeparationObs(e.target.value)} className="max-lg:h-[74px]" />
+                </Field>
+
+                {/* Validação mantida; só aparece quando há problema com o estoque escolhido (o mockup não tem este quadro). */}
+                {!separationValidation.ok && separationDepositoId > 0 && separationDepositosDisponiveis.length > 0 ? (
+                    <div className="rounded-[14px] border border-[#E3E8F0] bg-[#FCF3CC] px-3.5 py-2.5 text-[13.5px] font-bold text-[#313C55] dark:border-white/[0.12] dark:bg-[#F2CB3F]/[0.16] dark:text-white lg:px-4 lg:py-3 lg:text-sm">
                         {separationValidation.msg}
                     </div>
-
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                        <Button type="button" onClick={confirmStartSeparation} disabled={busy || !separationValidation.ok}>
-                            Iniciar separação
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={() => setSeparationOpen(false)}>
-                            Voltar
-                        </Button>
-                    </div>
-                </div>
+                ) : null}
             </Modal>
 
-            <Modal open={sendOpen} title={sendReq ? `Enviar ${reqCode(sendReq)}` : "Enviar requisição"} onClose={() => setSendOpen(false)} maxWidth="max-w-2xl">
-                <div className="space-y-4">
-                    <Field label="Depósito de origem">
-                        <Select
-                            value={sendDepositoId || ""}
-                            onChange={(e) => setSendDepositoId(Number(e.target.value || 0))}
-                            disabled={busy || sendDepositosPermitidos.length === 0 || Number(sendReq?.deposito_origem_id || 0) > 0}
-                        >
-                            <option value="">Selecione...</option>
-                            {sendDepositosPermitidos.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                    {d.nome}
-                                </option>
-                            ))}
-                        </Select>
-
-                        {Number(sendReq?.deposito_origem_id || 0) > 0 ? (
-                            <span className="mt-1 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                                Origem definida no início da separação e bloqueada para alteração nesta etapa.
-                            </span>
-                        ) : null}
-
-                        {sendDestinationDepositoId > 0 ? (
-                            <span className="mt-1 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                                Destino: <b>{destinationText(sendReq)}</b>. O estoque de destino não pode ser selecionado como origem.
-                            </span>
-                        ) : null}
-                    </Field>
-
-                    <div className="space-y-2">
-                        {(sendReq?.items || []).map((item) => {
-                            const qtd = asNumber(item.quantidade_solicitada);
-                            const disponivel = sendDepositoId ? saldoMap.get(`${Number(item.produto_id)}:${sendDepositoId}`) || 0 : 0;
-                            const invalid = sendDepositoId > 0 && qtd - 0.0001 > disponivel;
-
-                            return (
-                                <div key={item.id} className={["rounded-2xl border p-3", invalid ? "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15" : "border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334]"].join(" ")}>
-                                    <p className="font-bold text-[#313C55] dark:text-white">{item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}</p>
-                                    <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                        Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b> | Disponível: <b>{numberBR(disponivel)}</b>
-                                    </p>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    <Field label="Observação, opcional">
-                        <TextArea rows={3} value={sendObs} onChange={(e) => setSendObs(e.target.value)} />
-                    </Field>
-
-                    <div className={["rounded-2xl border p-3 text-sm font-bold", sendValidation.ok ? "border-[#7BA11A]/50 dark:border-[#B3CE52]/40 bg-[#EEF5D6] dark:bg-[#B3CE52]/20 text-[#313C55] dark:text-white" : "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15 text-[#313C55] dark:text-white"].join(" ")}>
-                        {sendValidation.msg}
-                    </div>
-
-                    <div className="flex flex-col gap-2 sm:flex-row">
+            <Modal
+                open={sendOpen}
+                title={sendReq ? `Enviar ${reqCode(sendReq)}` : "Enviar requisição"}
+                onClose={closeSend}
+                maxWidth="lg:max-w-[640px]"
+                footer={
+                    <>
+                        <Button type="button" variant="ghost" onClick={closeSend}>
+                            Voltar
+                        </Button>
                         <Button type="button" onClick={confirmSend} disabled={busy || !sendValidation.ok}>
                             Enviar
                         </Button>
-                        <Button type="button" variant="ghost" onClick={() => setSendOpen(false)}>
-                            Voltar
-                        </Button>
-                    </div>
+                    </>
+                }
+            >
+                <div>
+                    {sendOrigemTravada ? (
+                        <>
+                            <p className="mb-2 text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]">Depósito de origem</p>
+                            <div className={[CAMPO, "flex h-12 items-center font-bold opacity-70"].join(" ")} aria-readonly="true">
+                                {sendOrigemNome}
+                            </div>
+                        </>
+                    ) : (
+                        <Field label="Depósito de origem">
+                            <Select
+                                value={sendDepositoId || ""}
+                                onChange={(e) => setSendDepositoId(Number(e.target.value || 0))}
+                                disabled={busy || sendDepositosPermitidos.length === 0}
+                            >
+                                <option value="">Selecione...</option>
+                                {sendDepositosPermitidos.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.nome}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
+                    )}
+
+                    {/* Celular: um texto só, como no mockup. */}
+                    {sendOrigemTravada || sendDestinationDepositoId > 0 ? (
+                        <p className="mt-1.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:hidden">
+                            {sendOrigemTravada ? "Origem definida no início da separação e bloqueada nesta etapa. " : null}
+                            {sendDestinationDepositoId > 0 ? (
+                                <>
+                                    Destino: <b className="text-[#313C55] dark:text-white">{destinationText(sendReq)}</b>.
+                                </>
+                            ) : null}
+                        </p>
+                    ) : null}
+
+                    {sendOrigemTravada ? (
+                        <p className="mt-1.5 hidden text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:block">
+                            Origem definida no início da separação e bloqueada para alteração nesta etapa.
+                        </p>
+                    ) : null}
+
+                    {sendDestinationDepositoId > 0 ? (
+                        <p className={["hidden text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF] lg:block", sendOrigemTravada ? "mt-0.5" : "mt-1.5"].join(" ")}>
+                            Destino: <b className="text-[#313C55] dark:text-white">{destinationText(sendReq)}</b>. O estoque de destino não pode ser selecionado como origem.
+                        </p>
+                    ) : null}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                    {(sendReq?.items || []).map((item) => {
+                        const qtd = asNumber(item.quantidade_solicitada);
+                        const disponivel = sendDepositoId ? saldoMap.get(`${Number(item.produto_id)}:${sendDepositoId}`) || 0 : 0;
+                        const invalid = sendDepositoId > 0 && qtd - 0.0001 > disponivel;
+
+                        return (
+                            <ItemLinhaJanela key={item.id} invalid={invalid} nome={item.produto_nome_snapshot || item.produto_nome_atual || `Produto #${item.produto_id}`}>
+                                Solicitado: <b>{numberBR(item.quantidade_solicitada)}</b> | Disponível: <b>{numberBR(disponivel)}</b>
+                            </ItemLinhaJanela>
+                        );
+                    })}
+                </div>
+
+                <Field label="Observação, opcional">
+                    <TextArea rows={3} value={sendObs} onChange={(e) => setSendObs(e.target.value)} className="max-lg:h-[74px]" />
+                </Field>
+
+                <div
+                    className={[
+                        "rounded-[14px] border border-[#E3E8F0] px-3.5 py-2.5 text-[13.5px] font-bold text-[#313C55] dark:border-white/[0.12] dark:text-white lg:px-4 lg:py-3 lg:text-sm",
+                        sendValidation.ok ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/[0.18]" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/[0.16]",
+                    ].join(" ")}
+                >
+                    {sendValidation.msg}
                 </div>
             </Modal>
 
-            <Modal open={rejectOpen} title={rejectReq ? `Recusar ${reqCode(rejectReq)}` : "Recusar requisição"} onClose={() => setRejectOpen(false)}>
-                <div className="space-y-4">
-                    <Field label="Motivo da recusa obrigatório">
-                        <TextArea rows={4} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Digite o motivo da recusa..." />
-                    </Field>
-
-                    <div className="flex flex-col gap-2 sm:flex-row">
+            <Modal
+                open={rejectOpen}
+                title={rejectReq ? `Recusar ${reqCode(rejectReq)}` : "Recusar requisição"}
+                onClose={closeReject}
+                footer={
+                    <>
+                        <Button type="button" variant="ghost" onClick={closeReject}>
+                            Voltar
+                        </Button>
                         <Button type="button" variant="danger" onClick={confirmReject} disabled={busy || !rejectReason.trim()}>
                             Confirmar recusa
                         </Button>
-                        <Button type="button" variant="ghost" onClick={() => setRejectOpen(false)}>
-                            Voltar
-                        </Button>
-                    </div>
-                </div>
+                    </>
+                }
+            >
+                <Field label="Motivo da recusa obrigatório">
+                    <TextArea rows={4} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Digite o motivo da recusa..." />
+                </Field>
             </Modal>
         </main>
     );
@@ -1375,6 +1467,9 @@ export default function OperarRequisicoesPage() {
  * ação principal do fluxo e recusa. A ação principal muda conforme o status:
  * PENDENTE abre a escolha de origem para "Iniciar", EM_SEPARACAO vira "Enviar" e EM_TRANSITO fica
  * aguardando a confirmação do solicitante.
+ *
+ * Computador (lg): dados à esquerda e botões numa coluna de 272px à direita.
+ * Celular: tudo empilhado, botões embaixo (1,4fr / 1fr).
  */
 function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: boolean; onMain: () => void; onReject: () => void }) {
     const status = toStatus(row.status);
@@ -1392,59 +1487,65 @@ function RequestCard({ row, busy, onMain, onReject }: { row: ReqListRow; busy: b
     /**
      * Texto auxiliar que orienta o operador sobre o próximo passo do fluxo.
      */
-    const nextText = status === "PENDENTE" ? "Próximo passo: escolher a origem e iniciar a separação" : status === "EM_SEPARACAO" ? "Origem definida. Próximo passo: enviar" : status === "EM_TRANSITO" ? "Aguardando confirmação do solicitante" : "";
+    const nextText = status === "PENDENTE" ? "Próximo passo: escolher a origem e iniciar a separação" : status === "EM_SEPARACAO" ? "Origem definida. Próximo passo: enviar" : status === "EM_TRANSITO" ? "Aguardando o solicitante confirmar o recebimento" : "";
+
+    const late = isTruthy(row.atrasada_24h);
 
     return (
-        <Card className={isTruthy(row.atrasada_24h) ? "border-[#F2CB3F] dark:border-[#F2CB3F]" : ""}>
-            <div className="p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-lg font-black text-[#313C55] dark:text-white">{reqCode(row)}</h2>
-                            <Badge status={row.status} />
-                            {isTruthy(row.atrasada_24h) ? <span className="rounded-full border border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] px-2.5 py-1 text-xs font-bold">+24h</span> : null}
-                        </div>
-
-                        <ItensTabela resumo={row.itens_resumo} className="mt-3" />
-
-                        <div className="mt-2 grid gap-1 text-xs text-[#5B6478] dark:text-[#AEB9CF] sm:grid-cols-2">
-                            <p>
-                                Solicitante: <b>{row.solicitante_nome || "-"}</b>
-                            </p>
-                            <p>
-                                Destino: <b>{destinationText(row)}</b>
-                            </p>
-                            <p>
-                                Aberta em: <b>{fmtDateTime(row.criado_em)}</b>
-                            </p>
-                            <p>
-                                Atendimento: <b>{row.id_atendimento || "-"}</b>
-                            </p>
-                            {row.deposito_origem_nome ? (
-                                <p>
-                                    Origem: <b>{row.deposito_origem_nome}</b>
-                                </p>
-                            ) : null}
-                            {row.enviado_em ? (
-                                <p>
-                                    Enviada em: <b>{fmtDateTime(row.enviado_em)}</b>
-                                </p>
-                            ) : null}
-                        </div>
-
-                        {nextText ? <p className="mt-2 text-xs font-bold text-[#5B6478] dark:text-[#AEB9CF]">{nextText}</p> : null}
+        <Card className={late ? "border-[#F2CB3F] dark:border-[#F2CB3F]" : ""}>
+            <div className="p-3.5 lg:flex lg:items-start lg:gap-6 lg:px-6 lg:py-5">
+                <div className="min-w-0 lg:flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-extrabold text-[#313C55] dark:text-white lg:text-lg">{reqCode(row)}</h2>
+                        <Badge status={row.status} />
+                        {late ? <span className="inline-flex h-[26px] items-center rounded-full border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] px-2.5 text-[12.5px] font-extrabold text-[#313C55]">+24h</span> : null}
                     </div>
 
-                    <div className="grid shrink-0 grid-cols-2 gap-2 lg:w-64">
-                        <Button type="button" onClick={onMain} disabled={busy || status === "EM_TRANSITO" || status === "ENTREGUE" || status === "RECUSADA" || status === "CANCELADA"} title={status === "EM_TRANSITO" ? "Somente o solicitante pode confirmar o recebimento." : undefined}>
-                            {mainLabel}
-                        </Button>
-                        <Button type="button" variant="danger" onClick={onReject} disabled={busy || !canReject} title={!canReject ? "Só é possível recusar pendente ou em separação." : undefined}>
-                            Recusar
-                        </Button>
+                    <ItensTabela resumo={row.itens_resumo} className="mt-2.5 lg:mt-3" />
+
+                    <div className="mt-1.5 flex flex-col gap-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-2 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:gap-y-1 lg:text-[13.5px] [&_b]:text-[#313C55] dark:[&_b]:text-white">
+                        <p>
+                            Solicitante: <b>{row.solicitante_nome || "-"}</b>
+                        </p>
+                        <p>
+                            Destino: <b>{destinationText(row)}</b>
+                        </p>
+                        <p>
+                            Aberta em: <b>{fmtDateTime(row.criado_em)}</b>
+                        </p>
+                        <p>
+                            Atendimento: <b>{row.id_atendimento || "-"}</b>
+                        </p>
+                        {row.deposito_origem_nome ? (
+                            <p>
+                                Origem: <b>{row.deposito_origem_nome}</b>
+                            </p>
+                        ) : null}
+                        {row.enviado_em ? (
+                            <p>
+                                Enviada em: <b>{fmtDateTime(row.enviado_em)}</b>
+                            </p>
+                        ) : null}
                     </div>
+
+                    {nextText ? <p className="mt-2 text-[12.5px] font-extrabold text-[#5B6478] dark:text-[#AEB9CF] lg:mt-2.5 lg:text-[13px]">{nextText}</p> : null}
+                </div>
+
+                <div className="mt-3 grid grid-cols-[1.4fr_1fr] gap-2 lg:mt-0 lg:w-[272px] lg:flex-none lg:grid-cols-2">
+                    <Button
+                        type="button"
+                        onClick={onMain}
+                        disabled={busy || status === "EM_TRANSITO" || status === "ENTREGUE" || status === "RECUSADA" || status === "CANCELADA"}
+                        title={status === "EM_TRANSITO" ? "Somente o solicitante pode confirmar o recebimento." : undefined}
+                        compacto
+                    >
+                        {mainLabel}
+                    </Button>
+                    <Button type="button" variant="danger" onClick={onReject} disabled={busy || !canReject} title={!canReject ? "Só é possível recusar pendente ou em separação." : undefined}>
+                        Recusar
+                    </Button>
                 </div>
             </div>
         </Card>
     );
-}
+}

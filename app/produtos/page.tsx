@@ -1,6 +1,18 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+    IconChevronDown,
+    IconChevronLeft,
+    IconChevronRight,
+    IconFilter,
+    IconMaximize,
+    IconMinimize,
+    IconPhoto,
+    IconSearch,
+    IconX,
+} from "@tabler/icons-react";
 
 type ID = number;
 
@@ -185,6 +197,17 @@ async function apiGet<T>(
     return await safeJson<T>(r);
 }
 
+/* ------------------------------------------------------------------ */
+/* Apresentação (mockup "Consulta de produtos", 06/10/2026)            */
+/* ------------------------------------------------------------------ */
+
+const FIELD_CLS =
+    "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white dark:placeholder:text-[#8893AA]";
+
+const LABEL_CLS = "mb-2 block text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
+const KV_CLS = "text-[11px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
 function Card({
     children,
     className = "",
@@ -195,7 +218,7 @@ function Card({
     return (
         <section
             className={[
-                "rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-sm",
+                "border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]",
                 className,
             ].join(" ")}
         >
@@ -214,13 +237,11 @@ function Field({
     children: React.ReactNode;
 }) {
     return (
-        <label className="block">
-            <span className="mb-1 block text-xs font-medium text-[#313C55] dark:text-[#D6DCE8]">
-                {label}
-            </span>
+        <label className="block min-w-0">
+            <span className={LABEL_CLS}>{label}</span>
             {children}
             {hint ? (
-                <span className="mt-1 block text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">{hint}</span>
+                <span className="mt-1 block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{hint}</span>
             ) : null}
         </label>
     );
@@ -230,21 +251,12 @@ const TextInput = React.forwardRef<
     HTMLInputElement,
     React.InputHTMLAttributes<HTMLInputElement>
 >(function TextInput({ className = "", ...props }, ref) {
-    return (
-        <input
-            ref={ref}
-            {...props}
-            className={[
-                "w-full rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none sm:text-sm",
-                "focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30",
-                className,
-            ].join(" ")}
-        />
-    );
+    return <input ref={ref} {...props} className={[FIELD_CLS, className].join(" ")} />;
 });
 
 type Opt = { id: ID; nome: string };
 
+/** Lista suspensa de seleção múltipla (usada no Fabricante). */
 function MultiSelectDropdown({
     label,
     options,
@@ -298,32 +310,31 @@ function MultiSelectDropdown({
         );
     }
 
+    const optCls = "flex min-h-11 cursor-pointer items-center gap-2.5 rounded-xl px-2 hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08]";
+
     return (
-        <Field label={label}>
+        <div className="min-w-0">
+            <span className={LABEL_CLS}>{label}</span>
             <div ref={wrapRef} className="relative">
                 <button
                     type="button"
                     onClick={() => setOpen((v) => !v)}
-                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-[16px] text-[#313C55] dark:text-white shadow-sm outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 sm:text-sm"
+                    aria-expanded={open}
+                    aria-label={label}
+                    className={[FIELD_CLS, "flex items-center justify-between gap-2 text-left"].join(" ")}
                 >
-                    <span
-                        className={[
-                            "truncate",
-                            !selectedIds.length ? "text-[#5B6478] dark:text-[#AEB9CF]" : "text-[#313C55] dark:text-white",
-                        ].join(" ")}
-                    >
-                        {displayText || placeholder}
-                    </span>
-                    <span className="text-[#5B6478] dark:text-[#AEB9CF]">▾</span>
+                    <span className="truncate">{displayText || placeholder}</span>
+                    <IconChevronDown size={18} stroke={1.8} aria-hidden="true" className="shrink-0 text-[#5B6478] dark:text-[#AEB9CF]" />
                 </button>
 
                 {open ? (
-                    <div className="absolute left-0 z-30 mt-2 w-full min-w-[300px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-lg">
-                        <div className="border-b border-[#E3E8F0] dark:border-white/[0.12] p-2">
+                    <div className="absolute left-0 z-30 mt-2 w-full min-w-[280px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[#E3E8F0] bg-white shadow-lg dark:border-white/[0.12] dark:bg-[#232B3F]">
+                        <div className="flex gap-2 border-b border-[#E3E8F0] p-2 dark:border-white/[0.12]">
                             <TextInput
                                 value={q}
                                 onChange={(e) => setQ(e.target.value)}
                                 placeholder="Buscar..."
+                                aria-label={`Buscar ${label.toLowerCase()}`}
                             />
                             <button
                                 type="button"
@@ -331,44 +342,37 @@ function MultiSelectDropdown({
                                     onChangeIds([]);
                                     setQ("");
                                 }}
-                                className="mt-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
+                                className="h-12 shrink-0 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3 text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]"
                             >
                                 Limpar
                             </button>
                         </div>
 
-                        <div className="max-h-64 overflow-auto p-2">
-                            <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10">
+                        <div className="max-h-64 overflow-auto p-2 text-sm">
+                            <label className={optCls}>
                                 <input
                                     type="checkbox"
                                     checked={!selectedIds.length}
                                     onChange={() => onChangeIds([])}
-                                    className="h-4 w-4"
+                                    className="size-5"
                                 />
-                                <span className="text-sm text-[#313C55] dark:text-[#D6DCE8]">{allLabel}</span>
+                                <span>{allLabel}</span>
                             </label>
 
-                            <div className="my-2 border-t border-[#E3E8F0] dark:border-white/[0.12]" />
+                            <div className="my-1 border-t border-[#E3E8F0] dark:border-white/[0.12]" />
 
                             {filtered.length === 0 ? (
-                                <div className="p-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                    Nenhum encontrado.
-                                </div>
+                                <div className="p-2 text-[#5B6478] dark:text-[#AEB9CF]">Nenhum encontrado.</div>
                             ) : (
                                 filtered.map((o) => (
-                                    <label
-                                        key={o.id}
-                                        className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                                    >
+                                    <label key={o.id} className={optCls}>
                                         <input
                                             type="checkbox"
                                             checked={selectedIds.includes(o.id)}
                                             onChange={() => toggle(o.id)}
-                                            className="h-4 w-4"
+                                            className="size-5"
                                         />
-                                        <span className="whitespace-nowrap text-sm text-[#313C55] dark:text-white">
-                                            {o.nome}
-                                        </span>
+                                        <span className="whitespace-nowrap">{o.nome}</span>
                                     </label>
                                 ))
                             )}
@@ -376,32 +380,161 @@ function MultiSelectDropdown({
                     </div>
                 ) : null}
             </div>
-        </Field>
+        </div>
+    );
+}
+
+/** Chips de seleção múltipla (.fchip do mockup). Mesma seleção de antes: lista de ids. */
+function ChipsMulti({
+    label,
+    options,
+    selectedIds,
+    onChangeIds,
+}: {
+    label: string;
+    options: Opt[];
+    selectedIds: ID[];
+    onChangeIds: (ids: ID[]) => void;
+}) {
+    function toggle(id: ID) {
+        const has = selectedIds.includes(id);
+        onChangeIds(has ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+    }
+
+    return (
+        <div>
+            <p className={LABEL_CLS}>{label}</p>
+            {options.length === 0 ? (
+                <p className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">Nenhuma opção.</p>
+            ) : (
+                <div className="flex flex-wrap gap-2">
+                    {options.map((o) => {
+                        const on = selectedIds.includes(o.id);
+                        return (
+                            <button
+                                key={o.id}
+                                type="button"
+                                aria-pressed={on}
+                                onClick={() => toggle(o.id)}
+                                className={[
+                                    "h-11 rounded-full border-[1.5px] px-3.5 text-sm font-bold lg:h-10",
+                                    on
+                                        ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                                        : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]",
+                                ].join(" ")}
+                            >
+                                {o.nome}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
     );
 }
 
 function Button({
     children,
-    variant = "solid",
+    variant = "ghost",
     className = "",
     ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: "solid" | "ghost" | "soft";
+    variant?: "solid" | "ghost";
 }) {
     const base =
-        "inline-flex items-center justify-center rounded-xl px-3 py-2 text-[16px] font-medium shadow-sm outline-none focus:ring-2 focus:ring-[#00AEEC]/30 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm";
+        "inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-[18px] text-[15px] font-bold outline-none focus:ring-2 focus:ring-[#3D6A99]/20 disabled:cursor-not-allowed disabled:opacity-45";
 
     const cls =
         variant === "solid"
-            ? "border border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white hover:bg-[#232B40] dark:hover:bg-[#E4BC30] dark:text-[#313C55]"
-            : variant === "soft"
-                ? "border border-[#E3E8F0] dark:border-white/[0.12] bg-[#EEF2F7] dark:bg-white/10 text-[#313C55] dark:text-white hover:bg-[#E3E8F0] dark:hover:bg-white/15"
-                : "border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10";
+            ? "border-[1.5px] border-[#313C55] bg-[#313C55] font-extrabold text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
+            : "border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]";
 
     return (
         <button {...props} className={[base, cls, className].join(" ")}>
             {children}
         </button>
+    );
+}
+
+/** Selo com o número de filtros ativos. */
+function CountBadge({ n, floating }: { n: number; floating?: boolean }) {
+    return (
+        <span
+            className={[
+                "inline-flex items-center justify-center rounded-full bg-[#F2CB3F] font-extrabold text-[#313C55]",
+                floating ? "absolute -right-1.5 -top-1.5 h-5 min-w-5 px-1 text-xs" : "h-[22px] min-w-[22px] px-1.5 text-xs",
+            ].join(" ")}
+        >
+            {n}
+        </span>
+    );
+}
+
+/**
+ * Janelas abertas direto no <body> (06/10/2026). A página rola dentro de um contêiner e, no iPhone,
+ * a barra de baixo (z-40) ficava por cima. Só chama createPortal depois de montar no cliente.
+ */
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [montado, setMontado] = useState(false);
+    useEffect(() => setMontado(true), []);
+    return montado ? createPortal(children, document.body) : null;
+}
+
+/**
+ * Janela: no computador (lg) diálogo centralizado; no celular folha que sobe de baixo.
+ * Quem chama cuida do Esc e do bloqueio de rolagem.
+ */
+function Janela({
+    label,
+    title,
+    subtitle,
+    onClose,
+    closeLabel,
+    footer,
+    children,
+    maxWidth,
+}: {
+    label: string;
+    title: React.ReactNode;
+    subtitle?: React.ReactNode;
+    onClose: () => void;
+    closeLabel: string;
+    footer: React.ReactNode;
+    children: React.ReactNode;
+    maxWidth: string;
+}) {
+    return (
+        <NoCorpo>
+            <div role="dialog" data-pai-overlay aria-modal="true" aria-label={label} className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6">
+                <div
+                    className={[
+                        "flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]",
+                        maxWidth,
+                    ].join(" ")}
+                >
+                    <div className="flex items-start gap-2 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:gap-3 lg:px-6 lg:py-5">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="line-clamp-2 text-[19px] font-extrabold leading-tight lg:text-xl">{title}</h2>
+                            {subtitle ? <p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1 lg:text-sm">{subtitle}</p> : null}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label={closeLabel}
+                            className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08]"
+                        >
+                            <IconX size={20} stroke={1.8} aria-hidden="true" />
+                        </button>
+                    </div>
+
+                    <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto overscroll-contain px-5 py-4 lg:gap-5 lg:px-6 lg:py-5">{children}</div>
+
+                    <div className="flex flex-col gap-2 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:flex-row lg:items-center lg:justify-end lg:gap-3 lg:px-6 lg:py-4">
+                        {footer}
+                    </div>
+                </div>
+            </div>
+        </NoCorpo>
     );
 }
 
@@ -472,125 +605,72 @@ function FilterModal({
 
     if (!open) return null;
 
+    const quickCls = "flex min-h-12 items-center gap-2.5 text-[15px] font-semibold";
+
     return (
-        <div
-            role="dialog" data-pai-overlay
-            aria-modal="true"
-            className="fixed inset-0 z-50 flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-0 sm:items-center sm:p-4"
-        >
-            <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl sm:max-w-5xl sm:rounded-3xl">
-                <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:p-5">
-                    <div className="min-w-0">
-                        <h2 className="text-lg font-bold text-[#313C55] dark:text-white">
-                            Filtros de produtos
-                        </h2>
-                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                            Busque e refine a consulta. Ao aplicar, o modal fecha e a lista
-                            fica filtrada.
-                        </p>
-                    </div>
-                    <button
-                        className="rounded-xl px-3 py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                        onClick={onClose}
-                        type="button"
-                        aria-label="Fechar filtros"
-                    >
-                        ✕
-                    </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <Field label="Pesquisar por nome">
-                            <TextInput
-                                ref={searchRef}
-                                value={qEstoque}
-                                onChange={(e) => setQEstoque(e.target.value)}
-                                placeholder="Nome do produto..."
-                            />
-                        </Field>
-
-                        <Field label="Filtros rápidos">
-                            <div className="grid min-h-[42px] grid-cols-1 gap-2 rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 shadow-sm sm:grid-cols-2">
-                                <label className="flex items-center gap-2 text-sm text-[#313C55] dark:text-[#D6DCE8]">
-                                    <input
-                                        type="checkbox"
-                                        checked={onlyLow}
-                                        onChange={(e) => setOnlyLow(e.target.checked)}
-                                        className="h-4 w-4"
-                                    />
-                                    Somente alerta
-                                </label>
-                                <label className="flex items-center gap-2 text-sm text-[#313C55] dark:text-[#D6DCE8]">
-                                    <input
-                                        type="checkbox"
-                                        checked={onlyPositive}
-                                        onChange={(e) => setOnlyPositive(e.target.checked)}
-                                        className="h-4 w-4"
-                                    />
-                                    Ocultar zerados
-                                </label>
-                            </div>
-                        </Field>
-
-                        <MultiSelectDropdown
-                            label="Depósito"
-                            options={depositos}
-                            selectedIds={depFiltroEstoque}
-                            onChangeIds={setDepFiltroEstoque}
-                            allLabel="Todos"
-                        />
-                        <MultiSelectDropdown
-                            label="Categoria"
-                            options={categorias}
-                            selectedIds={catFiltroEstoque}
-                            onChangeIds={setCatFiltroEstoque}
-                            allLabel="Todas"
-                        />
-                        <MultiSelectDropdown
-                            label="Fabricante"
-                            options={fabricantes}
-                            selectedIds={fabFiltroEstoque}
-                            onChangeIds={setFabFiltroEstoque}
-                            allLabel="Todos"
-                        />
-                        <MultiSelectDropdown
-                            label="Classificação"
-                            options={classificacoes}
-                            selectedIds={classFiltroEstoque}
-                            onChangeIds={setClassFiltroEstoque}
-                            allLabel="Todas"
-                        />
-                    </div>
-                </div>
-
-                <div className="border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 sm:p-5">
-                    <div className="mb-3 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                        Resultado atual: <b>{totalResultados}</b> produto(s)
-                    </div>
-                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                        <Button
-                            variant="ghost"
-                            type="button"
-                            onClick={() => {
-                                limparFiltros();
-                            }}
-                            className="w-full sm:w-auto"
-                        >
+        <Janela
+            label="Filtros de produtos"
+            title="Filtros de produtos"
+            subtitle={
+                <>
+                    <span className="hidden lg:inline">Busque e refine a consulta. Ao aplicar, a janela fecha e a lista fica filtrada.</span>
+                    <span className="lg:hidden">Ao aplicar, a lista fica filtrada.</span>
+                </>
+            }
+            onClose={onClose}
+            closeLabel="Fechar filtros"
+            maxWidth="max-w-[600px] lg:max-w-[760px]"
+            footer={
+                <>
+                    <span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:flex-1 lg:text-sm">
+                        Resultado atual: <b className="text-[#313C55] dark:text-white">{totalResultados}</b> produto(s)
+                    </span>
+                    <div className="flex gap-2 lg:gap-3">
+                        <Button type="button" onClick={() => limparFiltros()} className="flex-1 lg:flex-none">
                             Limpar filtros
                         </Button>
-                        <Button
-                            variant="solid"
-                            type="button"
-                            onClick={onClose}
-                            className="w-full sm:w-auto"
-                        >
+                        <Button type="button" variant="solid" onClick={onClose} className="flex-1 lg:flex-none">
                             Aplicar filtros
                         </Button>
                     </div>
+                </>
+            }
+        >
+            <Field label="Pesquisar por nome">
+                <TextInput
+                    ref={searchRef}
+                    type="search"
+                    value={qEstoque}
+                    onChange={(e) => setQEstoque(e.target.value)}
+                    placeholder="Nome do produto…"
+                />
+            </Field>
+
+            <div>
+                <p className={LABEL_CLS}>Filtros rápidos</p>
+                <div className="flex flex-col rounded-xl bg-[#F1F4F8] px-3.5 dark:bg-[#1C2334] lg:min-h-12 lg:flex-row lg:flex-wrap lg:items-center lg:gap-6">
+                    <label className={quickCls}>
+                        <input type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} className="size-5" />
+                        Somente alerta
+                    </label>
+                    <label className={[quickCls, "border-t border-[#E3E8F0] dark:border-white/[0.12] lg:border-t-0"].join(" ")}>
+                        <input type="checkbox" checked={onlyPositive} onChange={(e) => setOnlyPositive(e.target.checked)} className="size-5" />
+                        Ocultar zerados
+                    </label>
                 </div>
             </div>
-        </div>
+
+            <ChipsMulti label="Depósito" options={depositos} selectedIds={depFiltroEstoque} onChangeIds={setDepFiltroEstoque} />
+            <ChipsMulti label="Categoria" options={categorias} selectedIds={catFiltroEstoque} onChangeIds={setCatFiltroEstoque} />
+            <MultiSelectDropdown
+                label="Fabricante"
+                options={fabricantes}
+                selectedIds={fabFiltroEstoque}
+                onChangeIds={setFabFiltroEstoque}
+                allLabel="Todos"
+            />
+            <ChipsMulti label="Classificação" options={classificacoes} selectedIds={classFiltroEstoque} onChangeIds={setClassFiltroEstoque} />
+        </Janela>
     );
 }
 
@@ -658,267 +738,212 @@ function ProdutoDetalhesModal({
     if (!open || !produto) return null;
 
     const total = rows.reduce((acc, r) => acc + r.quantidade, 0);
-    const foto = fotos.length ? fotos[Math.min(idx, fotos.length - 1)] : null;
+    const atual = Math.min(idx, Math.max(0, fotos.length - 1));
+    const foto = fotos.length ? fotos[atual] : null;
+    const fotoLabel = fotos.length ? `Foto ${atual + 1} de ${fotos.length}` : "";
     const prev = () => setIdx((i) => (i + fotos.length - 1) % fotos.length);
     const next = () => setIdx((i) => (i + 1) % fotos.length);
 
     const arrowCls =
-        "absolute top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-[#C9D1DE] dark:border-white/25 bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-white shadow";
+        "absolute top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-full border border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white";
 
     return (
         <>
-            <div
-                role="dialog" data-pai-overlay
-                aria-modal="true"
-                aria-label="Detalhes do produto"
-                className="fixed inset-0 z-[55] flex min-h-[100dvh] items-end justify-center bg-[#313C55]/45 p-0 sm:items-center sm:p-4"
+            <Janela
+                label="Detalhes do produto"
+                title={produto.nome}
+                subtitle={
+                    <>
+                        Quantidade total: <b className="text-[#313C55] dark:text-white">{total}</b>
+                    </>
+                }
+                onClose={onClose}
+                closeLabel="Fechar detalhes"
+                maxWidth="max-w-[820px] lg:max-w-[860px]"
+                footer={
+                    <Button type="button" onClick={onClose} className="w-full lg:w-auto">
+                        Fechar
+                    </Button>
+                }
             >
-                <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:landscape:max-w-4xl">
-                    <div className="flex items-start justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4 sm:p-5">
-                        <div className="min-w-0">
-                            <h2 className="line-clamp-2 text-lg font-bold text-[#313C55] dark:text-white">
-                                {produto.nome}
-                            </h2>
-                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                Quantidade total:{" "}
-                                <b className="text-[#313C55] dark:text-white">{total}</b>
-                            </p>
-                        </div>
-                        <button
-                            className="rounded-xl px-3 py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                            onClick={onClose}
-                            type="button"
-                            aria-label="Fechar detalhes"
-                        >
-                            ✕
-                        </button>
-                    </div>
+                <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2 max-lg:landscape:grid-cols-2">
+                    {/* FOTOS */}
+                    <div className="min-w-0">
+                        <div className={[KV_CLS, "mb-2"].join(" ")}>Fotos do produto</div>
 
-                    <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
-                        <div className="grid grid-cols-1 gap-5 sm:landscape:grid-cols-2 lg:grid-cols-2">
-                            {/* FOTOS */}
-                            <div className="min-w-0">
-                                <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
-                                    Fotos do produto
-                                </div>
+                        {foto ? (
+                            <>
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => setFull(true)}
+                                        aria-label="Ampliar foto em tela cheia"
+                                        className="block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#1C2334]"
+                                    >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={foto} alt={produto.nome} className="h-[220px] w-full object-contain lg:h-[320px]" />
+                                    </button>
 
-                                {foto ? (
-                                    <>
-                                        <div className="relative">
-                                            <button
-                                                type="button"
-                                                onClick={() => setFull(true)}
-                                                aria-label="Ampliar foto em tela cheia"
-                                                className="block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334]"
-                                            >
-                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
-                                                    src={foto}
-                                                    alt={produto.nome}
-                                                    className="h-56 w-full object-contain sm:h-72"
-                                                />
+                                    <span className="pointer-events-none absolute bottom-2.5 right-2.5 flex h-8 items-center gap-1.5 rounded-full border border-[#C9D1DE] bg-white px-3 text-[13px] font-extrabold text-[#313C55] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white">
+                                        <IconMaximize size={16} stroke={2} aria-hidden="true" />
+                                        Tela cheia
+                                    </span>
+
+                                    {fotos.length > 1 ? (
+                                        <>
+                                            <button type="button" onClick={prev} aria-label="Foto anterior" className={arrowCls + " left-2.5"}>
+                                                <IconChevronLeft size={22} stroke={2} aria-hidden="true" />
                                             </button>
-
-                                            <span className="pointer-events-none absolute bottom-2 right-2 rounded-full border border-[#C9D1DE] dark:border-white/25 bg-white dark:bg-[#232B3F] px-3 py-1 text-xs font-extrabold text-[#313C55] dark:text-white">
-                                                Tela cheia
-                                            </span>
-
-                                            {fotos.length > 1 ? (
-                                                <>
-                                                    <button type="button" onClick={prev} aria-label="Foto anterior" className={arrowCls + " left-2"}>
-                                                        ‹
-                                                    </button>
-                                                    <button type="button" onClick={next} aria-label="Próxima foto" className={arrowCls + " right-2"}>
-                                                        ›
-                                                    </button>
-                                                </>
-                                            ) : null}
-                                        </div>
-
-                                        {fotos.length > 1 ? (
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                                {fotos.map((u, i) => (
-                                                    <button
-                                                        key={`${u}-${i}`}
-                                                        type="button"
-                                                        onClick={() => setIdx(i)}
-                                                        aria-label={`Ver foto ${i + 1}`}
-                                                        className={[
-                                                            "h-14 w-[76px] overflow-hidden rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334]",
-                                                            i === idx
-                                                                ? "border-2 border-[#313C55] dark:border-[#F2CB3F]"
-                                                                : "border-[#E3E8F0] dark:border-white/[0.12]",
-                                                        ].join(" ")}
-                                                    >
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img src={u} alt="" className="h-full w-full object-cover" />
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        ) : null}
-                                    </>
-                                ) : (
-                                    <div className="grid h-56 place-items-center rounded-2xl border border-dashed border-[#C9D1DE] dark:border-white/25 text-sm text-[#5B6478] dark:text-[#AEB9CF] sm:h-72">
-                                        Produto sem fotos
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* PREÇO E DISTRIBUIÇÃO */}
-                            <div className="min-w-0 space-y-4">
-                                <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] px-4 py-3">
-                                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
-                                        Preço de venda
-                                    </div>
-                                    <div className="text-3xl font-extrabold leading-tight text-[#313C55] dark:text-white">
-                                        {moneyBRL(Number(produto.valor) || 0)}
-                                    </div>
+                                            <button type="button" onClick={next} aria-label="Próxima foto" className={arrowCls + " right-2.5"}>
+                                                <IconChevronRight size={22} stroke={2} aria-hidden="true" />
+                                            </button>
+                                        </>
+                                    ) : null}
                                 </div>
 
-                                <div>
-                                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
-                                        Distribuição do estoque
-                                    </div>
-
-                                    {rows.length === 0 ? (
-                                        <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                            Nenhum local com unidade deste produto.
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {rows.map((r) => (
-                                                <div
-                                                    key={r.deposito.id}
-                                                    className="flex items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-3 shadow-sm"
-                                                >
-                                                    <div className="min-w-0">
-                                                        <p className="truncate font-semibold text-[#313C55] dark:text-white">
-                                                            {r.deposito.nome}
-                                                        </p>
-                                                        {r.hasMinMax ? (
-                                                            <p className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                                                Min {r.min} • Rep {r.rep}
-                                                            </p>
-                                                        ) : null}
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Quantidade</p>
-                                                        <p className="text-xl font-bold text-[#313C55] dark:text-white">
-                                                            {r.quantidade}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                <div className="mt-2.5 flex flex-wrap gap-2">
+                                    {fotos.map((u, i) => (
+                                        <button
+                                            key={`${u}-${i}`}
+                                            type="button"
+                                            onClick={() => setIdx(i)}
+                                            aria-label={`Ver foto ${i + 1}`}
+                                            className={[
+                                                "h-[58px] w-[76px] overflow-hidden rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334]",
+                                                i === atual
+                                                    ? "border-2 border-[#313C55] dark:border-white"
+                                                    : "border border-[#E3E8F0] dark:border-white/[0.12]",
+                                            ].join(" ")}
+                                        >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={u} alt="" className="h-full w-full object-cover" />
+                                        </button>
+                                    ))}
                                 </div>
+                            </>
+                        ) : (
+                            <div className="grid h-[220px] place-items-center rounded-2xl border border-dashed border-[#C9D1DE] text-sm text-[#5B6478] dark:border-white/[0.26] dark:text-[#AEB9CF] lg:h-[320px]">
+                                Produto sem fotos
                             </div>
-                        </div>
+                        )}
                     </div>
 
-                    <div className="border-t border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 sm:flex sm:justify-end sm:p-5">
-                        <Button variant="ghost" type="button" onClick={onClose} className="w-full sm:w-auto">
-                            Fechar
-                        </Button>
+                    {/* PREÇO E DISTRIBUIÇÃO */}
+                    <div className="flex min-w-0 flex-col gap-4">
+                        <div className="rounded-[14px] border border-[#E3E8F0] bg-[#F6F8FB] px-4 py-3 dark:border-white/[0.12] dark:bg-[#1C2334]">
+                            <div className={KV_CLS}>Preço de venda</div>
+                            <div className="text-[30px] font-extrabold leading-tight">{moneyBRL(Number(produto.valor) || 0)}</div>
+                        </div>
+
+                        <div>
+                            <div className={[KV_CLS, "mb-2"].join(" ")}>Distribuição do estoque</div>
+
+                            {rows.length === 0 ? (
+                                <div className="rounded-2xl border border-[#E3E8F0] p-5 text-center text-[#5B6478] dark:border-white/[0.12] dark:text-[#AEB9CF]">
+                                    Nenhum local com unidade deste produto.
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-2.5">
+                                    {rows.map((r) => (
+                                        <div
+                                            key={r.deposito.id}
+                                            className="flex items-center gap-3 rounded-2xl border border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F]"
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-[15px] font-extrabold">{r.deposito.nome}</p>
+                                                {r.hasMinMax ? (
+                                                    <p className="mt-0.5 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        Min {r.min} • Rep {r.rep}
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Quantidade</p>
+                                                <p className="text-[22px] font-extrabold leading-[1.1]">{r.quantidade}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            </Janela>
 
             {full && foto ? (
-                <div
-                    role="dialog" data-pai-overlay
-                    aria-modal="true"
-                    aria-label="Foto em tela cheia"
-                    className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col bg-[#0E1320] text-white"
-                >
-                    <div className="flex items-center gap-2 py-2.5 pl-4 pr-3">
-                        <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold">
-                            {produto.nome}
-                            {fotos.length > 1 ? ` · Foto ${idx + 1} de ${fotos.length}` : ""}
+                <NoCorpo>
+                    <div
+                        role="dialog"
+                        data-pai-overlay
+                        aria-modal="true"
+                        aria-label="Foto em tela cheia"
+                        className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col bg-[#0E1320] text-white"
+                    >
+                        <div className="flex items-center gap-2 py-2.5 pl-4 pr-3">
+                            <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold">
+                                {produto.nome} · {fotoLabel}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setFull(false)}
+                                className="inline-flex h-11 items-center gap-2 rounded-xl border-[1.5px] border-white/40 px-4 text-sm font-extrabold text-white hover:bg-white/10"
+                            >
+                                <IconMinimize size={18} stroke={2} aria-hidden="true" />
+                                Sair da tela cheia
+                            </button>
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => setFull(false)}
-                            className="h-11 rounded-xl border border-white/40 px-4 text-sm font-extrabold text-white hover:bg-white/10"
-                        >
-                            Sair da tela cheia
-                        </button>
-                    </div>
 
-                    <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={foto} alt={produto.nome} className="max-h-full max-w-full object-contain" />
+                        <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={foto} alt={produto.nome} className="max-h-full max-w-full object-contain" />
 
-                        {fotos.length > 1 ? (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={prev}
-                                    aria-label="Foto anterior"
-                                    className="absolute left-4 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-white/40 bg-[#0E1320] text-xl text-white"
-                                >
-                                    ‹
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={next}
-                                    aria-label="Próxima foto"
-                                    className="absolute right-4 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-white/40 bg-[#0E1320] text-xl text-white"
-                                >
-                                    ›
-                                </button>
-                            </>
-                        ) : null}
+                            {fotos.length > 1 ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={prev}
+                                        aria-label="Foto anterior"
+                                        className="absolute left-6 top-1/2 grid size-12 -translate-y-1/2 place-items-center rounded-full border-[1.5px] border-white/40 bg-[#0E1320] text-white"
+                                    >
+                                        <IconChevronLeft size={24} stroke={2} aria-hidden="true" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={next}
+                                        aria-label="Próxima foto"
+                                        className="absolute right-6 top-1/2 grid size-12 -translate-y-1/2 place-items-center rounded-full border-[1.5px] border-white/40 bg-[#0E1320] text-white"
+                                    >
+                                        <IconChevronRight size={24} stroke={2} aria-hidden="true" />
+                                    </button>
+                                </>
+                            ) : null}
+                        </div>
                     </div>
-                </div>
+                </NoCorpo>
             ) : null}
         </>
     );
 }
 
-function PhotoThumb({
-    url,
-    onClick,
-    className = "",
-}: {
-    url?: string | null;
-    onClick?: () => void;
-    className?: string;
-}) {
+/** Miniatura da lista (só exibe; a linha inteira é que abre os detalhes). */
+function PhotoThumb({ url, className = "" }: { url?: string | null; className?: string }) {
     const cleanUrl = normalizeImgUrl(url);
-    const clickable = !!cleanUrl && !!onClick;
 
     return (
-        <button
-            type="button"
-            onClick={clickable ? onClick : undefined}
+        <span
             className={[
-                "relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] text-[#5B6478] dark:text-[#AEB9CF] sm:h-24 sm:w-24",
-                clickable
-                    ? "cursor-zoom-in hover:ring-2 hover:ring-[#00AEEC]/30"
-                    : "cursor-default",
+                "flex shrink-0 items-center justify-center overflow-hidden text-[#7A8396] dark:text-[#8893AA]",
+                cleanUrl ? "bg-[#E9EFF6] dark:bg-[#3D6A99]/20" : "bg-[#F6F8FB] dark:bg-[#1C2334]",
                 className,
             ].join(" ")}
-            aria-label={clickable ? "Abrir imagem do produto" : "Sem imagem"}
-            title={clickable ? "Clique para ampliar" : "Sem imagem"}
         >
             {cleanUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                    src={cleanUrl}
-                    alt="Foto do produto"
-                    className="h-full w-full rounded-2xl object-cover"
-                />
+                <img src={cleanUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-                <span className="text-2xl">🖼️</span>
+                <IconPhoto size={24} stroke={1.6} aria-hidden="true" />
             )}
-
-            {clickable ? (
-                <span className="pointer-events-none absolute -bottom-1 -right-1 rounded-full bg-white dark:bg-[#232B3F] px-1.5 py-0.5 text-[10px] shadow ring-1 ring-[#00AEEC]/30">
-                    🔍
-                </span>
-            ) : null}
-        </button>
+        </span>
     );
 }
 
@@ -1097,6 +1122,10 @@ export default function Page() {
         setProdutoDepositosOpen(true);
     }
 
+    // Referências estáveis: evitam que as janelas refaçam o efeito (e o foco) a cada digitação.
+    const fecharFiltros = useCallback(() => setFilterOpen(false), []);
+    const fecharDetalhes = useCallback(() => setProdutoDepositosOpen(false), []);
+
     function limparFiltros() {
         setQEstoque("");
         setDepFiltroEstoque([]);
@@ -1107,215 +1136,191 @@ export default function Page() {
         setOnlyPositive(false);
     }
 
+    const nFiltros =
+        (onlyLow ? 1 : 0) +
+        (onlyPositive ? 1 : 0) +
+        (depFiltroEstoque.length ? 1 : 0) +
+        (catFiltroEstoque.length ? 1 : 0) +
+        (fabFiltroEstoque.length ? 1 : 0) +
+        (classFiltroEstoque.length ? 1 : 0);
+
+    const contagem = loading ? "Carregando..." : `${produtosAgregados.length} produto(s) encontrado(s).`;
+    const vazio = !loading && produtosAgregados.length === 0;
+    const DESK_COLS = "grid-cols-[3fr_1.7fr_1fr_.7fr_1.1fr]";
+    const thCls = "text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
+    const nomeCategoria = (p: Produto) =>
+        p.categoria_nome || (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") || "—";
+    const nomeFabricante = (p: Produto) =>
+        p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || "—";
+
     return (
-        <main className="min-h-[100dvh] bg-[#F6F8FB] dark:bg-[#161C2A] p-4 text-[#313C55] dark:text-white sm:p-6">
-            <div className="mx-auto w-full max-w-7xl space-y-4">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:px-10 lg:pb-12 lg:pt-8">
+            <div className="mx-auto w-full max-w-[1120px]">
+                <div className="px-4 pb-3 pt-3.5 lg:mb-5 lg:p-0">
+                    <h1 className="text-[28px] font-extrabold leading-tight">Consulta de produtos</h1>
+                    <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                        Veja a quantidade de cada produto. <span className="lg:hidden">Toque</span>
+                        <span className="hidden lg:inline">Clique</span> num produto para ver preço, estoque por local e fotos.
+                    </p>
+                </div>
+
                 {initErr ? (
-                    <div className="rounded-2xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-sm text-[#B42318] dark:text-[#FF9C92]">
+                    <div className="mx-4 mb-3 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] lg:mx-0 lg:mb-4">
                         {initErr}
                     </div>
                 ) : null}
 
-                <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7A8396] dark:text-[#8893AA]">
-                            🔎
-                        </span>
-                        <TextInput
-                            value={qEstoque}
-                            onChange={(e) => setQEstoque(e.target.value)}
-                            placeholder="Pesquisar produto pelo nome..."
-                            className="pl-10"
-                        />
-                    </div>
+                <Card className="border-x-0 lg:overflow-hidden lg:rounded-[20px] lg:border-x">
+                    {/* Busca + filtros (no celular fica presa no topo enquanto a lista rola) */}
+                    <div className="sticky top-0 z-10 border-b border-[#E3E8F0] bg-white px-4 pb-3 pt-3 dark:border-white/[0.12] dark:bg-[#232B3F] lg:static lg:border-b-0 lg:bg-transparent lg:p-0">
+                        <div className="flex items-center gap-2 lg:gap-3 lg:px-6 lg:py-5">
+                            <label className="relative min-w-0 flex-1">
+                                <IconSearch
+                                    size={20}
+                                    stroke={1.8}
+                                    aria-hidden="true"
+                                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#5B6478] dark:text-[#AEB9CF]"
+                                />
+                                <TextInput
+                                    type="search"
+                                    value={qEstoque}
+                                    onChange={(e) => setQEstoque(e.target.value)}
+                                    placeholder="Pesquisar produto pelo nome…"
+                                    aria-label="Pesquisar produto pelo nome"
+                                    className="pl-11"
+                                />
+                            </label>
 
-                    <button
-                        type="button"
-                        onClick={() => setFilterOpen(true)}
-                        className="inline-flex h-[42px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-xl text-[#313C55] dark:text-[#D6DCE8] shadow-sm outline-none hover:bg-[#EEF2F7] dark:hover:bg-white/10 focus:ring-2 focus:ring-[#00AEEC]/30"
-                        aria-label="Abrir filtros"
-                        title="Abrir filtros"
-                    >
-                        <svg
-                            aria-hidden="true"
-                            viewBox="0 0 24 24"
-                            className="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        >
-                            <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" />
-                        </svg>
-                    </button>
-                </div>
+                            {/* Celular: só ícone (48px) com selo flutuante */}
+                            <button
+                                type="button"
+                                onClick={() => setFilterOpen(true)}
+                                aria-label="Filtros"
+                                aria-haspopup="dialog"
+                                className="relative grid size-12 shrink-0 place-items-center rounded-xl border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08] lg:hidden"
+                            >
+                                <IconFilter size={20} stroke={1.8} aria-hidden="true" />
+                                {nFiltros > 0 ? <CountBadge n={nFiltros} floating /> : null}
+                            </button>
 
-                <Card className="overflow-hidden">
-                    <div className="flex items-center justify-between gap-3 border-b border-[#E3E8F0] dark:border-white/[0.12] p-4">
-                        <div>
-                            <h2 className="text-base font-semibold text-[#313C55] dark:text-white">
-                                Produtos em estoque
-                            </h2>
-                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                {loading
-                                    ? "Carregando..."
-                                    : `${produtosAgregados.length} produto(s) encontrado(s).`}
-                            </p>
+                            {/* Computador: texto "Filtros" com selo */}
+                            <Button type="button" onClick={() => setFilterOpen(true)} aria-haspopup="dialog" className="max-lg:!hidden">
+                                <IconFilter size={20} stroke={1.8} aria-hidden="true" />
+                                Filtros
+                                {nFiltros > 0 ? <CountBadge n={nFiltros} /> : null}
+                            </Button>
+                        </div>
+
+                        <div className="mt-2.5 lg:mt-0 lg:flex lg:items-baseline lg:gap-3 lg:px-6 lg:pb-3.5">
+                            <h2 className="text-base font-extrabold lg:text-lg">Produtos em estoque</h2>
+                            <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:text-sm">{contagem}</span>
                         </div>
                     </div>
 
-                    <div className="hidden overflow-x-auto lg:block">
-                        <table className="min-w-full divide-y divide-[#E3E8F0] dark:divide-white/[0.12] text-left text-sm">
-                            <thead className="bg-[#F6F8FB] dark:bg-[#1C2334] text-xs uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">
-                                <tr>
-                                    <th className="w-28 px-4 py-3">Foto</th>
-                                    <th className="px-4 py-3">Produto</th>
-                                    <th className="px-4 py-3">Categoria</th>
-                                    <th className="px-4 py-3">Fabricante</th>
-                                    <th className="px-4 py-3 text-right">Qtd</th>
-                                    <th className="px-4 py-3 text-right">Valor un.</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12] bg-white dark:bg-[#232B3F]">
-                                {!loading && produtosAgregados.length === 0 ? (
-                                    <tr>
-                                        <td
-                                            colSpan={6}
-                                            className="px-4 py-8 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]"
-                                        >
-                                            Nenhum produto encontrado com os filtros atuais.
-                                        </td>
-                                    </tr>
-                                ) : null}
-
-                                {produtosAgregados.map(({ p, total, low }) => {
-                                    const img = getProdutoFotoPrincipal(p);
-                                    const cat =
-                                        p.categoria_nome ||
-                                        (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
-                                        "—";
-                                    const fab =
-                                        p.fabricante_nome ||
-                                        (p.fabricante_id
-                                            ? fabById.get(p.fabricante_id)?.nome
-                                            : "") ||
-                                        "—";
-
-                                    return (
-                                        <tr
-                                            key={p.id}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => abrirDepositosDoProduto(p)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" || e.key === " ") {
-                                                    e.preventDefault();
-                                                    abrirDepositosDoProduto(p);
-                                                }
-                                            }}
-                                            className={[
-                                                "cursor-pointer outline-none hover:bg-[#EEF2F7] dark:hover:bg-white/10 focus:ring-2 focus:ring-inset focus:ring-[#00AEEC]/30",
-                                                low ? "bg-[#FCF3CC]/70 dark:bg-[#F2CB3F]/10" : "",
-                                            ].join(" ")}
-                                        >
-                                            <td className="px-4 py-3 align-top">
-                                                <PhotoThumb url={img} className="h-24 w-24" />
-                                            </td>
-                                            <td className="px-4 py-3 font-medium text-[#313C55] dark:text-white">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="font-bold">{p.nome}</span>
-                                                    {low ? (
-                                                        <span className="rounded-full bg-[#F2CB3F] px-2.5 py-0.5 text-xs font-extrabold text-[#313C55]">
-                                                            alerta
-                                                        </span>
-                                                    ) : null}
-                                                </div>
-                                                <div className="mt-0.5 text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">
-                                                    CB: {p.codigo_barras || "—"}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-[#5B6478] dark:text-[#AEB9CF]">{cat}</td>
-                                            <td className="px-4 py-3 text-[#5B6478] dark:text-[#AEB9CF]">{fab}</td>
-                                            <td className="px-4 py-3 text-right text-lg font-extrabold text-[#313C55] dark:text-white">
-                                                {total}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-[#313C55] dark:text-[#D6DCE8]">
-                                                {moneyBRL(Number(p.valor) || 0)}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 p-4 lg:hidden">
-                        {!loading && produtosAgregados.length === 0 ? (
-                            <div className="rounded-2xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#F6F8FB] dark:bg-[#1C2334] p-4 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                                Nenhum produto encontrado com os filtros atuais.
+                    {/* Computador: tabela */}
+                    <div className="hidden overflow-x-auto border-t border-[#E3E8F0] dark:border-white/[0.12] lg:block">
+                        <div className="min-w-[780px]">
+                            <div className="flex gap-3 bg-[#F6F8FB] pl-6 dark:bg-[#1C2334]">
+                                <div className="w-16 shrink-0" />
+                                <div className={["grid min-w-0 flex-1 items-center gap-3 py-3 pr-6", DESK_COLS].join(" ")}>
+                                    <div className={thCls}>Produto</div>
+                                    <div className={thCls}>Categoria</div>
+                                    <div className={thCls}>Fabricante</div>
+                                    <div className={[thCls, "text-right"].join(" ")}>Qtd</div>
+                                    <div className={[thCls, "text-right"].join(" ")}>Valor un.</div>
+                                </div>
                             </div>
-                        ) : null}
 
-                        {produtosAgregados.map(({ p, total, low }) => {
-                            const img = getProdutoFotoPrincipal(p);
-                            const cat =
-                                p.categoria_nome ||
-                                (p.categoria_id ? catById.get(p.categoria_id)?.nome : "") ||
-                                "—";
-
-                            return (
-                                <div
+                            {produtosAgregados.map(({ p, total, low }) => (
+                                <button
                                     key={p.id}
-                                    role="button"
-                                    tabIndex={0}
+                                    type="button"
                                     onClick={() => abrirDepositosDoProduto(p)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
-                                            e.preventDefault();
-                                            abrirDepositosDoProduto(p);
-                                        }
-                                    }}
+                                    aria-label={`Abrir detalhes de ${p.nome}`}
                                     className={[
-                                        "cursor-pointer rounded-2xl border p-3 outline-none transition hover:border-[#C9D1DE] dark:hover:border-white/25 hover:shadow-sm focus:ring-2 focus:ring-[#00AEEC]/30",
+                                        "flex w-full items-center gap-3 border-t border-[#E3E8F0] pl-6 text-left text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-[#3D6A99]/20 dark:border-white/[0.12]",
                                         low
-                                            ? "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"
-                                            : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]",
+                                            ? "bg-[#FCF3CC] hover:bg-[#F8E9A6] dark:bg-[#F2CB3F]/[0.16] dark:hover:bg-[#F2CB3F]/25"
+                                            : "bg-white hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:hover:bg-white/[0.08]",
                                     ].join(" ")}
                                 >
-                                    <div className="flex gap-4">
-                                        <PhotoThumb url={img} />
-                                        <div className="min-w-0 flex-1">
-                                            <p className="line-clamp-2 font-semibold text-[#313C55] dark:text-white">
+                                    <PhotoThumb url={getProdutoFotoPrincipal(p)} className="size-16 rounded-[14px]" />
+                                    <span className={["grid min-w-0 flex-1 items-center gap-3 py-3 pr-6", DESK_COLS].join(" ")}>
+                                        <span className="min-w-0">
+                                            <span className="flex flex-wrap items-center gap-2 font-extrabold">
                                                 {p.nome}
-                                            </p>
-                                            <p className="mt-1 truncate text-xs font-medium text-[#5B6478] dark:text-[#AEB9CF]">
-                                                {cat}
-                                            </p>
-                                            <p className="mt-0.5 flex items-center gap-2 truncate text-xs font-semibold text-[#313C55] dark:text-white">
-                                                {moneyBRL(Number(p.valor) || 0)}
                                                 {low ? (
-                                                    <span className="rounded-full bg-[#F2CB3F] px-2 py-0.5 text-[11px] font-extrabold text-[#313C55]">
+                                                    <span className="inline-flex h-[22px] items-center rounded-full bg-[#F2CB3F] px-2.5 text-xs font-extrabold text-[#313C55]">
                                                         alerta
                                                     </span>
                                                 ) : null}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">Qtd</p>
-                                            <p className="text-xl font-bold text-[#313C55] dark:text-white">{total}</p>
-                                        </div>
-                                    </div>
+                                            </span>
+                                            <span className="mt-0.5 block text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                                CB: {p.codigo_barras || "Sem código"}
+                                            </span>
+                                        </span>
+                                        <span className="text-[13px]">{nomeCategoria(p)}</span>
+                                        <span className="text-[13px]">{nomeFabricante(p)}</span>
+                                        <span className="text-right text-lg font-extrabold">{total}</span>
+                                        <span className="text-right">{moneyBRL(Number(p.valor) || 0)}</span>
+                                    </span>
+                                </button>
+                            ))}
+
+                            {vazio ? (
+                                <div className="border-t border-[#E3E8F0] p-8 text-center text-[#5B6478] dark:border-white/[0.12] dark:text-[#AEB9CF]">
+                                    Nenhum produto encontrado com os filtros atuais.
                                 </div>
-                            );
-                        })}
+                            ) : null}
+                        </div>
+                    </div>
+
+                    {/* Celular (em pé e deitado): lista corrida com divisórias */}
+                    <div className="lg:hidden">
+                        {produtosAgregados.map(({ p, total, low }) => (
+                            <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => abrirDepositosDoProduto(p)}
+                                aria-label={`Abrir detalhes de ${p.nome}`}
+                                className={[
+                                    "flex min-h-[76px] w-full items-center gap-3 border-b border-[#E3E8F0] px-4 py-2.5 text-left dark:border-white/[0.12]",
+                                    low ? "bg-[#FCF3CC] dark:bg-[#F2CB3F]/[0.16]" : "bg-white dark:bg-[#232B3F]",
+                                ].join(" ")}
+                            >
+                                <PhotoThumb url={getProdutoFotoPrincipal(p)} className="size-[52px] rounded-xl" />
+                                <span className="block min-w-0 flex-1">
+                                    <span className="block text-[15px] font-extrabold leading-tight">{p.nome}</span>
+                                    <span className="mt-0.5 block truncate text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{nomeCategoria(p)}</span>
+                                    <span className="mt-0.5 flex items-center gap-2 text-[12.5px] font-bold">
+                                        {moneyBRL(Number(p.valor) || 0)}
+                                        {low ? (
+                                            <span className="inline-flex h-5 items-center rounded-full bg-[#F2CB3F] px-2 text-[11.5px] font-extrabold text-[#313C55]">
+                                                alerta
+                                            </span>
+                                        ) : null}
+                                    </span>
+                                </span>
+                                <span className="min-w-11 shrink-0 text-right">
+                                    <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">Qtd</span>
+                                    <span className="block text-2xl font-extrabold leading-[1.1]">{total}</span>
+                                </span>
+                            </button>
+                        ))}
+
+                        {vazio ? (
+                            <div className="p-8 text-center text-[#5B6478] dark:text-[#AEB9CF]">
+                                Nenhum produto encontrado com os filtros atuais.
+                            </div>
+                        ) : null}
                     </div>
                 </Card>
             </div>
 
             <FilterModal
                 open={filterOpen}
-                onClose={() => setFilterOpen(false)}
+                onClose={fecharFiltros}
                 qEstoque={qEstoque}
                 setQEstoque={setQEstoque}
                 depositos={depositos}
@@ -1340,7 +1345,7 @@ export default function Page() {
 
             <ProdutoDetalhesModal
                 open={produtoDepositosOpen}
-                onClose={() => setProdutoDepositosOpen(false)}
+                onClose={fecharDetalhes}
                 produto={selectedProduto}
                 rows={selectedProdutoDepositos}
             />
