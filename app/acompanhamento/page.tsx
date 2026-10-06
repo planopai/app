@@ -21,6 +21,7 @@ import {
   steps as stepsPadrao,
   wizardStepIndexes as wizardStepIndexesPadrao,
   wizardStepTitles as wizardStepTitlesPadrao,
+  localCerimoniaEfetivo,
 } from "./components/constants";
 import {
   defaultArrumacao,
@@ -33,10 +34,12 @@ import {
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
+import { BotoesTopoAtendimentos } from "@/components/atendimentos/BotoesAtendimento";
 import {
   OS_CAMPOS_VAZIO,
   SecaoOSAtendimento,
   carregarCamposOS,
+  salvarLocalCerimonia,
   salvarEsincronizarOS,
   tipoConvenio,
   validarCamposOS,
@@ -675,6 +678,8 @@ export default function AcompanhamentoPage() {
 
   /* -------------------- OS no atendimento (Editar registro) -------------------- */
   const [osCampos, setOsCampos] = useState<OsCampos>(OS_CAMPOS_VAZIO);
+  // true quando o Local do velório já foi lido do banco (ou é registro novo): só então ele é gravado.
+  const localCerimoniaCarregadoRef = useRef(false);
   const [osColunasFaltando, setOsColunasFaltando] = useState<string[]>([]);
   const [osVersao, setOsVersao] = useState(0);
   // Convênios e pacotes do cadastro (os_previa.php). Uma busca só, compartilhada com o campo Convênio e a prévia da OS.
@@ -2330,6 +2335,7 @@ export default function AcompanhamentoPage() {
 
     // ✅ ROTEAMENTO: quando Não, limpa os dados da aba para não manter informação escondida.
     if (isNao(next?.realiza_velorio)) {
+      next.local_cerimonia = "";
       next.local_velorio = "";
       next.sala_velorio = "";
       next.velorio_online = "";
@@ -2937,6 +2943,22 @@ export default function AcompanhamentoPage() {
           };
         }
 
+        // Local do velório: coluna nova (sepultamentos.local_cerimonia), gravada pelo os_principal.php.
+        // Em edição só grava depois de ter lido o valor salvo, para não apagar o local com um campo vazio.
+        let textoLocal = "";
+        if (
+          atendimentoId != null &&
+          !String(atendimentoId).startsWith("local") &&
+          localCerimoniaCarregadoRef.current &&
+          (!wizardRestrictIds || escopoTemAlgum(["local_velorio", "sala_velorio", "velorio_online"]))
+        ) {
+          try {
+            await salvarLocalCerimonia(atendimentoId, localCerimoniaEfetivo(dataAtualizada as any));
+          } catch (localError: any) {
+            textoLocal = ` Mas o local do velório não foi gravado: ${localError?.message || "erro desconhecido"}.`;
+          }
+        }
+
         let textoOS = "";
         if (
           atendimentoId != null &&
@@ -2959,8 +2981,8 @@ export default function AcompanhamentoPage() {
         }
 
         setWizardMsg({
-          text: (options?.mensagemSucesso || "Registro salvo!") + textoOS,
-          ok: !textoOS.includes("não foi atualizada"),
+          text: (options?.mensagemSucesso || "Registro salvo!") + textoOS + textoLocal,
+          ok: !textoOS.includes("não foi atualizada") && !textoLocal,
         });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
@@ -4092,12 +4114,17 @@ export default function AcompanhamentoPage() {
     let vivo = true;
     setOsCampos(OS_CAMPOS_VAZIO);
     setOsColunasFaltando([]);
+    localCerimoniaCarregadoRef.current = !wizardEditing;
     if (!wizardEditing || wizardRegistroId == null || String(wizardRegistroId).startsWith("local")) return;
     carregarCamposOS(wizardRegistroId)
       .then((r) => {
         if (!vivo) return;
         setOsCampos(r.campos);
         setOsColunasFaltando(r.faltando);
+        localCerimoniaCarregadoRef.current = true;
+        if (r.localCerimonia) {
+          setWizardData((prev: any) => ({ ...prev, local_cerimonia: r.localCerimonia }));
+        }
       })
       .catch(() => {
         /* sem OS disponível: a tela segue sem os campos preenchidos */
@@ -4194,26 +4221,7 @@ export default function AcompanhamentoPage() {
             Registre cada etapa e mantenha as informações do atendimento em dia.
           </p>
         </div>
-        <div className="flex gap-2.5">
-          <a
-            href="/os/minhas"
-            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-[#313C55] bg-white px-5 text-[15px] font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10"
-          >
-            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><path d="M14 2v6h6" /><path d="M9 13h6" /><path d="M9 17h6" />
-            </svg>
-            Minhas OS
-          </a>
-          <button
-            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-[14px] bg-[#313C55] px-5 text-[15px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#3D6A99] dark:text-white dark:hover:bg-[#355D86]"
-            onClick={() => iniciarNovoRegistro("funerario")}
-          >
-            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
-              <path d="M5 12h14" /><path d="M12 5v14" />
-            </svg>
-            Novo registro
-          </button>
-        </div>
+        <BotoesTopoAtendimentos onNovoRegistro={() => iniciarNovoRegistro("funerario")} />
       </header>
 
       <TabelaAtendimentos

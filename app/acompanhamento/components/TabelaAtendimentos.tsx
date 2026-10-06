@@ -7,6 +7,15 @@ import { capitalizeStatus } from "./helpers";
 import { proximaEtapaDoRegistro as proximaEtapa } from "./proximaEtapa";
 import { type VisitaStatus } from "./visita";
 import { atendimentoDeveFicarNoQuadro } from "@/components/atendimentos/regrasQuadro";
+import {
+    BTN_ACAO,
+    BTN_EDITAR,
+    BTN_COMPARTILHAR,
+    BotaoRegistrarAcao,
+    BotaoEditar,
+    BotaoCompartilhar,
+    BotaoVisita,
+} from "@/components/atendimentos/BotoesAtendimento";
 
 interface Props {
     registros: Registro[];
@@ -29,76 +38,22 @@ interface Props {
     selecionadoId?: Registro["id"] | null;
 }
 
-/* =====================================================================================
-   Ícones: exatamente os do mockup (Atendimentos.dc.html e AtendimentosCelular.dc.html).
-   24×24, traço 1,8, pontas arredondadas, cor = currentColor.
-   ===================================================================================== */
-function Ic({ children, className = "size-5" }: { children: React.ReactNode; className?: string }) {
-    return (
-        <svg viewBox="0 0 24 24" className={`${className} shrink-0`} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            {children}
-        </svg>
-    );
-}
-const IcAcaoSeta = () => (<Ic><circle cx="12" cy="12" r="10" /><path d="M8 12h8" /><path d="m12 8 4 4-4 4" /></Ic>);
-const IcAcaoLista = () => (<Ic className="size-[22px]"><path d="m3 17 2 2 4-4" /><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" /></Ic>);
-const IcEditar = ({ className }: { className?: string }) => (<Ic className={className}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></Ic>);
-const IcCompartilhar = ({ className }: { className?: string }) => (<Ic className={className}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4" /><path d="m15.4 6.5-6.8 4" /></Ic>);
-const IcOlho = ({ className }: { className?: string }) => (<Ic className={className}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></Ic>);
+/* Ícones e botões: padrão único em components/atendimentos/BotoesAtendimento.tsx
+   (o mesmo da janela "Informações do atendimento" do Quadro). */
+export { BTN_ACAO, BTN_EDITAR, BTN_COMPARTILHAR };
+
 const IcMais = () => (
     <svg viewBox="0 0 24 24" className="size-[22px]" fill="currentColor" aria-hidden="true">
         <circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" />
     </svg>
 );
 
-/* =====================================================================================
-   Botões padronizados (44 × 44, raio 12). Mesma cor em todas as telas:
-   • Registrar ação ......... azul-marinho #313C55, ícone branco   (no escuro: ciano #00AEEC, ícone #313C55)
-   • Editar ................. amarelo #F2CB3F, ícone #313C55
-   • Compartilhar ........... verde-lima #B3CE52, ícone #313C55
-   • Visita ................. contorno (visitar) · ciano (em andamento) · verde (finalizada) · apagado (indisponível)
-   ===================================================================================== */
-const BASE = "inline-flex h-11 shrink-0 items-center justify-center rounded-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00AEEC]";
-export const BTN_ACAO = `${BASE} w-11 bg-[#313C55] text-white hover:bg-[#232B40] dark:bg-[#3D6A99] dark:text-white dark:hover:bg-[#355D86]`;
-export const BTN_EDITAR = `${BASE} w-11 border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]`;
-export const BTN_COMPARTILHAR = `${BASE} w-11 border-[1.5px] border-[#B3CE52] bg-[#B3CE52] text-[#313C55] hover:bg-[#A3BE45]`;
-
-function classeVisita(s: VisitaStatus): string {
-    if (s === "em_andamento") return "border-[1.5px] border-[#00AEEC] bg-[#00AEEC] text-[#313C55]";
-    if (s === "visitado") return "border-[1.5px] border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/20 dark:text-white";
-    if (s === "visitar") return "border-[1.5px] border-[#313C55] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/60 dark:bg-[#232B3F] dark:text-white";
-    return "border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] opacity-45 cursor-not-allowed dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
-}
-function rotuloVisita(s: VisitaStatus): { aria: string; curto: string } {
-    if (s === "visitar") return { aria: "Iniciar visita", curto: "Visitar" };
-    if (s === "em_andamento") return { aria: "Visita em andamento", curto: "Em andamento" };
-    if (s === "visitado") return { aria: "Visita finalizada", curto: "Finalizada" };
-    return { aria: "Visita indisponível", curto: "Visita" };
-}
-function BotaoVisita({ status, onClick, comRotulo = false }: { status: VisitaStatus; onClick: () => void; comRotulo?: boolean }) {
-    const { aria, curto } = rotuloVisita(status);
-    const off = status === "indisponivel";
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={off}
-            aria-label={aria}
-            title={off ? "Visita disponível somente durante o velório." : aria}
-            className={`${BASE} ${comRotulo ? "flex-[1.35] gap-1.5 px-3 text-sm font-extrabold" : "w-11"} ${classeVisita(status)}`}
-        >
-            <IcOlho />
-            {comRotulo ? curto : null}
-        </button>
-    );
-}
-
-/** Estado do atendimento no padrão do mockup: amarelo = registro novo, verde = concluído, ciano = em andamento. */
+/** Estado do atendimento no padrão do mockup: amarelo = registro novo, verde = concluído, azul = em andamento. */
 function chipDoStatus(s?: string): { fundo: string; ponto: string } {
     const k = String(s || "").toLowerCase();
     if (k === "fase11" || k === "fase10" || k === "concluido") return { fundo: "bg-[#EEF5D6] dark:bg-[#B3CE52]/20", ponto: "bg-[#B3CE52]" };
     if (k === "fase00" || k === "") return { fundo: "bg-[#FCF3CC] dark:bg-[#F2CB3F]/16", ponto: "bg-[#F2CB3F]" };
-    return { fundo: "bg-[#E6F7FE] dark:bg-[#00AEEC]/20", ponto: "bg-[#00AEEC]" };
+    return { fundo: "bg-[#E9EFF6] dark:bg-[#3D6A99]/20", ponto: "bg-[#3D6A99]" };
 }
 
 function SyncBadge({ registro }: { registro: Registro }) {
@@ -195,7 +150,7 @@ export default function TabelaAtendimentos({
                                 return (
                                     <tr
                                         key={String(r.id ?? `row-${idx}`)}
-                                        className={`min-h-[76px] border-t border-[#E3E8F0] dark:border-white/[0.12] ${sel ? "bg-[#E6F7FE] dark:bg-[#00AEEC]/20" : "hover:bg-[#F6F8FB] dark:hover:bg-white/5"}`}
+                                        className={`min-h-[76px] border-t border-[#E3E8F0] dark:border-white/[0.12] ${sel ? "bg-[#E9EFF6] dark:bg-[#3D6A99]/20" : "hover:bg-[#F6F8FB] dark:hover:bg-white/5"}`}
                                     >
                                         <td className="px-5 py-3 align-middle">
                                             <div className="flex flex-col items-start gap-1">
@@ -218,17 +173,9 @@ export default function TabelaAtendimentos({
 
                                         <td className="px-5 py-3 align-middle">
                                             <div className="flex items-center justify-end gap-2">
-                                                <button type="button" className={BTN_ACAO} onClick={() => r.id != null && onAcao(r.id)} title="Registrar ação" aria-label="Registrar ação">
-                                                    <IcAcaoSeta />
-                                                </button>
-                                                {onEditar && (
-                                                    <button type="button" className={BTN_EDITAR} onClick={() => r.id != null && onEditar(r.id)} title="Editar" aria-label="Editar">
-                                                        <IcEditar />
-                                                    </button>
-                                                )}
-                                                <button type="button" className={BTN_COMPARTILHAR} onClick={() => r.id != null && onCompartilhar(r.id)} title="Compartilhar" aria-label="Compartilhar atendimento">
-                                                    <IcCompartilhar />
-                                                </button>
+                                                <BotaoRegistrarAcao onClick={() => r.id != null && onAcao(r.id)} />
+                                                {onEditar && <BotaoEditar onClick={() => r.id != null && onEditar(r.id)} />}
+                                                <BotaoCompartilhar onClick={() => r.id != null && onCompartilhar(r.id)} />
                                                 {visitaPermitida && onVisita && (
                                                     <BotaoVisita status={statusVisita(r)} onClick={() => r.id != null && onVisita(r.id)} />
                                                 )}
@@ -242,7 +189,7 @@ export default function TabelaAtendimentos({
                 </table>
             </div>
 
-            {/* CELULAR: nome + ícone de ações + "⋯" que abre as outras opções (AtendimentosCelular.dc.html) */}
+            {/* CELULAR: nome + Registrar ação + "⋯" que abre Editar, Compartilhar e Visita (mesmos botões do computador) */}
             <div className="overflow-hidden rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F] lg:hidden">
                 {linhas.length === 0 ? (
                     <div className="p-8 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">{vazio}</div>
@@ -266,9 +213,7 @@ export default function TabelaAtendimentos({
                                             <SyncBadge registro={r} />
                                         </div>
                                     </div>
-                                    <button type="button" className={BTN_ACAO} onClick={() => r.id != null && onAcao(r.id)} title="Ações" aria-label="Ações">
-                                        <IcAcaoLista />
-                                    </button>
+                                    <BotaoRegistrarAcao onClick={() => r.id != null && onAcao(r.id)} />
                                     <button
                                         type="button"
                                         onClick={() => setAbertoId(aberto ? null : id)}
@@ -281,17 +226,11 @@ export default function TabelaAtendimentos({
                                 </div>
 
                                 {aberto && (
-                                    <div className="flex gap-2 pb-3 pl-9 pr-4">
-                                        {onEditar && (
-                                            <button type="button" className={`${BASE} h-12 flex-1 border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]`} onClick={() => r.id != null && onEditar(r.id)} title="Editar" aria-label="Editar">
-                                                <IcEditar className="size-[22px]" />
-                                            </button>
-                                        )}
-                                        <button type="button" className={`${BASE} h-12 flex-1 border-[1.5px] border-[#B3CE52] bg-[#B3CE52] text-[#313C55]`} onClick={() => r.id != null && onCompartilhar(r.id)} title="Compartilhar" aria-label="Compartilhar">
-                                            <IcCompartilhar className="size-[22px]" />
-                                        </button>
+                                    <div className="flex items-center gap-2 pb-3 pl-9 pr-4">
+                                        {onEditar && <BotaoEditar onClick={() => r.id != null && onEditar(r.id)} />}
+                                        <BotaoCompartilhar onClick={() => r.id != null && onCompartilhar(r.id)} />
                                         {visitaPermitida && onVisita && (
-                                            <BotaoVisita comRotulo status={statusVisita(r)} onClick={() => r.id != null && onVisita(r.id)} />
+                                            <BotaoVisita status={statusVisita(r)} onClick={() => r.id != null && onVisita(r.id)} />
                                         )}
                                     </div>
                                 )}
