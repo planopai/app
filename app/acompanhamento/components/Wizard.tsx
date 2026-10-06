@@ -8,6 +8,7 @@ import { Registro, CoroaAtendimentoItem } from "./types";
 import { proximaEtapaDoRegistro } from "./proximaEtapa";
 import { RascunhoOSContext, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
 import { situacaoTermo } from "./termos";
+import { LOCAL_MEMORIAL, locaisCerimonia, localCerimoniaEfetivo } from "./constants";
 import { getLatestOfflineSignature } from "@/lib/offline/signatures";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
@@ -2899,6 +2900,7 @@ export default function Wizard({
                                             realiza_velorio: v,
                                             ...(v === "Não"
                                                 ? {
+                                                    local_cerimonia: "",
                                                     local_velorio: "",
                                                     sala_velorio: "",
                                                     velorio_online: "",
@@ -3025,6 +3027,24 @@ export default function Wizard({
                         const salaAtual = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
                         const onlineAtual = String(velorioOnlineVal || (wizardData as any).velorio_online || "").trim();
                         const mostraVelorioOnline = !!salaAtual;
+                        // Local do velório (lista fixa). A sala do Memorial só aparece com o Memorial escolhido.
+                        const localCerimonia = localCerimoniaEfetivo(wizardData as any);
+                        const ehMemorial = localCerimonia === LOCAL_MEMORIAL;
+                        const localForaDaLista = !!localCerimonia && !(locaisCerimonia as readonly string[]).includes(localCerimonia);
+
+                        const selecionarLocalCerimonia = (local: string) => {
+                            const saiDoMemorial = local !== LOCAL_MEMORIAL;
+                            if (saiDoMemorial) {
+                                setSalaVelorioVal("");
+                                setVelorioOnlineVal("");
+                                setVelorioOnlineErro("");
+                            }
+                            setWizardData((prev: any) => ({
+                                ...prev,
+                                local_cerimonia: local,
+                                ...(saiDoMemorial ? { sala_velorio: "", velorio_online: "" } : {}),
+                            }));
+                        };
 
                         const selecionarSala = (sala: string) => {
                             const nextSala = salaAtual === sala ? "" : sala;
@@ -3043,6 +3063,27 @@ export default function Wizard({
 
                         return (
                             <div key={step.id} className="sm:col-span-2">
+                                <label htmlFor="wizard-local_cerimonia" className="mb-1.5 block text-[13px] font-bold">
+                                    Local do Velório {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
+                                </label>
+                                <select
+                                    id="wizard-local_cerimonia"
+                                    className={`${CAMPO_CLS} mb-4`}
+                                    value={localCerimonia}
+                                    onChange={(e) => selecionarLocalCerimonia(e.target.value)}
+                                    disabled={wizardSubmitting}
+                                >
+                                    <option value="" disabled>
+                                        Selecione…
+                                    </option>
+                                    {localForaDaLista && <option value={localCerimonia}>{localCerimonia}</option>}
+                                    {locaisCerimonia.map((op) => (
+                                        <option key={op} value={op}>
+                                            {op}
+                                        </option>
+                                    ))}
+                                </select>
+
                                 <label className="mb-1.5 block text-[13px] font-bold">
                                     {step.label} {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
                                 </label>
@@ -3101,6 +3142,7 @@ export default function Wizard({
                                 <input id="wizard-sala_velorio" type="hidden" value={salaAtual} readOnly />
                                 <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />
 
+                                {ehMemorial && (
                                 <div className="mt-4 rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
                                     <label className="block text-sm font-medium">
                                         Sala do Velório <span className="text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">(opcional)</span>
@@ -3173,6 +3215,7 @@ export default function Wizard({
                                         </p>
                                     )}
                                 </div>
+                                )}
                             </div>
                         );
                     }

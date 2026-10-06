@@ -21,6 +21,7 @@ import {
   steps as stepsPadrao,
   wizardStepIndexes as wizardStepIndexesPadrao,
   wizardStepTitles as wizardStepTitlesPadrao,
+  localCerimoniaEfetivo,
 } from "./components/constants";
 import {
   defaultArrumacao,
@@ -37,6 +38,7 @@ import {
   OS_CAMPOS_VAZIO,
   SecaoOSAtendimento,
   carregarCamposOS,
+  salvarLocalCerimonia,
   salvarEsincronizarOS,
   tipoConvenio,
   validarCamposOS,
@@ -675,6 +677,8 @@ export default function AcompanhamentoPage() {
 
   /* -------------------- OS no atendimento (Editar registro) -------------------- */
   const [osCampos, setOsCampos] = useState<OsCampos>(OS_CAMPOS_VAZIO);
+  // true quando o Local do velório já foi lido do banco (ou é registro novo): só então ele é gravado.
+  const localCerimoniaCarregadoRef = useRef(false);
   const [osColunasFaltando, setOsColunasFaltando] = useState<string[]>([]);
   const [osVersao, setOsVersao] = useState(0);
   // Convênios e pacotes do cadastro (os_previa.php). Uma busca só, compartilhada com o campo Convênio e a prévia da OS.
@@ -2330,6 +2334,7 @@ export default function AcompanhamentoPage() {
 
     // ✅ ROTEAMENTO: quando Não, limpa os dados da aba para não manter informação escondida.
     if (isNao(next?.realiza_velorio)) {
+      next.local_cerimonia = "";
       next.local_velorio = "";
       next.sala_velorio = "";
       next.velorio_online = "";
@@ -2937,6 +2942,22 @@ export default function AcompanhamentoPage() {
           };
         }
 
+        // Local do velório: coluna nova (sepultamentos.local_cerimonia), gravada pelo os_principal.php.
+        // Em edição só grava depois de ter lido o valor salvo, para não apagar o local com um campo vazio.
+        let textoLocal = "";
+        if (
+          atendimentoId != null &&
+          !String(atendimentoId).startsWith("local") &&
+          localCerimoniaCarregadoRef.current &&
+          (!wizardRestrictIds || escopoTemAlgum(["local_velorio", "sala_velorio", "velorio_online"]))
+        ) {
+          try {
+            await salvarLocalCerimonia(atendimentoId, localCerimoniaEfetivo(dataAtualizada as any));
+          } catch (localError: any) {
+            textoLocal = ` Mas o local do velório não foi gravado: ${localError?.message || "erro desconhecido"}.`;
+          }
+        }
+
         let textoOS = "";
         if (
           atendimentoId != null &&
@@ -2959,8 +2980,8 @@ export default function AcompanhamentoPage() {
         }
 
         setWizardMsg({
-          text: (options?.mensagemSucesso || "Registro salvo!") + textoOS,
-          ok: !textoOS.includes("não foi atualizada"),
+          text: (options?.mensagemSucesso || "Registro salvo!") + textoOS + textoLocal,
+          ok: !textoOS.includes("não foi atualizada") && !textoLocal,
         });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
@@ -4092,12 +4113,17 @@ export default function AcompanhamentoPage() {
     let vivo = true;
     setOsCampos(OS_CAMPOS_VAZIO);
     setOsColunasFaltando([]);
+    localCerimoniaCarregadoRef.current = !wizardEditing;
     if (!wizardEditing || wizardRegistroId == null || String(wizardRegistroId).startsWith("local")) return;
     carregarCamposOS(wizardRegistroId)
       .then((r) => {
         if (!vivo) return;
         setOsCampos(r.campos);
         setOsColunasFaltando(r.faltando);
+        localCerimoniaCarregadoRef.current = true;
+        if (r.localCerimonia) {
+          setWizardData((prev: any) => ({ ...prev, local_cerimonia: r.localCerimonia }));
+        }
       })
       .catch(() => {
         /* sem OS disponível: a tela segue sem os campos preenchidos */

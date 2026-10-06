@@ -87,7 +87,7 @@ export const steps = [
         ],
     },
     {
-        label: "Local da Cerimônia",
+        label: "Endereço da Cerimônia",
         id: "local_velorio",
         type: "datalist",
         placeholder: "Digite ou escolha",
@@ -173,6 +173,32 @@ export const obrigatorios = [
     "realiza_velorio",
     "realiza_sepultamento",
 ];
+
+/** Local do velório (sepultamentos.local_cerimonia). Lista fixa no front; o back-end só grava o texto. */
+export const LOCAL_MEMORIAL = "Memorial Senhor do Bonfim";
+export const locaisCerimonia = [
+    LOCAL_MEMORIAL,
+    "Residência",
+    "Igreja",
+    "Capela do cemitério",
+    "Câmara de Vereadores",
+    "Espaço comunitário (associação, quadra, salão)",
+    "Funerária ou sala de velório de outra empresa",
+    "Outro",
+] as const;
+
+/**
+ * Local do velório que vale para a tela. Registro antigo (sem local_cerimonia) com sala marcada ou endereço
+ * "Memorial - Sala 0X" é do Memorial: assim a sala continua visível e não é cobrada escondida.
+ */
+export function localCerimoniaEfetivo(d: { local_cerimonia?: unknown; sala_velorio?: unknown; local_velorio?: unknown } | null | undefined): string {
+    const local = String(d?.local_cerimonia ?? "").trim();
+    if (local) return local;
+    const sala = String(d?.sala_velorio ?? "").trim();
+    const endereco = String(d?.local_velorio ?? "").trim().toLowerCase();
+    if (sala || endereco.startsWith("memorial")) return LOCAL_MEMORIAL;
+    return "";
+}
 
 export const salasMemorial = ["Memorial - Sala 01", "Memorial - Sala 02", "Memorial - Sala 03"];
 export const salasVelorio = ["Sala 01", "Sala 02", "Sala 03"] as const;

@@ -116,7 +116,7 @@ async function osChamar(flag: string, params: Record<string, string | number | u
     return json;
 }
 
-type CamposLidos = { campos: OsCampos; faltando: string[]; convenioTexto: string };
+type CamposLidos = { campos: OsCampos; faltando: string[]; convenioTexto: string; localCerimonia: string };
 
 export async function carregarCamposOS(atendimentoId: number | string): Promise<CamposLidos> {
     const r = await osChamar("dados_os_atendimento", { atendimento_id: atendimentoId });
@@ -126,7 +126,17 @@ export async function carregarCamposOS(atendimentoId: number | string): Promise<
         const v = c[k];
         (campos as any)[k] = v == null ? "" : String(v).replace(".", k === "translado_km" ? "," : ".");
     });
-    return { campos, faltando: r.dados?.colunas_faltando || [], convenioTexto: String(r.dados?.convenio_texto || "") };
+    return {
+        campos,
+        faltando: r.dados?.colunas_faltando || [],
+        convenioTexto: String(r.dados?.convenio_texto || ""),
+        localCerimonia: String(c.local_cerimonia ?? "").trim(),
+    };
+}
+
+/** Grava só o Local do velório (sepultamentos.local_cerimonia). Vale para qualquer convênio, com ou sem OS. */
+export async function salvarLocalCerimonia(atendimentoId: number | string, local: string): Promise<void> {
+    await osChamar("salvar_dados_os_atendimento", { atendimento_id: atendimentoId, local_cerimonia: local.trim() }, true);
 }
 
 export async function listarModelosTanato(): Promise<{ produto_id: number; nome: string }[]> {
@@ -632,6 +642,8 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         translado_autorizado_prefeitura: os.translado_autorizado_prefeitura,
         coroa_autorizada_prefeitura: os.coroa_autorizada_prefeitura,
         realiza_velorio: sim(s.realizaVelorio), realiza_sepultamento: sim(s.realizaSepultamento),
+        // Sala do Memorial (produto na OS): só com velório = Sim.
+        sala_velorio: sim(s.realizaVelorio) === "Sim" ? String(wd.sala_velorio ?? "").trim() : "",
     };
 }
 
@@ -639,7 +651,7 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
     if (!r) return false;
     if (Number(r.convenio_id) > 0) return true;
     return !!(r.urna_produto_id || r.roupa_produto_id || r.roupa_propria || r.veu === "Sim" || r.cordao === "Sim" || r.invol === "Sim" ||
-        (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim");
+        (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim" || !!r.sala_velorio);
 }
 
 type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
