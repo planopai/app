@@ -6,28 +6,67 @@ import React from "react";
  * Itens de uma requisição em tabela alinhada: nome à esquerda, quantidade à direita.
  *
  * Só apresentação. A lista de requisições traz os itens em um texto único
- * (`itens_resumo`, ex.: "ALCOOL (2), AJAX (3)"). Este componente tenta separar
+ * (`itens_resumo`, ex.: "URNA 000 ESPIRITO SANTO x 5, ALCOOL x 2" ou "ALCOOL (2), AJAX (3)"). Este componente tenta separar
  * esse texto em linhas; se o formato for outro, mostra o texto original como
  * antes, sem perder informação.
  */
 
 export type ItemLinha = { nome: string; qtd: string };
 
-const LINHA = /\s*([^()]+?)\s*\(\s*([\d.,]+)\s*\)\s*(?:[,;|]\s*|$)/y;
+/** Quantidade: 2, 10, 2.5 ou 2,5. */
+const QTD = "(\\d+(?:[.,]\\d+)?)";
 
+/** Formato antigo: "ALCOOL (2)". */
+const ITEM_PARENTESES = new RegExp("^(.*\\S)\\s*\\(\\s*" + QTD + "\\s*\\)$");
+
+/**
+ * Formato do servidor (requisicoes.php): "URNA 000 ESPIRITO SANTO x 5".
+ * A quantidade é o número depois do último " x ", então nomes com "X" no meio
+ * (ex.: "URNA 002 X PL CAS x 1") continuam inteiros.
+ */
+const ITEM_VEZES = new RegExp("^(.*\\S)\\s+[xX\\u00D7]\\s*" + QTD + "$");
+
+function lerItem(texto: string): ItemLinha | null {
+    const item = texto.trim();
+    const m = ITEM_PARENTESES.exec(item) || ITEM_VEZES.exec(item);
+    return m ? { nome: m[1].trim(), qtd: m[2] } : null;
+}
+
+/**
+ * Separa o texto em itens: " | " (servidor), ";", quebra de linha ou ", " (formato antigo).
+ * Na vírgula, junta os pedaços até formar um item completo, para não quebrar nomes
+ * que tenham vírgula.
+ */
 export function parseItensResumo(resumo?: string | null): ItemLinha[] | null {
     const texto = (resumo ?? "").trim();
     if (!texto) return null;
 
-    const linhas: ItemLinha[] = [];
-    LINHA.lastIndex = 0;
-
-    while (LINHA.lastIndex < texto.length) {
-        const m = LINHA.exec(texto);
-        if (!m) return null;
-        linhas.push({ nome: m[1].trim(), qtd: m[2] });
+    let partes: string[];
+    let separador = "";
+    if (texto.indexOf("|") >= 0) partes = texto.split("|");
+    else if (texto.indexOf(";") >= 0) partes = texto.split(";");
+    else if (texto.indexOf("\n") >= 0) partes = texto.split("\n");
+    else {
+        partes = texto.split(/,\s+/);
+        separador = ", ";
     }
 
+    const linhas: ItemLinha[] = [];
+    let acumulado = "";
+
+    for (const parte of partes) {
+        if (!parte.trim() && !acumulado) continue;
+        acumulado = acumulado ? acumulado + separador + parte : parte;
+        const item = lerItem(acumulado);
+        if (item) {
+            linhas.push(item);
+            acumulado = "";
+        } else if (!separador) {
+            return null;
+        }
+    }
+
+    if (acumulado.trim()) return null;
     return linhas.length ? linhas : null;
 }
 
