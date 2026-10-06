@@ -15,7 +15,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { carregarItensOS } from "@/app/os/components/ItensOSAjuste";
 import OSDoAtendimento from "@/app/os/components/OSDoAtendimento";
-import { classeOpcaoSimNao, MarcaSimNao } from "./simNaoCores";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -117,7 +116,7 @@ async function osChamar(flag: string, params: Record<string, string | number | u
     return json;
 }
 
-type CamposLidos = { campos: OsCampos; faltando: string[]; convenioTexto: string };
+type CamposLidos = { campos: OsCampos; faltando: string[]; convenioTexto: string; localCerimonia: string };
 
 export async function carregarCamposOS(atendimentoId: number | string): Promise<CamposLidos> {
     const r = await osChamar("dados_os_atendimento", { atendimento_id: atendimentoId });
@@ -127,7 +126,17 @@ export async function carregarCamposOS(atendimentoId: number | string): Promise<
         const v = c[k];
         (campos as any)[k] = v == null ? "" : String(v).replace(".", k === "translado_km" ? "," : ".");
     });
-    return { campos, faltando: r.dados?.colunas_faltando || [], convenioTexto: String(r.dados?.convenio_texto || "") };
+    return {
+        campos,
+        faltando: r.dados?.colunas_faltando || [],
+        convenioTexto: String(r.dados?.convenio_texto || ""),
+        localCerimonia: String(c.local_cerimonia ?? "").trim(),
+    };
+}
+
+/** Grava só o Local do velório (sepultamentos.local_cerimonia). Vale para qualquer convênio, com ou sem OS. */
+export async function salvarLocalCerimonia(atendimentoId: number | string, local: string): Promise<void> {
+    await osChamar("salvar_dados_os_atendimento", { atendimento_id: atendimentoId, local_cerimonia: local.trim() }, true);
 }
 
 export async function listarModelosTanato(): Promise<{ produto_id: number; nome: string }[]> {
@@ -254,11 +263,11 @@ function SimNaoBotoes({ valor, onChange, disabled }: { valor: SimNao; onChange: 
                     aria-pressed={valor === v}
                     className={[
                         "h-10 min-w-[64px] rounded-xl border-[1.5px] px-4 text-sm font-extrabold disabled:opacity-60",
-                        valor === v ? "border-transparent" : "border-[#C9D1DE] dark:border-white/25",
-                        classeOpcaoSimNao(v, valor === v),
+                        valor === v
+                            ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                            : "border-[#E3E8F0] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                     ].join(" ")}
                 >
-                    <MarcaSimNao valor={v} marcado={valor === v} />
                     {v}
                 </button>
             ))}
@@ -338,10 +347,11 @@ function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: 
                             className={[
                                 "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
                                 i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
-                                classeOpcaoSimNao(v, valor === v),
+                                valor === v
+                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                    : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
                             ].join(" ")}
                         >
-                            <MarcaSimNao valor={v} marcado={valor === v} />
                             {v}
                         </button>
                     ))}
@@ -372,13 +382,13 @@ async function previaChamar(acao: "opcoes" | "previa", corpo?: unknown, signal?:
         acao === "opcoes"
             ? await fetch(`${OS_API}?convenios_opcoes=1&_=${Date.now()}`, { credentials: "include", cache: "no-store", signal })
             : await fetch(OS_API, {
-                  method: "POST",
-                  credentials: "include",
-                  cache: "no-store",
-                  headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                  body: new URLSearchParams({ previa_os_atendimento: "1", rascunho: JSON.stringify(corpo ?? {}) }),
-                  signal,
-              });
+                method: "POST",
+                credentials: "include",
+                cache: "no-store",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ previa_os_atendimento: "1", rascunho: JSON.stringify(corpo ?? {}) }),
+                signal,
+            });
     const json = await res.json().catch(() => null);
     if (res.status === 401 || json?.need_login || json?.code === "NEED_LOGIN") {
         if (typeof window !== "undefined") window.location.href = LOGIN_URL;
@@ -558,7 +568,7 @@ export function ConvenioVinculo({
                                         className={[
                                             "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
                                             marcado
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white"
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
                                                 : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                                         ].join(" ")}
                                     >
@@ -632,6 +642,8 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         translado_autorizado_prefeitura: os.translado_autorizado_prefeitura,
         coroa_autorizada_prefeitura: os.coroa_autorizada_prefeitura,
         realiza_velorio: sim(s.realizaVelorio), realiza_sepultamento: sim(s.realizaSepultamento),
+        // Sala do Memorial (produto na OS): só com velório = Sim.
+        sala_velorio: sim(s.realizaVelorio) === "Sim" ? String(wd.sala_velorio ?? "").trim() : "",
     };
 }
 
@@ -639,7 +651,7 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
     if (!r) return false;
     if (Number(r.convenio_id) > 0) return true;
     return !!(r.urna_produto_id || r.roupa_produto_id || r.roupa_propria || r.veu === "Sim" || r.cordao === "Sim" || r.invol === "Sim" ||
-        (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim");
+        (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim" || !!r.sala_velorio);
 }
 
 type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
@@ -847,7 +859,7 @@ export function SecaoOSAtendimento({
                                         className={[
                                             "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
                                             marcado
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white"
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
                                                 : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                                         ].join(" ")}
                                     >
@@ -931,17 +943,17 @@ export function SecaoOSAtendimento({
                     {tipo === "associado" ? (
                         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                             {planoDoCadastro ? null : (
-                            <label className="block">
-                                <span className={ROTULO_CAMPO}>Plano do associado *</span>
-                                <select className={CAMPO_V2} disabled={disabled} value={plano} onChange={(e) => onChange({ convenio_os: e.target.value ? `ASSOCIADO_${e.target.value}` : "" })}>
-                                    <option value="">Selecione</option>
-                                    {PLANOS.map((p) => (
-                                        <option key={p} value={p}>
-                                            {p}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                                <label className="block">
+                                    <span className={ROTULO_CAMPO}>Plano do associado *</span>
+                                    <select className={CAMPO_V2} disabled={disabled} value={plano} onChange={(e) => onChange({ convenio_os: e.target.value ? `ASSOCIADO_${e.target.value}` : "" })}>
+                                        <option value="">Selecione</option>
+                                        {PLANOS.map((p) => (
+                                            <option key={p} value={p}>
+                                                {p}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
                             )}
                             <label className="block">
                                 <span className={ROTULO_CAMPO}>Contrato do titular</span>
@@ -957,55 +969,55 @@ export function SecaoOSAtendimento({
             {mostraResumo && ((atendimentoId != null && atendimentoId !== "") || previa.temBase) ? (
                 <section aria-label="Resumo da OS" className="rounded-[18px] border border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F]">
                     {/* RESUMO DA OS: valores calculados com o que está na tela; a OS é gravada ao salvar o registro */}
-                        <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="flex-1 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
-                                {previa.carregando ? (
-                                    <span className="text-[11px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">atualizando…</span>
-                                ) : pendenteDeSalvar ? (
-                                    <span className="rounded-full bg-[#FCF3CC] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">alterado · grava ao salvar</span>
-                                ) : os.length ? (
-                                    <span className="rounded-full bg-[#EEF5D6] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#B3CE52]/20 dark:text-white">OS salva e em dia</span>
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="flex-1 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
+                            {previa.carregando ? (
+                                <span className="text-[11px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">atualizando…</span>
+                            ) : pendenteDeSalvar ? (
+                                <span className="rounded-full bg-[#FCF3CC] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">alterado · grava ao salvar</span>
+                            ) : os.length ? (
+                                <span className="rounded-full bg-[#EEF5D6] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#B3CE52]/20 dark:text-white">OS salva e em dia</span>
+                            ) : null}
+                        </div>
+
+                        {resumoErro ? (
+                            <p className="mt-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">OS: {resumoErro}</p>
+                        ) : null}
+                        {previa.erro ? (
+                            <p className="mt-2 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Não foi possível recalcular agora ({previa.erro}). Mostrando a OS salva.</p>
+                        ) : null}
+
+                        {!temConvenioAgora && familiaAgora == null && os.length === 0 ? (
+                            <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Escolha o convênio e os itens: os valores da OS aparecem aqui.</p>
+                        ) : (
+                            <div className="mt-2 grid grid-cols-1 gap-1.5">
+                                {temConvenioAgora ? (
+                                    <CartaoResumo
+                                        rotulo={prefAgora ? "Faturar à Prefeitura" : "Coberto pelo plano"}
+                                        os={resumo?.os_convenio ?? { numero_os: "Nova OS ao salvar" }}
+                                        tom={prefAgora ? "azul" : "verde"}
+                                        valor={prefAgora ? undefined : brl(0)}
+                                        texto={prefAgora ? "O valor do contrato fica no financeiro." : "Total a pagar pela família."}
+                                    />
+                                ) : null}
+                                {familiaMostrar != null ? (
+                                    <CartaoResumo
+                                        rotulo={temConvenioAgora ? "Diferença da família" : "Total da família"}
+                                        os={resumo?.os_particular ?? { numero_os: "Nova OS ao salvar" }}
+                                        tom="amarelo"
+                                        valor={brl(familiaMostrar)}
+                                        texto={
+                                            (pendFamilia > 0 ? `+ ${pendFamilia} ${pendFamilia === 1 ? "item" : "itens"} com valor definido ao salvar. ` : "") +
+                                            (familiaDiverge && salvoFamilia != null
+                                                ? `OS salva: ${brl(salvoFamilia)} — salve o registro para atualizar.`
+                                                : "Confira e colha a assinatura em Ver OS.")
+                                        }
+                                    />
                                 ) : null}
                             </div>
-
-                            {resumoErro ? (
-                                <p className="mt-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">OS: {resumoErro}</p>
-                            ) : null}
-                            {previa.erro ? (
-                                <p className="mt-2 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Não foi possível recalcular agora ({previa.erro}). Mostrando a OS salva.</p>
-                            ) : null}
-
-                            {!temConvenioAgora && familiaAgora == null && os.length === 0 ? (
-                                <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Escolha o convênio e os itens: os valores da OS aparecem aqui.</p>
-                            ) : (
-                                <div className="mt-2 grid grid-cols-1 gap-1.5">
-                                    {temConvenioAgora ? (
-                                        <CartaoResumo
-                                            rotulo={prefAgora ? "Faturar à Prefeitura" : "Coberto pelo plano"}
-                                            os={resumo?.os_convenio ?? { numero_os: "Nova OS ao salvar" }}
-                                            tom={prefAgora ? "azul" : "verde"}
-                                            valor={prefAgora ? undefined : brl(0)}
-                                            texto={prefAgora ? "O valor do contrato fica no financeiro." : "Total a pagar pela família."}
-                                        />
-                                    ) : null}
-                                    {familiaMostrar != null ? (
-                                        <CartaoResumo
-                                            rotulo={temConvenioAgora ? "Diferença da família" : "Total da família"}
-                                            os={resumo?.os_particular ?? { numero_os: "Nova OS ao salvar" }}
-                                            tom="amarelo"
-                                            valor={brl(familiaMostrar)}
-                                            texto={
-                                                (pendFamilia > 0 ? `+ ${pendFamilia} ${pendFamilia === 1 ? "item" : "itens"} com valor definido ao salvar. ` : "") +
-                                                (familiaDiverge && salvoFamilia != null
-                                                    ? `OS salva: ${brl(salvoFamilia)} — salve o registro para atualizar.`
-                                                    : "Confira e colha a assinatura em Ver OS.")
-                                            }
-                                        />
-                                    ) : null}
-                                </div>
-                            )}
-                        </div>
+                        )}
+                    </div>
                     {os.length || onAtualizarOS ? (
                         <div className={`mt-2 grid gap-2 ${os.length && onAtualizarOS ? "grid-cols-2" : "grid-cols-1"}`}>
                             {onAtualizarOS ? (

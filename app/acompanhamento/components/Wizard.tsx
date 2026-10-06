@@ -8,7 +8,7 @@ import { Registro, CoroaAtendimentoItem } from "./types";
 import { proximaEtapaDoRegistro } from "./proximaEtapa";
 import { RascunhoOSContext, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
 import { situacaoTermo } from "./termos";
-import { classeOpcaoSimNao, MarcaSimNao } from "./simNaoCores";
+import { LOCAL_MEMORIAL, locaisCerimonia, localCerimoniaEfetivo } from "./constants";
 import { getLatestOfflineSignature } from "@/lib/offline/signatures";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
@@ -49,7 +49,6 @@ type EstoqueRow = {
 const ESTOQUE_API = `${ENDPOINT}/materiais_gerais.php`;
 
 const SALAS_VELORIO = ["Sala 01", "Sala 02", "Sala 03"] as const;
-const VELORIO_ONLINE_OPCOES = ["Sim", "Não"] as const;
 
 /* -------------------- helpers -------------------- */
 function normUpper(v: any) {
@@ -176,10 +175,11 @@ function CheckboxChoiceGroup({
                             className={[
                                 "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
                                 i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
-                                classeOpcaoSimNao(option.value, marcado),
+                                marcado
+                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                    : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
                             ].join(" ")}
                         >
-                            <MarcaSimNao valor={option.value} marcado={marcado} />
                             {option.label}
                         </button>
                     );
@@ -2124,65 +2124,48 @@ export default function Wizard({
 
     return (
         <RascunhoOSContext.Provider value={rascunhoOS}>
-        <Modal
-            open={open}
-            onClose={onClose}
-            ariaLabel="Wizard"
-            maxWidth={editandoCompleto ? 1140 : 740}
-            aside={
-                editandoCompleto ? (
-                    <PainelEdicao registro={registroAtual} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} resumoOS={osLateralSlot} />
-                ) : undefined
-            }
-            footer={
-                <>
-                {avisoLocal || aviso ? (
-                    <AvisoRodape
-                        aviso={(avisoLocal || aviso)!}
-                        onFechar={() => (avisoLocal ? setAvisoLocal(null) : onFecharAviso?.())}
-                        onIr={(c) => {
-                            if (!isRestrito && c.aba != null) setWizardStep(c.aba);
-                            // espera a aba aparecer e leva o operador até o campo
-                            window.setTimeout(() => {
-                                const el = document.getElementById("wizard-" + c.id) || document.querySelector<HTMLElement>(`[data-campo="${c.id}"]`);
-                                el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                (el as HTMLElement | null)?.focus?.({ preventScroll: true });
-                            }, 80);
-                        }}
-                    />
-                ) : null}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                        {isRestrito && (
-                            <>
-                                Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
-                            </>
-                        )}
-                    </div>
-
-                    <div className="flex w-full justify-end gap-2 sm:w-auto">
-                        <button className="rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold disabled:opacity-60 border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10" onClick={onClose} disabled={wizardSubmitting}>
-                            Cancelar
-                        </button>
-
-                        {isRestrito || emEdicao ? (
-                            <button
-                                className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
-                                onClick={tentarConcluir}
-                                disabled={wizardSubmitting || bloqueiaPorAssistencia}
-                                aria-busy={wizardSubmitting}
-                                title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
-                            >
-                                {wizardSubmitting ? "Salvando…" : emEdicao && !isRestrito ? "Salvar alterações" : "Salvar"}
-                            </button>
-                        ) : (
-                            <>
-                                {wizardStep > 0 && (
-                                    <button className="rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold disabled:opacity-60 border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10" onClick={goPrev} disabled={wizardSubmitting}>
-                                        Anterior
-                                    </button>
+            <Modal
+                open={open}
+                onClose={onClose}
+                ariaLabel="Wizard"
+                maxWidth={editandoCompleto ? 1140 : 740}
+                aside={
+                    editandoCompleto ? (
+                        <PainelEdicao registro={registroAtual} proxima={proximaTxt} onDocumento={onAbrirDocumento} onRegistrarAcao={onRegistrarAcaoEdicao} resumoOS={osLateralSlot} />
+                    ) : undefined
+                }
+                footer={
+                    <>
+                        {avisoLocal || aviso ? (
+                            <AvisoRodape
+                                aviso={(avisoLocal || aviso)!}
+                                onFechar={() => (avisoLocal ? setAvisoLocal(null) : onFecharAviso?.())}
+                                onIr={(c) => {
+                                    if (!isRestrito && c.aba != null) setWizardStep(c.aba);
+                                    // espera a aba aparecer e leva o operador até o campo
+                                    window.setTimeout(() => {
+                                        const el = document.getElementById("wizard-" + c.id) || document.querySelector<HTMLElement>(`[data-campo="${c.id}"]`);
+                                        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                        (el as HTMLElement | null)?.focus?.({ preventScroll: true });
+                                    }, 80);
+                                }}
+                            />
+                        ) : null}
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                {isRestrito && (
+                                    <>
+                                        Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
+                                    </>
                                 )}
-                                {isLastStep ? (
+                            </div>
+
+                            <div className="flex w-full justify-end gap-2 sm:w-auto">
+                                <button className="rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold disabled:opacity-60 border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10" onClick={onClose} disabled={wizardSubmitting}>
+                                    Cancelar
+                                </button>
+
+                                {isRestrito || emEdicao ? (
                                     <button
                                         className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
                                         onClick={tentarConcluir}
@@ -2190,1610 +2173,1677 @@ export default function Wizard({
                                         aria-busy={wizardSubmitting}
                                         title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
                                     >
-                                        {wizardSubmitting ? "Salvando…" : "Concluir"}
+                                        {wizardSubmitting ? "Salvando…" : emEdicao && !isRestrito ? "Salvar alterações" : "Salvar"}
                                     </button>
                                 ) : (
-                                    <button
-                                        className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
-                                        onClick={goNext}
-                                        disabled={wizardSubmitting || bloqueiaPorAssistencia}
-                                        title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
-                                    >
-                                        Próximo
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
-                </>
-            }
-        >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <div className="min-w-0 flex-1">
-                    <h2 className={editandoCompleto ? "text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white sm:text-[28px]" : "text-xl font-extrabold text-[#313C55] dark:text-white"}>
-                        {wizardTitle}
-                    </h2>
-                    {editandoCompleto && (
-                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                            {emEdicao ? `${String((registroAtual as any)?.falecido || "").trim() || "Atendimento"} · ` : ""}preencha as abas e conclua.
-                        </p>
-                    )}
-                </div>
-                {editandoCompleto && emEdicao && proximaTxt !== "—" && (
-                    <span className="inline-flex h-8 items-center gap-2 rounded-2xl bg-[#E6F7FE] px-3.5 text-[13px] font-bold text-[#313C55] dark:bg-[#00AEEC]/20 dark:text-white">
-                        <span className="size-2 rounded-full bg-[#00AEEC]" />
-                        Aguardando {proximaTxt}
-                    </span>
-                )}
-                {wizardSubmitting && (
-                    <span
-                        className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2 py-0.5 text-xs text-[#313C55] dark:text-white"
-                        aria-live="polite"
-                    >
-                        <svg className="h-3 w-3 animate-spin text-[#313C55] dark:text-white" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                        </svg>
-                        Salvando…
-                    </span>
-                )}
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-                {visibleWizardStepIndexes.map((i) => {
-                    const t = wizardStepTitles[i];
-                    if (!t) return null;
-                    const ativa = i === wizardStep;
-                    const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
-                    // Editando: a aba é um botão (troca livre). Novo registro: continua só indicando a etapa (a validação segue no Próximo).
-                    return emEdicao && editandoCompleto ? (
-                        <button
-                            key={`${t}-${i}`}
-                            type="button"
-                            onClick={() => irParaAba(i)}
-                            disabled={wizardSubmitting}
-                            aria-current={ativa ? "step" : undefined}
-                            className={`${classe} ${ativa ? "" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10"} disabled:opacity-60`}
-                        >
-                            {t}
-                        </button>
-                    ) : (
-                        <span key={`${t}-${i}`} className={classe}>
-                            {t}
-                        </span>
-                    );
-                })}
-            </div>
-
-            <div
-                className={
-                    ehPassoItens
-                        ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:[&>*]:col-span-2"
-                        : "mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
-                }
-            >
-                {(() => {
-                  let secaoAtual = "";
-                  return passosOrdenados.map((step) => {
-                  const conteudo = ((): React.ReactNode => {
-                    if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
-                    if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
-                    // Os campos legados coroa_tipo/coroa_modelo não são mais renderizados: a configuração
-                    // completa de 1..20 coroas fica no editor abaixo de Coroa de Flores.
-                    if (step.id === "coroa_tipo" || step.id === "coroa_modelo" || step.id === "coroas_itens") return null;
-
-                    // Convênio ligado ao cadastro de Convênios (pacote + autorização da Prefeitura).
-                    if (step.id === "convenio" && convenioSlot) {
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                {convenioSlot}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       URNA (checkbox Sim/Não + seletor async)
-                       =========================== */
-                    if (step.type === "async_urna" && step.id === "urna") {
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            Urna
-                                            {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-urna-uso"
-                                    ariaLabel="Urna"
-                                    value={urnaUsoVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!urnaUsoErro}
-                                    onChange={(v) => {
-                                        setUrnaUsoVal(v);
-                                        setUrnaUsoErro("");
-
-                                        if (v === "Não") {
-                                            setWizardData((prev: any) => ({
-                                                ...prev,
-                                                urna: "",
-                                                urna_deposito_nome: "",
-                                                urna_produto_id: 0,
-                                                urna_codigo_barras: "",
-                                            }));
-                                            setUrnaErro("");
-                                            return;
-                                        }
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            urna_deposito_nome:
-                                                String(prev?.urna_deposito_nome ?? "").trim() || depUrna,
-                                        }));
-                                    }}
-                                />
-
-                                {urnaUsoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{urnaUsoErro}</div>}
-
-                                {urnaUsoVal === "Sim" && (
-                                    <div className="mt-3">
-                                        <EstoqueCombobox
-                                            inputId="wizard-urna"
-                                            label="Urna para selecionar"
-                                            required={obrigatoriedadeAtiva}
-                                            placeholder={step.placeholder || "Selecione no estoque…"}
-                                            initialValue={String((wizardData as any).urna ?? "")}
-                                            disabled={wizardSubmitting}
-                                            depositoLabel="Local da Urna"
-                                            depositoOptions={[
-                                                { value: "MEMORIAL", label: "MEMORIAL" },
-                                                { value: "FUNERARIA", label: "FUNERARIA" },
-                                            ]}
-                                            depositoValue={depUrna}
-                                            onChangeDeposito={(v) => {
-                                                const next = normalizeDepUrna(v);
-                                                setDepUrna(next);
-
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    urna: "",
-                                                    urna_deposito_nome: next,
-                                                    urna_produto_id: 0,
-                                                    urna_codigo_barras: "",
-                                                }));
-
-                                                validarUrnaSeNecessario();
-                                            }}
-                                            action="urnas_buscar"
-                                            errorText={urnaErro}
-                                            onBlurValidate={validarUrnaSeNecessario}
-                                            onTypingInvalidate={(typed) => {
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    urna: typed,
-                                                    urna_deposito_nome: depUrna,
-                                                    urna_produto_id: 0,
-                                                    urna_codigo_barras: "",
-                                                }));
-                                            }}
-                                            onSelectRow={(it) => {
-                                                const pid = getPidFromRow(it);
-                                                const cb = String((it as any).codigo_barras || "").trim();
-
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    urna: String(it.nome || "").trim(),
-                                                    urna_deposito_nome: depUrna,
-                                                    urna_produto_id: pid,
-                                                    urna_codigo_barras: cb,
-                                                }));
-
-                                                setUrnaErro("");
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       ROUPA (checkbox Sim/Não + seletor async)
-                       =========================== */
-                    if (step.type === "async_roupa" && step.id === "roupa") {
-                        const roupaAtual = String((wizardData as any).roupa ?? "");
-                        const isPropria = isRoupaPropria(roupaAtual);
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            Roupa
-                                            {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-roupa-uso"
-                                    ariaLabel="Roupa"
-                                    value={roupaUsoVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!roupaUsoErro}
-                                    onChange={(v) => {
-                                        setRoupaUsoVal(v);
-                                        setRoupaUsoErro("");
-
-                                        if (v === "Não") {
-                                            setWizardData((prev: any) => ({
-                                                ...prev,
-                                                roupa: "",
-                                                roupa_deposito_nome: "",
-                                                roupa_produto_id: 0,
-                                                roupa_codigo_barras: "",
-                                                roupa_propria: 0,
-                                            }));
-                                            setRoupaErro("");
-                                            return;
-                                        }
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            roupa_deposito_nome:
-                                                isRoupaPropria(prev?.roupa)
-                                                    ? ""
-                                                    : String(prev?.roupa_deposito_nome ?? "").trim() || depRoupa,
-                                        }));
-                                    }}
-                                />
-
-                                {roupaUsoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{roupaUsoErro}</div>}
-
-                                {roupaUsoVal === "Sim" && (
-                                    <div className="mt-3">
-                                        <EstoqueCombobox
-                                            inputId="wizard-roupa"
-                                            label="Roupa para selecionar"
-                                            required={obrigatoriedadeAtiva}
-                                            placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
-                                            initialValue={String((wizardData as any).roupa ?? "")}
-                                            disabled={wizardSubmitting}
-                                            depositoLabel="Local da Roupa"
-                                            depositoOptions={[
-                                                { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
-                                                { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
-                                                { value: "FUNERARIA", label: "FUNERARIA" },
-                                            ]}
-                                            depositoValue={depRoupa}
-                                            onChangeDeposito={(v) => {
-                                                const next = normalizeDepRoupa(v);
-                                                setDepRoupa(next);
-
-                                                if (isRoupaPropria((wizardData as any).roupa)) return;
-
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    roupa: "",
-                                                    roupa_deposito_nome: next,
-                                                    roupa_produto_id: 0,
-                                                    roupa_codigo_barras: "",
-                                                }));
-
-                                                validarRoupaSeNecessario();
-                                            }}
-                                            action="roupas_buscar"
-                                            errorText={roupaErro}
-                                            onBlurValidate={validarRoupaSeNecessario}
-                                            onTypingInvalidate={(typed) => {
-                                                if (typed && isRoupaPropria(typed)) {
-                                                    setWizardData((prev: any) => ({
-                                                        ...prev,
-                                                        roupa: "ROUPA PRÓPRIA",
-                                                        roupa_deposito_nome: "",
-                                                        roupa_produto_id: 0,
-                                                        roupa_codigo_barras: "",
-                                                    }));
-                                                    setRoupaErro("");
-                                                    return;
-                                                }
-
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    roupa: typed,
-                                                    roupa_deposito_nome: depRoupa,
-                                                    roupa_produto_id: 0,
-                                                    roupa_codigo_barras: "",
-                                                }));
-                                            }}
-                                            onSelectRow={(it) => {
-                                                const pid = getPidFromRow(it);
-                                                const cb = String((it as any).codigo_barras || "").trim();
-
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    roupa: String(it.nome || "").trim(),
-                                                    roupa_deposito_nome: depRoupa,
-                                                    roupa_produto_id: pid,
-                                                    roupa_codigo_barras: cb,
-                                                    roupa_propria: 0,
-                                                }));
-
-                                                setRoupaErro("");
-                                            }}
-                                            extraButtons={
-                                                <>
-                                                    <button
-                                                        type="button"
-                                                        className={`${BTN_SEC_CLS}`}
-                                                        disabled={wizardSubmitting}
-                                                        onClick={() => {
-                                                            setWizardData((prev: any) => ({
-                                                                ...prev,
-                                                                roupa: "ROUPA PRÓPRIA",
-                                                                roupa_deposito_nome: "",
-                                                                roupa_produto_id: 0,
-                                                                roupa_codigo_barras: "",
-                                                                roupa_propria: 1,
-                                                            }));
-
-                                                            const el = document.getElementById("wizard-roupa") as HTMLInputElement | null;
-                                                            if (el) {
-                                                                el.value = "ROUPA PRÓPRIA";
-                                                                el.dispatchEvent(new Event("input", { bubbles: true }));
-                                                                el.dispatchEvent(new Event("change", { bubbles: true }));
-                                                                el.blur();
-                                                            }
-
-                                                            setRoupaErro("");
-                                                            requestAnimationFrame(() => validarRoupaSeNecessario());
-                                                        }}
-                                                    >
-                                                        Usar ROUPA PRÓPRIA
-                                                    </button>
-
-                                                    {isPropria ? (
-                                                        <span className="self-center text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
-                                                            Roupa própria não usa estoque.
-                                                        </span>
-                                                    ) : null}
-                                                </>
-                                            }
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       VÉU (checkbox Sim/Não)
-                       =========================== */
-                    if (step.id === "veu" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={veuVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!(veuSelectErro || veuErro)}
-                                    onChange={(v) => {
-                                        setVeuVal(v);
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            veu: v,
-                                            ...(v !== "Sim"
-                                                ? {
-                                                    veu_deposito_nome: "",
-                                                    veu_produto_id: 0,
-                                                    veu_codigo_barras: "",
-                                                    veu_item: "",
-                                                }
-                                                : {}),
-                                        }));
-
-                                        setVeuSelectErro("");
-                                        if (v !== "Sim") setVeuErro("");
-                                    }}
-                                />
-
-                                {veuSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{veuSelectErro}</div>}
-                                {veuErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{veuErro}</div>}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       VÉU ITEM (async) - só se veu=Sim
-                       =========================== */
-                    if (step.type === "async_veu" && step.id === "veu_item") {
-                        if (veuVal !== "Sim") return null;
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <EstoqueCombobox
-                                    inputId="wizard-veu_item"
-                                    label="VÉU (estoque)"
-                                    required={isRequired("veu")}
-                                    placeholder={step.placeholder || "Selecione no estoque…"}
-                                    initialValue={String((wizardData as any).veu_item ?? "")}
-                                    disabled={wizardSubmitting}
-                                    depositoLabel="Local do VÉU"
-                                    depositoOptions={[
-                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
-                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
-                                        { value: "FUNERARIA", label: "FUNERARIA" },
-                                    ]}
-                                    depositoValue={depVeu}
-                                    onChangeDeposito={(v) => {
-                                        const next = normalizeDepVeu(v);
-                                        setDepVeu(next);
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            veu_item: "",
-                                            veu_deposito_nome: next,
-                                            veu_produto_id: 0,
-                                            veu_codigo_barras: "",
-                                        }));
-                                        validarVeuSeNecessario();
-                                    }}
-                                    action="veus_buscar"
-                                    errorText={veuErro}
-                                    onBlurValidate={validarVeuSeNecessario}
-                                    onTypingInvalidate={(typed) => {
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            veu_item: typed,
-                                            veu_deposito_nome: depVeu,
-                                            veu_produto_id: 0,
-                                            veu_codigo_barras: "",
-                                        }));
-                                    }}
-                                    onSelectRow={(it) => {
-                                        const pid = getPidFromRow(it);
-                                        const cb = String((it as any).codigo_barras || "").trim();
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            veu: "Sim",
-                                            veu_item: String(it.nome || "").trim(),
-                                            veu_deposito_nome: depVeu,
-                                            veu_produto_id: pid,
-                                            veu_codigo_barras: cb,
-                                        }));
-
-                                        setVeuErro("");
-                                    }}
-                                />
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       CORDÃO (checkbox Sim/Não)
-                       =========================== */
-                    if (step.id === "cordao" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={cordaoVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!(cordaoSelectErro || cordaoErro)}
-                                    onChange={(v) => {
-                                        setCordaoVal(v);
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            cordao: v,
-                                            ...(v !== "Sim"
-                                                ? {
-                                                    cordao_deposito_nome: "",
-                                                    cordao_produto_id: 0,
-                                                    cordao_codigo_barras: "",
-                                                    cordao_item: "",
-                                                }
-                                                : {}),
-                                        }));
-
-                                        setCordaoSelectErro("");
-                                        if (v !== "Sim") setCordaoErro("");
-                                    }}
-                                />
-
-                                {cordaoSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{cordaoSelectErro}</div>}
-                                {cordaoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{cordaoErro}</div>}
-                            </div>
-                        );
-                    }
-
-
-                    /* ===========================
-                       KIT LANCHE (checkbox Sim/Não)
-                       Produto fixo no backend:
-                       código de barras 678560, depósito MEMORIAL.
-                       =========================== */
-                    if (step.id === "kit_lanche" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-kit_lanche"
-                                    ariaLabel="KIT LANCHE"
-                                    value={kitLancheVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!kitLancheSelectErro}
-                                    onChange={(v) => {
-                                        setKitLancheVal(v);
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            kit_lanche: v,
-                                        }));
-                                        setKitLancheSelectErro("");
-                                    }}
-                                />
-
-                                {kitLancheSelectErro && (
-                                    <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{kitLancheSelectErro}</div>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       COROA DE FLORES - múltiplas coroas
-                       =========================== */
-                    if (step.id === "coroa_flores" && step.type === "select") {
-                        const itensCoroa = Array.isArray((wizardData as any).coroas_itens)
-                            ? ((wizardData as any).coroas_itens as CoroaAtendimentoItem[])
-                            : [];
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-coroa_flores"
-                                    ariaLabel="Coroa de Flores"
-                                    value={coroaFloresVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!coroaFloresSelectErro}
-                                    onChange={(v) => {
-                                        setCoroaFloresVal(v);
-                                        setCoroaFloresSelectErro("");
-                                        setCoroaModeloErro("");
-
-                                        if (v === "Não") {
-                                            setCoroaTipoVal("");
-                                            setWizardData((prev: any) => ({
-                                                ...prev,
-                                                coroa_flores: "Não",
-                                                coroa_tipo: "",
-                                                coroa_produto_id: 0,
-                                                coroa_modelo: "",
-                                                coroa_codigo_barras: "",
-                                                coroa_deposito_nome: "",
-                                                coroas_itens: [],
-                                            }));
-                                            return;
-                                        }
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            coroa_flores: v,
-                                            coroas_itens: Array.isArray(prev?.coroas_itens) && prev.coroas_itens.length
-                                                ? prev.coroas_itens
-                                                : [{
-                                                    ordem: 1,
-                                                    tipo_coroa: "",
-                                                    produto_id: 0,
-                                                    modelo_coroa: "",
-                                                    codigo_barras: "",
-                                                    deposito_nome: "",
-                                                    frase: "",
-                                                    valor: null,
-                                                    foto_produto_url: "",
-                                                }],
-                                        }));
-                                    }}
-                                />
-                                {coroaFloresSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaFloresSelectErro}</div>}
-
-                                {coroaFloresVal === "Sim" && (
                                     <>
-                                        <CoroasAtendimentoEditor
-                                            value={itensCoroa}
-                                            disabled={wizardSubmitting}
-                                            hasError={!!coroaModeloErro}
-                                            onChange={(itens) => {
-                                                const primeiro = itens[0];
-                                                const tipoLegado = primeiro?.tipo_coroa === "natural"
-                                                    ? "Natural"
-                                                    : primeiro?.tipo_coroa === "artificial"
-                                                        ? "Artificial"
-                                                        : "";
-                                                const modeloResumo = primeiro?.modelo_coroa
-                                                    ? `${primeiro.modelo_coroa}${itens.length > 1 ? ` +${itens.length - 1}` : ""}`
-                                                    : "";
-                                                setWizardData((prev: any) => ({
-                                                    ...prev,
-                                                    coroas_itens: itens,
-                                                    coroa_tipo: tipoLegado,
-                                                    coroa_produto_id: Number(primeiro?.produto_id || 0),
-                                                    coroa_modelo: modeloResumo,
-                                                    coroa_codigo_barras: String(primeiro?.codigo_barras || ""),
-                                                    coroa_deposito_nome: primeiro?.tipo_coroa === "artificial"
-                                                        ? String(primeiro?.deposito_nome || "")
-                                                        : "",
-                                                }));
-                                                setCoroaModeloErro("");
-                                            }}
-                                        />
-                                        {coroaModeloErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaModeloErro}</div>}
-                                        {osCoroaSlot}
+                                        {wizardStep > 0 && (
+                                            <button className="rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold disabled:opacity-60 border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10" onClick={goPrev} disabled={wizardSubmitting}>
+                                                Anterior
+                                            </button>
+                                        )}
+                                        {isLastStep ? (
+                                            <button
+                                                className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
+                                                onClick={tentarConcluir}
+                                                disabled={wizardSubmitting || bloqueiaPorAssistencia}
+                                                aria-busy={wizardSubmitting}
+                                                title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
+                                            >
+                                                {wizardSubmitting ? "Salvando…" : "Concluir"}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                className="rounded-xl bg-[#313C55] dark:bg-[#F2CB3F] px-5 py-2.5 text-sm font-extrabold text-white dark:text-[#313C55] hover:bg-[#232B40] dark:hover:bg-[#E4BC30] disabled:opacity-60"
+                                                onClick={goNext}
+                                                disabled={wizardSubmitting || bloqueiaPorAssistencia}
+                                                title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
+                                            >
+                                                Próximo
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>
+                        </div>
+                    </>
+                }
+            >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <div className="min-w-0 flex-1">
+                        <h2 className={editandoCompleto ? "text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white sm:text-[28px]" : "text-xl font-extrabold text-[#313C55] dark:text-white"}>
+                            {wizardTitle}
+                        </h2>
+                        {editandoCompleto && (
+                            <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
+                                {emEdicao ? `${String((registroAtual as any)?.falecido || "").trim() || "Atendimento"} · ` : ""}preencha as abas e conclua.
+                            </p>
+                        )}
+                    </div>
+                    {editandoCompleto && emEdicao && proximaTxt !== "—" && (
+                        <span className="inline-flex h-8 items-center gap-2 rounded-2xl bg-[#E6F7FE] px-3.5 text-[13px] font-bold text-[#313C55] dark:bg-[#00AEEC]/20 dark:text-white">
+                            <span className="size-2 rounded-full bg-[#00AEEC]" />
+                            Aguardando {proximaTxt}
+                        </span>
+                    )}
+                    {wizardSubmitting && (
+                        <span
+                            className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2 py-0.5 text-xs text-[#313C55] dark:text-white"
+                            aria-live="polite"
+                        >
+                            <svg className="h-3 w-3 animate-spin text-[#313C55] dark:text-white" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                            </svg>
+                            Salvando…
+                        </span>
+                    )}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                    {visibleWizardStepIndexes.map((i) => {
+                        const t = wizardStepTitles[i];
+                        if (!t) return null;
+                        const ativa = i === wizardStep;
+                        const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
+                        // Editando: a aba é um botão (troca livre). Novo registro: continua só indicando a etapa (a validação segue no Próximo).
+                        return emEdicao && editandoCompleto ? (
+                            <button
+                                key={`${t}-${i}`}
+                                type="button"
+                                onClick={() => irParaAba(i)}
+                                disabled={wizardSubmitting}
+                                aria-current={ativa ? "step" : undefined}
+                                className={`${classe} ${ativa ? "" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10"} disabled:opacity-60`}
+                            >
+                                {t}
+                            </button>
+                        ) : (
+                            <span key={`${t}-${i}`} className={classe}>
+                                {t}
+                            </span>
                         );
+                    })}
+                </div>
+
+                <div
+                    className={
+                        ehPassoItens
+                            ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:[&>*]:col-span-2"
+                            : "mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
                     }
+                >
+                    {(() => {
+                        let secaoAtual = "";
+                        return passosOrdenados.map((step) => {
+                            const conteudo = ((): React.ReactNode => {
+                                if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
+                                if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
+                                // Os campos legados coroa_tipo/coroa_modelo não são mais renderizados: a configuração
+                                // completa de 1..20 coroas fica no editor abaixo de Coroa de Flores.
+                                if (step.id === "coroa_tipo" || step.id === "coroa_modelo" || step.id === "coroas_itens") return null;
 
-                    /* ===========================
-                       VELÓRIO / SEPULTAMENTO (roteamento)
-                       =========================== */
-                    if (step.id === "realiza_velorio" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            Velório
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-realiza_velorio"
-                                    ariaLabel="Velório"
-                                    value={realizaVelorioVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!realizaVelorioErro}
-                                    onChange={(v) => {
-                                        setRealizaVelorioVal(v);
-                                        setRealizaVelorioErro("");
+                                // Convênio ligado ao cadastro de Convênios (pacote + autorização da Prefeitura).
+                                if (step.id === "convenio" && convenioSlot) {
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            {convenioSlot}
+                                        </div>
+                                    );
+                                }
 
-                                        if (v === "Não") {
+                                /* ===========================
+                                   URNA (checkbox Sim/Não + seletor async)
+                                   =========================== */
+                                if (step.type === "async_urna" && step.id === "urna") {
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        Urna
+                                                        {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId="wizard-urna-uso"
+                                                ariaLabel="Urna"
+                                                value={urnaUsoVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!urnaUsoErro}
+                                                onChange={(v) => {
+                                                    setUrnaUsoVal(v);
+                                                    setUrnaUsoErro("");
+
+                                                    if (v === "Não") {
+                                                        setWizardData((prev: any) => ({
+                                                            ...prev,
+                                                            urna: "",
+                                                            urna_deposito_nome: "",
+                                                            urna_produto_id: 0,
+                                                            urna_codigo_barras: "",
+                                                        }));
+                                                        setUrnaErro("");
+                                                        return;
+                                                    }
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        urna_deposito_nome:
+                                                            String(prev?.urna_deposito_nome ?? "").trim() || depUrna,
+                                                    }));
+                                                }}
+                                            />
+
+                                            {urnaUsoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{urnaUsoErro}</div>}
+
+                                            {urnaUsoVal === "Sim" && (
+                                                <div className="mt-3">
+                                                    <EstoqueCombobox
+                                                        inputId="wizard-urna"
+                                                        label="Urna para selecionar"
+                                                        required={obrigatoriedadeAtiva}
+                                                        placeholder={step.placeholder || "Selecione no estoque…"}
+                                                        initialValue={String((wizardData as any).urna ?? "")}
+                                                        disabled={wizardSubmitting}
+                                                        depositoLabel="Local da Urna"
+                                                        depositoOptions={[
+                                                            { value: "MEMORIAL", label: "MEMORIAL" },
+                                                            { value: "FUNERARIA", label: "FUNERARIA" },
+                                                        ]}
+                                                        depositoValue={depUrna}
+                                                        onChangeDeposito={(v) => {
+                                                            const next = normalizeDepUrna(v);
+                                                            setDepUrna(next);
+
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                urna: "",
+                                                                urna_deposito_nome: next,
+                                                                urna_produto_id: 0,
+                                                                urna_codigo_barras: "",
+                                                            }));
+
+                                                            validarUrnaSeNecessario();
+                                                        }}
+                                                        action="urnas_buscar"
+                                                        errorText={urnaErro}
+                                                        onBlurValidate={validarUrnaSeNecessario}
+                                                        onTypingInvalidate={(typed) => {
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                urna: typed,
+                                                                urna_deposito_nome: depUrna,
+                                                                urna_produto_id: 0,
+                                                                urna_codigo_barras: "",
+                                                            }));
+                                                        }}
+                                                        onSelectRow={(it) => {
+                                                            const pid = getPidFromRow(it);
+                                                            const cb = String((it as any).codigo_barras || "").trim();
+
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                urna: String(it.nome || "").trim(),
+                                                                urna_deposito_nome: depUrna,
+                                                                urna_produto_id: pid,
+                                                                urna_codigo_barras: cb,
+                                                            }));
+
+                                                            setUrnaErro("");
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   ROUPA (checkbox Sim/Não + seletor async)
+                                   =========================== */
+                                if (step.type === "async_roupa" && step.id === "roupa") {
+                                    const roupaAtual = String((wizardData as any).roupa ?? "");
+                                    const isPropria = isRoupaPropria(roupaAtual);
+
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        Roupa
+                                                        {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId="wizard-roupa-uso"
+                                                ariaLabel="Roupa"
+                                                value={roupaUsoVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!roupaUsoErro}
+                                                onChange={(v) => {
+                                                    setRoupaUsoVal(v);
+                                                    setRoupaUsoErro("");
+
+                                                    if (v === "Não") {
+                                                        setWizardData((prev: any) => ({
+                                                            ...prev,
+                                                            roupa: "",
+                                                            roupa_deposito_nome: "",
+                                                            roupa_produto_id: 0,
+                                                            roupa_codigo_barras: "",
+                                                            roupa_propria: 0,
+                                                        }));
+                                                        setRoupaErro("");
+                                                        return;
+                                                    }
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        roupa_deposito_nome:
+                                                            isRoupaPropria(prev?.roupa)
+                                                                ? ""
+                                                                : String(prev?.roupa_deposito_nome ?? "").trim() || depRoupa,
+                                                    }));
+                                                }}
+                                            />
+
+                                            {roupaUsoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{roupaUsoErro}</div>}
+
+                                            {roupaUsoVal === "Sim" && (
+                                                <div className="mt-3">
+                                                    <EstoqueCombobox
+                                                        inputId="wizard-roupa"
+                                                        label="Roupa para selecionar"
+                                                        required={obrigatoriedadeAtiva}
+                                                        placeholder={step.placeholder || 'Selecione no estoque ou use "ROUPA PRÓPRIA"'}
+                                                        initialValue={String((wizardData as any).roupa ?? "")}
+                                                        disabled={wizardSubmitting}
+                                                        depositoLabel="Local da Roupa"
+                                                        depositoOptions={[
+                                                            { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                                            { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                                            { value: "FUNERARIA", label: "FUNERARIA" },
+                                                        ]}
+                                                        depositoValue={depRoupa}
+                                                        onChangeDeposito={(v) => {
+                                                            const next = normalizeDepRoupa(v);
+                                                            setDepRoupa(next);
+
+                                                            if (isRoupaPropria((wizardData as any).roupa)) return;
+
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                roupa: "",
+                                                                roupa_deposito_nome: next,
+                                                                roupa_produto_id: 0,
+                                                                roupa_codigo_barras: "",
+                                                            }));
+
+                                                            validarRoupaSeNecessario();
+                                                        }}
+                                                        action="roupas_buscar"
+                                                        errorText={roupaErro}
+                                                        onBlurValidate={validarRoupaSeNecessario}
+                                                        onTypingInvalidate={(typed) => {
+                                                            if (typed && isRoupaPropria(typed)) {
+                                                                setWizardData((prev: any) => ({
+                                                                    ...prev,
+                                                                    roupa: "ROUPA PRÓPRIA",
+                                                                    roupa_deposito_nome: "",
+                                                                    roupa_produto_id: 0,
+                                                                    roupa_codigo_barras: "",
+                                                                }));
+                                                                setRoupaErro("");
+                                                                return;
+                                                            }
+
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                roupa: typed,
+                                                                roupa_deposito_nome: depRoupa,
+                                                                roupa_produto_id: 0,
+                                                                roupa_codigo_barras: "",
+                                                            }));
+                                                        }}
+                                                        onSelectRow={(it) => {
+                                                            const pid = getPidFromRow(it);
+                                                            const cb = String((it as any).codigo_barras || "").trim();
+
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                roupa: String(it.nome || "").trim(),
+                                                                roupa_deposito_nome: depRoupa,
+                                                                roupa_produto_id: pid,
+                                                                roupa_codigo_barras: cb,
+                                                                roupa_propria: 0,
+                                                            }));
+
+                                                            setRoupaErro("");
+                                                        }}
+                                                        extraButtons={
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`${BTN_SEC_CLS}`}
+                                                                    disabled={wizardSubmitting}
+                                                                    onClick={() => {
+                                                                        setWizardData((prev: any) => ({
+                                                                            ...prev,
+                                                                            roupa: "ROUPA PRÓPRIA",
+                                                                            roupa_deposito_nome: "",
+                                                                            roupa_produto_id: 0,
+                                                                            roupa_codigo_barras: "",
+                                                                            roupa_propria: 1,
+                                                                        }));
+
+                                                                        const el = document.getElementById("wizard-roupa") as HTMLInputElement | null;
+                                                                        if (el) {
+                                                                            el.value = "ROUPA PRÓPRIA";
+                                                                            el.dispatchEvent(new Event("input", { bubbles: true }));
+                                                                            el.dispatchEvent(new Event("change", { bubbles: true }));
+                                                                            el.blur();
+                                                                        }
+
+                                                                        setRoupaErro("");
+                                                                        requestAnimationFrame(() => validarRoupaSeNecessario());
+                                                                    }}
+                                                                >
+                                                                    Usar ROUPA PRÓPRIA
+                                                                </button>
+
+                                                                {isPropria ? (
+                                                                    <span className="self-center text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                                                        Roupa própria não usa estoque.
+                                                                    </span>
+                                                                ) : null}
+                                                            </>
+                                                        }
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   VÉU (checkbox Sim/Não)
+                                   =========================== */
+                                if (step.id === "veu" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={veuVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!(veuSelectErro || veuErro)}
+                                                onChange={(v) => {
+                                                    setVeuVal(v);
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        veu: v,
+                                                        ...(v !== "Sim"
+                                                            ? {
+                                                                veu_deposito_nome: "",
+                                                                veu_produto_id: 0,
+                                                                veu_codigo_barras: "",
+                                                                veu_item: "",
+                                                            }
+                                                            : {}),
+                                                    }));
+
+                                                    setVeuSelectErro("");
+                                                    if (v !== "Sim") setVeuErro("");
+                                                }}
+                                            />
+
+                                            {veuSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{veuSelectErro}</div>}
+                                            {veuErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{veuErro}</div>}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   VÉU ITEM (async) - só se veu=Sim
+                                   =========================== */
+                                if (step.type === "async_veu" && step.id === "veu_item") {
+                                    if (veuVal !== "Sim") return null;
+
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <EstoqueCombobox
+                                                inputId="wizard-veu_item"
+                                                label="VÉU (estoque)"
+                                                required={isRequired("veu")}
+                                                placeholder={step.placeholder || "Selecione no estoque…"}
+                                                initialValue={String((wizardData as any).veu_item ?? "")}
+                                                disabled={wizardSubmitting}
+                                                depositoLabel="Local do VÉU"
+                                                depositoOptions={[
+                                                    { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                                    { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                                    { value: "FUNERARIA", label: "FUNERARIA" },
+                                                ]}
+                                                depositoValue={depVeu}
+                                                onChangeDeposito={(v) => {
+                                                    const next = normalizeDepVeu(v);
+                                                    setDepVeu(next);
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        veu_item: "",
+                                                        veu_deposito_nome: next,
+                                                        veu_produto_id: 0,
+                                                        veu_codigo_barras: "",
+                                                    }));
+                                                    validarVeuSeNecessario();
+                                                }}
+                                                action="veus_buscar"
+                                                errorText={veuErro}
+                                                onBlurValidate={validarVeuSeNecessario}
+                                                onTypingInvalidate={(typed) => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        veu_item: typed,
+                                                        veu_deposito_nome: depVeu,
+                                                        veu_produto_id: 0,
+                                                        veu_codigo_barras: "",
+                                                    }));
+                                                }}
+                                                onSelectRow={(it) => {
+                                                    const pid = getPidFromRow(it);
+                                                    const cb = String((it as any).codigo_barras || "").trim();
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        veu: "Sim",
+                                                        veu_item: String(it.nome || "").trim(),
+                                                        veu_deposito_nome: depVeu,
+                                                        veu_produto_id: pid,
+                                                        veu_codigo_barras: cb,
+                                                    }));
+
+                                                    setVeuErro("");
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   CORDÃO (checkbox Sim/Não)
+                                   =========================== */
+                                if (step.id === "cordao" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={cordaoVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!(cordaoSelectErro || cordaoErro)}
+                                                onChange={(v) => {
+                                                    setCordaoVal(v);
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        cordao: v,
+                                                        ...(v !== "Sim"
+                                                            ? {
+                                                                cordao_deposito_nome: "",
+                                                                cordao_produto_id: 0,
+                                                                cordao_codigo_barras: "",
+                                                                cordao_item: "",
+                                                            }
+                                                            : {}),
+                                                    }));
+
+                                                    setCordaoSelectErro("");
+                                                    if (v !== "Sim") setCordaoErro("");
+                                                }}
+                                            />
+
+                                            {cordaoSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{cordaoSelectErro}</div>}
+                                            {cordaoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{cordaoErro}</div>}
+                                        </div>
+                                    );
+                                }
+
+
+                                /* ===========================
+                                   KIT LANCHE (checkbox Sim/Não)
+                                   Produto fixo no backend:
+                                   código de barras 678560, depósito MEMORIAL.
+                                   =========================== */
+                                if (step.id === "kit_lanche" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId="wizard-kit_lanche"
+                                                ariaLabel="KIT LANCHE"
+                                                value={kitLancheVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!kitLancheSelectErro}
+                                                onChange={(v) => {
+                                                    setKitLancheVal(v);
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        kit_lanche: v,
+                                                    }));
+                                                    setKitLancheSelectErro("");
+                                                }}
+                                            />
+
+                                            {kitLancheSelectErro && (
+                                                <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{kitLancheSelectErro}</div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   COROA DE FLORES - múltiplas coroas
+                                   =========================== */
+                                if (step.id === "coroa_flores" && step.type === "select") {
+                                    const itensCoroa = Array.isArray((wizardData as any).coroas_itens)
+                                        ? ((wizardData as any).coroas_itens as CoroaAtendimentoItem[])
+                                        : [];
+
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId="wizard-coroa_flores"
+                                                ariaLabel="Coroa de Flores"
+                                                value={coroaFloresVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!coroaFloresSelectErro}
+                                                onChange={(v) => {
+                                                    setCoroaFloresVal(v);
+                                                    setCoroaFloresSelectErro("");
+                                                    setCoroaModeloErro("");
+
+                                                    if (v === "Não") {
+                                                        setCoroaTipoVal("");
+                                                        setWizardData((prev: any) => ({
+                                                            ...prev,
+                                                            coroa_flores: "Não",
+                                                            coroa_tipo: "",
+                                                            coroa_produto_id: 0,
+                                                            coroa_modelo: "",
+                                                            coroa_codigo_barras: "",
+                                                            coroa_deposito_nome: "",
+                                                            coroas_itens: [],
+                                                        }));
+                                                        return;
+                                                    }
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        coroa_flores: v,
+                                                        coroas_itens: Array.isArray(prev?.coroas_itens) && prev.coroas_itens.length
+                                                            ? prev.coroas_itens
+                                                            : [{
+                                                                ordem: 1,
+                                                                tipo_coroa: "",
+                                                                produto_id: 0,
+                                                                modelo_coroa: "",
+                                                                codigo_barras: "",
+                                                                deposito_nome: "",
+                                                                frase: "",
+                                                                valor: null,
+                                                                foto_produto_url: "",
+                                                            }],
+                                                    }));
+                                                }}
+                                            />
+                                            {coroaFloresSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaFloresSelectErro}</div>}
+
+                                            {coroaFloresVal === "Sim" && (
+                                                <>
+                                                    <CoroasAtendimentoEditor
+                                                        value={itensCoroa}
+                                                        disabled={wizardSubmitting}
+                                                        hasError={!!coroaModeloErro}
+                                                        onChange={(itens) => {
+                                                            const primeiro = itens[0];
+                                                            const tipoLegado = primeiro?.tipo_coroa === "natural"
+                                                                ? "Natural"
+                                                                : primeiro?.tipo_coroa === "artificial"
+                                                                    ? "Artificial"
+                                                                    : "";
+                                                            const modeloResumo = primeiro?.modelo_coroa
+                                                                ? `${primeiro.modelo_coroa}${itens.length > 1 ? ` +${itens.length - 1}` : ""}`
+                                                                : "";
+                                                            setWizardData((prev: any) => ({
+                                                                ...prev,
+                                                                coroas_itens: itens,
+                                                                coroa_tipo: tipoLegado,
+                                                                coroa_produto_id: Number(primeiro?.produto_id || 0),
+                                                                coroa_modelo: modeloResumo,
+                                                                coroa_codigo_barras: String(primeiro?.codigo_barras || ""),
+                                                                coroa_deposito_nome: primeiro?.tipo_coroa === "artificial"
+                                                                    ? String(primeiro?.deposito_nome || "")
+                                                                    : "",
+                                                            }));
+                                                            setCoroaModeloErro("");
+                                                        }}
+                                                    />
+                                                    {coroaModeloErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaModeloErro}</div>}
+                                                    {osCoroaSlot}
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   VELÓRIO / SEPULTAMENTO (roteamento)
+                                   =========================== */
+                                if (step.id === "realiza_velorio" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        Velório
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId="wizard-realiza_velorio"
+                                                ariaLabel="Velório"
+                                                value={realizaVelorioVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!realizaVelorioErro}
+                                                onChange={(v) => {
+                                                    setRealizaVelorioVal(v);
+                                                    setRealizaVelorioErro("");
+
+                                                    if (v === "Não") {
+                                                        setSalaVelorioVal("");
+                                                        setVelorioOnlineVal("");
+                                                        setVelorioOnlineErro("");
+                                                    }
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        realiza_velorio: v,
+                                                        ...(v === "Não"
+                                                            ? {
+                                                                local_cerimonia: "",
+                                                                local_velorio: "",
+                                                                sala_velorio: "",
+                                                                velorio_online: "",
+                                                                data_inicio_velorio: "",
+                                                                data_fim_velorio: "",
+                                                                hora_inicio_velorio: "",
+                                                                hora_fim_velorio: "",
+                                                                observacao_velorio01: "",
+                                                            }
+                                                            : {}),
+                                                    }));
+                                                }}
+                                            />
+                                            {realizaVelorioErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{realizaVelorioErro}</div>}
+                                        </div>
+                                    );
+                                }
+
+                                if (step.id === "realiza_sepultamento" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        Sepultamento
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId="wizard-realiza_sepultamento"
+                                                ariaLabel="Sepultamento"
+                                                value={realizaSepultamentoVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!realizaSepultamentoErro}
+                                                onChange={(v) => {
+                                                    setRealizaSepultamentoVal(v);
+                                                    setRealizaSepultamentoErro("");
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        realiza_sepultamento: v,
+                                                        ...(v === "Não" ? { local: "", observacao_velorio02: "" } : {}),
+                                                    }));
+                                                }}
+                                            />
+                                            {realizaSepultamentoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{realizaSepultamentoErro}</div>}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   CORDÃO ITEM (async) - só se cordao=Sim
+                                   =========================== */
+                                if (step.type === "async_cordao" && step.id === "cordao_item") {
+                                    if (cordaoVal !== "Sim") return null;
+
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <EstoqueCombobox
+                                                inputId="wizard-cordao_item"
+                                                label="CORDÃO (estoque)"
+                                                required={isRequired("cordao")}
+                                                placeholder={step.placeholder || "Selecione no estoque…"}
+                                                initialValue={String((wizardData as any).cordao_item ?? "")}
+                                                disabled={wizardSubmitting}
+                                                depositoLabel="Local do CORDÃO"
+                                                depositoOptions={[
+                                                    { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                                    { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                                    { value: "FUNERARIA", label: "FUNERARIA" },
+                                                ]}
+                                                depositoValue={depCordao}
+                                                onChangeDeposito={(v) => {
+                                                    const next = normalizeDepCordao(v);
+                                                    setDepCordao(next);
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        cordao_item: "",
+                                                        cordao_deposito_nome: next,
+                                                        cordao_produto_id: 0,
+                                                        cordao_codigo_barras: "",
+                                                    }));
+                                                    validarCordaoSeNecessario();
+                                                }}
+                                                action="cordoes_buscar"
+                                                errorText={cordaoErro}
+                                                onBlurValidate={validarCordaoSeNecessario}
+                                                onTypingInvalidate={(typed) => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        cordao_item: typed,
+                                                        cordao_deposito_nome: depCordao,
+                                                        cordao_produto_id: 0,
+                                                        cordao_codigo_barras: "",
+                                                    }));
+                                                }}
+                                                onSelectRow={(it) => {
+                                                    const pid = getPidFromRow(it);
+                                                    const cb = String((it as any).codigo_barras || "").trim();
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        cordao: "Sim",
+                                                        cordao_item: String(it.nome || "").trim(),
+                                                        cordao_deposito_nome: depCordao,
+                                                        cordao_produto_id: pid,
+                                                        cordao_codigo_barras: cb,
+                                                    }));
+
+                                                    setCordaoErro("");
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   local_velorio com GPS (datalist)
+                                   + Sala 01 / Sala 02 / Sala 03
+                                   + Velório Online obrigatório quando escolher sala
+                                   =========================== */
+                                if (step.id === "local_velorio" && step.type === "datalist") {
+                                    const listId = `dl-${step.id}`;
+                                    const currentText = String((wizardData as any)[step.id] ?? "");
+                                    const salaAtual = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
+                                    const onlineAtual = String(velorioOnlineVal || (wizardData as any).velorio_online || "").trim();
+                                    const mostraVelorioOnline = !!salaAtual;
+                                    // Local do velório (lista fixa). A sala do Memorial só aparece com o Memorial escolhido.
+                                    const localCerimonia = localCerimoniaEfetivo(wizardData as any);
+                                    const ehMemorial = localCerimonia === LOCAL_MEMORIAL;
+                                    const localForaDaLista = !!localCerimonia && !(locaisCerimonia as readonly string[]).includes(localCerimonia);
+
+                                    const selecionarLocalCerimonia = (local: string) => {
+                                        const saiDoMemorial = local !== LOCAL_MEMORIAL;
+                                        if (saiDoMemorial) {
                                             setSalaVelorioVal("");
                                             setVelorioOnlineVal("");
                                             setVelorioOnlineErro("");
                                         }
+                                        setWizardData((prev: any) => {
+                                            const enderecoAtual = String(prev?.local_velorio ?? "").trim();
+                                            const enderecoEraMemorial = enderecoAtual.toLowerCase().startsWith("memorial");
+                                            return {
+                                                ...prev,
+                                                local_cerimonia: local,
+                                                // Memorial: o endereço não é digitado (é a própria empresa); grava o nome do Memorial.
+                                                ...(local === LOCAL_MEMORIAL ? { local_velorio: LOCAL_MEMORIAL } : {}),
+                                                ...(saiDoMemorial ? { sala_velorio: "", velorio_online: "", ...(enderecoEraMemorial ? { local_velorio: "" } : {}) } : {}),
+                                            };
+                                        });
+                                    };
+
+                                    const selecionarSala = (sala: string) => {
+                                        const nextSala = salaAtual === sala ? "" : sala;
+                                        const nextOnline = nextSala ? onlineAtual : "";
+
+                                        setSalaVelorioVal(nextSala);
+                                        setVelorioOnlineVal(nextOnline);
+                                        setVelorioOnlineErro("");
 
                                         setWizardData((prev: any) => ({
                                             ...prev,
-                                            realiza_velorio: v,
-                                            ...(v === "Não"
-                                                ? {
-                                                    local_velorio: "",
-                                                    sala_velorio: "",
-                                                    velorio_online: "",
-                                                    data_inicio_velorio: "",
-                                                    data_fim_velorio: "",
-                                                    hora_inicio_velorio: "",
-                                                    hora_fim_velorio: "",
-                                                    observacao_velorio01: "",
-                                                }
-                                                : {}),
+                                            sala_velorio: nextSala,
+                                            velorio_online: nextOnline,
                                         }));
-                                    }}
-                                />
-                                {realizaVelorioErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{realizaVelorioErro}</div>}
-                            </div>
-                        );
-                    }
+                                    };
 
-                    if (step.id === "realiza_sepultamento" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            Sepultamento
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId="wizard-realiza_sepultamento"
-                                    ariaLabel="Sepultamento"
-                                    value={realizaSepultamentoVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!realizaSepultamentoErro}
-                                    onChange={(v) => {
-                                        setRealizaSepultamentoVal(v);
-                                        setRealizaSepultamentoErro("");
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            realiza_sepultamento: v,
-                                            ...(v === "Não" ? { local: "", observacao_velorio02: "" } : {}),
-                                        }));
-                                    }}
-                                />
-                                {realizaSepultamentoErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{realizaSepultamentoErro}</div>}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       CORDÃO ITEM (async) - só se cordao=Sim
-                       =========================== */
-                    if (step.type === "async_cordao" && step.id === "cordao_item") {
-                        if (cordaoVal !== "Sim") return null;
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <EstoqueCombobox
-                                    inputId="wizard-cordao_item"
-                                    label="CORDÃO (estoque)"
-                                    required={isRequired("cordao")}
-                                    placeholder={step.placeholder || "Selecione no estoque…"}
-                                    initialValue={String((wizardData as any).cordao_item ?? "")}
-                                    disabled={wizardSubmitting}
-                                    depositoLabel="Local do CORDÃO"
-                                    depositoOptions={[
-                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
-                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
-                                        { value: "FUNERARIA", label: "FUNERARIA" },
-                                    ]}
-                                    depositoValue={depCordao}
-                                    onChangeDeposito={(v) => {
-                                        const next = normalizeDepCordao(v);
-                                        setDepCordao(next);
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            cordao_item: "",
-                                            cordao_deposito_nome: next,
-                                            cordao_produto_id: 0,
-                                            cordao_codigo_barras: "",
-                                        }));
-                                        validarCordaoSeNecessario();
-                                    }}
-                                    action="cordoes_buscar"
-                                    errorText={cordaoErro}
-                                    onBlurValidate={validarCordaoSeNecessario}
-                                    onTypingInvalidate={(typed) => {
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            cordao_item: typed,
-                                            cordao_deposito_nome: depCordao,
-                                            cordao_produto_id: 0,
-                                            cordao_codigo_barras: "",
-                                        }));
-                                    }}
-                                    onSelectRow={(it) => {
-                                        const pid = getPidFromRow(it);
-                                        const cb = String((it as any).codigo_barras || "").trim();
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            cordao: "Sim",
-                                            cordao_item: String(it.nome || "").trim(),
-                                            cordao_deposito_nome: depCordao,
-                                            cordao_produto_id: pid,
-                                            cordao_codigo_barras: cb,
-                                        }));
-
-                                        setCordaoErro("");
-                                    }}
-                                />
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       local_velorio com GPS (datalist)
-                       + Sala 01 / Sala 02 / Sala 03
-                       + Velório Online obrigatório quando escolher sala
-                       =========================== */
-                    if (step.id === "local_velorio" && step.type === "datalist") {
-                        const listId = `dl-${step.id}`;
-                        const currentText = String((wizardData as any)[step.id] ?? "");
-                        const salaAtual = String(salaVelorioVal || (wizardData as any).sala_velorio || "").trim();
-                        const onlineAtual = String(velorioOnlineVal || (wizardData as any).velorio_online || "").trim();
-                        const mostraVelorioOnline = !!salaAtual;
-
-                        const selecionarSala = (sala: string) => {
-                            const nextSala = salaAtual === sala ? "" : sala;
-                            const nextOnline = nextSala ? onlineAtual : "";
-
-                            setSalaVelorioVal(nextSala);
-                            setVelorioOnlineVal(nextOnline);
-                            setVelorioOnlineErro("");
-
-                            setWizardData((prev: any) => ({
-                                ...prev,
-                                sala_velorio: nextSala,
-                                velorio_online: nextOnline,
-                            }));
-                        };
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1.5 block text-[13px] font-bold">
-                                    {step.label} {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
-                                </label>
-
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                    <input
-                                        key={`${wizardStep}-${step.id}`} // ✅ força remount do defaultValue por step (evita “travadas”)
-                                        ref={localVelorioRef}
-                                        id={`wizard-${step.id}`}
-                                        list={listId}
-                                        placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
-                                        defaultValue={currentText}
-                                        className={`${CAMPO_CLS} flex-1`}
-                                        disabled={wizardSubmitting}
-                                    />
-
-                                    <div className="flex flex-wrap gap-2">
-                                        <button
-                                            type="button"
-                                            className={`${BTN_SEC_CLS}`}
-                                            onClick={preencherLocalVelorioComGPS}
-                                            disabled={wizardSubmitting || gpsLoading}
-                                            title="Capturar localização e gerar link de rota"
-                                        >
-                                            {gpsLoading ? "Capturando…" : "Usar GPS"}
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            className={`${BTN_SEC_CLS}`}
-                                            onClick={() => {
-                                                if (localVelorioRef.current) localVelorioRef.current.value = "";
-                                                setGpsMsg(null);
-                                            }}
-                                            disabled={wizardSubmitting}
-                                            title="Limpar para digitar manualmente"
-                                        >
-                                            Limpar
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <datalist id={listId}>
-                                    {(step.datalist || []).map((op) => (
-                                        <option key={op} value={op} />
-                                    ))}
-                                </datalist>
-
-                                {gpsMsg && (
-                                    <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-[#313C55] dark:text-white" : "text-[#B42318] dark:text-[#FF9C92]"}`}>
-                                        {gpsMsg}
-                                    </div>
-                                )}
-
-                                {/* ✅ Campos reais/ocultos para o salvarGrupoWizard ler pelo DOM */}
-                                <input id="wizard-sala_velorio" type="hidden" value={salaAtual} readOnly />
-                                <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />
-
-                                <div className="mt-4 rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
-                                    <label className="block text-sm font-medium">
-                                        Sala do Velório <span className="text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">(opcional)</span>
-                                    </label>
-
-                                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                        {SALAS_VELORIO.map((sala) => {
-                                            const checked = salaAtual === sala;
-                                            return (
-                                                <button
-                                                    key={sala}
-                                                    type="button"
-                                                    data-wizard-error={velorioOnlineErro ? "1" : "0"}
-                                                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition disabled:opacity-60 border-[#E3E8F0] dark:border-white/[0.12] ${checked
-                                                        ? "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white dark:text-[#313C55] shadow-sm"
-                                                        : "bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                                                        }`}
-                                                    disabled={wizardSubmitting}
-                                                    aria-pressed={checked}
-                                                    onClick={() => selecionarSala(sala)}
-                                                >
-                                                    {sala}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {mostraVelorioOnline && (
-                                        <div className="mt-4">
-                                            <label className="mb-1.5 block text-[13px] font-bold">
-                                                Velório Online <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <label htmlFor="wizard-local_cerimonia" className="mb-1.5 block text-[13px] font-bold">
+                                                Local do Velório {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
                                             </label>
-
                                             <select
-                                                className={`${CAMPO_CLS} ${velorioOnlineErro ? "border-red-500!" : ""
-                                                    }`}
-                                                value={onlineAtual}
-                                                onChange={(e) => {
-                                                    const v = e.target.value;
-                                                    setVelorioOnlineVal(v);
-                                                    setWizardData((prev: any) => ({
-                                                        ...prev,
-                                                        sala_velorio: salaAtual,
-                                                        velorio_online: v,
-                                                    }));
-                                                    if (v === "Sim" || v === "Não") setVelorioOnlineErro("");
-                                                }}
-                                                onBlur={() => validarVelorioOnlineSeNecessario()}
+                                                id="wizard-local_cerimonia"
+                                                className={`${CAMPO_CLS} mb-4`}
+                                                value={localCerimonia}
+                                                onChange={(e) => selecionarLocalCerimonia(e.target.value)}
                                                 disabled={wizardSubmitting}
                                             >
                                                 <option value="" disabled>
                                                     Selecione…
                                                 </option>
-                                                {VELORIO_ONLINE_OPCOES.map((op) => (
+                                                {localForaDaLista && <option value={localCerimonia}>{localCerimonia}</option>}
+                                                {locaisCerimonia.map((op) => (
                                                     <option key={op} value={op}>
                                                         {op}
                                                     </option>
                                                 ))}
                                             </select>
 
-                                            {velorioOnlineErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{velorioOnlineErro}</div>}
-                                        </div>
-                                    )}
-
-                                    {!mostraVelorioOnline && (
-                                        <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                            {obrigatoriedadeAtiva
-                                                ? "Ao marcar uma sala, será obrigatório informar se terá Velório Online."
-                                                : "Velório Online ficará obrigatório somente após Corpo na Clínica."}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    }
-
-                    // ✅ Estes campos são renderizados dentro do bloco Local do Velório acima.
-                    // Mantemos os IDs ocultos para o salvarGrupoWizard ler e salvar corretamente.
-                    if (step.id === "sala_velorio" || step.id === "velorio_online") {
-                        return null;
-                    }
-
-                    /* ===========================
-                       custom arrumacao
-                       =========================== */
-                    if (step.type === "custom" && step.id === "arrumacao") {
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
-                                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-                                    <button
-                                        type="button"
-                                        className={`${BTN_SEC_CLS}`}
-                                        onClick={() => setArrumacaoOpen(true)}
-                                        disabled={wizardSubmitting}
-                                    >
-                                        Selecionar Itens…
-                                    </button>
-                                    <span className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
-                                </div>
-                                <input id="wizard-arrumacao" type="hidden" defaultValue="__custom__" />
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       assistência (checkbox Sim/Não)
-                       =========================== */
-                    if (step.id === "assistencia" && step.type === "select") {
-                        const showRequiredStar = isRequired(step.id) || requireAssistencia;
-
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {showRequiredStar && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={assistenciaVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!assistenciaErro}
-                                    onChange={(v) => {
-                                        setAssistenciaVal(v);
-                                        setAssistenciaErro("");
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            assistencia: v,
-                                        }));
-
-                                        if (v === "Não") setMateriaisOpen(false);
-                                    }}
-                                />
-
-                                {assistenciaErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{assistenciaErro}</div>}
-
-                                {assistenciaVal === "Sim" && (
-                                    <div className="mt-2 flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            className={`${BTN_SEC_CLS}`}
-                                            onClick={() => setMateriaisOpen(true)}
-                                            disabled={wizardSubmitting}
-                                        >
-                                            Selecionar Materiais…
-                                        </button>
-                                        <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                            {materiaisSelecionadosResumo || "Nenhum material selecionado"}
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       tanatopraxia (checkbox Sim/Não)
-                       =========================== */
-                    if (step.id === "tanato" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={tanatoVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!tanatoSelectErro}
-                                    onChange={(v) => {
-                                        setTanatoVal(v);
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            tanato: v,
-                                        }));
-                                        setTanatoSelectErro("");
-
-                                        if (v !== "Sim") setArrumacaoOpen(false);
-                                    }}
-                                />
-
-                                {tanatoSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{tanatoSelectErro}</div>}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       ornamentação (checkbox Sim/Não)
-                       =========================== */
-                    if (step.id === "ornamentacao" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={ornamentacaoVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!ornamentacaoSelectErro}
-                                    onChange={(v) => {
-                                        setOrnamentacaoVal(v);
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            ornamentacao: v,
-                                            ...(v !== "Sim" ? { ornamentacao_tipo: "" } : {}),
-                                        }));
-
-                                        setOrnamentacaoSelectErro("");
-                                        if (v !== "Sim") setOrnamentacaoTipoErro("");
-                                    }}
-                                />
-
-                                {ornamentacaoSelectErro && (
-                                    <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{ornamentacaoSelectErro}</div>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       INVOL (checkbox Sim/Não)
-                       =========================== */
-                    if (step.id === "invol" && step.type === "select") {
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={involVal}
-                                    options={SIM_NAO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!(involSelectErro || involErro)}
-                                    onChange={(v) => {
-                                        setInvolVal(v);
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            invol: v,
-                                            ...(v !== "Sim"
-                                                ? {
-                                                    invol_deposito_nome: "",
-                                                    invol_produto_id: 0,
-                                                    invol_codigo_barras: "",
-                                                    invol_item: "",
-                                                }
-                                                : {}),
-                                        }));
-
-                                        setInvolSelectErro("");
-                                        if (v !== "Sim") setInvolErro("");
-                                    }}
-                                />
-
-                                {involSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{involSelectErro}</div>}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       INVOL ITEM (async) - só se invol=Sim
-                       =========================== */
-                    if (step.type === "async_invol" && step.id === "invol_item") {
-                        if (involVal !== "Sim") return null;
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <EstoqueCombobox
-                                    inputId="wizard-invol_item"
-                                    label="INVOL (estoque)"
-                                    required={isRequired("invol")}
-                                    placeholder={step.placeholder || "Selecione no estoque…"}
-                                    initialValue={String((wizardData as any).invol_item ?? "")}
-                                    disabled={wizardSubmitting}
-                                    depositoLabel="Local do INVOL"
-                                    depositoOptions={[
-                                        { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
-                                        { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
-                                    ]}
-                                    depositoValue={depInvol}
-                                    onChangeDeposito={(v) => {
-                                        const next = normalizeDepInvol(v);
-                                        setDepInvol(next);
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            invol_item: "",
-                                            invol_deposito_nome: next,
-                                            invol_produto_id: 0,
-                                            invol_codigo_barras: "",
-                                        }));
-                                        validarInvolSeNecessario();
-                                    }}
-                                    action="invols_buscar"
-                                    errorText={involErro}
-                                    onBlurValidate={validarInvolSeNecessario}
-                                    onTypingInvalidate={(typed) => {
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            invol_item: typed,
-                                            invol_deposito_nome: depInvol,
-                                            invol_produto_id: 0,
-                                            invol_codigo_barras: "",
-                                        }));
-                                    }}
-                                    onSelectRow={(it) => {
-                                        const pid = getPidFromRow(it);
-                                        const cb = String((it as any).codigo_barras || "").trim();
-
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            invol_item: String(it.nome || "").trim(),
-                                            invol_deposito_nome: depInvol,
-                                            invol_produto_id: pid,
-                                            invol_codigo_barras: cb,
-                                        }));
-
-                                        setInvolErro("");
-                                    }}
-                                />
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       tipo de ornamentação (checkbox Natural/Artificial)
-                       =========================== */
-                    if (step.id === "ornamentacao_tipo" && step.type === "select") {
-                        const ornamentacaoTipoVal = String((wizardData as any).ornamentacao_tipo ?? "");
-
-                        return (
-                            <div key={step.id}>
-                                <CheckboxChoiceGroup
-                                    label={
-                                        <>
-                                            {step.label}
-                                            {isRequired("ornamentacao") && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                        </>
-                                    }
-                                    inputId={`wizard-${step.id}`}
-                                    ariaLabel={step.label}
-                                    value={ornamentacaoTipoVal}
-                                    options={ORNAMENTACAO_TIPO_OPTIONS}
-                                    disabled={wizardSubmitting}
-                                    hasError={!!ornamentacaoTipoErro}
-                                    onChange={(v) => {
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            ornamentacao_tipo: v,
-                                        }));
-                                        setOrnamentacaoTipoErro("");
-                                    }}
-                                />
-
-                                {ornamentacaoTipoErro && (
-                                    <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{ornamentacaoTipoErro}</div>
-                                )}
-                            </div>
-                        );
-                    }
-
-                    /* ===========================
-                       FOTO DO FALECIDO (upload real)
-                       - mantém foto_falecido como caminho/URL salvo
-                       - envia a nova imagem em foto_falecido_base64 para o backend salvar fisicamente
-                       =========================== */
-                    if (step.id === "foto_falecido" || step.type === "file") {
-                        const fotoAtual = String((wizardData as any).foto_falecido ?? "");
-                        const fotoBase64 = String((wizardData as any).foto_falecido_base64 ?? "");
-                        const fotoNome = String((wizardData as any).foto_falecido_nome ?? "");
-                        const previewSrc = normalizarFotoSrc(fotoBase64 || fotoAtual);
-
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1.5 block text-[13px] font-bold">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                </label>
-
-                                <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[112px_1fr]">
-                                    <div className="flex size-28 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2F7] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">
-                                        {previewSrc ? (
-                                            <img
-                                                src={previewSrc}
-                                                alt="Prévia da foto do falecido"
-                                                className="h-full w-full object-cover"
-                                            />
-                                        ) : (
-                                            <span className="px-2 text-center text-xs text-[#5B6478] dark:text-[#AEB9CF]">Sem foto</span>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        {/* valor persistido no banco; o FileReader envia a nova imagem em foto_falecido_base64 */}
-                                        <input
-                                            id={`wizard-${step.id}`}
-                                            type="hidden"
-                                            value={fotoAtual}
-                                            readOnly
-                                        />
-
-                                        <input
-                                            id={`wizard-${step.id}_file`}
-                                            type="file"
-                                            accept={step.accept || "image/*"}
-                                            className="block w-full text-sm text-[#5B6478] file:mr-3 file:h-11 file:cursor-pointer file:rounded-xl file:border-[1.5px] file:border-[#C9D1DE] file:bg-white file:px-4 file:text-sm file:font-bold file:text-[#313C55] hover:file:bg-[#EEF2F7] disabled:opacity-60 dark:text-[#AEB9CF] dark:file:border-white/25 dark:file:bg-[#232B3F] dark:file:text-white dark:hover:file:bg-white/10"
-                                            disabled={wizardSubmitting}
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-
-                                                if (!file) return;
-
-                                                if (!file.type.startsWith("image/")) {
-                                                    alert("Selecione um arquivo de imagem válido.");
-                                                    e.currentTarget.value = "";
-                                                    return;
-                                                }
-
-                                                const maxBytes = 5 * 1024 * 1024;
-                                                if (file.size > maxBytes) {
-                                                    alert("A imagem deve ter no máximo 5MB.");
-                                                    e.currentTarget.value = "";
-                                                    return;
-                                                }
-
-                                                try {
-                                                    const dataUrl = await fileToDataURL(file);
-
-                                                    setWizardData((prev: any) => ({
-                                                        ...prev,
-                                                        foto_falecido_base64: dataUrl,
-                                                        foto_falecido_nome: file.name,
-                                                        foto_falecido_tipo: file.type,
-                                                        foto_falecido_tamanho: file.size,
-                                                    }));
-                                                } catch (err: any) {
-                                                    alert(err?.message || "Erro ao carregar a imagem.");
-                                                    e.currentTarget.value = "";
-                                                }
-                                            }}
-                                        />
-
-                                        <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                                            {fotoNome ? (
-                                                <>
-                                                    Nova foto selecionada: <b>{fotoNome}</b>
-                                                </>
-                                            ) : fotoAtual ? (
-                                                <>
-                                                    Foto atual: <b>{fotoAtual}</b>
-                                                </>
+                                            {ehMemorial ? (
+                                                /* Memorial Senhor do Bonfim: é a própria empresa, o endereço não aparece. Grava o nome do Memorial. */
+                                                <input id={`wizard-${step.id}`} type="hidden" value={LOCAL_MEMORIAL} readOnly />
                                             ) : (
-                                                <>Selecione uma imagem JPG, PNG ou WEBP.</>
+                                                <>
+                                                    <label className="mb-1.5 block text-[13px] font-bold">
+                                                        {step.label} {obrigatoriedadeAtiva && <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>}
+                                                    </label>
+
+                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                        <input
+                                                            key={`${wizardStep}-${step.id}-${localCerimonia}`} // ✅ força remount do defaultValue por step e por local (evita “travadas”)
+                                                            ref={localVelorioRef}
+                                                            id={`wizard-${step.id}`}
+                                                            list={listId}
+                                                            placeholder={step.placeholder || "Digite o endereço ou use o GPS"}
+                                                            defaultValue={currentText}
+                                                            className={`${CAMPO_CLS} flex-1`}
+                                                            disabled={wizardSubmitting}
+                                                        />
+
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                className={`${BTN_SEC_CLS}`}
+                                                                onClick={preencherLocalVelorioComGPS}
+                                                                disabled={wizardSubmitting || gpsLoading}
+                                                                title="Capturar localização e gerar link de rota"
+                                                            >
+                                                                {gpsLoading ? "Capturando…" : "Usar GPS"}
+                                                            </button>
+
+                                                            <button
+                                                                type="button"
+                                                                className={`${BTN_SEC_CLS}`}
+                                                                onClick={() => {
+                                                                    if (localVelorioRef.current) localVelorioRef.current.value = "";
+                                                                    setGpsMsg(null);
+                                                                }}
+                                                                disabled={wizardSubmitting}
+                                                                title="Limpar para digitar manualmente"
+                                                            >
+                                                                Limpar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <datalist id={listId}>
+                                                        {(step.datalist || []).map((op) => (
+                                                            <option key={op} value={op} />
+                                                        ))}
+                                                    </datalist>
+
+                                                    {gpsMsg && (
+                                                        <div className={`mt-2 text-xs ${gpsMsg.includes("capturada") ? "text-[#313C55] dark:text-white" : "text-[#B42318] dark:text-[#FF9C92]"}`}>
+                                                            {gpsMsg}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {/* ✅ Campos reais/ocultos para o salvarGrupoWizard ler pelo DOM.
+                                    Com sala marcada, o hidden de Velório Online vem do grupo de botões Sim | Não abaixo. */}
+                                            <input id="wizard-sala_velorio" type="hidden" value={salaAtual} readOnly />
+                                            {!mostraVelorioOnline && <input id="wizard-velorio_online" type="hidden" value={onlineAtual} readOnly />}
+
+                                            {ehMemorial && (
+                                                <div className="rounded-xl border bg-[#F6F8FB] dark:bg-[#1C2334] p-3 border-[#E3E8F0] dark:border-white/[0.12]">
+                                                    <label className="block text-sm font-medium">
+                                                        Sala do Velório <span className="text-xs font-normal text-[#5B6478] dark:text-[#AEB9CF]">(opcional)</span>
+                                                    </label>
+
+                                                    {/* As 3 salas sempre na mesma linha, em cartões altos (quase quadrados). */}
+                                                    <div className="mt-2 grid grid-cols-3 gap-2 sm:gap-3">
+                                                        {SALAS_VELORIO.map((sala) => {
+                                                            const checked = salaAtual === sala;
+                                                            return (
+                                                                <button
+                                                                    key={sala}
+                                                                    type="button"
+                                                                    data-wizard-error={velorioOnlineErro ? "1" : "0"}
+                                                                    className={`flex min-h-[84px] items-center justify-center rounded-[14px] border-[1.5px] px-2 text-[15px] font-extrabold transition disabled:opacity-60 sm:min-h-[104px] sm:text-base border-[#E3E8F0] dark:border-white/[0.12] ${checked
+                                                                        ? "border-[#313C55] dark:border-[#F2CB3F] bg-[#313C55] dark:bg-[#F2CB3F] text-white dark:text-[#313C55] shadow-sm"
+                                                                        : "bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:bg-[#EEF2F7] dark:hover:bg-white/10"
+                                                                        }`}
+                                                                    disabled={wizardSubmitting}
+                                                                    aria-pressed={checked}
+                                                                    onClick={() => selecionarSala(sala)}
+                                                                >
+                                                                    {sala}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {mostraVelorioOnline && (
+                                                        <div className="mt-4">
+                                                            {/* Mesmo seletor Sim | Não das outras perguntas; o hidden wizard-velorio_online vem dele. */}
+                                                            <CheckboxChoiceGroup
+                                                                label={
+                                                                    <>
+                                                                        Velório Online <span className="text-[#B42318] dark:text-[#FF9C92]">*</span>
+                                                                    </>
+                                                                }
+                                                                inputId="wizard-velorio_online"
+                                                                ariaLabel="Velório Online"
+                                                                value={onlineAtual}
+                                                                options={SIM_NAO_OPTIONS}
+                                                                disabled={wizardSubmitting}
+                                                                hasError={!!velorioOnlineErro}
+                                                                onChange={(v) => {
+                                                                    setVelorioOnlineVal(v);
+                                                                    setWizardData((prev: any) => ({
+                                                                        ...prev,
+                                                                        sala_velorio: salaAtual,
+                                                                        velorio_online: v,
+                                                                    }));
+                                                                    if (v === "Sim" || v === "Não") setVelorioOnlineErro("");
+                                                                }}
+                                                            />
+
+                                                            {velorioOnlineErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{velorioOnlineErro}</div>}
+                                                        </div>
+                                                    )}
+
+                                                    {!mostraVelorioOnline && (
+                                                        <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                                            {obrigatoriedadeAtiva
+                                                                ? "Ao marcar uma sala, será obrigatório informar se terá Velório Online."
+                                                                : "Velório Online ficará obrigatório somente após Corpo na Clínica."}
+                                                        </p>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
+                                    );
+                                }
 
-                                        {(fotoAtual || fotoBase64) && (
-                                            <button
-                                                type="button"
-                                                className={`${BTN_SEC_CLS} mt-2`}
+                                // ✅ Estes campos são renderizados dentro do bloco Local do Velório acima.
+                                // Mantemos os IDs ocultos para o salvarGrupoWizard ler e salvar corretamente.
+                                if (step.id === "sala_velorio" || step.id === "velorio_online") {
+                                    return null;
+                                }
+
+                                /* ===========================
+                                   custom arrumacao
+                                   =========================== */
+                                if (step.type === "custom" && step.id === "arrumacao") {
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
+                                            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                                                <button
+                                                    type="button"
+                                                    className={`${BTN_SEC_CLS}`}
+                                                    onClick={() => setArrumacaoOpen(true)}
+                                                    disabled={wizardSubmitting}
+                                                >
+                                                    Selecionar Itens…
+                                                </button>
+                                                <span className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">{arrumacaoSelecionadaResumo || "Nenhum item selecionado"}</span>
+                                            </div>
+                                            <input id="wizard-arrumacao" type="hidden" defaultValue="__custom__" />
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   assistência (checkbox Sim/Não)
+                                   =========================== */
+                                if (step.id === "assistencia" && step.type === "select") {
+                                    const showRequiredStar = isRequired(step.id) || requireAssistencia;
+
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {showRequiredStar && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={assistenciaVal}
+                                                options={SIM_NAO_OPTIONS}
                                                 disabled={wizardSubmitting}
-                                                onClick={() => {
+                                                hasError={!!assistenciaErro}
+                                                onChange={(v) => {
+                                                    setAssistenciaVal(v);
+                                                    setAssistenciaErro("");
+
                                                     setWizardData((prev: any) => ({
                                                         ...prev,
-                                                        foto_falecido: "",
-                                                        foto_falecido_base64: "",
-                                                        foto_falecido_nome: "",
-                                                        foto_falecido_tipo: "",
-                                                        foto_falecido_tamanho: 0,
+                                                        assistencia: v,
                                                     }));
 
-                                                    const fileEl = document.getElementById(`wizard-${step.id}_file`) as HTMLInputElement | null;
-                                                    if (fileEl) fileEl.value = "";
+                                                    if (v === "Não") setMateriaisOpen(false);
                                                 }}
+                                            />
+
+                                            {assistenciaErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{assistenciaErro}</div>}
+
+                                            {assistenciaVal === "Sim" && (
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        className={`${BTN_SEC_CLS}`}
+                                                        onClick={() => setMateriaisOpen(true)}
+                                                        disabled={wizardSubmitting}
+                                                    >
+                                                        Selecionar Materiais…
+                                                    </button>
+                                                    <span className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        {materiaisSelecionadosResumo || "Nenhum material selecionado"}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   tanatopraxia (checkbox Sim/Não)
+                                   =========================== */
+                                if (step.id === "tanato" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={tanatoVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!tanatoSelectErro}
+                                                onChange={(v) => {
+                                                    setTanatoVal(v);
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        tanato: v,
+                                                    }));
+                                                    setTanatoSelectErro("");
+
+                                                    if (v !== "Sim") setArrumacaoOpen(false);
+                                                }}
+                                            />
+
+                                            {tanatoSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{tanatoSelectErro}</div>}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   ornamentação (checkbox Sim/Não)
+                                   =========================== */
+                                if (step.id === "ornamentacao" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={ornamentacaoVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!ornamentacaoSelectErro}
+                                                onChange={(v) => {
+                                                    setOrnamentacaoVal(v);
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        ornamentacao: v,
+                                                        ...(v !== "Sim" ? { ornamentacao_tipo: "" } : {}),
+                                                    }));
+
+                                                    setOrnamentacaoSelectErro("");
+                                                    if (v !== "Sim") setOrnamentacaoTipoErro("");
+                                                }}
+                                            />
+
+                                            {ornamentacaoSelectErro && (
+                                                <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{ornamentacaoSelectErro}</div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   INVOL (checkbox Sim/Não)
+                                   =========================== */
+                                if (step.id === "invol" && step.type === "select") {
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={involVal}
+                                                options={SIM_NAO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!(involSelectErro || involErro)}
+                                                onChange={(v) => {
+                                                    setInvolVal(v);
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        invol: v,
+                                                        ...(v !== "Sim"
+                                                            ? {
+                                                                invol_deposito_nome: "",
+                                                                invol_produto_id: 0,
+                                                                invol_codigo_barras: "",
+                                                                invol_item: "",
+                                                            }
+                                                            : {}),
+                                                    }));
+
+                                                    setInvolSelectErro("");
+                                                    if (v !== "Sim") setInvolErro("");
+                                                }}
+                                            />
+
+                                            {involSelectErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{involSelectErro}</div>}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   INVOL ITEM (async) - só se invol=Sim
+                                   =========================== */
+                                if (step.type === "async_invol" && step.id === "invol_item") {
+                                    if (involVal !== "Sim") return null;
+
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <EstoqueCombobox
+                                                inputId="wizard-invol_item"
+                                                label="INVOL (estoque)"
+                                                required={isRequired("invol")}
+                                                placeholder={step.placeholder || "Selecione no estoque…"}
+                                                initialValue={String((wizardData as any).invol_item ?? "")}
+                                                disabled={wizardSubmitting}
+                                                depositoLabel="Local do INVOL"
+                                                depositoOptions={[
+                                                    { value: "ARMARIO SANDRO", label: "ARMARIO SANDRO" },
+                                                    { value: "ARMARIO ILDO", label: "ARMARIO ILDO" },
+                                                ]}
+                                                depositoValue={depInvol}
+                                                onChangeDeposito={(v) => {
+                                                    const next = normalizeDepInvol(v);
+                                                    setDepInvol(next);
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        invol_item: "",
+                                                        invol_deposito_nome: next,
+                                                        invol_produto_id: 0,
+                                                        invol_codigo_barras: "",
+                                                    }));
+                                                    validarInvolSeNecessario();
+                                                }}
+                                                action="invols_buscar"
+                                                errorText={involErro}
+                                                onBlurValidate={validarInvolSeNecessario}
+                                                onTypingInvalidate={(typed) => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        invol_item: typed,
+                                                        invol_deposito_nome: depInvol,
+                                                        invol_produto_id: 0,
+                                                        invol_codigo_barras: "",
+                                                    }));
+                                                }}
+                                                onSelectRow={(it) => {
+                                                    const pid = getPidFromRow(it);
+                                                    const cb = String((it as any).codigo_barras || "").trim();
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        invol_item: String(it.nome || "").trim(),
+                                                        invol_deposito_nome: depInvol,
+                                                        invol_produto_id: pid,
+                                                        invol_codigo_barras: cb,
+                                                    }));
+
+                                                    setInvolErro("");
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   tipo de ornamentação (checkbox Natural/Artificial)
+                                   =========================== */
+                                if (step.id === "ornamentacao_tipo" && step.type === "select") {
+                                    const ornamentacaoTipoVal = String((wizardData as any).ornamentacao_tipo ?? "");
+
+                                    return (
+                                        <div key={step.id}>
+                                            <CheckboxChoiceGroup
+                                                label={
+                                                    <>
+                                                        {step.label}
+                                                        {isRequired("ornamentacao") && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                                    </>
+                                                }
+                                                inputId={`wizard-${step.id}`}
+                                                ariaLabel={step.label}
+                                                value={ornamentacaoTipoVal}
+                                                options={ORNAMENTACAO_TIPO_OPTIONS}
+                                                disabled={wizardSubmitting}
+                                                hasError={!!ornamentacaoTipoErro}
+                                                onChange={(v) => {
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        ornamentacao_tipo: v,
+                                                    }));
+                                                    setOrnamentacaoTipoErro("");
+                                                }}
+                                            />
+
+                                            {ornamentacaoTipoErro && (
+                                                <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{ornamentacaoTipoErro}</div>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   FOTO DO FALECIDO (upload real)
+                                   - mantém foto_falecido como caminho/URL salvo
+                                   - envia a nova imagem em foto_falecido_base64 para o backend salvar fisicamente
+                                   =========================== */
+                                if (step.id === "foto_falecido" || step.type === "file") {
+                                    const fotoAtual = String((wizardData as any).foto_falecido ?? "");
+                                    const fotoBase64 = String((wizardData as any).foto_falecido_base64 ?? "");
+                                    const fotoNome = String((wizardData as any).foto_falecido_nome ?? "");
+                                    const previewSrc = normalizarFotoSrc(fotoBase64 || fotoAtual);
+
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <label className="mb-1.5 block text-[13px] font-bold">
+                                                {step.label}
+                                                {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                            </label>
+
+                                            <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[112px_1fr]">
+                                                <div className="flex size-28 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2F7] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">
+                                                    {previewSrc ? (
+                                                        <img
+                                                            src={previewSrc}
+                                                            alt="Prévia da foto do falecido"
+                                                            className="h-full w-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <span className="px-2 text-center text-xs text-[#5B6478] dark:text-[#AEB9CF]">Sem foto</span>
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    {/* valor persistido no banco; o FileReader envia a nova imagem em foto_falecido_base64 */}
+                                                    <input
+                                                        id={`wizard-${step.id}`}
+                                                        type="hidden"
+                                                        value={fotoAtual}
+                                                        readOnly
+                                                    />
+
+                                                    <input
+                                                        id={`wizard-${step.id}_file`}
+                                                        type="file"
+                                                        accept={step.accept || "image/*"}
+                                                        className="block w-full text-sm text-[#5B6478] file:mr-3 file:h-11 file:cursor-pointer file:rounded-xl file:border-[1.5px] file:border-[#C9D1DE] file:bg-white file:px-4 file:text-sm file:font-bold file:text-[#313C55] hover:file:bg-[#EEF2F7] disabled:opacity-60 dark:text-[#AEB9CF] dark:file:border-white/25 dark:file:bg-[#232B3F] dark:file:text-white dark:hover:file:bg-white/10"
+                                                        disabled={wizardSubmitting}
+                                                        onChange={async (e) => {
+                                                            const file = e.target.files?.[0];
+
+                                                            if (!file) return;
+
+                                                            if (!file.type.startsWith("image/")) {
+                                                                alert("Selecione um arquivo de imagem válido.");
+                                                                e.currentTarget.value = "";
+                                                                return;
+                                                            }
+
+                                                            const maxBytes = 5 * 1024 * 1024;
+                                                            if (file.size > maxBytes) {
+                                                                alert("A imagem deve ter no máximo 5MB.");
+                                                                e.currentTarget.value = "";
+                                                                return;
+                                                            }
+
+                                                            try {
+                                                                const dataUrl = await fileToDataURL(file);
+
+                                                                setWizardData((prev: any) => ({
+                                                                    ...prev,
+                                                                    foto_falecido_base64: dataUrl,
+                                                                    foto_falecido_nome: file.name,
+                                                                    foto_falecido_tipo: file.type,
+                                                                    foto_falecido_tamanho: file.size,
+                                                                }));
+                                                            } catch (err: any) {
+                                                                alert(err?.message || "Erro ao carregar a imagem.");
+                                                                e.currentTarget.value = "";
+                                                            }
+                                                        }}
+                                                    />
+
+                                                    <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        {fotoNome ? (
+                                                            <>
+                                                                Nova foto selecionada: <b>{fotoNome}</b>
+                                                            </>
+                                                        ) : fotoAtual ? (
+                                                            <>
+                                                                Foto atual: <b>{fotoAtual}</b>
+                                                            </>
+                                                        ) : (
+                                                            <>Selecione uma imagem JPG, PNG ou WEBP.</>
+                                                        )}
+                                                    </div>
+
+                                                    {(fotoAtual || fotoBase64) && (
+                                                        <button
+                                                            type="button"
+                                                            className={`${BTN_SEC_CLS} mt-2`}
+                                                            disabled={wizardSubmitting}
+                                                            onClick={() => {
+                                                                setWizardData((prev: any) => ({
+                                                                    ...prev,
+                                                                    foto_falecido: "",
+                                                                    foto_falecido_base64: "",
+                                                                    foto_falecido_nome: "",
+                                                                    foto_falecido_tipo: "",
+                                                                    foto_falecido_tamanho: 0,
+                                                                }));
+
+                                                                const fileEl = document.getElementById(`wizard-${step.id}_file`) as HTMLInputElement | null;
+                                                                if (fileEl) fileEl.value = "";
+                                                            }}
+                                                        >
+                                                            Remover foto
+                                                        </button>
+                                                    )}
+
+                                                    <p className="mt-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        ATENÇÃO: Essa foto será usada no obituário, painel e página de homenagens.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                /* ===========================
+                                   defaults
+                                   =========================== */
+                                if (step.type === "input") {
+                                    const isCpfResponsavel = step.id === "cpf_responsavel";
+
+                                    return (
+                                        <div key={step.id}>
+                                            <label className="mb-1.5 block text-[13px] font-bold">
+                                                {step.label}
+                                                {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                            </label>
+                                            <input
+                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step (defaultValue confiável)
+                                                id={`wizard-${step.id}`}
+                                                type="text"
+                                                inputMode={isCpfResponsavel ? "numeric" : undefined}
+                                                maxLength={isCpfResponsavel ? 11 : undefined}
+                                                pattern={isCpfResponsavel ? "\\d{11}" : undefined}
+                                                placeholder={step.placeholder || ""}
+                                                defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                                onInput={(e) => {
+                                                    if (!isCpfResponsavel) return;
+
+                                                    const el = e.currentTarget;
+                                                    const somenteNumeros = el.value.replace(/\D/g, "").slice(0, 11);
+
+                                                    if (el.value !== somenteNumeros) {
+                                                        el.value = somenteNumeros;
+                                                    }
+
+                                                    setWizardData((prev: any) => ({
+                                                        ...prev,
+                                                        cpf_responsavel: somenteNumeros,
+                                                    }));
+                                                }}
+                                                className={CAMPO_CLS}
+                                                disabled={wizardSubmitting}
+                                            />
+                                        </div>
+                                    );
+                                }
+
+                                if (step.type === "textarea") {
+                                    return (
+                                        <div key={step.id} className="sm:col-span-2">
+                                            <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
+                                            <textarea
+                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step
+                                                id={`wizard-${step.id}`}
+                                                placeholder={step.placeholder || ""}
+                                                defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                                className={AREA_CLS}
+                                                rows={3}
+                                                disabled={wizardSubmitting}
+                                            />
+                                        </div>
+                                    );
+                                }
+
+                                if (step.type === "select") {
+                                    const options = step.options && step.options.length > 0 ? step.options : ["Sim", "Não"];
+
+                                    return (
+                                        <div key={step.id}>
+                                            <label className="mb-1.5 block text-[13px] font-bold">
+                                                {step.label}
+                                                {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                            </label>
+
+                                            <select
+                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step
+                                                id={`wizard-${step.id}`}
+                                                className={CAMPO_CLS}
+                                                defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                                disabled={wizardSubmitting}
                                             >
-                                                Remover foto
-                                            </button>
-                                        )}
+                                                <option value="" disabled>
+                                                    Selecione…
+                                                </option>
 
-                                        <p className="mt-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
-                                            ATENÇÃO: Essa foto será usada no obituário, painel e página de homenagens.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    }
+                                                {options.filter(Boolean).map((op) => (
+                                                    <option key={op} value={op}>
+                                                        {op}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                }
 
-                    /* ===========================
-                       defaults
-                       =========================== */
-                    if (step.type === "input") {
-                        const isCpfResponsavel = step.id === "cpf_responsavel";
+                                if (step.type === "date") {
+                                    return (
+                                        <div key={step.id}>
+                                            <label className="mb-1.5 block text-[13px] font-bold">
+                                                {step.label}
+                                                {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
+                                            </label>
 
-                        return (
-                            <div key={step.id}>
-                                <label className="mb-1.5 block text-[13px] font-bold">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                </label>
-                                <input
-                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step (defaultValue confiável)
-                                    id={`wizard-${step.id}`}
-                                    type="text"
-                                    inputMode={isCpfResponsavel ? "numeric" : undefined}
-                                    maxLength={isCpfResponsavel ? 11 : undefined}
-                                    pattern={isCpfResponsavel ? "\\d{11}" : undefined}
-                                    placeholder={step.placeholder || ""}
-                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    onInput={(e) => {
-                                        if (!isCpfResponsavel) return;
+                                            <input
+                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step
+                                                id={`wizard-${step.id}`}
+                                                type="date"
+                                                defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                                className={CAMPO_CLS}
+                                                disabled={wizardSubmitting}
+                                            />
+                                        </div>
+                                    );
+                                }
 
-                                        const el = e.currentTarget;
-                                        const somenteNumeros = el.value.replace(/\D/g, "").slice(0, 11);
+                                if (step.type === "time") {
+                                    return (
+                                        <div key={step.id}>
+                                            <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
+                                            <input
+                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step
+                                                id={`wizard-${step.id}`}
+                                                type="time"
+                                                defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                                className={CAMPO_CLS}
+                                                disabled={wizardSubmitting}
+                                            />
+                                        </div>
+                                    );
+                                }
 
-                                        if (el.value !== somenteNumeros) {
-                                            el.value = somenteNumeros;
-                                        }
+                                if (step.type === "datalist") {
+                                    const listId = `dl-${step.id}`;
+                                    return (
+                                        <div key={step.id}>
+                                            <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
+                                            <input
+                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step
+                                                id={`wizard-${step.id}`}
+                                                list={listId}
+                                                placeholder={step.placeholder || ""}
+                                                defaultValue={String((wizardData as any)[step.id] ?? "")}
+                                                className={CAMPO_CLS}
+                                                disabled={wizardSubmitting}
+                                            />
+                                            <datalist id={listId}>
+                                                {(step.datalist || []).map((op) => (
+                                                    <option key={op} value={op} />
+                                                ))}
+                                            </datalist>
+                                        </div>
+                                    );
+                                }
 
-                                        setWizardData((prev: any) => ({
-                                            ...prev,
-                                            cpf_responsavel: somenteNumeros,
-                                        }));
-                                    }}
-                                    className={CAMPO_CLS}
-                                    disabled={wizardSubmitting}
-                                />
-                            </div>
-                        );
-                    }
+                                return null;
+                            })();
+                            if (conteudo == null || conteudo === false) return null;
+                            const secao = ehPassoItens ? secaoDoPasso(step.id) : "";
+                            const abreSecao = ehPassoItens && secao !== secaoAtual;
+                            if (abreSecao) secaoAtual = secao;
+                            // Blocos da OS encaixados nos itens: procedimento depois de Tanatopraxia (Sim); translado depois de Invol.
+                            const depoisDoItem: React.ReactNode[] = [];
+                            if (ehPassoItens) {
+                                if (step.id === "tanato" && tanatoVal === "Sim" && osProcedimentoSlot) {
+                                    depoisDoItem.push(<React.Fragment key="os-procedimento">{osProcedimentoSlot}</React.Fragment>);
+                                }
+                                if (osTransladoSlot && ((step.id === "invol" && involVal !== "Sim") || step.id === "invol_item")) {
+                                    depoisDoItem.push(<React.Fragment key="os-translado">{osTransladoSlot}</React.Fragment>);
+                                }
+                            }
+                            return (
+                                <React.Fragment key={step.id}>
+                                    {abreSecao ? (
+                                        <div className={`text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF] ${secao === "demais" ? "mt-3" : ""}`}>
+                                            {secao === "principais" ? "Itens principais" : "Demais itens e serviços"}
+                                        </div>
+                                    ) : null}
+                                    {conteudo}
+                                    {depoisDoItem}
+                                </React.Fragment>
+                            );
+                        });
+                    })()}
+                </div>
 
-                    if (step.type === "textarea") {
-                        return (
-                            <div key={step.id} className="sm:col-span-2">
-                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
-                                <textarea
-                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
-                                    id={`wizard-${step.id}`}
-                                    placeholder={step.placeholder || ""}
-                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className={AREA_CLS}
-                                    rows={3}
-                                    disabled={wizardSubmitting}
-                                />
-                            </div>
-                        );
-                    }
+                {tanatoNoGrupoAtual ? osSlot : null}
 
-                    if (step.type === "select") {
-                        const options = step.options && step.options.length > 0 ? step.options : ["Sim", "Não"];
-
-                        return (
-                            <div key={step.id}>
-                                <label className="mb-1.5 block text-[13px] font-bold">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                </label>
-
-                                <select
-                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
-                                    id={`wizard-${step.id}`}
-                                    className={CAMPO_CLS}
-                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    disabled={wizardSubmitting}
-                                >
-                                    <option value="" disabled>
-                                        Selecione…
-                                    </option>
-
-                                    {options.filter(Boolean).map((op) => (
-                                        <option key={op} value={op}>
-                                            {op}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        );
-                    }
-
-                    if (step.type === "date") {
-                        return (
-                            <div key={step.id}>
-                                <label className="mb-1.5 block text-[13px] font-bold">
-                                    {step.label}
-                                    {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
-                                </label>
-
-                                <input
-                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
-                                    id={`wizard-${step.id}`}
-                                    type="date"
-                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className={CAMPO_CLS}
-                                    disabled={wizardSubmitting}
-                                />
-                            </div>
-                        );
-                    }
-
-                    if (step.type === "time") {
-                        return (
-                            <div key={step.id}>
-                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
-                                <input
-                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
-                                    id={`wizard-${step.id}`}
-                                    type="time"
-                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className={CAMPO_CLS}
-                                    disabled={wizardSubmitting}
-                                />
-                            </div>
-                        );
-                    }
-
-                    if (step.type === "datalist") {
-                        const listId = `dl-${step.id}`;
-                        return (
-                            <div key={step.id}>
-                                <label className="mb-1.5 block text-[13px] font-bold">{step.label}</label>
-                                <input
-                                    key={`${wizardStep}-${step.id}`} // ✅ remount por step
-                                    id={`wizard-${step.id}`}
-                                    list={listId}
-                                    placeholder={step.placeholder || ""}
-                                    defaultValue={String((wizardData as any)[step.id] ?? "")}
-                                    className={CAMPO_CLS}
-                                    disabled={wizardSubmitting}
-                                />
-                                <datalist id={listId}>
-                                    {(step.datalist || []).map((op) => (
-                                        <option key={op} value={op} />
-                                    ))}
-                                </datalist>
-                            </div>
-                        );
-                    }
-
-                    return null;
-                  })();
-                  if (conteudo == null || conteudo === false) return null;
-                  const secao = ehPassoItens ? secaoDoPasso(step.id) : "";
-                  const abreSecao = ehPassoItens && secao !== secaoAtual;
-                  if (abreSecao) secaoAtual = secao;
-                  // Blocos da OS encaixados nos itens: procedimento depois de Tanatopraxia (Sim); translado depois de Invol.
-                  const depoisDoItem: React.ReactNode[] = [];
-                  if (ehPassoItens) {
-                      if (step.id === "tanato" && tanatoVal === "Sim" && osProcedimentoSlot) {
-                          depoisDoItem.push(<React.Fragment key="os-procedimento">{osProcedimentoSlot}</React.Fragment>);
-                      }
-                      if (osTransladoSlot && ((step.id === "invol" && involVal !== "Sim") || step.id === "invol_item")) {
-                          depoisDoItem.push(<React.Fragment key="os-translado">{osTransladoSlot}</React.Fragment>);
-                      }
-                  }
-                  return (
-                      <React.Fragment key={step.id}>
-                          {abreSecao ? (
-                              <div className={`text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF] ${secao === "demais" ? "mt-3" : ""}`}>
-                                  {secao === "principais" ? "Itens principais" : "Demais itens e serviços"}
-                              </div>
-                          ) : null}
-                          {conteudo}
-                          {depoisDoItem}
-                      </React.Fragment>
-                  );
-                  });
-                })()}
-            </div>
-
-            {tanatoNoGrupoAtual ? osSlot : null}
-
-        </Modal>
+            </Modal>
         </RascunhoOSContext.Provider>
     );
 }
