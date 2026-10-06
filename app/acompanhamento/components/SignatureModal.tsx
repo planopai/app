@@ -13,7 +13,7 @@ import {
 } from "@/lib/offline/signatures";
 import { syncOperationalQueue } from "@/lib/offline/sync-engine";
 
-type Step = 0 | 1 | 2; // 0: nome, 1: cpf, 2: assinatura
+type Step = 0 | 1 | 2 | 3; // 0: nome, 1: cpf, 2: assinatura, 3: termo já assinado (visualizar / baixar / assinar de novo)
 type MatItem = { rotulo: string; qtd: number };
 
 /** Domínio onde os uploads realmente moram (sem "pai.") */
@@ -88,6 +88,11 @@ export default function SignatureModal({
     /** assinatura como dataURL (preferida para canvas/termo) */
     const [assinaturaB64, setAssinaturaB64] = useState<string>("");
 
+    /** Termo montado (imagem) para mostrar quando ele já está assinado. */
+    const [termoPreview, setTermoPreview] = useState<string>("");
+    /** Assinatura só no aparelho (ainda não enviada ao servidor). */
+    const [pendenteEnvio, setPendenteEnvio] = useState(false);
+
     // ---- assinatura (canvas) ----
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [drawing, setDrawing] = useState(false);
@@ -105,6 +110,8 @@ export default function SignatureModal({
         setPaths([]);
         setAssinaturaB64("");
         setUrlPublica("");
+        setTermoPreview("");
+        setPendenteEnvio(false);
 
         const nomeKeys =
             tipo === "recebimento"
@@ -135,6 +142,8 @@ export default function SignatureModal({
 
         if (nomeExist) setNome(String(nomeExist));
         if (cpfExist) setCpf(formatCpf(String(cpfExist)));
+        // Termo já assinado no servidor: abre direto no termo (não recomeça o processo).
+        if (urlExistAbs) setStep(3);
 
         void (async () => {
             try {
@@ -152,6 +161,9 @@ export default function SignatureModal({
 
                         if (!cancelled && localDataUrl) {
                             setAssinaturaB64(localDataUrl);
+                            // Assinatura guardada no aparelho (enviada ou não): mostra o termo assinado.
+                            setStep(3);
+                            setPendenteEnvio(local.status !== "synced");
                         }
 
                         if (local.serverUrl && !cancelled) {
@@ -369,6 +381,8 @@ export default function SignatureModal({
             });
 
             onSaved(undefined);
+            setStep(3);
+            setPendenteEnvio(true);
 
             if (!browserSaysOnline()) {
                 setMsg({
@@ -408,6 +422,7 @@ export default function SignatureModal({
                     text: "Assinatura salva e sincronizada!",
                     ok: true,
                 });
+                setPendenteEnvio(false);
 
                 onSaved(absolute || undefined);
                 return;
@@ -559,19 +574,15 @@ export default function SignatureModal({
     }
 
 
-    async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png") {
-        if (!nome.trim() || cpfDigits.length !== 11 || !assinaturaB64) {
-            // assinaturaB64 sempre deveria existir (proxy no prefill / após salvar)
-            // fallback de segurança: tenta via proxy agora
-            if (!assinaturaB64 && urlPublica) {
-                const b64 = await fetchViaProxyToDataURL(urlPublica);
-                if (b64) setAssinaturaB64(b64);
-            }
-            if (!nome.trim() || cpfDigits.length !== 11 || !assinaturaB64) {
-                setMsg({ text: "Assine e salve primeiro para liberar o download do termo.", ok: false });
-                return;
-            }
+    /** Monta o termo (imagem) com a assinatura. Devolve o dataURL, ou "" se faltar nome, CPF ou assinatura. */
+    async function gerarTermoDataUrl(format: "image/png" | "image/jpeg" = "image/png"): Promise<string> {
+        let assinaturaUsar = assinaturaB64;
+        if (!assinaturaUsar && urlPublica) {
+            // fallback de segurança: busca a assinatura via proxy agora
+            assinaturaUsar = (await fetchViaProxyToDataURL(urlPublica)) || "";
+            if (assinaturaUsar) setAssinaturaB64(assinaturaUsar);
         }
+        if (!nome.trim() || cpfDigits.length !== 11 || !assinaturaUsar) return "";
 
         const materiais = extrairMateriaisDoRegistro(registro);
         const agente = registro?.agente || "";
@@ -676,7 +687,7 @@ export default function SignatureModal({
 
         // assinatura
         try {
-            const signImg = await loadImg(assinaturaB64);
+            const signImg = await loadImg(assinaturaUsar);
             const SIGN_W = 420;
             const ratio = signImg.width ? SIGN_W / signImg.width : 1;
             const SIGN_H = signImg.height ? signImg.height * ratio : 160;
@@ -700,7 +711,15 @@ export default function SignatureModal({
         const nomeW = ctx.measureText(nomeTxt).width;
         ctx.fillText(nomeTxt, center + gapCol, LINE_Y + 42);
 
-        const dataUrl = c.toDataURL(format, format === "image/jpeg" ? 0.92 : undefined);
+        return c.toDataURL(format, format === "image/jpeg" ? 0.92 : undefined);
+    }
+
+    async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png") {
+        const dataUrl = await gerarTermoDataUrl(format);
+        if (!dataUrl) {
+            setMsg({ text: "Assine e salve primeiro para liberar o download do termo.", ok: false });
+            return;
+        }
         const a = document.createElement("a");
         const tipoNome = tipo === "recebimento" ? "termo-recebimento" : "termo-requisicao";
         const base = (registro?.falecido || "documento").toString().trim().replace(/\s+/g, "_").toLowerCase();
@@ -708,6 +727,19 @@ export default function SignatureModal({
         a.href = dataUrl;
         a.click();
     }
+
+    /* ---------- termo assinado: monta a imagem para visualizar ---------- */
+    useEffect(() => {
+        if (!open || step !== 3) return;
+        let vivo = true;
+        void gerarTermoDataUrl("image/png").then((u) => {
+            if (vivo) setTermoPreview(u);
+        });
+        return () => {
+            vivo = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, step, assinaturaB64, urlPublica, nome, cpfDigits]);
 
     if (!open) return null;
 
@@ -721,6 +753,7 @@ export default function SignatureModal({
                 {step === 0 && "Passo 1 de 3 - Identificação: Nome"}
                 {step === 1 && "Passo 2 de 3 - Identificação: CPF"}
                 {step === 2 && "Passo 3 de 3 - Assinatura"}
+                {step === 3 && (pendenteEnvio ? "Assinado · salvo no aparelho, aguardando envio" : "Assinado")}
             </div>
 
             {step === 0 && (
@@ -822,6 +855,54 @@ export default function SignatureModal({
                         </button>
                     </div>
                 </>
+            )}
+
+            {step === 3 && (
+                <div className="mt-4">
+                    <div className="flex flex-wrap items-center gap-3 rounded-xl border-[1.5px] border-[#B3CE52] bg-[#EEF5D6] px-4 py-3 text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/15 dark:text-white">
+                        <svg viewBox="0 0 24 24" className="size-5 shrink-0 text-[#5C7A12] dark:text-[#B3CE52]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" />
+                            <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+                        </svg>
+                        <div className="min-w-0 flex-1 text-sm">
+                            <div className="font-extrabold">{tipo === "recebimento" ? "Responsável" : "Requerente"}: {nome || "—"}</div>
+                            <div className="text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">CPF {cpf || "—"}</div>
+                        </div>
+                    </div>
+
+                    <div className="mt-3 max-h-[60vh] overflow-auto rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]">
+                        {termoPreview ? (
+                            <img src={termoPreview} alt={tipo === "recebimento" ? "Termo de recebimento assinado" : "Termo de requisição assinado"} className="block w-full" />
+                        ) : (
+                            <p className="p-6 text-center text-sm text-[#5B6478]">Montando o termo assinado…</p>
+                        )}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                            className="rounded-xl bg-[#313C55] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
+                            disabled={!termoPreview}
+                            onClick={() => baixarTermoImagem("image/png")}
+                        >
+                            Baixar termo (PNG)
+                        </button>
+                        <button
+                            className="rounded-xl border-[1.5px] border-[#C9D1DE] px-4 py-2.5 text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:text-white dark:hover:bg-white/10"
+                            onClick={() => {
+                                setMsg(null);
+                                setTermoPreview("");
+                                setAssinaturaB64("");
+                                setPaths([]);
+                                setStep(0);
+                            }}
+                        >
+                            Assinar novamente
+                        </button>
+                        <button className="ml-auto rounded-md border px-3 py-2 text-sm" onClick={onClose}>
+                            Fechar
+                        </button>
+                    </div>
+                </div>
             )}
 
             {msg && <div className={`mt-3 text-sm ${msg.ok ? "text-emerald-700" : "text-red-600"}`}>{msg.text}</div>}

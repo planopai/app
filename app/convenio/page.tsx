@@ -14,7 +14,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CONVENIO_API, apiJson } from "./components/api";
+import { CONVENIO_API, apiJson, osGet, osPost } from "./components/api";
 import type { ProdutoRegra, RegrasConvenio, SimNao } from "./components/tipos";
 import { normalizeProduto, normalizeRegras, regraProduto } from "./components/tipos";
 import SimNaoSelect from "./components/SimNaoSelect";
@@ -72,6 +72,16 @@ type Pacote = {
     versao: number;
     regras: RegrasTela;
     atualizado_em: string;
+    /** ATENDIMENTO (aparece no registro) ou PRODUTO (ex.: coroa da Prefeitura). Fica no módulo da OS (os_convenio_pacotes.tipo). */
+    tipo: TipoPacote;
+    ordem: number;
+};
+
+type TipoPacote = "ATENDIMENTO" | "PRODUTO";
+const ROTULO_TIPO_PACOTE: Record<TipoPacote, string> = { ATENDIMENTO: "Atendimento", PRODUTO: "Produto" };
+const AJUDA_TIPO_PACOTE: Record<TipoPacote, string> = {
+    ATENDIMENTO: "Aparece no registro do atendimento, na escolha do pacote.",
+    PRODUTO: "Pacote de produto (ex.: coroa de flores): vale mesmo sem o pacote de atendimento e não aparece na escolha do pacote.",
 };
 
 type Grupo = "urna" | "roupa" | "veu" | "cordao" | "invol" | "coroa_natural" | "coroa_artificial" | "servico";
@@ -197,6 +207,8 @@ function pacoteNovo(convenioId: number, padrao: boolean): Pacote {
         versao: 0,
         regras: normalizarRegrasTela({}),
         atualizado_em: "",
+        tipo: "ATENDIMENTO",
+        ordem: 0,
     };
 }
 
@@ -691,6 +703,8 @@ export default function ConveniosAdminPage() {
     const [erro, setErro] = useState("");
     const [msg, setMsg] = useState("");
     const [excluir, setExcluir] = useState<null | "convenio" | "pacote">(null);
+    const [novoTipo, setNovoTipo] = useState<null | { tipo: TipoPacote; nome: string }>(null);
+    const [classificacaoErro, setClassificacaoErro] = useState("");
 
     const bloqueado = saving || deleting;
     const ehPrefeitura = (atual?.tipo || "").toUpperCase() === "PREFEITURA";
@@ -729,6 +743,8 @@ export default function ConveniosAdminPage() {
         versao: Number(r?.versao ?? 1),
         regras: normalizarRegrasTela(r?.regras),
         atualizado_em: String(r?.atualizado_em ?? ""),
+        tipo: String(r?.tipo ?? "").toUpperCase() === "PRODUTO" ? "PRODUTO" : "ATENDIMENTO",
+        ordem: Number(r?.ordem ?? 0),
     });
 
     /* ---------------------------- carregamentos ---------------------------- */
@@ -758,13 +774,47 @@ export default function ConveniosAdminPage() {
         setCarregandoPacotes(true);
         try {
             const data = await apiJson(`${CONVENIO_API}?action=pacotes_listar&convenio_id=${convId}&_=${Date.now()}`);
-            const lista = Array.isArray(data?.data) ? data.data : [];
-            setPacotes(lista.map(normalizarPacote));
+            const lista: Pacote[] = (Array.isArray(data?.data) ? data.data : []).map(normalizarPacote);
+            // Tipo e ordem vêm do módulo da OS (os_convenio_pacotes.tipo / .ordem). Sem as colunas, todos ficam como Atendimento.
+            try {
+                const c = await osGet("convenio_pacotes_classificacao", { convenio_id: convId });
+                const mapa = new Map<number, { tipo: string; ordem: number }>((c?.dados?.pacotes || []).map((x: any) => [Number(x.id), x]));
+                lista.forEach((p) => {
+                    const m = mapa.get(p.id);
+                    if (m) {
+                        p.tipo = String(m.tipo).toUpperCase() === "PRODUTO" ? "PRODUTO" : "ATENDIMENTO";
+                        p.ordem = Number(m.ordem) || 0;
+                    }
+                });
+                setClassificacaoErro(c?.dados?.colunas === false ? "Rode o alteracoes_atendimento_sugeridas.sql: faltam as colunas tipo e ordem dos pacotes." : "");
+            } catch (e: any) {
+                setClassificacaoErro(e?.message || "Não foi possível carregar o tipo e a ordem dos pacotes.");
+            }
+            lista.sort((a, b) => (a.ordem || 9999) - (b.ordem || 9999) || a.id - b.id);
+            setPacotes(lista);
+            return lista;
         } catch (e: any) {
             setPacotes([]);
             setErro(e?.message || "Não foi possível carregar os pacotes.");
+            return [] as Pacote[];
         } finally {
             setCarregandoPacotes(false);
+        }
+    };
+
+    /** Setas da lista: muda a posição do pacote e grava a ordem (a mesma ordem aparece no registro do atendimento). */
+    const moverPacote = async (i: number, d: -1 | 1) => {
+        if (!atual || bloqueado) return;
+        const j = i + d;
+        if (j < 0 || j >= pacotes.length) return;
+        const nova = pacotes.slice();
+        [nova[i], nova[j]] = [nova[j], nova[i]];
+        setPacotes(nova.map((p, k) => ({ ...p, ordem: k + 1 })));
+        try {
+            await osPost("convenio_pacotes_ordenar", { convenio_id: atual.id, ids: JSON.stringify(nova.map((p) => p.id)) });
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível salvar a ordem dos pacotes.");
+            void carregarPacotes(atual.id);
         }
     };
 
@@ -825,10 +875,17 @@ export default function ConveniosAdminPage() {
         topo();
     };
 
+    /** "Novo pacote": primeiro escolhe o tipo e o nome (janela); os itens são escolhidos na tela do pacote, como hoje. */
     const novoPacote = () => {
         if (!atual) return;
         limparAvisos();
-        setPacote(pacoteNovo(atual.id, pacotes.filter((p) => p.ativo).length === 0));
+        setNovoTipo({ tipo: "ATENDIMENTO", nome: "" });
+    };
+    const continuarNovoPacote = () => {
+        if (!atual || !novoTipo || !novoTipo.nome.trim()) return;
+        const temAtendAtivo = pacotes.some((p) => p.ativo && p.tipo === "ATENDIMENTO");
+        setPacote({ ...pacoteNovo(atual.id, novoTipo.tipo === "ATENDIMENTO" && !temAtendAtivo), tipo: novoTipo.tipo, nome: novoTipo.nome.trim() });
+        setNovoTipo(null);
         setTela("pacote");
         topo();
     };
@@ -938,8 +995,9 @@ export default function ConveniosAdminPage() {
         }
         setSaving(true);
         limparAvisos();
+        const idsAntes = new Set(pacotes.map((p) => p.id));
         try {
-            await apiJson(CONVENIO_API, {
+            const resp = await apiJson(CONVENIO_API, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -956,9 +1014,24 @@ export default function ConveniosAdminPage() {
                 }),
             });
             const eraNovo = !pacote.id;
-            await carregarPacotes(atual.id);
+            let lista = await carregarPacotes(atual.id);
+            // id do pacote salvo: o que o convenio.php devolveu, ou o que apareceu na lista agora
+            const idSalvo =
+                pacote.id ||
+                Number(resp?.data?.id ?? resp?.dados?.id ?? resp?.id ?? 0) ||
+                (lista.filter((p) => !idsAntes.has(p.id)).sort((a, b) => b.id - a.id)[0]?.id ?? 0);
+            let avisoTipo = "";
+            const salvo = lista.find((p) => p.id === idSalvo);
+            if (idSalvo && (!salvo || salvo.tipo !== pacote.tipo || eraNovo)) {
+                try {
+                    await osPost("convenio_pacote_classificar", { pacote_id: idSalvo, tipo: pacote.tipo });
+                    lista = await carregarPacotes(atual.id);
+                } catch (e: any) {
+                    avisoTipo = ` Mas o tipo do pacote não foi gravado: ${e?.message || "erro desconhecido"}.`;
+                }
+            }
             setTela("convenio");
-            setMsg(eraNovo ? "Pacote criado com sucesso." : "Pacote atualizado com sucesso.");
+            setMsg((eraNovo ? "Pacote criado com sucesso." : "Pacote atualizado com sucesso.") + avisoTipo);
             topo();
         } catch (e: any) {
             setErro(e?.message || "Não foi possível salvar o pacote.");
@@ -1089,6 +1162,24 @@ export default function ConveniosAdminPage() {
                             </button>
                             <h1 className="mt-1 text-2xl font-bold">{pacote.id ? pacote.nome || `Pacote #${pacote.id}` : "Novo pacote"}</h1>
                             <p className="mt-1 text-sm text-slate-600">Os itens deste pacote são só dele.</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                                <span className="font-medium">Tipo do pacote:</span>
+                                <span className="inline-flex overflow-hidden rounded-lg border border-slate-300">
+                                    {(["ATENDIMENTO", "PRODUTO"] as TipoPacote[]).map((t) => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            disabled={bloqueado}
+                                            aria-pressed={pacote.tipo === t}
+                                            onClick={() => setPacote((p) => ({ ...p, tipo: t, padrao: t === "PRODUTO" ? false : p.padrao }))}
+                                            className={`px-3 py-1.5 text-xs font-semibold ${pacote.tipo === t ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                                        >
+                                            {ROTULO_TIPO_PACOTE[t]}
+                                        </button>
+                                    ))}
+                                </span>
+                                <span className="text-xs text-slate-500">{AJUDA_TIPO_PACOTE[pacote.tipo]}</span>
+                            </div>
                         </div>
                         {pacote.id > 0 && (
                             <div className="flex flex-col-reverse gap-2 sm:flex-row">
@@ -1184,7 +1275,12 @@ export default function ConveniosAdminPage() {
                     <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
                         <div className="border-b p-5">
                             <h2 className="text-lg font-bold">Pacotes cadastrados</h2>
-                            <p className="mt-1 text-xs text-slate-500">{pacotes.length} registro(s)</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                {pacotes.length} registro(s) · use as setas para ordenar: o registro do atendimento mostra os pacotes de Atendimento nesta ordem.
+                            </p>
+                            {classificacaoErro && (
+                                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{classificacaoErro}</p>
+                            )}
                         </div>
                         {carregandoPacotes ? (
                             <div className="p-8 text-center text-sm text-slate-500">Carregando pacotes...</div>
@@ -1200,6 +1296,7 @@ export default function ConveniosAdminPage() {
                                 <table className="min-w-full border-collapse text-sm">
                                     <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
                                         <tr>
+                                            <th className="w-[84px] border-b px-2 py-3 text-center">Ordem</th>
                                             <th className="min-w-[320px] border-b px-4 py-3">Pacote</th>
                                             <th className="whitespace-nowrap border-b px-4 py-3 text-right">Valor</th>
                                             <th className="whitespace-nowrap border-b px-4 py-3">Status</th>
@@ -1208,15 +1305,29 @@ export default function ConveniosAdminPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {pacotes.map((p) => {
+                                        {pacotes.map((p, i) => {
+                                            const seta = "inline-flex size-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-30";
                                             return (
                                                 <tr
                                                     key={p.id}
                                                     onClick={() => abrirPacote(p)}
                                                     className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50"
                                                 >
+                                                    <td className="whitespace-nowrap px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="inline-flex gap-1">
+                                                            <button type="button" aria-label={`Subir ${p.nome}`} title="Subir" disabled={bloqueado || i === 0} onClick={() => void moverPacote(i, -1)} className={seta}>
+                                                                ↑
+                                                            </button>
+                                                            <button type="button" aria-label={`Descer ${p.nome}`} title="Descer" disabled={bloqueado || i === pacotes.length - 1} onClick={() => void moverPacote(i, 1)} className={seta}>
+                                                                ↓
+                                                            </button>
+                                                        </div>
+                                                    </td>
                                                     <td className="px-4 py-3">
-                                                        <div className="font-semibold text-slate-900">{p.nome}</div>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="font-semibold text-slate-900">{p.nome}</span>
+                                                            <Etiqueta cor={p.tipo === "PRODUTO" ? "amarelo" : "cinza"}>{ROTULO_TIPO_PACOTE[p.tipo]}</Etiqueta>
+                                                        </div>
                                                     </td>
                                                     <td className="whitespace-nowrap px-4 py-3 text-right font-semibold">{moeda(p.valor)}</td>
                                                     <td className="whitespace-nowrap px-4 py-3">
@@ -1354,7 +1465,7 @@ export default function ConveniosAdminPage() {
                                     <input
                                         type="checkbox"
                                         checked={pacote.padrao}
-                                        disabled={bloqueado || !pacote.ativo}
+                                        disabled={bloqueado || !pacote.ativo || pacote.tipo === "PRODUTO"}
                                         onChange={(e) => setPacote((p) => ({ ...p, padrao: e.target.checked }))}
                                     />
                                     Pacote padrão do convênio
@@ -1654,6 +1765,57 @@ export default function ConveniosAdminPage() {
                         onCancelar={() => setExcluir(null)}
                         onConfirmar={() => void excluirConvenio()}
                     />
+                )}
+
+                {novoTipo && atual && (
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Novo pacote"
+                        onMouseDown={(e) => {
+                            if (e.target === e.currentTarget) setNovoTipo(null);
+                        }}
+                    >
+                        <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+                            <h2 className="text-xl font-bold">Novo pacote · {atual.nome}</h2>
+                            <div className="mt-4 text-sm font-medium">Tipo do pacote *</div>
+                            <div className="mt-1 inline-flex overflow-hidden rounded-lg border border-slate-300">
+                                {(["ATENDIMENTO", "PRODUTO"] as TipoPacote[]).map((t) => (
+                                    <button
+                                        key={t}
+                                        type="button"
+                                        aria-pressed={novoTipo.tipo === t}
+                                        onClick={() => setNovoTipo((n) => (n ? { ...n, tipo: t } : n))}
+                                        className={`px-4 py-2 text-sm font-semibold ${novoTipo.tipo === t ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                                    >
+                                        {ROTULO_TIPO_PACOTE[t]}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500">{AJUDA_TIPO_PACOTE[novoTipo.tipo]}</p>
+                            <label className="mt-4 block text-sm">
+                                <span className="mb-1 block font-medium">Nome do pacote *</span>
+                                <input
+                                    autoFocus
+                                    value={novoTipo.nome}
+                                    maxLength={150}
+                                    onChange={(e) => setNovoTipo((n) => (n ? { ...n, nome: e.target.value } : n))}
+                                    placeholder={novoTipo.tipo === "PRODUTO" ? "Ex.: Coroa Natural" : "Ex.: Adulto · padrão"}
+                                    className={inputCls}
+                                />
+                            </label>
+                            <p className="mt-3 text-xs text-slate-500">Os itens do pacote e o valor de contrato são escolhidos na tela seguinte, como hoje.</p>
+                            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                <button type="button" onClick={() => setNovoTipo(null)} className={btnSec}>
+                                    Cancelar
+                                </button>
+                                <button type="button" disabled={!novoTipo.nome.trim()} onClick={continuarNovoPacote} className={btnPrim}>
+                                    Continuar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {excluir === "pacote" && pacote.id > 0 && (

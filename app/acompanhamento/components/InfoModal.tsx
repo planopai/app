@@ -3,6 +3,7 @@
 import React from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
+import { situacaoTermo } from "./termos";
 
 export default function InfoModal({
     open,
@@ -55,7 +56,7 @@ export default function InfoModal({
             {/* AÇÕES DE ASSINATURA */}
             <div className="grid gap-2">
                 <button
-                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#313C55] hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
                     onClick={() => {
                         if (infoIdx != null) {
                             setOpen(false);
@@ -66,19 +67,14 @@ export default function InfoModal({
                     Termo de Recebimento de Material
                 </button>
 
-                {registro?.assinatura_recebimento_url && (
-                    <a
-                        className="w-full rounded-md bg-[#7BA11A] px-3 py-2 text-sm text-white text-center"
-                        href={registro.assinatura_recebimento_url}
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        Baixar Termo (assinatura de recebimento)
-                    </a>
+                {situacaoTermo(registro, "recebimento").assinado && (
+                    <p className="w-full rounded-md bg-[#EEF5D6] px-3 py-2 text-sm font-bold text-[#313C55] text-center">
+                        ✓ Termo de recebimento assinado — toque no termo para ver ou baixar
+                    </p>
                 )}
 
                 <button
-                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#059de0] hover:bg-[#232B40] dark:hover:bg-[#E4BC30]"
+                    className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#313C55] hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
                     onClick={() => {
                         if (infoIdx != null) {
                             setOpen(false);
@@ -89,15 +85,10 @@ export default function InfoModal({
                     Termo de Requisição de Veículo
                 </button>
 
-                {registro?.assinatura_requisicao_url && (
-                    <a
-                        className="w-full rounded-md bg-[#7BA11A] px-3 py-2 text-sm text-white text-center"
-                        href={registro.assinatura_requisicao_url}
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        Baixar Termo (assinatura de requisição)
-                    </a>
+                {situacaoTermo(registro, "requisicao").assinado && (
+                    <p className="w-full rounded-md bg-[#EEF5D6] px-3 py-2 text-sm font-bold text-[#313C55] text-center">
+                        ✓ Termo de requisição assinado — toque no termo para ver ou baixar
+                    </p>
                 )}
             </div>
         </Modal>

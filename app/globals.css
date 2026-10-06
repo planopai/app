@@ -576,3 +576,19 @@ body {
 body {
   overflow-x: clip;
 }
+
+/* =====================================================================
+   MENU LATERAL (05/10/2026)
+   • Fixo no computador: o botão de recolher do cabeçalho não aparece a partir de 1024 px.
+   • Rolagem discreta quando o menu não cabe na tela.
+   ===================================================================== */
+@media (min-width: 1024px) {
+  [data-sidebar="trigger"] { display: none !important; }
+}
+.pai-menu-rolagem {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+.pai-menu-rolagem::-webkit-scrollbar { width: 6px; }
+.pai-menu-rolagem::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border-radius: 3px; }
+.pai-menu-rolagem::-webkit-scrollbar-track { background: transparent; }

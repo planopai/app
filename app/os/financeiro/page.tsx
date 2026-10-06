@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ItensOSAjuste from "../components/ItensOSAjuste";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -585,6 +586,13 @@ function DetalheOS({
     const [prefeituras, setPrefeituras] = useState<any[]>([]);
 
     const osId = linha.os_id;
+    const [statusAtual, setStatusAtual] = useState<string>(linha.status);
+    const [reabrir, setReabrir] = useState(false);
+    const [motivoReabrir, setMotivoReabrir] = useState("");
+    const [versaoItens, setVersaoItens] = useState(0);
+    /** OS cobrada da família (Particular, diferenças e coroa): valores ajustáveis. */
+    const ehDaFamilia = ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(linha.tipo);
+    const podeReabrir = ehDaFamilia && statusAtual === "FECHADA";
 
     const carregar = useCallback(async () => {
         setErro("");
@@ -727,7 +735,7 @@ function DetalheOS({
                                         void abrirConversao()
                                     }
                                 >
-                                    Converter p/ Prefeitura (admin)
+                                    Converter para Prefeitura
                                 </Botao>
                             )}
 
@@ -739,6 +747,61 @@ function DetalheOS({
                     <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                         {erro}
                     </div>
+                )}
+
+                {/* Itens da OS: alterar valores (ícone de ajuste e desconto geral) com a OS aberta; assinada → Reabrir com motivo. */}
+                <div className="mb-4 rounded-xl border border-[#E1E5EC] bg-white p-4">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <div className="flex-1 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Itens da OS</div>
+                        {podeReabrir && (
+                            <Botao onClick={() => { setMotivoReabrir(""); setReabrir(true); }}>Reabrir OS</Botao>
+                        )}
+                    </div>
+                    {statusAtual === "FECHADA" && ehDaFamilia && (
+                        <div className="mb-3 rounded-lg border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55]">
+                            OS assinada: para alterar valores, reabra. A assinatura e a nota promissória anteriores deixam de valer.
+                        </div>
+                    )}
+                    <ItensOSAjuste
+                        osId={osId}
+                        editavel={statusAtual === "ABERTA" && ehDaFamilia}
+                        versao={versaoItens}
+                        onMudou={() => onAlterou("Valores da OS atualizados.")}
+                    />
+                </div>
+
+                {reabrir && (
+                    <Modal titulo={`Reabrir ${linha.numero_os}`} onFechar={() => setReabrir(false)}>
+                        <div className="text-sm text-[#313C55]">
+                            A assinatura e a nota promissória desta OS deixam de valer. Depois de alterar, o responsável assina de novo.
+                        </div>
+                        <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Motivo *</label>
+                        <textarea
+                            className="mt-1 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm"
+                            rows={3}
+                            value={motivoReabrir}
+                            onChange={(e) => setMotivoReabrir(e.target.value)}
+                            placeholder="Ex.: família pediu troca da urna"
+                        />
+                        <div className="mt-4 flex justify-end gap-2">
+                            <Botao onClick={() => setReabrir(false)}>Cancelar</Botao>
+                            <Botao
+                                primario
+                                disabled={salvando || motivoReabrir.trim().length < 5}
+                                onClick={() =>
+                                    void executar(async () => {
+                                        const r = await osPost("reabrir", { os_id: osId, motivo: motivoReabrir.trim() });
+                                        setReabrir(false);
+                                        setStatusAtual("ABERTA");
+                                        setVersaoItens((n) => n + 1);
+                                        return r;
+                                    }, "OS reaberta.")
+                                }
+                            >
+                                Reabrir
+                            </Botao>
+                        </div>
+                    </Modal>
                 )}
 
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row">

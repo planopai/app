@@ -13,6 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
+import ItensOSAjuste, { carregarItensOS } from "@/app/os/components/ItensOSAjuste";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -41,6 +42,10 @@ export type OsCampos = {
     translado_destino: string;
     translado_km: string;
     translado_autorizado_prefeitura: SimNao;
+    /** Prefeitura com pacote de coroa (pacote de Produto): a Prefeitura autorizou a coroa? Vale mesmo sem o pacote de atendimento. */
+    coroa_autorizada_prefeitura: SimNao;
+    /** "1" quando o convênio escolhido tem pacote de coroa (vem do cadastro, não é gravado no atendimento). */
+    pacote_coroa: "" | "1";
 };
 
 export const OS_CAMPOS_VAZIO: OsCampos = {
@@ -58,6 +63,8 @@ export const OS_CAMPOS_VAZIO: OsCampos = {
     translado_destino: "",
     translado_km: "",
     translado_autorizado_prefeitura: "",
+    coroa_autorizada_prefeitura: "",
+    pacote_coroa: "",
 };
 
 export const PLANOS = ["LIGHT", "FLEX", "PLUS", "MAX"] as const;
@@ -134,9 +141,20 @@ export async function lerOSDoAtendimento(atendimentoId: number | string): Promis
 }
 
 /** Valida o que a OS precisa antes de salvar o atendimento. Devolve a mensagem de erro ou null. */
-export function validarCamposOS(convenioTexto: string, tanato: string, c: OsCampos): string | null {
+/** Prefeitura com o pacote de atendimento NÃO autorizado: tudo vai para a família e as perguntas de tanatopraxia e translado somem. */
+export function pacoteNegado(c: OsCampos): boolean {
+    return !!c.convenio_id && !!c.pacote_id && c.pacote_autorizado_prefeitura === "Não";
+}
+
+/** A pergunta "A Prefeitura autorizou a coroa?" aparece: Prefeitura com pacote de coroa e coroa = Sim. */
+export function perguntaCoroa(convenioTexto: string, coroaFlores: string, c: OsCampos): boolean {
+    return tipoConvenio(convenioTexto, c.convenio_tipo) === "prefeitura" && c.pacote_coroa === "1" && String(coroaFlores).trim().toLowerCase() === "sim";
+}
+
+export function validarCamposOS(convenioTexto: string, tanato: string, c: OsCampos, coroaFlores = ""): string | null {
     const tipo = tipoConvenio(convenioTexto, c.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
+    const negado = pacoteNegado(c);
 
     if (tipo === "associado" && !c.convenio_os.startsWith("ASSOCIADO_")) {
         return "OS: informe o plano do associado (Itens → Dados da OS).";
@@ -147,16 +165,19 @@ export function validarCamposOS(convenioTexto: string, tanato: string, c: OsCamp
     if (tanatoSim && !c.tanato_produto_id) {
         return "OS: selecione o Tipo de procedimento da conservação.";
     }
-    if (tipo === "prefeitura" && tanatoSim && !c.tanato_autorizado_prefeitura) {
+    if (tipo === "prefeitura" && !negado && tanatoSim && !c.tanato_autorizado_prefeitura) {
         return "OS: informe se a Prefeitura autorizou a tanatopraxia.";
     }
     if (c.translado === "Sim") {
         if (!c.translado_origem.trim() || !c.translado_destino.trim() || !c.translado_km.trim()) {
             return "OS: informe partida, destino e distância do translado.";
         }
-        if (tipo === "prefeitura" && !c.translado_autorizado_prefeitura) {
+        if (tipo === "prefeitura" && !negado && !c.translado_autorizado_prefeitura) {
             return "OS: informe se a Prefeitura autorizou o translado.";
         }
+    }
+    if (perguntaCoroa(convenioTexto, coroaFlores, c) && !c.coroa_autorizada_prefeitura) {
+        return "OS: informe se a Prefeitura autorizou a coroa (aba Itens, Coroa de flores).";
     }
     return null;
 }
@@ -170,14 +191,21 @@ export async function salvarEsincronizarOS(
     convenioTexto: string,
     tanato: string,
     c: OsCampos,
+    coroaFlores = "",
 ): Promise<{ alteracoes: string[]; resumo: OsResumo }> {
     const tipo = tipoConvenio(convenioTexto, c.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
     const transladoSim = c.translado === "Sim";
+    const negado = pacoteNegado(c);
+    // A coluna da coroa só é enviada quando o convênio tem pacote de coroa: sem pacote de coroa nada muda no que é gravado.
+    const coroa: Record<string, string> = c.pacote_coroa === "1"
+        ? { coroa_autorizada_prefeitura: perguntaCoroa(convenioTexto, coroaFlores, c) ? c.coroa_autorizada_prefeitura : "" }
+        : {};
 
     await osChamar(
         "salvar_dados_os_atendimento",
         {
+            ...coroa,
             atendimento_id: atendimentoId,
             convenio_id: c.convenio_id,
             pacote_id: tipo === "particular" || tipo === "outro" ? "" : c.pacote_id,
@@ -185,13 +213,13 @@ export async function salvarEsincronizarOS(
             convenio_os: tipo === "associado" ? c.convenio_os : "",
             contrato_numero: tipo === "associado" ? c.contrato_numero : "",
             tanato_produto_id: tanatoSim ? c.tanato_produto_id : "",
-            tanato_autorizado_prefeitura: tipo === "prefeitura" && tanatoSim ? c.tanato_autorizado_prefeitura : "",
+            tanato_autorizado_prefeitura: tipo === "prefeitura" && tanatoSim && !negado ? c.tanato_autorizado_prefeitura : "",
             reconstituicao_facial: tanatoSim ? c.reconstituicao_facial : "",
             translado: c.translado,
             translado_origem: transladoSim ? c.translado_origem : "",
             translado_destino: transladoSim ? c.translado_destino : "",
             translado_km: transladoSim ? c.translado_km : "",
-            translado_autorizado_prefeitura: tipo === "prefeitura" && transladoSim ? c.translado_autorizado_prefeitura : "",
+            translado_autorizado_prefeitura: tipo === "prefeitura" && transladoSim && !negado ? c.translado_autorizado_prefeitura : "",
         },
         true,
     );
@@ -236,15 +264,15 @@ function SimNaoBotoes({ valor, onChange, disabled }: { valor: SimNao; onChange: 
     );
 }
 
-function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatopraxia" | "translado"; valor: SimNao; onChange: (v: SimNao) => void; disabled?: boolean }) {
+function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatopraxia" | "translado" | "coroa"; valor: SimNao; onChange: (v: SimNao) => void; disabled?: boolean }) {
     return (
         <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-4 py-2.5 text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
             <div className="min-w-[180px] flex-1 text-sm font-extrabold">
-                A Prefeitura autorizou {servico === "translado" ? "o translado" : "a tanatopraxia"}?
+                A Prefeitura autorizou {servico === "translado" ? "o translado" : servico === "coroa" ? "a coroa" : "a tanatopraxia"}?
             </div>
             <SimNaoBotoes valor={valor} onChange={onChange} disabled={disabled} />
             {valor === "Sim" ? <span className="rounded-full bg-[#EEF5D6] px-3 py-1 text-xs font-extrabold text-[#313C55]">entra no contrato</span> : null}
-            {valor === "Não" ? <span className="rounded-full bg-[#E6F7FE] px-3 py-1 text-xs font-extrabold text-[#313C55]">vai para a diferença da família</span> : null}
+            {valor === "Não" ? <span className="rounded-full bg-[#E6F7FE] px-3 py-1 text-xs font-extrabold text-[#313C55]">{servico === "coroa" ? "vai para a família (preço particular)" : "vai para a diferença da família"}</span> : null}
             {valor === "" ? <span className="text-xs font-extrabold text-[#B42318] dark:text-[#FF9C92]">obrigatório</span> : null}
         </div>
     );
@@ -319,30 +347,33 @@ function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: 
 }
 
 /* =========================================================================================================
-   Vínculo com o cadastro de Convênios + prévia da OS em tempo real  (os_principal.php: convenios_opcoes e previa_os_atendimento)
+   Vínculo com o cadastro de Convênios + prévia da OS em tempo real  (os_previa.php)
    A prévia NÃO grava nada: a OS só entra no banco quando o registro é salvo.
    ========================================================================================================= */
+const PREVIA_API = `${API_BASE}/os_previa.php`;
+
 export type ItemPacoteOpcao = { chave: string; rotulo: string; quantidade: number; tipo: string; produtos: { produto_id: number; nome: string }[]; valor_contrato?: number | null };
 export type PacoteOpcao = { id: number; nome: string; padrao: boolean; itens: ItemPacoteOpcao[]; realiza_velorio: boolean; realiza_sepultamento: boolean };
-export type ConvenioOpcao = { id: number; nome: string; tipo: TipoCadastro; codigo: string; pacotes: PacoteOpcao[]; aditivos_permitidos: string[] };
+/** pacotes = só os pacotes de ATENDIMENTO, na ordem do cadastro. tem_pacote_coroa: Prefeitura com pacote de Produto de coroa. */
+export type ConvenioOpcao = { id: number; nome: string; tipo: TipoCadastro; codigo: string; pacotes: PacoteOpcao[]; aditivos_permitidos: string[]; tem_pacote_coroa?: boolean };
 
-/** Convênios/pacotes e a prévia da OS vêm do os_principal.php (mesmo login e permissão da OS no atendimento). */
 async function previaChamar(acao: "opcoes" | "previa", corpo?: unknown, signal?: AbortSignal) {
-    const qs = new URLSearchParams({ [acao === "opcoes" ? "convenios_opcoes" : "previa_os_atendimento"]: "1" });
-    if (corpo !== undefined) qs.set("rascunho", JSON.stringify(corpo));
-    const res =
-        corpo === undefined
-            ? await fetch(`${OS_API}?${qs.toString()}&_=${Date.now()}`, { credentials: "include", cache: "no-store", signal })
-            : await fetch(OS_API, { method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: qs, signal });
+    const res = await fetch(`${PREVIA_API}?acao=${acao}&_=${Date.now()}`, {
+        method: corpo === undefined ? "GET" : "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: corpo === undefined ? undefined : { "Content-Type": "application/json" },
+        body: corpo === undefined ? undefined : JSON.stringify(corpo),
+        signal,
+    });
     const json = await res.json().catch(() => null);
-    if (res.status === 401 || json?.need_login) {
+    if (res.status === 401 || json?.need_login || json?.code === "NEED_LOGIN") {
         if (typeof window !== "undefined") window.location.href = LOGIN_URL;
         throw new Error("Sessão expirada.");
     }
-    if (res.status === 404 && /Nenhuma ação reconhecida/i.test(String(json?.msg ?? ""))) {
-        throw new Error("Prévia indisponível: o os_principal.php do servidor ainda é a versão antiga. Publique a versão nova.");
+    if (res.status === 404 || (!json && !res.ok)) {
+        throw new Error("Prévia indisponível: o arquivo os_previa.php ainda não está no servidor.");
     }
-    if (!res.ok && !json) throw new Error(`Falha na requisição (${res.status}).`);
     if (!res.ok || json?.erro || json?.sucesso === false) throw new Error(json?.msg || `Falha na requisição (${res.status}).`);
     return json.dados ?? json.data;
 }
@@ -401,6 +432,7 @@ export function resolverVinculo(convenios: ConvenioOpcao[], texto: string, c: Os
         convenio_id: String(conv.id),
         convenio_tipo: conv.tipo,
         pacote_id: pac ? String(pac.id) : "",
+        pacote_coroa: conv.tem_pacote_coroa ? "1" : "",
     };
     if (conv.tipo === "ASSOCIADO" && conv.codigo) novo.convenio_os = conv.codigo;
     const mudou = (Object.keys(novo) as (keyof OsCampos)[]).some((k) => (c as any)[k] !== (novo as any)[k]);
@@ -450,6 +482,8 @@ export function ConvenioVinculo({
             convenio_os: c && c.tipo === "ASSOCIADO" ? c.codigo : "",
             pacote_id: pac ? String(pac.id) : "",
             pacote_autorizado_prefeitura: "",
+            pacote_coroa: c?.tem_pacote_coroa ? "1" : "",
+            coroa_autorizada_prefeitura: "",
         });
     };
 
@@ -540,7 +574,7 @@ export function ConvenioVinculo({
                         {valores.pacote_autorizado_prefeitura === "Sim"
                             ? "Os itens do pacote entram na OS da Prefeitura; o que passar do pacote vai para a diferença da família."
                             : valores.pacote_autorizado_prefeitura === "Não"
-                                ? "Sem a autorização, o pacote não cobre nada: toda a OS fica com a família."
+                                ? "Sem a autorização, o pacote não cobre nada: toda a OS fica com a família, pelo preço particular." + (conv.tem_pacote_coroa ? " A coroa segue a pergunta própria." : "")
                                 : "Obrigatório: define como a OS é dividida entre a Prefeitura e a família."}
                     </p>
                 </LinhaSimNao>
@@ -586,6 +620,7 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         reconstituicao_facial: os.reconstituicao_facial || "Não",
         translado: os.translado || "Não", translado_km: os.translado_km,
         translado_autorizado_prefeitura: os.translado_autorizado_prefeitura,
+        coroa_autorizada_prefeitura: os.coroa_autorizada_prefeitura,
         realiza_velorio: sim(s.realizaVelorio), realiza_sepultamento: sim(s.realizaSepultamento),
     };
 }
@@ -597,44 +632,21 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
         (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim");
 }
 
-type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA" | "A_PARTE"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
+type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
 
-function LinhaDaPrevia({ l, compacto, prefeitura }: { l: LinhaPrevia; compacto: boolean; prefeitura?: boolean }) {
-    const nome = l.nome && l.nome !== l.rotulo ? `${l.rotulo}: ${l.nome}` : l.rotulo;
-    const valor =
-        l.destino === "FAMILIA"
-            ? l.valor !== null
-                ? brl(l.valor * Math.max(1, l.qtd))
-                : "valor definido pela OS"
-            : l.destino === "CONVENIO"
-                ? l.valor !== null
-                    ? `${prefeitura ? "contrato" : "coberto"} ${brl(l.valor)}`
-                    : l.valor_oculto
-                        ? "no contrato"
-                        : "coberto"
-                : l.destino === "A_PARTE"
-                    ? "pedido à parte"
-                    : "sem cobrança";
-    return (
-        <li className={`flex items-baseline gap-3 ${compacto ? "py-1 text-[13px]" : "py-1.5 text-sm"}`}>
-            <span className="min-w-0 flex-1">
-                <span className="block break-words font-bold text-[#313C55] dark:text-white">{nome}</span>
-                {l.motivo ? <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">{l.motivo}</span> : null}
-            </span>
-            <span className={`shrink-0 text-right text-xs font-extrabold ${l.destino === "FAMILIA" && l.valor !== null ? "text-[#313C55] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{valor}</span>
-        </li>
-    );
-}
-
-/** Prévia da OS em tempo real. Lê o rascunho do formulário (contexto) e refaz o cálculo a cada mudança, sem gravar nada. */
-export function PreviaOS({ compacto = false }: { compacto?: boolean }) {
+/**
+ * Cálculo da OS com o que está na tela agora (os_previa.php; nada é gravado).
+ * Alimenta o "Resumo da OS": os valores mudam conforme os itens, o pacote e a autorização são marcados.
+ * A OS só é gravada (e o resumo passa a bater com a OS salva) quando o registro é salvo.
+ */
+export function usePreviaOS(ativo = true) {
     const rascunho = React.useContext(RascunhoOSContext);
     const [s, setS] = useState<{ carregando: boolean; erro: string; d: any | null }>({ carregando: false, erro: "", d: null });
     const temBase = rascunhoTemConteudo(rascunho);
     const chave = JSON.stringify(rascunho ?? null);
 
     useEffect(() => {
-        if (!rascunho || !temBase) {
+        if (!ativo || !rascunho || !temBase) {
             setS({ carregando: false, erro: "", d: null });
             return;
         }
@@ -646,7 +658,7 @@ export function PreviaOS({ compacto = false }: { compacto?: boolean }) {
                 setS({ carregando: false, erro: "", d });
             } catch (e: any) {
                 if (ctl.signal.aborted) return;
-                setS({ carregando: false, erro: e?.message || "Prévia indisponível.", d: null });
+                setS({ carregando: false, erro: e?.message || "Cálculo da OS indisponível.", d: null });
             }
         }, 450);
         return () => {
@@ -654,81 +666,20 @@ export function PreviaOS({ compacto = false }: { compacto?: boolean }) {
             ctl.abort();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chave, temBase]);
+    }, [chave, temBase, ativo]);
 
-    const d = s.d;
-    const linhas: LinhaPrevia[] = d?.linhas ?? [];
-    const cobertas = linhas.filter((l) => l.destino === "CONVENIO");
-    const familia = linhas.filter((l) => l.destino === "FAMILIA");
-    const semCobranca = linhas.filter((l) => l.destino === "SEM_COBRANCA" || l.destino === "A_PARTE");
-    const ehPref = d?.convenio?.tipo === "PREFEITURA";
-    const pend = Number(d?.totais?.familia_valores_pendentes ?? 0);
-
-    return (
-        <section aria-label="Prévia da OS" className={`rounded-[14px] border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F] ${compacto ? "p-3.5" : "p-4"}`}>
-            <div className="flex items-center gap-2">
-                <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Prévia da OS</h3>
-                {s.carregando ? <span className="text-[11px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">atualizando…</span> : null}
-                <span className="rounded-full bg-[#E6F7FE] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#00AEEC]/20 dark:text-white">em tempo real</span>
-            </div>
-
-            {!temBase ? (
-                <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Escolha o convênio e os itens: a OS aparece aqui conforme você marca ou tira cada item.</p>
-            ) : s.erro ? (
-                <p className="mt-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{s.erro}</p>
-            ) : !d ? (
-                <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Calculando…</p>
-            ) : (
-                <>
-                    <p className="mt-1.5 text-xs font-bold text-[#313C55] dark:text-white">
-                        {d.convenio?.nome ?? "Particular"}
-                        {d.pacote ? ` · ${d.pacote.nome}` : ""}
-                        {d.pacote_autorizado === true ? " · Prefeitura autorizou" : d.pacote_autorizado === false ? " · Prefeitura NÃO autorizou" : ""}
-                    </p>
-
-                    {linhas.length === 0 ? <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Nenhum item marcado ainda.</p> : null}
-
-                    {cobertas.length ? (
-                        <div className="mt-3 rounded-xl bg-[#EEF5D6] px-3 py-2 dark:bg-[#B3CE52]/15">
-                            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#5C7A12] dark:text-[#B3CE52]">{ehPref ? "Faturado à Prefeitura" : "Coberto pelo plano"}</div>
-                            <ul className="divide-y divide-[#B3CE52]/30">{cobertas.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} prefeitura={ehPref} />)}</ul>
-                        </div>
-                    ) : null}
-
-                    {familia.length ? (
-                        <div className="mt-3 rounded-xl bg-[#FCF3CC] px-3 py-2 dark:bg-[#F2CB3F]/15">
-                            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#7A5600] dark:text-[#F2CB3F]">{cobertas.length ? "Diferença da família" : "Total da família"}</div>
-                            <ul className="divide-y divide-[#F2CB3F]/40">{familia.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} prefeitura={ehPref} />)}</ul>
-                            <div className="mt-1.5 flex items-baseline gap-3 border-t border-[#F2CB3F]/50 pt-2">
-                                <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">A pagar pela família</span>
-                                <span className="text-lg font-extrabold text-[#313C55] dark:text-white">{brl(d.totais?.familia ?? 0)}</span>
-                            </div>
-                            {pend > 0 ? <p className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">+ {pend} {pend === 1 ? "item" : "itens"} com valor definido pela OS ao salvar.</p> : null}
-                        </div>
-                    ) : null}
-
-                    {semCobranca.length ? (
-                        <ul className="mt-2 divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">{semCobranca.map((l, i) => <LinhaDaPrevia key={`${l.chave}-${i}`} l={l} compacto={compacto} prefeitura={ehPref} />)}</ul>
-                    ) : null}
-
-                    {(d.avisos ?? []).map((a: string, i: number) => (
-                        <p key={i} className="mt-2 rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-xs font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">{a}</p>
-                    ))}
-                </>
-            )}
-            <p className="mt-3 text-[11px] leading-snug text-[#7A8396] dark:text-[#8893AA]">Prévia: nada é gravado agora. A OS só entra no banco quando você salvar o registro, e o valor final é conferido nesse momento.</p>
-        </section>
-    );
+    return { ...s, temBase };
 }
 
-export type ParteOS = "tudo" | "procedimento" | "translado" | "resumo";
+export type ParteOS = "tudo" | "procedimento" | "translado" | "resumo" | "coroa";
 
 /**
  * Seção da OS no "Editar registro". Pode ser desenhada em partes, cada uma no seu lugar do assistente:
  *  - "procedimento": Tipo de procedimento (logo depois de Tanatopraxia, quando Sim) + Reconstituição facial (Sim/Não);
  *  - "translado": item Translado (entre Invol e Velório);
  *  - "resumo": plano do associado, Resumo da OS e Visualização da OS (no fim);
- *  - "tudo" (padrão): as três em sequência.
+ *  - "coroa": "A Prefeitura autorizou a coroa?" (logo abaixo da Coroa de flores; só Prefeitura com pacote de coroa);
+ *  - "tudo" (padrão): procedimento, translado e resumo em sequência.
  */
 export function SecaoOSAtendimento({
     convenio,
@@ -740,9 +691,11 @@ export function SecaoOSAtendimento({
     versao = 0,
     disabled,
     parte = "tudo",
+    coroaFlores = "",
 }: {
     convenio: string;
     tanato: string;
+    coroaFlores?: string;
     valores: OsCampos;
     onChange: (parcial: Partial<OsCampos>) => void;
     colunasFaltando?: string[];
@@ -759,12 +712,16 @@ export function SecaoOSAtendimento({
     const mostraProc = parte === "tudo" || parte === "procedimento";
     const mostraTransl = parte === "tudo" || parte === "translado";
     const mostraResumo = parte === "tudo" || parte === "resumo";
+    const negado = pacoteNegado(valores);
 
     const [modelos, setModelos] = useState<{ produto_id: number; nome: string }[]>([]);
     const [modelosErro, setModelosErro] = useState("");
     const [resumo, setResumo] = useState<OsResumo | null>(null);
     const [resumoErro, setResumoErro] = useState("");
     const [folhaAberta, setFolhaAberta] = useState(false);
+    const [osAba, setOsAba] = useState<number | null>(null);
+    /** Ajustes já gravados na OS da família (acréscimos − descontos): somados ao valor calculado com a tela. */
+    const [ajusteFamilia, setAjusteFamilia] = useState(0);
 
     useEffect(() => {
         if (!mostraProc || !tanatoSim || modelos.length) return;
@@ -794,7 +751,43 @@ export function SecaoOSAtendimento({
 
     const os = [resumo?.os_convenio, resumo?.os_particular].filter(Boolean) as any[];
     const ehPref = tipo === "prefeitura";
+    const osPartId = resumo?.os_particular?.id ?? null;
+
+    const calcularAjuste = useCallback((dd: { itens: any[]; resumo: any } | null) => {
+        if (!dd) return setAjusteFamilia(0);
+        const tabela = dd.itens.filter((i) => !i.referencia_apenas).reduce((s, i) => s + Number(i.valor_tabela_unitario) * Number(i.quantidade), 0);
+        setAjusteFamilia(Math.round((Number(dd.resumo.bruto) - tabela - Number(dd.resumo.reducao)) * 100) / 100);
+    }, []);
+    useEffect(() => {
+        if (!mostraResumo || !osPartId) return setAjusteFamilia(0);
+        let vivo = true;
+        carregarItensOS(osPartId)
+            .then((dd) => vivo && calcularAjuste(dd))
+            .catch(() => vivo && setAjusteFamilia(0));
+        return () => {
+            vivo = false;
+        };
+    }, [mostraResumo, osPartId, versao, calcularAjuste]);
     const opcoes = modelosProcedimento(modelos);
+
+    /* Resumo da OS: valores do cálculo com a tela atual; sem cálculo, os valores da OS salva. */
+    const previa = usePreviaOS(mostraResumo);
+    const dp = previa.d;
+    const linhasPrevia: LinhaPrevia[] = dp?.linhas ?? [];
+    const temConvenioAgora = dp ? linhasPrevia.some((l) => l.destino === "CONVENIO") : !!resumo?.os_convenio;
+    const prefAgora = dp ? dp.convenio?.tipo === "PREFEITURA" : ehPref;
+    const familiaAgora: number | null = dp ? Math.max(0, Number(dp.totais?.familia ?? 0) + (osPartId ? ajusteFamilia : 0)) : null;
+    const pendFamilia = Number(dp?.totais?.familia_valores_pendentes ?? 0);
+    const salvoFamilia: number | null = resumo?.os_particular ? Number(resumo.os_particular.valor_total) || 0 : null;
+    const temFamiliaAgora = dp ? linhasPrevia.some((l) => l.destino === "FAMILIA") : salvoFamilia != null;
+    const familiaMostrar: number | null = temFamiliaAgora ? (familiaAgora ?? salvoFamilia) : null;
+    const familiaDiverge = familiaAgora != null && salvoFamilia != null && Math.abs(familiaAgora - salvoFamilia) > 0.005;
+    const pendenteDeSalvar =
+        !!dp &&
+        (familiaDiverge ||
+            (temFamiliaAgora && !resumo?.os_particular) ||
+            (temConvenioAgora && !resumo?.os_convenio) ||
+            (!temConvenioAgora && !!resumo?.os_convenio));
 
     return (
         <>
@@ -830,7 +823,7 @@ export function SecaoOSAtendimento({
                             {opcoes.length === 0 && !modelosErro ? <span className="py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando as opções…</span> : null}
                         </div>
                         {modelosErro ? <p className="mt-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{modelosErro}</p> : null}
-                        {ehPref ? (
+                        {ehPref && !negado ? (
                             <Autorizacao servico="tanatopraxia" valor={valores.tanato_autorizado_prefeitura} onChange={(v) => onChange({ tanato_autorizado_prefeitura: v })} disabled={disabled} />
                         ) : null}
                     </div>
@@ -840,6 +833,13 @@ export function SecaoOSAtendimento({
                             <p className="mt-1.5 px-1 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Serviço adicional: entra na OS junto com o procedimento.</p>
                         ) : null}
                     </LinhaSimNao>
+                </div>
+            ) : null}
+
+            {/* ---------------- COROA DA PREFEITURA (pacote de produto; vale mesmo sem o pacote de atendimento) ---------------- */}
+            {parte === "coroa" && perguntaCoroa(convenio, coroaFlores, valores) ? (
+                <div data-os-parte="coroa">
+                    <Autorizacao servico="coroa" valor={valores.coroa_autorizada_prefeitura} onChange={(v) => onChange({ coroa_autorizada_prefeitura: v })} disabled={disabled} />
                 </div>
             ) : null}
 
@@ -870,7 +870,7 @@ export function SecaoOSAtendimento({
                                         />
                                     </label>
                                 </div>
-                                {ehPref ? (
+                                {ehPref && !negado ? (
                                     <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
                                 ) : null}
                             </div>
@@ -887,8 +887,9 @@ export function SecaoOSAtendimento({
                     ) : null}
 
                     {colunasFaltando.length ? (
-                        <div className="mt-3 rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
-                            Faltam colunas da OS no banco ({colunasFaltando.join(", ")}). Rode o <b>alteracoes_atendimento_sugeridas.sql</b> para poder salvar estes campos.
+                        <div role="alert" className="mt-3 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                            Faltam colunas da OS no banco ({colunasFaltando.join(", ")}). Enquanto isso, o pacote, a autorização da Prefeitura e a OS não são gravados ao salvar.
+                            Rode o <b>alteracoes_atendimento_sugeridas.sql</b> no banco.
                         </div>
                     ) : null}
 
@@ -914,47 +915,52 @@ export function SecaoOSAtendimento({
                         </div>
                     ) : null}
 
-                    {/* PRÉVIA DA OS: em tempo real, sem gravar */}
-                    <div className={(tipo === "associado" && !planoDoCadastro) || colunasFaltando.length ? "mt-5" : ""}>
-                        <PreviaOS />
-                    </div>
-
-                    {/* OS JÁ GERADA (salva no banco): só existe depois que o registro foi salvo */}
-                    {atendimentoId != null && atendimentoId !== "" ? (
-                        <div className="mt-5">
-                            <div className="flex items-center gap-2">
-                                <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">OS já gerada (salva)</h3>
-                                <button
-                                    type="button"
-                                    onClick={() => void carregarResumo()}
-                                    className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
-                                >
-                                    Atualizar
-                                </button>
+                    {/* RESUMO DA OS: valores calculados com o que está na tela; a OS é gravada ao salvar o registro */}
+                    {atendimentoId != null && atendimentoId !== "" || previa.temBase ? (
+                        <div className={(tipo === "associado" && !planoDoCadastro) || colunasFaltando.length ? "mt-5" : ""}>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Resumo da OS</h3>
+                                {previa.carregando ? (
+                                    <span className="text-[11px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">atualizando…</span>
+                                ) : pendenteDeSalvar ? (
+                                    <span className="rounded-full bg-[#FCF3CC] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">alterado · grava ao salvar</span>
+                                ) : os.length ? (
+                                    <span className="rounded-full bg-[#EEF5D6] px-2.5 py-0.5 text-[11px] font-extrabold text-[#313C55] dark:bg-[#B3CE52]/20 dark:text-white">OS salva e em dia</span>
+                                ) : null}
                             </div>
 
                             {resumoErro ? (
                                 <p className="mt-2 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">OS: {resumoErro}</p>
-                            ) : os.length === 0 ? (
-                                <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Ainda não há OS salva para este atendimento. Salve o registro para montar.</p>
+                            ) : null}
+                            {previa.erro ? (
+                                <p className="mt-2 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Não foi possível recalcular agora ({previa.erro}). Mostrando a OS salva.</p>
+                            ) : null}
+
+                            {!temConvenioAgora && familiaAgora == null && os.length === 0 ? (
+                                <p className="mt-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Escolha o convênio e os itens: os valores da OS aparecem aqui.</p>
                             ) : (
                                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    {resumo?.os_convenio ? (
+                                    {temConvenioAgora ? (
                                         <CartaoResumo
-                                            rotulo={ehPref ? "Faturar à Prefeitura" : "Coberto pelo plano"}
-                                            os={resumo.os_convenio}
-                                            tom={ehPref ? "azul" : "verde"}
-                                            valor={ehPref ? undefined : "Total a pagar R$ 0,00"}
-                                            texto={ehPref ? "O valor do contrato fica no financeiro." : undefined}
+                                            rotulo={prefAgora ? "Faturar à Prefeitura" : "Coberto pelo plano"}
+                                            os={resumo?.os_convenio ?? { numero_os: "Nova OS ao salvar" }}
+                                            tom={prefAgora ? "azul" : "verde"}
+                                            valor={prefAgora ? undefined : "Total a pagar R$ 0,00"}
+                                            texto={prefAgora ? "O valor do contrato fica no financeiro." : undefined}
                                         />
                                     ) : null}
-                                    {resumo?.os_particular ? (
+                                    {familiaMostrar != null ? (
                                         <CartaoResumo
-                                            rotulo={resumo?.os_convenio ? "Diferença da família" : "Total da OS"}
-                                            os={resumo.os_particular}
+                                            rotulo={temConvenioAgora ? "Diferença da família" : "Total da família"}
+                                            os={resumo?.os_particular ?? { numero_os: "Nova OS ao salvar" }}
                                             tom="amarelo"
-                                            valor={brl(resumo.os_particular.valor_total)}
-                                            texto="Confirme os valores e colha a assinatura em Minhas OS."
+                                            valor={brl(familiaMostrar)}
+                                            texto={
+                                                (pendFamilia > 0 ? `+ ${pendFamilia} ${pendFamilia === 1 ? "item" : "itens"} com valor definido ao salvar. ` : "") +
+                                                (familiaDiverge && salvoFamilia != null
+                                                    ? `OS salva: ${brl(salvoFamilia)} — salve o registro para atualizar.`
+                                                    : "Confirme os valores e colha a assinatura em Minhas OS.")
+                                            }
                                         />
                                     ) : null}
                                 </div>
@@ -962,39 +968,75 @@ export function SecaoOSAtendimento({
                         </div>
                     ) : null}
 
-                    {/* VISUALIZAÇÃO DA OS */}
+                    {/* VISUALIZAÇÃO DA OS: recolhida; só aparece quando pedida. Na OS da família, ajuste de valor e desconto pelo ícone. */}
                     {os.length ? (
                         <div className="mt-5">
-                            <div className="flex items-center gap-2">
-                                <h3 className="flex-1 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Visualização da OS</h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Visualização da OS</h3>
+                                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
+                                    {os.length === 1 ? "1 OS" : `${os.length} OS`} · {os.map((o) => o.numero_os).join(" · ")}
+                                </span>
                                 <button
                                     type="button"
+                                    aria-expanded={folhaAberta}
                                     onClick={() => setFolhaAberta((v) => !v)}
                                     className="h-9 rounded-xl border-[1.5px] border-[#313C55] px-3 text-xs font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
                                 >
-                                    {folhaAberta ? "Ocultar folha" : "Ver folha"}
+                                    {folhaAberta ? "Ocultar OS" : "Ver OS"}
                                 </button>
                             </div>
-                            <p className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Rascunho: a folha se monta conforme os itens são lançados.</p>
 
-                            {folhaAberta ? (
-                                <div className="mt-2 space-y-3">
-                                    {os.map((o) => {
-                                        const url = `${OS_API}?documento_os=1&os_id=${o.id}&formato=visualizar&_=${versao}`;
-                                        return (
-                                            <div key={o.id} className={CARTAO}>
-                                                <div className="mb-2 flex items-center gap-2">
-                                                    <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">OS nº {o.numero_os}</span>
-                                                    <a href={url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#313C55] underline dark:text-white">
-                                                        Abrir em nova aba
-                                                    </a>
-                                                </div>
-                                                <iframe title={`Folha da OS ${o.numero_os}`} src={url} className="h-[420px] w-full rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]" />
+                            {folhaAberta ? (() => {
+                                const sel = os.find((o) => o.id === osAba) ?? os[os.length - 1];
+                                const url = `${OS_API}?documento_os=1&os_id=${sel.id}&formato=visualizar&_=${versao}`;
+                                const daFamilia = sel.natureza === "PARTICULAR";
+                                return (
+                                    <div className="mt-2">
+                                        {os.length > 1 ? (
+                                            <div role="tablist" aria-label="OS do atendimento" className="mb-2 flex flex-wrap gap-2">
+                                                {os.map((o) => (
+                                                    <button
+                                                        key={o.id}
+                                                        type="button"
+                                                        role="tab"
+                                                        aria-selected={o.id === sel.id}
+                                                        onClick={() => setOsAba(o.id)}
+                                                        className={[
+                                                            "h-9 rounded-full border-[1.5px] px-4 text-xs font-extrabold",
+                                                            o.id === sel.id
+                                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                                                : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-white",
+                                                        ].join(" ")}
+                                                    >
+                                                        {o.numero_os}
+                                                    </button>
+                                                ))}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : null}
+                                        ) : null}
+                                        <div className={CARTAO}>
+                                            <div className="mb-2 flex items-center gap-2">
+                                                <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">OS nº {sel.numero_os}</span>
+                                                <a href={url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#313C55] underline dark:text-white">
+                                                    Abrir folha
+                                                </a>
+                                            </div>
+                                            {daFamilia ? (
+                                                <ItensOSAjuste
+                                                    osId={sel.id}
+                                                    editavel={sel.status === "ABERTA"}
+                                                    versao={versao}
+                                                    onMudou={(dd) => {
+                                                        calcularAjuste(dd);
+                                                        void carregarResumo();
+                                                    }}
+                                                />
+                                            ) : (
+                                                <iframe title={`Folha da OS ${sel.numero_os}`} src={url} className="h-[420px] w-full rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]" />
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })() : null}
                         </div>
                     ) : null}
                 </section>

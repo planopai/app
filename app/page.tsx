@@ -24,7 +24,7 @@ import { formatarSelo, useContadores } from "@/components/shell/useContadores";
  *
  * Da home anterior ficaram: o relógio, a pesquisa de funções (só entram páginas permitidas; casa pelo começo do título),
  * o contador do Messenger (não lidas + fila de clientes) e o filtro por permissões (`usePerms`).
- * Novos: boas-vindas com o nome, resumo de números, "Acesso rápido" (Quadro, Minhas OS, Messenger, Chat e Avisos) e os
+ * Novos: boas-vindas com o nome, resumo de números, "Acesso rápido" (Quadro, Minhas OS, Messenger e Chat) e os
  * módulos do organograma.
  *
  * Os números vêm de useContadores (mesmas consultas da home anterior; atendimentos pela regra do Quadro, concluídos não contam).
@@ -130,16 +130,11 @@ export default function HomePage() {
         return itens.filter((i) => i.mostrar);
     }, [c, pronto, has]);
 
-    /* Acesso rápido: Quadro, Minhas OS, Messenger (só com a página), Chat e Avisos */
+    /* Acesso rápido: Quadro, Minhas OS, Messenger (só com a página) e Chat. Avisos fica no sino. Item ausente é ignorado. */
     const rapidos = useMemo(() => {
-        const messenger = MODULOS.find((m) => m.id === "comunicacao")!.itens.find((i) => i.href === "/messenger")!;
-        const lista = [
-            FIXOS.find((f) => f.titulo === "Quadro de Atendimentos")!,
-            FIXOS.find((f) => f.titulo === "Minhas OS")!,
-            messenger,
-            FIXOS.find((f) => f.titulo === "Aurora")!,
-            FIXOS.find((f) => f.titulo === "Avisos")!,
-        ];
+        const lista = ["/quadro-acompanhamento", "/os/minhas", "/messenger", "/chat"]
+            .map((href) => FIXOS.find((f) => f.href === href))
+            .filter((i): i is (typeof FIXOS)[number] => !!i);
         return lista.filter((i) => pronto && itemVisivel(i, has));
     }, [pronto, has]);
 

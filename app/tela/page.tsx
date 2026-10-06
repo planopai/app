@@ -419,7 +419,7 @@ export default function PainelTV() {
 
       <div className="min-h-screen w-full bg-[#0e2a44] text-white">
         {/* Top bar com logo central */}
-        <header className="bg-[#059de0]">
+        <header className="bg-[#313C55]">
           <div className="mx-auto grid h-20 w-full max-w-[1920px] grid-cols-3 items-center px-4 sm:h-24 sm:px-8">
             <div className="hidden sm:block" />
             <div className="flex items-center justify-center">
@@ -458,7 +458,7 @@ export default function PainelTV() {
               <h2 className="text-center text-2xl font-extrabold tracking-tight sm:text-4xl">
                 Quadro de Atendimentos
               </h2>
-              <div className="mx-auto mt-2 h-1 w-24 rounded-full bg-[#059de0]/80" />
+              <div className="mx-auto mt-2 h-1 w-24 rounded-full bg-[#313C55]/80" />
             </div>
 
             {/* Tabela */}

@@ -6,7 +6,9 @@ import Modal from "./Modal";
 import CoroasAtendimentoEditor from "./CoroasAtendimentoEditor";
 import { Registro, CoroaAtendimentoItem } from "./types";
 import { proximaEtapaDoRegistro } from "./proximaEtapa";
-import { RascunhoOSContext, PreviaOS, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
+import { RascunhoOSContext, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
+import { situacaoTermo } from "./termos";
+import { getLatestOfflineSignature } from "@/lib/offline/signatures";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -864,6 +866,51 @@ function IcDoc() {
     );
 }
 
+/** Ícone de concluído (círculo com check) para o termo assinado. */
+function IcOk() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.5 2.5 4.5-5" />
+        </svg>
+    );
+}
+
+/**
+ * Situação de cada termo: assinado no servidor, salvo só no aparelho (aguardando envio) ou pendente.
+ * A assinatura do servidor vem do próprio registro (assinatura_responsavel / assinatura_requerente);
+ * a do aparelho vem da fila offline (lib/offline/signatures), a mesma que o SignatureModal grava.
+ */
+function useSituacaoTermos(registro: Registro | null) {
+    const servidor = {
+        recebimento: situacaoTermo(registro, "recebimento"),
+        requisicao: situacaoTermo(registro, "requisicao"),
+    };
+    const [noAparelho, setNoAparelho] = useState<{ recebimento: boolean; requisicao: boolean }>({ recebimento: false, requisicao: false });
+    const id = registro?.id != null ? String(registro.id) : "";
+    useEffect(() => {
+        if (!id) return;
+        let vivo = true;
+        (async () => {
+            const r: { recebimento: boolean; requisicao: boolean } = { recebimento: false, requisicao: false };
+            for (const t of ["recebimento", "requisicao"] as const) {
+                try {
+                    const local: any = await getLatestOfflineSignature(id, t);
+                    r[t] = !!local && local.status !== "synced";
+                } catch {
+                    /* sem armazenamento local: fica só o que veio do servidor */
+                }
+            }
+            if (vivo) setNoAparelho(r);
+        })();
+        return () => {
+            vivo = false;
+        };
+        // a lista é refeita quando o registro volta do servidor (depois de assinar)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, servidor.recebimento.url, servidor.requisicao.url]);
+    return { servidor, noAparelho };
+}
+
 function PainelEdicao({
     registro,
     proxima,
@@ -876,37 +923,48 @@ function PainelEdicao({
     onDocumento?: (tipo: "recebimento" | "requisicao") => void;
     onRegistrarAcao?: () => void;
 }) {
-    const botaoDoc =
-        "inline-flex h-11 w-full items-center justify-start gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-left text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
-    const baixar =
-        "inline-flex h-9 w-full items-center justify-center rounded-lg bg-[#EEF5D6] px-3 text-xs font-extrabold text-[#313C55] hover:bg-[#E2EDBB] dark:bg-[#B3CE52]/20 dark:text-white";
-    const a: any = registro ?? {};
     const novo = !registro;
+    const { servidor, noAparelho } = useSituacaoTermos(registro);
+    const termos = [
+        { tipo: "recebimento" as const, titulo: "Termo de recebimento de material" },
+        { tipo: "requisicao" as const, titulo: "Termo de requisição de veículo" },
+    ];
     return (
         <div className={`flex-col gap-4 ${novo ? "hidden lg:flex" : "flex"}`}>
-            <PreviaOS compacto />
-
             <section className="rounded-[18px] border border-[#E3E8F0] bg-white p-5 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
                 <div className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
                 <div className="flex flex-col gap-2.5">
-                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("recebimento")} disabled={!onDocumento || novo}>
-                        <IcDoc />
-                        Termo de recebimento de material
-                    </button>
-                    {a?.assinatura_recebimento_url ? (
-                        <a className={baixar} href={a.assinatura_recebimento_url} target="_blank" rel="noreferrer">
-                            Baixar termo assinado
-                        </a>
-                    ) : null}
-                    <button type="button" className={botaoDoc} onClick={() => onDocumento?.("requisicao")} disabled={!onDocumento || novo}>
-                        <IcDoc />
-                        Termo de requisição de veículo
-                    </button>
-                    {a?.assinatura_requisicao_url ? (
-                        <a className={baixar} href={a.assinatura_requisicao_url} target="_blank" rel="noreferrer">
-                            Baixar termo assinado
-                        </a>
-                    ) : null}
+                    {termos.map(({ tipo, titulo }) => {
+                        const sv = servidor[tipo];
+                        const local = !sv.assinado && noAparelho[tipo];
+                        const feito = sv.assinado || local;
+                        const sub = sv.assinado
+                            ? `Assinado${sv.nome ? ` por ${sv.nome}` : ""} · toque para ver`
+                            : local
+                                ? "Salvo no aparelho · aguardando envio"
+                                : "Pendente de assinatura";
+                        return (
+                            <button
+                                key={tipo}
+                                type="button"
+                                onClick={() => onDocumento?.(tipo)}
+                                disabled={!onDocumento || novo}
+                                aria-label={`${titulo}: ${sub}`}
+                                className={[
+                                    "flex min-h-[56px] w-full items-center gap-3 rounded-xl border-[1.5px] px-4 py-2.5 text-left disabled:opacity-50",
+                                    feito
+                                        ? "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] hover:bg-[#E2EDBB] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/15 dark:text-white"
+                                        : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                                ].join(" ")}
+                            >
+                                <span className={feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : ""}>{feito ? <IcOk /> : <IcDoc />}</span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-sm font-bold leading-tight">{titulo}</span>
+                                    <span className={`mt-0.5 block text-xs font-semibold ${feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{sub}</span>
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
                 {novo && <p className="mt-3 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
             </section>
@@ -939,6 +997,7 @@ export default function Wizard({
     osSlot,
     osProcedimentoSlot,
     osTransladoSlot,
+    osCoroaSlot,
     convenioSlot,
     osCampos,
     wizardData,
@@ -978,6 +1037,8 @@ export default function Wizard({
     osProcedimentoSlot?: React.ReactNode;
     /** Item Translado: aparece logo depois de Invol, antes de Velório. */
     osTransladoSlot?: React.ReactNode;
+    /** "A Prefeitura autorizou a coroa?" (Prefeitura com pacote de coroa), logo abaixo da Coroa de flores. */
+    osCoroaSlot?: React.ReactNode;
     /** Campo Convênio ligado ao cadastro (convênio, pacote e autorização da Prefeitura). Substitui o seletor simples. */
     convenioSlot?: React.ReactNode;
     /** Campos da OS em edição (convênio, pacote, procedimento, translado...): alimentam a prévia da OS em tempo real. */
@@ -2677,6 +2738,7 @@ export default function Wizard({
                                             }}
                                         />
                                         {coroaModeloErro && <div className="mt-1 text-xs text-[#B42318] dark:text-[#FF9C92]">{coroaModeloErro}</div>}
+                                        {osCoroaSlot}
                                     </>
                                 )}
                             </div>

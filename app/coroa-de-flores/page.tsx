@@ -24,6 +24,7 @@
  */
 
 import * as React from "react";
+import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
 import {
     IconCamera,
     IconCheck,
@@ -50,6 +51,23 @@ const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informat
 const USUARIO_ATUAL_API = "https://api.planoassistencialintegrado.com.br/informativo.php?me=1";
 const MATERIAIS_API = "https://api.planoassistencialintegrado.com.br/materiais_gerais.php";
 const API_PUBLIC_BASE = "https://api.planoassistencialintegrado.com.br";
+/** Módulo da OS: pedido avulso autorizado pela Prefeitura vira OS Prf (lancar_coroa_prefeitura). */
+const OS_API = "https://api.planoassistencialintegrado.com.br/os_principal.php";
+
+/** Depois de salvar um pedido autorizado pela Prefeitura: lança a OS Prf (e a Dif.Prf, se houver modelo fora do pacote). */
+async function lancarOSCoroaPrefeitura(pedidoId: number): Promise<string> {
+    const body = new URLSearchParams({ lancar_coroa_prefeitura: "1", coroa_pedido_id: String(pedidoId) });
+    const res = await fetch(OS_API, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.erro || json?.sucesso === false) throw new Error(json?.msg || `Falha ao lançar a OS (${res.status}).`);
+    return String(json?.msg || "OS da Prefeitura lançada.");
+}
 
 /* =========================================================
    PEDIDOS MANUAIS
@@ -86,6 +104,9 @@ type ManualOrder = {
     falecido: string;
     falecido_atendimento_id?: number | null;
     atendimento_origem_id?: number | null;
+    /** Pedido avulso de Prefeitura (06/10/2026): convênio do cadastro e "A Prefeitura autorizou a coroa?". */
+    convenio_id?: number | null;
+    coroa_autorizada_prefeitura?: "Sim" | "Não" | null;
     status_pagamento: ManualPagamento;
     origem: ManualOrigem;
     /** ID do pedido no WooCommerce quando o registro veio da loja online. */
@@ -1957,6 +1978,12 @@ export default function Page() {
     const [quantidadeCoroas, setQuantidadeCoroas] = React.useState(1);
     const [newItems, setNewItems] = React.useState<NovoCoroaItem[]>([criarNovoCoroaItem()]);
     const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
+    /* Convênio do pedido avulso: Particular ("") ou uma Prefeitura com pacote de coroa; com Prefeitura, a pergunta da autorização. */
+    const [newConvenioId, setNewConvenioId] = React.useState("");
+    const [newCoroaAut, setNewCoroaAut] = React.useState<"" | "Sim" | "Não">("");
+    const opcoesConvenio = useOpcoesConvenio(newOpen);
+    const prefeiturasCoroa = opcoesConvenio.convenios.filter((c) => c.tipo === "PREFEITURA" && c.tem_pacote_coroa);
+    const newAutorizada = !!newConvenioId && newCoroaAut === "Sim";
     const [newForm, setNewForm] = React.useState({
         solicitante: "",
         telefone: "",
@@ -1976,6 +2003,8 @@ export default function Page() {
         setQuantidadeCoroas(1);
         setNewItems([criarNovoCoroaItem()]);
         setNewComprovante(null);
+        setNewConvenioId("");
+        setNewCoroaAut("");
         setNewAtendimentoSelecionado("");
         setModeloTipo("");
         setModeloItemIndex(null);
@@ -2058,6 +2087,11 @@ export default function Page() {
             }
         }
 
+        if (newConvenioId && !newCoroaAut) {
+            setNewError("Informe se a Prefeitura autorizou a coroa.");
+            return;
+        }
+
         // Prioriza o atendimento explicitamente selecionado. Se o usuário
         // digitou o falecido manualmente, mantém o fallback por nome para
         // preservar a compatibilidade do fluxo anterior.
@@ -2076,7 +2110,8 @@ export default function Page() {
         setNewSaving(true);
 
         try {
-            if (newComprovante) validarComprovanteFile(newComprovante);
+            const comprovanteEnviar = newAutorizada ? null : newComprovante;
+            if (comprovanteEnviar) validarComprovanteFile(comprovanteEnviar);
 
             const payload = {
                 acao: "novo",
@@ -2097,15 +2132,28 @@ export default function Page() {
                 })),
                 falecido: newForm.falecido.trim(),
                 falecido_atendimento_id: match?.id ? Number(match.id) || null : null,
-                status_pagamento: newComprovante ? "pago" : "aguardando_pagamento",
+                // Autorizado pela Prefeitura: faturado à Prefeitura (OS Prf), não espera pagamento da família.
+                status_pagamento: newAutorizada || comprovanteEnviar ? "pago" : "aguardando_pagamento",
+                convenio_id: newConvenioId ? Number(newConvenioId) : 0,
+                coroa_autorizada_prefeitura: newConvenioId ? newCoroaAut : "",
                 // Pedido criado manualmente nesta página é sempre Venda Direta.
                 // Ordem de Serviço é reservada aos pedidos gerados pelo Atendimento Funerário.
                 origem: "venda_direta" as ManualOrigem,
             };
 
-            const json = newComprovante
-                ? await postManualComArquivo(payload, "comprovante", newComprovante)
+            const json = comprovanteEnviar
+                ? await postManualComArquivo(payload, "comprovante", comprovanteEnviar)
                 : await postManual(payload);
+
+            // Autorizado pela Prefeitura: a autorização vale mais que o tipo — a OS é Prf, não Cor.
+            let avisoOS = "";
+            if (newAutorizada && json?.id) {
+                try {
+                    avisoOS = await lancarOSCoroaPrefeitura(Number(json.id));
+                } catch (osErr: any) {
+                    avisoOS = `O pedido foi salvo, mas a OS da Prefeitura não foi lançada: ${osErr?.message || "erro desconhecido"}. Avise o financeiro.`;
+                }
+            }
 
             setNewOpen(false);
             resetNewForm();
@@ -2121,6 +2169,7 @@ export default function Page() {
                     "O pedido foi salvo, mas o OneSignal não confirmou o envio da notificação.";
                 window.alert(erroPush);
             }
+            if (avisoOS) window.alert(avisoOS);
         } catch (e: any) {
             setNewError(e?.message || "Não foi possível criar o pedido.");
         } finally {
@@ -2881,6 +2930,9 @@ export default function Page() {
                                             {pagamentoAutomaticoManual(o)}
                                         </span>
                                         <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemPedidoLabel(o)}</span>
+                                        {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
+                                            <span className="rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
+                                        ) : null}
                                     </div>
                                     <div className="mt-3 flex gap-2">
                                         <button
@@ -2945,7 +2997,12 @@ export default function Page() {
                                                         {pagamentoAutomaticoManual(o)}
                                                     </span>
                                                 </td>
-                                                <td className="px-3 py-2">{origemPedidoLabel(o)}</td>
+                                                <td className="px-3 py-2">
+                                                    {origemPedidoLabel(o)}
+                                                    {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
+                                                        <span className="ml-1.5 rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
+                                                    ) : null}
+                                                </td>
                                                 <td className="px-3 py-2">
                                                     <div className="flex justify-end gap-2">
                                                         <button
@@ -3623,6 +3680,57 @@ export default function Page() {
                             </div>
 
 
+                            {/* Convênio: pedido de uma Prefeitura (com pacote de coroa). Autorizado → OS da Prefeitura, sem comprovante. */}
+                            <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">Convênio</label>
+                                <select
+                                    value={newConvenioId}
+                                    disabled={newSaving}
+                                    onChange={(e) => {
+                                        setNewConvenioId(e.target.value);
+                                        setNewCoroaAut("");
+                                    }}
+                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                >
+                                    <option value="">Particular (venda direta)</option>
+                                    {prefeiturasCoroa.map((c) => (
+                                        <option key={c.id} value={String(c.id)}>
+                                            {c.nome}
+                                        </option>
+                                    ))}
+                                </select>
+                                {opcoesConvenio.erro ? (
+                                    <div className="mt-1 text-xs text-muted-foreground">Não foi possível carregar as Prefeituras ({opcoesConvenio.erro}).</div>
+                                ) : null}
+                                {newConvenioId ? (
+                                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
+                                        <span className="min-w-[180px] flex-1 text-sm font-semibold">A Prefeitura autorizou a coroa? *</span>
+                                        <span className="inline-flex gap-2">
+                                            {(["Sim", "Não"] as const).map((v) => (
+                                                <button
+                                                    key={v}
+                                                    type="button"
+                                                    disabled={newSaving}
+                                                    aria-pressed={newCoroaAut === v}
+                                                    onClick={() => setNewCoroaAut(v)}
+                                                    className={`h-9 min-w-[60px] rounded-md border px-3 text-sm font-semibold ${newCoroaAut === v ? "border-[#313C55] bg-[#313C55] text-white" : "bg-background"}`}
+                                                >
+                                                    {v}
+                                                </button>
+                                            ))}
+                                        </span>
+                                        <span className="w-full text-xs">
+                                            {newCoroaAut === "Sim"
+                                                ? "A coroa é faturada à Prefeitura (OS Prf). Modelo fora do pacote de coroa: a família paga só a diferença."
+                                                : newCoroaAut === "Não"
+                                                    ? "Sem autorização, o pedido segue como venda direta, pago pela família pelo preço particular."
+                                                    : "Obrigatório."}
+                                        </span>
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            {!newAutorizada && (
                             <div className="sm:col-span-2">
                                 <label className="mb-1 block text-sm font-medium">Comprovante</label>
                                 <ComprovanteUploadButtons
@@ -3657,6 +3765,7 @@ export default function Page() {
                                     </div>
                                 )}
                             </div>
+                            )}
 
                             {/* 5. Solicitante por último, conforme o fluxo operacional */}
                             <div className="sm:col-span-2 border-t pt-4">

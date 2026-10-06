@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import ItensOSAjuste from "../components/ItensOSAjuste";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -149,7 +150,6 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
     const [erro, setErro] = useState("");
     const [msg, setMsg] = useState("");
     const [salvando, setSalvando] = useState(false);
-    const [edit, setEdit] = useState<any>(null);         // {item, modo: 'valor'|'pct'|'reais', v}
     const [assinar, setAssinar] = useState(false);
 
     const carregar = useCallback(async () => {
@@ -184,12 +184,6 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
     const particular = os?.natureza === "PARTICULAR";
     const confirmada = !!os?.confirmada_em;
 
-    const salvarEdicao = () => run(() => {
-        const it = edit.item;
-        if (edit.modo === "valor") return osPost("editar_valor_item", { os_item_id: it.id, valor: num(edit.v) });
-        if (edit.modo === "pct") return osPost("aplicar_desconto", { os_item_id: it.id, percentual: num(edit.v) });
-        return osPost("aplicar_desconto", { os_item_id: it.id, valor_desconto: num(edit.v) });
-    }).then((ok) => ok && setEdit(null));
 
     return (
         <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(49,60,85,0.45)]" onClick={onFechar}>
@@ -210,26 +204,9 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
                 {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
 
                 <div className="mb-4 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
-                    <table className="w-full text-sm">
-                        <thead><tr className="border-b border-[#E1E5EC] dark:border-white/[0.12] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
-                            <th className="py-2">Item</th><th className="text-right">Qtd</th><th className="text-right">Tabela</th><th className="text-right">Aplicado</th><th className="text-right">Final</th><th></th>
-                        </tr></thead>
-                        <tbody>
-                            {(d?.itens || []).map((it: any) => (
-                                <tr key={it.id} className="border-b border-[#E1E5EC] dark:border-white/[0.12]">
-                                    <td className="py-2"><b>{it.produto_nome}</b><div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{it.categoria}{it.tipo_item === "DIFERENCA" ? " · diferença" : ""}{Number(it.desconto_percentual) > 0 ? ` · desconto ${it.desconto_percentual}%` : ""}</div></td>
-                                    <td className="text-right">{it.quantidade}</td>
-                                    <td className="whitespace-nowrap text-right">{Number(it.referencia_apenas) ? "—" : brl(it.valor_unitario_travado)}</td>
-                                    <td className="whitespace-nowrap text-right">{Number(it.referencia_apenas) ? "—" : brl(it.valor_unitario_aplicado)}</td>
-                                    <td className="whitespace-nowrap text-right font-bold">{Number(it.referencia_apenas) ? "contrato" : brl(it.valor_final)}</td>
-                                    <td className="text-right">{aberta && particular && !Number(it.referencia_apenas) && (
-                                        <button type="button" className="text-xs font-bold text-[#00AEEC] dark:text-[#66CFF5]" onClick={() => setEdit({ item: it, modo: "pct", v: "" })}>Valor / desconto</button>
-                                    )}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <div className="mt-3 flex justify-end text-xl font-extrabold">Total: {brl(os?.valor_total)}</div>
+                    {/* Qtd · Valor · Desconto · Final; ajuste pelo ícone (valor só aumenta, desconto em R$) e desconto geral (% ou R$). */}
+                    <ItensOSAjuste osId={osId} editavel={aberta && particular} onMudou={() => void carregar()} />
+                    {!particular && <div className="mt-3 flex justify-end text-xl font-extrabold">Total: {brl(os?.valor_total)}</div>}
                 </div>
 
                 {aberta && particular && (
@@ -246,22 +223,6 @@ function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
                         <div className="text-sm">OS de convênio: o responsável assina como ciência{os?.convenio?.startsWith("ASSOCIADO") && !os?.contrato_numero ? " — informe o contrato do titular no atendimento antes." : "."}</div>
                         <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>
                     </div>
-                )}
-
-                {edit && (
-                    <Modal titulo="Valor e desconto" sub={edit.item.produto_nome} onFechar={() => setEdit(null)}>
-                        <div className="mb-3 flex gap-1 rounded-lg bg-[#F4F6F9] dark:bg-[#161C2A] p-1 text-sm font-bold">
-                            {[["pct", "Desconto %"], ["reais", "Desconto R$"], ["valor", "Novo valor"]].map(([m, r]) => (
-                                <button key={m} type="button" onClick={() => setEdit({ ...edit, modo: m, v: "" })} className={`flex-1 rounded-md py-1.5 ${edit.modo === m ? "bg-white dark:bg-[#232B3F] shadow" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{r}</button>
-                            ))}
-                        </div>
-                        <input autoFocus inputMode="decimal" className={inputCls} value={edit.v} placeholder={edit.modo === "pct" ? "ex.: 5" : "ex.: 100,00"} onChange={(e) => setEdit({ ...edit, v: e.target.value })} />
-                        <div className="my-3 text-xs text-[#6B7488] dark:text-[#AEB9CF]">Tabela {brl(edit.item.valor_unitario_travado)}. Limite do agente: 8% por item e no total da OS (não soma). Acima disso, só o administrador. Aumentar o valor é livre (aparece "Edit" na folha).</div>
-                        <div className="flex justify-end gap-2">
-                            <button type="button" onClick={() => setEdit(null)} className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] px-4 py-2 text-sm font-bold">Cancelar</button>
-                            <button type="button" disabled={salvando || !edit.v} onClick={() => void salvarEdicao()} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55] disabled:opacity-50">Aplicar</button>
-                        </div>
-                    </Modal>
                 )}
 
                 {assinar && os && <AssinaturaModal os={os} particular={particular} onFechar={() => setAssinar(false)} onAssinado={() => { setAssinar(false); setMsg("OS assinada."); void carregar(); }} />}

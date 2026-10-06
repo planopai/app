@@ -2860,6 +2860,7 @@ export default function AcompanhamentoPage() {
           String((dataAtualizada as any).convenio ?? ""),
           String((dataAtualizada as any).tanato ?? ""),
           osCampos,
+          String((dataAtualizada as any).coroa_flores ?? ""),
         );
         if (msgOS) {
           setWizardMsg({ text: msgOS, ok: false });
@@ -2930,6 +2931,7 @@ export default function AcompanhamentoPage() {
               String((dataAtualizada as any).convenio ?? ""),
               String((dataAtualizada as any).tanato ?? ""),
               osCampos,
+              String((dataAtualizada as any).coroa_flores ?? ""),
             );
             setOsVersao((n) => n + 1);
             textoOS = r.alteracoes.length ? " OS atualizada." : " OS em dia.";
@@ -3967,6 +3969,23 @@ export default function AcompanhamentoPage() {
     [registros, abrirWizard],
   );
 
+  /* Quadro de atendimentos → "Editar" chega com ?editar=<id>: abre o Editar registro desse atendimento direto (uma vez). */
+  const editarDaUrlRef = useRef(false);
+  useEffect(() => {
+    if (editarDaUrlRef.current || typeof window === "undefined" || !registros.length) return;
+    const url = new URL(window.location.href);
+    const alvo = url.searchParams.get("editar");
+    if (!alvo) {
+      editarDaUrlRef.current = true;
+      return;
+    }
+    if (!registros.some((r) => String(r.id) === alvo)) return; // espera a lista trazer o atendimento
+    editarDaUrlRef.current = true;
+    url.searchParams.delete("editar");
+    window.history.replaceState(window.history.state, "", url.pathname + (url.search ? url.search : "") + url.hash);
+    editarPorId(alvo);
+  }, [registros, editarPorId]);
+
   /* Editar registro (layout do mockup): documentos e Registrar ação ficam na coluna da direita. */
   const abrirDocumentoDoWizard = useCallback(
     (tipo: "recebimento" | "requisicao") => {
@@ -4125,6 +4144,7 @@ export default function AcompanhamentoPage() {
         parte={parte}
         convenio={String((wizardData as any)?.convenio ?? "")}
         tanato={tanatoVal || String((wizardData as any)?.tanato ?? "")}
+        coroaFlores={String((wizardData as any)?.coroa_flores ?? "")}
         valores={osCampos}
         onChange={(p) => setOsCampos((c) => ({ ...c, ...p }))}
         colunasFaltando={osColunasFaltando}
@@ -4219,6 +4239,7 @@ export default function AcompanhamentoPage() {
         osSlot={renderOs("resumo")}
         osProcedimentoSlot={renderOs("procedimento")}
         osTransladoSlot={renderOs("translado")}
+        osCoroaSlot={renderOs("coroa")}
         wizardData={wizardData}
         setWizardData={setWizardData}
         obrigatorios={obrigatoriosForTipo}

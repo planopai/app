@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
-  themeColor: "#059de0",
+  themeColor: "#313C55",
   manifest: "/manifest.webmanifest",
   viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
-    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#059de0" }],
+    other: [{ rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#313C55" }],
   },
   appleWebApp: {
     capable: true,
@@ -74,12 +74,12 @@ export default async function RootLayout({
     >
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
-        <meta name="theme-color" content="#059de0" />
+        <meta name="theme-color" content="#313C55" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#059de0" />
+        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#313C55" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="App Plano PAI 2.0" />
