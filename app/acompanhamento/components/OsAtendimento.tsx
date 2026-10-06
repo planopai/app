@@ -248,8 +248,18 @@ const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "curre
 
 const ROTULO = "mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
 const CAMPO =
-    "w-full rounded-xl border border-[#E3E8F0] bg-white px-3 py-2.5 text-[16px] text-[#313C55] outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 disabled:opacity-60 dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-white sm:text-sm";
+    "w-full rounded-xl border border-[#E3E8F0] bg-white px-3 py-2.5 text-[16px] text-[#313C55] outline-none focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/30 disabled:opacity-60 dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-white sm:text-sm";
 const CARTAO = "rounded-2xl border border-[#E3E8F0] bg-white p-3 dark:border-white/[0.12] dark:bg-[#232B3F]";
+
+/** Marcação do botão escolhido: ✓ no Sim (e nas demais opções), ✕ no Não. */
+function IconeMarcado({ valor }: { valor: string }) {
+    const nao = valor === "Não";
+    return (
+        <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {nao ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M5 12.5l4.5 4.5L19 7.5" />}
+        </svg>
+    );
+}
 
 function SimNaoBotoes({ valor, onChange, disabled }: { valor: SimNao; onChange: (v: SimNao) => void; disabled?: boolean }) {
     return (
@@ -262,12 +272,13 @@ function SimNaoBotoes({ valor, onChange, disabled }: { valor: SimNao; onChange: 
                     onClick={() => onChange(v)}
                     aria-pressed={valor === v}
                     className={[
-                        "h-10 min-w-[64px] rounded-xl border-[1.5px] px-4 text-sm font-extrabold disabled:opacity-60",
+                        "inline-flex h-10 min-w-[84px] items-center justify-center gap-1.5 rounded-xl border-[1.5px] px-4 text-sm font-extrabold disabled:opacity-60",
                         valor === v
                             ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
                             : "border-[#E3E8F0] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                     ].join(" ")}
                 >
+                    {valor === v ? <IconeMarcado valor={v} /> : null}
                     {v}
                 </button>
             ))}
@@ -283,7 +294,7 @@ function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatop
             </div>
             <SimNaoBotoes valor={valor} onChange={onChange} disabled={disabled} />
             {valor === "Sim" ? <span className="rounded-full bg-[#EEF5D6] px-3 py-1 text-xs font-extrabold text-[#313C55]">entra no contrato</span> : null}
-            {valor === "Não" ? <span className="rounded-full bg-[#E6F7FE] px-3 py-1 text-xs font-extrabold text-[#313C55]">{servico === "coroa" ? "vai para a família (preço particular)" : "vai para a diferença da família"}</span> : null}
+            {valor === "Não" ? <span className="rounded-full bg-[#E9EFF6] px-3 py-1 text-xs font-extrabold text-[#313C55]">{servico === "coroa" ? "vai para a família (preço particular)" : "vai para a diferença da família"}</span> : null}
             {valor === "" ? <span className="text-xs font-extrabold text-[#B42318] dark:text-[#FF9C92]">obrigatório</span> : null}
         </div>
     );
@@ -291,7 +302,7 @@ function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatop
 
 /** Cartão compacto do Resumo da OS (coluna lateral): rótulo e número à esquerda, valor à direita, nota curta embaixo. */
 function CartaoResumo({ rotulo, os, texto, valor, tom }: { rotulo: string; os: any; texto?: string; valor?: string; tom: "azul" | "verde" | "amarelo" }) {
-    const fundo = tom === "azul" ? "bg-[#E6F7FE] dark:bg-[#00AEEC]/20" : tom === "verde" ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/20" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15";
+    const fundo = tom === "azul" ? "bg-[#E9EFF6] dark:bg-[#3D6A99]/20" : tom === "verde" ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/20" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15";
     return (
         <div className={["rounded-xl px-3 py-2", fundo].join(" ")}>
             <div className="flex items-center justify-between gap-2">
@@ -326,7 +337,7 @@ export function rotuloProcedimento(nome: string): string {
 
 const ROTULO_CAMPO = "mb-1.5 block text-[13px] font-bold text-[#313C55] dark:text-white";
 const CAMPO_V2 =
-    "h-12 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
+    "h-12 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
 const CARTAO_LINHA = "rounded-[14px] border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]";
 
 /** Linha de item no padrão do mockup: cartão com o nome e o seletor Sim | Não (igual aos demais itens do assistente). */
@@ -345,13 +356,14 @@ function LinhaSimNao({ rotulo, valor, onChange, disabled, children }: { rotulo: 
                             aria-label={`${rotulo}: ${v}`}
                             onClick={() => onChange(v)}
                             className={[
-                                "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
+                                "inline-flex h-11 min-w-[84px] items-center justify-center gap-1.5 px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
                                 i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
                                 valor === v
-                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                    ? "bg-[#313C55] text-white dark:bg-[#3D6A99] dark:text-white"
                                     : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
                             ].join(" ")}
                         >
+                            {valor === v ? <IconeMarcado valor={v} /> : null}
                             {v}
                         </button>
                     ))}
@@ -568,7 +580,7 @@ export function ConvenioVinculo({
                                         className={[
                                             "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
                                             marcado
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white"
                                                 : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                                         ].join(" ")}
                                     >
@@ -859,7 +871,7 @@ export function SecaoOSAtendimento({
                                         className={[
                                             "min-h-11 rounded-full border-[1.5px] px-[18px] text-sm font-extrabold transition-colors disabled:opacity-60",
                                             marcado
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white"
                                                 : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-transparent dark:text-white dark:hover:bg-white/10",
                                         ].join(" ")}
                                     >

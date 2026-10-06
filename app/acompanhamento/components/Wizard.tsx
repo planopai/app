@@ -118,6 +118,16 @@ function normalizarFotoSrc(src: any): string {
     return `${ENDPOINT}/${s.replace(/^\/+/, "")}`;
 }
 
+/** Marcação do botão escolhido: ✓ no Sim (e nas demais opções), ✕ no Não. */
+function IconeMarcado({ valor }: { valor: string }) {
+    const nao = valor === "Não";
+    return (
+        <svg viewBox="0 0 24 24" className="size-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {nao ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M5 12.5l4.5 4.5L19 7.5" />}
+        </svg>
+    );
+}
+
 type CheckboxChoiceOption = {
     value: string;
     label: string;
@@ -173,13 +183,14 @@ function CheckboxChoiceGroup({
                             disabled={disabled}
                             onClick={() => onChange(option.value)}
                             className={[
-                                "h-11 min-w-[68px] px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
+                                "inline-flex h-11 min-w-[84px] items-center justify-center gap-1.5 px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed",
                                 i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
                                 marcado
-                                    ? "bg-[#313C55] text-white dark:bg-[#00AEEC] dark:text-[#313C55]"
+                                    ? "bg-[#313C55] text-white dark:bg-[#3D6A99] dark:text-white"
                                     : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
                             ].join(" ")}
                         >
+                            {marcado ? <IconeMarcado valor={option.value} /> : null}
                             {option.label}
                         </button>
                     );
@@ -848,9 +859,9 @@ function normalizeDepCordao(v: any): DepCordao {
    ========================================================================= */
 /* Estilos de formulário do mockup (Registro.dc.html): campo de 48 px, raio 12, borda 1,5 px, rótulo 13 px em negrito. */
 const CAMPO_CLS =
-    "h-12 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
+    "h-12 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
 const AREA_CLS =
-    "min-h-24 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 py-3 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
+    "min-h-24 w-full rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 py-3 text-[15px] text-[#313C55] outline-none transition placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
 const BTN_SEC_CLS =
     "inline-flex h-11 items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] transition hover:bg-[#EEF2F7] disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
 
@@ -2221,14 +2232,14 @@ export default function Wizard({
                         )}
                     </div>
                     {editandoCompleto && emEdicao && proximaTxt !== "—" && (
-                        <span className="inline-flex h-8 items-center gap-2 rounded-2xl bg-[#E6F7FE] px-3.5 text-[13px] font-bold text-[#313C55] dark:bg-[#00AEEC]/20 dark:text-white">
-                            <span className="size-2 rounded-full bg-[#00AEEC]" />
+                        <span className="inline-flex h-8 items-center gap-2 rounded-2xl bg-[#E9EFF6] px-3.5 text-[13px] font-bold text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">
+                            <span className="size-2 rounded-full bg-[#3D6A99]" />
                             Aguardando {proximaTxt}
                         </span>
                     )}
                     {wizardSubmitting && (
                         <span
-                            className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#E6F7FE] dark:bg-[#00AEEC]/20 px-2 py-0.5 text-xs text-[#313C55] dark:text-white"
+                            className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#E9EFF6] dark:bg-[#3D6A99]/20 px-2 py-0.5 text-xs text-[#313C55] dark:text-white"
                             aria-live="polite"
                         >
                             <svg className="h-3 w-3 animate-spin text-[#313C55] dark:text-white" viewBox="0 0 24 24" fill="none">
@@ -2245,7 +2256,7 @@ export default function Wizard({
                         const t = wizardStepTitles[i];
                         if (!t) return null;
                         const ativa = i === wizardStep;
-                        const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#00AEEC] dark:bg-[#00AEEC] dark:text-[#313C55]" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
+                        const classe = `inline-flex items-center rounded-full border-[1.5px] font-bold ${editandoCompleto ? "h-11 px-5 text-sm" : "px-3 py-1 text-xs"} ${ativa ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99] dark:text-white" : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-[#D6DCE8]"}`;
                         // Editando: a aba é um botão (troca livre). Novo registro: continua só indicando a etapa (a validação segue no Próximo).
                         return emEdicao && editandoCompleto ? (
                             <button
