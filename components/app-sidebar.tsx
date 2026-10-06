@@ -129,10 +129,13 @@ type GroupKey = string;
 
 /* Cores do menu (mockup da repaginada): fundo azul escuro (--sidebar), item ativo com faixa amarela à esquerda. */
 const ITEM_BASE =
-  "relative flex min-h-10 gap-3 rounded-xl px-3 text-[15px] font-semibold text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white";
+  "relative flex gap-3 rounded-xl px-3 text-[15px] font-semibold text-[#E8ECF4] hover:bg-white/[0.08] hover:text-white";
 /* Botões pequenos do rodapé do menu (Personalizar barra, Ajuda, Sair da conta). */
 const RODAPE_BTN =
   "flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1.5 text-[12px] font-bold text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white disabled:opacity-60";
+/* Altura do item: 40 px nos módulos; 34 px na seção Atalhos (mesma formatação, só mais próximos). */
+const ITEM_ALTURA = "min-h-10";
+const ITEM_ALTURA_ATALHO = "min-h-[34px]";
 const ITEM_ATIVO =
   "bg-white/[0.14] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.14]";
 
@@ -302,10 +305,10 @@ export function AppSidebar(
     : [];
 
   /** Item do menu (ativo = faixa amarela à esquerda). */
-  const MenuItem = ({ title, href, Icon, badge = 0 }: { title: string; href: string; Icon: any; badge?: number }) => {
+  const MenuItem = ({ title, href, Icon, badge = 0, compacto = false }: { title: string; href: string; Icon: any; badge?: number; compacto?: boolean }) => {
     const active = pathname === href;
     return (
-      <SidebarMenuButton asChild title={title} className={[ITEM_BASE, active ? ITEM_ATIVO : ""].join(" ")}>
+      <SidebarMenuButton asChild title={title} className={[ITEM_BASE, compacto ? ITEM_ALTURA_ATALHO : ITEM_ALTURA, active ? ITEM_ATIVO : ""].join(" ")}>
         <Link href={href} aria-current={active ? "page" : undefined} onClick={(event) => handleNavigate(href, event)}>
           <Icon className="!size-5" />
           <span className="flex-1 truncate">{title}</span>
@@ -349,10 +352,10 @@ export function AppSidebar(
                 <div className="flex w-full items-center px-3 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">
                   Atalhos
                 </div>
-                <SidebarMenu className="space-y-0.5">
+                <SidebarMenu className="gap-0">
                   {atalhos.map((item) => (
                     <SidebarMenuItem key={`atalho-${item.href}`}>
-                      <MenuItem title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
+                      <MenuItem compacto title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>
