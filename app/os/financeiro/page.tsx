@@ -752,7 +752,7 @@ function DetalheOS({
                 {/* Itens da OS: alterar valores (ícone de ajuste e desconto geral) com a OS aberta; assinada → Reabrir com motivo. */}
                 <div className="mb-4 rounded-xl border border-[#E1E5EC] bg-white p-4">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <div className="flex-1 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Itens da OS</div>
+                        <div className="flex-1 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">{linha.tipo === "PRF" ? "Pacotes e serviços da OS" : "Itens da OS"}</div>
                         {podeReabrir && (
                             <Botao onClick={() => { setMotivoReabrir(""); setReabrir(true); }}>Reabrir OS</Botao>
                         )}
@@ -762,12 +762,17 @@ function DetalheOS({
                             OS assinada: para alterar valores, reabra. A assinatura e a nota promissória anteriores deixam de valer.
                         </div>
                     )}
-                    <ItensOSAjuste
-                        osId={osId}
-                        editavel={statusAtual === "ABERTA" && ehDaFamilia}
-                        versao={versaoItens}
-                        onMudou={() => onAlterou("Valores da OS atualizados.")}
-                    />
+                    {linha.tipo === "PRF" ? (
+                        /* OS da Prefeitura: pacote(s) e serviços de contrato com o valor lançado, e os itens usados embaixo de cada um */
+                        <ComposicaoContrato osId={osId} versao={versaoItens} />
+                    ) : (
+                        <ItensOSAjuste
+                            osId={osId}
+                            editavel={statusAtual === "ABERTA" && ehDaFamilia}
+                            versao={versaoItens}
+                            onMudou={() => onAlterou("Valores da OS atualizados.")}
+                        />
+                    )}
                 </div>
 
                 {reabrir && (
@@ -1551,6 +1556,81 @@ function DetalheOS({
                         </div>
                     </Modal>
                 )}
+            </div>
+        </div>
+    );
+}
+
+/* ====================================================================== */
+/* OS da Prefeitura no Financeiro: cada pacote / serviço de contrato com o valor lançado e, embaixo, só os itens usados no atendimento. */
+
+type GrupoContrato = {
+    tipo: "PACOTE" | "CONTRATO" | "SEM_VALOR";
+    titulo: string;
+    subtitulo: string;
+    valor: number;
+    itens: { nome: string; categoria: string; quantidade: number; detalhe: string }[];
+};
+
+function ComposicaoContrato({ osId, versao = 0 }: { osId: number; versao?: number }) {
+    const [d, setD] = useState<{ grupos: GrupoContrato[]; soma: number; valor_total: number } | null>(null);
+    const [erro, setErro] = useState("");
+    useEffect(() => {
+        let vivo = true;
+        osGet("composicao_contrato_os", { os_id: osId })
+            .then((r) => vivo && (setD(r.dados), setErro("")))
+            .catch((e) => vivo && setErro(e?.message || "Não foi possível carregar a composição da OS."));
+        return () => {
+            vivo = false;
+        };
+    }, [osId, versao]);
+
+    if (erro) return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>;
+    if (!d) return <div className="py-2 text-sm text-[#6B7488]">Carregando…</div>;
+    if (!d.grupos.length) return <div className="py-2 text-sm text-[#6B7488]">Nenhum pacote ou serviço lançado nesta OS.</div>;
+    const diverge = Math.abs(Number(d.soma) - Number(d.valor_total)) > 0.005;
+
+    return (
+        <div>
+            <div className="flex flex-col gap-2.5">
+                {d.grupos.map((g, i) => (
+                    <div key={i} className="rounded-xl border border-[#E1E5EC] bg-white">
+                        <div className="flex items-start gap-3 border-b border-[#E1E5EC] px-4 py-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[15px] font-extrabold leading-tight text-[#313C55]">{g.titulo}</div>
+                                <div className="text-xs text-[#6B7488]">{g.subtitulo}</div>
+                            </div>
+                            <div className="whitespace-nowrap text-lg font-extrabold text-[#313C55]">{g.tipo === "SEM_VALOR" ? "—" : brl(g.valor)}</div>
+                        </div>
+                        {g.itens.length ? (
+                            <ul className="px-4 py-2 text-sm">
+                                {g.itens.map((it, j) => (
+                                    <li key={j} className="flex items-baseline gap-2 py-0.5">
+                                        <span className="text-[#6B7488]">•</span>
+                                        <span className="min-w-0 flex-1">
+                                            <b className="font-bold text-[#313C55]">{it.nome}</b>
+                                            <span className="text-xs text-[#6B7488]">
+                                                {" "}· {it.categoria}
+                                                {it.quantidade > 1 ? ` · ${it.quantidade} un.` : ""}
+                                                {it.detalhe ? ` · ${it.detalhe}` : ""}
+                                            </span>
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <div className="px-4 py-2 text-xs text-[#6B7488]">Nenhum item do atendimento neste pacote.</div>
+                        )}
+                    </div>
+                ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-right">
+                {diverge ? (
+                    <span className="rounded-lg bg-[#FCF3CC] px-2.5 py-1 text-xs font-bold text-[#313C55]">
+                        Soma dos pacotes e serviços: {brl(d.soma)} (diferente do total gravado)
+                    </span>
+                ) : null}
+                <span className="text-lg font-extrabold text-[#313C55]">Total da OS: {brl(d.valor_total)}</span>
             </div>
         </div>
     );

@@ -24,6 +24,7 @@
  */
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
 import {
     IconCamera,
@@ -42,6 +43,17 @@ import {
 } from "@tabler/icons-react";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Janelas desta tela abertas direto no <body> (06/10/2026). A página rola dentro de um contêiner com
+ * -webkit-overflow-scrolling: touch; no iPhone isso prende o z-index das janelas dentro dele e a barra de baixo
+ * do celular ficava por cima (o botão "Criar Pedido" ficava atrás dela). No <body> a janela cobre a barra.
+ */
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [montado, setMontado] = React.useState(false);
+    React.useEffect(() => setMontado(true), []);
+    return montado ? createPortal(children, document.body) : null;
+}
 
 /* =========================================================
    CONFIGURAÇÃO
@@ -899,6 +911,7 @@ function CameraCaptureDialog({
     }
 
     return (
+        <NoCorpo>
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3">
             <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-950">
                 <div className="flex items-center justify-between border-b px-4 py-3">
@@ -964,6 +977,7 @@ function CameraCaptureDialog({
                 </div>
             </div>
         </div>
+        </NoCorpo>
     );
 }
 
@@ -3391,11 +3405,12 @@ export default function Page() {
 
             {/* Modal NOVO */}
             {newOpen && (
+                <NoCorpo>
                 <div className="fixed inset-0 z-50 grid place-items-center p-4">
                     <div className="absolute inset-0 bg-black/40" onClick={() => !newSaving && setNewOpen(false)} />
                     <form
                         onSubmit={salvarNovoPedido}
-                        className="mobile-y-scroll relative z-10 max-h-[92vh] w-full max-w-2xl touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-background shadow-xl"
+                        className="mobile-y-scroll relative z-10 max-h-[92dvh] w-full max-w-2xl touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-background shadow-xl"
                     >
                         <div className="flex items-center justify-between border-b px-4 py-3">
                             <div>
@@ -3797,7 +3812,7 @@ export default function Page() {
 
                             {newError && <div className="sm:col-span-2 text-sm text-rose-600">{newError}</div>}
                         </div>
-                        <div className="flex justify-end gap-2 border-t px-4 py-3">
+                        <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t bg-background px-4 py-3">
                             <button type="button" className="rounded-md border px-4 py-2 text-sm" onClick={() => setNewOpen(false)} disabled={newSaving}>
                                 Cancelar
                             </button>
@@ -3807,10 +3822,12 @@ export default function Page() {
                         </div>
                     </form>
                 </div>
+                </NoCorpo>
             )}
 
             {/* Drawer manual */}
             {modeloModalOpen && (
+                <NoCorpo>
                 <div
                     className="fixed inset-0 z-[80] flex min-h-0 items-center justify-center overflow-hidden bg-black/50 p-2 sm:p-4"
                     role="dialog"
@@ -4032,10 +4049,12 @@ export default function Page() {
                         </div>
                     </div>
                 </div>
+                </NoCorpo>
             )}
 
             {/* Ações do pedido manual */}
             {manualPanel === "acoes" && (
+                <NoCorpo>
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
                     <div className="w-full max-w-xl overflow-hidden rounded-xl border bg-background shadow-xl">
                         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -4102,10 +4121,12 @@ export default function Page() {
                         </div>
                     </div>
                 </div>
+                </NoCorpo>
             )}
 
             {/* Foto obrigatória para Finalizada */}
             {finalizarOpen && (
+                <NoCorpo>
                 <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-3">
                     <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
                         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -4177,10 +4198,12 @@ export default function Page() {
                         </div>
                     </div>
                 </div>
+                </NoCorpo>
             )}
 
             {/* Ver pedido manual — mesmo padrão visual do pedido online */}
             {manualPanel === "ver" && (
+                <NoCorpo>
                 <div className="fixed inset-0 z-50">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setManualPanel(null)} />
                     <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl">
@@ -4388,10 +4411,12 @@ export default function Page() {
                         )}
                     </div>
                 </div>
+                </NoCorpo>
             )}
 
             {/* Drawer online — mantém a experiência existente */}
             {open && (
+                <NoCorpo>
                 <div className="fixed inset-0 z-50">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
                     <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "contain" }}>
@@ -4479,6 +4504,7 @@ export default function Page() {
                         )}
                     </div>
                 </div>
+                </NoCorpo>
             )}
         </div>
     );

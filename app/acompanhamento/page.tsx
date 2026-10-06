@@ -4169,6 +4169,13 @@ export default function AcompanhamentoPage() {
         atendimentoId={wizardEditing ? (wizardData as any)?.id ?? null : null}
         versao={osVersao}
         disabled={wizardSubmitting}
+        atualizando={wizardSubmitting}
+        // "Atualizar OS" (só na edição): mesmo salvamento do botão Salvar, mas a tela continua aberta e a OS é refeita na hora.
+        onAtualizarOS={
+          parte === "lateral" && wizardEditing
+            ? () => concluirWizard({ manterWizardAberto: true, mensagemSucesso: "Registro salvo." })
+            : undefined
+        }
       />
     );
 

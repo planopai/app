@@ -703,6 +703,8 @@ export function SecaoOSAtendimento({
     disabled,
     parte = "tudo",
     coroaFlores = "",
+    onAtualizarOS,
+    atualizando = false,
 }: {
     convenio: string;
     tanato: string;
@@ -714,6 +716,9 @@ export function SecaoOSAtendimento({
     versao?: number;
     disabled?: boolean;
     parte?: ParteOS;
+    /** "Atualizar OS": grava o registro sem fechar a tela e refaz as OS (a folha passa a mostrar o que está na tela). */
+    onAtualizarOS?: () => Promise<void> | void;
+    atualizando?: boolean;
 }) {
     const tipo = tipoConvenio(convenio, valores.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
@@ -1001,14 +1006,37 @@ export function SecaoOSAtendimento({
                                 </div>
                             )}
                         </div>
-                    {os.length ? (
-                        <button
-                            type="button"
-                            onClick={() => abrirJanelaOS()}
-                            className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#313C55] text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
-                        >
-                            Ver OS e colher assinatura
-                        </button>
+                    {os.length || onAtualizarOS ? (
+                        <div className={`mt-2 grid gap-2 ${os.length && onAtualizarOS ? "grid-cols-2" : "grid-cols-1"}`}>
+                            {onAtualizarOS ? (
+                                <button
+                                    type="button"
+                                    disabled={atualizando || disabled}
+                                    onClick={() => void onAtualizarOS()}
+                                    title="Grava o registro sem fechar a tela e atualiza a folha da OS"
+                                    className={[
+                                        "flex h-10 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-extrabold disabled:opacity-60",
+                                        pendenteDeSalvar
+                                            ? "bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]"
+                                            : "border-[1.5px] border-[#313C55] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10",
+                                    ].join(" ")}
+                                >
+                                    <svg viewBox="0 0 24 24" className={`size-4 ${atualizando ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" />
+                                    </svg>
+                                    {atualizando ? "Atualizando…" : "Atualizar OS"}
+                                </button>
+                            ) : null}
+                            {os.length ? (
+                                <button
+                                    type="button"
+                                    onClick={() => abrirJanelaOS()}
+                                    className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#313C55] text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
+                                >
+                                    {onAtualizarOS ? "Ver OS e assinar" : "Ver OS e colher assinatura"}
+                                </button>
+                            ) : null}
+                        </div>
                     ) : null}
                     {verOS && atendimentoId != null && atendimentoId !== "" ? (
                         <OSDoAtendimento sobreposto atendimentoId={atendimentoId} onFechar={() => setVerOS(false)} onMudou={() => setRecarga((n) => n + 1)} />
