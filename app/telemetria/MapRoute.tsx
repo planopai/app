@@ -345,7 +345,7 @@ export default function MapRoute({
             />
 
             {showSummary && valid.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-[#AEB9CF]">
                     <span>{summary.total} ponto(s)</span>
                     {summary.distanceKm > 0 && (
                         <span>• distância estimada: {summary.distanceKm.toFixed(2).replace(".", ",")} km</span>
@@ -356,7 +356,7 @@ export default function MapRoute({
                 </div>
             )}
 
-            {error && <div className="mt-1 text-xs text-red-600">{error}</div>}
+            {error && <div className="mt-1 text-xs text-red-600 dark:text-[#FF9C92]">{error}</div>}
         </div>
     );
 }

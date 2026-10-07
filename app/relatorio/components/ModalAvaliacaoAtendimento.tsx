@@ -756,7 +756,7 @@ export default function ModalAvaliacaoAtendimento({
             }}
         >
             <div
-                className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+                className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-[#232B3F]"
                 style={{
                     maxHeight: viewport
                         ? `${Math.max(1, viewport.height - 24)}px`
@@ -765,11 +765,11 @@ export default function ModalAvaliacaoAtendimento({
             >
                 <div className="flex shrink-0 items-start justify-between gap-4 border-b p-4 sm:p-5">
                     <div>
-                        <h2 className="text-lg font-semibold text-slate-950">
+                        <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
                             {tituloTipo(tipo)}
                         </h2>
 
-                        <p className="mt-1 text-sm text-slate-600">
+                        <p className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">
                             Falecido(a):{" "}
                             <strong>{falecido || "—"}</strong>
                         </p>
@@ -778,7 +778,7 @@ export default function ModalAvaliacaoAtendimento({
                     <button
                         type="button"
                         onClick={onFechar}
-                        className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+                        className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-[#1C2334]"
                     >
                         Fechar
                     </button>
@@ -793,17 +793,17 @@ export default function ModalAvaliacaoAtendimento({
                     }}
                 >
                     {erro ? (
-                        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                             {erro}
                         </div>
                     ) : null}
 
                     {loading ? (
-                        <div className="py-10 text-center text-sm text-slate-500">
+                        <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                             Carregando avaliação...
                         </div>
                     ) : !dados ? null : !avaliacao ? (
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15">
                             <button
                                 type="button"
                                 onClick={() => void iniciar()}
@@ -819,9 +819,9 @@ export default function ModalAvaliacaoAtendimento({
                         </div>
                     ) : (
                         <div className="space-y-5">
-                            <div className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-3">
+                            <div className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-3 dark:border-white/12">
                                 <div>
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                                    <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
                                         Início
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
@@ -832,7 +832,7 @@ export default function ModalAvaliacaoAtendimento({
                                 </div>
 
                                 <div>
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                                    <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
                                         Avaliador
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
@@ -843,7 +843,7 @@ export default function ModalAvaliacaoAtendimento({
                                 </div>
 
                                 <div>
-                                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                                    <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
                                         Progresso
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
@@ -853,11 +853,11 @@ export default function ModalAvaliacaoAtendimento({
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
+                            <div className="grid gap-4 rounded-xl border border-slate-200 p-4 sm:grid-cols-2 dark:border-white/12">
                                 <label className="block">
                                     <span className="text-sm font-medium">
                                         Responsável{" "}
-                                        <span className="text-red-600">
+                                        <span className="text-red-600 dark:text-[#FF9C92]">
                                             *
                                         </span>
                                     </span>
@@ -872,7 +872,7 @@ export default function ModalAvaliacaoAtendimento({
                                         }
                                         disabled={concluida}
                                         maxLength={180}
-                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50 dark:disabled:bg-[#1C2334]"
                                         placeholder="Nome do responsável"
                                     />
                                 </label>
@@ -880,7 +880,7 @@ export default function ModalAvaliacaoAtendimento({
                                 <label className="block">
                                     <span className="text-sm font-medium">
                                         Grau de parentesco{" "}
-                                        <span className="text-red-600">
+                                        <span className="text-red-600 dark:text-[#FF9C92]">
                                             *
                                         </span>
                                     </span>
@@ -894,7 +894,7 @@ export default function ModalAvaliacaoAtendimento({
                                             )
                                         }
                                         disabled={concluida}
-                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                        className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50 dark:disabled:bg-[#1C2334]"
                                     >
                                         <option value="">
                                             Selecione...
@@ -934,7 +934,7 @@ export default function ModalAvaliacaoAtendimento({
                                                         pergunta.numero
                                                     ] = el;
                                                 }}
-                                                className="rounded-xl border border-slate-200 p-4"
+                                                className="rounded-xl border border-slate-200 p-4 dark:border-white/12"
                                             >
                                                 <div className="flex gap-3">
                                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
@@ -944,13 +944,13 @@ export default function ModalAvaliacaoAtendimento({
                                                     </div>
 
                                                     <div>
-                                                        <h3 className="font-semibold text-slate-950">
+                                                        <h3 className="font-semibold text-slate-950 dark:text-white">
                                                             {
                                                                 pergunta.titulo
                                                             }
                                                         </h3>
 
-                                                        <p className="mt-1 text-sm text-slate-600">
+                                                        <p className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">
                                                             {
                                                                 pergunta.descricao
                                                             }
@@ -962,7 +962,7 @@ export default function ModalAvaliacaoAtendimento({
                                                     <label className="block">
                                                         <span className="text-sm font-medium">
                                                             Nota{" "}
-                                                            <span className="text-red-600">
+                                                            <span className="text-red-600 dark:text-[#FF9C92]">
                                                                 *
                                                             </span>
                                                         </span>
@@ -986,7 +986,7 @@ export default function ModalAvaliacaoAtendimento({
                                                             disabled={
                                                                 concluida
                                                             }
-                                                            className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                            className="mt-1 w-full rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50 dark:disabled:bg-[#1C2334]"
                                                         >
                                                             <option value="">
                                                                 Selecione a nota...
@@ -1042,7 +1042,7 @@ export default function ModalAvaliacaoAtendimento({
                                                                 2000
                                                             }
                                                             rows={3}
-                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                            className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50 dark:disabled:bg-[#1C2334]"
                                                             placeholder="Observação deste item"
                                                         />
                                                     </label>
@@ -1054,14 +1054,14 @@ export default function ModalAvaliacaoAtendimento({
                             </div>
 
                             {tipo === "visita" ? (
-                                <div className="rounded-xl border border-slate-200 p-4">
+                                <div className="rounded-xl border border-slate-200 p-4 dark:border-white/12">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div>
-                                            <h3 className="font-semibold text-slate-950">
+                                            <h3 className="font-semibold text-slate-950 dark:text-white">
                                                 Registros
                                             </h3>
 
-                                            <p className="mt-1 text-sm text-slate-600">
+                                            <p className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">
                                                 Você pode adicionar fotos
                                                 da avaliação e uma legenda
                                                 em cada registro.
@@ -1074,7 +1074,7 @@ export default function ModalAvaliacaoAtendimento({
                                                 onClick={() =>
                                                     void abrirCamera()
                                                 }
-                                                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-[#3D6A99] dark:hover:bg-[#355D86]"
                                             >
                                                 Adicionar registro
                                             </button>
@@ -1089,7 +1089,7 @@ export default function ModalAvaliacaoAtendimento({
                                                         key={
                                                             item.localId
                                                         }
-                                                        className="rounded-xl border border-slate-200 p-3"
+                                                        className="rounded-xl border border-slate-200 p-3 dark:border-white/12"
                                                     >
                                                         <img
                                                             src={
@@ -1140,7 +1140,7 @@ export default function ModalAvaliacaoAtendimento({
                                                                     500
                                                                 }
                                                                 rows={2}
-                                                                className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                                                className="mt-1 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50 dark:disabled:bg-[#1C2334]"
                                                                 placeholder="Legenda do registro"
                                                             />
                                                         </label>
@@ -1154,7 +1154,7 @@ export default function ModalAvaliacaoAtendimento({
                                                                             item.localId,
                                                                         )
                                                                     }
-                                                                    className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                                                    className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-[#FF9C92]/40 dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
                                                                 >
                                                                     Remover
                                                                 </button>
@@ -1165,7 +1165,7 @@ export default function ModalAvaliacaoAtendimento({
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">
+                                        <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
                                             Nenhum registro adicionado.
                                         </div>
                                     )}
@@ -1173,7 +1173,7 @@ export default function ModalAvaliacaoAtendimento({
 
                             ) : null}
 
-                            <label className="block rounded-xl border border-slate-200 p-4">
+                            <label className="block rounded-xl border border-slate-200 p-4 dark:border-white/12">
                                 <span className="text-sm font-medium">
                                     Conclusão
                                 </span>
@@ -1188,7 +1188,7 @@ export default function ModalAvaliacaoAtendimento({
                                     disabled={concluida}
                                     maxLength={4000}
                                     rows={5}
-                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50"
+                                    className="mt-2 w-full resize-y rounded-lg border px-3 py-2 text-base sm:text-sm disabled:bg-slate-50 dark:disabled:bg-[#1C2334]"
                                     placeholder="Registre a conclusão geral da avaliação..."
                                 />
                             </label>
@@ -1201,7 +1201,7 @@ export default function ModalAvaliacaoAtendimento({
                                             void salvar(false)
                                         }
                                         disabled={saving}
-                                        className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                        className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-[#1C2334]"
                                     >
                                         Salvar rascunho
                                     </button>
@@ -1212,7 +1212,7 @@ export default function ModalAvaliacaoAtendimento({
                                             void salvar(true)
                                         }
                                         disabled={saving}
-                                        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                                        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-[#3D6A99] dark:hover:bg-[#355D86]"
                                     >
                                         {saving
                                             ? "Salvando..."
@@ -1220,7 +1220,7 @@ export default function ModalAvaliacaoAtendimento({
                                     </button>
                                 </div>
                             ) : (
-                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]">
                                     Avaliação concluída.
                                 </div>
                             )}
@@ -1244,7 +1244,7 @@ export default function ModalAvaliacaoAtendimento({
                     }}
                 >
                     <div
-                        className="w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl"
+                        className="w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-[#232B3F]"
                         style={{
                             maxHeight: viewport
                                 ? `${Math.max(1, viewport.height - 24)}px`
@@ -1269,7 +1269,7 @@ export default function ModalAvaliacaoAtendimento({
                         </div>
 
                         {cameraErro ? (
-                            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                                 {cameraErro}
                             </div>
                         ) : null}
@@ -1288,7 +1288,7 @@ export default function ModalAvaliacaoAtendimento({
                                 void capturarFoto()
                             }
                             disabled={cameraLoading}
-                            className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
+                            className="mt-4 w-full rounded-lg bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50 dark:bg-[#3D6A99]"
                         >
                             {cameraLoading
                                 ? "Aguarde..."

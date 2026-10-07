@@ -67,7 +67,7 @@ const COR = {
     navy: "#313C55",
     amarelo: "#F2CB3F",
     verde: "#B3CE52",
-    azul: "#00AEEC",
+    azul: "#3D6A99",
     muted: "#6B7488",
 };
 
@@ -84,16 +84,16 @@ function Kpi({
 }) {
     return (
         <div
-            className="flex-1 rounded-xl border border-[#E1E5EC] bg-white p-4"
+            className="flex-1 rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]"
             style={{ borderTop: `4px solid ${cor}` }}
         >
-            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">
+            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
                 {rotulo}
             </div>
-            <div className="mt-1 whitespace-nowrap text-2xl font-extrabold text-[#313C55]">
+            <div className="mt-1 whitespace-nowrap text-2xl font-extrabold text-[#313C55] dark:text-white">
                 {valor}
             </div>
-            {sub && <div className="text-xs text-[#6B7488]">{sub}</div>}
+            {sub && <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{sub}</div>}
         </div>
     );
 }
@@ -108,7 +108,7 @@ function Tag({
     const bg = {
         amarelo: "#FBEFC4",
         verde: "#E6F0C9",
-        azul: "#E0F3FA",
+        azul: "#E9EFF6",
         laranja: "#FDECD8",
         neutro: "#EEF1F5",
     }[tom];
@@ -135,8 +135,8 @@ function Botao({
     const cls = perigo
         ? "bg-[#C0392B] text-white"
         : primario
-            ? "bg-[#313C55] text-white"
-            : "border border-[#E1E5EC] bg-white text-[#313C55]";
+            ? "bg-[#313C55] text-white dark:bg-[#3D6A99]"
+            : "border border-[#E1E5EC] bg-white text-[#313C55] dark:border-white/12 dark:bg-[#232B3F] dark:text-white";
 
     return (
         <button
@@ -158,7 +158,7 @@ function Campo({
 }) {
     return (
         <label className="block text-sm">
-            <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">
+            <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
                 {rotulo}
             </span>
             {children}
@@ -167,7 +167,7 @@ function Campo({
 }
 
 const inputCls =
-    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#00AEEC]";
+    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#3D6A99] dark:border-white/12 dark:bg-[#232B3F] dark:text-white";
 
 const TIPOS = [
     { v: "", r: "Todos" },
@@ -191,7 +191,7 @@ const FORMAS = [
 ];
 
 function tagNP(np: any) {
-    if (!np) return <span className="text-[#6B7488]">—</span>;
+    if (!np) return <span className="text-[#6B7488] dark:text-[#AEB9CF]">—</span>;
     if (np.status === "BAIXADA") {
         return (
             <Tag tom="verde">
@@ -259,10 +259,10 @@ export default function FinanceiroOSPage() {
     const vt = ind?.vendas_por_tipo || {};
 
     return (
-        <main className="min-h-screen bg-[#F4F6F9] p-6 text-[#313C55]">
+        <main className="min-h-screen bg-[#F4F6F9] p-6 text-[#313C55] dark:bg-[#161C2A] dark:text-white">
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                    <div className="text-sm text-[#6B7488]">
+                    <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                         Contas a receber e vendas das ordens de serviço
                     </div>
                     <h1 className="text-2xl font-extrabold">Financeiro</h1>
@@ -270,20 +270,20 @@ export default function FinanceiroOSPage() {
                 <div className="flex gap-2">
                     <a
                         href="/os/relatorio"
-                        className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold"
+                        className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/12 dark:bg-[#232B3F]"
                     >
                         Relatório de atendimentos
                     </a>
                     <a
                         href="/convenio"
-                        className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold"
+                        className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/12 dark:bg-[#232B3F]"
                     >
                         Convênios
                     </a>
                 </div>
             </div>
 
-            <div className="mb-4 grid gap-3 rounded-xl border border-[#E1E5EC] bg-white p-4 md:grid-cols-[160px_160px_1fr_1fr_1fr_auto] md:items-end">
+            <div className="mb-4 grid gap-3 rounded-xl border border-[#E1E5EC] bg-white p-4 md:grid-cols-[160px_160px_1fr_1fr_1fr_auto] md:items-end dark:border-white/12 dark:bg-[#232B3F]">
                 <Campo rotulo="De">
                     <input
                         type="date"
@@ -383,13 +383,13 @@ export default function FinanceiroOSPage() {
             </div>
 
             {erro && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                     {erro}
                 </div>
             )}
 
             {msg && (
-                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]">
                     {msg}
                 </div>
             )}
@@ -452,10 +452,10 @@ export default function FinanceiroOSPage() {
                 </>
             )}
 
-            <div className="overflow-x-auto rounded-xl border border-[#E1E5EC] bg-white">
+            <div className="overflow-x-auto rounded-xl border border-[#E1E5EC] bg-white dark:border-white/12 dark:bg-[#232B3F]">
                 <table className="w-full text-sm">
                     <thead>
-                        <tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488]">
+                        <tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:border-white/12 dark:text-[#AEB9CF]">
                             <th className="px-3 py-3">OS</th>
                             <th className="px-3">Tipo</th>
                             <th className="px-3">Falecido</th>
@@ -472,7 +472,7 @@ export default function FinanceiroOSPage() {
                             <tr>
                                 <td
                                     colSpan={9}
-                                    className="p-6 text-center text-[#6B7488]"
+                                    className="p-6 text-center text-[#6B7488] dark:text-[#AEB9CF]"
                                 >
                                     Nenhuma OS no período.
                                 </td>
@@ -482,14 +482,14 @@ export default function FinanceiroOSPage() {
                         {(painel?.os || []).map((l: any) => (
                             <tr
                                 key={l.os_id}
-                                className={`border-b border-[#E1E5EC] ${l.status === "CONVERTIDA"
-                                        ? "bg-[#FAFBFC] text-[#6B7488]"
+                                className={`border-b border-[#E1E5EC] dark:border-white/12 ${l.status === "CONVERTIDA"
+                                        ? "bg-[#FAFBFC] text-[#6B7488] dark:bg-[#1C2334] dark:text-[#AEB9CF]"
                                         : ""
                                     }`}
                             >
                                 <td className="px-3 py-3">
                                     <b>{l.numero_os}</b>
-                                    <div className="text-xs text-[#6B7488]">
+                                    <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">
                                         {l.status === "FECHADA"
                                             ? `Assinada ${dataBR(l.assinada_em)}`
                                             : l.status}
@@ -502,7 +502,7 @@ export default function FinanceiroOSPage() {
                                 </td>
                                 <td className="px-3">
                                     <b>{l.falecido || "—"}</b>
-                                    <div className="text-xs text-[#6B7488]">
+                                    <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">
                                         {l.responsavel || ""}
                                     </div>
                                 </td>
@@ -695,20 +695,20 @@ function DetalheOS({
             onClick={onFechar}
         >
             <div
-                className="h-full w-full max-w-5xl overflow-y-auto bg-[#F4F6F9] p-6"
+                className="h-full w-full max-w-5xl overflow-y-auto bg-[#F4F6F9] p-6 dark:bg-[#1C2334]"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
-                        <div className="text-sm text-[#6B7488]">
+                        <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                             Financeiro › {linha.tipo_rotulo}
                         </div>
                         <h2 className="text-2xl font-extrabold">
                             OS {linha.numero_os} · {linha.falecido || "—"}
                         </h2>
-                        <div className="text-sm text-[#6B7488]">
+                        <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                             Responsável{" "}
-                            <b className="text-[#313C55]">
+                            <b className="text-[#313C55] dark:text-white">
                                 {linha.responsavel || "—"}
                             </b>{" "}
                             · agente {linha.agente} ·{" "}
@@ -720,7 +720,7 @@ function DetalheOS({
 
                     <div className="flex gap-2">
                         <a
-                            className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold"
+                            className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/12 dark:bg-[#232B3F]"
                             target="_blank"
                             rel="noreferrer"
                             href={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar`}
@@ -744,21 +744,21 @@ function DetalheOS({
                 </div>
 
                 {erro && (
-                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                         {erro}
                     </div>
                 )}
 
                 {/* Itens da OS: alterar valores (ícone de ajuste e desconto geral) com a OS aberta; assinada → Reabrir com motivo. */}
-                <div className="mb-4 rounded-xl border border-[#E1E5EC] bg-white p-4">
+                <div className="mb-4 rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <div className="flex-1 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">{linha.tipo === "PRF" ? "Pacotes e serviços da OS" : "Itens da OS"}</div>
+                        <div className="flex-1 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">{linha.tipo === "PRF" ? "Pacotes e serviços da OS" : "Itens da OS"}</div>
                         {podeReabrir && (
                             <Botao onClick={() => { setMotivoReabrir(""); setReabrir(true); }}>Reabrir OS</Botao>
                         )}
                     </div>
                     {statusAtual === "FECHADA" && ehDaFamilia && (
-                        <div className="mb-3 rounded-lg border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55]">
+                        <div className="mb-3 rounded-lg border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
                             OS assinada: para alterar valores, reabra. A assinatura e a nota promissória anteriores deixam de valer.
                         </div>
                     )}
@@ -777,12 +777,12 @@ function DetalheOS({
 
                 {reabrir && (
                     <Modal titulo={`Reabrir ${linha.numero_os}`} onFechar={() => setReabrir(false)}>
-                        <div className="text-sm text-[#313C55]">
+                        <div className="text-sm text-[#313C55] dark:text-white">
                             A assinatura e a nota promissória desta OS deixam de valer. Depois de alterar, o responsável assina de novo.
                         </div>
-                        <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Motivo *</label>
+                        <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Motivo *</label>
                         <textarea
-                            className="mt-1 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm"
+                            className="mt-1 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm dark:border-white/12 dark:bg-[#232B3F]"
                             rows={3}
                             value={motivoReabrir}
                             onChange={(e) => setMotivoReabrir(e.target.value)}
@@ -837,12 +837,12 @@ function DetalheOS({
                     />
 
                     <div
-                        className="flex-[1.4] rounded-xl border border-[#E1E5EC] bg-white p-4"
+                        className="flex-[1.4] rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]"
                         style={{
                             borderTop: `4px solid ${COR.azul}`,
                         }}
                     >
-                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">
+                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
                             Nota promissória
                         </div>
 
@@ -857,7 +857,7 @@ function DetalheOS({
                                     {tagNP(linha.nota_promissoria)}
                                 </div>
 
-                                <div className="text-xs text-[#6B7488]">
+                                <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">
                                     à vista · via única
                                 </div>
 
@@ -888,7 +888,7 @@ function DetalheOS({
                                     )}
                             </>
                         ) : (
-                            <div className="mt-1 text-sm text-[#6B7488]">
+                            <div className="mt-1 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                                 Sem nota promissória
                             </div>
                         )}
@@ -896,7 +896,7 @@ function DetalheOS({
                 </div>
 
                 {linha.credito_a_devolver > 0 && (
-                    <div className="mb-4 flex items-center justify-between rounded-xl border border-[#F2CB3F] bg-[#FFF8E1] p-4 text-sm">
+                    <div className="mb-4 flex items-center justify-between rounded-xl border border-[#F2CB3F] bg-[#FFF8E1] p-4 text-sm dark:bg-[#F2CB3F]/15">
                         <span>
                             Crédito a devolver à família:{" "}
                             <b>
@@ -927,14 +927,14 @@ function DetalheOS({
 
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                     <div className="flex min-w-0 flex-1 flex-col gap-4">
-                        <div className="rounded-xl border border-[#E1E5EC] bg-white p-4">
+                        <div className="rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]">
                             <div className="mb-2 text-lg font-extrabold">
                                 Lançamentos
                             </div>
 
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488]">
+                                    <tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:border-white/12 dark:text-[#AEB9CF]">
                                         <th className="py-2">
                                             Data
                                         </th>
@@ -955,7 +955,7 @@ function DetalheOS({
                                             <tr>
                                                 <td
                                                     colSpan={5}
-                                                    className="py-4 text-[#6B7488]"
+                                                    className="py-4 text-[#6B7488] dark:text-[#AEB9CF]"
                                                 >
                                                     Nenhum recebimento.
                                                 </td>
@@ -966,10 +966,10 @@ function DetalheOS({
                                         (p: any) => (
                                             <tr
                                                 key={p.id}
-                                                className={`border-b border-[#E1E5EC] ${Number(
+                                                className={`border-b border-[#E1E5EC] dark:border-white/12 ${Number(
                                                     p.estornado,
                                                 )
-                                                        ? "text-[#6B7488] line-through"
+                                                        ? "text-[#6B7488] line-through dark:text-[#AEB9CF]"
                                                         : ""
                                                     }`}
                                             >
@@ -1003,7 +1003,7 @@ function DetalheOS({
                                                                     c.id ||
                                                                     c.arquivo_url
                                                                 }
-                                                                className="ml-2 font-bold text-[#00AEEC]"
+                                                                className="ml-2 font-bold text-[#3D6A99] dark:text-[#A9BED6]"
                                                                 target="_blank"
                                                                 rel="noreferrer"
                                                                 href={
@@ -1021,7 +1021,7 @@ function DetalheOS({
                                                     ) && (
                                                             <button
                                                                 type="button"
-                                                                className="text-xs font-bold text-[#C0392B]"
+                                                                className="text-xs font-bold text-[#C0392B] dark:text-[#FF9C92]"
                                                                 onClick={() => {
                                                                     setEstorno(
                                                                         p,
@@ -1042,18 +1042,18 @@ function DetalheOS({
                             </table>
                         </div>
 
-                        <div className="rounded-xl border border-[#E1E5EC] bg-white p-4">
+                        <div className="rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]">
                             <div className="mb-2 flex justify-between">
                                 <span className="text-lg font-extrabold">
                                     Linha do tempo
                                 </span>
-                                <span className="text-xs text-[#6B7488]">
+                                <span className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">
                                     todas as OS do atendimento
                                 </span>
                             </div>
 
                             {tempo.length === 0 && (
-                                <div className="text-sm text-[#6B7488]">
+                                <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                                     Sem eventos.
                                 </div>
                             )}
@@ -1062,7 +1062,7 @@ function DetalheOS({
                                 (e: any, i: number) => (
                                     <div
                                         key={i}
-                                        className="flex gap-3 border-b border-[#E1E5EC] py-2 text-sm last:border-b-0"
+                                        className="flex gap-3 border-b border-[#E1E5EC] py-2 text-sm last:border-b-0 dark:border-white/12"
                                     >
                                         <span
                                             className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
@@ -1095,7 +1095,7 @@ function DetalheOS({
                                             }}
                                         />
 
-                                        <span className="w-28 shrink-0 text-[#6B7488]">
+                                        <span className="w-28 shrink-0 text-[#6B7488] dark:text-[#AEB9CF]">
                                             {dataHoraBR(e.data)}
                                         </span>
 
@@ -1106,7 +1106,7 @@ function DetalheOS({
                                             {e.descricao}
                                         </span>
 
-                                        <span className="text-xs text-[#6B7488]">
+                                        <span className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">
                                             {e.usuario || ""}
                                         </span>
                                     </div>
@@ -1116,7 +1116,7 @@ function DetalheOS({
                     </div>
 
                     {podeReceber && (
-                        <div className="w-full shrink-0 rounded-xl border border-[#E1E5EC] bg-white p-4 lg:w-[310px]">
+                        <div className="w-full shrink-0 rounded-xl border border-[#E1E5EC] bg-white p-4 lg:w-[310px] dark:border-white/12 dark:bg-[#232B3F]">
                             <div className="mb-3 text-lg font-extrabold">
                                 Registrar recebimento
                             </div>
@@ -1200,11 +1200,11 @@ function DetalheOS({
                                 </Campo>
                             </div>
 
-                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm">
+                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm dark:bg-[#1C2334]">
                                 Saldo após o lançamento:{" "}
                                 <b>{brl(saldoApos)}</b>
                                 <br />
-                                <span className="text-[#6B7488]">
+                                <span className="text-[#6B7488] dark:text-[#AEB9CF]">
                                     A NP continua aberta até o saldo
                                     zerar.
                                 </span>
@@ -1229,7 +1229,7 @@ function DetalheOS({
                         sub="Somente administrador · o lançamento fica no histórico, marcado como estornado"
                         onFechar={() => setEstorno(null)}
                     >
-                        <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3">
+                        <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 dark:bg-[#1C2334]">
                             {dataBR(estorno.data_pagamento)} ·{" "}
                             {String(
                                 estorno.forma_pagamento,
@@ -1250,7 +1250,7 @@ function DetalheOS({
                             />
                         </Campo>
 
-                        <div className="my-3 rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] p-3 text-sm">
+                        <div className="my-3 rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] p-3 text-sm dark:bg-[#F2CB3F]/15">
                             Depois do estorno o saldo volta e a
                             nota promissória volta a ABERTA.
                         </div>
@@ -1337,7 +1337,7 @@ function DetalheOS({
                         ].map(([k, r]) => (
                             <div
                                 key={k}
-                                className="mb-2 flex items-center justify-between rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] px-3 py-2 text-sm font-bold"
+                                className="mb-2 flex items-center justify-between rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] px-3 py-2 text-sm font-bold dark:bg-[#F2CB3F]/15"
                             >
                                 <span>{r}</span>
 
@@ -1357,8 +1357,8 @@ function DetalheOS({
                                                 })
                                             }
                                             className={`px-3 py-1 ${conv[k] === v
-                                                    ? "bg-[#313C55] text-white"
-                                                    : "border border-[#E1E5EC] bg-white text-[#6B7488]"
+                                                    ? "bg-[#313C55] text-white dark:bg-[#3D6A99]"
+                                                    : "border border-[#E1E5EC] bg-white text-[#6B7488] dark:border-white/12 dark:bg-[#232B3F] dark:text-[#AEB9CF]"
                                                 }`}
                                         >
                                             {t}
@@ -1385,10 +1385,10 @@ function DetalheOS({
                         </div>
 
                         {conv.previa ? (
-                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm">
+                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm dark:bg-[#1C2334]">
                                 <table className="mb-2 w-full text-xs">
                                     <thead>
-                                        <tr className="text-left text-[#6B7488]">
+                                        <tr className="text-left text-[#6B7488] dark:text-[#AEB9CF]">
                                             <th>Item</th>
                                             <th className="text-right">
                                                 Lançado
@@ -1409,7 +1409,7 @@ function DetalheOS({
                                             ) => (
                                                 <tr
                                                     key={n}
-                                                    className="border-t border-[#E1E5EC]"
+                                                    className="border-t border-[#E1E5EC] dark:border-white/12"
                                                 >
                                                     <td className="py-1">
                                                         {i.item}
@@ -1419,7 +1419,7 @@ function DetalheOS({
                                                             i.lancado,
                                                         )}
                                                     </td>
-                                                    <td className="pl-2 text-[#6B7488]">
+                                                    <td className="pl-2 text-[#6B7488] dark:text-[#AEB9CF]">
                                                         {i.regra}
                                                     </td>
                                                     <td className="text-right font-bold">
@@ -1467,7 +1467,7 @@ function DetalheOS({
                                 </div>
                             </div>
                         ) : (
-                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-xs leading-5">
+                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-xs leading-5 dark:bg-[#1C2334]">
                                 A diferença é calculada{" "}
                                 <b>por item</b>: item do pacote com
                                 o modelo padrão fica coberto; item
@@ -1585,31 +1585,31 @@ function ComposicaoContrato({ osId, versao = 0 }: { osId: number; versao?: numbe
         };
     }, [osId, versao]);
 
-    if (erro) return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>;
-    if (!d) return <div className="py-2 text-sm text-[#6B7488]">Carregando…</div>;
-    if (!d.grupos.length) return <div className="py-2 text-sm text-[#6B7488]">Nenhum pacote ou serviço lançado nesta OS.</div>;
+    if (erro) return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>;
+    if (!d) return <div className="py-2 text-sm text-[#6B7488] dark:text-[#AEB9CF]">Carregando…</div>;
+    if (!d.grupos.length) return <div className="py-2 text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum pacote ou serviço lançado nesta OS.</div>;
     const diverge = Math.abs(Number(d.soma) - Number(d.valor_total)) > 0.005;
 
     return (
         <div>
             <div className="flex flex-col gap-2.5">
                 {d.grupos.map((g, i) => (
-                    <div key={i} className="rounded-xl border border-[#E1E5EC] bg-white">
-                        <div className="flex items-start gap-3 border-b border-[#E1E5EC] px-4 py-3">
+                    <div key={i} className="rounded-xl border border-[#E1E5EC] bg-white dark:border-white/12 dark:bg-[#232B3F]">
+                        <div className="flex items-start gap-3 border-b border-[#E1E5EC] px-4 py-3 dark:border-white/12">
                             <div className="min-w-0 flex-1">
-                                <div className="text-[15px] font-extrabold leading-tight text-[#313C55]">{g.titulo}</div>
-                                <div className="text-xs text-[#6B7488]">{g.subtitulo}</div>
+                                <div className="text-[15px] font-extrabold leading-tight text-[#313C55] dark:text-white">{g.titulo}</div>
+                                <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{g.subtitulo}</div>
                             </div>
-                            <div className="whitespace-nowrap text-lg font-extrabold text-[#313C55]">{g.tipo === "SEM_VALOR" ? "—" : brl(g.valor)}</div>
+                            <div className="whitespace-nowrap text-lg font-extrabold text-[#313C55] dark:text-white">{g.tipo === "SEM_VALOR" ? "—" : brl(g.valor)}</div>
                         </div>
                         {g.itens.length ? (
                             <ul className="px-4 py-2 text-sm">
                                 {g.itens.map((it, j) => (
                                     <li key={j} className="flex items-baseline gap-2 py-0.5">
-                                        <span className="text-[#6B7488]">•</span>
+                                        <span className="text-[#6B7488] dark:text-[#AEB9CF]">•</span>
                                         <span className="min-w-0 flex-1">
-                                            <b className="font-bold text-[#313C55]">{it.nome}</b>
-                                            <span className="text-xs text-[#6B7488]">
+                                            <b className="font-bold text-[#313C55] dark:text-white">{it.nome}</b>
+                                            <span className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">
                                                 {" "}· {it.categoria}
                                                 {it.quantidade > 1 ? ` · ${it.quantidade} un.` : ""}
                                                 {it.detalhe ? ` · ${it.detalhe}` : ""}
@@ -1619,18 +1619,18 @@ function ComposicaoContrato({ osId, versao = 0 }: { osId: number; versao?: numbe
                                 ))}
                             </ul>
                         ) : (
-                            <div className="px-4 py-2 text-xs text-[#6B7488]">Nenhum item do atendimento neste pacote.</div>
+                            <div className="px-4 py-2 text-xs text-[#6B7488] dark:text-[#AEB9CF]">Nenhum item do atendimento neste pacote.</div>
                         )}
                     </div>
                 ))}
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-right">
                 {diverge ? (
-                    <span className="rounded-lg bg-[#FCF3CC] px-2.5 py-1 text-xs font-bold text-[#313C55]">
+                    <span className="rounded-lg bg-[#FCF3CC] px-2.5 py-1 text-xs font-bold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
                         Soma dos pacotes e serviços: {brl(d.soma)} (diferente do total gravado)
                     </span>
                 ) : null}
-                <span className="text-lg font-extrabold text-[#313C55]">Total da OS: {brl(d.valor_total)}</span>
+                <span className="text-lg font-extrabold text-[#313C55] dark:text-white">Total da OS: {brl(d.valor_total)}</span>
             </div>
         </div>
     );
@@ -1653,14 +1653,14 @@ function Modal({
             onClick={onFechar}
         >
             <div
-                className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+                className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#232B3F]"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="text-xl font-extrabold">
                     {titulo}
                 </div>
                 {sub && (
-                    <div className="mb-4 text-sm text-[#6B7488]">
+                    <div className="mb-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                         {sub}
                     </div>
                 )}

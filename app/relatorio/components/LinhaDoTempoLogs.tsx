@@ -160,19 +160,19 @@ function ListaMateriais({ titulo, itens }: { titulo: string; itens: MaterialRela
     }
 
     return (
-        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-white/12 dark:bg-[#1C2334]/60">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-[#AEB9CF]">
                 {titulo}
             </div>
             <div className="mt-2 space-y-2">
                 {Array.from(grupos.entries()).map(([categoria, linhas]) => (
                     <div key={categoria}>
                         {categoria !== titulo && (
-                            <div className="mb-1 text-[11px] font-medium text-slate-500">
+                            <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-[#AEB9CF]">
                                 {categoria}
                             </div>
                         )}
-                        <ul className="space-y-1 text-sm text-slate-800">
+                        <ul className="space-y-1 text-sm text-slate-800 dark:text-white">
                             {linhas.map((item, index) => (
                                 <li
                                     key={`${categoria}-${item.nome}-${index}`}
@@ -201,7 +201,7 @@ function DetalhesHumanos({
 
     if (compacto && temHumanos) {
         return (
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-white/12 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                 Dados iniciais organizados no resumo do atendimento acima.
             </div>
         );
@@ -212,14 +212,14 @@ function DetalhesHumanos({
     return (
         <div className="mt-3 space-y-3">
             {detalhes.campos.length > 0 && (
-                <dl className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <dl className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/12 dark:bg-[#232B3F]">
                     {detalhes.campos.map((campo, index) => (
                         <div
                             key={`${campo.chave}-${index}`}
-                            className="grid grid-cols-1 gap-0.5 border-b border-slate-100 px-3 py-2 last:border-b-0 sm:grid-cols-[170px_1fr] sm:gap-3"
+                            className="grid grid-cols-1 gap-0.5 border-b border-slate-100 px-3 py-2 last:border-b-0 sm:grid-cols-[170px_1fr] sm:gap-3 dark:border-white/12"
                         >
-                            <dt className="text-xs font-medium text-slate-500">{campo.label}</dt>
-                            <dd className="min-w-0 break-words text-sm text-slate-900">{campo.valor}</dd>
+                            <dt className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">{campo.label}</dt>
+                            <dd className="min-w-0 break-words text-sm text-slate-900 dark:text-white">{campo.valor}</dd>
                         </div>
                     ))}
                 </dl>
@@ -229,15 +229,15 @@ function DetalhesHumanos({
             <ListaMateriais titulo="Insumos Tanatopraxia" itens={detalhes.insumos} />
 
             {detalhes.arrumacao.length > 0 && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-white/12 dark:bg-[#1C2334]/60">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-[#AEB9CF]">
                         Conservação do corpo
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                         {detalhes.arrumacao.map((item) => (
                             <span
                                 key={item}
-                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700"
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 dark:border-white/12 dark:bg-[#232B3F] dark:text-[#D6DCE8]"
                             >
                                 {item}
                             </span>
@@ -247,11 +247,11 @@ function DetalhesHumanos({
             )}
 
             {detalhes.coroas.length > 0 && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-white/12 dark:bg-[#1C2334]/60">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-[#AEB9CF]">
                         Coroas de flores
                     </div>
-                    <ul className="mt-2 space-y-1 text-sm text-slate-800">
+                    <ul className="mt-2 space-y-1 text-sm text-slate-800 dark:text-white">
                         {detalhes.coroas.map((item, index) => (
                             <li key={`${item}-${index}`}>{item}</li>
                         ))}
@@ -262,26 +262,26 @@ function DetalhesHumanos({
             {detalhes.textoLivre.map((texto, index) => (
                 <div
                     key={`${texto}-${index}`}
-                    className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-800"
+                    className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-800 dark:border-white/12 dark:bg-[#1C2334]/60 dark:text-white"
                 >
                     {texto}
                 </div>
             ))}
 
             {detalhes.tecnicos.length > 0 && (
-                <details className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60">
-                    <summary className="flex cursor-pointer list-none items-center gap-1 px-3 py-2 text-xs font-semibold text-slate-500">
+                <details className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 dark:border-white/25 dark:bg-[#1C2334]/60">
+                    <summary className="flex cursor-pointer list-none items-center gap-1 px-3 py-2 text-xs font-semibold text-slate-500 dark:text-[#AEB9CF]">
                         <IconChevronDown className="size-4" />
                         Dados técnicos ({detalhes.tecnicos.length})
                     </summary>
-                    <dl className="divide-y divide-slate-200 border-t border-dashed border-slate-300 px-3">
+                    <dl className="divide-y divide-slate-200 border-t border-dashed border-slate-300 px-3 dark:divide-white/12 dark:border-white/25">
                         {detalhes.tecnicos.map((campo, index) => (
                             <div
                                 key={`${campo.chave}-${index}`}
                                 className="grid grid-cols-1 gap-1 py-2 text-xs sm:grid-cols-[180px_1fr]"
                             >
-                                <dt className="font-medium text-slate-500">{campo.label}</dt>
-                                <dd className="break-all text-slate-700">{campo.valor}</dd>
+                                <dt className="font-medium text-slate-500 dark:text-[#AEB9CF]">{campo.label}</dt>
+                                <dd className="break-all text-slate-700 dark:text-[#D6DCE8]">{campo.valor}</dd>
                             </div>
                         ))}
                     </dl>
@@ -310,7 +310,7 @@ export default function LinhaDoTempoLogs({
     return (
         <>
             <div className="relative space-y-0 pl-6">
-                <div className="absolute bottom-4 left-[9px] top-4 w-px bg-slate-200" />
+                <div className="absolute bottom-4 left-[9px] top-4 w-px bg-slate-200 dark:bg-white/15" />
 
                 {logsVisiveis.map((ent, index) => {
                     const detalhes = extrairDetalhesLogHumanos(ent.detalhes, materiaisMap);
@@ -320,22 +320,22 @@ export default function LinhaDoTempoLogs({
 
                     return (
                         <article key={`${ent.datahora || "log"}-${index}`} className="relative pb-5">
-                            <div className="absolute -left-6 top-4 flex h-[19px] w-[19px] items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] shadow-sm">
+                            <div className="absolute -left-6 top-4 flex h-[19px] w-[19px] items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] shadow-sm dark:border-white/12 dark:bg-[#232B3F]">
                                 {iconeAcao(ent.acao, ent.status_novo)}
                             </div>
 
-                            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4 dark:border-white/12 dark:bg-[#232B3F]">
                                 <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                                     <div className="min-w-0">
-                                        <div className="text-xs text-slate-500">
+                                        <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                             {formataDataHora(ent.datahora)}
                                         </div>
-                                        <h5 className="mt-0.5 text-sm font-semibold text-slate-900">
+                                        <h5 className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
                                             {tituloDoLog(ent)}
                                         </h5>
                                         {usuarioVisivel && ent.usuario && (
-                                            <div className="mt-0.5 text-xs text-slate-500">
-                                                Responsável: <span className="font-medium text-slate-700">{ent.usuario}</span>
+                                            <div className="mt-0.5 text-xs text-slate-500 dark:text-[#AEB9CF]">
+                                                Responsável: <span className="font-medium text-slate-700 dark:text-[#D6DCE8]">{ent.usuario}</span>
                                             </div>
                                         )}
                                     </div>
@@ -347,7 +347,7 @@ export default function LinhaDoTempoLogs({
                                                     key={foto.url}
                                                     type="button"
                                                     onClick={() => setFotoModal(foto)}
-                                                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6] dark:hover:bg-[#3D6A99]/20"
                                                 >
                                                     <IconPhoto className="size-4" />
                                                     Ver foto
@@ -374,7 +374,7 @@ export default function LinhaDoTempoLogs({
                         if (e.target === e.currentTarget) setFotoModal(null);
                     }}
                 >
-                    <div className="w-full max-w-4xl overflow-hidden rounded-2xl border bg-white shadow-2xl">
+                    <div className="w-full max-w-4xl overflow-hidden rounded-2xl border bg-white shadow-2xl dark:bg-[#232B3F]">
                         <div className="flex items-center justify-between gap-3 border-b p-3 sm:p-4">
                             <div className="font-semibold">{fotoModal.titulo}</div>
                             <button
@@ -386,11 +386,11 @@ export default function LinhaDoTempoLogs({
                                 <IconX className="size-5" />
                             </button>
                         </div>
-                        <div className="bg-slate-50 p-3 sm:p-4">
+                        <div className="bg-slate-50 p-3 sm:p-4 dark:bg-[#1C2334]">
                             <img
                                 src={fotoModal.url}
                                 alt={fotoModal.titulo}
-                                className="mx-auto max-h-[78vh] w-auto max-w-full rounded-lg border bg-white object-contain"
+                                className="mx-auto max-h-[78vh] w-auto max-w-full rounded-lg border bg-white object-contain dark:bg-[#232B3F]"
                             />
                         </div>
                     </div>

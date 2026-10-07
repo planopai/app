@@ -864,7 +864,7 @@ function LiveVehiclesMap({
     }, []);
 
     return (
-        <div className="relative overflow-hidden rounded-2xl border bg-slate-100">
+        <div className="relative overflow-hidden rounded-2xl border bg-slate-100 dark:bg-white/10">
             <style jsx global>{`
                 .live-car-div-icon { background: transparent; border: 0; }
                 .live-car-marker {
@@ -934,26 +934,26 @@ function LiveVehiclesMap({
 
             <div ref={mapDivRef} style={{ height }} className="w-full" />
 
-            <div className="pointer-events-none absolute left-3 top-3 rounded-xl border bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
-                <div className="font-semibold text-slate-800">🚗 Veículos ao vivo</div>
-                <div className="text-slate-500">
+            <div className="pointer-events-none absolute left-3 top-3 rounded-xl border bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:bg-[#232B3F]/95">
+                <div className="font-semibold text-slate-800 dark:text-white">🚗 Veículos ao vivo</div>
+                <div className="text-slate-500 dark:text-[#AEB9CF]">
                     {valid.length} no mapa {loading ? "• atualizando..." : ""}
                 </div>
             </div>
 
-            <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
-                <div className="flex flex-wrap gap-3 text-slate-600">
-                    <span><strong className="text-emerald-700">●</strong> em movimento</span>
-                    <span><strong className="text-slate-700">●</strong> parado/desligado</span>
+            <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:bg-[#232B3F]/95">
+                <div className="flex flex-wrap gap-3 text-slate-600 dark:text-[#AEB9CF]">
+                    <span><strong className="text-emerald-700 dark:text-[#B3CE52]">●</strong> em movimento</span>
+                    <span><strong className="text-slate-700 dark:text-[#D6DCE8]">●</strong> parado/desligado</span>
                     <span>clique no carro para detalhes</span>
                 </div>
-                <div className="text-slate-500">
+                <div className="text-slate-500 dark:text-[#AEB9CF]">
                     Atualizado: {lastUpdate ? lastUpdate.toLocaleTimeString("pt-BR") : "-"}
                 </div>
             </div>
 
             {error && (
-                <div className="absolute inset-x-3 bottom-16 rounded-xl border bg-white/95 p-3 text-sm text-slate-600 shadow-sm">
+                <div className="absolute inset-x-3 bottom-16 rounded-xl border bg-white/95 p-3 text-sm text-slate-600 shadow-sm dark:bg-[#232B3F]/95 dark:text-[#AEB9CF]">
                     {error}
                 </div>
             )}
@@ -1473,8 +1473,8 @@ export default function TelemetriaOperacionalPage() {
     }, [tab]);
 
     return (
-        <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6">
-            <section className="mb-5 rounded-2xl border bg-white p-3 shadow-sm md:p-4">
+        <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6 dark:bg-[#1C2334] dark:text-white">
+            <section className="mb-5 rounded-2xl border bg-white p-3 shadow-sm md:p-4 dark:bg-[#232B3F]">
                 {tab === "ao_vivo" || tab === "lista_veiculos" ? (
                     <LiveVehiclesMap
                         veiculos={veiculos}
@@ -1493,7 +1493,7 @@ export default function TelemetriaOperacionalPage() {
                 )}
 
                 {mapaPrincipalPontos.length === 0 && tab !== "ao_vivo" && tab !== "lista_veiculos" && (
-                    <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                    <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                         {mensagemMapaVazio}
                     </div>
                 )}
@@ -1514,7 +1514,7 @@ export default function TelemetriaOperacionalPage() {
                                 fetchVeiculos(false, true);
                             }}
                             disabled={loadingVeiculos}
-                            className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 sm:w-auto"
+                            className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 sm:w-auto dark:bg-[#3D6A99]"
                         >
                             {loadingVeiculos ? "Consultando..." : "Atualizar agora"}
                         </button>
@@ -1522,7 +1522,7 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={carregarTudo}
                             disabled={loadingGeral}
-                            className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 sm:w-auto"
+                            className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 sm:w-auto dark:bg-[#232B3F]"
                         >
                             Atualizar tudo
                         </button>
@@ -1531,7 +1531,7 @@ export default function TelemetriaOperacionalPage() {
             </section>
 
             {msg && (
-                <div className="mb-5 rounded-xl border bg-white p-3 text-sm text-slate-700 shadow-sm">
+                <div className="mb-5 rounded-xl border bg-white p-3 text-sm text-slate-700 shadow-sm dark:bg-[#232B3F] dark:text-[#D6DCE8]">
                     {msg}
                 </div>
             )}
@@ -1598,18 +1598,18 @@ export default function TelemetriaOperacionalPage() {
                         setConsumoPlaca(normalizePlaca(consumoPlaca || placaBase));
                         setConsumoAberto(true);
                     }}
-                    className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto"
+                    className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-[#1C2334]"
                 >
                     ⛽ Consumo
                 </button>
             </nav>
 
             {tab === "lista_veiculos" && (
-                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-[#232B3F]">
                     <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Frota iTrack</h2>
-                            <p className="text-sm text-slate-500">
+                            <p className="text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 {veiculosFiltrados.length} de {veiculos.length} veículo(s) • tempo real {LIVE_REFRESH_MS / 1000}s • última atualização: {ultimaAtualizacaoAoVivo ? ultimaAtualizacaoAoVivo.toLocaleTimeString("pt-BR") : "-"}
                             </p>
                         </div>
@@ -1645,7 +1645,7 @@ export default function TelemetriaOperacionalPage() {
                             <button
                                 onClick={exportarVeiculosCsv}
                                 disabled={veiculosFiltrados.length === 0}
-                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto"
+                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto dark:bg-[#232B3F]"
                             >
                                 Exportar CSV
                             </button>
@@ -1671,8 +1671,8 @@ export default function TelemetriaOperacionalPage() {
                                             <div className="mb-3 flex items-start justify-between gap-3">
                                                 <div>
                                                     <div className="text-lg font-bold">{placaComTraco(v.placa)}</div>
-                                                    <div className="text-sm text-slate-600">{veiculoDescricao(v)}</div>
-                                                    <div className="mt-1 text-xs text-slate-500">Cliente: {veiculoCliente(v)}</div>
+                                                    <div className="text-sm text-slate-600 dark:text-[#AEB9CF]">{veiculoDescricao(v)}</div>
+                                                    <div className="mt-1 text-xs text-slate-500 dark:text-[#AEB9CF]">Cliente: {veiculoCliente(v)}</div>
                                                 </div>
 
                                                 <div className="flex flex-col items-end gap-1">
@@ -1687,7 +1687,7 @@ export default function TelemetriaOperacionalPage() {
                                                 <KPI label="GPS" value={String(v.gps ?? "-")} compact />
                                             </div>
 
-                                            <div className="mt-3 space-y-1 text-xs text-slate-500">
+                                            <div className="mt-3 space-y-1 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                 <div>Rastreador: {veiculoRastreador(v)}</div>
                                                 <div>Motorista: {veiculoMotorista(v)}</div>
                                                 <div>Última posição: {fmtDataHora(veiculoDataPosicao(v))}</div>
@@ -1696,7 +1696,7 @@ export default function TelemetriaOperacionalPage() {
                                             </div>
 
                                             {eventos.length > 0 && (
-                                                <div className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
+                                                <div className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                                                     {eventos.map((ev, i) => (
                                                         <div key={i}>
                                                             {ev.idEvento ? `${ev.idEvento} - ` : ""}
@@ -1734,11 +1734,11 @@ export default function TelemetriaOperacionalPage() {
             )}
 
             {tab === "atendimentos" && (
-                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-[#232B3F]">
                     <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Atendimentos funerários</h2>
-                            <p className="text-sm text-slate-500">
+                            <p className="text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 {kpis.atendimentos} atendimento(s), {kpis.atendComPlaca} com placa vinculada.
                             </p>
                         </div>
@@ -1781,7 +1781,7 @@ export default function TelemetriaOperacionalPage() {
                             <button
                                 onClick={exportarAtendimentosCsv}
                                 disabled={rowsFiltradas.length === 0}
-                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60"
+                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 dark:bg-[#232B3F]"
                             >
                                 Exportar CSV
                             </button>
@@ -1799,7 +1799,7 @@ export default function TelemetriaOperacionalPage() {
                                 return (
                                     <div
                                         key={row.id}
-                                        className={`rounded-2xl border p-4 ${selected ? "border-slate-900 bg-slate-50" : "bg-white"}`}
+                                        className={`rounded-2xl border p-4 ${selected ? "border-slate-900 bg-slate-50 dark:bg-[#1C2334]" : "bg-white dark:bg-[#232B3F]"}`}
                                     >
                                         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                                             <div>
@@ -1810,11 +1810,11 @@ export default function TelemetriaOperacionalPage() {
                                                     {row.placa && <Badge tone="emerald">{placaComTraco(row.placa)}</Badge>}
                                                 </div>
 
-                                                <div className="mt-1 text-sm text-slate-600">
+                                                <div className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">
                                                     {row.veiculo_nome || "Sem veículo"} {row.agente ? `• Agente: ${row.agente}` : ""}
                                                 </div>
 
-                                                <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-2 xl:grid-cols-4">
+                                                <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-2 xl:grid-cols-4 dark:text-[#AEB9CF]">
                                                     <div>Sepultamento: {row.sepultamento_id ?? "-"}</div>
                                                     <div>Motorista: {row.nome_motorista ?? "-"}</div>
                                                     <div>Início: {fmtDataHora(row.inicio_iso || row.inicio_ts)}</div>
@@ -1862,8 +1862,8 @@ export default function TelemetriaOperacionalPage() {
                                         {selected && (
                                             <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_280px]">
                                                 <MapRoute pontos={pontos} height={260} />
-                                                <div className="rounded-xl bg-white p-3 text-xs text-slate-600">
-                                                    <div className="font-semibold text-slate-800">Detalhes operacionais</div>
+                                                <div className="rounded-xl bg-white p-3 text-xs text-slate-600 dark:bg-[#232B3F] dark:text-[#AEB9CF]">
+                                                    <div className="font-semibold text-slate-800 dark:text-white">Detalhes operacionais</div>
                                                     <div className="mt-2">Rastreador iTrack: {row.id_rastreador_itrack ?? "-"}</div>
                                                     <div>Hod. inicial: {row.hodometro_inicial != null ? fmtM(row.hodometro_inicial) : "-"}</div>
                                                     <div>Hod. final: {row.hodometro_final != null ? fmtM(row.hodometro_final) : "-"}</div>
@@ -1882,11 +1882,11 @@ export default function TelemetriaOperacionalPage() {
             )}
 
             {tab === "motoristas" && (
-                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-[#232B3F]">
                     <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Motorista</h2>
-                            <p className="text-sm text-slate-500">
+                            <p className="text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 Nome do motorista, velocidade média, velocidade máxima e total de km rodado no período selecionado.
                             </p>
                         </div>
@@ -1907,7 +1907,7 @@ export default function TelemetriaOperacionalPage() {
                             <button
                                 onClick={() => fetchMotoristas(periodoMotorista, true)}
                                 disabled={loadingMotoristas}
-                                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 md:w-auto"
+                                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 md:w-auto dark:bg-[#3D6A99]"
                             >
                                 {loadingMotoristas ? "Atualizando..." : "Atualizar iTrack"}
                             </button>
@@ -1915,7 +1915,7 @@ export default function TelemetriaOperacionalPage() {
                             <button
                                 onClick={exportarMotoristasCsv}
                                 disabled={motoristasOrdenados.length === 0}
-                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 md:w-auto"
+                                className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 md:w-auto dark:bg-[#232B3F]"
                             >
                                 Exportar CSV
                             </button>
@@ -1941,7 +1941,7 @@ export default function TelemetriaOperacionalPage() {
 
                             <div className="overflow-x-auto rounded-2xl border">
                                 <table className="min-w-full text-left text-sm">
-                                    <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                                    <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                                         <tr>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "motorista"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("motorista")}>Motorista</SortButton></th>
                                             <th className="px-3 py-2"><SortButton active={sortMotoristasBy === "velocidade_media"} direction={sortMotoristasDirection} onClick={() => alternarOrdenacaoMotoristas("velocidade_media")}>Vel. média</SortButton></th>
@@ -1976,11 +1976,11 @@ export default function TelemetriaOperacionalPage() {
             )}
 
             {tab === "historico_veicular" && (
-                <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-[#232B3F]">
                     <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold">Histórico Veicular</h2>
-                            <p className="text-sm text-slate-500">
+                            <p className="text-sm text-slate-500 dark:text-[#AEB9CF]">
                                 Veículo, placa, hodômetro inicial/final e km total rodado no período selecionado.
                             </p>
                         </div>
@@ -2018,7 +2018,7 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={() => fetchHistoricoVeicular(periodoVeicular, selectedPlaca || undefined, true)}
                             disabled={loadingHistoricoVeicular}
-                            className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 xl:w-auto"
+                            className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 xl:w-auto dark:bg-[#3D6A99]"
                         >
                             {loadingHistoricoVeicular ? "Atualizando..." : "Atualizar iTrack"}
                         </button>
@@ -2033,7 +2033,7 @@ export default function TelemetriaOperacionalPage() {
                         <button
                             onClick={exportarHistoricoVeicularCsv}
                             disabled={historicoVeicularOrdenado.length === 0}
-                            className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto"
+                            className="inline-flex w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium disabled:opacity-60 xl:w-auto dark:bg-[#232B3F]"
                         >
                             Exportar CSV
                         </button>
@@ -2051,7 +2051,7 @@ export default function TelemetriaOperacionalPage() {
 
                             <div className="overflow-x-auto rounded-2xl border">
                                 <table className="min-w-full text-left text-sm">
-                                    <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                                    <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                                         <tr>
                                             <th className="px-3 py-2">Veículo</th>
                                             <th className="px-3 py-2"><SortButton active={sortHistoricoBy === "placa"} direction={sortHistoricoDirection} onClick={() => alternarOrdenacaoHistorico("placa")}>Placa</SortButton></th>
@@ -2106,7 +2106,7 @@ function PeriodoControls({
     return (
         <div className="grid w-full gap-2 sm:grid-cols-2 md:w-auto md:grid-cols-none md:flex md:items-end">
             <div className="grid gap-1">
-                <label className="text-xs font-medium text-slate-500">Período</label>
+                <label className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Período</label>
                 <select
                     value={periodo}
                     onChange={(e) => setPeriodo(e.target.value as PeriodoRapido)}
@@ -2122,7 +2122,7 @@ function PeriodoControls({
             {periodo === "custom" && (
                 <>
                     <div className="grid gap-1">
-                        <label className="text-xs font-medium text-slate-500">Início</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Início</label>
                         <input
                             type="date"
                             value={inicioCustom}
@@ -2132,7 +2132,7 @@ function PeriodoControls({
                     </div>
 
                     <div className="grid gap-1">
-                        <label className="text-xs font-medium text-slate-500">Fim</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Fim</label>
                         <input
                             type="date"
                             value={fimCustom}
@@ -2146,7 +2146,7 @@ function PeriodoControls({
             <button
                 onClick={onConsultar}
                 disabled={loading}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 md:w-auto"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 md:w-auto dark:bg-[#3D6A99]"
             >
                 {loading ? "Consultando..." : buttonText}
             </button>
@@ -2228,10 +2228,10 @@ function ConsumoModal({
 
     return (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm">
-            <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] border bg-white shadow-2xl">
+            <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] border bg-white shadow-2xl dark:bg-[#232B3F]">
                 <div className="relative overflow-hidden rounded-t-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 px-5 py-5 text-white">
                     <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-emerald-400/20 blur-3xl" />
-                    <div className="absolute -bottom-20 left-8 h-44 w-44 rounded-full bg-cyan-400/10 blur-3xl" />
+                    <div className="absolute -bottom-20 left-8 h-44 w-44 rounded-full bg-[#3D6A99]/10 blur-3xl" />
 
                     <div className="relative flex items-start justify-between gap-4">
                         <div>
@@ -2255,7 +2255,7 @@ function ConsumoModal({
                 <div className="space-y-5 p-5">
                     <div className="grid gap-3 md:grid-cols-2">
                         <div className="grid gap-1 md:col-span-2">
-                            <label className="text-xs font-medium text-slate-500">Veículo</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Veículo</label>
                             <select
                                 value={placaNormalizada}
                                 onChange={(e) => setPlaca(normalizePlaca(e.target.value))}
@@ -2269,7 +2269,7 @@ function ConsumoModal({
                         </div>
 
                         <div className="grid gap-1">
-                            <label className="text-xs font-medium text-slate-500">Km por litro</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Km por litro</label>
                             <input
                                 value={kmPorLitro}
                                 onChange={(e) => setKmPorLitro(e.target.value)}
@@ -2280,7 +2280,7 @@ function ConsumoModal({
                         </div>
 
                         <div className="grid gap-1">
-                            <label className="text-xs font-medium text-slate-500">Preço do combustível</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Preço do combustível</label>
                             <input
                                 value={precoLitro}
                                 onChange={(e) => setPrecoLitro(e.target.value)}
@@ -2291,7 +2291,7 @@ function ConsumoModal({
                         </div>
                     </div>
 
-                    <div className="rounded-2xl border bg-slate-50 p-3">
+                    <div className="rounded-2xl border bg-slate-50 p-3 dark:bg-[#1C2334]">
                         <PeriodoControls
                             periodo={periodo}
                             setPeriodo={setPeriodo}
@@ -2306,13 +2306,13 @@ function ConsumoModal({
                     </div>
 
                     {!placaNormalizada && (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]">
                             Selecione um veículo para calcular o consumo.
                         </div>
                     )}
 
                     {placaNormalizada && !historicoSelecionado && (
-                        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]">
                             Não há histórico carregado para {placaComTraco(placaNormalizada)} neste período. Clique em <strong>Calcular consumo</strong> para consultar o histórico veicular existente.
                         </div>
                     )}
@@ -2327,27 +2327,27 @@ function ConsumoModal({
                     <div className="rounded-2xl border p-4 text-sm">
                         <div className="grid gap-3">
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Veículo</span>
-                                <span className="text-right font-semibold text-slate-900">
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Veículo</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">
                                     {historicoSelecionado?.descricao_veiculo ?? historicoSelecionado?.descricaoVeiculo ?? (veiculoSelecionado ? veiculoDescricao(veiculoSelecionado) : "-")}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Placa</span>
-                                <span className="text-right font-semibold text-slate-900">{placaNormalizada ? placaComTraco(placaNormalizada) : "-"}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Placa</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">{placaNormalizada ? placaComTraco(placaNormalizada) : "-"}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Consumo informado</span>
-                                <span className="text-right font-semibold text-slate-900">{consumoKmLitro > 0 ? `${consumoKmLitro.toFixed(2).replace(".", ",")} km/L` : "-"}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Consumo informado</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">{consumoKmLitro > 0 ? `${consumoKmLitro.toFixed(2).replace(".", ",")} km/L` : "-"}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Preço por litro</span>
-                                <span className="text-right font-semibold text-slate-900">{preco > 0 ? fmtMoeda(preco) : "-"}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Preço por litro</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">{preco > 0 ? fmtMoeda(preco) : "-"}</span>
                             </div>
                         </div>
                     </div>
 
-                    <p className="text-xs leading-relaxed text-slate-500">
+                    <p className="text-xs leading-relaxed text-slate-500 dark:text-[#AEB9CF]">
                         O cálculo é estimado: km rodado ÷ km por litro × preço do combustível. Ele usa o histórico veicular já consultado para o período selecionado.
                     </p>
                 </div>
@@ -2376,14 +2376,14 @@ function VehicleSpeedModal({
 
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm">
-            <div className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/70 bg-white shadow-2xl">
+            <div className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/70 bg-white shadow-2xl dark:bg-[#232B3F]">
                 <div className="relative overflow-hidden rounded-t-[2rem] bg-slate-950 px-5 pb-6 pt-5 text-white">
-                    <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-cyan-400/20 blur-2xl" />
+                    <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-[#3D6A99]/20 blur-2xl" />
                     <div className="absolute -bottom-20 left-8 h-44 w-44 rounded-full bg-blue-500/20 blur-3xl" />
 
                     <div className="relative flex items-start justify-between gap-4">
                         <div>
-                            <div className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-200">Painel do veículo</div>
+                            <div className="text-xs font-bold uppercase tracking-[0.24em] text-[#A9BED6]">Painel do veículo</div>
                             <div className="mt-2 text-xl font-black leading-tight">{veiculoDescricao(veiculo)}</div>
                             <div className="mt-1 inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-white ring-1 ring-white/15">
                                 {placaComTraco(veiculo.placa)}
@@ -2415,14 +2415,14 @@ function VehicleSpeedModal({
                                     return (
                                         <div
                                             key={i}
-                                            className="absolute left-1/2 top-[124px] h-[2px] w-5 origin-left rounded-full bg-white/50"
+                                            className="absolute left-1/2 top-[124px] h-[2px] w-5 origin-left rounded-full bg-white/50 dark:bg-[#232B3F]/50"
                                             style={{ transform: `rotate(${a}deg) translateX(88px)` }}
                                         />
                                     );
                                 })}
 
                                 <div
-                                    className="absolute left-1/2 top-[124px] h-1.5 w-[86px] origin-left rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.65)] transition-transform duration-500"
+                                    className="absolute left-1/2 top-[124px] h-1.5 w-[86px] origin-left rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.65)] transition-transform duration-500 dark:bg-[#232B3F]"
                                     style={{ transform: `rotate(${angle}deg) translateY(-50%)` }}
                                 />
                                 <div className="absolute left-1/2 top-[124px] h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-slate-950 shadow-lg" />
@@ -2431,7 +2431,7 @@ function VehicleSpeedModal({
                                     <div className="text-6xl font-black leading-none tracking-tight text-white tabular-nums">
                                         {velocidade.toFixed(0)}
                                     </div>
-                                    <div className="mt-1 text-xs font-bold uppercase tracking-[0.25em] text-cyan-100">km/h</div>
+                                    <div className="mt-1 text-xs font-bold uppercase tracking-[0.25em] text-[#E9EFF6]">km/h</div>
                                 </div>
                             </div>
                         </div>
@@ -2440,18 +2440,18 @@ function VehicleSpeedModal({
 
                 <div className="space-y-4 p-5">
                     <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-2xl border bg-slate-50 p-3">
-                            <div className="text-xs font-medium text-slate-500">Status</div>
-                            <div className="mt-1 text-sm font-bold text-slate-900">{st.label}</div>
+                        <div className="rounded-2xl border bg-slate-50 p-3 dark:bg-[#1C2334]">
+                            <div className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Status</div>
+                            <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{st.label}</div>
                         </div>
-                        <div className="rounded-2xl border bg-slate-50 p-3">
-                            <div className="text-xs font-medium text-slate-500">Ignição</div>
-                            <div className="mt-1 text-sm font-bold text-slate-900">{Number(veiculo.ignicao) === 1 ? "Ligada" : "Desligada"}</div>
+                        <div className="rounded-2xl border bg-slate-50 p-3 dark:bg-[#1C2334]">
+                            <div className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">Ignição</div>
+                            <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{Number(veiculo.ignicao) === 1 ? "Ligada" : "Desligada"}</div>
                         </div>
                     </div>
 
                     {isHighSpeed && (
-                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                             Atenção: velocidade acima do limite de referência de {LIMITE_VELOCIDADE_ALERTA} km/h.
                         </div>
                     )}
@@ -2459,20 +2459,20 @@ function VehicleSpeedModal({
                     <div className="rounded-2xl border p-4 text-sm">
                         <div className="grid gap-3">
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Motorista</span>
-                                <span className="text-right font-semibold text-slate-900">{veiculoMotorista(veiculo)}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Motorista</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">{veiculoMotorista(veiculo)}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Última posição</span>
-                                <span className="text-right font-semibold text-slate-900">{fmtDataHora(veiculoDataPosicao(veiculo))}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Última posição</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">{fmtDataHora(veiculoDataPosicao(veiculo))}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-slate-500">Atualizado na tela</span>
-                                <span className="text-right font-semibold text-slate-900">{lastUpdate ? lastUpdate.toLocaleTimeString("pt-BR") : "-"}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Atualizado na tela</span>
+                                <span className="text-right font-semibold text-slate-900 dark:text-white">{lastUpdate ? lastUpdate.toLocaleTimeString("pt-BR") : "-"}</span>
                             </div>
                             <div className="flex items-start justify-between gap-3">
-                                <span className="text-slate-500">Localização</span>
-                                <span className="max-w-[220px] text-right font-semibold text-slate-900">{veiculo.localizacao || "-"}</span>
+                                <span className="text-slate-500 dark:text-[#AEB9CF]">Localização</span>
+                                <span className="max-w-[220px] text-right font-semibold text-slate-900 dark:text-white">{veiculo.localizacao || "-"}</span>
                             </div>
                         </div>
                     </div>
@@ -2494,10 +2494,10 @@ function KPI({
     compact?: boolean;
 }) {
     return (
-        <div className={`rounded-xl border bg-white text-center ${compact ? "p-2" : "p-3"}`}>
-            <div className="text-xs text-slate-500">{label}</div>
+        <div className={`rounded-xl border bg-white text-center dark:bg-[#232B3F] ${compact ? "p-2" : "p-3"}`}>
+            <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">{label}</div>
             <div className={`${compact ? "text-sm" : "text-xl"} font-semibold`}>{value}</div>
-            {sub && <div className="text-xs text-slate-400">{sub}</div>}
+            {sub && <div className="text-xs text-slate-400 dark:text-[#8893AA]">{sub}</div>}
         </div>
     );
 }
@@ -2511,14 +2511,14 @@ function Badge({
 }) {
     const cls =
         tone === "emerald"
-            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52] dark:border-[#B3CE52]/40"
             : tone === "amber"
-                ? "bg-amber-50 text-amber-700 border-amber-200"
+                ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F] dark:border-[#F2CB3F]/40"
                 : tone === "blue"
-                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6] dark:border-[#3D6A99]/60"
                     : tone === "red"
-                        ? "bg-red-50 text-red-700 border-red-200"
-                        : "bg-slate-50 text-slate-700 border-slate-200";
+                        ? "bg-red-50 text-red-700 border-red-200 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] dark:border-[#FF9C92]/40"
+                        : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-[#1C2334] dark:text-[#D6DCE8] dark:border-white/12";
 
     return (
         <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}>
@@ -2539,7 +2539,7 @@ function TabButton({
     return (
         <button
             onClick={onClick}
-            className={`inline-flex w-full items-center justify-center rounded-xl border px-3 py-2 text-center text-sm font-medium sm:w-auto ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            className={`inline-flex w-full items-center justify-center rounded-xl border px-3 py-2 text-center text-sm font-medium sm:w-auto ${active ? "border-slate-900 bg-slate-900 text-white" : "bg-white text-slate-700 dark:bg-[#232B3F] dark:text-[#D6DCE8]"}`}
         >
             {children}
         </button>
@@ -2561,7 +2561,7 @@ function SortButton({
         <button
             type="button"
             onClick={onClick}
-            className="inline-flex items-center gap-1 font-semibold hover:text-slate-900"
+            className="inline-flex items-center gap-1 font-semibold hover:text-slate-900 dark:hover:text-white"
         >
             <span>{children}</span>
             {active && <span className="text-[10px]">{direction === "asc" ? "▲" : "▼"}</span>}
@@ -2571,9 +2571,9 @@ function SortButton({
 
 function EmptyState({ title, text }: { title: string; text: string }) {
     return (
-        <div className="rounded-2xl border border-dashed bg-slate-50 p-8 text-center">
-            <div className="font-semibold text-slate-700">{title}</div>
-            <div className="mt-1 text-sm text-slate-500">{text}</div>
+        <div className="rounded-2xl border border-dashed bg-slate-50 p-8 text-center dark:bg-[#1C2334]">
+            <div className="font-semibold text-slate-700 dark:text-[#D6DCE8]">{title}</div>
+            <div className="mt-1 text-sm text-slate-500 dark:text-[#AEB9CF]">{text}</div>
         </div>
     );
 }

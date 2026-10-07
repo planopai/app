@@ -83,15 +83,15 @@ function IconePos() {
 function statusVisualAvaliacao(status?: AvaliacaoStatusResumo | null) {
     switch (status?.status) {
         case "concluida":
-            return { classes: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100", texto: status.avaliador_nome ? `Concluída por ${status.avaliador_nome}` : "Concluída" };
+            return { classes: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52] dark:hover:bg-[#B3CE52]/15", texto: status.avaliador_nome ? `Concluída por ${status.avaliador_nome}` : "Concluída" };
         case "em_andamento":
-            return { classes: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100", texto: status.avaliador_nome ? `Em andamento por ${status.avaliador_nome}` : "Em andamento" };
+            return { classes: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6] dark:hover:bg-[#3D6A99]/20", texto: status.avaliador_nome ? `Em andamento por ${status.avaliador_nome}` : "Em andamento" };
         case "pendente":
-            return { classes: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100", texto: "Pendente" };
+            return { classes: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F] dark:hover:bg-[#F2CB3F]/15", texto: "Pendente" };
         case "nao_aplicavel":
-            return { classes: "border-slate-200 bg-slate-50 text-slate-400", texto: "Não aplicável" };
+            return { classes: "border-slate-200 bg-slate-50 text-slate-400 dark:border-white/12 dark:bg-[#1C2334] dark:text-[#8893AA]", texto: "Não aplicável" };
         default:
-            return { classes: "border-slate-200 bg-white text-slate-700 hover:bg-muted", texto: "Abrir" };
+            return { classes: "border-slate-200 bg-white text-slate-700 hover:bg-muted dark:border-white/12 dark:bg-[#232B3F] dark:text-[#D6DCE8]", texto: "Abrir" };
     }
 }
 
@@ -323,28 +323,28 @@ function CamposAba({
 }) {
     if (!campos.length) {
         return (
-            <div className="rounded-2xl border bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+            <div className="rounded-2xl border bg-white p-6 text-center text-sm text-slate-500 shadow-sm dark:bg-[#232B3F] dark:text-[#AEB9CF]">
                 Nenhuma informação disponível nesta seção.
             </div>
         );
     }
 
     return (
-        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-            <div className="border-b bg-slate-50 px-4 py-3 sm:px-5">
-                <h4 className="text-sm font-semibold text-slate-900">{titulo}</h4>
+        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-[#232B3F]">
+            <div className="border-b bg-slate-50 px-4 py-3 sm:px-5 dark:bg-[#1C2334]">
+                <h4 className="text-sm font-semibold text-slate-900 dark:text-white">{titulo}</h4>
             </div>
 
-            <dl className="divide-y divide-slate-100">
+            <dl className="divide-y divide-slate-100 dark:divide-white/12">
                 {campos.map((campo, index) => (
                     <div
                         key={`${campo.chave}-${index}`}
                         className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4 sm:px-5"
                     >
-                        <dt className="text-xs font-medium text-slate-500">
+                        <dt className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">
                             {campo.label}
                         </dt>
-                        <dd className="min-w-0 break-words text-sm text-slate-900">
+                        <dd className="min-w-0 break-words text-sm text-slate-900 dark:text-white">
                             {campo.valor}
                         </dd>
                     </div>
@@ -610,21 +610,21 @@ export default function ModalDetalheRegistro({
                 }}
             >
                 <div
-                    className="flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border bg-white shadow-xl"
+                    className="flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border bg-white shadow-xl dark:bg-[#232B3F]"
                     style={{
                         maxHeight: viewport
                             ? `${Math.max(1, viewport.height - 16)}px`
                             : "calc(100dvh - 1rem)",
                     }}
                 >
-                    <div className="shrink-0 border-b bg-white/95 p-3 backdrop-blur sm:px-5 sm:py-4">
+                    <div className="shrink-0 border-b bg-white/95 p-3 backdrop-blur sm:px-5 sm:py-4 dark:bg-[#232B3F]/95">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
-                                <h3 className="break-words text-base font-semibold leading-tight text-slate-900 sm:text-lg">
+                                <h3 className="break-words text-base font-semibold leading-tight text-slate-900 sm:text-lg dark:text-white">
                                     {nomeFalecidoAtual}
                                 </h3>
 
-                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                     {registroId && (
                                         <span>Atendimento #{registroId}</span>
                                     )}
@@ -644,8 +644,8 @@ export default function ModalDetalheRegistro({
 
                                     <span
                                         className={`rounded-full px-2 py-0.5 font-medium ${finalizado
-                                            ? "bg-emerald-50 text-emerald-700"
-                                            : "bg-amber-50 text-amber-700"
+                                            ? "bg-emerald-50 text-emerald-700 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]"
+                                            : "bg-amber-50 text-amber-700 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]"
                                             }`}
                                     >
                                         {finalizado
@@ -747,14 +747,14 @@ export default function ModalDetalheRegistro({
                         </div>
                     </div>
 
-                    <div className="shrink-0 bg-white px-3 py-3 sm:px-5 sm:py-4">
+                    <div className="shrink-0 bg-white px-3 py-3 sm:px-5 sm:py-4 dark:bg-[#232B3F]">
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                             {ABAS_DETALHE.map((aba) => (
                                 <button
                                     key={aba.id}
                                     type="button"
                                     onClick={() => setAbaAtiva(aba.id)}
-                                    className="min-h-12 min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-medium leading-tight text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] sm:text-sm"
+                                    className="min-h-12 min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-medium leading-tight text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] sm:text-sm dark:border-white/12 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:border-white/25 dark:hover:bg-[#1C2334]"
                                 >
                                     <span className="block break-words">
                                         {aba.label}
@@ -763,7 +763,7 @@ export default function ModalDetalheRegistro({
                             ))}
                         </div>
 
-                        <p className="mt-3 text-center text-xs text-slate-500">
+                        <p className="mt-3 text-center text-xs text-slate-500 dark:text-[#AEB9CF]">
                             Toque em uma opção para abrir as informações.
                         </p>
                     </div>
@@ -797,7 +797,7 @@ export default function ModalDetalheRegistro({
                     }}
                 >
                     <div
-                        className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl"
+                        className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl dark:bg-[#232B3F]"
                         style={{
                             maxHeight: viewport
                                 ? `${Math.max(
@@ -807,13 +807,13 @@ export default function ModalDetalheRegistro({
                                 : "calc(100dvh - 1rem)",
                         }}
                     >
-                        <div className="flex shrink-0 items-start justify-between gap-3 border-b bg-white px-4 py-3 sm:px-5 sm:py-4">
+                        <div className="flex shrink-0 items-start justify-between gap-3 border-b bg-white px-4 py-3 sm:px-5 sm:py-4 dark:bg-[#232B3F]">
                             <div className="min-w-0">
-                                <div className="text-xs text-slate-500">
+                                <div className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                     {nomeFalecidoAtual}
                                 </div>
 
-                                <h3 className="mt-0.5 break-words text-base font-semibold text-slate-950 sm:text-lg">
+                                <h3 className="mt-0.5 break-words text-base font-semibold text-slate-950 sm:text-lg dark:text-white">
                                     {ABAS_DETALHE.find(
                                         (aba) =>
                                             aba.id === abaAtiva,
@@ -824,7 +824,7 @@ export default function ModalDetalheRegistro({
                             <button
                                 type="button"
                                 onClick={() => setAbaAtiva(null)}
-                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/12 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-[#1C2334]"
                                 title="Fechar"
                                 aria-label="Fechar"
                             >
@@ -833,7 +833,7 @@ export default function ModalDetalheRegistro({
                         </div>
 
                         <div
-                            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/50 p-3 sm:p-5"
+                            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/50 p-3 sm:p-5 dark:bg-[#1C2334]/50"
                             style={{
                                 WebkitOverflowScrolling: "touch",
                                 overscrollBehaviorY: "contain",
@@ -841,12 +841,12 @@ export default function ModalDetalheRegistro({
                             }}
                         >
                             {abaAtiva === "timeline" ? (
-                                <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+                                <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5 dark:bg-[#232B3F]">
                                     <div className="mb-4">
-                                        <h4 className="text-sm font-semibold text-slate-900">
+                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
                                             Linha do Tempo
                                         </h4>
-                                        <p className="mt-0.5 text-xs text-slate-500">
+                                        <p className="mt-0.5 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                             Eventos em ordem cronológica,
                                             mostrando apenas informações
                                             relevantes de cada ação.
@@ -869,8 +869,8 @@ export default function ModalDetalheRegistro({
 
                                     {resumoOrganizado.tecnicos.length >
                                         0 ? (
-                                        <details className="rounded-2xl border bg-white shadow-sm">
-                                            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 sm:px-5">
+                                        <details className="rounded-2xl border bg-white shadow-sm dark:bg-[#232B3F]">
+                                            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 sm:px-5 dark:text-[#D6DCE8]">
                                                 Dados técnicos (
                                                 {
                                                     resumoOrganizado
@@ -880,7 +880,7 @@ export default function ModalDetalheRegistro({
                                                 )
                                             </summary>
 
-                                            <dl className="divide-y divide-slate-100 border-t">
+                                            <dl className="divide-y divide-slate-100 border-t dark:divide-white/12">
                                                 {resumoOrganizado.tecnicos.map(
                                                     (
                                                         campo,
@@ -890,12 +890,12 @@ export default function ModalDetalheRegistro({
                                                             key={`${campo.chave}-${index}`}
                                                             className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4 sm:px-5"
                                                         >
-                                                            <dt className="text-xs font-medium text-slate-500">
+                                                            <dt className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">
                                                                 {
                                                                     campo.label
                                                                 }
                                                             </dt>
-                                                            <dd className="min-w-0 break-all text-xs text-slate-700">
+                                                            <dd className="min-w-0 break-all text-xs text-slate-700 dark:text-[#D6DCE8]">
                                                                 {
                                                                     campo.valor
                                                                 }
@@ -950,7 +950,7 @@ export default function ModalDetalheRegistro({
                     }}
                 >
                     <div
-                        className="flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl"
+                        className="flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl dark:bg-[#232B3F]"
                         style={{
                             maxHeight: viewport
                                 ? `${Math.max(1, viewport.height - 24)}px`
@@ -977,7 +977,7 @@ export default function ModalDetalheRegistro({
                         </div>
 
                         <div
-                            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 p-3 sm:p-4"
+                            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50 p-3 sm:p-4 dark:bg-[#1C2334]"
                             style={{
                                 WebkitOverflowScrolling: "touch",
                                 overscrollBehaviorY: "contain",
@@ -985,7 +985,7 @@ export default function ModalDetalheRegistro({
                             }}
                         >
                             {fotos.length === 0 ? (
-                                <div className="rounded-xl border bg-white p-6 text-center text-sm text-muted-foreground">
+                                <div className="rounded-xl border bg-white p-6 text-center text-sm text-muted-foreground dark:bg-[#232B3F]">
                                     Nenhuma foto anexada neste atendimento.
                                 </div>
                             ) : (
@@ -993,16 +993,16 @@ export default function ModalDetalheRegistro({
                                     {fotos.map((foto) => (
                                         <div
                                             key={foto.url}
-                                            className="overflow-hidden rounded-xl border bg-white shadow-sm"
+                                            className="overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#232B3F]"
                                         >
                                             <div className="border-b px-3 py-2 text-sm font-semibold">
                                                 {foto.titulo}
                                             </div>
-                                            <div className="bg-slate-50 p-3">
+                                            <div className="bg-slate-50 p-3 dark:bg-[#1C2334]">
                                                 <img
                                                     src={foto.url}
                                                     alt={foto.titulo}
-                                                    className="mx-auto max-h-[64vh] w-auto max-w-full rounded-lg border bg-white object-contain"
+                                                    className="mx-auto max-h-[64vh] w-auto max-w-full rounded-lg border bg-white object-contain dark:bg-[#232B3F]"
                                                 />
                                             </div>
                                         </div>

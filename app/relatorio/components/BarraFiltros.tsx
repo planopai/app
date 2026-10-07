@@ -367,7 +367,7 @@ export default function BarraFiltros({
                             <button
                                 type="button"
                                 onClick={aplicarFiltrosMobile}
-                                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-[#3D6A99] dark:hover:bg-[#355D86]"
                             >
                                 Aplicar
                             </button>

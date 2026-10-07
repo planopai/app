@@ -3,7 +3,7 @@
 import React from "react";
 import type { Aba, Conversa, Mensagem } from "@/components/messenger/tipos";
 
-export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#00AEEC", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
+export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#3D6A99", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
 
 export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className?: string }) {
     const p: Record<string, React.ReactNode> = {
@@ -46,7 +46,7 @@ const TONS = ["#BDE9FA", "#DCEBAA", "#F7E39A", "#D6DCE8", "#FAD3CF"];
 export function Avatar({ conversa, tamanho = 44 }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number }) {
     if (conversa.tipo === "grupo") {
         return (
-            <div className="flex flex-none items-center justify-center rounded-[14px] bg-[#313C55] text-white" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
+            <div className="flex flex-none items-center justify-center rounded-[14px] bg-[#313C55] text-white dark:bg-[#3D6A99]" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
                 <Icone nome="users" className="h-5 w-5" />
             </div>
         );
@@ -93,14 +93,14 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
         { id: "clientes", rotulo: "Clientes", icone: "phone" },
     ];
     return (
-        <div className="flex gap-1 rounded-[14px] bg-[#F1F4F8] p-1" role="group" aria-label="Tipo de conversa">
+        <div className="flex gap-1 rounded-[14px] bg-[#F1F4F8] p-1 dark:bg-[#1C2334]" role="group" aria-label="Tipo de conversa">
             {itens.map((i) => (
                 <button
                     key={i.id}
                     type="button"
                     aria-pressed={aba === i.id}
                     onClick={() => setAba(i.id)}
-                    className={`flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-1.5 text-sm font-extrabold ${aba === i.id ? "bg-white text-[#313C55] shadow-sm" : "text-[#6B7488]"}`}
+                    className={`flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-1.5 text-sm font-extrabold ${aba === i.id ? "bg-white text-[#313C55] shadow-sm dark:bg-[#232B3F] dark:text-white" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}
                 >
                     <Icone nome={i.icone} className="h-[18px] w-[18px] flex-none" />
                     <span className="truncate">{i.rotulo}</span>
@@ -117,20 +117,20 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao }: { c: Conver
     let etiqueta: React.ReactNode = null;
     if (c.tipo === "externo") {
         if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#F2CB3F] px-2 py-0.5 text-[11.5px] font-extrabold text-[#313C55]">Na fila</span>;
-        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#5B6478]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
-        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#5B6478]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
+        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
+        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
     }
     return (
-        <div className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 ${selecionada ? "bg-[#E6F7FE]" : "hover:bg-[#EEF2F7]"}`}>
+        <div className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 ${selecionada ? "bg-[#E9EFF6] dark:bg-[#3D6A99]/20" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10"}`}>
             <button type="button" onClick={onAbrir} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                 <Avatar conversa={c} />
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-[#313C55]">{c.titulo}</div>
-                        {etiqueta || <div className={`flex-none text-xs font-bold ${c.nao_lidas ? "text-[#0A7FB0]" : "text-[#6B7488]"}`}>{hora(c.ultima_mensagem_em)}</div>}
+                        <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-[#313C55] dark:text-white">{c.titulo}</div>
+                        {etiqueta || <div className={`flex-none text-xs font-bold ${c.nao_lidas ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>}
                     </div>
                     <div className="mt-0.5 flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[13.5px] text-[#5B6478]">
+                        <div className="min-w-0 flex-1 truncate text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">
                             {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
                             {minha ? "Você: " : ""}
                             {previa(m)}

@@ -21,10 +21,10 @@ const hoje = () => new Date().toLocaleDateString("sv-SE");
 const dataBR = (s: string) => new Date(s + "T12:00").toLocaleDateString("pt-BR");
 
 const inputCls =
-    "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-500";
+    "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-500 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:focus:ring-[#3D6A99]/60 dark:disabled:bg-[#1C2334] dark:disabled:text-[#AEB9CF]";
 
 const lbl =
-    "mb-1.5 block text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500";
+    "mb-1.5 block text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-[#AEB9CF]";
 
 type TipoOS = "" | "PARTICULAR" | "ASSOCIADO" | "PREFEITURA";
 
@@ -41,7 +41,7 @@ function Botao({
                 "whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
                 primario
                     ? "bg-slate-800 text-white hover:bg-slate-900"
-                    : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                    : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-[#1C2334]",
                 p.className || "",
             ].join(" ")}
         >
@@ -59,8 +59,8 @@ function Aviso({
 }) {
     const cls =
         tipo === "erro"
-            ? "border-red-200 bg-red-50 text-red-800"
-            : "border-emerald-200 bg-emerald-50 text-emerald-800";
+            ? "border-red-200 bg-red-50 text-red-800 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
+            : "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]";
 
     return <div className={`rounded-lg border px-3 py-2.5 text-sm ${cls}`}>{children}</div>;
 }
@@ -75,10 +75,10 @@ function BlocoRegras({
     children: React.ReactNode;
 }) {
     return (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
+        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5 dark:border-white/12 dark:bg-[#1C2334]/60">
             <div className="mb-4">
-                <h3 className="text-base font-bold text-slate-800">{titulo}</h3>
-                {descricao && <p className="mt-1 text-xs leading-5 text-slate-500">{descricao}</p>}
+                <h3 className="text-base font-bold text-slate-800 dark:text-white">{titulo}</h3>
+                {descricao && <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#AEB9CF]">{descricao}</p>}
             </div>
             {children}
         </div>
@@ -124,8 +124,8 @@ export default function SecaoOS({
 
     if (!convenio.id) {
         return (
-            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500 shadow-sm">
-                <b className="text-slate-800">Dados da OS</b>
+            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500 shadow-sm dark:border-white/25 dark:bg-[#232B3F] dark:text-[#AEB9CF]">
+                <b className="text-slate-800 dark:text-white">Dados da OS</b>
                 <span> — salve o convênio primeiro; depois defina como ele entra na Ordem de Serviço.</span>
             </section>
         );
@@ -158,21 +158,21 @@ export default function SecaoOS({
     const tipoTravado = !!dadosOS?.codigo;
 
     return (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-t-4 border-t-sky-500 px-5 pb-4 pt-5 sm:px-6">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/12 dark:bg-[#232B3F]">
+            <div className="border-t-4 border-t-[#3D6A99] px-5 pb-4 pt-5 sm:px-6">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                        <h2 className="text-lg font-bold text-slate-900">Dados da OS</h2>
-                        <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
+                        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Dados da OS</h2>
+                        <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500 dark:text-[#AEB9CF]">
                             Defina como este convênio entra na Ordem de Serviço. Itens e valores próprios dos
                             atendimentos continuam organizados nos pacotes.
                         </p>
                     </div>
 
                     {dadosOS?.codigo && (
-                        <div className="shrink-0 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-500">
+                        <div className="shrink-0 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-500 dark:bg-white/10 dark:text-[#AEB9CF]">
                             Código na OS
-                            <div className="mt-0.5 font-bold text-slate-800">{dadosOS.codigo}</div>
+                            <div className="mt-0.5 font-bold text-slate-800 dark:text-white">{dadosOS.codigo}</div>
                         </div>
                     )}
                 </div>
@@ -182,7 +182,7 @@ export default function SecaoOS({
                 {erro && <Aviso tipo="erro">{erro}</Aviso>}
                 {msg && <Aviso tipo="sucesso">{msg}</Aviso>}
 
-                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-white/12 dark:bg-[#232B3F]">
                     <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_auto] lg:items-end">
                         <label>
                             <span className={lbl}>Tipo na OS</span>
@@ -219,11 +219,11 @@ export default function SecaoOS({
                             {tipo === "ASSOCIADO" && (
                                 <div>
                                     <span className={lbl}>Aditivos possíveis neste plano</span>
-                                    <div className="flex min-h-[42px] flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <div className="flex min-h-[42px] flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/12 dark:bg-[#1C2334]">
                                         {["TRANSLADO", "TANATOPRAXIA"].map((a) => (
                                             <label
                                                 key={a}
-                                                className="flex items-center gap-2 text-sm font-medium text-slate-700"
+                                                className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-[#D6DCE8]"
                                             >
                                                 <input
                                                     type="checkbox"
@@ -242,7 +242,7 @@ export default function SecaoOS({
                                         ))}
 
                                         {aditivos.length === 0 && (
-                                            <span className="text-xs text-slate-500">
+                                            <span className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                 Nenhum aditivo selecionado.
                                             </span>
                                         )}
@@ -251,13 +251,13 @@ export default function SecaoOS({
                             )}
 
                             {tipo === "PARTICULAR" && (
-                                <div className="flex min-h-[42px] items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+                                <div className="flex min-h-[42px] items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 dark:border-white/12 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                                     Sem regras adicionais para este tipo.
                                 </div>
                             )}
 
                             {!tipo && (
-                                <div className="flex min-h-[42px] items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
+                                <div className="flex min-h-[42px] items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-sm text-slate-500 dark:border-white/25 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                                     Selecione um tipo para configurar as regras da OS.
                                 </div>
                             )}
@@ -404,8 +404,8 @@ function PrecosPrefeitura({
                     </label>
                 </div>
 
-                <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="max-w-4xl text-xs leading-5 text-slate-500">
+                <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/12 dark:bg-[#232B3F]">
+                    <p className="max-w-4xl text-xs leading-5 text-slate-500 dark:text-[#AEB9CF]">
                         Os valores são usados quando a Prefeitura autoriza o serviço no atendimento.
                         Avançada e embalsamamento podem gerar diferença sobre a tanatopraxia autorizada.
                     </p>
@@ -563,7 +563,7 @@ function ValoresPlano({
                             }
                         />
 
-                        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600">
+                        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-[#AEB9CF]">
                             <input
                                 type="checkbox"
                                 disabled={disabled}
@@ -601,8 +601,8 @@ function ValoresPlano({
                     </label>
                 </div>
 
-                <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="max-w-4xl text-xs leading-5 text-slate-500">
+                <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/12 dark:bg-[#232B3F]">
+                    <p className="max-w-4xl text-xs leading-5 text-slate-500 dark:text-[#AEB9CF]">
                         Urna acima do teto: o plano cobre até o limite e o restante vai para
                         Dif.Soc. Translado acima do limite: o excedente também vai para Dif.Soc.
                         Os itens do atendimento permanecem definidos nos pacotes do convênio.

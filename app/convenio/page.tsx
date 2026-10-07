@@ -396,15 +396,15 @@ function ItemPicker({
     return (
         <section
             className={[
-                "bg-white px-4 py-3",
-                faltaItem ? "bg-amber-50/40" : "",
+                "bg-white px-4 py-3 dark:bg-[#232B3F]",
+                faltaItem ? "bg-amber-50/40 dark:bg-[#F2CB3F]/15" : "",
             ].join(" ")}
         >
             <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
                 <div className="min-w-0">
-                    <h3 className="font-semibold text-slate-800">{titulo}</h3>
+                    <h3 className="font-semibold text-slate-800 dark:text-white">{titulo}</h3>
                     {value.valor === "Sim" && escolhidos.length > 0 && (
-                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                        <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-[#AEB9CF]">
                             {escolhidos.length === 1 ? escolhidos[0].nome : `${escolhidos.length} itens selecionados`}
                         </p>
                     )}
@@ -421,7 +421,7 @@ function ItemPicker({
                             aria-expanded={expandido}
                             aria-label={expandido ? `Ocultar detalhes de ${titulo}` : `Mostrar detalhes de ${titulo}`}
                             title={expandido ? "Ocultar detalhes" : "Mostrar detalhes"}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-[#AEB9CF] dark:hover:bg-[#1C2334]"
                         >
                             <span className={`text-base transition-transform ${expandido ? "rotate-180" : ""}`}>⌄</span>
                         </button>
@@ -430,13 +430,13 @@ function ItemPicker({
             </div>
 
             {value.valor === "Sim" && expandido && (
-                <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
-                    <p className="text-xs text-slate-500">{descricao}</p>
+                <div className="mt-3 space-y-3 border-t border-slate-100 pt-3 dark:border-white/12">
+                    <p className="text-xs text-slate-500 dark:text-[#AEB9CF]">{descricao}</p>
                     {(extra || mostrarQuantidade) && (
                         <div className="grid gap-3 md:grid-cols-2">
                             {extra}
                             {mostrarQuantidade && (
-                                <label className="text-sm text-slate-700">
+                                <label className="text-sm text-slate-700 dark:text-[#D6DCE8]">
                                     <span className="mb-1 block font-medium">Quantidade padrão</span>
                                     <input
                                         type="number"
@@ -447,7 +447,7 @@ function ItemPicker({
                                         onChange={(e) =>
                                             onChange({ ...value, quantidade: Math.max(1, Math.min(100, Number(e.target.value) || 1)) })
                                         }
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                                     />
                                 </label>
                             )}
@@ -457,7 +457,7 @@ function ItemPicker({
                     {/* Itens escolhidos */}
                     {escolhidos.length > 0 && (
                         <div className="space-y-2">
-                            <div className="text-xs font-medium text-slate-500">
+                            <div className="text-xs font-medium text-slate-500 dark:text-[#AEB9CF]">
                                 {escolhidos.length === 1
                                     ? "Item escolhido"
                                     : `${escolhidos.length} itens aceitos`}
@@ -465,11 +465,11 @@ function ItemPicker({
                             {escolhidos.map((it) => (
                                 <div
                                     key={it.produto_id}
-                                    className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]"
                                 >
                                     <span className="min-w-0">
                                         <b className="block truncate">{it.nome || "item"}</b>
-                                        <span className="text-xs text-emerald-800">
+                                        <span className="text-xs text-emerald-800 dark:text-[#B3CE52]">
                                             produto #{it.produto_id}
                                             {it.codigo_barras ? ` · CB ${it.codigo_barras}` : ""}
                                         </span>
@@ -478,7 +478,7 @@ function ItemPicker({
                                         type="button"
                                         disabled={disabled}
                                         onClick={() => remover(it.produto_id)}
-                                        className="shrink-0 text-xs font-semibold text-emerald-800 underline hover:text-emerald-950 disabled:opacity-60"
+                                        className="shrink-0 text-xs font-semibold text-emerald-800 underline hover:text-emerald-950 disabled:opacity-60 dark:text-[#B3CE52]"
                                     >
                                         Remover
                                     </button>
@@ -489,7 +489,7 @@ function ItemPicker({
                                     type="button"
                                     disabled={disabled}
                                     onClick={() => setAdicionando(true)}
-                                    className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                                    className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-white/25 dark:text-[#AEB9CF] dark:hover:bg-[#1C2334]"
                                 >
                                     + Adicionar outro item
                                 </button>
@@ -498,14 +498,14 @@ function ItemPicker({
                     )}
 
                     {grupo === "" ? (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]">
                             {avisoSemGrupo || "Complete os campos acima para listar os itens."}
                         </div>
                     ) : (
                         buscaAberta && (
                             <div className="space-y-2">
                                 <div className="flex items-end gap-2">
-                                    <label className="block flex-1 text-sm text-slate-700">
+                                    <label className="block flex-1 text-sm text-slate-700 dark:text-[#D6DCE8]">
                                         <span className="mb-1 block font-medium">
                                             {escolhidos.length > 0 ? "Adicionar outro item" : "Buscar item"}
                                         </span>
@@ -514,7 +514,7 @@ function ItemPicker({
                                             disabled={disabled}
                                             onChange={(e) => setQ(e.target.value)}
                                             placeholder="Digite para filtrar ou deixe vazio para listar..."
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                                         />
                                     </label>
                                     {escolhidos.length > 0 && (
@@ -524,7 +524,7 @@ function ItemPicker({
                                                 setAdicionando(false);
                                                 setQ("");
                                             }}
-                                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/25 dark:text-[#AEB9CF] dark:hover:bg-[#1C2334]"
                                         >
                                             Fechar
                                         </button>
@@ -532,12 +532,12 @@ function ItemPicker({
                                 </div>
 
                                 <div className="max-h-52 overflow-y-auto rounded-lg border">
-                                    {loading && <div className="p-3 text-sm text-slate-500">Consultando itens...</div>}
+                                    {loading && <div className="p-3 text-sm text-slate-500 dark:text-[#AEB9CF]">Consultando itens...</div>}
 
-                                    {!loading && erro && <div className="p-3 text-sm text-red-700">{erro}</div>}
+                                    {!loading && erro && <div className="p-3 text-sm text-red-700 dark:text-[#FF9C92]">{erro}</div>}
 
                                     {!loading && !erro && rows.length === 0 && (
-                                        <div className="p-3 text-sm text-slate-500">Nenhum item encontrado.</div>
+                                        <div className="p-3 text-sm text-slate-500 dark:text-[#AEB9CF]">Nenhum item encontrado.</div>
                                     )}
 
                                     {!loading &&
@@ -553,18 +553,18 @@ function ItemPicker({
                                                     onClick={() => selecionar(row)}
                                                     className={[
                                                         "flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0",
-                                                        jaEscolhido ? "cursor-default bg-slate-50 text-slate-400" : "hover:bg-blue-50",
+                                                        jaEscolhido ? "cursor-default bg-slate-50 text-slate-400 dark:bg-[#1C2334] dark:text-[#8893AA]" : "hover:bg-blue-50 dark:hover:bg-[#3D6A99]/20",
                                                     ].join(" ")}
                                                 >
                                                     <span className="min-w-0">
                                                         <span className="block font-medium">{row.nome}</span>
-                                                        <span className="block text-xs text-slate-500">
+                                                        <span className="block text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                             ID {row.id}
                                                             {row.codigo_barras ? ` · CB ${row.codigo_barras}` : ""}
                                                             {jaEscolhido ? " · já escolhido" : ""}
                                                         </span>
                                                     </span>
-                                                    <span className="shrink-0 text-right text-xs text-slate-500">
+                                                    <span className="shrink-0 text-right text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                         {row.valor !== null && row.valor > 0 && <span className="block">{moeda(row.valor)}</span>}
                                                         {mostrarSaldo && row.saldo_total !== null && (
                                                             <span className="block">Saldo {row.saldo_total.toLocaleString("pt-BR")}</span>
@@ -576,7 +576,7 @@ function ItemPicker({
                                 </div>
 
                                 {escolhidos.length === 0 && (
-                                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]">
                                         Escolha um item na lista. Ele é obrigatório quando a opção está como “Sim”.
                                     </div>
                                 )}
@@ -594,9 +594,9 @@ function ItemPicker({
 /* ====================================================================== */
 
 const btnPrim = "rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60";
-const btnSec = "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60";
-const btnPerigo = "rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60";
-const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2";
+const btnSec = "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-[#1C2334]";
+const btnPerigo = "rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15";
+const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25";
 
 const TIPO_OS: Record<string, string> = {
     PARTICULAR: "Particular",
@@ -606,10 +606,10 @@ const TIPO_OS: Record<string, string> = {
 
 function Etiqueta({ cor, children }: { cor: "verde" | "cinza" | "azul" | "amarelo"; children: React.ReactNode }) {
     const cls = {
-        verde: "bg-emerald-100 text-emerald-800",
-        cinza: "bg-slate-200 text-slate-600",
-        azul: "bg-blue-100 text-blue-800",
-        amarelo: "bg-amber-100 text-amber-800",
+        verde: "bg-emerald-100 text-emerald-800 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]",
+        cinza: "bg-slate-200 text-slate-600 dark:bg-white/15 dark:text-[#AEB9CF]",
+        azul: "bg-blue-100 text-blue-800 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]",
+        amarelo: "bg-amber-100 text-amber-800 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]",
     }[cor];
     return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>{children}</span>;
 }
@@ -639,15 +639,15 @@ function ModalExcluir({
                 if (e.target === e.currentTarget && !ocupado) onCancelar();
             }}
         >
-            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-                <h2 className="text-xl font-bold text-red-700">{titulo}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#232B3F]">
+                <h2 className="text-xl font-bold text-red-700 dark:text-[#FF9C92]">{titulo}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#AEB9CF]">
                     {aviso} <b>{nome}</b>. Para confirmar, digite exatamente:
                 </p>
-                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center font-mono text-base font-bold tracking-widest text-red-700">
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center font-mono text-base font-bold tracking-widest text-red-700 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                     EXCLUIR
                 </div>
-                <label className="mt-4 block text-sm font-medium text-slate-700">
+                <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-[#D6DCE8]">
                     Confirmação
                     <input
                         autoFocus
@@ -656,7 +656,7 @@ function ModalExcluir({
                         onChange={(e) => setConf(e.target.value)}
                         placeholder="Digite EXCLUIR"
                         autoComplete="off"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100 dark:border-white/25 dark:focus:border-[#FF9C92]/60 dark:focus:ring-[#FF9C92]/40"
                     />
                 </label>
                 <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -1088,14 +1088,14 @@ export default function ConveniosAdminPage() {
     /* ------------------------------ render ------------------------------ */
 
     return (
-        <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900">
+        <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-[#1C2334] dark:text-white">
             <div className="mx-auto max-w-7xl space-y-6">
                 {/* Cabeçalho de cada tela */}
                 {tela === "lista" && (
-                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between dark:bg-[#232B3F]">
                         <div>
                             <h1 className="text-2xl font-bold">Convênios</h1>
-                            <p className="mt-1 text-sm text-slate-600">Cadastre convênios e os pacotes de cada um.</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">Cadastre convênios e os pacotes de cada um.</p>
                         </div>
                         <button type="button" onClick={novoConvenio} className={btnPrim}>
                             Novo convênio
@@ -1104,9 +1104,9 @@ export default function ConveniosAdminPage() {
                 )}
 
                 {tela === "convenio" && atual && (
-                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between dark:bg-[#232B3F]">
                         <div>
-                            <button type="button" onClick={irParaLista} className="text-xs font-semibold text-blue-700 hover:underline">
+                            <button type="button" onClick={irParaLista} className="text-xs font-semibold text-blue-700 hover:underline dark:text-[#A9BED6]">
                                 ‹ Convênios
                             </button>
                             <h1 className="mt-1 text-2xl font-bold">{atual.nome}</h1>
@@ -1134,17 +1134,17 @@ export default function ConveniosAdminPage() {
                 )}
 
                 {tela === "dados" && (
-                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between dark:bg-[#232B3F]">
                         <div>
                             <button
                                 type="button"
                                 onClick={atual ? voltarConvenio : irParaLista}
-                                className="text-xs font-semibold text-blue-700 hover:underline"
+                                className="text-xs font-semibold text-blue-700 hover:underline dark:text-[#A9BED6]"
                             >
                                 ‹ {atual ? atual.nome : "Convênios"}
                             </button>
                             <h1 className="mt-1 text-2xl font-bold">{form.id ? "Dados do convênio" : "Novo convênio"}</h1>
-                            <p className="mt-1 text-sm text-slate-600">Nome, status e como o convênio entra na Ordem de Serviço.</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">Nome, status e como o convênio entra na Ordem de Serviço.</p>
                         </div>
                         {form.id > 0 && (
                             <button type="button" onClick={() => setExcluir("convenio")} disabled={bloqueado} className={btnPerigo}>
@@ -1155,16 +1155,16 @@ export default function ConveniosAdminPage() {
                 )}
 
                 {tela === "pacote" && atual && (
-                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <header className="flex flex-col gap-3 rounded-2xl border bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between dark:bg-[#232B3F]">
                         <div>
-                            <button type="button" onClick={voltarConvenio} className="text-xs font-semibold text-blue-700 hover:underline">
+                            <button type="button" onClick={voltarConvenio} className="text-xs font-semibold text-blue-700 hover:underline dark:text-[#A9BED6]">
                                 ‹ {atual.nome}
                             </button>
                             <h1 className="mt-1 text-2xl font-bold">{pacote.id ? pacote.nome || `Pacote #${pacote.id}` : "Novo pacote"}</h1>
-                            <p className="mt-1 text-sm text-slate-600">Os itens deste pacote são só dele.</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-[#AEB9CF]">Os itens deste pacote são só dele.</p>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                                 <span className="font-medium">Tipo do pacote:</span>
-                                <span className="inline-flex overflow-hidden rounded-lg border border-slate-300">
+                                <span className="inline-flex overflow-hidden rounded-lg border border-slate-300 dark:border-white/25">
                                     {(["ATENDIMENTO", "PRODUTO"] as TipoPacote[]).map((t) => (
                                         <button
                                             key={t}
@@ -1172,13 +1172,13 @@ export default function ConveniosAdminPage() {
                                             disabled={bloqueado}
                                             aria-pressed={pacote.tipo === t}
                                             onClick={() => setPacote((p) => ({ ...p, tipo: t, padrao: t === "PRODUTO" ? false : p.padrao }))}
-                                            className={`px-3 py-1.5 text-xs font-semibold ${pacote.tipo === t ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                                            className={`px-3 py-1.5 text-xs font-semibold ${pacote.tipo === t ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-white/10"}`}
                                         >
                                             {ROTULO_TIPO_PACOTE[t]}
                                         </button>
                                     ))}
                                 </span>
-                                <span className="text-xs text-slate-500">{AJUDA_TIPO_PACOTE[pacote.tipo]}</span>
+                                <span className="text-xs text-slate-500 dark:text-[#AEB9CF]">{AJUDA_TIPO_PACOTE[pacote.tipo]}</span>
                             </div>
                         </div>
                         {pacote.id > 0 && (
@@ -1194,23 +1194,23 @@ export default function ConveniosAdminPage() {
                     </header>
                 )}
 
-                {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{erro}</div>}
+                {erro && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
                 {msg && (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{msg}</div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]">{msg}</div>
                 )}
 
                 {/* ======================= 1. Lista de convênios ======================= */}
                 {tela === "lista" && (
-                    <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                    <section className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-[#232B3F]">
                         <div className="border-b p-5">
                             <h2 className="text-lg font-bold">Convênios cadastrados</h2>
-                            <p className="mt-1 text-xs text-slate-500">{rows.length} registro(s)</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-[#AEB9CF]">{rows.length} registro(s)</p>
                         </div>
                         {loading ? (
-                            <div className="p-8 text-center text-sm text-slate-500">Carregando convênios...</div>
+                            <div className="p-8 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">Carregando convênios...</div>
                         ) : rows.length === 0 ? (
                             <div className="p-8 text-center">
-                                <div className="text-sm font-medium text-slate-700">Nenhum convênio cadastrado.</div>
+                                <div className="text-sm font-medium text-slate-700 dark:text-[#D6DCE8]">Nenhum convênio cadastrado.</div>
                                 <button type="button" onClick={novoConvenio} className={`mt-4 ${btnPrim}`}>
                                     Criar primeiro convênio
                                 </button>
@@ -1218,7 +1218,7 @@ export default function ConveniosAdminPage() {
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="min-w-full border-collapse text-sm">
-                                    <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                    <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-[#AEB9CF]">
                                         <tr>
                                             <th className="whitespace-nowrap border-b px-4 py-3">ID</th>
                                             <th className="min-w-[280px] border-b px-4 py-3">Descrição</th>
@@ -1233,20 +1233,20 @@ export default function ConveniosAdminPage() {
                                             <tr
                                                 key={row.id}
                                                 onClick={() => abrirConvenio(row)}
-                                                className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50"
+                                                className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50 dark:hover:bg-[#1C2334]"
                                             >
-                                                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-700">{row.id}</td>
+                                                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-700 dark:text-[#D6DCE8]">{row.id}</td>
                                                 <td className="px-4 py-3">
-                                                    <div className="font-semibold text-slate-900">{row.nome}</div>
+                                                    <div className="font-semibold text-slate-900 dark:text-white">{row.nome}</div>
                                                     {row.observacao ? (
-                                                        <div className="mt-1 max-w-xl truncate text-xs text-slate-500">{row.observacao}</div>
+                                                        <div className="mt-1 max-w-xl truncate text-xs text-slate-500 dark:text-[#AEB9CF]">{row.observacao}</div>
                                                     ) : null}
                                                 </td>
                                                 <td className="whitespace-nowrap px-4 py-3">
                                                     <Etiqueta cor={row.ativo ? "verde" : "cinza"}>{row.ativo ? "Ativo" : "Inativo"}</Etiqueta>
                                                 </td>
-                                                <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.ordem}</td>
-                                                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
+                                                <td className="whitespace-nowrap px-4 py-3 text-slate-700 dark:text-[#D6DCE8]">{row.ordem}</td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                     {formatarData(row.atualizado_em)}
                                                 </td>
                                                 <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -1256,7 +1256,7 @@ export default function ConveniosAdminPage() {
                                                             e.stopPropagation();
                                                             abrirConvenio(row);
                                                         }}
-                                                        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                                                        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6] dark:hover:bg-[#3D6A99]/20"
                                                     >
                                                         Ver pacotes
                                                     </button>
@@ -1272,21 +1272,21 @@ export default function ConveniosAdminPage() {
 
                 {/* ======================= 2. Pacotes do convênio ======================= */}
                 {tela === "convenio" && atual && (
-                    <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                    <section className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-[#232B3F]">
                         <div className="border-b p-5">
                             <h2 className="text-lg font-bold">Pacotes cadastrados</h2>
-                            <p className="mt-1 text-xs text-slate-500">
+                            <p className="mt-1 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                 {pacotes.length} registro(s) · use as setas para ordenar: o registro do atendimento mostra os pacotes de Atendimento nesta ordem.
                             </p>
                             {classificacaoErro && (
-                                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{classificacaoErro}</p>
+                                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]">{classificacaoErro}</p>
                             )}
                         </div>
                         {carregandoPacotes ? (
-                            <div className="p-8 text-center text-sm text-slate-500">Carregando pacotes...</div>
+                            <div className="p-8 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">Carregando pacotes...</div>
                         ) : pacotes.length === 0 ? (
                             <div className="p-8 text-center">
-                                <div className="text-sm font-medium text-slate-700">Nenhum pacote cadastrado neste convênio.</div>
+                                <div className="text-sm font-medium text-slate-700 dark:text-[#D6DCE8]">Nenhum pacote cadastrado neste convênio.</div>
                                 <button type="button" onClick={novoPacote} className={`mt-4 ${btnPrim}`}>
                                     Criar primeiro pacote
                                 </button>
@@ -1294,7 +1294,7 @@ export default function ConveniosAdminPage() {
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="min-w-full border-collapse text-sm">
-                                    <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                    <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-[#AEB9CF]">
                                         <tr>
                                             <th className="w-[84px] border-b px-2 py-3 text-center">Ordem</th>
                                             <th className="min-w-[320px] border-b px-4 py-3">Pacote</th>
@@ -1306,12 +1306,12 @@ export default function ConveniosAdminPage() {
                                     </thead>
                                     <tbody>
                                         {pacotes.map((p, i) => {
-                                            const seta = "inline-flex size-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-30";
+                                            const seta = "inline-flex size-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-30 dark:border-white/25 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-white/10";
                                             return (
                                                 <tr
                                                     key={p.id}
                                                     onClick={() => abrirPacote(p)}
-                                                    className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50"
+                                                    className="cursor-pointer border-b last:border-b-0 hover:bg-slate-50 dark:hover:bg-[#1C2334]"
                                                 >
                                                     <td className="whitespace-nowrap px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                         <div className="inline-flex gap-1">
@@ -1325,7 +1325,7 @@ export default function ConveniosAdminPage() {
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="font-semibold text-slate-900">{p.nome}</span>
+                                                            <span className="font-semibold text-slate-900 dark:text-white">{p.nome}</span>
                                                             <Etiqueta cor={p.tipo === "PRODUTO" ? "amarelo" : "cinza"}>{ROTULO_TIPO_PACOTE[p.tipo]}</Etiqueta>
                                                         </div>
                                                     </td>
@@ -1336,7 +1336,7 @@ export default function ConveniosAdminPage() {
                                                             {p.padrao && <Etiqueta cor="azul">Padrão</Etiqueta>}
                                                         </div>
                                                     </td>
-                                                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
+                                                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                         {formatarData(p.atualizado_em)}
                                                     </td>
                                                     <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -1346,7 +1346,7 @@ export default function ConveniosAdminPage() {
                                                                 e.stopPropagation();
                                                                 abrirPacote(p);
                                                             }}
-                                                            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                                                            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6] dark:hover:bg-[#3D6A99]/20"
                                                         >
                                                             Ver / Editar
                                                         </button>
@@ -1364,7 +1364,7 @@ export default function ConveniosAdminPage() {
                 {/* ======================= 3. Dados do convênio ======================= */}
                 {tela === "dados" && (
                     <div className="space-y-5">
-                        <section className="rounded-2xl border bg-white p-5 shadow-sm">
+                        <section className="rounded-2xl border bg-white p-5 shadow-sm dark:bg-[#232B3F]">
                             <div className="grid gap-4 md:grid-cols-2">
                                 <label className="text-sm">
                                     <span className="mb-1 block font-medium">Nome do convênio</span>
@@ -1425,7 +1425,7 @@ export default function ConveniosAdminPage() {
                 {/* ======================= 4. Pacote ======================= */}
                 {tela === "pacote" && atual && (
                     <div className="space-y-5">
-                        <section className="rounded-2xl border bg-white p-5 shadow-sm">
+                        <section className="rounded-2xl border bg-white p-5 shadow-sm dark:bg-[#232B3F]">
                             <div className="grid gap-4 md:grid-cols-[1fr_200px]">
                                 <label className="text-sm">
                                     <span className="mb-1 block font-medium">Nome do pacote</span>
@@ -1469,7 +1469,7 @@ export default function ConveniosAdminPage() {
                                         onChange={(e) => setPacote((p) => ({ ...p, padrao: e.target.checked }))}
                                     />
                                     Pacote padrão do convênio
-                                    <span className="text-xs font-normal text-slate-500">(usado na Ordem de Serviço)</span>
+                                    <span className="text-xs font-normal text-slate-500 dark:text-[#AEB9CF]">(usado na Ordem de Serviço)</span>
                                 </label>
                             </div>
                             <label className="mt-4 block text-sm">
@@ -1483,7 +1483,7 @@ export default function ConveniosAdminPage() {
                                 />
                             </label>
                             {ehPrefeitura && (
-                                <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                                <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                                     Prefeitura: selecione os itens do pacote primeiro. Os <b>valores de contrato</b> ficam reunidos em uma única
                                     seção no final desta tela. A tanatopraxia continua usando o preço cadastrado em “Dados do convênio”.
                                 </p>
@@ -1491,13 +1491,13 @@ export default function ConveniosAdminPage() {
                         </section>
 
                         {/* Itens do pacote — lista única e compacta */}
-                        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-                            <div className="grid grid-cols-[1fr_228px] items-center border-b bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-[#232B3F]">
+                            <div className="grid grid-cols-[1fr_228px] items-center border-b bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-[#AEB9CF]">
                                 <span>Item / produto padrão incluído</span>
                                 <span className="text-center">Inclui no pacote</span>
                             </div>
 
-                            <div className="divide-y divide-slate-200">
+                            <div className="divide-y divide-slate-200 dark:divide-white/12">
                                 {ITENS_ESTOQUE.map(([key, label, grupo]) => (
                                     <ItemPicker
                                         key={key}
@@ -1519,7 +1519,7 @@ export default function ConveniosAdminPage() {
                                     avisoSemGrupo="Escolha o tipo (Natural ou Artificial) para listar os modelos."
                                     onChange={(v) => patchRegra("coroa_flores", { ...v, tipo: v.valor === "Sim" ? coroa.tipo : "" })}
                                     extra={
-                                        <label className="text-sm text-slate-700">
+                                        <label className="text-sm text-slate-700 dark:text-[#D6DCE8]">
                                             <span className="mb-1 block font-medium">Tipo</span>
                                             <select
                                                 value={coroa.tipo}
@@ -1555,7 +1555,7 @@ export default function ConveniosAdminPage() {
                                                 })
                                             }
                                             extra={
-                                                <label className="text-sm text-slate-700">
+                                                <label className="text-sm text-slate-700 dark:text-[#D6DCE8]">
                                                     <span className="mb-1 block font-medium">Tipo padrão de ornamentação</span>
                                                     <select
                                                         value={regras.ornamentacao.tipo}
@@ -1599,11 +1599,11 @@ export default function ConveniosAdminPage() {
                                 {ITENS_SIM_NAO.map(([key, label]) => (
                                     <div
                                         key={key}
-                                        className="grid gap-3 bg-white px-4 py-3 md:grid-cols-[1fr_228px] md:items-center"
+                                        className="grid gap-3 bg-white px-4 py-3 md:grid-cols-[1fr_228px] md:items-center dark:bg-[#232B3F]"
                                     >
                                         <div>
-                                            <div className="font-semibold text-slate-800">{label}</div>
-                                            <div className="mt-0.5 text-xs text-slate-500">Regra simples do pacote, sem produto para selecionar.</div>
+                                            <div className="font-semibold text-slate-800 dark:text-white">{label}</div>
+                                            <div className="mt-0.5 text-xs text-slate-500 dark:text-[#AEB9CF]">Regra simples do pacote, sem produto para selecionar.</div>
                                         </div>
                                         <SimNaoSelect
                                             value={regras[key].valor}
@@ -1617,23 +1617,23 @@ export default function ConveniosAdminPage() {
 
                         {/* Valores de contrato agrupados no final, no padrão da referência */}
                         {ehPrefeitura && (
-                            <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                            <section className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-[#232B3F]">
                                 <div className="border-b p-5">
                                     <h2 className="text-lg font-bold">Valores do contrato</h2>
-                                    <p className="mt-1 text-xs text-slate-500">
+                                    <p className="mt-1 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                         Os valores ficam reunidos aqui. O valor do pacote é a soma dos itens marcados como “Sim”.
                                     </p>
                                 </div>
 
                                 {CHAVES_COM_VALOR.some((key) => regras[key].valor === "Sim") ? (
                                     <>
-                                        <div className="hidden grid-cols-[200px_1fr_190px] gap-3 border-b bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 md:grid">
+                                        <div className="hidden grid-cols-[200px_1fr_190px] gap-3 border-b bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 md:grid dark:bg-white/10 dark:text-[#AEB9CF]">
                                             <span>Categoria</span>
                                             <span>Produto padrão incluído</span>
                                             <span className="text-right">Valor no contrato</span>
                                         </div>
 
-                                        <div className="divide-y divide-slate-200">
+                                        <div className="divide-y divide-slate-200 dark:divide-white/12">
                                             {CHAVES_COM_VALOR.filter((key) => regras[key].valor === "Sim").map((key) => {
                                                 const regra = regras[key];
 
@@ -1642,10 +1642,10 @@ export default function ConveniosAdminPage() {
                                                         key={key}
                                                         className="grid gap-3 px-4 py-3 md:grid-cols-[200px_1fr_190px] md:items-center"
                                                     >
-                                                        <div className="font-semibold text-slate-800">{ROTULOS[key]}</div>
-                                                        <div className="min-w-0 text-sm text-slate-600">
+                                                        <div className="font-semibold text-slate-800 dark:text-white">{ROTULOS[key]}</div>
+                                                        <div className="min-w-0 text-sm text-slate-600 dark:text-[#AEB9CF]">
                                                             {regra.produtos.length === 0 ? (
-                                                                <span className="text-amber-700">Produto não selecionado</span>
+                                                                <span className="text-amber-700 dark:text-[#F2CB3F]">Produto não selecionado</span>
                                                             ) : (
                                                                 <div className="space-y-1">
                                                                     {regra.produtos.map((produto) => (
@@ -1657,18 +1657,18 @@ export default function ConveniosAdminPage() {
                                                             )}
                                                         </div>
                                                         <label>
-                                                            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden">
+                                                            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:hidden dark:text-[#AEB9CF]">
                                                                 Valor no contrato
                                                             </span>
                                                             <div
                                                                 className={[
-                                                                    "flex items-center rounded-lg border bg-white",
+                                                                    "flex items-center rounded-lg border bg-white dark:bg-[#232B3F]",
                                                                     num(regra.valor_contrato) > 0
-                                                                        ? "border-slate-300"
-                                                                        : "border-amber-300 bg-amber-50",
+                                                                        ? "border-slate-300 dark:border-white/25"
+                                                                        : "border-amber-300 bg-amber-50 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15",
                                                                 ].join(" ")}
                                                             >
-                                                                <span className="pl-3 text-sm font-semibold text-slate-500">R$</span>
+                                                                <span className="pl-3 text-sm font-semibold text-slate-500 dark:text-[#AEB9CF]">R$</span>
                                                                 <input
                                                                     type="text"
                                                                     inputMode="decimal"
@@ -1713,35 +1713,35 @@ export default function ConveniosAdminPage() {
                                             })}
                                         </div>
 
-                                        <div className="flex flex-col gap-2 border-t bg-slate-50 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
-                                            <p className="max-w-2xl text-xs text-slate-500">
+                                        <div className="flex flex-col gap-2 border-t bg-slate-50 px-4 py-4 sm:flex-row sm:items-end sm:justify-between dark:bg-[#1C2334]">
+                                            <p className="max-w-2xl text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                 Troca de modelo: a diferença pode ser calculada a partir do produto escolhido e do valor previsto no contrato.
                                                 Tanatopraxia e Translado continuam usando os preços cadastrados em “Dados do convênio”.
                                             </p>
                                             <div className="shrink-0 text-right">
-                                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
                                                     Valor do pacote = soma dos itens
                                                 </div>
-                                                <div className="text-2xl font-bold text-slate-900">{moeda(total)}</div>
+                                                <div className="text-2xl font-bold text-slate-900 dark:text-white">{moeda(total)}</div>
                                             </div>
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="p-5 text-sm text-slate-500">
+                                    <div className="p-5 text-sm text-slate-500 dark:text-[#AEB9CF]">
                                         Marque algum item como “Sim” para informar os valores de contrato.
                                     </div>
                                 )}
                             </section>
                         )}
 
-                        <div className="sticky bottom-0 flex flex-col gap-3 rounded-xl border bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                        <div className="sticky bottom-0 flex flex-col gap-3 rounded-xl border bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:bg-[#232B3F]/95">
                             <div className="text-xs">
                                 {!temItem ? (
-                                    <span className="font-medium text-amber-700">Marque ao menos um item como “Sim”.</span>
+                                    <span className="font-medium text-amber-700 dark:text-[#F2CB3F]">Marque ao menos um item como “Sim”.</span>
                                 ) : pendencias.length > 0 ? (
-                                    <span className="font-medium text-amber-700">Falta: {pendencias.join(", ")}</span>
+                                    <span className="font-medium text-amber-700 dark:text-[#F2CB3F]">Falta: {pendencias.join(", ")}</span>
                                 ) : (
-                                    <span className="text-slate-500">Todos os itens marcados “Sim” estão completos.</span>
+                                    <span className="text-slate-500 dark:text-[#AEB9CF]">Todos os itens marcados “Sim” estão completos.</span>
                                 )}
                             </div>
                             <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center">
@@ -1777,23 +1777,23 @@ export default function ConveniosAdminPage() {
                             if (e.target === e.currentTarget) setNovoTipo(null);
                         }}
                     >
-                        <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+                        <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#232B3F]">
                             <h2 className="text-xl font-bold">Novo pacote · {atual.nome}</h2>
                             <div className="mt-4 text-sm font-medium">Tipo do pacote *</div>
-                            <div className="mt-1 inline-flex overflow-hidden rounded-lg border border-slate-300">
+                            <div className="mt-1 inline-flex overflow-hidden rounded-lg border border-slate-300 dark:border-white/25">
                                 {(["ATENDIMENTO", "PRODUTO"] as TipoPacote[]).map((t) => (
                                     <button
                                         key={t}
                                         type="button"
                                         aria-pressed={novoTipo.tipo === t}
                                         onClick={() => setNovoTipo((n) => (n ? { ...n, tipo: t } : n))}
-                                        className={`px-4 py-2 text-sm font-semibold ${novoTipo.tipo === t ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}
+                                        className={`px-4 py-2 text-sm font-semibold ${novoTipo.tipo === t ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-100 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-white/10"}`}
                                     >
                                         {ROTULO_TIPO_PACOTE[t]}
                                     </button>
                                 ))}
                             </div>
-                            <p className="mt-2 text-xs text-slate-500">{AJUDA_TIPO_PACOTE[novoTipo.tipo]}</p>
+                            <p className="mt-2 text-xs text-slate-500 dark:text-[#AEB9CF]">{AJUDA_TIPO_PACOTE[novoTipo.tipo]}</p>
                             <label className="mt-4 block text-sm">
                                 <span className="mb-1 block font-medium">Nome do pacote *</span>
                                 <input
@@ -1805,7 +1805,7 @@ export default function ConveniosAdminPage() {
                                     className={inputCls}
                                 />
                             </label>
-                            <p className="mt-3 text-xs text-slate-500">Os itens do pacote e o valor de contrato são escolhidos na tela seguinte, como hoje.</p>
+                            <p className="mt-3 text-xs text-slate-500 dark:text-[#AEB9CF]">Os itens do pacote e o valor de contrato são escolhidos na tela seguinte, como hoje.</p>
                             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                                 <button type="button" onClick={() => setNovoTipo(null)} className={btnSec}>
                                     Cancelar

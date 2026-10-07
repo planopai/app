@@ -96,11 +96,11 @@ export default function EstoquePicker({
     };
 
     return (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]">
             <div className="grid gap-3 md:grid-cols-[1fr_180px] md:items-center">
                 <div>
-                    <h3 className="font-semibold text-slate-800">{label}</h3>
-                    <p className="text-xs text-slate-500">
+                    <h3 className="font-semibold text-slate-800 dark:text-white">{label}</h3>
+                    <p className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                         Define se o convênio oferece este item.
                     </p>
                 </div>
@@ -110,7 +110,7 @@ export default function EstoquePicker({
             {value.valor === "Sim" && (
                 <div className="mt-4 space-y-3 border-t pt-4">
                     <div className="grid gap-3 md:grid-cols-2">
-                        <label className="text-sm text-slate-700">
+                        <label className="text-sm text-slate-700 dark:text-[#D6DCE8]">
                             <span className="mb-1 block font-medium">Depósito</span>
                             <select
                                 value={value.deposito_nome}
@@ -125,7 +125,7 @@ export default function EstoquePicker({
                                     });
                                     setQ("");
                                 }}
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                             >
                                 <option value="">Selecione...</option>
                                 {depositos.map((d) => (
@@ -136,7 +136,7 @@ export default function EstoquePicker({
                             </select>
                         </label>
 
-                        <label className="text-sm text-slate-700">
+                        <label className="text-sm text-slate-700 dark:text-[#D6DCE8]">
                             <span className="mb-1 block font-medium">Quantidade padrão</span>
                             <input
                                 type="number"
@@ -150,37 +150,37 @@ export default function EstoquePicker({
                                         quantidade: Math.max(1, Number(e.target.value) || 1),
                                     })
                                 }
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                             />
                         </label>
                     </div>
 
                     {value.deposito_nome && (
                         <>
-                            <label className="block text-sm text-slate-700">
+                            <label className="block text-sm text-slate-700 dark:text-[#D6DCE8]">
                                 <span className="mb-1 block font-medium">Buscar no estoque</span>
                                 <input
                                     value={q}
                                     disabled={disabled}
                                     onChange={(e) => setQ(e.target.value)}
                                     placeholder="Digite para filtrar ou deixe vazio para listar..."
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                                 />
                             </label>
 
                             <div className="max-h-52 overflow-y-auto rounded-lg border">
                                 {loading && (
-                                    <div className="p-3 text-sm text-slate-500">
+                                    <div className="p-3 text-sm text-slate-500 dark:text-[#AEB9CF]">
                                         Consultando estoque...
                                     </div>
                                 )}
 
                                 {!loading && erro && (
-                                    <div className="p-3 text-sm text-red-700">{erro}</div>
+                                    <div className="p-3 text-sm text-red-700 dark:text-[#FF9C92]">{erro}</div>
                                 )}
 
                                 {!loading && !erro && rows.length === 0 && (
-                                    <div className="p-3 text-sm text-slate-500">
+                                    <div className="p-3 text-sm text-slate-500 dark:text-[#AEB9CF]">
                                         Nenhum item encontrado.
                                     </div>
                                 )}
@@ -206,22 +206,22 @@ export default function EstoquePicker({
                                                 className={[
                                                     "flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm last:border-b-0",
                                                     selected
-                                                        ? "bg-blue-50 text-blue-900"
-                                                        : "hover:bg-slate-50",
+                                                        ? "bg-blue-50 text-blue-900 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]"
+                                                        : "hover:bg-slate-50 dark:hover:bg-[#1C2334]",
                                                 ].join(" ")}
                                             >
                                                 <span className="min-w-0">
                                                     <span className="block font-medium">
                                                         {row.nome}
                                                     </span>
-                                                    <span className="block text-xs text-slate-500">
+                                                    <span className="block text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                         ID {pid}
                                                         {row.codigo_barras
                                                             ? ` · CB ${row.codigo_barras}`
                                                             : ""}
                                                     </span>
                                                 </span>
-                                                <span className="shrink-0 text-xs text-slate-500">
+                                                <span className="shrink-0 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                     Saldo {String(row.saldo_total ?? "-")}
                                                 </span>
                                             </button>
@@ -232,7 +232,7 @@ export default function EstoquePicker({
                     )}
 
                     {value.produto_id > 0 && (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]">
                             Selecionado: <b>{value.nome}</b> · produto #{value.produto_id}
                             {value.codigo_barras ? ` · CB ${value.codigo_barras}` : ""}
                         </div>

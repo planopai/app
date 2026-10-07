@@ -149,13 +149,13 @@ function ItemCard({
 
         yellow: "border-l-yellow-400",
 
-        sky: "border-l-sky-500",
+        sky: "border-l-[#3D6A99]",
 
-        teal: "border-l-teal-500",
+        teal: "border-l-[#3D6A99]",
 
         indigo: "border-l-indigo-500",
 
-        rose: "border-l-rose-500",
+        rose: "border-l-rose-500 dark:border-l-[#FF9C92]/60",
 
     }[destaque];
 
@@ -163,17 +163,17 @@ function ItemCard({
 
     const chipColor = {
 
-        blue: "bg-blue-50 text-blue-700",
+        blue: "bg-blue-50 text-blue-700 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]",
 
-        yellow: "bg-yellow-50 text-yellow-700",
+        yellow: "bg-yellow-50 text-yellow-700 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]",
 
-        sky: "bg-sky-50 text-sky-700",
+        sky: "bg-[#E9EFF6] text-[#3D6A99] dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]",
 
-        teal: "bg-teal-50 text-teal-700",
+        teal: "bg-[#E9EFF6] text-[#3D6A99] dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]",
 
-        indigo: "bg-indigo-50 text-indigo-700",
+        indigo: "bg-indigo-50 text-indigo-700 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]",
 
-        rose: "bg-rose-50 text-rose-700",
+        rose: "bg-rose-50 text-rose-700 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]",
 
     }[destaque];
 
@@ -181,7 +181,7 @@ function ItemCard({
 
     return (
 
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden dark:border-white/12 dark:bg-[#232B3F]">
 
             <div className={`border-l-4 ${leftBar} p-4`}>
 
@@ -203,9 +203,9 @@ function ItemCard({
 
                 </div>
 
-                <div className="mt-1 text-sm text-gray-600">{titulo}</div>
+                <div className="mt-1 text-sm text-gray-600 dark:text-[#AEB9CF]">{titulo}</div>
 
-                {subtexto && <div className="mt-1 text-xs text-gray-500">{subtexto}</div>}
+                {subtexto && <div className="mt-1 text-xs text-gray-500 dark:text-[#AEB9CF]">{subtexto}</div>}
 
             </div>
 
@@ -865,15 +865,15 @@ function ModalListaTanato({
 
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
 
-            <div className="bg-white w-[96%] md:w-[80%] lg:w-[60%] rounded-2xl shadow-2xl max-h-[90%] overflow-hidden">
+            <div className="bg-white w-[96%] md:w-[80%] lg:w-[60%] rounded-2xl shadow-2xl max-h-[90%] overflow-hidden dark:bg-[#232B3F]">
 
-                <div className="flex items-center justify-between gap-3 border-b p-4 bg-white/90 backdrop-blur">
+                <div className="flex items-center justify-between gap-3 border-b p-4 bg-white/90 backdrop-blur dark:bg-[#232B3F]/90">
 
                     <div>
 
                         <div className="text-base font-bold">Tanatopraxia: {agente}</div>
 
-                        <div className="text-xs text-gray-500">{fmt0(itensOrdenados.length)} falecido(s)</div>
+                        <div className="text-xs text-gray-500 dark:text-[#AEB9CF]">{fmt0(itensOrdenados.length)} falecido(s)</div>
 
                     </div>
 
@@ -881,7 +881,7 @@ function ModalListaTanato({
 
                         onClick={onFechar}
 
-                        className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                        className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
 
                     >
 
@@ -897,7 +897,7 @@ function ModalListaTanato({
 
                     {itensOrdenados.length === 0 ? (
 
-                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                        <div className="rounded-lg border p-6 text-center text-sm text-gray-500 dark:text-[#AEB9CF]">
 
                             Nenhum registro para este agente no período.
 
@@ -913,17 +913,17 @@ function ModalListaTanato({
 
                                     key={it.entityKey}
 
-                                    className="rounded-xl border border-gray-200 bg-white p-3"
+                                    className="rounded-xl border border-gray-200 bg-white p-3 dark:border-white/12 dark:bg-[#232B3F]"
 
                                 >
 
-                                    <div className="text-sm font-semibold text-gray-900">
+                                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
 
                                         {it.falecido || "(Sem nome do falecido)"}
 
                                     </div>
 
-                                    <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-3">
+                                    <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-3 dark:text-[#AEB9CF]">
 
                                         <span>Data/hora: {fmtDateHora(it.ts) || "-"}</span>
 
@@ -1815,17 +1815,17 @@ export default function ModalAnaliseGeral({
 
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
 
-                <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto">
+                <div className="bg-white w-[96%] md:w-[92%] lg:w-[84%] rounded-2xl shadow-2xl max-h-[95%] overflow-y-auto dark:bg-[#232B3F]">
 
                     {/* Cabeçalho */}
 
-                    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/90 p-4 backdrop-blur">
+                    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-white/90 p-4 backdrop-blur dark:bg-[#232B3F]/90">
 
                         <div>
 
                             <h2 className="text-lg font-bold leading-tight">Análise Geral</h2>
 
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-500 dark:text-[#AEB9CF]">
 
                                 Período: {aDe || "-"} a {aAte || "-"} • {fmt0(registrosComEventoNoPeriodo)} registro(s)
 
@@ -1839,7 +1839,7 @@ export default function ModalAnaliseGeral({
 
                                 onClick={handleRecarregar}
 
-                                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-[#1C2334]"
 
                             >
 
@@ -1851,7 +1851,7 @@ export default function ModalAnaliseGeral({
 
                                 onClick={onFechar}
 
-                                className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                                className="rounded-lg border px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
 
                             >
 
@@ -1871,7 +1871,7 @@ export default function ModalAnaliseGeral({
 
                         <label className="flex flex-col gap-1">
 
-                            <span className="text-xs text-gray-500">Data inicial</span>
+                            <span className="text-xs text-gray-500 dark:text-[#AEB9CF]">Data inicial</span>
 
                             <input
 
@@ -1889,7 +1889,7 @@ export default function ModalAnaliseGeral({
 
                         <label className="flex flex-col gap-1">
 
-                            <span className="text-xs text-gray-500">Data final</span>
+                            <span className="text-xs text-gray-500 dark:text-[#AEB9CF]">Data final</span>
 
                             <input
 
@@ -1921,7 +1921,7 @@ export default function ModalAnaliseGeral({
 
                         </label>
 
-                        <div className="text-sm text-gray-500 self-center">
+                        <div className="text-sm text-gray-500 self-center dark:text-[#AEB9CF]">
 
                             Se informar apenas uma data, usamos <b>só aquele dia</b>.
 
@@ -1937,7 +1937,7 @@ export default function ModalAnaliseGeral({
 
                         {carregandoAnalise ? (
 
-                            <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                            <div className="rounded-lg border p-6 text-center text-sm text-gray-500 dark:text-[#AEB9CF]">
 
                                 Carregando análise completa…
 
@@ -1945,7 +1945,7 @@ export default function ModalAnaliseGeral({
 
                         ) : erro ? (
 
-                            <div className="rounded-lg border p-6 text-center text-sm text-red-600">
+                            <div className="rounded-lg border p-6 text-center text-sm text-red-600 dark:text-[#FF9C92]">
 
                                 {erro}
 
@@ -1953,7 +1953,7 @@ export default function ModalAnaliseGeral({
 
                         ) : dadosPeriodo.length === 0 ? (
 
-                            <div className="rounded-lg border p-6 text-center text-sm text-gray-500">
+                            <div className="rounded-lg border p-6 text-center text-sm text-gray-500 dark:text-[#AEB9CF]">
 
                                 Nenhum dado para o período/filtro selecionado.
 
@@ -1967,7 +1967,7 @@ export default function ModalAnaliseGeral({
 
                                 <div className="rounded-2xl border overflow-hidden mb-6">
 
-                                    <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                    <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 dark:bg-[#1C2334]">
 
                                         <div className="text-sm font-semibold">Itens principais</div>
 
@@ -2029,7 +2029,7 @@ export default function ModalAnaliseGeral({
 
                                 <div className="rounded-2xl border overflow-hidden mb-6">
 
-                                    <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                    <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 dark:bg-[#1C2334]">
 
                                         <div className="text-sm font-semibold">Atendimentos por convênio</div>
 
@@ -2055,11 +2055,11 @@ export default function ModalAnaliseGeral({
 
                                     <div className="rounded-2xl border overflow-hidden mb-6">
 
-                                        <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                        <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 dark:bg-[#1C2334]">
 
                                             <div className="text-sm font-semibold">Itens consumidos (Arrumação)</div>
 
-                                            <div className="text-xs text-gray-500">Mostrando os 12 itens</div>
+                                            <div className="text-xs text-gray-500 dark:text-[#AEB9CF]">Mostrando os 12 itens</div>
 
                                         </div>
 

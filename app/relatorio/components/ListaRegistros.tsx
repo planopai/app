@@ -147,7 +147,7 @@ function statusVisual(status?: AvaliacaoStatusResumo | null) {
         case "concluida":
             return {
                 classes:
-                    "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+                    "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52] dark:hover:bg-[#B3CE52]/25",
                 texto: status.avaliador_nome
                     ? `Concluída por ${status.avaliador_nome}`
                     : "Concluída",
@@ -156,7 +156,7 @@ function statusVisual(status?: AvaliacaoStatusResumo | null) {
         case "em_andamento":
             return {
                 classes:
-                    "border-blue-200 bg-blue-100 text-blue-700 hover:bg-blue-200",
+                    "border-blue-200 bg-blue-100 text-blue-700 hover:bg-blue-200 dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6] dark:hover:bg-[#3D6A99]/30",
                 texto: status.avaliador_nome
                     ? `Em andamento por ${status.avaliador_nome}`
                     : "Em andamento",
@@ -165,21 +165,21 @@ function statusVisual(status?: AvaliacaoStatusResumo | null) {
         case "pendente":
             return {
                 classes:
-                    "border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-200",
+                    "border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-200 dark:border-[#F2CB3F]/40 dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F] dark:hover:bg-[#F2CB3F]/25",
                 texto: "Pendente",
             };
 
         case "nao_aplicavel":
             return {
                 classes:
-                    "border-slate-200 bg-slate-100 text-slate-400 cursor-default",
+                    "border-slate-200 bg-slate-100 text-slate-400 cursor-default dark:border-white/12 dark:bg-white/10 dark:text-[#8893AA]",
                 texto: "Não aplicável",
             };
 
         default:
             return {
                 classes:
-                    "border-slate-200 bg-slate-100 text-slate-400",
+                    "border-slate-200 bg-slate-100 text-slate-400 dark:border-white/12 dark:bg-white/10 dark:text-[#8893AA]",
                 texto: "Status indisponível",
             };
     }
@@ -292,7 +292,7 @@ export default function ListaRegistros({
 
     return (
         <div className="flex w-full flex-col overflow-hidden rounded border">
-            <div className="bg-gray-100 p-3 font-semibold">Registros</div>
+            <div className="bg-gray-100 p-3 font-semibold dark:bg-white/10">Registros</div>
 
             <div className="flex-1 overflow-y-auto">
                 {loading ? (
@@ -326,8 +326,8 @@ export default function ListaRegistros({
                                     className={[
                                         "border-b",
                                         selecionadoId === id
-                                            ? "bg-blue-50"
-                                            : "bg-white",
+                                            ? "bg-blue-50 dark:bg-[#3D6A99]/20"
+                                            : "bg-white dark:bg-[#232B3F]",
                                     ].join(" ")}
                                 >
                                     <div className="px-3 py-3 hover:bg-muted/40">
@@ -337,7 +337,7 @@ export default function ListaRegistros({
                                                 className="min-w-0 flex-1 text-left"
                                                 onClick={() => onSelecionar(item)}
                                             >
-                                                <div className="break-words text-sm font-medium leading-5 text-slate-900 sm:truncate sm:text-base">
+                                                <div className="break-words text-sm font-medium leading-5 text-slate-900 sm:truncate sm:text-base dark:text-white">
                                                     {item.falecido}
                                                 </div>
                                             </button>
@@ -393,7 +393,7 @@ export default function ListaRegistros({
                 )}
             </div>
 
-            <div className="flex items-center justify-between border-t bg-gray-50 p-2">
+            <div className="flex items-center justify-between border-t bg-gray-50 p-2 dark:bg-[#1C2334]">
                 <button
                     onClick={onPaginaAnterior}
                     disabled={pagina <= 1}

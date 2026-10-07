@@ -83,11 +83,11 @@ export default function CoroaEditor({
     }, [podeBuscar, q, value.tipo, value.deposito_nome]);
 
     return (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]">
             <div className="grid gap-3 md:grid-cols-[1fr_180px] md:items-center">
                 <div>
-                    <h3 className="font-semibold text-slate-800">Coroa de Flores</h3>
-                    <p className="text-xs text-slate-500">
+                    <h3 className="font-semibold text-slate-800 dark:text-white">Coroa de Flores</h3>
+                    <p className="text-xs text-slate-500 dark:text-[#AEB9CF]">
                         Pode definir apenas a cobertura ou também um modelo padrão.
                     </p>
                 </div>
@@ -128,7 +128,7 @@ export default function CoroaEditor({
                                         codigo_barras: "",
                                     });
                                 }}
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                             >
                                 <option value="">Somente definir que oferece</option>
                                 <option value="Natural">Natural</option>
@@ -151,7 +151,7 @@ export default function CoroaEditor({
                                             codigo_barras: "",
                                         })
                                     }
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 dark:border-white/25"
                                 >
                                     <option value="">Selecione...</option>
                                     {DEP_COROA.map((d) => (
@@ -171,18 +171,18 @@ export default function CoroaEditor({
                                 disabled={disabled}
                                 onChange={(e) => setQ(e.target.value)}
                                 placeholder="Buscar modelo de coroa..."
-                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-white/25"
                             />
 
                             <div className="max-h-52 overflow-y-auto rounded-lg border">
                                 {loading && (
-                                    <div className="p-3 text-sm text-slate-500">
+                                    <div className="p-3 text-sm text-slate-500 dark:text-[#AEB9CF]">
                                         Consultando coroas...
                                     </div>
                                 )}
 
                                 {!loading && erro && (
-                                    <div className="p-3 text-sm text-red-700">{erro}</div>
+                                    <div className="p-3 text-sm text-red-700 dark:text-[#FF9C92]">{erro}</div>
                                 )}
 
                                 {!loading &&
@@ -211,12 +211,12 @@ export default function CoroaEditor({
                                                 className={[
                                                     "block w-full border-b px-3 py-2 text-left text-sm last:border-b-0",
                                                     selected
-                                                        ? "bg-blue-50 text-blue-900"
-                                                        : "hover:bg-slate-50",
+                                                        ? "bg-blue-50 text-blue-900 dark:bg-[#3D6A99]/20 dark:text-[#A9BED6]"
+                                                        : "hover:bg-slate-50 dark:hover:bg-[#1C2334]",
                                                 ].join(" ")}
                                             >
                                                 <b>{row.nome}</b>
-                                                <span className="ml-2 text-xs text-slate-500">
+                                                <span className="ml-2 text-xs text-slate-500 dark:text-[#AEB9CF]">
                                                     #{pid}
                                                 </span>
                                             </button>
@@ -227,7 +227,7 @@ export default function CoroaEditor({
                     )}
 
                     {value.produto_id > 0 && (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#B3CE52]">
                             Modelo padrão: <b>{value.nome}</b> · produto #{value.produto_id}
                         </div>
                     )}
