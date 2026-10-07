@@ -226,6 +226,9 @@ export default function JanelaConversa(props: {
     temMais: boolean;
     digitando: string;
     seguranca: boolean;
+    /** conversa individual: "online" ou "visto por último …" do colega */
+    presenca?: string;
+    online?: boolean;
     onVoltar: () => void;
     onCarregarMais: () => void;
     onEnviarTexto: (t: string) => void;
@@ -303,7 +306,7 @@ export default function JanelaConversa(props: {
 
     const subtitulo = externo
         ? `${c.contato?.telefone || ""}${c.responsavel ? ` · Responsável: ${c.responsavel.nome}` : " · Na fila"}`
-        : c.tipo === "grupo" ? `${c.membros.length} membros` : "";
+        : c.tipo === "grupo" ? `${c.membros.length} membros` : props.presenca || "";
 
     return (
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-x-hidden bg-[#EFEAE2] dark:bg-[#1C2334]">
@@ -314,7 +317,7 @@ export default function JanelaConversa(props: {
             )}
             <div className="flex items-center gap-2 border-b border-[#E6E9EE] bg-white py-2 pl-0.5 pr-1 md:gap-3 md:px-4 dark:border-white/12 dark:bg-[#232B3F]">
                 <button type="button" onClick={props.onVoltar} className="flex h-11 w-10 flex-none items-center justify-center text-[#313C55] md:hidden dark:text-white" aria-label="Voltar às conversas"><Icone nome="back" className="h-6 w-6" /></button>
-                <Avatar conversa={c} tamanho={40} />
+                <Avatar conversa={c} tamanho={40} online={!!props.online} />
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                         <span className="truncate text-[17px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</span>

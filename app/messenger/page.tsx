@@ -46,6 +46,55 @@ function useAreaVisivel(ativo: boolean) {
     return area;
 }
 
+/**
+ * Presença dos colegas ("online" / "visto por último"): consulta o servidor a cada 30 s com a tela aberta.
+ * O app avisa a presença de qualquer tela (tempoReal.ts); "online" = visto há até 2 minutos.
+ */
+function usePresencas() {
+    const [dados, setDados] = useState<{ vistos: Record<string, string>; limite: number; ajuste: number }>({ vistos: {}, limite: 120, ajuste: 0 });
+    const [, setTique] = useState(0);
+    useEffect(() => {
+        let vivo = true;
+        const buscar = async () => {
+            if (document.visibilityState !== "visible") return;
+            try {
+                const d = await msgGet<{ agora: string; online_segundos: number; vistos: Record<string, string> }>("presencas", {}, false);
+                if (vivo) setDados({ vistos: d.vistos || {}, limite: d.online_segundos || 120, ajuste: Date.now() - Date.parse(d.agora) });
+            } catch {
+                /* sem presença: ninguém aparece online */
+            }
+        };
+        buscar();
+        const t = setInterval(() => { buscar(); setTique((n) => n + 1); }, 30000);
+        const aoVoltar = () => document.visibilityState === "visible" && buscar();
+        document.addEventListener("visibilitychange", aoVoltar);
+        return () => {
+            vivo = false;
+            clearInterval(t);
+            document.removeEventListener("visibilitychange", aoVoltar);
+        };
+    }, []);
+    const vistoEm = (id?: number | null) => (id && dados.vistos[String(id)] ? Date.parse(dados.vistos[String(id)]) : 0);
+    const online = (id?: number | null) => {
+        const v = vistoEm(id);
+        return v > 0 && Date.now() - dados.ajuste - v <= dados.limite * 1000;
+    };
+    const texto = (id?: number | null) => {
+        if (!id) return "";
+        if (online(id)) return "online";
+        const v = vistoEm(id);
+        if (!v) return "";
+        const d = new Date(v);
+        const h = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const hoje = new Date();
+        const ontem = new Date(hoje.getTime() - 86400000);
+        if (d.toDateString() === hoje.toDateString()) return `visto por último hoje às ${h}`;
+        if (d.toDateString() === ontem.toDateString()) return `visto por último ontem às ${h}`;
+        return `visto por último em ${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${h}`;
+    };
+    return { online, texto };
+}
+
 const TIPOS_DOC: Record<string, string> = {
     pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -69,6 +118,7 @@ export default function MessengerPage() {
     const [digitando, setDigitando] = useState<Record<number, { nome: string; ate: number }>>({});
     const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes">(null);
     const [verHistorico, setVerHistorico] = useState(false);
+    const presenca = usePresencas();
     const [notif, setNotif] = useState<{ estado: EstadoNotificacoes; detalhe?: string }>({ estado: "desligadas" });
     const selRef = useRef<number | null>(null);
     selRef.current = selId;
@@ -193,7 +243,11 @@ export default function MessengerPage() {
                 agendarRecarga();
             } else if (nome === "status_envio") {
                 if (dados.conversa_id === aberta) setMensagens((ms) => ms.map((x) => (x.id === dados.mensagem_id ? { ...x, status_envio: dados.status_envio, erro_envio: dados.erro_envio } : x)));
+                // lista: tiques da última mensagem
+                setConversas((cs) => cs.map((c) => (c.id === dados.conversa_id && c.ultima_mensagem?.id === dados.mensagem_id ? { ...c, ultima_mensagem: { ...c.ultima_mensagem!, status_envio: dados.status_envio } } : c)));
             } else if (nome === "leitura") {
+                // lista: tiques azuis quando o colega lê
+                setConversas((cs) => cs.map((c) => (c.id === dados.conversa_id ? { ...c, membros: c.membros.map((p) => (p.usuario_id === dados.usuario_id ? { ...p, ultima_lida_id: Math.max(p.ultima_lida_id, dados.ultima_lida_id) } : p)) } : c)));
                 if (dados.conversa_id === aberta) {
                     setConversaSel((c) => (c ? { ...c, membros: c.membros.map((p) => (p.usuario_id === dados.usuario_id ? { ...p, ultima_lida_id: Math.max(p.ultima_lida_id, dados.ultima_lida_id) } : p)) } : c));
                 }
@@ -318,6 +372,7 @@ export default function MessengerPage() {
     const silenciar = () => conversaSel && executar(async () => {
         const r = await msgPost("silenciar", { conversa_id: conversaSel.id, silenciada: !conversaSel.silenciada });
         setConversaSel({ ...conversaSel, silenciada: r.dados.silenciada });
+        window.dispatchEvent(new CustomEvent("messenger:silenciada", { detail: { conversa_id: conversaSel.id, silenciada: r.dados.silenciada } }));
         return r;
     }, conversaSel.silenciada ? "Notificações desta conversa ligadas." : "Conversa silenciada.");
     const carregarMais = async () => {
@@ -351,13 +406,13 @@ export default function MessengerPage() {
                 <div className={`${selId ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-[#E6E9EE] dark:border-white/12`}>
                     <div className="flex items-center gap-1 pb-1 pl-4 pr-2 pt-3">
                         <h1 className="m-0 flex-1 text-[26px] font-extrabold text-[#313C55] md:text-2xl dark:text-white">Conversas</h1>
-                        <button type="button" onClick={() => setModal("nova")} className="hidden h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] md:flex dark:text-white dark:hover:bg-white/10" aria-label="Nova conversa" title="Nova conversa"><Icone nome="novaconversa" className="h-[22px] w-[22px]" /></button>
+                        <button type="button" onClick={() => setModal("nova")} className="hidden h-11 items-center gap-2 rounded-full bg-[#313C55] px-4 text-[15px] font-extrabold text-white shadow-sm hover:bg-[#262F45] md:flex dark:bg-[#3D6A99] dark:hover:bg-[#4A7AAB]" aria-label="Nova conversa"><Icone nome="novaconversa" className="h-5 w-5" />Nova conversa</button>
                         <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10" aria-label="Histórico de clientes" title="Histórico de clientes"><Icone nome="clock" className="h-[22px] w-[22px]" /></button>
                     </div>
                     <div className="flex flex-col gap-2.5 px-4 pb-2.5 pt-1">
-                        <label className="flex h-[42px] items-center gap-2.5 rounded-full bg-[#F0F2F5] px-3.5 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                        <label className="flex h-12 items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                             <Icone nome="search" />
-                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[16px] text-[#1F2638] outline-none dark:text-white" />
+                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[17px] text-[#1F2638] outline-none dark:text-white" />
                         </label>
                         <Abas aba={aba} setAba={setAba} contagem={contagem} />
                     </div>
@@ -392,7 +447,7 @@ export default function MessengerPage() {
                             </>
                         )}
                         {perfil && listaAtual.map((c) => (
-                            <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} />
+                            <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} online={c.tipo === "individual" && presenca.online(c.outro_usuario_id)} />
                         ))}
                         {!listaAtual.length && !carregando && (
                             <p className="px-4 py-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
@@ -410,6 +465,8 @@ export default function MessengerPage() {
                 <div className={`${selId ? "flex" : "hidden md:flex"} min-h-0 flex-col bg-[#EFEAE2] dark:bg-[#1C2334]`} style={area ? { position: "fixed", left: 0, right: 0, top: area.topo, height: area.altura, zIndex: 60 } : undefined}>
                     {conversaSel && perfil && selId === conversaSel.id ? (
                         <JanelaConversa
+                            presenca={conversaSel.tipo === "individual" ? presenca.texto(conversaSel.outro_usuario_id) : ""}
+                            online={conversaSel.tipo === "individual" && presenca.online(conversaSel.outro_usuario_id)}
                             conversa={conversaSel} mensagens={mensagens} perfil={perfil} temMais={temMais} digitando={digitandoAgora} seguranca={seguranca}
                             onVoltar={fecharConversa} onCarregarMais={carregarMais}
                             onEnviarTexto={enviarTexto} onEnviarModelo={enviarModelo} onEnviarArquivo={enviarMidia} onApagar={apagar}
@@ -427,7 +484,7 @@ export default function MessengerPage() {
             </div>
 
             {(modal === "nova" || modal === "grupo") && (
-                <NovaConversa grupoInicial={modal === "grupo"} onFechar={() => setModal(null)} onAberta={(c) => { setModal(null); carregarListas(); setAba(c.tipo === "grupo" ? "grupos" : "equipe"); abrirConversa(c.id); }} />
+                <NovaConversa online={presenca.online} grupoInicial={modal === "grupo"} onFechar={() => setModal(null)} onAberta={(c) => { setModal(null); carregarListas(); setAba(c.tipo === "grupo" ? "grupos" : "equipe"); abrirConversa(c.id); }} />
             )}
             {modal === "transferir" && conversaSel && (
                 <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida. Você continua acompanhando, sem responder."); carregarListas(); abrirConversa(conversaSel.id, true); }} />

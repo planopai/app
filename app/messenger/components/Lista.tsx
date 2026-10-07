@@ -46,7 +46,14 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
 }
 
 const TONS = ["#BDE9FA", "#DCEBAA", "#F7E39A", "#D6DCE8", "#FAD3CF"];
-export function Avatar({ conversa, tamanho = 50 }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number }) {
+
+/** Bolinha verde de "online" no canto da foto (como no WhatsApp Web). */
+function PontoOnline({ tamanho }: { tamanho: number }) {
+    const d = Math.max(11, Math.round(tamanho * 0.26));
+    return <span className="absolute bottom-0 right-0 rounded-full border-2 border-white bg-[#4C9A2A] dark:border-[#232B3F]" style={{ width: d, height: d }} aria-hidden="true" />;
+}
+
+export function Avatar({ conversa, tamanho = 50, online = false }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number; online?: boolean }) {
     if (conversa.tipo === "grupo") {
         return (
             <div className="flex flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
@@ -56,10 +63,33 @@ export function Avatar({ conversa, tamanho = 50 }: { conversa: Pick<Conversa, "i
     }
     const iniciais = (conversa.titulo || "?").replace(/[^\p{L}\p{N} ]/gu, "").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "?";
     return (
-        <div className="flex flex-none items-center justify-center rounded-full font-extrabold text-[#313C55]" style={{ width: tamanho, height: tamanho, fontSize: Math.round(tamanho * 0.34), background: TONS[conversa.id % TONS.length] }} aria-hidden="true">
+        <div className="relative flex flex-none items-center justify-center rounded-full font-extrabold text-[#313C55]" style={{ width: tamanho, height: tamanho, fontSize: Math.round(tamanho * 0.34), background: TONS[conversa.id % TONS.length] }} aria-hidden="true">
             {iniciais}
+            {online && <PontoOnline tamanho={tamanho} />}
         </div>
     );
+}
+
+/**
+ * Situação da MINHA última mensagem da conversa, para os tiques da lista:
+ * equipe/grupo pela última lida de cada participante; cliente pelo status do WhatsApp.
+ */
+export function estadoUltima(c: Conversa, eu: number): "enviando" | "enviada" | "entregue" | "lida" | "falhou" | null {
+    const m = c.ultima_mensagem;
+    if (!m || m.apagada || m.autor_tipo !== "usuario" || m.autor_usuario_id !== eu) return null;
+    if (m._enviando) return "enviando";
+    if (c.tipo === "externo") return m.status_envio === "lida" ? "lida" : m.status_envio === "entregue" ? "entregue" : m.status_envio === "falhou" ? "falhou" : "enviada";
+    const outros = c.membros.filter((p) => p.usuario_id !== eu);
+    const leram = outros.filter((p) => p.ultima_lida_id >= m.id).length;
+    return outros.length > 0 && leram === outros.length ? "lida" : leram > 0 ? "entregue" : "enviada";
+}
+
+export function TiquesLista({ estado }: { estado: ReturnType<typeof estadoUltima> }) {
+    if (!estado) return null;
+    if (estado === "falhou") return <span className="flex-none text-[12.5px] font-extrabold text-[#B42318] dark:text-[#FF9C92]">Falhou</span>;
+    if (estado === "enviando") return <span className="flex-none" aria-label="Enviando"><Icone nome="clock" className="h-[15px] w-[15px] text-[#6B7488] dark:text-[#AEB9CF]" /></span>;
+    if (estado === "enviada") return <span className="flex-none" aria-label="Enviada"><Icone nome="check" className="h-4 w-4 text-[#6B7488] dark:text-[#AEB9CF]" /></span>;
+    return <span className={`flex-none ${estado === "lida" ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`} aria-label={estado === "lida" ? "Lida" : "Entregue"}><Icone nome="checks" className="h-4 w-4" /></span>;
 }
 
 export function hora(iso: string | null) {
@@ -115,7 +145,7 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
     );
 }
 
-export function LinhaConversa({ c, selecionada, onAbrir, eu, acao }: { c: Conversa; selecionada: boolean; onAbrir: () => void; eu: number; acao?: React.ReactNode }) {
+export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = false }: { c: Conversa; selecionada: boolean; onAbrir: () => void; eu: number; acao?: React.ReactNode; online?: boolean }) {
     const m = c.ultima_mensagem;
     const minha = m?.autor_usuario_id === eu && m?.autor_tipo === "usuario";
     let etiqueta: React.ReactNode = null;
@@ -127,7 +157,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao }: { c: Conver
     return (
         <div className={`flex w-full items-center gap-3 px-3 ${selecionada ? "bg-[#F0F2F5] dark:bg-[#3D6A99]/20" : "hover:bg-[#F5F6F8] dark:hover:bg-white/10"}`}>
             <button type="button" onClick={onAbrir} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
-                <Avatar conversa={c} />
+                <Avatar conversa={c} online={online} />
                 <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-2.5 dark:border-white/10">
                     <div className="flex items-center gap-2">
                         <div className="min-w-0 flex-1 truncate text-[16.5px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</div>
@@ -135,7 +165,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao }: { c: Conver
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">
                         {etiqueta}
-                        {minha && !m?.apagada && <Icone nome="check" className="h-4 w-4 flex-none text-[#6B7488] dark:text-[#AEB9CF]" />}
+                        <TiquesLista estado={estadoUltima(c, eu)} />
                         <div className="min-w-0 flex-1 truncate text-[14.5px] text-[#5B6478] dark:text-[#AEB9CF]">
                             {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
                             {previa(m)}

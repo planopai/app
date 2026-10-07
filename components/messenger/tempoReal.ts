@@ -15,7 +15,8 @@
  */
 import * as Ably from "ably";
 import Push from "ably/push";
-import { msgGet } from "./api";
+import { apiJson, MESSENGER_API, msgGet } from "./api";
+import { iniciarAvisos } from "./avisos";
 
 /** Service worker só das notificações do Messenger (escopo próprio /push/ably/, separado do OneSignal). */
 export const SW_NOTIFICACOES = "/push/ably/sw.js";
@@ -92,6 +93,25 @@ export async function sincronizar() {
     }
 }
 
+/**
+ * Presença ("online" no Messenger): enquanto o app está aberto e visível, em qualquer tela,
+ * avisa o servidor a cada minuto. Sem sessão, falha em silêncio (não leva ao login).
+ */
+let presencaLigada = false;
+function ligarPresenca() {
+    if (presencaLigada) return;
+    presencaLigada = true;
+    const avisar = () => {
+        if (document.visibilityState !== "visible") return;
+        apiJson(`${MESSENGER_API}?action=presenca`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, false).catch(() => {});
+    };
+    avisar();
+    setInterval(avisar, 60000);
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") avisar();
+    });
+}
+
 async function iniciar() {
     if (iniciado || typeof window === "undefined") return;
     iniciado = true;
@@ -112,6 +132,9 @@ async function iniciar() {
         definirSeguranca(true);
         return;
     }
+    ligarPresenca();
+    // avisos de mensagem nova dentro do app (qualquer tela) e alerta de não lidas no celular sem notificações
+    iniciarAvisos({ eu: Number(perfil.id) || 0, ouvir });
     if (!perfil?.tempo_real) {
         definirSeguranca(true); // Ably não configurada: só consulta ao MySQL
         return;

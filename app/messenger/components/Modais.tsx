@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { msgGet, msgPost } from "@/components/messenger/api";
 import type { Conversa, Perfil } from "@/components/messenger/tipos";
-import { Icone } from "./Lista";
+import { Avatar, Icone } from "./Lista";
 
 function Janela({ titulo, sub, onFechar, children, rodape }: { titulo: string; sub?: string; onFechar: () => void; children: React.ReactNode; rodape?: React.ReactNode }) {
     return (
@@ -26,7 +26,7 @@ const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] d
 type Colega = { id: number; nome: string; atendente_whatsapp: boolean };
 
 /** Nova conversa individual ou novo grupo. */
-export function NovaConversa({ grupoInicial, onFechar, onAberta }: { grupoInicial: boolean; onFechar: () => void; onAberta: (c: Conversa) => void }) {
+export function NovaConversa({ grupoInicial, onFechar, onAberta, online = () => false }: { grupoInicial: boolean; onFechar: () => void; onAberta: (c: Conversa) => void; online?: (usuarioId: number) => boolean }) {
     const [modo, setModo] = useState<"colega" | "grupo">(grupoInicial ? "grupo" : "colega");
     const [colegas, setColegas] = useState<Colega[]>([]);
     const [busca, setBusca] = useState("");
@@ -72,16 +72,27 @@ export function NovaConversa({ grupoInicial, onFechar, onAberta }: { grupoInicia
             </div>
             {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
             {modo === "grupo" && (
-                <label className="block"><span className={rotulo}>Nome do grupo</span><input className="mt-1 h-12 w-full rounded-xl bg-[#F1F4F8] px-3.5 text-[15px] outline-none dark:bg-[#1C2334]" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Plantão de domingo" maxLength={120} /></label>
+                <label className="block"><span className={rotulo}>Nome do grupo</span><input className="mt-1 h-12 w-full rounded-xl bg-[#F1F4F8] px-3.5 text-[16px] outline-none dark:bg-[#1C2334]" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Plantão de domingo" maxLength={120} /></label>
             )}
-            <input type="search" className="h-11 w-full rounded-xl bg-[#F1F4F8] px-3.5 text-sm outline-none dark:bg-[#1C2334]" placeholder="Buscar colega" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar colega" />
+            <label className="flex h-12 flex-none items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                <Icone nome="search" />
+                <input type="search" className="min-w-0 flex-1 bg-transparent text-[17px] text-[#1F2638] outline-none dark:text-white" placeholder="Buscar colega" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar colega" />
+            </label>
             <div className="flex flex-col">
                 {filtrados.map((c) =>
                     modo === "colega" ? (
-                        <button key={c.id} type="button" disabled={salvando} onClick={() => abrir(c.id)} className="flex min-h-[48px] items-center gap-3 rounded-xl px-2 text-left text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">{c.nome}</button>
+                        <button key={c.id} type="button" disabled={salvando} onClick={() => abrir(c.id)} className="flex min-h-[64px] items-center gap-3.5 rounded-xl px-2 text-left hover:bg-[#EEF2F7] dark:hover:bg-white/10">
+                            <Avatar conversa={{ id: c.id, tipo: "individual", titulo: c.nome }} tamanho={46} online={online(c.id)} />
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[17px] font-extrabold text-[#1F2638] dark:text-white">{c.nome}</span>
+                                {online(c.id) && <span className="block text-[13.5px] font-semibold text-[#4C9A2A] dark:text-[#B3CE52]">online</span>}
+                            </span>
+                        </button>
                     ) : (
-                        <label key={c.id} className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-xl px-2 text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">
-                            <input type="checkbox" className="h-5 w-5 accent-[#313C55]" checked={marcados.includes(c.id)} onChange={(e) => setMarcados(e.target.checked ? [...marcados, c.id] : marcados.filter((x) => x !== c.id))} />{c.nome}
+                        <label key={c.id} className="flex min-h-[60px] cursor-pointer items-center gap-3.5 rounded-xl px-2 text-[17px] font-extrabold hover:bg-[#EEF2F7] dark:hover:bg-white/10">
+                            <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={marcados.includes(c.id)} onChange={(e) => setMarcados(e.target.checked ? [...marcados, c.id] : marcados.filter((x) => x !== c.id))} />
+                            <Avatar conversa={{ id: c.id, tipo: "individual", titulo: c.nome }} tamanho={42} online={online(c.id)} />
+                            <span className="min-w-0 flex-1 truncate">{c.nome}</span>
                         </label>
                     )
                 )}
@@ -124,7 +135,7 @@ export function Transferir({ conversa, onFechar, onFeito }: { conversa: Conversa
                 </label>
             ))}
             {!lista.length && !erro && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum outro atendente com a permissão de atender clientes.</p>}
-            <label className="block"><span className={rotulo}>Observação para o colega</span><textarea className="mt-1 w-full rounded-xl bg-[#F1F4F8] px-3.5 py-3 text-[15px] outline-none dark:bg-[#1C2334]" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} placeholder="Ex.: a família quer falar sobre translado" /></label>
+            <label className="block"><span className={rotulo}>Observação para o colega</span><textarea className="mt-1 w-full rounded-xl bg-[#F1F4F8] px-3.5 py-3 text-[16px] outline-none dark:bg-[#1C2334]" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} placeholder="Ex.: a família quer falar sobre translado" /></label>
             <p className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Você continua acompanhando a conversa, mas sem responder. Para voltar a falar, ela precisa ser transferida de novo para você.</p>
         </Janela>
     );
@@ -163,7 +174,7 @@ export function DetalhesGrupo({ conversa, perfil, onFechar, onMudou, onSaiu }: {
             {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
             {souAdmin && (
                 <div className="flex gap-2">
-                    <input className="h-11 min-w-0 flex-1 rounded-xl bg-[#F1F4F8] px-3.5 text-[15px] outline-none dark:bg-[#1C2334]" value={nome} onChange={(e) => setNome(e.target.value)} aria-label="Nome do grupo" maxLength={120} />
+                    <input className="h-11 min-w-0 flex-1 rounded-xl bg-[#F1F4F8] px-3.5 text-[16px] outline-none dark:bg-[#1C2334]" value={nome} onChange={(e) => setNome(e.target.value)} aria-label="Nome do grupo" maxLength={120} />
                     <button type="button" className={btn} disabled={!nome.trim() || nome === conversa.titulo} onClick={() => editar({ operacao: "renomear", titulo: nome })}>Renomear</button>
                 </div>
             )}
