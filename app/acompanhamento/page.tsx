@@ -54,7 +54,7 @@ import Visita, {
   type VisitaStatus,
 } from "./components/visita";
 
-import Wizard, { type CampoFaltando } from "./components/Wizard";
+import Wizard, { type CampoFaltando, type TravaItens } from "./components/Wizard";
 import MateriaisModal from "./components/MateriaisModal";
 import ArrumacaoModal from "./components/ArrumacaoModal";
 import AcaoModal, {
@@ -117,6 +117,33 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 // ✅ endpoint da baixa automática (novo PHP independente)
 const URNA_SAIDA_API = `${ENDPOINT}/urna_saida.php`;
 const COROAS_API = `${ENDPOINT}/coroas.php`;
+const ME_API = `${ENDPOINT}/informativo.php?me=1`;
+
+/*
+ * Trava dos itens a partir do Início da Ornamentação (fase05).
+ * Só quem tem a página Gestão (ou o administrador) altera. O informativo.php confere a mesma regra
+ * ao salvar (pode_alterar_itens_travados vem do ?me=1). Ids dos passos do Wizard (constants.ts → steps).
+ */
+const FASE_TRAVA_ITENS = 5;
+const CAMPOS_TRAVADOS_APOS_ORNAMENTACAO = [
+  "urna",
+  "roupa",
+  "veu",
+  "veu_item",
+  "cordao",
+  "cordao_item",
+  "invol",
+  "invol_item",
+  "tanato",
+  "ornamentacao",
+  "ornamentacao_tipo",
+  "kit_lanche",
+  "coroa_flores",
+  "coroa_tipo",
+  "coroa_modelo",
+  "coroas_itens",
+  "arrumacao",
+];
 
 // ===== Helpers de baixa (fase12: URNA / ROUPA / INVOL / INSUMOS) =====
 type BaixaTipo =
@@ -827,6 +854,38 @@ export default function AcompanhamentoPage() {
     wizardIdx,
     registros,
   ]);
+
+  /* -------------------- Trava dos itens após o Início da Ornamentação -------------------- */
+  const [podeAlterarItensTravados, setPodeAlterarItensTravados] = useState(false);
+  useEffect(() => {
+    let cancel = false;
+    fetch(`${ME_API}&_nocache=${Date.now()}`, { credentials: "include", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!cancel) setPodeAlterarItensTravados(!!j?.pode_alterar_itens_travados);
+      })
+      .catch(() => {
+        // Sem resposta (offline): fica travado. O servidor confere de novo ao salvar.
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  const travaItens = useMemo<TravaItens | null>(() => {
+    if (!wizardEditing) return null;
+    const registroOriginal = typeof wizardIdx === "number" ? registros[wizardIdx] : null;
+    if (resolveTipoFromRegistro((registroOriginal ?? wizardData) as Registro) === "terceiro") return null;
+    const status = (registroOriginal as any)?.status ?? (wizardData as any)?.status ?? "";
+    const fase = getNumeroFase(status);
+    if (fase < FASE_TRAVA_ITENS) return null;
+    return {
+      campos: CAMPOS_TRAVADOS_APOS_ORNAMENTACAO,
+      podeAlterar: podeAlterarItensTravados,
+      // fase07 a fase12: o Corpo Pronto (fase12) já deu baixa no estoque.
+      baixaFeita: fase >= 7,
+    };
+  }, [wizardEditing, wizardIdx, registros, wizardData, podeAlterarItensTravados]);
 
   /* ===========================
      ✅ OFFLINE: Flush da fila
@@ -4296,6 +4355,7 @@ export default function AcompanhamentoPage() {
         onRegistrarAcaoEdicao={registrarAcaoDoWizard}
         aviso={wizardMsg}
         onFecharAviso={() => setWizardMsg(null)}
+        travaItens={travaItens}
       />
 
       <MateriaisModal

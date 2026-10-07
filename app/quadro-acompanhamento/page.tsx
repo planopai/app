@@ -3880,14 +3880,14 @@ function DetalheAtendimentoDrawer({
 
                     <div className={rotulo}>Resumo</div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
-                        {[
+                        {([
                             ["Aberto em", tvDataHora(resumo.criadoTs) || "—"],
                             ["Agente", shown(detail.agente)],
-                            ["Contato", shown(detail.contato)],
+                            ["Contato", <ContatoDoAtendimento key="contato" nome={(detail as any).nome_responsavel} telefone={detail.contato} vazio={shown(detail.contato)} />],
                             ["Religião", shown(detail.religiao)],
                             ["Convênio", shown(detail.convenio)],
                             ["Situação", `${resumo.atualLabel} · há ${tvDuracaoTexto(resumo.atualDesdeMs)}`],
-                        ].map(([k, v]) => (
+                        ] as Array<[string, React.ReactNode]>).map(([k, v]) => (
                             <div key={k} className="min-w-0">
                                 <div className="text-xs font-bold text-[var(--d-muted)]">{k}</div>
                                 <div className="break-words font-extrabold [overflow-wrap:anywhere]">{v}</div>
@@ -4828,8 +4828,16 @@ type TvResumo = {
     atualResponsavel: string;
     totalMs: number;
     criadoTs: number;
+    /** Quem abriu o atendimento (histórico "criou"). O campo agente do registro é o da última ação. */
+    abertoPor: string;
     alerta?: { nivel: "crit" | "warn"; texto: string };
 };
+
+/** Quem abriu: autor do registro "criou" do histórico. Sem ele (histórico ainda não carregado), fica vazio e a tela usa o agente. */
+function quemAbriuAtendimento(logs: LogItem[] | undefined): string {
+    const criou = (logs ?? []).find((log) => String(log.acao ?? "").trim().toLowerCase() === "criou" && String(log.usuario ?? "").trim() !== "");
+    return criou ? shown(criou.usuario, "") : "";
+}
 
 function resumirAtendimentoTv(r: Registro, logs: LogItem[] | undefined, nowMs: number): TvResumo {
     const segments = buildStatusSegments(r, logs, nowMs);
@@ -4875,6 +4883,7 @@ function resumirAtendimentoTv(r: Registro, logs: LogItem[] | undefined, nowMs: n
         atualResponsavel,
         totalMs,
         criadoTs: getRegistroCreatedTs(r, logs, nowMs),
+        abertoPor: quemAbriuAtendimento(logs),
         alerta,
     };
 }
@@ -4932,7 +4941,7 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
                 <div className="tv-name">{shown(r.falecido)}</div>
                 <div className="tv-meta">
                     <span className={tvConvenioClasse(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
-                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
                 </div>
                 <div className="tv-place">
                     <span className="tv-place-vel">{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</span>
@@ -5585,7 +5594,7 @@ function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect
 
             <div className="qm-meta">
                 <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
-                <span className="qm-meta-t">Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+                <span className="qm-meta-t">Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
             </div>
 
             <div className="qm-now">
@@ -6259,7 +6268,7 @@ function DeskCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelec
                 <h3 className="qd-name">{shown(r.falecido)}</h3>
                 <div className="qd-meta">
                     <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
-                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {shown(r.agente)}</span>
+                    <span>Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
                 </div>
                 <div className="qd-now">
                     <span className="qd-dot qa-status-blink" aria-hidden />
@@ -7111,5 +7120,18 @@ function LinhaDoTempoLogs({ logs, usuarioVisivel = true }: { logs: LogItem[]; us
                 );
             })}
         </div>
+    );
+}
+
+/** Contato no resumo: nome do responsável e, embaixo, o telefone. Sem nome, mostra só o telefone (como antes). */
+function ContatoDoAtendimento({ nome, telefone, vazio }: { nome?: unknown; telefone?: unknown; vazio: React.ReactNode }) {
+    const n = String(nome ?? "").trim();
+    const t = String(telefone ?? "").trim();
+    if (!n) return <>{vazio}</>;
+    return (
+        <>
+            {n}
+            {t && <span className="block text-[13px] font-bold text-[var(--d-muted)]">{t}</span>}
+        </>
     );
 }
