@@ -102,6 +102,17 @@ type ManualCoroaItem = {
     frase: string;
     valor?: string | number | null;
     foto_produto_url?: string | null;
+    /** Etapa da PRÓPRIA coroa (07/10/2026): cada coroa do pedido anda sozinha na Confecção. */
+    status?: ManualStatus | null;
+    coroa_inicio_em?: string | null;
+    coroa_inicio_por?: string | null;
+    faixa_inicio_em?: string | null;
+    faixa_inicio_por?: string | null;
+    foto_coroa_url?: string | null;
+    finalizada_em?: string | null;
+    finalizada_por?: string | null;
+    entregue_em?: string | null;
+    entregue_por?: string | null;
 };
 
 type ManualOrder = {
@@ -140,6 +151,11 @@ type ManualOrder = {
     finalizada_por?: string | null;
     entregue_em?: string | null;
     entregue_por?: string | null;
+    /** Cartão de UMA coroa (07/10/2026): chave única, id da coroa (coroas_itens.id) e "coroa N de M". */
+    _chave?: string;
+    _item_id?: number | null;
+    _coroa_n?: number;
+    _coroa_total?: number;
 };
 
 type ManualListResponse = {
@@ -597,7 +613,7 @@ function resumoModelosManual(order: ManualOrder) {
     if (!itens.length) return order.modelo_coroa || "—";
 
     const nomes = itens.map((x) => x.modelo_coroa);
-    if (nomes.length === 1) return nomes[0];
+    if (nomes.length === 1) return rotuloCoroaDe(order) ? `${nomes[0]} · ${rotuloCoroaDe(order)}` : nomes[0];
     return `${nomes[0]} +${nomes.length - 1}`;
 }
 
@@ -610,6 +626,77 @@ function itensManual(order?: ManualOrder | null): ManualCoroaItem[] {
         modelo_coroa: order.modelo_coroa || "",
         frase: order.frase || "",
     }];
+}
+
+/* =========================================================
+   UM CARTÃO POR COROA (07/10/2026)
+   Pedido com várias coroas (atendimento, venda direta ou online) aparece como um cartão
+   por coroa. O cartão tem os dados do pedido (solicitante, falecido, pagamento, comprovante)
+   e a etapa da própria coroa (coroas_itens). As ações vão com item_id.
+   Sem as colunas de etapa no servidor, a coroa usa a etapa do pedido (andam juntas).
+   ========================================================= */
+const ETAPAS_DA_COROA = [
+    "coroa_inicio_em", "coroa_inicio_por", "faixa_inicio_em", "faixa_inicio_por",
+    "foto_coroa_url", "finalizada_em", "finalizada_por", "entregue_em", "entregue_por",
+] as const;
+
+function separarPedidoPorCoroa(order: ManualOrder): ManualOrder[] {
+    const itens = Array.isArray(order.itens)
+        ? [...order.itens].sort((a, b) => Number(a.ordem || 0) - Number(b.ordem || 0))
+        : [];
+
+    if (itens.length <= 1) {
+        const item = itens[0];
+        return [{
+            ...order,
+            _chave: `${order.id}-${item?.id ?? 0}`,
+            _item_id: item?.id ?? null,
+            _coroa_n: 1,
+            _coroa_total: 1,
+        }];
+    }
+
+    return itens.map((item, index) => {
+        const temEtapa = Boolean(item.status);
+        const etapa: Partial<ManualOrder> = {};
+        if (temEtapa) {
+            etapa.status = item.status as ManualStatus;
+            for (const campo of ETAPAS_DA_COROA) {
+                (etapa as any)[campo] = (item as any)[campo] ?? null;
+            }
+        }
+
+        return {
+            ...order,
+            ...etapa,
+            itens: [item],
+            quantidade_coroas: 1,
+            modelo_coroa: item.modelo_coroa || order.modelo_coroa,
+            frase: item.frase || order.frase,
+            _chave: `${order.id}-${item.id ?? index + 1}`,
+            _item_id: item.id ?? null,
+            _coroa_n: index + 1,
+            _coroa_total: itens.length,
+        };
+    });
+}
+
+function separarPedidosPorCoroa(orders?: ManualOrder[] | null): ManualOrder[] {
+    return (Array.isArray(orders) ? orders : []).flatMap(separarPedidoPorCoroa);
+}
+
+/** Cartão da coroa escolhida dentro do pedido (sem item: o pedido como veio). */
+function coroaDoPedido(order: ManualOrder, itemId?: number | null): ManualOrder {
+    const cartoes = separarPedidoPorCoroa(order);
+    if (itemId) {
+        const achado = cartoes.find((c) => c._item_id === itemId);
+        if (achado) return achado;
+    }
+    return cartoes.length === 1 ? cartoes[0] : order;
+}
+
+function rotuloCoroaDe(order?: ManualOrder | null) {
+    return order && Number(order._coroa_total || 0) > 1 ? `coroa ${order._coroa_n} de ${order._coroa_total}` : "";
 }
 
 function totalManual(order?: ManualOrder | null) {
@@ -1858,9 +1945,7 @@ export default function Page() {
 
             if (forceFresh) u.searchParams.set("fresh", String(Date.now()));
             if (confeccaoAppliedQ.trim()) u.searchParams.set("q", confeccaoAppliedQ.trim());
-            if (confeccaoAppliedStatus !== "todos") {
-                u.searchParams.set("status", confeccaoAppliedStatus);
-            }
+            // O filtro de Status é da coroa (cada uma tem a sua etapa): aplicado abaixo, depois de separar.
 
             const res = await fetch(u.toString(), {
                 credentials: "include",
@@ -1877,7 +1962,14 @@ export default function Page() {
                 throw new Error(json?.msg || `Falha ao carregar a confecção (${res.status}).`);
             }
 
-            setConfeccaoOrders(Array.isArray(json.dados) ? json.dados : []);
+            // Um cartão por coroa; a coroa já entregue sai da Confecção mesmo que as outras do pedido não.
+            setConfeccaoOrders(
+                separarPedidosPorCoroa(json.dados).filter(
+                    (o) =>
+                        o.status !== "entregue" &&
+                        (confeccaoAppliedStatus === "todos" || o.status === confeccaoAppliedStatus),
+                ),
+            );
             setConfeccaoTotal(Math.max(0, Number(json.meta?.total || 0)));
             setConfeccaoTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
         } catch (e: any) {
@@ -1935,7 +2027,7 @@ export default function Page() {
                 throw new Error(json?.msg || `Falha ao carregar pedidos manuais (${res.status}).`);
             }
 
-            setManualHistoricoOrders(Array.isArray(json.dados) ? json.dados : []);
+            setManualHistoricoOrders(separarPedidosPorCoroa(json.dados));
             setManualTotal(Math.max(0, Number(json.meta?.total || 0)));
             setManualTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
         } catch (e: any) {
@@ -2202,6 +2294,8 @@ export default function Page() {
     const [manualDetailMsg, setManualDetailMsg] = React.useState<string | null>(null);
     const [manualCopied, setManualCopied] = React.useState(false);
     const manualDetailAbortRef = React.useRef<AbortController | null>(null);
+    // Coroa aberta no detalhe/ações (coroas_itens.id). O servidor devolve o pedido inteiro.
+    const manualItemIdRef = React.useRef<number | null>(null);
 
     const [finalizarOpen, setFinalizarOpen] = React.useState(false);
     const [finalizarFile, setFinalizarFile] = React.useState<File | null>(null);
@@ -2245,8 +2339,9 @@ export default function Page() {
                 throw new Error(json?.msg || "Não foi possível carregar o pedido.");
             }
 
-            setManualDetail(json.dado as ManualOrder);
-            return json.dado as ManualOrder;
+            const coroa = coroaDoPedido(json.dado as ManualOrder, manualItemIdRef.current);
+            setManualDetail(coroa);
+            return coroa;
         } catch (e: any) {
             if (e?.name === "AbortError") return null;
             setManualDetail(null);
@@ -2260,14 +2355,18 @@ export default function Page() {
         }
     }
 
-    async function openManualView(id: number) {
+    async function openManualView(alvo: number | ManualOrder) {
+        const id = typeof alvo === "number" ? alvo : alvo.id;
+        manualItemIdRef.current = typeof alvo === "number" ? null : alvo._item_id ?? null;
         setManualPanel("ver");
         setManualDetail(null);
         setManualCopied(false);
         await carregarManualDetail(id);
     }
 
-    async function openManualActions(id: number) {
+    async function openManualActions(alvo: number | ManualOrder) {
+        const id = typeof alvo === "number" ? alvo : alvo.id;
+        manualItemIdRef.current = typeof alvo === "number" ? null : alvo._item_id ?? null;
         setManualPanel("acoes");
         setManualDetail(null);
         await carregarManualDetail(id);
@@ -2376,6 +2475,7 @@ export default function Page() {
             const json = await postManual({
                 acao: "atualizar_status",
                 id: manualDetail.id,
+                ...(manualDetail._item_id ? { item_id: manualDetail._item_id } : {}),
                 status: target,
             });
 
@@ -2445,6 +2545,7 @@ export default function Page() {
                 {
                     acao: "atualizar_status",
                     id: manualDetail.id,
+                    ...(manualDetail._item_id ? { item_id: manualDetail._item_id } : {}),
                     status: "finalizada",
                 },
                 "foto_coroa",
@@ -2709,7 +2810,7 @@ export default function Page() {
             })
             .map((order) => ({
                 source: "manual" as const,
-                key: `manual-${order.id}`,
+                key: `manual-${order._chave ?? order.id}`,
                 origem: origemFinalizadaLabel(order),
                 dataRaw: order.criado_em || "",
                 dataLabel: formatDate(order.criado_em),
@@ -2927,7 +3028,7 @@ export default function Page() {
                     <div className="px-4 pb-6 md:hidden lg:px-6">
                         <div className="space-y-3">
                             {(!isDesktop ? confeccaoOrders : []).map((o) => (
-                                <div key={o.id} className="rounded-lg border bg-card p-3">
+                                <div key={o._chave ?? o.id} className="rounded-lg border bg-card p-3">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0">
                                             <div className="font-medium">{o.solicitante}</div>
@@ -2952,13 +3053,13 @@ export default function Page() {
                                     <div className="mt-3 flex gap-2">
                                         <button
                                             className="inline-flex flex-1 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white"
-                                            onClick={() => openManualActions(o.id)}
+                                            onClick={() => openManualActions(o)}
                                         >
                                             Ações
                                         </button>
                                         <button
                                             className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                            onClick={() => openManualView(o.id)}
+                                            onClick={() => openManualView(o)}
                                         >
                                             <IconEye className="size-4" />
                                             Ver
@@ -2995,7 +3096,7 @@ export default function Page() {
                                     </thead>
                                     <tbody>
                                         {(isDesktop ? confeccaoOrders : []).map((o) => (
-                                            <tr key={o.id} className="border-t">
+                                            <tr key={o._chave ?? o.id} className="border-t">
                                                 <td className="px-3 py-2">
                                                     <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
                                                         {manualStatusLabel(o.status)}
@@ -3022,13 +3123,13 @@ export default function Page() {
                                                     <div className="flex justify-end gap-2">
                                                         <button
                                                             className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
-                                                            onClick={() => openManualActions(o.id)}
+                                                            onClick={() => openManualActions(o)}
                                                         >
                                                             Ações
                                                         </button>
                                                         <button
                                                             className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
-                                                            onClick={() => openManualView(o.id)}
+                                                            onClick={() => openManualView(o)}
                                                         >
                                                             <IconEye className="size-4" /> Ver
                                                         </button>
@@ -3229,7 +3330,7 @@ export default function Page() {
                                             className="inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
                                             onClick={() => {
                                                 if (row.source === "manual") {
-                                                    void openManualView(row.order.id);
+                                                    void openManualView(row.order as ManualOrder);
                                                 } else {
                                                     void openDetail(row.order.id);
                                                 }
@@ -3321,7 +3422,7 @@ export default function Page() {
                                                             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
                                                             onClick={() => {
                                                                 if (row.source === "manual") {
-                                                                    void openManualView(row.order.id);
+                                                                    void openManualView(row.order as ManualOrder);
                                                                 } else {
                                                                     void openDetail(row.order.id);
                                                                 }
@@ -4063,7 +4164,9 @@ export default function Page() {
                             <div>
                                 <div className="text-lg font-semibold">Registrar uma ação</div>
                                 <div className="mt-0.5 text-xs text-muted-foreground">
-                                    Status sincronizado com o servidor.
+                                    {manualDetail
+                                        ? `${pedidoModelosManual(manualDetail)}${rotuloCoroaDe(manualDetail) ? ` · ${rotuloCoroaDe(manualDetail)}` : ""}`
+                                        : "Status sincronizado com o servidor."}
                                 </div>
                             </div>
                             <button
@@ -4219,6 +4322,7 @@ export default function Page() {
                                     {pedidoEhOnline(manualDetail) && manualDetail?.origem_externa_id
                                         ? ` • Woo #${manualDetail.origem_externa_id}`
                                         : ""}
+                                    {rotuloCoroaDe(manualDetail) ? ` • ${rotuloCoroaDe(manualDetail)}` : ""}
                                 </div>
                             </div>
                             <button

@@ -205,6 +205,16 @@ type CoroaTvItem = {
     tipo_coroa?: "natural" | "artificial" | null;
     modelo_coroa?: string | null;
     frase?: string | null;
+    /** Etapa da PRÓPRIA coroa (07/10/2026): cada coroa do pedido anda sozinha na Confecção. */
+    status?: string | null;
+    coroa_inicio_em?: string | null;
+    coroa_inicio_por?: string | null;
+    faixa_inicio_em?: string | null;
+    faixa_inicio_por?: string | null;
+    finalizada_em?: string | null;
+    finalizada_por?: string | null;
+    entregue_em?: string | null;
+    entregue_por?: string | null;
 };
 
 type CoroaTvPedido = {
@@ -233,7 +243,56 @@ type CoroaTvPedido = {
     entregue_em?: string | null;
     entregue_por?: string | null;
     itens?: CoroaTvItem[] | null;
+    /** Cartão de UMA coroa (07/10/2026): chave única e "coroa N de M". */
+    _chave?: string;
+    _coroa_n?: number;
+    _coroa_total?: number;
 };
+
+/* =========================
+   UM CARTÃO POR COROA (07/10/2026)
+   Pedido com várias coroas (atendimento, venda direta ou online) aparece como um cartão por
+   coroa: os dados do pedido e a etapa da própria coroa (coroas_itens). Sem as colunas de etapa
+   no servidor, a coroa usa a etapa do pedido.
+   ========================= */
+const ETAPAS_DA_COROA_TV = [
+    "status", "coroa_inicio_em", "coroa_inicio_por", "faixa_inicio_em", "faixa_inicio_por",
+    "finalizada_em", "finalizada_por", "entregue_em", "entregue_por",
+] as const;
+
+function separarCoroasTv(pedido: CoroaTvPedido): CoroaTvPedido[] {
+    const itens = Array.isArray(pedido.itens)
+        ? [...pedido.itens].sort((a, b) => Number(a.ordem ?? 0) - Number(b.ordem ?? 0))
+        : [];
+
+    if (itens.length <= 1) {
+        return [{ ...pedido, _chave: `${pedido.id}-${itens[0]?.id ?? 0}`, _coroa_n: 1, _coroa_total: 1 }];
+    }
+
+    return itens.map((item, index) => {
+        const etapa: Partial<CoroaTvPedido> = {};
+        if (item.status) {
+            for (const campo of ETAPAS_DA_COROA_TV) {
+                (etapa as any)[campo] = (item as any)[campo] ?? null;
+            }
+        }
+        return {
+            ...pedido,
+            ...etapa,
+            itens: [item],
+            quantidade_coroas: 1,
+            modelo_coroa: item.modelo_coroa ?? pedido.modelo_coroa,
+            frase: item.frase ?? pedido.frase,
+            _chave: `${pedido.id}-${item.id ?? index + 1}`,
+            _coroa_n: index + 1,
+            _coroa_total: itens.length,
+        };
+    });
+}
+
+function rotuloCoroaDeTv(pedido?: CoroaTvPedido | null): string {
+    return pedido && Number(pedido._coroa_total ?? 0) > 1 ? ` · ${pedido._coroa_n} de ${pedido._coroa_total}` : "";
+}
 
 type CoroasTvResponse = {
     sucesso?: boolean;
@@ -1510,7 +1569,7 @@ function coroaModelos(order?: CoroaTvPedido | null): string {
         .map((it) => decodeHtmlEntitiesDeep(String(it?.modelo_coroa ?? "")).trim())
         .filter(Boolean);
 
-    if (modelos.length === 1) return modelos[0];
+    if (modelos.length === 1) return modelos[0] + rotuloCoroaDeTv(order);
     if (modelos.length > 1) return `${modelos[0]} +${modelos.length - 1}`;
 
     const principal = decodeHtmlEntitiesDeep(String(order.modelo_coroa ?? "")).trim();
@@ -2322,7 +2381,10 @@ function compararCoroasPorOrdemDeChegada(a: CoroaTvPedido, b: CoroaTvPedido): nu
     }
 
     // Fallback para registros legados: IDs menores chegaram primeiro.
-    return Number(a.id || 0) - Number(b.id || 0);
+    if (Number(a.id || 0) !== Number(b.id || 0)) return Number(a.id || 0) - Number(b.id || 0);
+
+    // Coroas do mesmo pedido: na ordem do pedido.
+    return Number(a._coroa_n ?? 0) - Number(b._coroa_n ?? 0);
 }
 
 /* =========================
@@ -2507,7 +2569,9 @@ export default function QuadroAtendimentoPage() {
                         throw new Error(j?.msg || "Resposta inválida ao consultar coroas.");
                     }
 
+                    // Um cartão por coroa; a coroa entregue sai do quadro mesmo que as outras do pedido não.
                     const arr = j.dados
+                        .flatMap(separarCoroasTv)
                         .filter(coroaEmConfeccao)
                         .sort(compararCoroasPorOrdemDeChegada);
 
@@ -2805,7 +2869,7 @@ export default function QuadroAtendimentoPage() {
     }, [coroasOrdenadas, paginaAtualCoroas, coroasPorPagina]);
 
     const coroasPaginationSignature = useMemo(
-        () => coroasOrdenadas.map((pedido) => String(pedido.id)).join("|"),
+        () => coroasOrdenadas.map((pedido) => String(pedido._chave ?? pedido.id)).join("|"),
         [coroasOrdenadas]
     );
 
@@ -5791,7 +5855,7 @@ function QuadroTv({
             </div>
             <div className="tv-clist" ref={coroasListaRef}>
                 {coroas.map((p) => (
-                    <TvCartaoCoroa key={p.id} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} />
+                    <TvCartaoCoroa key={p._chave ?? p.id} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} />
                 ))}
             </div>
             <TvPaginador atual={paginaCoroas} total={totalPaginasCoroas} segundos={INTERVALO_PAGINACAO_COROAS_MS / 1000} />
@@ -6486,7 +6550,7 @@ function QuadroMobile({
                                 <div className="qm-grid">
                                     {coroas.map((p, i) => (
                                         <MobCartaoCoroa
-                                            key={String(p.id ?? i)}
+                                            key={String(p._chave ?? p.id ?? i)}
                                             pedido={p}
                                             nowMs={nowMs}
                                             atraso={coroaAtrasoTv(p, nowMs)}
@@ -7072,7 +7136,7 @@ function QuadroDesktop({
                             </p>
                             <div className="qd-cgrid">
                                 {coroas.map((p, i) => (
-                                    <MobCartaoCoroa key={String(p.id ?? i)} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} onSelect={onSelectCoroa} />
+                                    <MobCartaoCoroa key={String(p._chave ?? p.id ?? i)} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} onSelect={onSelectCoroa} />
                                 ))}
                             </div>
                         </>
