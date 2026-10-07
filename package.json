@@ -30,7 +30,7 @@
     "@woocommerce/woocommerce-rest-api": "^1.0.2",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
-    "ably": "^2.29.0",
+    "ably": "2.24.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
