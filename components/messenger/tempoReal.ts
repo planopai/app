@@ -185,6 +185,46 @@ function definirEstadoNotif(e: EstadoNotificacoes, detalhe = "") {
     ouvintesNotif.forEach((f) => f(e, detalhe));
 }
 
+/**
+ * O OneSignalInit.tsx (não alterado) força o escopo /push/onesignal/ em todo registro de service worker.
+ * Esta função ACRESCENTA um desvio só para o service worker do Messenger (/push/ably/): ele é registrado pelo
+ * método original do navegador, no próprio escopo. Qualquer outro registro segue exatamente como antes.
+ * Funciona nas duas ordens: se o OneSignal embrulhar este desvio depois, o endereço /push/ably/ ainda é reconhecido aqui.
+ */
+let desvioInstalado = false;
+function garantirEscopoAbly() {
+    if (desvioInstalado || typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const original = (window as any).ServiceWorkerContainer?.prototype?.register;
+    if (typeof original !== "function") return;
+    desvioInstalado = true;
+    const sw: any = navigator.serviceWorker;
+    const anterior = sw.register;
+    sw.register = function (this: any, url: any, opts?: any) {
+        if (String(url || "").includes("/push/ably/")) {
+            return registrarAtivo(original.call(sw, url, { ...(opts || {}), scope: "/push/ably/" }));
+        }
+        return anterior.call(this ?? sw, url, opts);
+    };
+}
+
+/** Devolve o registro só quando o service worker já está ativo (a Ably espera por isso antes de assinar o Web Push). */
+async function registrarAtivo(p: Promise<ServiceWorkerRegistration>): Promise<ServiceWorkerRegistration> {
+    const reg = await p;
+    const w = reg.active ? null : reg.installing || reg.waiting;
+    if (w) {
+        await new Promise<void>((ok) => {
+            const limite = setTimeout(ok, 10000);
+            w.addEventListener("statechange", () => {
+                if (w.state === "activated") {
+                    clearTimeout(limite);
+                    ok();
+                }
+            });
+        });
+    }
+    return reg;
+}
+
 function suportaPush(): boolean {
     return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
@@ -195,6 +235,7 @@ function suportaPush(): boolean {
  */
 async function prepararNotificacoes() {
     if (!suportaPush()) return definirEstadoNotif("sem_suporte");
+    garantirEscopoAbly();
     if (Notification.permission === "denied") return definirEstadoNotif("negadas");
     const dono = localStorage.getItem(CHAVE_DONO);
     if (dono && dono !== String(meuId)) {
@@ -219,6 +260,7 @@ export async function ativarNotificacoes(): Promise<EstadoNotificacoes> {
         definirEstadoNotif("sem_suporte");
         return estadoNotif;
     }
+    garantirEscopoAbly();
     try {
         if (cliente.connection.state !== "connected") {
             // o clientId do usuário vem no token: espera a conexão (no máximo 15 s)
