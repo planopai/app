@@ -3,7 +3,7 @@
 import React from "react";
 import type { Aba, Conversa, Mensagem } from "@/components/messenger/tipos";
 
-export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#00AEEC", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
+export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#3D6A99", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
 
 export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className?: string }) {
     const p: Record<string, React.ReactNode> = {
@@ -49,7 +49,7 @@ const TONS = ["#BDE9FA", "#DCEBAA", "#F7E39A", "#D6DCE8", "#FAD3CF"];
 export function Avatar({ conversa, tamanho = 50 }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number }) {
     if (conversa.tipo === "grupo") {
         return (
-            <div className="flex flex-none items-center justify-center rounded-full bg-[#313C55] text-white" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
+            <div className="flex flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
                 <Icone nome="users" className="h-5 w-5" />
             </div>
         );
@@ -105,7 +105,7 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
                     type="button"
                     aria-pressed={aba === i.id}
                     onClick={() => setAba(i.id)}
-                    className={`flex h-[34px] flex-none items-center gap-1.5 rounded-full px-3.5 text-sm ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207]" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE]"}`}
+                    className={`flex h-[34px] flex-none items-center gap-1.5 rounded-full px-3.5 text-sm ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}
                 >
                     {i.rotulo}
                     {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[13px] font-extrabold">{contagem[i.id]}</span>}
@@ -120,27 +120,27 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao }: { c: Conver
     const minha = m?.autor_usuario_id === eu && m?.autor_tipo === "usuario";
     let etiqueta: React.ReactNode = null;
     if (c.tipo === "externo") {
-        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[11.5px] font-extrabold text-[#5C4600]">Na fila</span>;
-        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
-        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
+        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[11.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
+        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
+        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
     }
     return (
-        <div className={`flex w-full items-center gap-3 px-3 ${selecionada ? "bg-[#F0F2F5]" : "hover:bg-[#F5F6F8]"}`}>
+        <div className={`flex w-full items-center gap-3 px-3 ${selecionada ? "bg-[#F0F2F5] dark:bg-[#3D6A99]/20" : "hover:bg-[#F5F6F8] dark:hover:bg-white/10"}`}>
             <button type="button" onClick={onAbrir} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
                 <Avatar conversa={c} />
-                <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-2.5">
+                <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-2.5 dark:border-white/10">
                     <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[16.5px] font-extrabold text-[#1F2638]">{c.titulo}</div>
-                        <div className={`flex-none text-[12.5px] font-bold ${c.nao_lidas ? "text-[#4E6B0A]" : "text-[#6B7488]"}`}>{hora(c.ultima_mensagem_em)}</div>
+                        <div className="min-w-0 flex-1 truncate text-[16.5px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</div>
+                        <div className={`flex-none text-[12.5px] font-bold ${c.nao_lidas ? "text-[#4E6B0A] dark:text-[#B3CE52]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">
                         {etiqueta}
-                        {minha && !m?.apagada && <Icone nome="check" className="h-4 w-4 flex-none text-[#6B7488]" />}
-                        <div className="min-w-0 flex-1 truncate text-[14.5px] text-[#5B6478]">
+                        {minha && !m?.apagada && <Icone nome="check" className="h-4 w-4 flex-none text-[#6B7488] dark:text-[#AEB9CF]" />}
+                        <div className="min-w-0 flex-1 truncate text-[14.5px] text-[#5B6478] dark:text-[#AEB9CF]">
                             {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
                             {previa(m)}
                         </div>
-                        {c.silenciada && <Icone nome="belloff" className="h-4 w-4 flex-none text-[#6B7488]" />}
+                        {c.silenciada && <Icone nome="belloff" className="h-4 w-4 flex-none text-[#6B7488] dark:text-[#AEB9CF]" />}
                         <Badge n={c.nao_lidas} />
                     </div>
                 </div>
