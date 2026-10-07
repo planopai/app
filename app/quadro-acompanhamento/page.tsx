@@ -3204,17 +3204,17 @@ export default function QuadroAtendimentoPage() {
                 const requestPayload =
                     statusCode === "fase11"
                         ? {
-                              acao: "material_recolhido",
-                              ...commonMeta,
-                              ...extraPayload,
-                          }
+                            acao: "material_recolhido",
+                            ...commonMeta,
+                            ...extraPayload,
+                        }
                         : {
-                              acao: "atualizar_status",
-                              status: statusCode || acao,
-                              ...commonMeta,
-                              ...extraPayload,
-                              ...(needsBackendConfirm ? { confirmar: true } : {}),
-                          };
+                            acao: "atualizar_status",
+                            status: statusCode || acao,
+                            ...commonMeta,
+                            ...extraPayload,
+                            ...(needsBackendConfirm ? { confirmar: true } : {}),
+                        };
 
                 const json = await enviarRegistroPHP(requestPayload as any);
 

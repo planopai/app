@@ -31,7 +31,25 @@
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import AcaoModal from "../acompanhamento/components/AcaoModal";
+import AcaoModal, {
+    type EstoqueInsuficienteAlerta,
+    type EstoqueInsuficienteItem,
+} from "../acompanhamento/components/AcaoModal";
+import FotoAcaoModal, { type FotoAcaoTipo } from "../acompanhamento/components/FotoAcaoModal";
+import TelemetriaModal, {
+    type TipoTele,
+    type TelemetriaHandle,
+} from "../acompanhamento/components/TelemetriaModal";
+import MateriaisConferenciaModal, {
+    type MatCheckItem,
+    type MateriaisConferenciaResult,
+} from "../acompanhamento/components/MateriaisConferenciaModal";
+import { enviarRegistroPHP, normalizeMateriaisState } from "../acompanhamento/components/helpers";
+import type { MateriaisState } from "../acompanhamento/components/types";
+import { getCurrentOfflineSession } from "@/lib/offline/session";
+import { getOperationalTimestamp } from "@/lib/offline/clock";
+import { getOfflineDeviceId } from "@/lib/offline/device";
+import { newOfflineId } from "@/lib/offline/db";
 import Visita, { consultarAcessoVisita, consultarStatusVisitas, type VisitaStatus } from "../acompanhamento/components/visita";
 import { BotaoRegistrarAcao, BotaoEditar, BotaoVisita, BotaoFechar } from "@/components/atendimentos/BotoesAtendimento";
 
@@ -239,6 +257,206 @@ type QaDensity = "normal" | "compact" | "dense" | "ultra" | "micro";
  * Para forçar, troque FORCAR_ROTA_TV por true ou false. */
 const FORCAR_ROTA_TV: boolean | null = null;
 const API_DIRETA = "https://api.planoassistencialintegrado.com.br";
+const URNA_SAIDA_API = `${API_DIRETA}/urna_saida.php`;
+
+type BaixaCorpoProntoPayload = {
+    registro_id: string;
+    tipo: "" | "URNA" | "ROUPA" | "INVOL" | "CORDAO" | "VEU" | "KIT_LANCHE" | "COROA_ARTIFICIAL" | "INSUMOS";
+    deposito_nome?: string;
+    itens?: Array<{ produto_id: number; qtd: number }>;
+};
+
+class EstoqueInsuficienteQuadroError extends Error {
+    readonly code = "ESTOQUE_INSUFICIENTE";
+    readonly itens: EstoqueInsuficienteItem[];
+
+    constructor(message: string, itens: EstoqueInsuficienteItem[]) {
+        super(message);
+        this.name = "EstoqueInsuficienteQuadroError";
+        this.itens = itens;
+    }
+}
+
+function isEstoqueInsuficienteQuadroError(error: unknown): error is EstoqueInsuficienteQuadroError {
+    return (
+        error instanceof EstoqueInsuficienteQuadroError ||
+        String((error as any)?.code ?? "") === "ESTOQUE_INSUFICIENTE"
+    );
+}
+
+async function baixarItensCorpoProntoQuadro(payload: BaixaCorpoProntoPayload): Promise<any> {
+    const resp = await fetch(`${URNA_SAIDA_API}?_nocache=${Date.now()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+        cache: "no-store",
+    });
+
+    if (resp.status === 401) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    const json = await resp.json().catch(() => null);
+    if (!json) {
+        throw new Error("Resposta inválida do servidor ao processar a baixa do Corpo Pronto.");
+    }
+    if (json?.need_login) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    if (!resp.ok || json?.ok === false) {
+        const faltantesRaw = Array.isArray(json?.faltantes) ? json.faltantes : [];
+
+        if (String(json?.error_code ?? "") === "ESTOQUE_INSUFICIENTE" || faltantesRaw.length > 0) {
+            const itens: EstoqueInsuficienteItem[] = faltantesRaw
+                .map((item: any) => {
+                    const necessario = Math.max(
+                        1,
+                        Number(item?.necessario ?? item?.quantidade_solicitada ?? 1) || 1,
+                    );
+                    const disponivel = Math.max(
+                        0,
+                        Number(item?.disponivel ?? item?.saldo_atual ?? 0) || 0,
+                    );
+
+                    return {
+                        produto_id: Number(item?.produto_id ?? 0) || 0,
+                        produto_nome: String(
+                            item?.produto_nome ?? item?.nome ?? (item?.produto_id ? `Produto ${item.produto_id}` : "Produto"),
+                        ).trim() || "Produto",
+                        deposito_nome: String(item?.deposito_nome ?? item?.deposito_origem ?? "").trim(),
+                        disponivel,
+                        necessario,
+                        faltante: Math.max(0, Number(item?.faltante ?? necessario - disponivel) || 0),
+                    };
+                })
+                .filter((item: EstoqueInsuficienteItem) => item.produto_id > 0);
+
+            if (itens.length === 0 && Number(json?.produto_id ?? 0) > 0) {
+                const necessario = Math.max(1, Number(json?.quantidade_solicitada ?? 1) || 1);
+                const disponivel = Math.max(0, Number(json?.saldo_atual ?? 0) || 0);
+                itens.push({
+                    produto_id: Number(json.produto_id),
+                    produto_nome: String(json?.produto_nome ?? `Produto ${json.produto_id}`).trim(),
+                    deposito_nome: String(json?.deposito_nome ?? json?.deposito_origem ?? "").trim(),
+                    disponivel,
+                    necessario,
+                    faltante: Math.max(0, necessario - disponivel),
+                });
+            }
+
+            throw new EstoqueInsuficienteQuadroError(
+                String(json?.msg ?? json?.erro ?? "Estoque insuficiente para concluir Corpo Pronto."),
+                itens,
+            );
+        }
+
+        throw new Error(String(json?.msg ?? json?.erro ?? "Falha ao processar as baixas do Corpo Pronto."));
+    }
+
+    return json;
+}
+
+async function carregarRegistrosAtuaisQuadro(): Promise<Registro[]> {
+    const url = `${API_PHP}/informativo.php?listar=1&_ts=${Date.now()}`;
+    const json = await fetchJsonFast<any>(url, {
+        ttlMs: 0,
+        timeoutMs: 12_000,
+        cacheKey: `informativo_listar_acao_${Date.now()}`,
+    });
+
+    if (!Array.isArray(json)) {
+        throw new Error("Resposta inválida ao atualizar os atendimentos.");
+    }
+
+    return json as Registro[];
+}
+
+function mapFaseToTipoQuadro(fase: string): TipoTele | null {
+    if (fase === "fase01") return "remocao";
+    if (fase === "fase07") return "para_velorio";
+    if (fase === "fase09") return "para_sepultamento";
+    return null;
+}
+
+function resolveFalecidoNomeQuadro(r?: Registro | null): string {
+    return String(
+        (r as any)?.falecido ??
+        (r as any)?.nome_falecido ??
+        (r as any)?.falecido_nome ??
+        (r as any)?.nome_do_falecido ??
+        (r as any)?.nome ??
+        "",
+    ).trim();
+}
+
+function parseMateriaisFromRegistroQuadro(r: Registro): MateriaisState {
+    if ((r as any)?.materiais_json) {
+        try {
+            const parsed = JSON.parse(String((r as any).materiais_json));
+            return normalizeMateriaisState(parsed);
+        } catch {
+            // fallback para colunas legadas abaixo
+        }
+    }
+
+    const out: MateriaisState = {};
+    try {
+        for (const [k, v] of Object.entries(r as any)) {
+            if (!k.startsWith("materiais_") || !k.endsWith("_qtd")) continue;
+            const qtd = Math.max(0, Math.floor(Number(v ?? 0)));
+            if (qtd <= 0) continue;
+
+            const nomeBase = k.replace(/^materiais_/, "").replace(/_qtd$/, "");
+            (out as any)[nomeBase] = {
+                checked: true,
+                qtd,
+                nome: nomeBase.replace(/_/g, " "),
+            };
+        }
+    } catch {
+        // mantém objeto vazio
+    }
+    return out;
+}
+
+async function salvarConferenciaNoPHPQuadro(data: {
+    registro_id: string | number | null | undefined;
+    falecido_nome: string;
+    observacao: string;
+    itens: Array<{
+        key: string;
+        nome: string;
+        qtd: number;
+        ok: 0 | 1;
+        nao_conforme: 0 | 1;
+    }>;
+}) {
+    const registroId = data.registro_id != null ? String(data.registro_id) : "";
+    if (!registroId) {
+        throw new Error("Não foi possível identificar o atendimento (registro_id).");
+    }
+
+    const resp = await fetch(`${API_DIRETA}/materiais_admin.php?op=conferencia_create&_nocache=${Date.now()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+            registro_id: registroId,
+            falecido_nome: String(data.falecido_nome || "").trim(),
+            observacao: String(data.observacao || "").trim(),
+            itens: Array.isArray(data.itens) ? data.itens : [],
+        }),
+    });
+
+    if (resp.status === 401) throw new Error("Sessão expirada. Faça login novamente.");
+    const json = await resp.json().catch(() => null);
+    if (!json) throw new Error("Resposta inválida do servidor.");
+    if (json?.need_login) throw new Error("Sessão expirada. Faça login novamente.");
+    if (!resp.ok || json?.erro) throw new Error(json?.msg || "Erro ao salvar conferência.");
+    return json;
+}
 
 function ehRotaTv(): boolean {
     if (FORCAR_ROTA_TV !== null) return FORCAR_ROTA_TV;
@@ -257,7 +475,6 @@ const API_PHP = ehRotaTv() ? API_DIRETA : "/api/php";
  * Os PARÂMETROS que abrem "Registrar ação" e "Editar" direto no atendimento escolhido NÃO estão na skill:
  * deixei como estão abaixo e marquei com  >>> TROCAR AO SUBIR  para você ajustar ao que o app realmente usa.
  * A rota da TV também não está na skill: o padrão abaixo abre este mesmo Quadro em modo TV (?tv=1). */
-const ROTA_ATENDIMENTO = "/atendimento";
 const ROTA_ACOMPANHAMENTO = "/acompanhamento";
 
 const rotaEditar = (id: string) =>
@@ -2143,6 +2360,26 @@ export default function QuadroAtendimentoPage() {
     const [acaoId, setAcaoId] = useState<string | number | null>(null);
     const [acaoMsg, setAcaoMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [acaoSubmitting, setAcaoSubmitting] = useState(false);
+    const [estoqueInsuficiente, setEstoqueInsuficiente] = useState<EstoqueInsuficienteAlerta | null>(null);
+
+    // Fluxos auxiliares do mesmo AcaoModal usado em /acompanhamento.
+    const [fotoAcaoOpen, setFotoAcaoOpen] = useState(false);
+    const [fotoAcaoId, setFotoAcaoId] = useState<string | number | null>(null);
+    const [fotoAcaoFase, setFotoAcaoFase] = useState<string>("fase06");
+    const [fotoAcaoTipo, setFotoAcaoTipo] = useState<FotoAcaoTipo | null>(null);
+
+    const teleRef = useRef<TelemetriaHandle>(null);
+    const [teleOpen, setTeleOpen] = useState(false);
+    const [teleFase, setTeleFase] = useState<string>("fase01");
+    const [teleTipo, setTeleTipo] = useState<TipoTele>("remocao");
+    const [teleRegistroId, setTeleRegistroId] = useState<string | number | null>(null);
+
+    const [matCheckOpen, setMatCheckOpen] = useState(false);
+    const [matCheckItens, setMatCheckItens] = useState<MatCheckItem[]>([]);
+    const [matCheckRegistroId, setMatCheckRegistroId] = useState<string | number | null>(null);
+    const [matCheckFalecidoNome, setMatCheckFalecidoNome] = useState("");
+    const [matCheckSaving, setMatCheckSaving] = useState(false);
+    const [matCheckReturnToAcao, setMatCheckReturnToAcao] = useState(false);
 
     const [detailTimelineOpen, setDetailTimelineOpen] = useState(false);
     const [detailLogs, setDetailLogs] = useState<LogItem[]>([]);
@@ -2841,17 +3078,16 @@ export default function QuadroAtendimentoPage() {
     }, []);
 
     /**
-     * AcaoModal exige a função registrarAcao como prop.
+     * Registra a ação diretamente no backend sem sair do Quadro.
      *
-     * Esta Page do Quadro não contém a implementação de persistência que existe
-     * na página principal de Atendimento. Para não inventar uma API/POST e alterar
-     * dados de forma incorreta, o componente é aberto diretamente aqui e, somente
-     * quando a etapa é confirmada, este bridge encaminha o atendimento + a fase
-     * para o fluxo oficial já existente.
+     * O fluxo antigo montava /atendimento?registrar_acao=... e navegava para
+     * outra tela. Agora o próprio Quadro persiste o status usando o mesmo
+     * helper de backend da página de Atendimento, atualiza a lista e fecha
+     * o AcaoModal somente depois de confirmação do servidor.
      *
-     * Quando registrarAcao for extraída da Page de Atendimento para um helper
-     * compartilhado, basta substituir o corpo desta função pela chamada real e
-     * todo o fluxo passará a ocorrer 100% dentro deste Quadro.
+     * A fase12 continua usando o checkpoint único de baixa de estoque antes
+     * da alteração de status. Em falta de saldo, o AcaoModal exibe o mesmo
+     * alerta estruturado de estoque insuficiente.
      */
     const registrarAcaoDoQuadro = useCallback(
         async (
@@ -2861,40 +3097,250 @@ export default function QuadroAtendimentoPage() {
                 skipConfirm?: boolean;
                 extra?: Record<string, any>;
             },
-        ) => {
+        ): Promise<boolean> => {
+            if (acaoSubmitting) return false;
             if (acaoId == null) {
-                throw new Error("Atendimento não selecionado.");
+                setAcaoMsg({ text: "Atendimento não selecionado.", ok: false });
+                return false;
+            }
+
+            const statusCode = normalizarStatus(String(acao)) || String(acao).toLowerCase();
+            const extraPayload = opts?.extra && typeof opts.extra === "object" ? opts.extra : {};
+            const needsBackendConfirm = statusCode === "fase03" || statusCode === "fase04";
+
+            // Material Recolhido: exige a conferência antes de efetivar fase11.
+            if (statusCode === "fase11" && !opts?.skipMaterialCheck) {
+                const reg = registros.find((x) => String((x as any).id) === String(acaoId));
+                const mats = reg ? parseMateriaisFromRegistroQuadro(reg) : ({} as MateriaisState);
+                const itens: MatCheckItem[] = Object.entries((mats as any) || {})
+                    .map(([k, it]: any) => ({
+                        key: String(k),
+                        nome: String(it?.nome || k),
+                        qtd: Number(it?.qtd ?? 0),
+                        checked: !!it?.checked,
+                    }))
+                    .filter((x: any) => x.checked && x.qtd > 0)
+                    .map((x: any) => ({ key: x.key, nome: x.nome, qtd: x.qtd }));
+
+                setMatCheckItens(itens);
+                setMatCheckRegistroId(reg && (reg as any).id != null ? String((reg as any).id) : String(acaoId));
+                setMatCheckFalecidoNome(reg ? resolveFalecidoNomeQuadro(reg) : "");
+                setMatCheckReturnToAcao(true);
+                setAcaoOpen(false);
+                setMatCheckOpen(true);
+                return false;
+            }
+
+            if (!opts?.skipConfirm) {
+                const confirmou = window.confirm("Deseja confirmar essa ação?");
+                if (!confirmou) return false;
             }
 
             setAcaoSubmitting(true);
             setAcaoMsg(null);
+            setEstoqueInsuficiente(null);
 
             try {
-                const params = new URLSearchParams();
-                params.set("registrar_acao", String(acaoId));
-                params.set("acao", String(acao));
+                // Corpo Pronto: primeiro executa a baixa transacional de estoque.
+                // O endpoint valida todos os itens antes de efetivar qualquer saída.
+                if (statusCode === "fase12") {
+                    try {
+                        await baixarItensCorpoProntoQuadro({
+                            registro_id: String(acaoId),
+                            tipo: "",
+                        });
+                    } catch (e: any) {
+                        if (isEstoqueInsuficienteQuadroError(e)) {
+                            setAcaoMsg(null);
+                            setEstoqueInsuficiente({
+                                titulo: "Estoque insuficiente",
+                                mensagem:
+                                    "Não é possível avançar para Corpo Pronto enquanto houver item sem quantidade suficiente no estoque.",
+                                itens: Array.isArray(e.itens) ? e.itens : [],
+                            });
+                            return false;
+                        }
+                        throw e;
+                    }
+                }
 
-                if (opts?.skipMaterialCheck) {
-                    params.set("skip_material_check", "1");
-                }
-                if (opts?.skipConfirm) {
-                    params.set("skip_confirm", "1");
-                }
-                if (opts?.extra && Object.keys(opts.extra).length > 0) {
-                    params.set("extra", JSON.stringify(opts.extra));
+                // Metadados operacionais equivalentes aos utilizados no Atendimento.
+                let session: Awaited<ReturnType<typeof getCurrentOfflineSession>> = null;
+                try {
+                    session = await getCurrentOfflineSession({
+                        refreshIfOnline: true,
+                        allowCachedOnNetworkFailure: true,
+                    });
+                } catch {
+                    session = null;
                 }
 
-                window.location.assign(`${ROTA_ATENDIMENTO}?${params.toString()}`);
-                return null;
+                let ocorreuEm = new Date().toISOString();
+                try {
+                    const stamp = await getOperationalTimestamp();
+                    ocorreuEm = stamp.occurredAt || ocorreuEm;
+                } catch {
+                    // fallback para o relógio local
+                }
+
+                let deviceId = "";
+                try {
+                    deviceId = await getOfflineDeviceId();
+                } catch {
+                    // backend continua podendo identificar a sessão mesmo sem device_id
+                }
+
+                const registroAtual = registros.find((x) => String((x as any).id) === String(acaoId));
+                const commonMeta = {
+                    id: acaoId,
+                    operation_id: String(extraPayload.operationId || newOfflineId("status-op")),
+                    ocorreu_em: String(extraPayload.occurredAt || ocorreuEm),
+                    ...(deviceId ? { device_id: deviceId } : {}),
+                    ...(session?.userId ? { usuario_id: session.userId } : {}),
+                    origem: "online",
+                    status_anterior: registroAtual?.status || undefined,
+                };
+
+                const requestPayload =
+                    statusCode === "fase11"
+                        ? {
+                            acao: "material_recolhido",
+                            ...commonMeta,
+                            ...extraPayload,
+                        }
+                        : {
+                            acao: "atualizar_status",
+                            status: statusCode || acao,
+                            ...commonMeta,
+                            ...extraPayload,
+                            ...(needsBackendConfirm ? { confirmar: true } : {}),
+                        };
+
+                const json = await enviarRegistroPHP(requestPayload as any);
+
+                if (!json?.sucesso) {
+                    const msg = String(json?.msg || json?.erro || "Erro ao atualizar status.");
+                    setAcaoMsg({ text: msg, ok: false });
+                    return false;
+                }
+
+                setAcaoMsg({
+                    text: `Status alterado para "${capStatus(statusCode || acao)}"`,
+                    ok: true,
+                });
+
+                // Atualiza imediatamente o Quadro, sem esperar o polling de 8 segundos.
+                try {
+                    const atualizados = await carregarRegistrosAtuaisQuadro();
+                    setRegistros(atualizados);
+                    writeLS("qa_registros", atualizados);
+                } catch (refreshError) {
+                    // A gravação já foi confirmada pelo servidor. Não transforma um
+                    // problema de refresh em falso erro de persistência.
+                    console.warn("A ação foi registrada, mas o Quadro não conseguiu atualizar imediatamente.", refreshError);
+                }
+
+                setAcaoOpen(false);
+                return true;
             } catch (e: any) {
-                const msg = e?.message || "Não foi possível continuar o registro da ação.";
+                const msg = e?.message || "Não foi possível registrar a ação.";
                 setAcaoMsg({ text: msg, ok: false });
-                throw e;
+                return false;
             } finally {
                 setAcaoSubmitting(false);
             }
         },
-        [acaoId],
+        [acaoId, acaoSubmitting, registros],
+    );
+
+    const handleFotoAcaoRequired = useCallback(
+        (id: string | number | null | undefined, fase: string, tipo: FotoAcaoTipo) => {
+            const normalizedId = id != null ? String(id) : null;
+            setAcaoMsg(null);
+            setAcaoId(normalizedId);
+            setFotoAcaoId(normalizedId);
+            setFotoAcaoFase(fase);
+            setFotoAcaoTipo(tipo);
+            setAcaoOpen(false);
+            setFotoAcaoOpen(true);
+        },
+        [],
+    );
+
+    const handleVeiculoRequired = useCallback(
+        (id: string | number | null | undefined, fase: string) => {
+            const normalizedId = id != null ? String(id) : null;
+            const tipo = mapFaseToTipoQuadro(fase);
+
+            setAcaoId(normalizedId);
+            if (!tipo) {
+                void registrarAcaoDoQuadro(fase);
+                return;
+            }
+
+            setTeleRegistroId(normalizedId);
+            setTeleFase(fase);
+            setTeleTipo(tipo);
+            setTeleOpen(true);
+            setAcaoOpen(false);
+        },
+        [registrarAcaoDoQuadro],
+    );
+
+    const confirmarAcaoSilenciosaQuadro = useCallback(
+        async (fase: string) => {
+            const id = teleRegistroId ?? acaoId;
+            if (id == null) return;
+
+            const statusCode = normalizarStatus(fase) || fase;
+            const current = registros.find((x) => String((x as any).id) === String(id));
+
+            let session: Awaited<ReturnType<typeof getCurrentOfflineSession>> = null;
+            try {
+                session = await getCurrentOfflineSession({
+                    refreshIfOnline: true,
+                    allowCachedOnNetworkFailure: false,
+                });
+            } catch {
+                session = null;
+            }
+
+            let ocorreuEm = new Date().toISOString();
+            try {
+                ocorreuEm = (await getOperationalTimestamp()).occurredAt || ocorreuEm;
+            } catch {
+                // fallback local
+            }
+
+            let deviceId = "";
+            try {
+                deviceId = await getOfflineDeviceId();
+            } catch {
+                // opcional
+            }
+
+            const json = await enviarRegistroPHP({
+                acao: "atualizar_status",
+                id,
+                status: statusCode,
+                operation_id: newOfflineId("status-op"),
+                ocorreu_em: ocorreuEm,
+                ...(deviceId ? { device_id: deviceId } : {}),
+                ...(session?.userId ? { usuario_id: session.userId } : {}),
+                origem: "online",
+                status_anterior: current?.status || undefined,
+                ...(statusCode === "fase03" || statusCode === "fase04" ? { confirmar: true } : {}),
+            } as any);
+
+            if (!json?.sucesso) {
+                throw new Error(String(json?.msg || json?.erro || "Erro ao atualizar status."));
+            }
+
+            const atualizados = await carregarRegistrosAtuaisQuadro();
+            setRegistros(atualizados);
+            writeLS("qa_registros", atualizados);
+        },
+        [teleRegistroId, acaoId, registros],
     );
 
     const handleCopy = useCallback(async () => {
@@ -3741,8 +4187,136 @@ export default function QuadroAtendimentoPage() {
                         registrarAcao={registrarAcaoDoQuadro}
                         acaoMsg={acaoMsg}
                         acaoSubmitting={acaoSubmitting}
+                        estoqueInsuficiente={estoqueInsuficiente}
+                        onCloseEstoqueInsuficiente={() => setEstoqueInsuficiente(null)}
+                        onVeiculoRequired={handleVeiculoRequired}
+                        onFotoAcaoRequired={handleFotoAcaoRequired}
+                        onAbrirCadastro={(id) => {
+                            window.location.assign(rotaEditar(String(id)));
+                        }}
                     />
                 )}
+
+                <FotoAcaoModal
+                    open={fotoAcaoOpen}
+                    onClose={() => setFotoAcaoOpen(false)}
+                    registro={
+                        fotoAcaoId != null
+                            ? ((registros.find((r) => String((r as any).id) === String(fotoAcaoId)) as any) ?? null)
+                            : null
+                    }
+                    registroId={fotoAcaoId as any}
+                    fase={fotoAcaoFase}
+                    tipo={fotoAcaoTipo}
+                    onSaved={async ({ id, fase, offline, photoId, occurredAt }) => {
+                        setAcaoId(id != null ? String(id) : null);
+                        setFotoAcaoOpen(false);
+                        await registrarAcaoDoQuadro(fase, {
+                            skipConfirm: true,
+                            extra: {
+                                offlinePhotoId: offline ? photoId : undefined,
+                                photoAlreadyUploaded: !offline,
+                                occurredAt,
+                            },
+                        });
+                    }}
+                />
+
+                <MateriaisConferenciaModal
+                    open={matCheckOpen}
+                    itens={matCheckItens}
+                    onClose={() => {
+                        setMatCheckOpen(false);
+                        setMatCheckSaving(false);
+                        if (matCheckReturnToAcao) setAcaoOpen(true);
+                        setMatCheckReturnToAcao(false);
+                    }}
+                    onConfirm={async (result?: MateriaisConferenciaResult) => {
+                        if (!result) return;
+                        try {
+                            setMatCheckSaving(true);
+                            const registroId = matCheckRegistroId ?? acaoId;
+                            if (!registroId) {
+                                throw new Error("Não foi possível identificar o atendimento (registro_id).");
+                            }
+
+                            let nomeFinal = matCheckFalecidoNome.trim();
+                            if (!nomeFinal) {
+                                const reg = registros.find((x) => String((x as any).id) === String(registroId));
+                                nomeFinal = reg ? resolveFalecidoNomeQuadro(reg) : "";
+                            }
+
+                            const itensNormalizados = (result.itens || []).map((it) => ({
+                                key: String(it.key),
+                                nome: String(it.nome),
+                                qtd: Number(it.qtd ?? 0),
+                                ok: it.ok ? (1 as const) : (0 as const),
+                                nao_conforme: it.naoConforme ? (1 as const) : (0 as const),
+                            }));
+
+                            await salvarConferenciaNoPHPQuadro({
+                                registro_id: registroId,
+                                falecido_nome: nomeFinal,
+                                observacao: result.observacao,
+                                itens: itensNormalizados,
+                            });
+
+                            setMatCheckOpen(false);
+                            setMatCheckReturnToAcao(false);
+                            setMatCheckSaving(false);
+
+                            await registrarAcaoDoQuadro("fase11", {
+                                skipMaterialCheck: true,
+                                skipConfirm: true,
+                                extra: { materialCheckAlreadyUploaded: true },
+                            });
+                        } catch (e: any) {
+                            setMatCheckSaving(false);
+                            window.alert(e?.message || "Erro ao salvar conferência de materiais.");
+                        }
+                    }}
+                />
+
+                <TelemetriaModal
+                    ref={teleRef}
+                    open={teleOpen}
+                    onClose={async () => {
+                        setTeleOpen(false);
+                        try {
+                            const atualizados = await carregarRegistrosAtuaisQuadro();
+                            setRegistros(atualizados);
+                            writeLS("qa_registros", atualizados);
+                        } catch {
+                            // polling normal fará nova tentativa
+                        }
+                    }}
+                    registro={
+                        teleRegistroId != null
+                            ? ((registros.find((r) => String((r as any).id) === String(teleRegistroId)) as any) ?? null)
+                            : null
+                    }
+                    fase={teleFase}
+                    tipo={teleTipo}
+                    onConfirmAcao={confirmarAcaoSilenciosaQuadro}
+                    onStarted={() => undefined}
+                    onSaved={async () => {
+                        try {
+                            const atualizados = await carregarRegistrosAtuaisQuadro();
+                            setRegistros(atualizados);
+                            writeLS("qa_registros", atualizados);
+                        } catch {
+                            // polling normal fará nova tentativa
+                        }
+                    }}
+                />
+
+                {matCheckSaving ? (
+                    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/20" aria-live="polite">
+                        <div className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-[#313C55] shadow-xl dark:bg-[#232B3F] dark:text-white">
+                            Salvando conferência…
+                        </div>
+                    </div>
+                ) : null}
 
                 {open && detail && (
                     <DetalheAtendimentoDrawer
