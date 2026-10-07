@@ -32,7 +32,8 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AcaoModal from "../acompanhamento/components/AcaoModal";
-import { BotaoRegistrarAcao, BotaoEditar } from "@/components/atendimentos/BotoesAtendimento";
+import Visita, { consultarAcessoVisita, consultarStatusVisitas, type VisitaStatus } from "../acompanhamento/components/visita";
+import { BotaoRegistrarAcao, BotaoEditar, BotaoVisita, BotaoFechar } from "@/components/atendimentos/BotoesAtendimento";
 
 /* =========================
    Cache rápido (memória + localStorage)
@@ -2784,6 +2785,49 @@ export default function QuadroAtendimentoPage() {
         });
     }, [avisos, nomesAtivos]);
 
+    /* Visita de avaliação no Quadro: mesma permissão ("visita-avaliacao") e mesmo botão da lista de Atendimentos. */
+    const [visitaPermitida, setVisitaPermitida] = useState(false);
+    const [visitaStatusDetalhe, setVisitaStatusDetalhe] = useState<VisitaStatus>("indisponivel");
+    const [visitaRegistro, setVisitaRegistro] = useState<Registro | null>(null);
+
+    useEffect(() => {
+        let cancel = false;
+        consultarAcessoVisita(true)
+            .then((me) => {
+                if (!cancel) setVisitaPermitida(!!me.autorizado);
+            })
+            .catch(() => {
+                if (!cancel) setVisitaPermitida(false);
+            });
+        return () => {
+            cancel = true;
+        };
+    }, []);
+
+    const detalheVisitaId = open && detail ? getRegistroBackendId(detail) : "";
+    const carregarStatusVisitaDetalhe = useCallback(async (id: string) => {
+        if (!id) return;
+        try {
+            const mapa = await consultarStatusVisitas([id]);
+            setVisitaStatusDetalhe(mapa[String(id)] ?? "indisponivel");
+        } catch {
+            setVisitaStatusDetalhe("indisponivel");
+        }
+    }, []);
+    useEffect(() => {
+        setVisitaStatusDetalhe("indisponivel");
+        if (!visitaPermitida || !detalheVisitaId) return;
+        void carregarStatusVisitaDetalhe(String(detalheVisitaId));
+    }, [visitaPermitida, detalheVisitaId, carregarStatusVisitaDetalhe]);
+
+    const abrirVisita = useCallback((r: Registro) => {
+        const id = getRegistroBackendId(r);
+        if (!id) return;
+        setVisitaRegistro({ ...(r as any), id } as Registro);
+        // Fecha a gaveta de detalhes; a janela da visita assume a interface (igual ao Registrar ação).
+        setOpen(false);
+    }, []);
+
     const abrirRegistrarAcao = useCallback((r: Registro) => {
         const id = getRegistroBackendId(r);
         if (!id) return;
@@ -3718,6 +3762,18 @@ export default function QuadroAtendimentoPage() {
                         matLookup={matLookup}
                         faltam={[...missingEtapa0(detail), ...missingEtapa1(detail), ...missingEtapa2(detail)].map((k) => LABELS[k] ?? k)}
                         onRegistrarAcao={() => abrirRegistrarAcao(detail)}
+                        visita={visitaPermitida ? { status: visitaStatusDetalhe, onClick: () => abrirVisita(detail) } : null}
+                    />
+                )}
+
+                {visitaPermitida && (
+                    <Visita
+                        open={!!visitaRegistro}
+                        onClose={() => setVisitaRegistro(null)}
+                        registro={visitaRegistro as any}
+                        onSaved={async () => {
+                            if (visitaRegistro) await carregarStatusVisitaDetalhe(String(visitaRegistro.id ?? ""));
+                        }}
                     />
                 )}
             </div>
@@ -3746,6 +3802,7 @@ function DetalheAtendimentoDrawer({
     matLookup,
     faltam,
     onRegistrarAcao,
+    visita,
 }: {
     detail: Registro;
     tema: string;
@@ -3764,6 +3821,8 @@ function DetalheAtendimentoDrawer({
     faltam: string[];
     /** Abre o Registrar ação dentro do Quadro (a função é a do Quadro: fecha esta janela e abre o AcaoModal). */
     onRegistrarAcao: () => void;
+    /** Botão da visita de avaliação (só para quem tem a permissão). null = não mostra. */
+    visita?: { status: VisitaStatus; onClick: () => void } | null;
 }) {
     const resumo = useMemo(() => resumirAtendimentoTv(detail, logs, nowMs), [detail, logs, nowMs]);
     const backendId = getRegistroBackendId(detail);
@@ -4000,17 +4059,16 @@ function DetalheAtendimentoDrawer({
                     )}
                 </div>
 
-                {/* Rodapé: Registrar ação · Editar (botões padrão de components/atendimentos/BotoesAtendimento.tsx) · Fechar */}
-                <div className="flex shrink-0 items-center gap-2 border-t border-[var(--d-line)] px-5 pt-3.5 sm:px-6" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
+                {/* Rodapé: Registrar ação · Editar · Visita · Fechar — botões padrão (components/atendimentos/BotoesAtendimento.tsx), tamanho grande (48 px) */}
+                <div className="flex shrink-0 items-center gap-2.5 border-t border-[var(--d-line)] px-5 pt-3.5 sm:px-6" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
                     {backendId ? (
                         <>
-                            <BotaoRegistrarAcao onClick={onRegistrarAcao} />
-                            <BotaoEditar href={rotaEditar(backendId)} />
+                            <BotaoRegistrarAcao grande onClick={onRegistrarAcao} />
+                            <BotaoEditar grande href={rotaEditar(backendId)} />
+                            {visita && <BotaoVisita grande status={visita.status} onClick={visita.onClick} />}
                         </>
                     ) : null}
-                    <button type="button" onClick={onClose} className="ml-auto h-11 rounded-xl border-[1.5px] border-[var(--d-line)] px-5 text-[15px] font-bold hover:bg-black/5 dark:hover:bg-white/10">
-                        Fechar
-                    </button>
+                    <BotaoFechar grande onClick={onClose} className="ml-auto" />
                 </div>
             </aside>
         </div>

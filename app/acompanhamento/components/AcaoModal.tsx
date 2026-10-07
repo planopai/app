@@ -565,15 +565,22 @@ export default function AcaoModal({
                         <div className="mt-3 rounded-xl border border-[#E3E8F0] bg-white p-3 dark:border-white/[0.12] dark:bg-[#232B3F]">
                             <div className="text-[13px] font-extrabold">Baixa automática no estoque</div>
                             <div className="mt-0.5 text-xs leading-snug text-[#5B6478] dark:text-[#AEB9CF]">
-                                O app dá baixa nos itens abaixo. Depois disso, só o administrador corrige. O saldo é conferido antes de dar baixa.
+                                O app dá baixa nos itens abaixo, saindo de cada local indicado. Confira antes de confirmar: depois disso os itens do atendimento ficam travados e só a Gestão altera. O saldo é conferido antes de dar baixa.
                             </div>
-                            <ul className="mt-2 flex flex-col gap-1">
+                            <ul className="mt-2 flex flex-col gap-2">
                                 {itensBaixa.length === 0 ? (
                                     <li className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Nenhum item com baixa neste cadastro.</li>
                                 ) : (
                                     itensBaixa.map((b, i) => (
-                                        <li key={`${b.nome}-${i}`} className={`flex items-baseline gap-3 text-[13px] ${b.semBaixa ? "text-[#5B6478] dark:text-[#AEB9CF]" : ""}`}>
-                                            <span className="min-w-0 flex-1 break-words font-bold">{b.nome}</span>
+                                        <li key={`${b.nome}-${b.local ?? ""}-${i}`} className={`flex items-baseline gap-3 text-[13px] ${b.semBaixa ? "text-[#5B6478] dark:text-[#AEB9CF]" : ""}`}>
+                                            <span className="min-w-0 flex-1 break-words">
+                                                <span className="font-bold">{b.nome}</span>
+                                                {!b.semBaixa && (
+                                                    <span className="mt-0.5 block text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
+                                                        Sai de: {b.local ? <b className="font-extrabold text-[#313C55] dark:text-white">{b.local}</b> : "local definido pelo sistema"}
+                                                    </span>
+                                                )}
+                                            </span>
                                             <span className="shrink-0 text-xs font-extrabold text-[#5B6478] dark:text-[#AEB9CF]">{b.qtd}</span>
                                         </li>
                                     ))

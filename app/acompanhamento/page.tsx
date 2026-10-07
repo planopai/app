@@ -120,12 +120,13 @@ const COROAS_API = `${ENDPOINT}/coroas.php`;
 const ME_API = `${ENDPOINT}/informativo.php?me=1`;
 
 /*
- * Trava dos itens a partir do Início da Ornamentação (fase05).
+ * Trava dos itens no Corpo Pronto (fase12), no mesmo momento da baixa no estoque.
+ * Vale para a fase12 e as etapas depois dela (fase07 a fase11); durante a ornamentação ainda se edita.
  * Só quem tem a página Gestão (ou o administrador) altera. O informativo.php confere a mesma regra
  * ao salvar (pode_alterar_itens_travados vem do ?me=1). Ids dos passos do Wizard (constants.ts → steps).
  */
-const FASE_TRAVA_ITENS = 5;
-const CAMPOS_TRAVADOS_APOS_ORNAMENTACAO = [
+const FASE_TRAVA_ITENS = 7;
+const CAMPOS_TRAVADOS_APOS_CORPO_PRONTO = [
   "urna",
   "roupa",
   "veu",
@@ -855,7 +856,7 @@ export default function AcompanhamentoPage() {
     registros,
   ]);
 
-  /* -------------------- Trava dos itens após o Início da Ornamentação -------------------- */
+  /* -------------------- Trava dos itens após o Corpo Pronto -------------------- */
   const [podeAlterarItensTravados, setPodeAlterarItensTravados] = useState(false);
   useEffect(() => {
     let cancel = false;
@@ -880,10 +881,10 @@ export default function AcompanhamentoPage() {
     const fase = getNumeroFase(status);
     if (fase < FASE_TRAVA_ITENS) return null;
     return {
-      campos: CAMPOS_TRAVADOS_APOS_ORNAMENTACAO,
+      campos: CAMPOS_TRAVADOS_APOS_CORPO_PRONTO,
       podeAlterar: podeAlterarItensTravados,
-      // fase07 a fase12: o Corpo Pronto (fase12) já deu baixa no estoque.
-      baixaFeita: fase >= 7,
+      // Travado = Corpo Pronto feito: a baixa no estoque já aconteceu.
+      baixaFeita: true,
     };
   }, [wizardEditing, wizardIdx, registros, wizardData, podeAlterarItensTravados]);
 

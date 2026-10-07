@@ -866,7 +866,7 @@ const BTN_SEC_CLS =
     "inline-flex h-11 items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] transition hover:bg-[#EEF2F7] disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
 
 /** Campo obrigatório que impediu o salvamento: nome, aba (índice e título) para levar o operador até ele. */
-/** Itens travados depois do Início da Ornamentação (ver page.tsx → CAMPOS_TRAVADOS_APOS_ORNAMENTACAO). */
+/** Itens travados depois do Corpo Pronto (ver page.tsx → CAMPOS_TRAVADOS_APOS_CORPO_PRONTO). */
 export type TravaItens = { campos: string[]; podeAlterar: boolean; baixaFeita: boolean };
 
 export type CampoFaltando = { id: string; rotulo: string; aba: number | null; abaTitulo: string };
@@ -1156,7 +1156,7 @@ export default function Wizard({
     aviso?: { text: string; ok: boolean; faltando?: CampoFaltando[] } | null;
     onFecharAviso?: () => void;
     /**
-     * Trava dos itens a partir do Início da Ornamentação (fase05).
+     * Trava dos itens a partir do Corpo Pronto (fase12, junto com a baixa no estoque).
      * campos: ids dos passos travados; podeAlterar: Gestão/administrador; baixaFeita: o Corpo Pronto já deu baixa no estoque.
      * O servidor (informativo.php) confere a mesma regra ao salvar.
      */
@@ -3849,7 +3849,7 @@ export default function Wizard({
                           const procedimentoTravado = !!travaItens && !travaItens.podeAlterar && travaItens.campos.includes("tanato");
                           depoisDoItem.push(
                               procedimentoTravado ? (
-                                  <fieldset key="os-procedimento" disabled aria-disabled="true" className="m-0 min-w-0 border-0 p-0 sm:col-span-2" title="Item travado após o início da ornamentação">
+                                  <fieldset key="os-procedimento" disabled aria-disabled="true" className="m-0 min-w-0 border-0 p-0 sm:col-span-2" title="Item travado após o Corpo Pronto">
                                       <div className="pointer-events-none select-none opacity-60">{osProcedimentoSlot}</div>
                                   </fieldset>
                               ) : (
@@ -3870,7 +3870,7 @@ export default function Wizard({
                           ) : null}
                           {travaItens && !travaItens.podeAlterar && travaItens.campos.includes(step.id) ? (
                               /* Item travado: fieldset desabilita os campos nativos; pointer-events-none barra os botões próprios (Sim/Não, listas). */
-                              <fieldset disabled aria-disabled="true" className="m-0 min-w-0 border-0 p-0 sm:col-span-2" title="Item travado após o início da ornamentação">
+                              <fieldset disabled aria-disabled="true" className="m-0 min-w-0 border-0 p-0 sm:col-span-2" title="Item travado após o Corpo Pronto">
                                   <div className="pointer-events-none select-none opacity-60">{conteudo}</div>
                               </fieldset>
                           ) : (
@@ -3890,7 +3890,7 @@ export default function Wizard({
     );
 }
 
-/** Faixa no topo da aba Itens quando o atendimento já passou do Início da Ornamentação. */
+/** Faixa no topo da aba Itens quando o atendimento já passou do Corpo Pronto. */
 function AvisoTravaItens({ podeAlterar, baixaFeita }: { podeAlterar: boolean; baixaFeita: boolean }) {
     return (
         <div
@@ -3902,7 +3902,7 @@ function AvisoTravaItens({ podeAlterar, baixaFeita }: { podeAlterar: boolean; ba
                 <path d="M8 11V7a4 4 0 0 1 8 0v4" />
             </svg>
             <div>
-                <b>Itens travados após o início da ornamentação.</b>{" "}
+                <b>Itens travados após o Corpo Pronto.</b>{" "}
                 {podeAlterar ? (
                     <>
                         Você pode alterar porque tem acesso à Gestão.
@@ -3911,7 +3911,7 @@ function AvisoTravaItens({ podeAlterar, baixaFeita }: { podeAlterar: boolean; ba
                             : " A baixa no estoque acontece no Corpo Pronto, com os itens que estiverem aqui."}
                     </>
                 ) : (
-                    <>Urna, roupa, véu, cordão, invol, tanatopraxia (com o procedimento e os insumos), ornamentação, kit lanche e coroa não podem mais ser alterados. Se precisar, fale com a Gestão.</>
+                    <>A baixa no estoque já foi feita. Urna, roupa, véu, cordão, invol, tanatopraxia (com o procedimento e os insumos), ornamentação, kit lanche e coroa não podem mais ser alterados. Se precisar, fale com a Gestão.</>
                 )}
             </div>
         </div>
