@@ -3,7 +3,7 @@
 import React from "react";
 import type { Aba, Conversa, Mensagem } from "@/components/messenger/tipos";
 
-export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#3D6A99", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
+export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#00AEEC", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
 
 export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className?: string }) {
     const p: Record<string, React.ReactNode> = {
@@ -34,6 +34,9 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
         lock: (<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>),
         wifi: (<><path d="M12 20h.01" /><path d="M8.5 16.4a5 5 0 0 1 7 0" /><path d="M2 8.8a15 15 0 0 1 20 0" /><path d="M5 12.9a10 10 0 0 1 14 0" /><path d="m2 2 20 20" /></>),
         tpl: (<><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 8h10" /><path d="M7 12h10" /><path d="M7 16h6" /></>),
+        camera: (<><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></>),
+        mais: (<><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>),
+        novaconversa: (<><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z" /><path d="M12 9v6" /><path d="M9 12h6" /></>),
     };
     return (
         <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -43,17 +46,17 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
 }
 
 const TONS = ["#BDE9FA", "#DCEBAA", "#F7E39A", "#D6DCE8", "#FAD3CF"];
-export function Avatar({ conversa, tamanho = 44 }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number }) {
+export function Avatar({ conversa, tamanho = 50 }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number }) {
     if (conversa.tipo === "grupo") {
         return (
-            <div className="flex flex-none items-center justify-center rounded-[14px] bg-[#313C55] text-white dark:bg-[#3D6A99]" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
+            <div className="flex flex-none items-center justify-center rounded-full bg-[#313C55] text-white" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
                 <Icone nome="users" className="h-5 w-5" />
             </div>
         );
     }
     const iniciais = (conversa.titulo || "?").replace(/[^\p{L}\p{N} ]/gu, "").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "?";
     return (
-        <div className="flex flex-none items-center justify-center rounded-full text-[15px] font-extrabold text-[#313C55]" style={{ width: tamanho, height: tamanho, background: TONS[conversa.id % TONS.length] }} aria-hidden="true">
+        <div className="flex flex-none items-center justify-center rounded-full font-extrabold text-[#313C55]" style={{ width: tamanho, height: tamanho, fontSize: Math.round(tamanho * 0.34), background: TONS[conversa.id % TONS.length] }} aria-hidden="true">
             {iniciais}
         </div>
     );
@@ -83,28 +86,29 @@ export function previa(m: Mensagem | null): string {
 
 function Badge({ n }: { n: number }) {
     if (!n) return null;
-    return <span className="inline-flex h-[22px] min-w-[22px] flex-none items-center justify-center rounded-full bg-[#F2CB3F] px-1.5 text-xs font-extrabold text-[#313C55]">{n > 99 ? "99+" : n}</span>;
+    return <span className="inline-flex h-[22px] min-w-[22px] flex-none items-center justify-center rounded-full bg-[#B3CE52] px-1.5 text-xs font-extrabold text-[#1F2638]">{n > 99 ? "99+" : n}</span>;
 }
 
+/** Filtros em pílula, como no WhatsApp: Tudo · Equipe · Grupos · Clientes (com contador). */
 export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => void; contagem: Record<Aba, number> }) {
-    const itens: { id: Aba; rotulo: string; icone: string }[] = [
-        { id: "equipe", rotulo: "Equipe", icone: "user" },
-        { id: "grupos", rotulo: "Grupos", icone: "users" },
-        { id: "clientes", rotulo: "Clientes", icone: "phone" },
+    const itens: { id: Aba; rotulo: string }[] = [
+        { id: "tudo", rotulo: "Tudo" },
+        { id: "equipe", rotulo: "Equipe" },
+        { id: "grupos", rotulo: "Grupos" },
+        { id: "clientes", rotulo: "Clientes" },
     ];
     return (
-        <div className="flex gap-1 rounded-[14px] bg-[#F1F4F8] p-1 dark:bg-[#1C2334]" role="group" aria-label="Tipo de conversa">
+        <div className="flex gap-2 overflow-x-auto" role="group" aria-label="Filtrar conversas">
             {itens.map((i) => (
                 <button
                     key={i.id}
                     type="button"
                     aria-pressed={aba === i.id}
                     onClick={() => setAba(i.id)}
-                    className={`flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-1.5 text-sm font-extrabold ${aba === i.id ? "bg-white text-[#313C55] shadow-sm dark:bg-[#232B3F] dark:text-white" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}
+                    className={`flex h-[34px] flex-none items-center gap-1.5 rounded-full px-3.5 text-sm ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207]" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE]"}`}
                 >
-                    <Icone nome={i.icone} className="h-[18px] w-[18px] flex-none" />
-                    <span className="truncate">{i.rotulo}</span>
-                    <Badge n={contagem[i.id]} />
+                    {i.rotulo}
+                    {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[13px] font-extrabold">{contagem[i.id]}</span>}
                 </button>
             ))}
         </div>
@@ -113,28 +117,30 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
 
 export function LinhaConversa({ c, selecionada, onAbrir, eu, acao }: { c: Conversa; selecionada: boolean; onAbrir: () => void; eu: number; acao?: React.ReactNode }) {
     const m = c.ultima_mensagem;
-    const minha = m?.autor_usuario_id === eu;
+    const minha = m?.autor_usuario_id === eu && m?.autor_tipo === "usuario";
     let etiqueta: React.ReactNode = null;
     if (c.tipo === "externo") {
-        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#F2CB3F] px-2 py-0.5 text-[11.5px] font-extrabold text-[#313C55]">Na fila</span>;
-        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
-        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
+        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[11.5px] font-extrabold text-[#5C4600]">Na fila</span>;
+        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
+        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
     }
     return (
-        <div className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 ${selecionada ? "bg-[#E9EFF6] dark:bg-[#3D6A99]/20" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10"}`}>
-            <button type="button" onClick={onAbrir} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className={`flex w-full items-center gap-3 px-3 ${selecionada ? "bg-[#F0F2F5]" : "hover:bg-[#F5F6F8]"}`}>
+            <button type="button" onClick={onAbrir} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
                 <Avatar conversa={c} />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-2.5">
                     <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-[#313C55] dark:text-white">{c.titulo}</div>
-                        {etiqueta || <div className={`flex-none text-xs font-bold ${c.nao_lidas ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>}
+                        <div className="min-w-0 flex-1 truncate text-[16.5px] font-extrabold text-[#1F2638]">{c.titulo}</div>
+                        <div className={`flex-none text-[12.5px] font-bold ${c.nao_lidas ? "text-[#4E6B0A]" : "text-[#6B7488]"}`}>{hora(c.ultima_mensagem_em)}</div>
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                        {etiqueta}
+                        {minha && !m?.apagada && <Icone nome="check" className="h-4 w-4 flex-none text-[#6B7488]" />}
+                        <div className="min-w-0 flex-1 truncate text-[14.5px] text-[#5B6478]">
                             {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
-                            {minha ? "Você: " : ""}
                             {previa(m)}
                         </div>
+                        {c.silenciada && <Icone nome="belloff" className="h-4 w-4 flex-none text-[#6B7488]" />}
                         <Badge n={c.nao_lidas} />
                     </div>
                 </div>

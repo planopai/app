@@ -70,4 +70,4 @@ export type Perfil = {
     notificacoes_canal?: "ably" | "onesignal";
 };
 
-export type Aba = "equipe" | "grupos" | "clientes";
+export type Aba = "tudo" | "equipe" | "grupos" | "clientes";

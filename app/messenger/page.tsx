@@ -3,7 +3,7 @@
 /**
  * Messenger — conversas da equipe, grupos e atendimento de clientes pelo WhatsApp.
  * Rota /messenger · página "messenger" do pai_api.php · API: messenger.php
- * Visual do mockup aprovado (Repaginada do app PAI → Messenger).
+ * Visual do mockup "PAI Messenger estilo WhatsApp" (07/10/2026).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { enviarArquivo, msgGet, msgPost, novoUuid } from "@/components/messenger/api";
@@ -16,6 +16,36 @@ import JanelaConversa from "./components/Conversa";
 import { DetalhesGrupo, NovaConversa, Transferir } from "./components/Modais";
 import HistoricoClientes from "./components/Historico";
 
+/**
+ * Celular com a conversa aberta: a conversa ocupa só a parte visível da tela (acima do teclado),
+ * como no WhatsApp. No iPhone o teclado não diminui a página; por isso a altura vem do visualViewport.
+ */
+function useAreaVisivel(ativo: boolean) {
+    const [area, setArea] = useState<{ altura: number; topo: number } | null>(null);
+    useEffect(() => {
+        if (!ativo || typeof window === "undefined" || !window.visualViewport) {
+            setArea(null);
+            return;
+        }
+        const vv = window.visualViewport;
+        const celular = window.matchMedia("(max-width: 767px)");
+        const medir = () => setArea(celular.matches ? { altura: Math.round(vv.height), topo: Math.round(vv.offsetTop) } : null);
+        medir();
+        vv.addEventListener("resize", medir);
+        vv.addEventListener("scroll", medir);
+        celular.addEventListener?.("change", medir);
+        const antes = document.documentElement.style.overflow;
+        document.documentElement.style.overflow = "hidden";
+        return () => {
+            vv.removeEventListener("resize", medir);
+            vv.removeEventListener("scroll", medir);
+            celular.removeEventListener?.("change", medir);
+            document.documentElement.style.overflow = antes;
+        };
+    }, [ativo]);
+    return area;
+}
+
 const TIPOS_DOC: Record<string, string> = {
     pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -24,7 +54,7 @@ const TIPOS_DOC: Record<string, string> = {
 
 export default function MessengerPage() {
     const [perfil, setPerfil] = useState<Perfil | null>(null);
-    const [aba, setAba] = useState<Aba>("equipe");
+    const [aba, setAba] = useState<Aba>("tudo");
     const [conversas, setConversas] = useState<Conversa[]>([]);
     const [fila, setFila] = useState<Conversa[]>([]);
     const [selId, setSelId] = useState<number | null>(null);
@@ -186,6 +216,7 @@ export default function MessengerPage() {
         const q = busca.trim().toLowerCase();
         const f = (c: Conversa) => !q || c.titulo.toLowerCase().includes(q) || (c.contato?.telefone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "") || "#");
         return {
+            tudo: conversas.filter(f),
             equipe: conversas.filter((c) => c.canal === "interno" && f(c)),
             grupos: conversas.filter((c) => c.tipo === "grupo" && f(c)),
             clientes: conversas.filter((c) => c.canal === "whatsapp" && f(c)),
@@ -193,6 +224,7 @@ export default function MessengerPage() {
         };
     }, [conversas, fila, busca]);
     const contagem: Record<Aba, number> = {
+        tudo: conversas.filter((c) => c.nao_lidas > 0).length + fila.length,
         equipe: conversas.filter((c) => c.canal === "interno" && c.nao_lidas > 0).length,
         grupos: conversas.filter((c) => c.tipo === "grupo" && c.nao_lidas > 0).length,
         clientes: fila.length + conversas.filter((c) => c.canal === "whatsapp" && c.nao_lidas > 0).length,
@@ -300,85 +332,82 @@ export default function MessengerPage() {
     };
 
     const digitandoAgora = selId && digitando[selId] && digitando[selId].ate > Date.now() ? digitando[selId].nome : "";
-    const listaAtual = aba === "clientes" ? porAba.clientes : aba === "grupos" ? porAba.grupos : porAba.equipe;
+    const listaAtual = aba === "clientes" ? porAba.clientes : aba === "grupos" ? porAba.grupos : aba === "equipe" ? porAba.equipe : porAba.tudo;
+    const area = useAreaVisivel(selId !== null);
 
-    if (carregando && !perfil) return <div className="p-8 text-[#313C55] dark:text-white">Carregando o Messenger…</div>;
+    if (carregando && !perfil) return <div className="p-8 text-[#313C55]">Carregando o Messenger…</div>;
     if (verHistorico) return <HistoricoClientes embutido onVoltar={() => setVerHistorico(false)} />;
 
     return (
-        <div className={`flex ${selId ? "h-[calc(100dvh-var(--header-height))]" : "h-[calc(100dvh-var(--header-height)-4.25rem-env(safe-area-inset-bottom))]"} flex-col bg-[#F4F6F9] text-[#313C55] md:h-[calc(100dvh-var(--header-height))] md:min-h-[560px] md:p-6 dark:bg-[#1C2334] dark:text-white`}>
-            <div className="mb-3 hidden items-center gap-4 md:flex">
-                <div className="flex h-14 w-14 flex-none items-center justify-center rounded-[18px] bg-[#313C55] text-white dark:bg-[#3D6A99]"><Icone nome="msg" className="h-[26px] w-[26px]" /></div>
-                <div className="min-w-0 flex-1">
-                    <h1 className="m-0 text-[32px] font-extrabold leading-tight">Messenger</h1>
-                    <p className="mt-1 text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">Conversas da equipe e atendimento de clientes pelo WhatsApp.</p>
-                </div>
-                <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 items-center rounded-xl border border-[#C9D1DE] bg-white px-4 text-sm font-bold dark:border-white/25 dark:bg-[#232B3F]">Histórico de clientes</button>
-                <button type="button" onClick={() => setModal("nova")} className="flex h-11 items-center gap-2 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white dark:bg-[#3D6A99]"><Icone nome="plus" />Nova conversa</button>
-            </div>
+        <div className={`flex ${selId ? "h-[calc(100dvh-var(--header-height))]" : "h-[calc(100dvh-var(--header-height)-4.25rem-env(safe-area-inset-bottom))]"} flex-col overflow-x-hidden bg-white text-[#1F2638] md:h-[calc(100dvh-var(--header-height))] md:min-h-[560px] md:bg-[#F4F6F9] md:p-4`}>
             {(erro || aviso) && (
-                <div className={`mb-2 flex items-center gap-3 rounded-xl border px-4 py-2 text-sm font-bold ${erro ? "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]" : "border-[#B3CE52] bg-[#EEF5D6] dark:bg-[#B3CE52]/15"}`}>
+                <div className={`mx-2 mb-2 mt-2 flex items-center gap-3 rounded-xl border px-4 py-2 text-sm font-bold md:mx-0 md:mt-0 ${erro ? "border-[#B42318] bg-[#FDECEA] text-[#B42318]" : "border-[#B3CE52] bg-[#EEF5D6]"}`}>
                     <span className="flex-1">{erro || aviso}</span>
                     <button type="button" onClick={() => { setErro(""); setAviso(""); }} aria-label="Fechar aviso"><Icone nome="x" className="h-4 w-4" /></button>
                 </div>
             )}
-            <div className="grid min-h-0 flex-1 overflow-hidden border-[#E1E5EC] bg-white md:grid-cols-[380px_minmax(0,1fr)] md:rounded-2xl md:border dark:border-white/12 dark:bg-[#232B3F]">
+            <div className="relative grid min-h-0 flex-1 overflow-hidden border-[#E1E5EC] bg-white md:grid-cols-[400px_minmax(0,1fr)] md:rounded-2xl md:border">
                 {/* lista */}
-                <div className={`${selId ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-[#E1E5EC] dark:border-white/12`}>
-                    <div className="flex items-center gap-2 px-4 pt-3 md:hidden">
-                        <h1 className="m-0 flex-1 text-xl font-extrabold">Messenger</h1>
-                        <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-xl" aria-label="Histórico de clientes"><Icone nome="clock" /></button>
-                        <button type="button" onClick={() => setModal("nova")} className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#313C55] text-white dark:bg-[#3D6A99]" aria-label="Nova conversa"><Icone nome="plus" /></button>
+                <div className={`${selId ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-[#E6E9EE]`}>
+                    <div className="flex items-center gap-1 pb-1 pl-4 pr-2 pt-3">
+                        <h1 className="m-0 flex-1 text-[26px] font-extrabold text-[#313C55] md:text-2xl">Conversas</h1>
+                        <button type="button" onClick={() => setModal("nova")} className="hidden h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] md:flex" aria-label="Nova conversa" title="Nova conversa"><Icone nome="novaconversa" className="h-[22px] w-[22px]" /></button>
+                        <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5]" aria-label="Histórico de clientes" title="Histórico de clientes"><Icone nome="clock" className="h-[22px] w-[22px]" /></button>
                     </div>
-                    <div className="flex flex-col gap-3 px-4 pb-2 pt-3">
-                        <Abas aba={aba} setAba={setAba} contagem={contagem} />
-                        <label className="flex h-11 items-center gap-2.5 rounded-xl bg-[#F1F4F8] px-3.5 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                    <div className="flex flex-col gap-2.5 px-4 pb-2.5 pt-1">
+                        <label className="flex h-[42px] items-center gap-2.5 rounded-full bg-[#F0F2F5] px-3.5 text-[#5B6478]">
                             <Icone nome="search" />
-                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder={aba === "clientes" ? "Buscar cliente ou telefone" : aba === "grupos" ? "Buscar grupo" : "Buscar colega ou grupo"} aria-label="Buscar conversa" className="min-w-0 flex-1 bg-transparent text-sm text-[#313C55] outline-none dark:text-white" />
+                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[16px] text-[#1F2638] outline-none" />
                         </label>
+                        <Abas aba={aba} setAba={setAba} contagem={contagem} />
                     </div>
-                    <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
-                        {seguranca && <div className="mx-2 mb-1 rounded-lg bg-[#FCF3CC] px-3 py-1.5 text-xs font-bold dark:bg-[#F2CB3F]/15">Modo de segurança: atualizando a cada 5 s.</div>}
+                    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24 md:pb-3">
+                        {seguranca && <div className="mx-2 mb-1 rounded-lg bg-[#FCF3CC] px-3 py-1.5 text-xs font-bold">Modo de segurança: atualizando a cada 5 s.</div>}
                         {perfil?.notificacoes_canal === "ably" && notif.estado === "pendente" && (
-                            <div className="mx-2 mb-1 flex items-center gap-2 rounded-lg bg-[#E9EFF6] px-3 py-1.5 text-xs font-bold dark:bg-[#3D6A99]/20">
+                            <div className="mx-2 mb-1 flex items-center gap-2 rounded-lg bg-[#E6F7FE] px-3 py-1.5 text-xs font-bold">
                                 <span className="flex-1">Receba aviso de mensagem nova neste aparelho.</span>
-                                <button type="button" onClick={() => ativarNotificacoes()} className="h-8 rounded-[10px] bg-[#313C55] px-3 text-[12.5px] font-extrabold text-white dark:bg-[#3D6A99]">Ativar notificações</button>
+                                <button type="button" onClick={() => ativarNotificacoes()} className="h-8 rounded-[10px] bg-[#313C55] px-3 text-[12.5px] font-extrabold text-white">Ativar notificações</button>
                             </div>
                         )}
                         {perfil?.notificacoes_canal === "ably" && (notif.estado === "negadas" || notif.estado === "erro") && (
-                            <div className="mx-2 mb-1 rounded-lg bg-[#FCF3CC] px-3 py-1.5 text-xs font-bold dark:bg-[#F2CB3F]/15">
+                            <div className="mx-2 mb-1 rounded-lg bg-[#FCF3CC] px-3 py-1.5 text-xs font-bold">
                                 {notif.estado === "negadas" ? "As notificações estão bloqueadas neste aparelho. Libere nas configurações do navegador para receber avisos." : `Não foi possível ativar as notificações: ${notif.detalhe || "erro desconhecido"}`}
                             </div>
                         )}
                         {aba === "grupos" && (
-                            <div className="flex items-center gap-2 px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">
+                            <div className="flex items-center gap-2 px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478]">
                                 <span className="flex-1">Grupos{contagem.grupos ? ` · ${contagem.grupos} com mensagens novas` : ""}</span>
-                                <button type="button" onClick={() => setModal("grupo")} className="h-8 rounded-[10px] bg-[#313C55] px-3 text-[13px] normal-case tracking-normal text-white dark:bg-[#3D6A99]">+ Criar grupo</button>
+                                <button type="button" onClick={() => setModal("grupo")} className="h-8 rounded-[10px] bg-[#313C55] px-3 text-[13px] normal-case tracking-normal text-white">+ Criar grupo</button>
                             </div>
                         )}
-                        {aba === "clientes" && perfil?.atendente && (
+                        {(aba === "clientes" || (aba === "tudo" && porAba.fila.length > 0)) && perfil?.atendente && (
                             <>
-                                <div className="px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Aguardando atendimento · {porAba.fila.length}</div>
+                                <div className="px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478]">Aguardando atendimento · {porAba.fila.length}</div>
                                 {porAba.fila.map((c) => (
                                     <LinhaConversa key={`f${c.id}`} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)}
-                                        acao={<button type="button" onClick={() => assumir(c.id)} className="h-9 flex-none rounded-[10px] bg-[#313C55] px-3 text-[13px] font-extrabold text-white dark:bg-[#3D6A99]">Assumir</button>} />
+                                        acao={<button type="button" onClick={() => assumir(c.id)} className="h-9 flex-none rounded-[10px] bg-[#313C55] px-3 text-[13px] font-extrabold text-white">Assumir</button>} />
                                 ))}
-                                {!porAba.fila.length && <p className="px-3 text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum cliente na fila.</p>}
-                                <div className="px-3 pb-1.5 pt-3 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Em atendimento</div>
+                                {!porAba.fila.length && <p className="px-4 text-sm text-[#6B7488]">Nenhum cliente na fila.</p>}
+                                <div className="px-3 pb-1.5 pt-3 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478]">{aba === "tudo" ? "Conversas" : "Em atendimento"}</div>
                             </>
                         )}
                         {perfil && listaAtual.map((c) => (
                             <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} />
                         ))}
                         {!listaAtual.length && !carregando && (
-                            <p className="px-3 py-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
-                                {aba === "clientes" ? (perfil?.atendente ? "Nenhum atendimento com você." : "Você não atende clientes do WhatsApp.") : aba === "grupos" ? "Você ainda não participa de grupos." : "Nenhuma conversa ainda. Toque em + para começar."}
+                            <p className="px-4 py-4 text-sm text-[#6B7488]">
+                                {aba === "clientes" ? (perfil?.atendente ? "Nenhum atendimento com você." : "Você não atende clientes do WhatsApp.") : aba === "grupos" ? "Você ainda não participa de grupos." : "Nenhuma conversa ainda. Toque no botão de nova conversa para começar."}
                             </p>
                         )}
                     </div>
                 </div>
-                {/* conversa */}
-                <div className={`${selId ? "flex" : "hidden md:flex"} min-h-0 flex-col`}>
+                {!selId && (
+                    <button type="button" onClick={() => setModal("nova")} className="absolute bottom-4 right-4 flex h-[58px] w-[58px] items-center justify-center rounded-[18px] bg-[#313C55] text-white shadow-[0_4px_12px_rgba(31,38,56,0.25)] md:hidden" aria-label="Nova conversa">
+                        <Icone nome="novaconversa" className="h-[26px] w-[26px]" />
+                    </button>
+                )}
+                {/* conversa (no celular, ocupa a área visível acima do teclado) */}
+                <div className={`${selId ? "flex" : "hidden md:flex"} min-h-0 flex-col bg-[#EFEAE2]`} style={area ? { position: "fixed", left: 0, right: 0, top: area.topo, height: area.altura, zIndex: 60 } : undefined}>
                     {conversaSel && perfil && selId === conversaSel.id ? (
                         <JanelaConversa
                             conversa={conversaSel} mensagens={mensagens} perfil={perfil} temMais={temMais} digitando={digitandoAgora} seguranca={seguranca}
@@ -389,7 +418,7 @@ export default function MessengerPage() {
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}
                         />
                     ) : (
-                        <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-[#F6F8FB] p-8 text-center text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                        <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-[#F0F2F5] p-8 text-center text-[#5B6478]">
                             <Icone nome="msg" className="h-10 w-10" />
                             <p className="text-[15px] font-bold">{selId ? "Abrindo a conversa…" : "Escolha uma conversa"}</p>
                         </div>
