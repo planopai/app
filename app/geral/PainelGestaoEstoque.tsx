@@ -154,25 +154,34 @@ function daysInMonthWithin(k: string, a: number, b: number) {
 const isTeste = (obs?: string | null) => (obs || "").toUpperCase().includes("TESTE");
 const isAtend = (t?: string | null) => /^atendimento\s*#/i.test((t || "").trim());
 
+/* ---------- Estilo (padrão das telas repaginadas, 06/10/2026) ---------- */
+const ROTULO = "mb-1.5 block text-[12px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+const CAMPO =
+    "h-12 w-full rounded-xl border border-transparent bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white dark:[color-scheme:dark] lg:text-[15px]";
+const BTN_SEC =
+    "inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-[#C9D1DE] bg-[#FFFFFF] px-4 text-[14px] font-bold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/26 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/8";
+const BTN_PRI =
+    "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#313C55] px-4 text-[14px] font-extrabold text-white hover:bg-[#232B40] disabled:opacity-50 dark:bg-[#3D6A99] dark:hover:bg-[#355D86]";
+
 /* ---------- Pequenos componentes visuais ---------- */
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={["rounded-2xl border border-slate-200 bg-white shadow-sm", className].join(" ")}>{children}</section>;
+    return <section className={["rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] shadow-sm", className].join(" ")}>{children}</section>;
 }
 function Titulo({ t, s }: { t: string; s?: string }) {
     return (
         <div>
-            <h3 className="text-sm font-bold text-slate-900">{t}</h3>
-            {s ? <p className="mt-0.5 text-xs text-slate-500">{s}</p> : null}
+            <h3 className="text-[15px] font-extrabold text-[#313C55] dark:text-white">{t}</h3>
+            {s ? <p className="mt-0.5 text-xs text-[#7A8396] dark:text-[#8893AA]">{s}</p> : null}
         </div>
     );
 }
 type Tom = "neutro" | "critico" | "atencao" | "ok" | "info";
 const TOM: Record<Tom, string> = {
-    neutro: "border-slate-200 bg-slate-50 text-slate-700",
-    critico: "border-rose-200 bg-rose-50 text-rose-700",
-    atencao: "border-amber-200 bg-amber-50 text-amber-800",
-    ok: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    info: "border-sky-200 bg-sky-50 text-sky-700",
+    neutro: "border-[#E3E8F0] dark:border-white/12 bg-[#F6F8FB] dark:bg-[#1C2334] text-[#5B6478] dark:text-[#AEB9CF]",
+    critico: "border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 text-[#B42318] dark:text-[#FF9C92]",
+    atencao: "border-[#F2CB3F] bg-[#FCF3CC] dark:bg-[#F2CB3F]/16 text-[#313C55] dark:text-white",
+    ok: "border-[#7BA11A] bg-[#EEF5D6] dark:bg-[#B3CE52]/18 text-[#313C55] dark:text-white",
+    info: "border-[#A9BED6] dark:border-[#3D6A99]/60 bg-[#E9EFF6] dark:bg-[#3D6A99]/20 text-[#313C55] dark:text-white",
 };
 function Pill({ tom = "neutro", children }: { tom?: Tom; children: React.ReactNode }) {
     return (
@@ -182,12 +191,12 @@ function Pill({ tom = "neutro", children }: { tom?: Tom; children: React.ReactNo
     );
 }
 function Kpi({ l, v, d, tom }: { l: string; v: string; d?: string; tom?: "critico" | "atencao" }) {
-    const bar = tom === "critico" ? "border-l-4 border-l-rose-500" : tom === "atencao" ? "border-l-4 border-l-amber-500" : "";
+    const bar = tom === "critico" ? "border-l-4 border-l-[#B42318] dark:border-l-[#FF9C92]" : tom === "atencao" ? "border-l-4 border-l-[#F2CB3F]" : "";
     return (
         <Card className={`p-4 ${bar}`}>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{l}</div>
-            <div className="mt-2 whitespace-nowrap text-xl font-black tracking-tight text-slate-950 tabular-nums sm:text-2xl">{v}</div>
-            {d ? <div className="mt-1 text-xs text-slate-500">{d}</div> : null}
+            <div className="text-[11px] font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]">{l}</div>
+            <div className="mt-2 whitespace-nowrap text-xl font-black tracking-tight text-[#313C55] dark:text-white tabular-nums sm:text-2xl">{v}</div>
+            {d ? <div className="mt-1 text-xs text-[#7A8396] dark:text-[#8893AA]">{d}</div> : null}
         </Card>
     );
 }
@@ -201,15 +210,17 @@ function Seg<T extends string | number>({
     onChange: (v: T) => void;
 }) {
     return (
-        <div className="inline-flex flex-wrap overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="inline-flex flex-wrap gap-1 rounded-xl border border-[#E3E8F0] bg-[#F6F8FB] p-1 dark:border-white/12 dark:bg-[#1C2334]">
             {options.map((o) => (
                 <button
                     key={String(o.v)}
                     type="button"
                     onClick={() => onChange(o.v)}
                     className={[
-                        "px-3 py-1.5 text-xs font-semibold transition-colors",
-                        o.v === value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
+                        "h-9 rounded-lg px-3 text-[13px] font-bold transition-colors",
+                        o.v === value
+                            ? "bg-[#FFFFFF] text-[#313C55] shadow-sm dark:bg-[#232B3F] dark:text-white"
+                            : "text-[#5B6478] hover:text-[#313C55] dark:text-[#AEB9CF] dark:hover:text-white",
                     ].join(" ")}
                 >
                     {o.l}
@@ -226,19 +237,19 @@ function HBars({
     fmt: (v: number) => string;
 }) {
     const mx = Math.max(1, ...rows.map((r) => Math.abs(r.v)));
-    if (!rows.length) return <p className="text-xs text-slate-500">Sem dados para os filtros atuais.</p>;
+    if (!rows.length) return <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Sem dados para os filtros atuais.</p>;
     return (
         <div className="space-y-2">
             {rows.map((r) => {
                 const cor =
-                    r.tom === "critico" ? "bg-rose-500" : r.tom === "atencao" ? "bg-amber-500" : r.tom === "ok" ? "bg-emerald-600" : r.tom === "fraco" ? "bg-slate-300" : "bg-teal-700";
+                    r.tom === "critico" ? "bg-[#B42318] dark:bg-[#FF9C92]" : r.tom === "atencao" ? "bg-[#F2CB3F]" : r.tom === "ok" ? "bg-[#7BA11A] dark:bg-[#B3CE52]" : r.tom === "fraco" ? "bg-[#C9D1DE] dark:bg-white/26" : "bg-[#3D6A99]";
                 return (
                     <div key={r.k} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-xs sm:grid-cols-[minmax(0,12rem)_1fr_auto]" title={r.sub || ""}>
-                        <span className="truncate text-right text-slate-700">{r.k}</span>
-                        <span className="h-3 rounded bg-slate-100">
+                        <span className="truncate text-right text-[#5B6478] dark:text-[#AEB9CF]">{r.k}</span>
+                        <span className="h-3 rounded bg-[#EEF2F7] dark:bg-white/8">
                             <span className={`block h-3 rounded ${cor}`} style={{ width: `${Math.max(1.5, (Math.abs(r.v) / mx) * 100)}%` }} />
                         </span>
-                        <span className="whitespace-nowrap text-right font-semibold tabular-nums text-slate-900">{fmt(r.v)}</span>
+                        <span className="whitespace-nowrap text-right font-semibold tabular-nums text-[#313C55] dark:text-white">{fmt(r.v)}</span>
                     </div>
                 );
             })}
@@ -258,7 +269,7 @@ function VBars({
 }) {
     const all = series.flatMap((s) => s.vals).concat((projecao || []).map((v) => v || 0));
     const mx = Math.max(1, ...all);
-    if (!labels.length) return <p className="text-xs text-slate-500">Sem dados no período.</p>;
+    if (!labels.length) return <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Sem dados no período.</p>;
     return (
         <div>
             <div className="flex h-44 items-end gap-1 sm:gap-2">
@@ -275,11 +286,11 @@ function VBars({
                                         title={`${l} · ${s.nome}: ${fmt(v)}${p ? ` (projeção ${fmt(p)})` : ""}`}
                                     >
                                         {p && p > v ? (
-                                            <div className="w-full rounded-t border-2 border-b-0 border-dashed border-teal-700/70" style={{ height: `${((p - v) / mx) * 100}%` }} />
+                                            <div className="w-full rounded-t border-2 border-b-0 border-dashed border-[#3D6A99]/70" style={{ height: `${((p - v) / mx) * 100}%` }} />
                                         ) : null}
                                         <div className={`w-full ${p && p > v ? "" : "rounded-t"} ${s.cor}`} style={{ height: `${(v / mx) * 100}%` }} />
                                         {j === 0 && series.length === 1 ? (
-                                            <span className="absolute -top-4 left-1/2 hidden -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold tabular-nums text-slate-600 sm:block">
+                                            <span className="absolute -top-4 left-1/2 hidden -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold tabular-nums text-[#5B6478] dark:text-[#AEB9CF] sm:block">
                                                 {fmt(v)}
                                             </span>
                                         ) : null}
@@ -292,13 +303,13 @@ function VBars({
             </div>
             <div className="mt-1 flex gap-1 sm:gap-2">
                 {labels.map((l) => (
-                    <div key={l} className="flex-1 text-center text-[10px] text-slate-500">
+                    <div key={l} className="flex-1 text-center text-[10px] text-[#7A8396] dark:text-[#8893AA]">
                         {l}
                     </div>
                 ))}
             </div>
             {series.length > 1 ? (
-                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-600">
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-[#5B6478] dark:text-[#AEB9CF]">
                     {series.map((s) => (
                         <span key={s.nome} className="inline-flex items-center gap-1.5">
                             <i className={`inline-block h-2.5 w-2.5 rounded-sm ${s.cor}`} />
@@ -311,7 +322,7 @@ function VBars({
     );
 }
 function Spark({ vals }: { vals: number[] }) {
-    if (vals.length < 2) return <span className="text-xs text-slate-400">—</span>;
+    if (vals.length < 2) return <span className="text-xs text-[#7A8396] dark:text-[#8893AA]">—</span>;
     const W = 90,
         H = 22,
         mx = Math.max(1, ...vals);
@@ -320,19 +331,19 @@ function Spark({ vals }: { vals: number[] }) {
     const last = pts[pts.length - 1];
     return (
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
-            <path d={`${d} L${W - 2} ${H - 2} L2 ${H - 2}Z`} fill="#ccfbf1" />
-            <path d={d} fill="none" stroke="#0f766e" strokeWidth={1.5} />
-            <circle cx={last[0]} cy={last[1]} r={2.5} fill="#0f766e" />
+            <path d={`${d} L${W - 2} ${H - 2} L2 ${H - 2}Z`} className="fill-[#E9EFF6] dark:fill-[#3D6A99]/25" />
+            <path d={d} fill="none" className="stroke-[#3D6A99] dark:stroke-[#A9BED6]" strokeWidth={1.5} />
+            <circle cx={last[0]} cy={last[1]} r={2.5} className="fill-[#3D6A99] dark:fill-[#A9BED6]" />
         </svg>
     );
 }
 function Tendencia({ t, base }: { t: number; base: number }) {
-    if (base < 0.5 || !Number.isFinite(t)) return <span className="text-xs text-slate-400">—</span>;
+    if (base < 0.5 || !Number.isFinite(t)) return <span className="text-xs text-[#7A8396] dark:text-[#8893AA]">—</span>;
     const p = Math.round(t * 100);
-    if (p > 200) return <span className="whitespace-nowrap text-xs font-bold text-amber-700">▲ &gt;200%</span>;
-    if (p > 15) return <span className="whitespace-nowrap text-xs font-bold text-amber-700">▲ {p}%</span>;
-    if (p < -15) return <span className="whitespace-nowrap text-xs font-bold text-sky-700">▼ {Math.abs(p)}%</span>;
-    return <span className="whitespace-nowrap text-xs font-semibold text-slate-500">● {p > 0 ? "+" : ""}{p}%</span>;
+    if (p > 200) return <Pill tom="atencao">▲ &gt;200%</Pill>;
+    if (p > 15) return <Pill tom="atencao">▲ {p}%</Pill>;
+    if (p < -15) return <Pill tom="info">▼ {Math.abs(p)}%</Pill>;
+    return <span className="whitespace-nowrap text-xs font-semibold text-[#7A8396] dark:text-[#8893AA]">● {p > 0 ? "+" : ""}{p}%</span>;
 }
 function Regularidade({ cv, base }: { cv: number; base: number }) {
     if (base < 0.5) return <Pill tom="info">Pouco uso</Pill>;
@@ -343,25 +354,25 @@ function Tabela({ head, children, alinhar }: { head: string[]; children: React.R
         <div className="overflow-x-auto">
             <table className="w-full min-w-[36rem] text-sm">
                 <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                    <tr className="border-b border-[#E3E8F0] dark:border-white/12 bg-[#F6F8FB] dark:bg-[#1C2334] text-[11px] uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]">
                         {head.map((h, i) => (
-                            <th key={h + i} className={`whitespace-nowrap px-3 py-2 font-bold ${alinhar?.[i] === "r" ? "text-right" : "text-left"}`}>
+                            <th key={h + i} className={`whitespace-nowrap px-3 py-2.5 font-extrabold ${alinhar?.[i] === "r" ? "text-right" : "text-left"}`}>
                                 {h}
                             </th>
                         ))}
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">{children}</tbody>
+                <tbody className="divide-y divide-[#E3E8F0] dark:divide-white/12">{children}</tbody>
             </table>
         </div>
     );
 }
-const tdR = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
-const tdL = "px-3 py-2";
+const tdR = "px-3 py-2.5 text-right tabular-nums whitespace-nowrap";
+const tdL = "px-3 py-2.5";
 function Vazio({ cols, txt = "Nenhum item." }: { cols: number; txt?: string }) {
     return (
         <tr>
-            <td colSpan={cols} className="px-3 py-3 text-xs text-slate-500">
+            <td colSpan={cols} className="px-3 py-3 text-xs text-[#7A8396] dark:text-[#8893AA]">
                 {txt}
             </td>
         </tr>
@@ -716,40 +727,20 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
 
     return (
         <div className="space-y-4">
-            {/* ---------- Cabeçalho + filtros ---------- */}
+            {/* ---------- Filtros ---------- */}
             <Card className="p-4 sm:p-5">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-lg font-bold tracking-tight text-slate-950 sm:text-xl">Painel de gestão do estoque</h2>
-                            <Pill tom="info">Estoque, consumo e compras</Pill>
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">
-                            Posição atual do estoque, consumo por período, previsão de término, sugestão de compra e custos.
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={carregar}
-                        disabled={loading}
-                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-900 shadow-sm hover:bg-slate-200 disabled:opacity-50"
-                    >
-                        {loading ? "Atualizando..." : "Atualizar dados"}
-                    </button>
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_1fr_1fr_1fr]">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-[auto_auto_1fr_1fr_1fr]">
                     <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-slate-700">De</span>
-                        <input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+                        <span className={ROTULO}>De</span>
+                        <input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className={CAMPO} />
                     </label>
                     <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-slate-700">Até</span>
-                        <input type="date" value={ate} min={de} max={isoDay(hoje)} onChange={(e) => setAte(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+                        <span className={ROTULO}>Até</span>
+                        <input type="date" value={ate} min={de} max={isoDay(hoje)} onChange={(e) => setAte(e.target.value)} className={CAMPO} />
                     </label>
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-slate-700">Classificação</span>
-                        <select value={clsId} onChange={(e) => setClsId(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label className="col-span-2 block lg:col-span-1">
+                        <span className={ROTULO}>Classificação</span>
+                        <select value={clsId} onChange={(e) => setClsId(Number(e.target.value))} className={CAMPO}>
                             <option value={0}>Todas</option>
                             {classificacoes.map((c) => (
                                 <option key={c.id} value={c.id}>
@@ -758,9 +749,9 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
                             ))}
                         </select>
                     </label>
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-slate-700">Categoria</span>
-                        <select value={catId} onChange={(e) => setCatId(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label className="col-span-2 block lg:col-span-1">
+                        <span className={ROTULO}>Categoria</span>
+                        <select value={catId} onChange={(e) => setCatId(Number(e.target.value))} className={CAMPO}>
                             <option value={0}>Todas</option>
                             {catsDaClasse.map((c) => (
                                 <option key={c.id} value={c.id}>
@@ -769,9 +760,9 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
                             ))}
                         </select>
                     </label>
-                    <label className="block">
-                        <span className="mb-1 block text-xs font-medium text-slate-700">Depósito</span>
-                        <select value={depId} onChange={(e) => setDepId(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <label className="col-span-2 block lg:col-span-1">
+                        <span className={ROTULO}>Depósito</span>
+                        <select value={depId} onChange={(e) => setDepId(Number(e.target.value))} className={CAMPO}>
                             <option value={0}>Todos</option>
                             {depositos.map((d) => (
                                 <option key={d.id} value={d.id}>
@@ -795,36 +786,46 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
                     />
                     <Pill>Período: {periodoLabel}</Pill>
                     {Number.isFinite(carregadoEm) ? <Pill>Atualizado às {new Date(carregadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</Pill> : null}
+                    <button type="button" onClick={carregar} disabled={loading} className={`ml-auto ${BTN_SEC}`} aria-label="Atualizar dados" title="Atualizar dados">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={loading ? "animate-spin" : ""}>
+                            <path d="M20 11a8 8 0 0 0-14.9-4M4 4v4h4M4 13a8 8 0 0 0 14.9 4M20 20v-4h-4" />
+                        </svg>
+                        <span className="hidden sm:inline">{loading ? "Atualizando…" : "Atualizar"}</span>
+                    </button>
                 </div>
 
                 {periodo.cortado ? (
-                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                    <div className="mt-3 rounded-2xl border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-xs leading-5 text-[#313C55] dark:bg-[#F2CB3F]/16 dark:text-white">
                         O histórico devolvido pela API começa em <b>{fmtDay(cobertura.consumoDesde)}</b>. As médias e a tendência usam só esse trecho
                         ({periodo.dias} dias). Para analisar períodos maiores, o <b>materiais_gerais.php</b> precisa devolver mais registros no
                         histórico (hoje ele limita a quantidade por consulta).
                     </div>
                 ) : null}
-                {err ? <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
-
-                <nav className="mt-4 flex gap-1 overflow-x-auto border-t border-slate-100 pt-3">
-                    {subTabs.map((t) => (
-                        <button
-                            key={t.k}
-                            type="button"
-                            onClick={() => setSub(t.k)}
-                            className={[
-                                "whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
-                                sub === t.k ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100",
-                            ].join(" ")}
-                        >
-                            {t.l}
-                        </button>
-                    ))}
-                </nav>
+                {err ? <div className="mt-3 rounded-2xl border border-[#B42318] bg-[#FDECEA] p-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{err}</div> : null}
             </Card>
 
+            <nav role="tablist" aria-label="Seções do painel" className="flex gap-1 overflow-x-auto rounded-2xl border border-[#E3E8F0] bg-[#FFFFFF] p-1.5 dark:border-white/12 dark:bg-[#232B3F]">
+                {subTabs.map((t) => (
+                    <button
+                        key={t.k}
+                        type="button"
+                        role="tab"
+                        aria-selected={sub === t.k}
+                        onClick={() => setSub(t.k)}
+                        className={[
+                            "h-11 flex-1 whitespace-nowrap rounded-[10px] px-4 text-[14px] transition-colors",
+                            sub === t.k
+                                ? "bg-[#313C55] font-extrabold text-white dark:bg-[#3D6A99]"
+                                : "font-bold text-[#5B6478] hover:bg-[#EEF2F7] hover:text-[#313C55] dark:text-[#AEB9CF] dark:hover:bg-white/8 dark:hover:text-white",
+                        ].join(" ")}
+                    >
+                        {t.l}
+                    </button>
+                ))}
+            </nav>
+
             {loading && !Number.isFinite(carregadoEm) ? (
-                <Card className="p-6 text-sm text-slate-500">Carregando movimentações e conferências...</Card>
+                <Card className="p-6 text-sm text-[#7A8396] dark:text-[#8893AA]">Carregando movimentações e conferências...</Card>
             ) : null}
 
             {sub === "GERAL" ? <AbaGeral tot={tot} calc={calc} cobDias={cobDias} saidasMes={saidasMes} meses={periodo.meses} confs={confs} /> : null}
@@ -893,7 +894,7 @@ function AbaGeral({
                 </Card>
                 <Card className="space-y-3 p-4">
                     <Titulo t="Saídas por mês no período" s="Unidades · tracejado = projeção do mês incompleto" />
-                    <VBars labels={meses.map(monthLabel)} series={[{ nome: "Saídas", cor: "bg-teal-700", vals: saidasMes.vals }]} projecao={saidasMes.proj} fmt={(v) => nf(v)} />
+                    <VBars labels={meses.map(monthLabel)} series={[{ nome: "Saídas", cor: "bg-[#3D6A99]", vals: saidasMes.vals }]} projecao={saidasMes.proj} fmt={(v) => nf(v)} />
                 </Card>
             </div>
 
@@ -906,7 +907,7 @@ function AbaGeral({
                             return (
                                 <tr key={r.id}>
                                     <td className={tdL}>{r.nome}</td>
-                                    <td className={`${tdL} text-slate-500`}>{r.cat}</td>
+                                    <td className={`${tdL} text-[#7A8396] dark:text-[#8893AA]`}>{r.cat}</td>
                                     <td className={tdR}>{nf(r.saldo)}</td>
                                     <td className={tdR}>{nf(r.pond, 1)}</td>
                                     <td className={tdR}>{nf(c)} d</td>
@@ -943,7 +944,7 @@ function curvaABC(items: { nome: string; v: number }[]) {
 function BlocoABC({ titulo, sub, items }: { titulo: string; sub: string; items: { nome: string; v: number }[] }) {
     const { tot, n, cl } = curvaABC(items);
     const soma = (a: { v: number }[]) => a.reduce((s, x) => s + x.v, 0);
-    const cores = { A: "bg-teal-700", B: "bg-teal-300", C: "bg-slate-200" };
+    const cores = { A: "bg-[#3D6A99]", B: "bg-[#A9BED6] dark:bg-[#A9BED6]/60", C: "bg-[#E3E8F0] dark:bg-white/12" };
     return (
         <Card className="space-y-3 p-4">
             <Titulo t={titulo} s={sub} />
@@ -967,13 +968,13 @@ function BlocoABC({ titulo, sub, items }: { titulo: string; sub: string; items: 
                                 <td className={tdR}>{nf((cl[k].length / (n || 1)) * 100)}%</td>
                                 <td className={tdR}>{kbrl(soma(cl[k]))}</td>
                                 <td className={tdR}>{nf((soma(cl[k]) / tot) * 100)}%</td>
-                                <td className={`${tdL} text-xs text-slate-500`}>{cl[k].slice(0, 2).map((x) => x.nome).join(", ")}</td>
+                                <td className={`${tdL} text-xs text-[#7A8396] dark:text-[#8893AA]`}>{cl[k].slice(0, 2).map((x) => x.nome).join(", ")}</td>
                             </tr>
                         ))}
                     </Tabela>
                 </>
             ) : (
-                <p className="text-xs text-slate-500">Sem valor para os filtros atuais.</p>
+                <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Sem valor para os filtros atuais.</p>
             )}
         </Card>
     );
@@ -1078,7 +1079,7 @@ function AbaEstoque({
                             <td className={tdR}>{o.cm && o.v ? `${nf((o.cm * 12) / o.v, 1)}×` : "—"}</td>
                         </tr>
                     ))}
-                    <tr className="bg-slate-50 font-bold">
+                    <tr className="bg-[#F6F8FB] dark:bg-[#1C2334] font-bold">
                         <td className={tdL}>Total</td>
                         <td className={tdR}>{tot.nProd}</td>
                         <td className={tdR}>{nf(tot.un)}</td>
@@ -1102,8 +1103,8 @@ function AbaEstoque({
                 <VBars
                     labels={periodo.meses.map(monthLabel)}
                     series={[
-                        { nome: "Entradas", cor: "bg-teal-300", vals: periodo.meses.map((k) => entMes.get(k) || 0) },
-                        { nome: "Saídas", cor: "bg-teal-700", vals: periodo.meses.map((k) => saiMes.get(k) || 0) },
+                        { nome: "Entradas", cor: "bg-[#A9BED6] dark:bg-[#A9BED6]/60", vals: periodo.meses.map((k) => entMes.get(k) || 0) },
+                        { nome: "Saídas", cor: "bg-[#3D6A99]", vals: periodo.meses.map((k) => saiMes.get(k) || 0) },
                     ]}
                     fmt={(v) => nf(v)}
                 />
@@ -1118,7 +1119,7 @@ function AbaEstoque({
                                 <tr key={r.id}>
                                     <td className={tdL}>
                                         {r.nome}
-                                        <div className="text-xs text-slate-500">{r.cat}</div>
+                                        <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">{r.cat}</div>
                                     </td>
                                     <td className={tdR}>{nf(r.saldo)}</td>
                                     <td className={tdR}>{brl(r.valor)}</td>
@@ -1137,7 +1138,7 @@ function AbaEstoque({
                                 <tr key={r.id}>
                                     <td className={tdL}>
                                         {r.nome}
-                                        <div className="text-xs text-slate-500">{r.cat}</div>
+                                        <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">{r.cat}</div>
                                     </td>
                                     <td className={tdR}>{nf(r.saldo)}</td>
                                     <td className={tdR}>{nf(cobDias(r))} d</td>
@@ -1158,7 +1159,7 @@ function AbaEstoque({
                         abaixo.map((r) => (
                             <tr key={r.id}>
                                 <td className={tdL}>{r.nome}</td>
-                                <td className={`${tdL} text-slate-500`}>{r.cat}</td>
+                                <td className={`${tdL} text-[#7A8396] dark:text-[#8893AA]`}>{r.cat}</td>
                                 <td className={tdR}>{nf(r.saldo)}</td>
                                 <td className={tdR}>{nf(r.minimoComSaldo)}</td>
                                 <td className={tdR}>{nf(r.pond, 1)}</td>
@@ -1247,28 +1248,28 @@ function AbaConsumo({
                         <Seg value={modo} onChange={(v) => setModo(v as "UN" | "AT")} options={[{ v: "UN", l: "Unidades" }, { v: "AT", l: "Por atendimento" }]} />
                     </div>
                     {modo === "UN" ? (
-                        <VBars labels={meses.map(monthLabel)} series={[{ nome: "Saídas", cor: "bg-teal-700", vals: saidasMes.vals }]} projecao={saidasMes.proj} fmt={(v) => nf(v)} />
+                        <VBars labels={meses.map(monthLabel)} series={[{ nome: "Saídas", cor: "bg-[#3D6A99]", vals: saidasMes.vals }]} projecao={saidasMes.proj} fmt={(v) => nf(v)} />
                     ) : (
-                        <VBars labels={meses.map(monthLabel)} series={[{ nome: "Por atendimento", cor: "bg-teal-700", vals: unAtend }]} fmt={(v) => nf(v, 1)} />
+                        <VBars labels={meses.map(monthLabel)} series={[{ nome: "Por atendimento", cor: "bg-[#3D6A99]", vals: unAtend }]} fmt={(v) => nf(v, 1)} />
                     )}
                 </Card>
                 <Card className="space-y-3 p-4">
                     <Titulo t="Leitura rápida" s={`Média do período × últimos ${periodo.recDias} dias`} />
                     <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-bold uppercase text-slate-500">Média do período</div>
+                        <div className="rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Média do período</div>
                             <div className="text-xl font-black tabular-nums">{nf(somaP)}</div>
-                            <div className="text-xs text-slate-500">un/mês</div>
+                            <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">un/mês</div>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-bold uppercase text-slate-500">Recentes</div>
+                        <div className="rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Recentes</div>
                             <div className="text-xl font-black tabular-nums">{nf(somaR)}</div>
-                            <div className="text-xs text-slate-500">un/mês</div>
+                            <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">un/mês</div>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-bold uppercase text-slate-500">Tendência</div>
+                        <div className="rounded-xl bg-[#F6F8FB] dark:bg-[#1C2334] p-3">
+                            <div className="text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Tendência</div>
                             <div className="text-xl font-black tabular-nums">{somaPrev ? `${somaR >= somaPrev ? "+" : ""}${nf(((somaR - somaPrev) / somaPrev) * 100)}%` : "—"}</div>
-                            <div className="text-xs text-slate-500">vs janela anterior</div>
+                            <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">vs janela anterior</div>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1277,7 +1278,7 @@ function AbaConsumo({
                             { t: "Caindo", l: cai },
                         ].map((g) => (
                             <div key={g.t}>
-                                <div className="mb-1 text-xs font-bold text-slate-700">{g.t}</div>
+                                <div className="mb-1 text-xs font-bold text-[#5B6478] dark:text-[#AEB9CF]">{g.t}</div>
                                 {g.l.length ? (
                                     g.l.map((r) => (
                                         <div key={r.id} className="flex justify-between gap-2 text-xs">
@@ -1286,7 +1287,7 @@ function AbaConsumo({
                                         </div>
                                     ))
                                 ) : (
-                                    <p className="text-xs text-slate-500">Nenhum item relevante</p>
+                                    <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Nenhum item relevante</p>
                                 )}
                             </div>
                         ))}
@@ -1298,25 +1299,25 @@ function AbaConsumo({
                 <Titulo t="Quando o estoque acaba" s="Saldo atual ÷ consumo diário, a partir de hoje" />
                 <div className="flex flex-wrap items-end gap-3">
                     <div>
-                        <div className="mb-1 text-[10px] font-bold uppercase text-slate-500">Acaba em até</div>
+                        <div className="mb-1 text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Acaba em até</div>
                         <Seg value={prazo} onChange={(v) => setPrazo(Number(v))} options={[{ v: 30, l: "1 mês" }, { v: 60, l: "2 meses" }, { v: 90, l: "3 meses" }, { v: 180, l: "6 meses" }]} />
                     </div>
                     <div>
-                        <div className="mb-1 text-[10px] font-bold uppercase text-slate-500">Consumo usado</div>
+                        <div className="mb-1 text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Consumo usado</div>
                         <Seg value={base} onChange={(v) => setBase(v as "MAIOR" | "POND" | "PER" | "REC")} options={[{ v: "MAIOR", l: "O maior dos dois" }, { v: "POND", l: "Ponderado" }, { v: "PER", l: "Média do período" }, { v: "REC", l: "Recente" }]} />
                     </div>
                     <div>
-                        <div className="mb-1 text-[10px] font-bold uppercase text-slate-500">Incluir</div>
+                        <div className="mb-1 text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Incluir</div>
                         <Seg value={zerados ? 1 : 0} onChange={(v) => setZerados(Number(v) === 1)} options={[{ v: 1, l: "Com zerados" }, { v: 0, l: "Só com saldo" }]} />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                     {faixas.map((f) => {
                         const n = acaba.filter((x) => f.f(x.d)).length;
-                        const cor = n && f.tom === "critico" ? "border-l-rose-500" : n && f.tom === "atencao" ? "border-l-amber-500" : "border-l-slate-200";
+                        const cor = n && f.tom === "critico" ? "border-l-[#B42318] dark:border-l-[#FF9C92]" : n && f.tom === "atencao" ? "border-l-[#F2CB3F]" : "border-l-[#E3E8F0] dark:border-l-white/12";
                         return (
-                            <div key={f.l} className={`rounded-xl border border-slate-200 border-l-4 ${cor} bg-white p-3`}>
-                                <div className="text-[10px] font-bold uppercase text-slate-500">{f.l}</div>
+                            <div key={f.l} className={`rounded-xl border border-[#E3E8F0] dark:border-white/12 border-l-4 ${cor} bg-[#FFFFFF] dark:bg-[#232B3F] p-3`}>
+                                <div className="text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">{f.l}</div>
                                 <div className="text-xl font-black tabular-nums">{n}</div>
                             </div>
                         );
@@ -1328,7 +1329,7 @@ function AbaConsumo({
                             <tr key={r.id}>
                                 <td className={tdL}>
                                     {r.nome}
-                                    <div className="text-xs text-slate-500">{r.cat}</div>
+                                    <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">{r.cat}</div>
                                 </td>
                                 <td className={tdR}>{nf(r.saldo)}</td>
                                 <td className={tdR}>{nf(r.mP, 1)}</td>
@@ -1352,13 +1353,13 @@ function AbaConsumo({
                         <Vazio cols={9} txt="Nenhum produto acaba nesse prazo com os filtros atuais." />
                     )}
                 </Tabela>
-                <p className="text-xs text-slate-500">Entram produtos que saem ao menos 1 vez por mês. Itens de baixo giro (urnas de mostruário, tamanhos específicos) não têm previsão confiável por média.</p>
+                <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Entram produtos que saem ao menos 1 vez por mês. Itens de baixo giro (urnas de mostruário, tamanhos específicos) não têm previsão confiável por média.</p>
             </Card>
 
             <Card className="space-y-3 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                     <Titulo t="Produtos" s={`${rows.length} produtos com saída · ordenados pela média do período`} />
-                    <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto" className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm sm:w-64" />
+                    <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto" className={`${CAMPO} sm:w-64`} />
                 </div>
                 <Tabela head={["Produto", "Evolução", "Média período", "Média recente", "Tendência", "Regularidade", "Saldo"]} alinhar={["l", "l", "r", "r", "l", "l", "r"]}>
                     {lista.length ? (
@@ -1366,7 +1367,7 @@ function AbaConsumo({
                             <tr key={r.id}>
                                 <td className={tdL}>
                                     {r.nome}
-                                    <div className="text-xs text-slate-500">{r.cat}</div>
+                                    <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">{r.cat}</div>
                                 </td>
                                 <td className={tdL}>
                                     <Spark vals={r.mensal} />
@@ -1386,7 +1387,7 @@ function AbaConsumo({
                         <Vazio cols={7} />
                     )}
                 </Tabela>
-                {lista.length > 80 ? <p className="text-xs text-slate-500">Mostrando 80 de {lista.length}. Use a busca ou os filtros para ver os demais.</p> : null}
+                {lista.length > 80 ? <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Mostrando 80 de {lista.length}. Use a busca ou os filtros para ver os demais.</p> : null}
             </Card>
         </div>
     );
@@ -1469,19 +1470,19 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
             <Card className="space-y-3 p-4">
                 <div className="flex flex-wrap items-end gap-3">
                     <div>
-                        <div className="mb-1 text-[10px] font-bold uppercase text-slate-500">Comprar para cobrir</div>
+                        <div className="mb-1 text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Comprar para cobrir</div>
                         <Seg value={dias} onChange={(v) => setDias(Number(v))} options={[30, 45, 60, 90, 120].map((v) => ({ v, l: `${v} dias` }))} />
                     </div>
                     <div>
-                        <div className="mb-1 text-[10px] font-bold uppercase text-slate-500">Base do consumo</div>
+                        <div className="mb-1 text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Base do consumo</div>
                         <Seg value={base} onChange={(v) => setBase(v as "POND" | "REC" | "PER")} options={[{ v: "POND", l: "Ponderada" }, { v: "REC", l: "Recente" }, { v: "PER", l: "Média do período" }]} />
                     </div>
                     <div>
-                        <div className="mb-1 text-[10px] font-bold uppercase text-slate-500">Margem de segurança</div>
+                        <div className="mb-1 text-[10px] font-bold uppercase text-[#7A8396] dark:text-[#8893AA]">Margem de segurança</div>
                         <Seg value={z} onChange={(v) => setZ(Number(v))} options={[{ v: 0, l: "Nenhuma" }, { v: 1.04, l: "Moderada" }, { v: 1.65, l: "Alta" }]} />
                     </div>
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">
                     Sugestão = consumo diário × {dias} dias {z ? "+ margem de segurança " : ""}− saldo atual. Entram itens que saem ao menos 1 vez por mês; os de baixo giro ficam numa lista à parte.
                 </p>
             </Card>
@@ -1490,24 +1491,24 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
                 ordem.map(([cat, xs], gi) => {
                     const crit = xs.filter((x) => x.cob < 15).length;
                     return (
-                        <details key={cat} open={gi < 3} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <details key={cat} open={gi < 3} className="overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] shadow-sm">
                             <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3">
-                                <span className="text-sm font-bold text-slate-900">
-                                    {cat} <span className="font-medium text-slate-500">· {xs.length} {xs.length > 1 ? "itens" : "item"}</span>{" "}
+                                <span className="text-sm font-bold text-[#313C55] dark:text-white">
+                                    {cat} <span className="font-medium text-[#7A8396] dark:text-[#8893AA]">· {xs.length} {xs.length > 1 ? "itens" : "item"}</span>{" "}
                                     {crit ? <Pill tom="critico">{crit} crítico{crit > 1 ? "s" : ""}</Pill> : null}
                                 </span>
-                                <span className="text-sm font-semibold tabular-nums text-slate-700">{brl(totG(xs))}</span>
+                                <span className="text-sm font-semibold tabular-nums text-[#5B6478] dark:text-[#AEB9CF]">{brl(totG(xs))}</span>
                             </summary>
-                            <div className="border-t border-slate-100">
+                            <div className="border-t border-[#E3E8F0] dark:border-white/12">
                                 <Tabela head={["", "Produto", "Saldo", "Consumo/mês", "Cobertura atual", "Tendência", "Comprar", "Custo un.", "Total"]} alinhar={["l", "l", "r", "r", "r", "l", "r", "r", "r"]}>
                                     {xs.map((x) => (
                                         <tr key={x.r.id} className={desmarcados.has(x.r.id) ? "opacity-50" : ""}>
                                             <td className={tdL}>
-                                                <input type="checkbox" checked={!desmarcados.has(x.r.id)} onChange={() => toggle(x.r.id)} aria-label={`Incluir ${x.r.nome}`} className="h-4 w-4 accent-teal-700" />
+                                                <input type="checkbox" checked={!desmarcados.has(x.r.id)} onChange={() => toggle(x.r.id)} aria-label={`Incluir ${x.r.nome}`} className="h-5 w-5 accent-[#3D6A99]" />
                                             </td>
                                             <td className={tdL}>
                                                 {x.r.nome}
-                                                {x.r.cv > 0.75 ? <div className="text-xs text-amber-700">Consumo irregular: confirme antes de comprar</div> : null}
+                                                {x.r.cv > 0.75 ? <div className="mt-1"><Pill tom="atencao">Consumo irregular: confirme antes de comprar</Pill></div> : null}
                                             </td>
                                             <td className={tdR}>{nf(x.r.saldo)}</td>
                                             <td className={tdR}>{nf(x.d * 30, 1)}</td>
@@ -1518,7 +1519,7 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
                                                 <Tendencia t={x.r.tr} base={x.r.pond} />
                                             </td>
                                             <td className={`${tdR} font-bold`}>{x.qtd}</td>
-                                            <td className={tdR}>{x.r.custo ? brl(x.r.custo) : <span className="text-xs text-slate-400">sem custo</span>}</td>
+                                            <td className={tdR}>{x.r.custo ? brl(x.r.custo) : <span className="text-xs text-[#7A8396] dark:text-[#8893AA]">sem custo</span>}</td>
                                             <td className={tdR}>{x.r.custo ? brl(x.qtd * x.r.custo) : "—"}</td>
                                         </tr>
                                     ))}
@@ -1528,23 +1529,23 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
                     );
                 })
             ) : (
-                <Card className="p-4 text-sm text-slate-600">Nenhum item precisa de reposição com esses parâmetros e filtros.</Card>
+                <Card className="p-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Nenhum item precisa de reposição com esses parâmetros e filtros.</Card>
             )}
 
             {baixoGiro.length ? (
-                <details className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-slate-900">
+                <details className="overflow-hidden rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] shadow-sm">
+                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-[#313C55] dark:text-white">
                         <span>
-                            Baixo giro, saldo zerado <span className="font-medium text-slate-500">· {baixoGiro.length} itens · decidir caso a caso</span>
+                            Baixo giro, saldo zerado <span className="font-medium text-[#7A8396] dark:text-[#8893AA]">· {baixoGiro.length} itens · decidir caso a caso</span>
                         </span>
-                        <span className="text-xs font-medium text-slate-500">sem sugestão automática</span>
+                        <span className="text-xs font-medium text-[#7A8396] dark:text-[#8893AA]">sem sugestão automática</span>
                     </summary>
-                    <div className="border-t border-slate-100">
+                    <div className="border-t border-[#E3E8F0] dark:border-white/12">
                         <Tabela head={["Produto", "Categoria", "Saídas no período", "Última saída"]} alinhar={["l", "l", "r", "r"]}>
                             {baixoGiro.map((r) => (
                                 <tr key={r.id}>
                                     <td className={tdL}>{r.nome}</td>
-                                    <td className={`${tdL} text-slate-500`}>{r.cat}</td>
+                                    <td className={`${tdL} text-[#7A8396] dark:text-[#8893AA]`}>{r.cat}</td>
                                     <td className={tdR}>{nf(r.qP)}</td>
                                     <td className={tdR}>{fmtDay(r.ultimaSaida)}</td>
                                 </tr>
@@ -1554,25 +1555,25 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
                 </details>
             ) : null}
 
-            <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg">
+            <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] p-3 shadow-lg">
                 <div>
-                    <div className="text-xs text-slate-500">Selecionado para compra</div>
-                    <div className="text-lg font-black tabular-nums text-slate-950">
+                    <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">Selecionado para compra</div>
+                    <div className="text-lg font-black tabular-nums text-[#313C55] dark:text-white">
                         {sel.length} itens · {brl(total)}
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    {msg ? <span className="text-xs font-semibold text-teal-700">{msg}</span> : null}
-                    <button type="button" onClick={() => setDesmarcados(new Set(lista.map((x) => x.r.id)))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    {msg ? <span className="text-xs font-semibold text-[#5C7A12] dark:text-[#B3CE52]">{msg}</span> : null}
+                    <button type="button" onClick={() => setDesmarcados(new Set(lista.map((x) => x.r.id)))} className={BTN_SEC}>
                         Desmarcar tudo
                     </button>
-                    <button type="button" onClick={() => setDesmarcados(new Set())} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    <button type="button" onClick={() => setDesmarcados(new Set())} className={BTN_SEC}>
                         Marcar tudo
                     </button>
-                    <button type="button" onClick={baixarCsv} className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-200">
+                    <button type="button" onClick={baixarCsv} className={BTN_SEC}>
                         Baixar CSV
                     </button>
-                    <button type="button" onClick={copiar} className="rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">
+                    <button type="button" onClick={copiar} className={BTN_PRI}>
                         Copiar lista de compras
                     </button>
                 </div>
@@ -1639,7 +1640,7 @@ function AbaCustos({
 
     return (
         <div className="space-y-4">
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
+            <div className="rounded-2xl border border-[#A9BED6] dark:border-[#3D6A99]/60 bg-[#E9EFF6] dark:bg-[#3D6A99]/20 p-3 text-xs leading-5 text-[#313C55] dark:text-white">
                 O consumo usa o custo gravado na saída quando existe; senão, o custo cadastrado do produto. Compras usam o custo total lançado na
                 entrada. Meses sem custo lançado aparecem zerados em compras.
             </div>
@@ -1655,15 +1656,15 @@ function AbaCustos({
                     <VBars
                         labels={meses.map(monthLabel)}
                         series={[
-                            { nome: "Compras", cor: "bg-teal-300", vals: meses.map((k) => comp.get(k) || 0) },
-                            { nome: "Consumo", cor: "bg-teal-700", vals: meses.map((k) => cons.get(k) || 0) },
+                            { nome: "Compras", cor: "bg-[#A9BED6] dark:bg-[#A9BED6]/60", vals: meses.map((k) => comp.get(k) || 0) },
+                            { nome: "Consumo", cor: "bg-[#3D6A99]", vals: meses.map((k) => cons.get(k) || 0) },
                         ]}
                         fmt={kbrl}
                     />
                 </Card>
                 <Card className="space-y-3 p-4">
                     <Titulo t="Materiais por atendimento" s="Saídas com destino a atendimento ÷ atendimentos do mês" />
-                    <VBars labels={meses.map(monthLabel)} series={[{ nome: "Por atendimento", cor: "bg-teal-700", vals: meses.map((k) => ((atendMes.get(k)?.size || 0) ? (consAt.get(k) || 0) / (atendMes.get(k)?.size || 1) : 0)) }]} fmt={brl} />
+                    <VBars labels={meses.map(monthLabel)} series={[{ nome: "Por atendimento", cor: "bg-[#3D6A99]", vals: meses.map((k) => ((atendMes.get(k)?.size || 0) ? (consAt.get(k) || 0) / (atendMes.get(k)?.size || 1) : 0)) }]} fmt={brl} />
                 </Card>
             </div>
             <Card className="space-y-3 p-4">
@@ -1682,7 +1683,7 @@ function AbaCustos({
                     ) : (
                         <Vazio cols={5} />
                     )}
-                    <tr className="bg-slate-50 font-bold">
+                    <tr className="bg-[#F6F8FB] dark:bg-[#1C2334] font-bold">
                         <td className={tdL}>Total</td>
                         <td className={tdR}>{brl(ct)}</td>
                         <td className={tdR}>100%</td>
@@ -1737,7 +1738,7 @@ function AbaControle({
                 <Card className="space-y-3 p-4">
                     <Titulo t="Movimentações carregadas por tipo" s="Registros devolvidos pelo histórico" />
                     <HBars rows={mix} fmt={(v) => `${nf(v)} mov.`} />
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
+                    <div className="rounded-xl border border-[#B42318]/40 dark:border-[#FF9C92]/40 bg-[#FDECEA] dark:bg-[#FF9C92]/15 p-3 text-xs leading-5 text-[#B42318] dark:text-[#FF9C92]">
                         Ajustes somam <b>{nf(liquido)}</b> unidades desde {fmtDay(cobertura.ajustesDesde)}
                         {truncado.AJUSTE ? " (histórico limitado)" : ""}. Ajuste negativo é consumo não lançado ou perda: vale exigir motivo em cada ajuste.
                     </div>
@@ -1751,17 +1752,17 @@ function AbaControle({
                         <td className={tdR}>
                             {nf(semCusto)} de {nf(hist.SAIDA.length)}
                         </td>
-                        <td className={`${tdL} text-slate-600`}>Custo por atendimento usa o custo cadastrado como aproximação</td>
+                        <td className={`${tdL} text-[#5B6478] dark:text-[#AEB9CF]`}>Custo por atendimento usa o custo cadastrado como aproximação</td>
                     </tr>
                     <tr>
                         <td className={tdL}>Ajustes manuais</td>
                         <td className={tdR}>{nf(ajustes.length)}</td>
-                        <td className={`${tdL} text-slate-600`}>Consumo real pode ser maior que o registrado</td>
+                        <td className={`${tdL} text-[#5B6478] dark:text-[#AEB9CF]`}>Consumo real pode ser maior que o registrado</td>
                     </tr>
                     <tr>
                         <td className={tdL}>Histórico limitado pela API</td>
                         <td className={tdR}>{Object.values(truncado).some(Boolean) ? "Sim" : "Não"}</td>
-                        <td className={`${tdL} text-slate-600`}>Médias longas ficam restritas ao trecho devolvido</td>
+                        <td className={`${tdL} text-[#5B6478] dark:text-[#AEB9CF]`}>Médias longas ficam restritas ao trecho devolvido</td>
                     </tr>
                 </Tabela>
             </Card>
@@ -1788,10 +1789,11 @@ function AbaGuia({ recDias }: { recDias: number }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {itens.map(([t, d]) => (
                 <Card key={t} className="p-4">
-                    <h3 className="text-sm font-bold text-teal-800">{t}</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">{d}</p>
+                    <h3 className="text-[15px] font-extrabold text-[#313C55] dark:text-white">{t}</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#5B6478] dark:text-[#AEB9CF]">{d}</p>
                 </Card>
             ))}
         </div>
     );
 }
+

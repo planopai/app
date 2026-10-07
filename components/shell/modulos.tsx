@@ -194,6 +194,8 @@ export const MODULOS: Modulo[] = [
             { titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock },
             { titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails },
             { titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar },
+            { titulo: "Dashboard do estoque", desc: "Saídas e transferências por produto", href: "/dashboard-estoque", slugs: ["dashboard-estoque"], icone: IconChartBar },
+            { titulo: "Painel do estoque", desc: "Consumo, cobertura e reposição", href: "/painel-estoque", slugs: ["painel-estoque"], icone: IconReportAnalytics },
             { titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages },
             { titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },
             { titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar },
