@@ -1,13 +1,32 @@
 /**
- * tempoReal.ts — versão oficial SEM o pacote "ably" (decisão de 05/10/2026: o Messenger não usa a Ably).
+ * Tempo real do Messenger: UMA conexão Ably por aba do navegador, usada pela tela e pelo contador do menu.
+ * (06/10/2026: volta da Ably no lugar da consulta a cada 5 s; requer `npm install ably`.)
  *
- * Os nomes exportados são os mesmos de antes (EventoTempoReal, sincronizar, ouvir, ouvirSeguranca, registrarId), então
- * ContadorMenu.tsx e app/messenger/page.tsx não mudam.
+ * - Escuta o canal do próprio usuário (pai-msg:usuario:<id>). A credencial vem do messenger.php (ably_token).
+ * - Modo de segurança: se a Ably ficar fora por mais de 10 s (ou não estiver configurada), consulta
+ *   messenger.php?action=novidades a cada 5 s (30 s com o app em segundo plano) e entrega os mesmos eventos.
+ * - Ao reconectar, ao voltar ao app e ao entrar no modo de segurança, ressincroniza pelo MySQL.
  *
- * Como funciona: consulta messenger.php?action=novidades a cada 5 s (30 s com o app em segundo plano) e entrega os mesmos
- * eventos. Mensagens chegam com até ~5 s de atraso. Retire "ably" do package.json (npm uninstall ably).
+ * - Notificações (quando o servidor usa notificacoes_canal = 'ably'): a MESMA conexão registra este aparelho no
+ *   Web Push da Ably (service worker /push/ably/sw.js). O servidor manda UMA notificação por mensagem, só por esse
+ *   canal; o OneSignal não manda nada do Messenger. Ver ativarNotificacoes().
+ *
+ * Eventos entregues aos ouvintes: mensagem, mensagem_apagada, leitura, digitando, status_envio, conversa.
  */
+import * as Ably from "ably";
+import Push from "ably/push";
 import { msgGet } from "./api";
+
+/** Service worker só das notificações do Messenger (escopo próprio /push/ably/, separado do OneSignal). */
+export const SW_NOTIFICACOES = "/push/ably/sw.js";
+const CHAVE_DONO = "pai.messenger.push.dono"; // de quem é a ativação deste aparelho (evita notificar o usuário errado)
+
+export type EstadoNotificacoes = "desligadas" | "ativas" | "pendente" | "negadas" | "sem_suporte" | "erro";
+const ouvintesNotif = new Set<(e: EstadoNotificacoes, detalhe?: string) => void>();
+let estadoNotif: EstadoNotificacoes = "desligadas";
+let detalheNotif = "";
+let canalNotificacoes = "";
+let meuId = 0;
 
 export type EventoTempoReal = { nome: string; dados: any };
 type Ouvinte = (e: EventoTempoReal) => void;
@@ -15,9 +34,11 @@ type Ouvinte = (e: EventoTempoReal) => void;
 const ouvintes = new Set<Ouvinte>();
 const ouvintesSeguranca = new Set<(ativo: boolean) => void>();
 let iniciado = false;
+let cliente: any = null;
 let ultimoId = 0;
 let servidorEm = "";
 let seguranca = false;
+let timerQueda: ReturnType<typeof setTimeout> | null = null;
 let timerConsulta: ReturnType<typeof setTimeout> | null = null;
 let sincronizando = false;
 
@@ -84,7 +105,50 @@ async function iniciar() {
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") sincronizar();
     });
-    definirSeguranca(true); // sem Ably: só consulta ao MySQL
+    let perfil: any = null;
+    try {
+        perfil = await msgGet("perfil", {}, false);
+    } catch {
+        definirSeguranca(true);
+        return;
+    }
+    if (!perfil?.tempo_real) {
+        definirSeguranca(true); // Ably não configurada: só consulta ao MySQL
+        return;
+    }
+    meuId = Number(perfil.id) || 0;
+    canalNotificacoes = String(perfil.notificacoes_canal || "");
+    cliente = new Ably.Realtime({
+        authCallback: async (_params: any, callback: any) => {
+            try {
+                callback(null, await msgGet("ably_token", {}, false));
+            } catch (e: any) {
+                callback(e?.message || "Falha na credencial", null);
+            }
+        },
+        pushServiceWorkerUrl: SW_NOTIFICACOES,
+        plugins: { Push },
+    } as any);
+    if (canalNotificacoes === "ably") prepararNotificacoes();
+    const canal = cliente.channels.get(`pai-msg:usuario:${perfil.id}`);
+    canal.subscribe((m: any) => emitir(m.name, m.data));
+    cliente.connection.on((mudanca: any) => {
+        if (mudanca.current === "connected") {
+            if (timerQueda) {
+                clearTimeout(timerQueda);
+                timerQueda = null;
+            }
+            sincronizar(); // cobre o que chegou enquanto estava desconectado
+            definirSeguranca(false);
+        } else if (["disconnected", "suspended", "failed"].includes(mudanca.current)) {
+            if (!timerQueda && !seguranca) {
+                timerQueda = setTimeout(() => {
+                    timerQueda = null;
+                    definirSeguranca(true);
+                }, 10000);
+            }
+        }
+    });
 }
 
 /** Recebe os eventos do Messenger. Devolve a função para parar de ouvir. */
@@ -96,7 +160,7 @@ export function ouvir(fn: Ouvinte): () => void {
     };
 }
 
-/** Avisa quando entra ou sai do modo de segurança (aqui, sempre ativo). */
+/** Avisa quando entra ou sai do modo de segurança (Ably fora do ar). */
 export function ouvirSeguranca(fn: (ativo: boolean) => void): () => void {
     ouvintesSeguranca.add(fn);
     fn(seguranca);
@@ -109,4 +173,93 @@ export function ouvirSeguranca(fn: (ativo: boolean) => void): () => void {
 /** A tela informa os ids que já carregou (para a ressincronização começar do ponto certo). */
 export function registrarId(id: number) {
     if (id > ultimoId) ultimoId = id;
+}
+
+/* ------------------------------------------------------------------ */
+/* Notificações pela Ably (Web Push)                                   */
+/* ------------------------------------------------------------------ */
+
+function definirEstadoNotif(e: EstadoNotificacoes, detalhe = "") {
+    estadoNotif = e;
+    detalheNotif = detalhe;
+    ouvintesNotif.forEach((f) => f(e, detalhe));
+}
+
+function suportaPush(): boolean {
+    return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+/**
+ * Ao abrir o app: se a permissão já foi dada, ativa sozinho (sem pedir nada). Se este aparelho estava ativado para
+ * OUTRO usuário (troca de login no mesmo aparelho), desativa antes, para as notificações dele não chegarem aqui.
+ */
+async function prepararNotificacoes() {
+    if (!suportaPush()) return definirEstadoNotif("sem_suporte");
+    if (Notification.permission === "denied") return definirEstadoNotif("negadas");
+    const dono = localStorage.getItem(CHAVE_DONO);
+    if (dono && dono !== String(meuId)) {
+        try {
+            await cliente.push.deactivate();
+        } catch {
+            /* segue: a ativação abaixo registra de novo */
+        }
+        localStorage.removeItem(CHAVE_DONO);
+    }
+    if (Notification.permission === "granted") await ativarNotificacoes();
+    else definirEstadoNotif("pendente");
+}
+
+/**
+ * Ativa as notificações do Messenger neste aparelho (pede a permissão se preciso).
+ * No iPhone, chamar a partir de um toque (botão) e com o app instalado na tela de início.
+ */
+export async function ativarNotificacoes(): Promise<EstadoNotificacoes> {
+    if (canalNotificacoes !== "ably" || !cliente) return estadoNotif;
+    if (!suportaPush()) {
+        definirEstadoNotif("sem_suporte");
+        return estadoNotif;
+    }
+    try {
+        if (cliente.connection.state !== "connected") {
+            // o clientId do usuário vem no token: espera a conexão (no máximo 15 s)
+            await Promise.race([
+                new Promise<void>((ok) => cliente.connection.once("connected", () => ok())),
+                new Promise<void>((_, falha) => setTimeout(() => falha(new Error("Sem conexão com o tempo real.")), 15000)),
+            ]);
+        }
+        await cliente.push.activate();
+        localStorage.setItem(CHAVE_DONO, String(meuId));
+        definirEstadoNotif("ativas");
+    } catch (e: any) {
+        if (typeof Notification !== "undefined" && Notification.permission === "denied") definirEstadoNotif("negadas");
+        else if (typeof Notification !== "undefined" && Notification.permission === "default") definirEstadoNotif("pendente");
+        else definirEstadoNotif("erro", e?.message || "Falha ao ativar as notificações.");
+        console.warn("[messenger] notificações:", e);
+    }
+    return estadoNotif;
+}
+
+/** Ao sair da conta: desliga as notificações deste aparelho (chamar antes de apagar a sessão). */
+export async function desativarNotificacoes() {
+    try {
+        if (cliente && canalNotificacoes === "ably") await cliente.push.deactivate();
+    } catch {
+        /* sem conexão: na próxima abertura o app desativa (dono diferente) */
+    }
+    try {
+        localStorage.removeItem(CHAVE_DONO);
+    } catch {
+        /* sem armazenamento */
+    }
+    definirEstadoNotif("desligadas");
+}
+
+/** Acompanha o estado das notificações deste aparelho (para o aviso "Ativar notificações" na tela). */
+export function ouvirNotificacoes(fn: (e: EstadoNotificacoes, detalhe?: string) => void): () => void {
+    ouvintesNotif.add(fn);
+    fn(estadoNotif, detalheNotif);
+    iniciar();
+    return () => {
+        ouvintesNotif.delete(fn);
+    };
 }

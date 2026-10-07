@@ -52,6 +52,8 @@ export type Conversa = {
     janela_ate: string | null;
     janela_aberta: boolean | null;
     atendimento_id: number | null;
+    /** Gestão vendo um atendimento em andamento sem participar: pode transferir e encerrar, não responde */
+    gestao_acompanha?: boolean;
 };
 
 export type Perfil = {
@@ -62,8 +64,10 @@ export type Perfil = {
     tempo_real: boolean;
     midias: boolean;
     whatsapp: boolean;
-    /** OneSignal configurado no servidor (notificação com o app fechado) */
+    /** canal de notificação configurado no servidor (notificação com o app fechado) */
     notificacoes: boolean;
+    /** por onde saem as notificações (sempre um só): "ably" → este aparelho ativa o Web Push da Ably */
+    notificacoes_canal?: "ably" | "onesignal";
 };
 
 export type Aba = "equipe" | "grupos" | "clientes";
