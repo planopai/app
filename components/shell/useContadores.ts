@@ -56,6 +56,26 @@ function publicar(parcial: Partial<Contadores>) {
     ouvintes.forEach((f) => f());
 }
 
+type PedidoCoroaContador = { status?: string | null; quantidade_coroas?: number | string | null; itens?: { status?: string | null }[] | null };
+
+/** Coroas na Confecção que ainda não foram entregues (cada coroa conta 1). */
+function contarCoroasNaoEntregues(pedidos: PedidoCoroaContador[]): number {
+    let total = 0;
+    for (const p of pedidos) {
+        const statusPedido = String(p?.status ?? "").trim().toLowerCase();
+        const itens = Array.isArray(p?.itens) ? p.itens : [];
+        if (!itens.length) {
+            if (statusPedido !== "entregue") total += Math.max(1, Number(p?.quantidade_coroas) || 1);
+            continue;
+        }
+        for (const it of itens) {
+            const st = String(it?.status ?? statusPedido).trim().toLowerCase();
+            if (st !== "entregue") total += 1;
+        }
+    }
+    return total;
+}
+
 async function atualizar() {
     if (emAndamento) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -89,16 +109,14 @@ async function atualizar() {
         }
 
         if (has("coroa-de-flores")) {
-            const j = await getJson<{ sucesso?: boolean; dados?: { status?: string | null }[]; meta?: { total?: number | string } }>(
+            // Um cartão por coroa (07/10/2026): conta as COROAS ainda não entregues (etapa de cada coroa),
+            // não os pedidos. Sem a etapa na coroa (servidor antigo), usa a do pedido.
+            const j = await getJson<{ sucesso?: boolean; dados?: PedidoCoroaContador[] }>(
                 `${ENDPOINT}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100&fresh=${t}`,
                 sig,
             );
-            if (j?.sucesso) {
-                const total = Number(j.meta?.total);
-                if (Number.isFinite(total) && total >= 0) publicar({ coroas: total });
-                else if (Array.isArray(j.dados)) {
-                    publicar({ coroas: j.dados.filter((p) => ["novo", "coroa", "faixa"].includes(String(p.status ?? "").trim().toLowerCase())).length });
-                }
+            if (j?.sucesso && Array.isArray(j.dados)) {
+                publicar({ coroas: contarCoroasNaoEntregues(j.dados) });
             }
         }
 

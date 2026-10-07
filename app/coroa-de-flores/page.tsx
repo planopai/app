@@ -3151,7 +3151,7 @@ export default function Page() {
                             </div>
                             <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
                                 <div>
-                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoTotal} pedidos
+                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoTotal} {confeccaoTotal === 1 ? "pedido" : "pedidos"} · {confeccaoOrders.length} {confeccaoOrders.length === 1 ? "coroa" : "coroas"}
                                 </div>
                                 <div className="flex gap-2">
                                     <button
