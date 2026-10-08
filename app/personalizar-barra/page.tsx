@@ -32,13 +32,13 @@ function normalizarCargos(j: any): Cargo[] {
         .filter((c: Cargo) => c.id > 0);
 }
 
-const btn = "h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] disabled:opacity-40";
-const btnPri = "h-11 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white disabled:opacity-40";
-const quad = "flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border border-[#E3E8F0] bg-white text-[#313C55] disabled:opacity-35";
+const btn = "h-11 rounded-xl border border-[#C9D1DE] bg-[#FFFFFF] px-4 text-sm font-bold text-[#313C55] disabled:opacity-40 dark:border-white/20 dark:bg-[#232B3F] dark:text-white";
+const btnPri = "h-11 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white disabled:opacity-40 dark:bg-[#F2CB3F] dark:text-[#313C55]";
+const quad = "flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border border-[#E3E8F0] dark:border-white/[0.12] bg-[#FFFFFF] text-[#313C55] disabled:opacity-35 dark:border-white/[0.14] dark:bg-[#1C2334] dark:text-white";
 /* 44 px nos controles novos (Meu menu e ícone) */
 /* "+" escuro: sem o bg-white do quad, para a cor não depender da ordem do CSS */
-const quadPri = "flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border border-[#313C55] bg-[#313C55] text-white disabled:opacity-35";
-const quad44 = "grid size-11 flex-none place-items-center rounded-xl border border-[#E3E8F0] bg-white text-[#313C55] disabled:opacity-30";
+const quadPri = "flex h-10 w-10 flex-none items-center justify-center rounded-[10px] border border-[#313C55] bg-[#313C55] text-white disabled:opacity-35 dark:border-[#3D6A99] dark:bg-[#3D6A99]";
+const quad44 = "grid size-11 flex-none place-items-center rounded-xl border border-[#E3E8F0] dark:border-white/[0.12] bg-[#FFFFFF] text-[#313C55] disabled:opacity-30 dark:border-white/[0.14] dark:bg-[#1C2334] dark:text-white";
 
 const iguais = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -280,21 +280,21 @@ export default function PersonalizarMenuPage() {
                 setAba(a);
                 setOk("");
             }}
-            className={`h-11 flex-1 rounded-[10px] text-sm font-extrabold ${aba === a ? "bg-white shadow-sm" : "text-[#6B7488]"}`}
+            className={`h-11 flex-1 rounded-[10px] text-sm font-extrabold ${aba === a ? "bg-[#FFFFFF] shadow-sm dark:bg-[#3D6A99] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF] dark:text-[#AEB9CF]"}`}
         >
             {rotulo}
         </button>
     );
 
     return (
-        <div className="min-h-screen bg-[#F4F6F9] p-4 pb-28 text-[#313C55] md:p-8">
+        <div className="min-h-screen bg-[#F6F8FB] p-4 pb-28 text-[#313C55] dark:bg-[#161C2A] dark:text-white md:p-8">
             <div className="mx-auto flex max-w-[1120px] flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="min-w-[240px] flex-1">
                         <h1 className="m-0 text-2xl font-extrabold md:text-[32px]">
                             {aba === "menu" ? "Personalizar menu" : modo === "minha" ? "Personalizar menu" : "Barra padrão por cargo"}
                         </h1>
-                        <p className="mt-1 text-[15px] text-[#5B6478]">
+                        <p className="mt-1 text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">
                             {aba === "menu"
                                 ? "Ordem dos módulos e das telas e o que esconder. Só muda o seu menu."
                                 : modo === "minha"
@@ -334,14 +334,14 @@ export default function PersonalizarMenuPage() {
                 </div>
 
                 {modo === "minha" ? (
-                    <div className="flex w-[360px] max-w-full gap-1 rounded-[14px] bg-[#E9EDF3] p-1" role="tablist" aria-label="O que personalizar">
+                    <div className="flex w-[360px] max-w-full gap-1 rounded-[14px] bg-[#E9EDF3] p-1 dark:bg-[#1C2334]" role="tablist" aria-label="O que personalizar">
                         {abaBtn("atalhos", "Atalhos")}
                         {abaBtn("menu", "Meu menu")}
                     </div>
                 ) : null}
 
-                {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318]">{erro}</div>}
-                {ok && <div className="rounded-xl border border-[#B3CE52] bg-[#EEF5D6] px-4 py-2 text-sm font-bold">{ok}</div>}
+                {erro && <AvisoFaixa tom="erro">{erro}</AvisoFaixa>}
+                {ok && <AvisoFaixa tom="ok">{ok}</AvisoFaixa>}
                 {!menu.tabelasProntas && menu.carregado ? (
                     <AvisoFaixa tom="atencao">Os ícones e o seu menu ainda não podem ser salvos: falta rodar o menu_modulos.sql no banco.</AvisoFaixa>
                 ) : null}
@@ -349,7 +349,7 @@ export default function PersonalizarMenuPage() {
                 {aba === "atalhos" ? (
                     <>
                         <div className="flex flex-wrap items-center gap-3">
-                            <div className="flex w-[360px] max-w-full gap-1 rounded-[14px] bg-[#F1F4F8] p-1" role="group" aria-label="Aparelho">
+                            <div className="flex w-[360px] max-w-full gap-1 rounded-[14px] bg-[#E9EDF3] p-1 dark:bg-[#1C2334]" role="group" aria-label="Aparelho">
                                 {(["celular", "computador"] as Aparelho[]).map((a) => (
                                     <button
                                         key={a}
@@ -359,7 +359,7 @@ export default function PersonalizarMenuPage() {
                                             setAparelho(a);
                                             setOk("");
                                         }}
-                                        className={`h-10 flex-1 rounded-[10px] text-sm font-extrabold ${aparelho === a ? "bg-white shadow-sm" : "text-[#6B7488]"}`}
+                                        className={`h-10 flex-1 rounded-[10px] text-sm font-extrabold ${aparelho === a ? "bg-[#FFFFFF] shadow-sm dark:bg-[#3D6A99] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF] dark:text-[#AEB9CF]"}`}
                                     >
                                         {a === "celular" ? "Celular" : "Computador"}
                                     </button>
@@ -368,7 +368,7 @@ export default function PersonalizarMenuPage() {
                             {modo === "cargo" && (
                                 <label className="flex items-center gap-2 text-sm font-extrabold">
                                     Cargo
-                                    <select className="h-11 min-w-[220px] rounded-xl border border-[#E1E5EC] bg-white px-3 font-bold" value={cargoId} onChange={(e) => carregarCargo(Number(e.target.value))}>
+                                    <select className="h-11 min-w-[220px] rounded-xl border border-[#E1E5EC] bg-[#FFFFFF] px-3 font-bold dark:border-white/[0.12] dark:bg-[#1C2334]" value={cargoId} onChange={(e) => carregarCargo(Number(e.target.value))}>
                                         {cargos.map((c) => (
                                             <option key={c.id} value={c.id}>
                                                 {c.nome}
@@ -377,28 +377,28 @@ export default function PersonalizarMenuPage() {
                                     </select>
                                 </label>
                             )}
-                            <span className="text-sm font-bold text-[#5B6478]">{modo === "cargo" && cargoNome ? `Editando: ${cargoNome}. ` : ""}Cada aparelho tem a sua barra.</span>
+                            <span className="text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">{modo === "cargo" && cargoNome ? `Editando: ${cargoNome}. ` : ""}Cada aparelho tem a sua barra.</span>
                         </div>
 
                         {lista.length >= limite && (
-                            <div className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-4 py-2 text-sm font-bold">
+                            <div className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-4 py-2 text-sm font-bold dark:border-[#F2CB3F]/60 dark:bg-[#F2CB3F]/15">
                                 A barra {aparelho === "celular" ? "do celular" : "do computador"} está completa ({limite} atalhos). Tire um para pôr outro.
                             </div>
                         )}
 
-                        <div className="grid gap-5 md:grid-cols-3">
-                            <section className="flex flex-col gap-2 rounded-2xl border border-[#E1E5EC] bg-white p-4">
+                        <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                            <section className="flex flex-col gap-2 rounded-2xl border border-[#E1E5EC] bg-[#FFFFFF] dark:border-white/[0.12] dark:bg-[#232B3F] p-4">
                                 <div className="mb-1 flex items-baseline">
                                     <h2 className="m-0 flex-1 text-lg font-extrabold">{modo === "minha" ? "Na sua barra" : "Na barra do cargo"}</h2>
-                                    <span className="text-[13px] font-extrabold text-[#5B6478]">
+                                    <span className="text-[13px] font-extrabold text-[#5B6478] dark:text-[#AEB9CF]">
                                         {lista.length} de {limite}
                                     </span>
                                 </div>
                                 {lista.map((id, i) => {
                                     const it = porId[id];
                                     return (
-                                        <div key={id} className="flex items-center gap-2 rounded-[14px] border border-[#E3E8F0] py-2 pl-3 pr-2">
-                                            <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[#F1F4F8] text-[12.5px] font-extrabold text-[#5B6478]">{i + 1}</span>
+                                        <div key={id} className="flex items-center gap-2 rounded-[14px] border border-[#E3E8F0] dark:border-white/[0.12] py-2 pl-3 pr-2">
+                                            <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[#F1F4F8] dark:bg-[#1C2334] text-[12.5px] font-extrabold text-[#5B6478] dark:text-[#AEB9CF]">{i + 1}</span>
                                             {modo === "minha" ? (
                                                 <button
                                                     type="button"
@@ -412,7 +412,7 @@ export default function PersonalizarMenuPage() {
                                             ) : (
                                                 <IconeAtalho id={id} icone="" className="h-5 w-5 flex-none" />
                                             )}
-                                            <span className="line-clamp-2 min-w-0 flex-1 break-words text-[15px] font-extrabold leading-tight">{it?.rotulo || id}</span>
+                                            <span className="line-clamp-2 min-w-0 flex-1 text-[15px] font-extrabold leading-tight">{it?.rotulo || id}</span>
                                             <button type="button" className={quad} disabled={i === 0} onClick={() => mover(i, -1)} aria-label={`Mover ${it?.rotulo} para cima`}>
                                                 ↑
                                             </button>
@@ -426,15 +426,15 @@ export default function PersonalizarMenuPage() {
                                     );
                                 })}
                                 {modo === "minha" ? (
-                                    <p className="mt-1 flex items-center gap-1.5 text-[13px] text-[#5B6478]">
+                                    <p className="mt-1 flex items-center gap-1.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
                                         <IconPalette size={16} className="shrink-0" /> Toque no ícone para trocá-lo. O ícone vale nos dois aparelhos.
                                     </p>
                                 ) : null}
-                                {aparelho === "celular" && <p className="mt-1 text-[13px] text-[#5B6478]">No celular, o Menu fica sempre por último e não sai da barra.</p>}
+                                {aparelho === "celular" && <p className="mt-1 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">No celular, o Menu fica sempre por último e não sai da barra.</p>}
                             </section>
-                            <section className="flex flex-col gap-2 rounded-2xl border border-[#E1E5EC] bg-white p-4">
+                            <section className="flex flex-col gap-2 rounded-2xl border border-[#E1E5EC] bg-[#FFFFFF] dark:border-white/[0.12] dark:bg-[#232B3F] p-4">
                                 <h2 className="m-0 mb-1 text-lg font-extrabold">{modo === "minha" ? "Disponíveis para você" : "Páginas que o cargo tem"}</h2>
-                                <label className="flex h-11 items-center gap-2 rounded-xl bg-[#F1F4F8] px-3 text-[#5B6478]">
+                                <label className="flex h-11 items-center gap-2 rounded-xl bg-[#F1F4F8] dark:bg-[#1C2334] px-3 text-[#5B6478] dark:text-[#AEB9CF]">
                                     <IconSearch size={17} className="shrink-0" />
                                     <input
                                         type="search"
@@ -442,15 +442,15 @@ export default function PersonalizarMenuPage() {
                                         onChange={(e) => setFiltro(e.target.value)}
                                         placeholder="Procurar tela"
                                         aria-label="Procurar tela"
-                                        className="min-w-0 flex-1 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396]"
+                                        className="min-w-0 flex-1 bg-transparent text-[16px] text-[#313C55] outline-none dark:text-white placeholder:text-[#7A8396]"
                                     />
                                 </label>
                                 <div className="flex max-h-[520px] flex-col gap-2 overflow-y-auto pr-0.5">
                                     {grupos.map((g) => (
                                         <React.Fragment key={g.titulo}>
-                                            <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.08em] text-[#5B6478]">{g.titulo}</p>
+                                            <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.08em] text-[#5B6478] dark:text-[#AEB9CF]">{g.titulo}</p>
                                             {g.itens.map((it) => (
-                                                <div key={it.id} className="flex items-center gap-2.5 rounded-[14px] border border-[#E3E8F0] py-2 pl-3 pr-2">
+                                                <div key={it.id} className="flex items-center gap-2.5 rounded-[14px] border border-[#E3E8F0] dark:border-white/[0.12] py-2 pl-3 pr-2">
                                                     <IconeAtalho id={it.id} icone={modo === "minha" && prefs ? iconeDe(it.id) : ""} className="h-5 w-5 flex-none" />
                                                     <span className="min-w-0 flex-1 truncate text-[15px] font-extrabold">{it.rotulo}</span>
                                                     <button
@@ -467,12 +467,12 @@ export default function PersonalizarMenuPage() {
                                         </React.Fragment>
                                     ))}
                                 </div>
-                                {!totalLivres && <p className="text-sm text-[#6B7488]">{filtro ? "Nenhuma tela com esse nome." : "Todos os atalhos possíveis já estão na barra."}</p>}
+                                {!totalLivres && <p className="text-sm text-[#5B6478] dark:text-[#AEB9CF]">{filtro ? "Nenhuma tela com esse nome." : "Todos os atalhos possíveis já estão na barra."}</p>}
                             </section>
-                            <section className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] bg-white p-4">
+                            <section className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] bg-[#FFFFFF] dark:border-white/[0.12] dark:bg-[#232B3F] p-4">
                                 <h2 className="m-0 text-lg font-extrabold">Prévia</h2>
                                 {aparelho === "celular" ? (
-                                    <div className="flex h-[72px] rounded-2xl bg-[#313C55] px-0.5" aria-label="Prévia da barra do celular">
+                                    <div className="flex h-[72px] rounded-2xl bg-[#313C55] px-0.5 dark:bg-[#1C2334]" aria-label="Prévia da barra do celular">
                                         {lista.map((id) => (
                                             <span key={id} className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-bold text-[#D6DCE8]">
                                                 <IconeAtalho id={id} icone={modo === "minha" && prefs ? iconeDe(id) : ""} />
@@ -487,7 +487,7 @@ export default function PersonalizarMenuPage() {
                                         </span>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col gap-0.5 rounded-2xl bg-[#313C55] p-3" aria-label="Prévia da barra do computador">
+                                    <div className="flex flex-col gap-0.5 rounded-2xl bg-[#313C55] p-3 dark:bg-[#1C2334]" aria-label="Prévia da barra do computador">
                                         {lista.map((id) => (
                                             <span key={id} className="flex min-h-[38px] items-center gap-2.5 rounded-[10px] px-2.5 text-sm font-bold text-[#E8ECF4]">
                                                 <IconeAtalho id={id} icone={modo === "minha" && prefs ? iconeDe(id) : ""} className="h-[18px] w-[18px]" />
@@ -496,14 +496,14 @@ export default function PersonalizarMenuPage() {
                                         ))}
                                     </div>
                                 )}
-                                <p className="m-0 text-[13px] text-[#5B6478]">Os números (como Messenger e Estoque) seguem com o atalho para onde ele for.</p>
+                                <p className="m-0 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Os números (como Messenger e Estoque) seguem com o atalho para onde ele for.</p>
                             </section>
                         </div>
                     </>
                 ) : (
                     /* ===== MEU MENU ===== */
-                    <section className="flex flex-col gap-2 rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5">
-                        <p className="m-0 text-sm text-[#5B6478]">
+                    <section className="flex flex-col gap-2 rounded-2xl border border-[#E1E5EC] bg-[#FFFFFF] dark:border-white/[0.12] dark:bg-[#232B3F] p-4 md:p-5">
+                        <p className="m-0 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
                             Use as setas para mudar a ordem e o olho para esconder ou mostrar. Escondido some só do seu menu: a tela continua na pesquisa e na
                             página do módulo. Quem decide os módulos e onde cada tela fica é a Gestão
                             {menu.podeOrganizar ? (
@@ -523,7 +523,7 @@ export default function PersonalizarMenuPage() {
                             const esc = escondidoM(m.id);
                             const exp = aberto === m.id;
                             return (
-                                <div key={m.id} className={`rounded-[14px] border border-[#E3E8F0] ${esc ? "bg-[#F6F8FB]" : ""}`}>
+                                <div key={m.id} className={`rounded-[14px] border border-[#E3E8F0] dark:border-white/[0.12] ${esc ? "bg-[#F6F8FB] dark:bg-white/[0.04]" : ""}`}>
                                     <div className="flex items-center gap-2 py-2 pl-2 pr-2">
                                         <button
                                             type="button"
@@ -531,14 +531,14 @@ export default function PersonalizarMenuPage() {
                                             aria-expanded={exp}
                                             className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-xl px-1.5 text-left"
                                         >
-                                            <span className={`grid size-10 shrink-0 place-items-center rounded-xl bg-[#EEF2F7] ${esc ? "opacity-50" : ""}`}>
+                                            <span className={`grid size-10 shrink-0 place-items-center rounded-xl bg-[#EEF2F7] dark:bg-white/10 ${esc ? "opacity-50" : ""}`}>
                                                 <I size={20} />
                                             </span>
                                             <span className={`min-w-0 flex-1 ${esc ? "opacity-60" : ""}`}>
                                                 <span className="block truncate font-extrabold">{m.titulo}</span>
-                                                <span className="block text-[13px] text-[#5B6478]">{esc ? "Escondido do seu menu" : `${m.itens.length} ${m.itens.length === 1 ? "tela" : "telas"}`}</span>
+                                                <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{esc ? "Escondido do seu menu" : `${m.itens.length} ${m.itens.length === 1 ? "tela" : "telas"}`}</span>
                                             </span>
-                                            {exp ? <IconChevronDown size={18} className="text-[#7A8396]" /> : <IconChevronRight size={18} className="text-[#7A8396]" />}
+                                            {exp ? <IconChevronDown size={18} className="text-[#7A8396] dark:text-[#AEB9CF]" /> : <IconChevronRight size={18} className="text-[#7A8396] dark:text-[#AEB9CF]" />}
                                         </button>
                                         <button type="button" className={quad44} onClick={() => alternar("ocultos_modulos", m.id)} aria-label={esc ? `Mostrar ${m.titulo}` : `Esconder ${m.titulo}`} title={esc ? "Mostrar" : "Esconder"}>
                                             {esc ? <IconEyeOff size={19} /> : <IconEye size={19} />}
@@ -551,7 +551,7 @@ export default function PersonalizarMenuPage() {
                                         </button>
                                     </div>
                                     {exp ? (
-                                        <div className="space-y-1.5 border-t border-[#E3E8F0] px-2 pb-2 pt-2">
+                                        <div className="space-y-1.5 border-t border-[#E3E8F0] dark:border-white/[0.12] px-2 pb-2 pt-2">
                                             {m.itens.map((it, pos) => {
                                                 const T = it.icone;
                                                 const e2 = escondidoI(it.id);
@@ -561,11 +561,11 @@ export default function PersonalizarMenuPage() {
                                                 return (
                                                     <React.Fragment key={it.id}>
                                                         {it.secao && it.secao !== ant?.secao ? (
-                                                            <p className="px-2 pt-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[#5B6478]">{it.secao}</p>
+                                                            <p className="px-2 pt-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[#5B6478] dark:text-[#AEB9CF]">{it.secao}</p>
                                                         ) : null}
                                                         <div className="flex items-center gap-2 rounded-xl py-1 pl-2">
                                                             <T size={19} className={`shrink-0 ${e2 ? "opacity-40" : ""}`} />
-                                                            <span className={`min-w-0 flex-1 truncate text-[15px] font-bold ${e2 ? "text-[#7A8396] line-through" : ""}`}>{it.titulo}</span>
+                                                            <span className={`min-w-0 flex-1 truncate text-[15px] font-bold ${e2 ? "text-[#7A8396] dark:text-[#AEB9CF] line-through" : ""}`}>{it.titulo}</span>
                                                             <button type="button" className={quad44} onClick={() => alternar("ocultos_itens", it.id)} aria-label={e2 ? `Mostrar ${it.titulo}` : `Esconder ${it.titulo}`} title={e2 ? "Mostrar" : "Esconder"}>
                                                                 {e2 ? <IconEyeOff size={19} /> : <IconEye size={19} />}
                                                             </button>
@@ -584,7 +584,7 @@ export default function PersonalizarMenuPage() {
                                 </div>
                             );
                         })}
-                        {prefsMudaram ? <p className="m-0 text-sm font-bold text-[#5B6478]">Mudanças ainda não salvas.</p> : null}
+                        {prefsMudaram ? <p className="m-0 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Mudanças ainda não salvas.</p> : null}
                     </section>
                 )}
             </div>
