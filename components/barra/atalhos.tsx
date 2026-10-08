@@ -14,6 +14,9 @@
  */
 import React, { useEffect, useState } from "react";
 import { barraGet } from "@/components/messenger/api";
+import { iconePorNome } from "@/components/shell/icones";
+import { catalogoTelas } from "@/components/shell/menuOrganizado";
+import { useMenu } from "@/components/shell/useMenu";
 
 export type ItemBarra = { id: string; rotulo: string; curto: string; pagina?: string; rota: string };
 export type BarraAparelho = { itens: ItemBarra[]; origem: "usuario" | "cargo" | "sistema"; limite: number };
@@ -80,7 +83,20 @@ const D: Record<string, string> = {
     associados: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" + circ(9, 7, 4) + "M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
 };
 
-export function IconeAtalho({ id, className = "h-[22px] w-[22px]" }: { id: string; className?: string }) {
+/**
+ * Ícone do atalho (08/10/2026), nesta ordem:
+ *  1. o ícone que o usuário escolheu no Personalizar menu (ou o passado em `icone`; "" = sem escolha);
+ *  2. o desenho de sempre dos 14 atalhos antigos;
+ *  3. o ícone da tela no menu (atalhos novos, de qualquer tela).
+ */
+export function IconeAtalho({ id, className = "h-[22px] w-[22px]", icone }: { id: string; className?: string; icone?: string | null }) {
+    const menu = useMenu();
+    const Escolhido = iconePorNome(icone !== undefined ? icone : menu.preferencias?.icones?.[id]);
+    if (Escolhido) return <Escolhido className={className} stroke={1.8} aria-hidden="true" />;
+    if (!D[id]) {
+        const DaTela = catalogoTelas().get(id)?.item.icone;
+        if (DaTela) return <DaTela className={className} stroke={1.8} aria-hidden="true" />;
+    }
     return (
         <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d={D[id] || D.inicio} />

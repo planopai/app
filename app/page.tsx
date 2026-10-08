@@ -16,7 +16,8 @@ import {
 } from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
-import { FIXOS, MODULOS, destinoDoModulo, hrefDoItem, itemVisivel, moduloVisivel, type Icone } from "@/components/shell/modulos";
+import { destinoDoModulo, hrefDoItem, itemVisivel, moduloVisivel, type Icone } from "@/components/shell/modulos";
+import { useMenu } from "@/components/shell/useMenu";
 import { formatarSelo, useContadores } from "@/components/shell/useContadores";
 
 /**
@@ -130,25 +131,24 @@ export default function HomePage() {
         return itens.filter((i) => i.mostrar);
     }, [c, pronto, has]);
 
-    /* Acesso rápido: Quadro, Minhas OS, Messenger (só com a página) e Chat. Avisos fica no sino. Item ausente é ignorado. */
-    const rapidos = useMemo(() => {
-        const lista = ["/quadro-acompanhamento", "/os/minhas", "/messenger", "/chat"]
-            .map((href) => FIXOS.find((f) => f.href === href))
-            .filter((i): i is (typeof FIXOS)[number] => !!i);
-        return lista.filter((i) => pronto && itemVisivel(i, has));
-    }, [pronto, has]);
+    /*
+     * Acesso rápido: os itens fixos do menu, menos o Início (padrão: Quadro, Minhas OS, Messenger só com a página, e Chat).
+     * 08/10/2026: a Gestão escolhe os fixos e a ordem em Organizar menu; os módulos seguem a ordem e o que o usuário escondeu.
+     */
+    const menu = useMenu();
+    const rapidos = useMemo(() => menu.fixos.filter((i) => i.href !== "/" && pronto && itemVisivel(i, has)), [menu.fixos, pronto, has]);
 
-    const modulos = pronto ? MODULOS.filter((m) => moduloVisivel(m, has)) : [];
+    const modulos = pronto ? menu.modulosPessoais.filter((m) => moduloVisivel(m, has)) : [];
 
     /* Pesquisa de funções: só páginas permitidas; casa pelo começo do título (como antes) */
     const resultados = useMemo(() => {
         const q = normalizeSearch(busca);
         if (!q || !pronto) return [];
         const base: { title: string; href: string; group: string; icone: Icone }[] = [
-            ...MODULOS.flatMap((m) =>
+            ...menu.modulos.flatMap((m) =>
                 itensVisiveisDe(m.itens, has).map((i) => ({ title: i.titulo, href: hrefDoItem(i, has), group: m.titulo, icone: i.icone as Icone })),
             ),
-            ...FIXOS.filter((f) => itemVisivel(f, has)).map((f) => ({ title: f.titulo, href: f.href, group: "Início", icone: f.icone as Icone })),
+            ...menu.fixos.filter((f) => itemVisivel(f, has)).map((f) => ({ title: f.titulo, href: f.href, group: "Início", icone: f.icone as Icone })),
             ...APELIDOS.filter((a) => has(a.slug)).map((a) => ({ title: a.title, href: a.href, group: a.group, icone: IconSearch as Icone })),
         ];
         const vistos = new Set<string>();
@@ -159,7 +159,7 @@ export default function HomePage() {
             vistos.add(k);
             return true;
         });
-    }, [busca, pronto, has]);
+    }, [busca, pronto, has, menu.modulos, menu.fixos]);
 
     const pesquisando = busca.trim() !== "";
     const horas = agora ? agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
@@ -280,9 +280,14 @@ export default function HomePage() {
                             {rapidos.map((f) => {
                                 const Icon = f.icone;
                                 const selo =
-                                    f.selo === "avisos" ? formatarSelo(c.avisos) : f.selo === "messenger" ? formatarSelo(contMessenger) : "";
+                                    f.selo === "avisos" ? formatarSelo(c.avisos)
+                                    : f.selo === "messenger" ? formatarSelo(contMessenger)
+                                    : f.selo === "aguardando" ? formatarSelo(c.aguardando)
+                                    : f.selo === "coroas" ? formatarSelo(c.coroas)
+                                    : f.selo === "estoque" ? formatarSelo(c.estoque)
+                                    : "";
                                 return (
-                                    <Link key={f.href} href={f.href} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
+                                    <Link key={f.id} href={hrefDoItem(f, has)} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
                                         <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP.azul].join(" ")}>
                                             <Icon size={22} />
                                         </span>

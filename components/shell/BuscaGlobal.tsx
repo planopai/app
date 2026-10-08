@@ -10,7 +10,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconSearch } from "@tabler/icons-react";
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { FIXOS, MODULOS, destinoDoModulo, hrefDoItem, itemVisivel, itensVisiveis, moduloVisivel } from "./modulos";
+import { destinoDoModulo, hrefDoItem, itemVisivel, itensVisiveis, moduloVisivel } from "./modulos";
+import { useMenu } from "./useMenu";
 
 type Resultado = { chave: string; titulo: string; onde: string; desc: string; href: string; texto: string };
 
@@ -19,6 +20,8 @@ const normaliza = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, 
 export default function BuscaGlobal({ className = "" }: { className?: string }) {
     const router = useRouter();
     const { perms, has } = usePerms();
+    /* 08/10/2026: procura na organização da Gestão (Organizar menu); acha também o que o usuário escondeu do próprio menu */
+    const menu = useMenu();
     const entrada = useRef<HTMLInputElement | null>(null);
     const [q, setQ] = useState("");
     const [aberto, setAberto] = useState(false);
@@ -42,12 +45,12 @@ export default function BuscaGlobal({ className = "" }: { className?: string }) 
     const todos = useMemo<Resultado[]>(() => {
         if (perms === null) return [];
         const lista: Resultado[] = [];
-        for (const f of FIXOS) {
+        for (const f of menu.fixos) {
             if (!itemVisivel(f, has)) continue;
             const href = hrefDoItem(f, has);
             lista.push({ chave: "f:" + href, titulo: f.titulo, onde: "Atalhos", desc: f.desc, href, texto: normaliza(`${f.titulo} ${f.desc}`) });
         }
-        for (const m of MODULOS) {
+        for (const m of menu.modulos) {
             if (!moduloVisivel(m, has)) continue;
             lista.push({ chave: "m:" + m.id, titulo: `Visão geral de ${m.titulo}`, onde: m.titulo, desc: m.desc, href: destinoDoModulo(m, has), texto: normaliza(`${m.titulo} ${m.desc} visao geral`) });
             for (const i of itensVisiveis(m, has)) {
@@ -56,7 +59,7 @@ export default function BuscaGlobal({ className = "" }: { className?: string }) 
             }
         }
         return lista;
-    }, [perms, has]);
+    }, [perms, has, menu.modulos, menu.fixos]);
 
     const resultados = useMemo(() => {
         const termos = normaliza(q).split(/\s+/).filter(Boolean);

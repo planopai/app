@@ -17,12 +17,13 @@ import { BotaoMenuCelular, useBarraVisivel } from "@/components/shell/MenuCelula
 import BuscaGlobal from "@/components/shell/BuscaGlobal";
 import { acharModuloPorRota, destinoDoModulo } from "@/components/shell/modulos";
 import { rotaExiste } from "@/components/shell/rotas";
+import { useMenu } from "@/components/shell/useMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { ModeSwitcher } from "./mode-switcher";
 
 const TITULOS_EXTRA: Record<string, string> = {
   "/help": "Ajuda",
-  "/personalizar-barra": "Personalizar barra",
+  "/personalizar-barra": "Personalizar menu",
   "/tela": "Tela inicial",
   "/geral": "Estoque",
   "/quadrotv": "Quadro de Atendimentos (TV)",
@@ -54,7 +55,9 @@ export function SiteHeader() {
     };
   }, []);
 
-  const { modulo, item, fixo } = acharModuloPorRota(pathname);
+  /* 08/10/2026: o caminho "Módulo > Tela" segue a organização feita pela Gestão em Organizar menu */
+  const menu = useMenu();
+  const { modulo, item, fixo } = acharModuloPorRota(pathname, menu.modulos, menu.fixos);
   const titulo = item?.titulo ?? fixo?.titulo ?? modulo?.titulo ?? tituloDaRota(pathname);
   const pronto = perms !== null;
   const temAvisos = pronto && has("avisos") && rotaExiste("/avisos");

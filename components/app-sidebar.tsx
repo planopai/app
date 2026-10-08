@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/sidebar";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { MODULOS, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import { hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import { useMenu } from "@/components/shell/useMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
 import { IconeAtalho, useBarra } from "@/components/barra/atalhos";
@@ -251,30 +252,37 @@ export function AppSidebar(
 
   const userInitials = React.useMemo(() => initialsFromName(displayName).slice(0, 1), [displayName]);
 
-  /** Módulos do organograma, só com as telas que o usuário pode abrir (mesmas chaves de página de antes). */
+  /**
+   * Módulos do menu, só com as telas que o usuário pode abrir (mesmas chaves de página de antes).
+   * 08/10/2026: a organização vem do useMenu() (Gestão em Organizar menu + o que o usuário ajustou em Personalizar menu).
+   */
+  const menu = useMenu();
   const visibleGroups = React.useMemo(() => {
     if (carregando) return [];
-    return MODULOS
+    return menu.modulosPessoais
       .filter((modulo) => moduloVisivel(modulo, has))
       .map((modulo) => ({
+        key: modulo.id,
         category: modulo.titulo,
         items: itensVisiveis(modulo, has).map((item) => ({
+          id: item.id,
           title: item.titulo,
           href: hrefDoItem(item, has),
           slug: item.slugs[0],
+          secao: item.secao || "",
           Icon: item.icone as any,
         })),
       }))
       .filter((group) => group.items.length > 0);
-  }, [has, carregando]);
+  }, [has, carregando, menu.modulosPessoais]);
 
   /** Abre por padrão o grupo da rota atual, senão o primeiro. */
   const defaultOpenOne = React.useMemo((): GroupKey | null => {
     if (!visibleGroups.length) {
       return null;
     }
-    const found = visibleGroups.find((group) => group.items.some((item) => item.href === pathname))?.category;
-    return found ?? visibleGroups[0]?.category ?? null;
+    const found = visibleGroups.find((group) => group.items.some((item) => item.href === pathname))?.key;
+    return found ?? visibleGroups[0]?.key ?? null;
   }, [visibleGroups, pathname]);
 
   /**
@@ -364,11 +372,11 @@ export function AppSidebar(
             )}
 
             {visibleGroups.map((group) => {
-              const opened = openGroup === group.category;
+              const opened = openGroup === group.key;
               return (
-                <div key={group.category}>
+                <div key={group.key}>
                   <button
-                    onClick={() => toggleGroup(group.category)}
+                    onClick={() => toggleGroup(group.key)}
                     className="flex w-full items-center justify-between px-3 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF] hover:text-white"
                     type="button"
                     aria-expanded={opened}
@@ -379,10 +387,18 @@ export function AppSidebar(
 
                   {opened && (
                     <SidebarMenu className="space-y-0.5">
-                      {group.items.map((item) => (
-                        <SidebarMenuItem key={item.href}>
-                          <MenuItem title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
-                        </SidebarMenuItem>
+                      {group.items.map((item, pos) => (
+                        <React.Fragment key={item.id}>
+                          {/* Seção dentro do módulo (ex.: Gestão → Pessoas e acesso) */}
+                          {item.secao && item.secao !== group.items[pos - 1]?.secao ? (
+                            <li className="list-none px-3 pb-0.5 pt-2.5 text-[12px] font-semibold text-[#AEB9CF]">
+                              {item.secao}
+                            </li>
+                          ) : null}
+                          <SidebarMenuItem>
+                            <MenuItem title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
+                          </SidebarMenuItem>
+                        </React.Fragment>
                       ))}
                     </SidebarMenu>
                   )}
@@ -395,7 +411,7 @@ export function AppSidebar(
 
       {/*
         RODAPÉ COMPACTO (06/10/2026): ocupa pouco espaço para dar prioridade aos módulos.
-        Uma linha com o usuário e uma linha com três botões pequenos: Personalizar barra, Ajuda e Sair da conta (sem vermelho).
+        Uma linha com o usuário e uma linha com três botões pequenos: Personalizar menu (antes "Barra"), Ajuda e Sair da conta (sem vermelho).
       */}
       <SidebarFooter className="p-0">
         <div className="border-t border-white/[0.18] px-3 pb-2 pt-2">
@@ -414,13 +430,13 @@ export function AppSidebar(
           <div className="mt-1.5 grid grid-cols-3 gap-1">
             <Link
               href="/personalizar-barra"
-              title="Personalizar barra"
+              title="Personalizar menu"
               aria-current={pathname === "/personalizar-barra" ? "page" : undefined}
               onClick={(event) => handleNavigate("/personalizar-barra", event)}
               className={[RODAPE_BTN, pathname === "/personalizar-barra" ? "bg-white/[0.14] text-white" : ""].join(" ")}
             >
               <IconAdjustmentsHorizontal className="size-4 shrink-0" />
-              <span className="truncate">Barra</span>
+              <span className="truncate">Menu</span>
             </Link>
             <Link
               href="/help"

@@ -4,17 +4,24 @@ import React from "react";
 import Link from "next/link";
 import { IconChevronRight } from "@tabler/icons-react";
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { MODULOS, hrefDoItem, itensVisiveis } from "./modulos";
+import { hrefDoItem, itensVisiveis } from "./modulos";
+import { useMenu } from "./useMenu";
 
 /**
  * Página de entrada de um módulo: lista só as telas que o usuário tem.
  * Usada por: servicos-funerarios (Atendimento), plano, administrativo e pelas páginas novas
- * comunicacao, modulo-estoque, financeiro e gestao.
+ * comunicacao, modulo-estoque, financeiro e gestao, e pelos módulos criados pela Gestão (app/modulo/[id]).
+ * 08/10/2026: segue a organização da Gestão (useMenu().modulos); as preferências pessoais não escondem nada aqui.
  */
 export default function ModuloHub({ moduloId }: { moduloId: string }) {
     const { perms, has } = usePerms();
-    const m = MODULOS.find((x) => x.id === moduloId);
-    if (!m) return null;
+    const menu = useMenu();
+    const m = menu.modulos.find((x) => x.id === moduloId);
+    if (!m) {
+        return menu.carregado ? (
+            <div className="min-h-[100dvh] bg-[#F6F8FB] p-6 text-[15px] font-bold text-[#5B6478] dark:bg-[#161C2A] dark:text-[#AEB9CF]">Este módulo não existe mais no menu.</div>
+        ) : null;
+    }
 
     const Icon = m.icone;
     const itens = perms == null ? [] : itensVisiveis(m, has);
@@ -43,7 +50,7 @@ export default function ModuloHub({ moduloId }: { moduloId: string }) {
                         {itens.map((i, pos) => {
                             const I = i.icone;
                             return (
-                                <React.Fragment key={i.titulo}>
+                                <React.Fragment key={i.id}>
                                 {i.secao && i.secao !== itens[pos - 1]?.secao ? (
                                     <h2 className="col-span-full pt-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] first:pt-0 dark:text-[#AEB9CF]">{i.secao}</h2>
                                 ) : null}
