@@ -1,16 +1,3 @@
-
-#!/usr/bin / env node
-/**
- * Adiciona o botão da OS depois do botão Editar
- * no rodapé de Informações do Atendimento.
- *
- * Altera somente:
- * app/quadro-acompanhamento/page.tsx
- *
- * Uso:
- * node ferramentas/quadro-botao-os.mjs
- */
-
 import fs from "node:fs";
 
 const arq = "app/quadro-acompanhamento/page.tsx";
