@@ -19,11 +19,6 @@ const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
 const ORIGEM_API = new URL(API_BASE).origin;
 const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
-/**
- * AJUSTAR: endpoint de upload de assinatura que o app já usa na Despedida (fase08).
- * Recebe POST multipart com o campo "arquivo" (PNG) e deve devolver o caminho salvo, ex.: { url: "/uploads/assinaturas/xxx.png" }.
- */
-const UPLOAD_ASSINATURA_API = `${API_BASE}/upload_assinatura.php`;
 
 async function apiJson(url: string, init?: RequestInit) {
     const res = await fetch(url, { credentials: "include", cache: "no-store", ...init });
@@ -460,17 +455,13 @@ export function AssinaturaModal({
         setSalvando(true);
         setErro("");
         try {
-            const blob: Blob = await new Promise((ok) => canvas.current!.toBlob((b) => ok(b!), "image/png"));
-            const fd = new FormData();
-            fd.append("arquivo", blob, `assinatura_os_${os.id}.png`);
-            const up = await apiJson(UPLOAD_ASSINATURA_API, { method: "POST", body: fd });
-            const caminho = up?.url || up?.dados?.url || up?.caminho;
-            if (!caminho) throw new Error("O upload da assinatura não devolveu o caminho do arquivo.");
+            // A imagem vai junto com a assinatura e o servidor grava em uploads/assinaturas/ (08/10/2026).
+            const imagem = canvas.current!.toDataURL("image/png");
             await osPost("assinar", {
                 os_id: os.id,
                 nome_responsavel: f.nome.trim(),
                 cpf_responsavel: f.cpf,
-                arquivo_assinatura: caminho,
+                assinatura_base64: imagem,
                 ...(particular && num(f.pago) > 0 ? { pagamento_valor: num(f.pago), pagamento_forma: f.forma, pagamento_data: hoje() } : {}),
             });
             onAssinado();
