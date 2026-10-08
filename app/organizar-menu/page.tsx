@@ -154,6 +154,21 @@ export default function OrganizarMenuPage() {
         });
     const definirSecao = (modId: string, itemId: string, secao: string) =>
         mudarModulo(modId, (m) => ({ ...m, itens: agruparPorSecao(m.itens.map((i) => (i.id === itemId ? { ...i, secao: secao || undefined } : i))) }));
+    /*
+     * Telas que não nasceram em nenhum módulo (Início, Quadro de Atendimentos, Minhas OS: só fixos no código).
+     * A Gestão pode pô-las num módulo e tirá-las de novo. As outras telas sempre têm módulo (só mudam de um para outro).
+     */
+    const trazerTela = (modId: string, telaId: string) => {
+        if (!modulos || modulos.some((m) => m.itens.some((i) => i.id === telaId))) return;
+        const base = catalogo.get(telaId)?.item;
+        if (!base) return;
+        const fixo = fixos.find((f) => f.id === telaId);
+        const item = { ...base, titulo: fixo && fixo.titulo !== nomeOriginal(telaId, true) ? fixo.titulo : base.titulo, secao: undefined };
+        mudarModulo(modId, (m) => ({ ...m, itens: agruparPorSecao([...m.itens, item]) }));
+        setOk(`"${item.titulo}" entrou em ${modulos.find((m) => m.id === modId)?.titulo}. Salve para valer para todos.`);
+    };
+    const tirarDoModulo = (modId: string, telaId: string) => mudarModulo(modId, (m) => ({ ...m, itens: m.itens.filter((i) => i.id !== telaId) }));
+
     const moverParaModulo = (itemId: string, origem: string, destino: string) => {
         if (!modulos || origem === destino) return;
         const item = modulos.find((m) => m.id === origem)?.itens.find((i) => i.id === itemId);
@@ -279,6 +294,7 @@ export default function OrganizarMenuPage() {
     }
 
     const secoesAtual = atual ? secoesDe(atual.itens) : [];
+    const soltas = Array.from(catalogo.values()).filter((t) => t.moduloPadrao === null && !modulos.some((m) => m.itens.some((i) => i.id === t.item.id)));
     const foraDosFixos = Array.from(catalogo.values())
         .map((t) => FIXOS.find((f) => f.id === t.item.id) || t.item)
         .filter((it) => !fixos.some((f) => f.id === it.id));
@@ -466,7 +482,7 @@ export default function OrganizarMenuPage() {
 
                                 {!atual.itens.length ? (
                                     <div className="mt-3 rounded-xl border border-dashed border-[#C9D1DE] p-5 text-sm text-[#5B6478] dark:border-white/20 dark:text-[#AEB9CF]">
-                                        Nenhuma tela neste módulo. Traga telas de outro módulo pelo campo "Mover para".
+                                        Nenhuma tela neste módulo. Traga telas de outro módulo pelo campo "Mover para" ou uma tela sem módulo pelo campo abaixo.
                                     </div>
                                 ) : null}
 
@@ -527,6 +543,17 @@ export default function OrganizarMenuPage() {
                                                         <button type="button" className={QUAD} disabled={!mesmaSecao(proximo)} onClick={() => moverItem(atual.id, pos, 1)} aria-label={`Descer ${it.titulo}`}>
                                                             <IconArrowDown size={18} />
                                                         </button>
+                                                        {catalogo.get(it.id)?.moduloPadrao === null ? (
+                                                            <button
+                                                                type="button"
+                                                                className={QUAD}
+                                                                onClick={() => tirarDoModulo(atual.id, it.id)}
+                                                                aria-label={`Tirar ${it.titulo} do módulo`}
+                                                                title="Tirar do módulo (continua nos itens fixos, se estiver lá)"
+                                                            >
+                                                                <IconX size={18} />
+                                                            </button>
+                                                        ) : null}
                                                     </div>
                                                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                                         <div className="sm:col-span-2">
@@ -595,6 +622,33 @@ export default function OrganizarMenuPage() {
                                         );
                                     })}
                                 </div>
+
+                                {soltas.length ? (
+                                    <div className="mt-4">
+                                        <label className={ROTULO} htmlFor="trazer-tela">
+                                            Trazer tela sem módulo
+                                        </label>
+                                        <select
+                                            id="trazer-tela"
+                                            className={CAMPO}
+                                            value=""
+                                            onChange={(e) => {
+                                                trazerTela(atual.id, e.target.value);
+                                                e.target.value = "";
+                                            }}
+                                        >
+                                            <option value="">Escolha uma tela…</option>
+                                            {soltas.map((t) => (
+                                                <option key={t.item.id} value={t.item.id}>
+                                                    {fixos.find((f) => f.id === t.item.id)?.titulo || t.item.titulo}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p className="mt-1 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                            Telas que hoje só aparecem como item fixo (Início, Quadro de Atendimentos, Minhas OS). No módulo, ela continua nos fixos.
+                                        </p>
+                                    </div>
+                                ) : null}
 
                                 <div className="mt-5 border-t border-[#E3E8F0] pt-4 dark:border-white/[0.12]">
                                     <button
