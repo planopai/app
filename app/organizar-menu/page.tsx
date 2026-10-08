@@ -19,6 +19,7 @@ import {
     IconFolderPlus,
     IconHistory,
     IconPencil,
+    IconArrowBackUp,
     IconRestore,
     IconStar,
     IconTrash,
@@ -30,6 +31,7 @@ import {
     catalogoTelas,
     idParaModulo,
     paraConfig,
+    nomeOriginal,
     retratoDesatualizado,
     secoesDe,
 } from "@/components/shell/menuOrganizado";
@@ -181,6 +183,19 @@ export default function OrganizarMenuPage() {
             return { ...m, itens: [...semSecao, ...lista.flatMap((s) => m.itens.filter((x) => x.secao === s))] };
         });
 
+    /* ===== nome da tela (vale em todo lugar: menu, entradas, pesquisa, cabeçalho e atalhos) ===== */
+    const renomearTela = (id: string, nome: string) => {
+        const t = nome.slice(0, 60);
+        if (modulos) mudar(modulos.map((m) => (m.itens.some((i) => i.id === id) ? { ...m, itens: m.itens.map((i) => (i.id === id ? { ...i, titulo: t } : i)) } : m)));
+        setFixos((fs) => fs.map((f) => (f.id === id ? { ...f, titulo: t } : f)));
+        setAlterado(true);
+    };
+    /* ao sair do campo: nome vazio volta ao original */
+    const conferirNome = (id: string, comoFixo = false) => {
+        const atualNome = (comoFixo ? fixos.find((f) => f.id === id) : modulos?.flatMap((m) => m.itens).find((i) => i.id === id))?.titulo || "";
+        if (!atualNome.trim()) renomearTela(id, nomeOriginal(id, comoFixo));
+    };
+
     /* ===== fixos ===== */
     const moverFixo = (i: number, d: number) => {
         const n = [...fixos];
@@ -193,8 +208,10 @@ export default function OrganizarMenuPage() {
         setAlterado(true);
     };
     const porFixo = (id: string) => {
-        const it = FIXOS.find((f) => f.id === id) || catalogo.get(id)?.item;
-        if (!it || fixos.some((f) => f.id === id) || fixos.length >= MAX_FIXOS) return;
+        const base = FIXOS.find((f) => f.id === id) || catalogo.get(id)?.item;
+        if (!base || fixos.some((f) => f.id === id) || fixos.length >= MAX_FIXOS) return;
+        const renomeado = modulos?.flatMap((m) => m.itens).find((i) => i.id === id);
+        const it = renomeado && renomeado.titulo !== nomeOriginal(id) ? { ...base, titulo: renomeado.titulo } : base;
         setFixos([...fixos, it]);
         setAlterado(true);
     };
@@ -271,7 +288,7 @@ export default function OrganizarMenuPage() {
             <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
                 <h1 className="text-2xl font-extrabold lg:text-[28px]">Organizar menu</h1>
                 <p className="mt-1 max-w-3xl text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">
-                    Defina os módulos, as seções e onde cada tela fica. Vale para todos ao salvar. Mudar uma tela de lugar não muda quem pode abri-la: isso
+                    Defina os módulos, as seções, onde cada tela fica e o nome de cada uma. Vale para todos ao salvar. Mudar uma tela de lugar não muda quem pode abri-la: isso
                     continua em Permissões.
                 </p>
 
@@ -360,7 +377,15 @@ export default function OrganizarMenuPage() {
                                         return (
                                             <div key={f.id} className="flex items-center gap-2 rounded-xl border border-[#E3E8F0] py-1.5 pl-3 pr-1.5 dark:border-white/[0.12]">
                                                 <I size={20} className="shrink-0" />
-                                                <span className="min-w-0 flex-1 truncate font-bold">{f.titulo}</span>
+                                                <input
+                                                    className={`${CAMPO} h-11 min-w-0 flex-1 font-bold`}
+                                                    value={f.titulo}
+                                                    maxLength={60}
+                                                    aria-label={`Nome de ${nomeOriginal(f.id, true)}`}
+                                                    title={`Nome original: ${nomeOriginal(f.id, true)}`}
+                                                    onChange={(e) => renomearTela(f.id, e.target.value)}
+                                                    onBlur={() => conferirNome(f.id, true)}
+                                                />
                                                 <button type="button" className={QUAD} disabled={i === 0} onClick={() => moverFixo(i, -1)} aria-label={`Subir ${f.titulo}`}>
                                                     <IconArrowUp size={18} />
                                                 </button>
@@ -504,6 +529,36 @@ export default function OrganizarMenuPage() {
                                                         </button>
                                                     </div>
                                                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                                        <div className="sm:col-span-2">
+                                                            <label className="sr-only" htmlFor={`nome-${it.id}`}>
+                                                                Nome de {nomeOriginal(it.id)} no menu
+                                                            </label>
+                                                            <div className="flex gap-2">
+                                                                <input
+                                                                    id={`nome-${it.id}`}
+                                                                    className={CAMPO}
+                                                                    value={it.titulo}
+                                                                    maxLength={60}
+                                                                    placeholder={nomeOriginal(it.id)}
+                                                                    onChange={(e) => renomearTela(it.id, e.target.value)}
+                                                                    onBlur={() => conferirNome(it.id)}
+                                                                />
+                                                                {it.titulo !== nomeOriginal(it.id) ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        className={`${QUAD} size-12`}
+                                                                        onClick={() => renomearTela(it.id, nomeOriginal(it.id))}
+                                                                        aria-label={`Voltar ao nome original: ${nomeOriginal(it.id)}`}
+                                                                        title={`Voltar ao nome original: ${nomeOriginal(it.id)}`}
+                                                                    >
+                                                                        <IconArrowBackUp size={18} />
+                                                                    </button>
+                                                                ) : null}
+                                                            </div>
+                                                            {it.titulo !== nomeOriginal(it.id) ? (
+                                                                <p className="mt-1 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Nome original: {nomeOriginal(it.id)}</p>
+                                                            ) : null}
+                                                        </div>
                                                         <label className="block">
                                                             <span className="sr-only">Seção de {it.titulo}</span>
                                                             <select

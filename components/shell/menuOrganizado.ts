@@ -27,6 +27,8 @@ export type ConfigMenu = {
     removidos?: string[];
     /** Retrato das telas, usado pelo barra_atalhos.php para conferir a permissão dos atalhos. */
     telas?: Record<string, TelaRetrato>;
+    /** Nome dado pela Gestão a uma tela (id → nome). Vale no menu, entradas, pesquisa, cabeçalho e atalhos. */
+    nomes?: Record<string, string>;
 };
 
 /** Preferências de um usuário. */
@@ -86,6 +88,8 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
     }
     const cat = catalogoTelas();
     const padrao = new Map(MODULOS.map((m) => [m.id, m]));
+    const nomes = config.nomes && typeof config.nomes === "object" && !Array.isArray(config.nomes) ? config.nomes : {};
+    const nomeDe = (id: string, original: string) => (typeof nomes[id] === "string" && nomes[id].trim() ? nomes[id].trim() : original);
     const usados = new Set<string>();
     const res: Modulo[] = [];
 
@@ -97,7 +101,7 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
             const t = cat.get(ic?.id);
             if (!t || usados.has(ic.id)) continue;
             usados.add(ic.id);
-            itens.push({ ...t.item, secao: ic.secao || undefined });
+            itens.push({ ...t.item, titulo: nomeDe(ic.id, t.item.titulo), secao: ic.secao || undefined });
         }
         res.push({
             id: mc.id,
@@ -121,7 +125,7 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
             if (usados.has(it.id)) continue;
             usados.add(it.id);
             const destino = res.find((r) => r.id === m.id) || res[res.length - 1];
-            if (destino) destino.itens.push({ ...it });
+            if (destino) destino.itens.push({ ...it, titulo: nomeDe(it.id, it.titulo) });
         }
     }
     for (const r of res) r.itens = agruparPorSecao(r.itens);
@@ -129,7 +133,8 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
     const fixosIds = Array.isArray(config.fixos) ? config.fixos : FIXOS.map((f) => f.id);
     const fixos = fixosIds
         .map((id) => FIXOS.find((f) => f.id === id) || cat.get(id)?.item)
-        .filter((f): f is ItemModulo => !!f);
+        .filter((f): f is ItemModulo => !!f)
+        .map((f) => ({ ...f, titulo: nomeDe(f.id, f.titulo) }));
 
     return { modulos: res, fixos };
 }
@@ -165,10 +170,10 @@ export function aplicarPreferencias(modulos: Modulo[], prefs: PrefsMenu | null |
 }
 
 /** Retrato de todas as telas do código (vai junto com a organização, para a barra de atalhos). */
-export function retratoTelas(): Record<string, TelaRetrato> {
+export function retratoTelas(nomes: Record<string, string> = {}): Record<string, TelaRetrato> {
     const out: Record<string, TelaRetrato> = {};
     catalogoTelas().forEach(({ item }, id) => {
-        const t: TelaRetrato = { titulo: item.titulo, rota: item.href, paginas: item.slugs };
+        const t: TelaRetrato = { titulo: nomes[id] || item.titulo, rota: item.href, paginas: item.slugs };
         if (item.alternativas?.length) t.alternativas = item.alternativas.map((a) => ({ pagina: a.slug, rota: a.href }));
         out[id] = t;
     });
@@ -182,7 +187,17 @@ export function retratoDesatualizado(config: ConfigMenu | null | undefined): boo
 }
 
 /** Converte o menu (como a tela Organizar menu edita) no formato que é salvo. */
+/** Nome original (do código) de uma tela; para os fixos vale o nome do fixo (ex.: "Chat"). */
+export function nomeOriginal(id: string, comoFixo = false): string {
+    const f = comoFixo ? FIXOS.find((x) => x.id === id) : undefined;
+    return f?.titulo || catalogoTelas().get(id)?.item.titulo || id;
+}
+
 export function paraConfig(modulos: Modulo[], fixos: ItemModulo[], removidos: string[] = []): ConfigMenu {
+    // Só vai o nome que é diferente do original (renomear de volta ao original = sem nome próprio).
+    const nomes: Record<string, string> = {};
+    for (const m of modulos) for (const i of m.itens) if (i.titulo.trim() && i.titulo.trim() !== nomeOriginal(i.id)) nomes[i.id] = i.titulo.trim();
+    for (const f of fixos) if (!(f.id in nomes) && f.titulo.trim() && f.titulo.trim() !== nomeOriginal(f.id, true)) nomes[f.id] = f.titulo.trim();
     return {
         v: 1,
         modulos: modulos.map((m) => ({
@@ -194,7 +209,8 @@ export function paraConfig(modulos: Modulo[], fixos: ItemModulo[], removidos: st
         })),
         fixos: fixos.map((f) => f.id),
         removidos,
-        telas: retratoTelas(),
+        telas: retratoTelas(nomes),
+        nomes,
     };
 }
 
