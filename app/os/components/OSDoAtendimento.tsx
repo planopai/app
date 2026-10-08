@@ -462,6 +462,8 @@ export function AssinaturaModal({
                 nome_responsavel: f.nome.trim(),
                 cpf_responsavel: f.cpf,
                 assinatura_base64: imagem,
+                // uma assinatura para as OS abertas do mesmo atendimento (convênio e família) — 08/10/2026
+                assinar_juntas: 1,
                 ...(particular && num(f.pago) > 0 ? { pagamento_valor: num(f.pago), pagamento_forma: f.forma, pagamento_data: hoje() } : {}),
             });
             onAssinado();
@@ -473,7 +475,7 @@ export function AssinaturaModal({
     };
 
     return (
-        <ModalSimples titulo="Assinatura da OS" sub={`OS ${os.numero_os} · uma assinatura vale para a OS${particular ? ", o pagamento e a nota promissória do saldo" : ""}`} onFechar={onFechar}>
+        <ModalSimples titulo="Assinatura da OS" sub={`OS ${os.numero_os} · uma assinatura vale para as OS deste atendimento${particular ? ", o pagamento e a nota promissória do saldo" : ""}`} onFechar={onFechar}>
             {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
             <div className="mb-3 grid grid-cols-2 gap-2">
                 <input className={inputCls} placeholder="Nome do responsável" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} />
