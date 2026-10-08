@@ -99,9 +99,18 @@ export function BotaoEditar({ onClick, href, grande }: { onClick?: () => void; h
 export const IcOS = () => (<Ic><path d="M14 3H6v18h12V7z" /><path d="M14 3v4h4" /><path d="M12 9.5v8" /><path d="M14 11.3c-.4-.6-1.1-.9-2-.9-1.2 0-2 .6-2 1.4 0 1.9 4 1 4 2.9 0 .8-.8 1.4-2 1.4-.9 0-1.7-.4-2.1-1" /></Ic>);
 export const COR_OS = "border-[1.5px] border-[#3D6A99] bg-[#E9EFF6] text-[#3D6A99] hover:bg-[#DCE5F0] dark:bg-[#3D6A99]/20 dark:text-[#A9C3E0] dark:hover:bg-[#3D6A99]/30";
 
-export function BotaoOS({ onClick, grande }: { onClick: () => void; grande?: boolean }) {
+/** `onClick` abre a OS por cima da tela; `href` (ex.: no Quadro) vai para /os/minhas?atendimento=<id>, que mostra a OS do atendimento. */
+export function BotaoOS({ onClick, href, grande }: { onClick?: () => void; href?: string; grande?: boolean }) {
+    const cls = `${btnBase(grande)} ${COR_OS}`;
+    if (href) {
+        return (
+            <a href={href} className={cls} title="Ver a OS do atendimento" aria-label="Ver a OS do atendimento">
+                <IcOS />
+            </a>
+        );
+    }
     return (
-        <button type="button" className={`${btnBase(grande)} ${COR_OS}`} onClick={onClick} title="Ver a OS do atendimento" aria-label="Ver a OS do atendimento">
+        <button type="button" className={cls} onClick={onClick} title="Ver a OS do atendimento" aria-label="Ver a OS do atendimento">
             <IcOS />
         </button>
     );

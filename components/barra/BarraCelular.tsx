@@ -40,7 +40,10 @@ export default function BarraCelular() {
     const naoLidas = useNaoLidas(temMessenger);
     const numeros = useContadores(perms, has);
     const [ocultaPelaTela, setOcultaPelaTela] = useState(false);
-    /* A barra vai direto no <body> (portal): assim nenhuma caixa da página consegue "carregar" a barra junto na rolagem do iPhone. */
+    /*
+     * iPhone (08/10/2026): a barra vai direto no <body> (portal), com fundo sólido (sem desfoque) e camada própria.
+     * O desfoque (backdrop-filter) numa barra fixa faz o Safari do iPhone redesenhar a barra fora do lugar durante a rolagem.
+     */
     const [montada, setMontada] = useState(false);
     useEffect(() => setMontada(true), []);
 
@@ -90,7 +93,7 @@ export default function BarraCelular() {
                 aria-label="Atalhos"
                 data-pai-barra-celular
                 onPointerDownCapture={naoContarComoFora}
-                className={`fixed inset-x-0 bottom-0 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur [transform:translateZ(0)] lg:hidden ${menuAberto ? "pointer-events-auto z-[60]" : "z-40"}`}
+                className={`fixed inset-x-0 bottom-0 border-t border-border bg-background pb-[env(safe-area-inset-bottom)] [transform:translateZ(0)] [-webkit-transform:translateZ(0)] [will-change:transform] lg:hidden ${menuAberto ? "pointer-events-auto z-[60]" : "z-40"}`}
             >
                 <div className="mx-auto flex h-[4.25rem] max-w-xl items-stretch px-1">
                     {itens.map((i) => {

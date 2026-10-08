@@ -255,8 +255,8 @@ export function JanelaFiltrosOS({ valor, mostrar, onAplicar, onFechar }: { valor
     const sec = "mb-2 text-[11.5px] font-extrabold uppercase tracking-[0.1em] text-[#5B6478] dark:text-[#AEB9CF]";
     const campoData = "h-11 w-full min-w-0 rounded-xl border border-[#C9D1DE] bg-white px-3 text-[15px] font-semibold dark:border-white/25 dark:bg-[#1C2334] dark:text-white";
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,14,24,0.55)] sm:items-center" onClick={onFechar} role="dialog" aria-modal="true" aria-label="Filtros">
-            <div className="flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+        <div data-pai-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,14,24,0.55)] sm:items-center" onClick={onFechar}>
+            <div role="dialog" aria-modal="true" aria-label="Filtros" className="flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center border-b border-[#E3E8F0] py-2.5 pl-5 pr-2 dark:border-white/[0.12]">
                     <h2 className="flex-1 text-[19px] font-black">Filtros</h2>
                     <button type="button" aria-label="Fechar" onClick={onFechar} className="flex size-11 items-center justify-center rounded-xl">
@@ -565,8 +565,8 @@ export function ResumoOS({ numero, situacao, subtitulo, campos, acoes, aviso, on
     const sec = acoes.filter((a) => !a.primaria);
     const pri = acoes.filter((a) => a.primaria);
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,14,24,0.55)] sm:items-center" onClick={onFechar} role="dialog" aria-modal="true" aria-label={`Resumo da OS ${numero}`}>
-            <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 text-[#313C55] dark:bg-[#232B3F] dark:text-white sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+        <div data-pai-overlay className="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(10,14,24,0.55)] px-2 sm:px-4 sm:pt-[8vh]" onClick={onFechar}>
+            <div role="dialog" aria-modal="true" aria-label={`Resumo da OS ${numero}`} className="mt-1 max-h-[calc(100%-0.5rem)] w-full max-w-lg overflow-y-auto rounded-3xl bg-white px-5 pb-5 pt-4 text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">

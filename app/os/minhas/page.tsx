@@ -87,7 +87,13 @@ export default function MinhasOSPage() {
         const avisarJanelaDeOrigem = () => {
             try { window.opener?.postMessage({ pai: "os-atualizada", atendimento_id: atendimentoDaUrl }, window.location.origin); } catch { /* janela fechada */ }
         };
-        return <OSDoAtendimento atendimentoId={atendimentoDaUrl} onFechar={() => window.close()} onMudou={avisarJanelaDeOrigem} />;
+        // Aberta em outra janela (Editar registro): fecha a janela. Aberta na mesma aba (botão da OS no Quadro): volta.
+        const fechar = () => {
+            if (window.opener) window.close();
+            else if (window.history.length > 1) window.history.back();
+            else window.location.href = "/quadro-acompanhamento";
+        };
+        return <OSDoAtendimento atendimentoId={atendimentoDaUrl} onFechar={fechar} onMudou={avisarJanelaDeOrigem} />;
     }
     const emAberto = lista.filter((l) => l.status === "ABERTA").length;
     const assinadas = lista.filter((l) => l.status === "FECHADA");
