@@ -34,6 +34,7 @@ import {
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
+import OSDoAtendimento from "@/app/os/components/OSDoAtendimento";
 import { BotoesTopoAtendimentos } from "@/components/atendimentos/BotoesAtendimento";
 import {
   OS_CAMPOS_VAZIO,
@@ -695,6 +696,8 @@ export default function AcompanhamentoPage() {
     faltando?: CampoFaltando[];
   } | null>(null);
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
+  /** OS do atendimento aberta direto pela lista (botão do documento com cifrão). */
+  const [osDoAtendimentoId, setOsDoAtendimentoId] = useState<string | number | null>(null);
   // ✅ snapshot do registro original (para não revalidar / não reenviar roupa no EDITAR)
   const wizardOriginalRoupaRef = useRef<RoupaSnapshot | null>(null);
   const wizardOriginalCoroasRef = useRef<CoroaSnapshot | null>(null);
@@ -2448,7 +2451,7 @@ export default function AcompanhamentoPage() {
     avisarFaltando,
   ]);
 
-  const concluirWizard = useCallback(async (options?: {
+  const concluirWizardInterno = useCallback(async (options?: {
     dataOverride?: Registro | null;
     manterWizardAberto?: boolean;
     mensagemSucesso?: string;
@@ -3223,6 +3226,26 @@ export default function AcompanhamentoPage() {
     sincronizarCoroasAtendimento,
     osCampos,
   ]);
+
+  /*
+   * Trava do salvamento (08/10/2026): o estado wizardSubmitting só muda na próxima renderização, então dois toques
+   * seguidos (ou o salvar da Arrumação junto com o Salvar) passavam os dois e gravavam o registro duas vezes.
+   * A referência trava na hora: enquanto um salvamento estiver em andamento, o outro pedido é ignorado.
+   */
+  const salvandoRef = useRef(false);
+  const concluirWizard = useCallback(async (options?: {
+    dataOverride?: Registro | null;
+    manterWizardAberto?: boolean;
+    mensagemSucesso?: string;
+  }) => {
+    if (salvandoRef.current) return;
+    salvandoRef.current = true;
+    try {
+      await concluirWizardInterno(options);
+    } finally {
+      salvandoRef.current = false;
+    }
+  }, [concluirWizardInterno]);
 
   // Salva imediatamente a Arrumação/Insumos quando estamos EDITANDO um
   // atendimento que já existe no servidor. Para atendimento novo, o modal
@@ -4290,11 +4313,15 @@ export default function AcompanhamentoPage() {
         onAcao={(id) => abrirPopupAcaoPorId(id)}
         onEditar={editarPorId}
         onCompartilhar={(id) => abrirCompartilharPorId(id)}
+        onVerOS={(id) => id != null && !isLocalAttendanceId(id) && setOsDoAtendimentoId(id)}
         visitaPermitida={visitaPermitida}
         visitaStatusById={visitaStatusById}
         onVisita={abrirVisitaPorId}
         ocultarAgente={visitaPermitida}
       />
+      {osDoAtendimentoId != null && (
+        <OSDoAtendimento sobreposto atendimentoId={osDoAtendimentoId} onFechar={() => setOsDoAtendimentoId(null)} />
+      )}
       <AcaoModal
         open={acaoOpen}
         setOpen={setAcaoOpen}

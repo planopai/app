@@ -47,3 +47,35 @@ export function cpfParcial(cpf: string): string {
     if (d.length !== 11) return "";
     return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
 }
+
+const ehNao = (v: unknown) => ["não", "nao", "n"].includes(String(v ?? "").trim().toLowerCase());
+
+/** Rótulo curto de cada termo (lista do quadro Documentos e título da assinatura). */
+export const NOME_TERMO: Record<TipoTermo, string> = {
+    recebimento: "Recebimento de material",
+    requisicao: "Requisição de veículo",
+};
+
+/**
+ * Termos que o atendimento tem (08/10/2026): só aparecem se houver a etapa.
+ *  - recebimento de material: com Assistência (a mesma condição da etapa "Material Recolhido");
+ *  - requisição de veículo (data e horário do sepultamento): com Sepultamento (etapas "Transportando P/ Sepultamento" e "Sepultamento Concluído").
+ * Campo ainda sem resposta conta como tendo a etapa (como nas etapas, só o "Não" esconde).
+ */
+export function termosDoAtendimento(registro: Registro | null | undefined): TipoTermo[] {
+    const r: any = registro || {};
+    const out: TipoTermo[] = [];
+    if (!ehNao(r.assistencia)) out.push("recebimento");
+    if (!ehNao(r.realiza_sepultamento)) out.push("requisicao");
+    return out;
+}
+
+/**
+ * Termos assinados juntos, com uma assinatura só: o termo escolhido mais os outros do atendimento que ainda não foram
+ * assinados. Termo já assinado abre só ele (para ver), sem misturar com os pendentes.
+ */
+export function termosAssinadosJuntos(registro: Registro | null | undefined, tipo: TipoTermo): TipoTermo[] {
+    if (situacaoTermo(registro, tipo).assinado) return [tipo];
+    const outros = termosDoAtendimento(registro).filter((t) => t !== tipo && !situacaoTermo(registro, t).assinado);
+    return [tipo, ...outros];
+}

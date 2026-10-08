@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import {
+    BarraFiltrosOS, CartoesOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, ResumoOS, SITUACOES_OS, TIPOS_OS,
+    baixarPdfDaOS, dataBROS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
+} from "../components/ListaOS";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -18,107 +22,123 @@ async function apiJson(url: string, init?: RequestInit) {
 }
 
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const hoje = () => new Date().toLocaleDateString("sv-SE");
-const inputCls = "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#3D6A99] dark:border-white/12 dark:bg-[#232B3F] dark:text-white";
-const TIPOS = [
-    { v: "PRT,DIF_SOC,DIF_PRF,COR", r: "Todos (Particular, Dif e Coroa)" }, { v: "PRT", r: "Particular" },
-    { v: "DIF_SOC", r: "Dif — Associado" }, { v: "DIF_PRF", r: "Dif — Prefeitura" }, { v: "COR", r: "Coroa" },
-];
+const TIPOS_REL = TIPOS_OS.filter((t) => ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(t.v));
+/* Relatório: sem situação escolhida vêm só as assinadas (como antes). Com situação, as escolhidas (ex.: também as abertas). */
+const SITUACOES_REL = SITUACOES_OS.filter((s) => s.v !== "CONVERTIDA");
 const ROTULO: Record<string, string> = { PRT: "Particular", DIF_SOC: "Dif — Associado", DIF_PRF: "Dif — Prefeitura", COR: "Coroa" };
-const COR_TIPO: Record<string, string> = { PRT: "#313C55", DIF_SOC: "#F2CB3F", DIF_PRF: "#F2CB3F", COR: "#B98BCB" };
 
 export default function RelatorioAtendimentosPage() {
-    const [f, setF] = useState({ data_inicio: hoje().slice(0, 8) + "01", data_fim: hoje(), tipo: "PRT,DIF_SOC,DIF_PRF,COR", agente_id: "" });
+    /* Padrão de 08/10/2026: filtros no botão Filtros, Exportar (imprimir, PDF, planilha) e lista que cabe na tela. */
+    const [filtro, setFiltro] = useState<FiltroOS>(() => filtroInicial({ situacoes: ["FECHADA", "ABERTA", "AGUARDANDO_ASSINATURA"] }));
+    const [janelaFiltros, setJanelaFiltros] = useState(false);
     const [rel, setRel] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [erro, setErro] = useState("");
-
-    const urlCom = (formato: string) => {
-        const u = new URL(OS_API);
-        u.searchParams.set("financeiro_relatorio", "1");
-        Object.entries({ ...f, formato }).forEach(([k, v]) => v && u.searchParams.set(k, String(v)));
-        return u.toString();
-    };
+    const [aviso, setAviso] = useState("");
+    const [resumo, setResumo] = useState<any>(null);
 
     const carregar = useCallback(async () => {
         setLoading(true);
         setErro("");
         try {
-            const r = await apiJson(urlCom("json") + `&_=${Date.now()}`);
+            const u = new URL(OS_API);
+            u.searchParams.set("financeiro_relatorio", "1");
+            Object.entries({ ...paramsDoFiltro(filtro), formato: "json", _: String(Date.now()) }).forEach(([k, v]) => v && u.searchParams.set(k, String(v)));
+            const r = await apiJson(u.toString());
             setRel(r.dados);
         } catch (e: any) {
             setErro(e?.message || "Não foi possível gerar o relatório.");
         } finally {
             setLoading(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [f]);
+    }, [filtro]);
     useEffect(() => { void carregar(); }, [carregar]);
 
     const g = rel?.total_geral;
+    const linhas: any[] = rel?.linhas || [];
+    const mostrar = { tipo: TIPOS_REL, situacao: SITUACOES_REL };
+    const dataL = (d: string) => (d ? new Date(d + "T12:00").toLocaleDateString("pt-BR") : "—");
+    const tabela = (): TabelaExport => ({
+        titulo: "Relatório de OS — Particular, Dif e Coroa (sem translado)",
+        subtitulo: `${dataBROS(filtro.data_inicio)} a ${dataBROS(filtro.data_fim)} · ${linhas.length} OS`,
+        cabecalho: ["OS", "Situação", "Tipo", "Data", "Falecido", "Agente", "Total", "Translado", "Sem translado"],
+        linhas: linhas.map((l) => [l.numero_os, situacaoDaOS(l).texto, l.tipo_rotulo, dataL(l.data), l.falecido || "—", l.agente || "—", brl(l.valor_total), l.translado > 0 ? `− ${brl(l.translado)}` : "—", brl(l.valor_sem_translado)]),
+        rodape: `Total sem translado: ${brl(g?.valor_sem_translado)}`,
+        arquivo: `relatorio-os-${filtro.data_inicio}-a-${filtro.data_fim}`,
+    });
+    const porTipo = Object.entries(rel?.totais_por_tipo || {}) as [string, any][];
+
     return (
-        <main className="min-h-screen bg-[#F4F6F9] p-6 text-[#313C55] dark:bg-[#161C2A] dark:text-white">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Financeiro › Relatórios · Particular, Dif e Coroa — valores de translado excluídos</div>
-                    <h1 className="text-2xl font-extrabold">Relatório de atendimentos</h1>
-                </div>
-                <div className="flex gap-2">
-                    <a href="/os/financeiro" className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/12 dark:bg-[#232B3F]">Voltar ao financeiro</a>
-                    <a href={urlCom("csv")} className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold dark:border-white/12 dark:bg-[#232B3F]">Planilha (Excel)</a>
-                    <a href={urlCom("pdf")} target="_blank" rel="noreferrer" className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#3D6A99]">PDF</a>
-                </div>
+        <main className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <div className="mx-auto flex max-w-6xl flex-col gap-3">
+                <BarraFiltrosOS
+                    filtro={filtro}
+                    mostrar={mostrar}
+                    onAbrirFiltros={() => setJanelaFiltros(true)}
+                    onMudar={setFiltro}
+                    exportar={itensExportar(tabela)}
+                    extra={<a href="/os/financeiro" className="inline-flex h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25">Financeiro</a>}
+                />
+
+                {erro && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+                {aviso && <div className="rounded-lg border border-[#E3E8F0] bg-white p-3 text-sm font-semibold dark:border-white/[0.12] dark:bg-[#232B3F]">{aviso}</div>}
+
+                {rel && (
+                    <CartoesOS
+                        itens={[
+                            { rotulo: "Sem translado", valor: brl(g?.valor_sem_translado), cor: "#313C55", sub: porTipo.length ? porTipo.map(([t, v]) => `${ROTULO[t] || t} ${brl(v.valor_sem_translado)}`).join(" · ") : `${g?.quantidade || 0} OS` },
+                            { rotulo: "Translado excluído", valor: brl(g?.translado), cor: "#C9CFD9", sub: `total ${brl(g?.valor_total)}` },
+                        ]}
+                    />
+                )}
+
+                <ListaCompactaOS
+                    titulo={`${linhas.length} OS`}
+                    total={linhas.length ? "valor sem translado" : undefined}
+                    carregando={loading}
+                    vazio="Nenhuma OS no período com esses filtros."
+                    linhas={linhas.map((l, i) => ({
+                        chave: l.os_id ?? `${l.numero_os}-${i}`,
+                        numero: l.numero_os,
+                        situacao: situacaoDaOS(l),
+                        valor: brl(l.valor_sem_translado),
+                        nome: l.falecido || "—",
+                        meta: [l.tipo_rotulo, l.agente, dataL(l.data)].filter(Boolean).join(" · "),
+                    }))}
+                    onMais={(ch) => setResumo(linhas.find((l, i) => (l.os_id ?? `${l.numero_os}-${i}`) === ch))}
+                />
+                {rel && linhas.length ? (
+                    <div className="text-right text-lg font-black tabular-nums">Total sem translado: {brl(g?.valor_sem_translado)}</div>
+                ) : null}
             </div>
 
-            <div className="mb-4 grid gap-3 rounded-xl border border-[#E1E5EC] bg-white p-4 md:grid-cols-[160px_160px_1fr_auto] md:items-end dark:border-white/12 dark:bg-[#232B3F]">
-                <label className="text-sm"><span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">De</span><input type="date" className={inputCls} value={f.data_inicio} onChange={(e) => setF({ ...f, data_inicio: e.target.value })} /></label>
-                <label className="text-sm"><span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Até</span><input type="date" className={inputCls} value={f.data_fim} onChange={(e) => setF({ ...f, data_fim: e.target.value })} /></label>
-                <label className="text-sm"><span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Tipo</span>
-                    <select className={inputCls} value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })}>{TIPOS.map((t) => <option key={t.v} value={t.v}>{t.r}</option>)}</select>
-                </label>
-                <button type="button" onClick={() => void carregar()} disabled={loading} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white disabled:opacity-50 dark:bg-[#3D6A99]">{loading ? "Gerando…" : "Aplicar"}</button>
-            </div>
+            {janelaFiltros && (
+                <JanelaFiltrosOS valor={filtro} mostrar={mostrar} onFechar={() => setJanelaFiltros(false)} onAplicar={(f) => (setFiltro(f), setJanelaFiltros(false))} />
+            )}
 
-            {erro && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-[#FF9C92]/40 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
-
-            {rel && (
-                <>
-                    <div className="mb-4 flex flex-col gap-3 lg:flex-row">
-                        {Object.entries(rel.totais_por_tipo || {}).map(([t, v]: any) => (
-                            <div key={t} className="flex-1 rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]" style={{ borderTop: `4px solid ${COR_TIPO[t] || "#313C55"}` }}>
-                                <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">{ROTULO[t] || t}</div>
-                                <div className="mt-1 whitespace-nowrap text-2xl font-extrabold">{brl(v.valor_sem_translado)}</div>
-                                <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{v.quantidade} OS · sem translado</div>
-                            </div>
-                        ))}
-                        <div className="flex-1 rounded-xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]" style={{ borderTop: "4px solid #C9CFD9" }}>
-                            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Translado excluído</div>
-                            <div className="mt-1 whitespace-nowrap text-2xl font-extrabold">{brl(g?.translado)}</div>
-                        </div>
-                    </div>
-
-                    <div className="overflow-x-auto rounded-xl border border-[#E1E5EC] bg-white p-2 dark:border-white/12 dark:bg-[#232B3F]">
-                        <table className="w-full text-sm">
-                            <thead><tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:border-white/12 dark:text-[#AEB9CF]">
-                                <th className="px-3 py-3">OS</th><th className="px-3">Tipo</th><th className="px-3">Data</th><th className="px-3">Falecido</th><th className="px-3">Agente</th>
-                                <th className="px-3 text-right">Total</th><th className="px-3 text-right">Translado</th><th className="px-3 text-right">Sem translado</th>
-                            </tr></thead>
-                            <tbody>
-                                {rel.linhas.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-[#6B7488] dark:text-[#AEB9CF]">Nenhum atendimento no período.</td></tr>}
-                                {rel.linhas.map((l: any) => (
-                                    <tr key={l.numero_os} className="border-b border-[#E1E5EC] dark:border-white/12">
-                                        <td className="px-3 py-2.5 font-bold">{l.numero_os}</td><td className="px-3 text-xs">{l.tipo_rotulo}</td>
-                                        <td className="px-3">{new Date(l.data + "T12:00").toLocaleDateString("pt-BR")}</td><td className="px-3">{l.falecido || "—"}</td><td className="px-3">{l.agente}</td>
-                                        <td className="whitespace-nowrap px-3 text-right">{brl(l.valor_total)}</td>
-                                        <td className="whitespace-nowrap px-3 text-right">{l.translado > 0 ? <span className="text-[#B03A2E] dark:text-[#FF9C92]">− {brl(l.translado)}</span> : "—"}</td>
-                                        <td className="whitespace-nowrap px-3 text-right font-bold">{brl(l.valor_sem_translado)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        <div className="flex justify-end px-3 py-3 text-xl font-extrabold">Total sem translado: {brl(g?.valor_sem_translado)}</div>
-                    </div>
-                </>
+            {resumo && (
+                <ResumoOS
+                    numero={resumo.numero_os}
+                    situacao={situacaoDaOS(resumo)}
+                    subtitulo={resumo.tipo_rotulo}
+                    onFechar={() => setResumo(null)}
+                    campos={[
+                        ["Falecido", resumo.falecido || "—"],
+                        ["Agente", resumo.agente || "—"],
+                        ["Data", dataL(resumo.data)],
+                        ["Total", brl(resumo.valor_total)],
+                        ["Translado", resumo.translado > 0 ? `− ${brl(resumo.translado)}` : "—"],
+                        ["Sem translado", brl(resumo.valor_sem_translado), true],
+                    ]}
+                    acoes={
+                        resumo.os_id
+                            ? [
+                                { rotulo: "PDF", icone: <Icone d={Ic.pdf} tam={18} />, onClick: () => void baixarPdfDaOS(resumo.os_id, resumo.numero_os).then((m) => m && setAviso(m)) },
+                                { rotulo: "Imprimir", icone: <Icone d={Ic.imprimir} tam={18} />, onClick: () => window.open(`${OS_API}?documento_os=1&os_id=${resumo.os_id}&formato=impressao`, "_blank") },
+                            ]
+                            : []
+                    }
+                />
             )}
         </main>
     );

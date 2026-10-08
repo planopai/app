@@ -13,6 +13,7 @@
  *  - quando a tela pede (evento "pai:ocultar-barra", ex.: conversa aberta no Messenger).
  */
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -39,6 +40,9 @@ export default function BarraCelular() {
     const naoLidas = useNaoLidas(temMessenger);
     const numeros = useContadores(perms, has);
     const [ocultaPelaTela, setOcultaPelaTela] = useState(false);
+    /* A barra vai direto no <body> (portal): assim nenhuma caixa da página consegue "carregar" a barra junto na rolagem do iPhone. */
+    const [montada, setMontada] = useState(false);
+    useEffect(() => setMontada(true), []);
 
     useEffect(() => {
         const aoPedir = (e: Event) => setOcultaPelaTela(Boolean((e as CustomEvent).detail));
@@ -81,11 +85,12 @@ export default function BarraCelular() {
         <>
             {/* reserva o espaço da barra no fim da página */}
             <div aria-hidden="true" className="h-[calc(4.25rem+env(safe-area-inset-bottom))] lg:hidden" />
+            {montada && createPortal(
             <nav
                 aria-label="Atalhos"
                 data-pai-barra-celular
                 onPointerDownCapture={naoContarComoFora}
-                className={`fixed inset-x-0 bottom-0 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden ${menuAberto ? "pointer-events-auto z-[60]" : "z-40"}`}
+                className={`fixed inset-x-0 bottom-0 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur [transform:translateZ(0)] lg:hidden ${menuAberto ? "pointer-events-auto z-[60]" : "z-40"}`}
             >
                 <div className="mx-auto flex h-[4.25rem] max-w-xl items-stretch px-1">
                     {itens.map((i) => {
@@ -117,7 +122,9 @@ export default function BarraCelular() {
                         <span>Menu</span>
                     </button>
                 </div>
-            </nav>
+            </nav>,
+            document.body,
+            )}
         </>
     );
 }

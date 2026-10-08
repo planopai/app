@@ -14,6 +14,7 @@ import {
     BotaoRegistrarAcao,
     BotaoEditar,
     BotaoCompartilhar,
+    BotaoOS,
     BotaoVisita,
 } from "@/components/atendimentos/BotoesAtendimento";
 
@@ -23,6 +24,8 @@ interface Props {
     /** Opcional: a lista não tem mais o botão de informações (o Editar registro mostra os mesmos dados e os documentos). */
     onInfo?: (id: Registro["id"]) => void;
     onCompartilhar: (id: Registro["id"]) => void;
+    /** Abre direto a folha da OS do atendimento (botão com o documento e o cifrão). Atendimento de terceiro não tem OS. */
+    onVerOS?: (id: Registro["id"]) => void;
     /** Abre o cadastro do atendimento para edição (botão amarelo do mockup). */
     onEditar?: (id: Registro["id"]) => void;
 
@@ -83,6 +86,7 @@ export default function TabelaAtendimentos({
     registros,
     onAcao,
     onCompartilhar,
+    onVerOS,
     onEditar,
     visitaPermitida = false,
     visitaStatusById = {},
@@ -176,6 +180,7 @@ export default function TabelaAtendimentos({
                                                 <BotaoRegistrarAcao onClick={() => r.id != null && onAcao(r.id)} />
                                                 {onEditar && <BotaoEditar onClick={() => r.id != null && onEditar(r.id)} />}
                                                 <BotaoCompartilhar onClick={() => r.id != null && onCompartilhar(r.id)} />
+                                                {onVerOS && (r as any).tipo_atendimento !== "terceiro" && <BotaoOS onClick={() => r.id != null && onVerOS(r.id)} />}
                                                 {visitaPermitida && onVisita && (
                                                     <BotaoVisita status={statusVisita(r)} onClick={() => r.id != null && onVisita(r.id)} />
                                                 )}
@@ -229,6 +234,7 @@ export default function TabelaAtendimentos({
                                     <div className="flex items-center gap-2 pb-3 pl-9 pr-4">
                                         {onEditar && <BotaoEditar onClick={() => r.id != null && onEditar(r.id)} />}
                                         <BotaoCompartilhar onClick={() => r.id != null && onCompartilhar(r.id)} />
+                                        {onVerOS && (r as any).tipo_atendimento !== "terceiro" && <BotaoOS onClick={() => r.id != null && onVerOS(r.id)} />}
                                         {visitaPermitida && onVisita && (
                                             <BotaoVisita status={statusVisita(r)} onClick={() => r.id != null && onVisita(r.id)} />
                                         )}

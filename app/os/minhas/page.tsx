@@ -3,6 +3,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ItensOSAjuste from "../components/ItensOSAjuste";
 import OSDoAtendimento, { AssinaturaModal } from "../components/OSDoAtendimento";
+import {
+    BarraFiltrosOS, CartoesOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, ResumoOS, SITUACOES_OS, TIPOS_OS,
+    baixarPdfDaOS, dataBROS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
+} from "../components/ListaOS";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -48,11 +52,15 @@ function situacao(l: any) {
 /* ====================================================================== */
 
 export default function MinhasOSPage() {
-    const [f, setF] = useState({ data_inicio: hoje().slice(0, 8) + "01", data_fim: hoje(), tipo: "" });
+    /* Padrão de 08/10/2026: filtros no botão Filtros (seleção múltipla), cartões numa linha e lista que cabe na tela. */
+    const [filtro, setFiltro] = useState<FiltroOS>(() => filtroInicial());
+    const [janelaFiltros, setJanelaFiltros] = useState(false);
     const [dados, setDados] = useState<any>(null);
     const [erro, setErro] = useState("");
+    const [aviso, setAviso] = useState("");
     const [loading, setLoading] = useState(true);
     const [aberta, setAberta] = useState<number | null>(null);
+    const [resumo, setResumo] = useState<any>(null);
     /* Janela "Ver OS" do Editar registro: /os/minhas?atendimento=<id> mostra só as OS daquele atendimento. */
     const [atendimentoDaUrl, setAtendimentoDaUrl] = useState<string | null>(null);
     useEffect(() => {
@@ -65,13 +73,13 @@ export default function MinhasOSPage() {
         setLoading(true);
         setErro("");
         try {
-            setDados((await osGet("minhas_os", f)).dados);
+            setDados((await osGet("minhas_os", paramsDoFiltro(filtro))).dados);
         } catch (e: any) {
             setErro(e?.message || "Não foi possível carregar suas OS.");
         } finally {
             setLoading(false);
         }
-    }, [f]);
+    }, [filtro]);
     useEffect(() => { void carregar(); }, [carregar]);
 
     const lista: any[] = dados?.os || [];
@@ -83,66 +91,78 @@ export default function MinhasOSPage() {
     }
     const emAberto = lista.filter((l) => l.status === "ABERTA").length;
     const assinadas = lista.filter((l) => l.status === "FECHADA");
+    const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS };
+    const totalLista = lista.reduce((a, l) => a + (l.status === "CONVERTIDA" ? 0 : Number(l.valor_total) || 0), 0);
+    const acompanhamento = (l: any) =>
+        l.status === "ABERTA" ? "Confirmar valores e colher assinatura" : l.saldo ? `Saldo ${brl(l.saldo)} (financeiro)` : l.nota_promissoria ? `NP ${brl(l.nota_promissoria.valor)}` : "—";
+    const tabela = (): TabelaExport => ({
+        titulo: "Minhas OS",
+        subtitulo: `${dataBROS(filtro.data_inicio)} a ${dataBROS(filtro.data_fim)} · ${lista.length} OS`,
+        cabecalho: ["OS", "Situação", "Tipo", "Falecido", "Aberta em", "Total", "Acompanhamento"],
+        linhas: lista.map((l) => [l.numero_os, situacaoDaOS(l).texto, l.tipo_rotulo, l.falecido || "—", dataBROS(l.criado_em), brl(l.valor_total), acompanhamento(l)]),
+        rodape: `Total da lista: ${brl(totalLista)}`,
+        arquivo: `minhas-os-${filtro.data_inicio}-a-${filtro.data_fim}`,
+    });
 
     return (
-        <main className="min-h-screen bg-[#F4F6F9] dark:bg-[#161C2A] p-6 text-[#313C55] dark:text-white">
-            <div className="mb-5">
-                <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Você vê apenas as OS que abriu</div>
-                <h1 className="text-2xl font-extrabold">Minhas OS</h1>
+        <main className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <div className="mx-auto flex max-w-6xl flex-col gap-3">
+                <BarraFiltrosOS filtro={filtro} mostrar={mostrar} onAbrirFiltros={() => setJanelaFiltros(true)} onMudar={setFiltro} exportar={itensExportar(tabela)} />
+
+                <CartoesOS
+                    itens={[
+                        { rotulo: "Em aberto", valor: String(emAberto), sub: "a finalizar", cor: "#F2CB3F" },
+                        { rotulo: "Assinadas", valor: String(assinadas.length), sub: brl(assinadas.reduce((a, l) => a + (Number(l.valor_total) || 0), 0)), cor: "#B3CE52" },
+                        { rotulo: "Convertidas", valor: String(lista.filter((l) => l.status === "CONVERTIDA").length), sub: "Prt → Prf", cor: "#C9CFD9" },
+                    ]}
+                />
+
+                {erro && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+                {aviso && <div className="rounded-lg border border-[#E3E8F0] bg-white p-3 text-sm font-semibold dark:border-white/[0.12] dark:bg-[#232B3F]">{aviso}</div>}
+
+                <ListaCompactaOS
+                    titulo={`${lista.length} OS`}
+                    total={lista.length ? brl(totalLista) : undefined}
+                    carregando={loading}
+                    vazio="Nenhuma OS no período."
+                    linhas={lista.map((l) => ({
+                        chave: l.os_id,
+                        numero: l.numero_os,
+                        situacao: situacaoDaOS(l),
+                        valor: brl(l.valor_total),
+                        nome: l.falecido || "—",
+                        meta: [l.tipo_rotulo, dataBROS(l.criado_em)].filter(Boolean).join(" · "),
+                        destaque: l.status === "ABERTA",
+                    }))}
+                    onAbrir={(id) => setAberta(Number(id))}
+                    onMais={(id) => setResumo(lista.find((l) => l.os_id === id))}
+                />
             </div>
 
-            <div className="mb-4 flex flex-col gap-3 lg:flex-row">
-                {[
-                    { r: "Em aberto", v: String(emAberto), s: "rascunhos a finalizar", c: "#F2CB3F" },
-                    { r: "Assinadas no período", v: String(assinadas.length), s: brl(assinadas.reduce((a, l) => a + (Number(l.valor_total) || 0), 0)), c: "#B3CE52" },
-                    { r: "Convertidas", v: String(lista.filter((l) => l.status === "CONVERTIDA").length), s: "Particular → Prefeitura", c: "#C9CFD9" },
-                ].map((k) => (
-                    <div key={k.r} className="flex-1 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4" style={{ borderTop: `4px solid ${k.c}` }}>
-                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">{k.r}</div>
-                        <div className="mt-1 text-2xl font-extrabold">{k.v}</div>
-                        <div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{k.s}</div>
-                    </div>
-                ))}
-            </div>
+            {janelaFiltros && (
+                <JanelaFiltrosOS valor={filtro} mostrar={mostrar} onFechar={() => setJanelaFiltros(false)} onAplicar={(f) => (setFiltro(f), setJanelaFiltros(false))} />
+            )}
 
-            <div className="mb-4 grid gap-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4 md:grid-cols-[160px_160px_1fr] md:items-end">
-                <input type="date" className={inputCls} value={f.data_inicio} onChange={(e) => setF({ ...f, data_inicio: e.target.value })} />
-                <input type="date" className={inputCls} value={f.data_fim} onChange={(e) => setF({ ...f, data_fim: e.target.value })} />
-                <select className={inputCls} value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })}>
-                    <option value="">Todos os tipos</option><option value="PRT">Particular</option><option value="SOC">Associado</option><option value="DIF_SOC">Dif.Soc</option>
-                    <option value="PRF">Prefeitura</option><option value="DIF_PRF">Dif.Prf</option><option value="COR">Coroa</option>
-                </select>
-            </div>
-
-            {erro && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
-
-            <div className="overflow-x-auto rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]">
-                <table className="w-full text-sm">
-                    <thead><tr className="border-b border-[#E1E5EC] dark:border-white/[0.12] text-left text-[11px] uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
-                        <th className="px-3 py-3">OS / falecido</th><th className="px-3">Tipo</th><th className="px-3">Situação</th><th className="px-3 text-right">Total</th><th className="px-3">Acompanhamento</th><th></th>
-                    </tr></thead>
-                    <tbody>
-                        {!loading && lista.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma OS no período.</td></tr>}
-                        {lista.map((l) => (
-                            <tr key={l.os_id} className={`border-b border-[#E1E5EC] dark:border-white/[0.12] ${l.status === "ABERTA" ? "bg-[#FFF8E1] dark:bg-[#F2CB3F]/10" : ""}`}>
-                                <td className="px-3 py-3"><b>{l.numero_os}</b><div className="text-xs text-[#6B7488] dark:text-[#AEB9CF]">{l.falecido || "—"}</div></td>
-                                <td className="px-3 text-xs">{l.tipo_rotulo}</td>
-                                <td className="px-3">{situacao(l)}</td>
-                                <td className="whitespace-nowrap px-3 text-right">{brl(l.valor_total)}</td>
-                                <td className="px-3 text-xs text-[#6B7488] dark:text-[#AEB9CF]">
-                                    {l.status === "ABERTA" ? <b className="text-[#313C55] dark:text-white">Confirmar valores e colher assinatura</b>
-                                        : l.saldo ? `saldo ${brl(l.saldo)} (financeiro)` : l.nota_promissoria ? `NP ${brl(l.nota_promissoria.valor)}` : "—"}
-                                </td>
-                                <td className="px-3 text-right">
-                                    <button type="button" onClick={() => setAberta(l.os_id)} className={`rounded-lg px-4 py-2 text-sm font-bold ${l.status === "ABERTA" ? "bg-[#313C55] text-white dark:bg-[#F2CB3F] dark:text-[#313C55]" : "border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F]"}`}>
-                                        {l.status === "ABERTA" ? "Continuar" : "Abrir"}
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            {resumo && (
+                <ResumoOS
+                    numero={resumo.numero_os}
+                    situacao={situacaoDaOS(resumo)}
+                    subtitulo={resumo.tipo_rotulo}
+                    onFechar={() => setResumo(null)}
+                    campos={[
+                        ["Falecido", resumo.falecido || "—"],
+                        ["Responsável", resumo.responsavel || "—"],
+                        ["Aberta em", dataBROS(resumo.criado_em)],
+                        ["Total", brl(resumo.valor_total), true],
+                        ["Acompanhamento", acompanhamento(resumo)],
+                    ]}
+                    acoes={[
+                        { rotulo: "PDF", icone: <Icone d={Ic.pdf} tam={18} />, onClick: () => void baixarPdfDaOS(resumo.os_id, resumo.numero_os).then((m) => m && setAviso(m)) },
+                        { rotulo: "Imprimir", icone: <Icone d={Ic.imprimir} tam={18} />, onClick: () => window.open(`${OS_API}?documento_os=1&os_id=${resumo.os_id}&formato=impressao`, "_blank") },
+                        { rotulo: resumo.status === "ABERTA" ? "Continuar" : "Abrir OS", icone: <Icone d={Ic.abrir} tam={18} />, primaria: true, onClick: () => (setAberta(Number(resumo.os_id)), setResumo(null)) },
+                    ]}
+                />
+            )}
 
             {aberta && <OSAgente osId={aberta} onFechar={() => { setAberta(null); void carregar(); }} />}
         </main>

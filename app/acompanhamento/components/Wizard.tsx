@@ -7,7 +7,7 @@ import CoroasAtendimentoEditor from "./CoroasAtendimentoEditor";
 import { Registro, CoroaAtendimentoItem } from "./types";
 import { proximaEtapaDoRegistro } from "./proximaEtapa";
 import { RascunhoOSContext, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } from "./OsAtendimento";
-import { situacaoTermo } from "./termos";
+import { NOME_TERMO, situacaoTermo, termosDoAtendimento } from "./termos";
 import { LOCAL_MEMORIAL, locaisCerimonia, localCerimoniaEfetivo } from "./constants";
 import { getLatestOfflineSignature } from "@/lib/offline/signatures";
 
@@ -999,50 +999,56 @@ function PainelEdicao({
 }) {
     const novo = !registro;
     const { servidor, noAparelho } = useSituacaoTermos(registro);
-    const termos = [
-        { tipo: "recebimento" as const, titulo: "Termo de recebimento de material" },
-        { tipo: "requisicao" as const, titulo: "Termo de requisição de veículo" },
-    ];
+    /*
+     * Termos (08/10/2026): só os que o atendimento tem (Assistência → recebimento de material; Sepultamento → requisição
+     * de veículo) e uma assinatura só para todos, numa linha "Termos do atendimento". Sem nenhum, o quadro não aparece.
+     */
+    const termos = termosDoAtendimento(registro);
+    const assinados = termos.filter((t) => servidor[t].assinado);
+    const noAparelhoPend = termos.filter((t) => !servidor[t].assinado && noAparelho[t]);
+    const pendentes = termos.filter((t) => !servidor[t].assinado && !noAparelho[t]);
+    const feito = termos.length > 0 && pendentes.length === 0;
+    const titulo = termos.length === 1 ? (termos[0] === "recebimento" ? "Termo de recebimento de material" : "Termo de requisição de veículo") : "Termos do atendimento";
+    const nomes = termos.map((t) => NOME_TERMO[t]).join(" · ");
+    const quem = assinados.length ? servidor[assinados[0]].nome : "";
+    const sub = pendentes.length === 0 && noAparelhoPend.length === 0
+        ? `Assinado${quem ? ` por ${quem}` : ""} · toque para ver`
+        : pendentes.length === 0
+            ? "Salvo no aparelho · aguardando envio"
+            : assinados.length || noAparelhoPend.length
+                ? `Falta assinar: ${pendentes.map((t) => NOME_TERMO[t]).join(" e ")}`
+                : "Pendente de assinatura";
+    const tipoAbrir = pendentes[0] ?? termos[0];
     return (
         <div className={`flex-col gap-2.5 ${novo ? "hidden lg:flex" : "flex"}`}>
             {/* Coluna compacta: Documentos, Resumo da OS e Próxima etapa cabem numa tela, sem rolagem. */}
-            <section className="rounded-[18px] border border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
-                <div className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
-                <div className="flex flex-col gap-1.5">
-                    {termos.map(({ tipo, titulo }) => {
-                        const sv = servidor[tipo];
-                        const local = !sv.assinado && noAparelho[tipo];
-                        const feito = sv.assinado || local;
-                        const sub = sv.assinado
-                            ? `Assinado${sv.nome ? ` por ${sv.nome}` : ""} · toque para ver`
-                            : local
-                                ? "Salvo no aparelho · aguardando envio"
-                                : "Pendente de assinatura";
-                        return (
-                            <button
-                                key={tipo}
-                                type="button"
-                                onClick={() => onDocumento?.(tipo)}
-                                disabled={!onDocumento || novo}
-                                aria-label={`${titulo}: ${sub}`}
-                                className={[
-                                    "flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border-[1.5px] px-3 py-1.5 text-left disabled:opacity-50",
-                                    feito
-                                        ? "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] hover:bg-[#E2EDBB] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/15 dark:text-white"
-                                        : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
-                                ].join(" ")}
-                            >
-                                <span className={feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : ""}>{feito ? <IcOk /> : <IcDoc />}</span>
-                                <span className="min-w-0 flex-1">
-                                    <span className="block text-[13px] font-bold leading-tight">{titulo}</span>
-                                    <span className={`block text-[11px] font-semibold leading-tight ${feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{sub}</span>
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-                {novo && <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
-            </section>
+            {novo || termos.length ? (
+                <section className="rounded-[18px] border border-[#E3E8F0] bg-white px-4 py-3 dark:border-white/[0.12] dark:bg-[#232B3F]" aria-label="Documentos">
+                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Documentos</div>
+                    {termos.length ? (
+                        <button
+                            type="button"
+                            onClick={() => tipoAbrir && onDocumento?.(tipoAbrir)}
+                            disabled={!onDocumento || novo}
+                            aria-label={`${titulo}: ${sub}`}
+                            className={[
+                                "flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border-[1.5px] px-3 py-1.5 text-left disabled:opacity-50",
+                                feito
+                                    ? "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] hover:bg-[#E2EDBB] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/15 dark:text-white"
+                                    : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                            ].join(" ")}
+                        >
+                            <span className={feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : ""}>{feito ? <IcOk /> : <IcDoc />}</span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[13px] font-bold leading-tight">{titulo}</span>
+                                {termos.length > 1 ? <span className="block text-[11px] font-semibold leading-tight text-[#5B6478] dark:text-[#AEB9CF]">{nomes} · uma assinatura</span> : null}
+                                <span className={`block text-[11px] font-semibold leading-tight ${feito ? "text-[#5C7A12] dark:text-[#B3CE52]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{sub}</span>
+                            </span>
+                        </button>
+                    ) : null}
+                    {novo && <p className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">Os termos ficam disponíveis depois que o registro for salvo.</p>}
+                </section>
+            ) : null}
 
             {resumoOS}
 

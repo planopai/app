@@ -4,6 +4,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
+import { NOME_TERMO, termosAssinadosJuntos, type TipoTermo } from "./termos";
 import { browserSaysOnline } from "@/lib/offline/session";
 import {
     signatureToDataUrl,
@@ -90,6 +91,14 @@ export default function SignatureModal({
 
     /** Termo montado (imagem) para mostrar quando ele já está assinado. */
     const [termoPreview, setTermoPreview] = useState<string>("");
+    /** Um termo montado por tipo assinado junto (mesma ordem de `juntos`). */
+    const [termosPreview, setTermosPreview] = useState<string[]>([]);
+    /*
+     * Uma assinatura para os termos do atendimento (08/10/2026): o termo escolhido e os outros que o atendimento tem
+     * e ainda não foram assinados. A mesma assinatura (nome, CPF e imagem) é gravada em cada termo, nos campos que já
+     * existem (assinatura_responsavel e assinatura_requerente), pela mesma fila do aparelho.
+     */
+    const [juntos, setJuntos] = useState<TipoTermo[]>([tipo]);
     /** Assinatura só no aparelho (ainda não enviada ao servidor). */
     const [pendenteEnvio, setPendenteEnvio] = useState(false);
 
@@ -107,6 +116,8 @@ export default function SignatureModal({
         setStep(0);
         setMsg(null);
         setSaving(false);
+        // Fixa ao abrir: depois de salvar, o registro volta do servidor já assinado e a lista não pode encolher.
+        setJuntos(termosAssinadosJuntos(registro, tipo));
         setPaths([]);
         setAssinaturaB64("");
         setUrlPublica("");
@@ -379,6 +390,15 @@ export default function SignatureModal({
                 cpf: cpfDigits,
                 dataUrl: dataUrlToStore,
             });
+            for (const outro of juntos.filter((t) => t !== tipo)) {
+                await saveOfflineSignature({
+                    recordId: String(registro.id),
+                    kind: outro,
+                    name: nome.trim(),
+                    cpf: cpfDigits,
+                    dataUrl: dataUrlToStore,
+                });
+            }
 
             onSaved(undefined);
             setStep(3);
@@ -575,7 +595,7 @@ export default function SignatureModal({
 
 
     /** Monta o termo (imagem) com a assinatura. Devolve o dataURL, ou "" se faltar nome, CPF ou assinatura. */
-    async function gerarTermoDataUrl(format: "image/png" | "image/jpeg" = "image/png"): Promise<string> {
+    async function gerarTermoDataUrl(format: "image/png" | "image/jpeg" = "image/png", t: TipoTermo = tipo): Promise<string> {
         let assinaturaUsar = assinaturaB64;
         if (!assinaturaUsar && urlPublica) {
             // fallback de segurança: busca a assinatura via proxy agora
@@ -608,7 +628,7 @@ export default function SignatureModal({
         ctx.textBaseline = "top";
 
         ctx.font = "bold 36px Helvetica, Arial, sans-serif";
-        const titulo = tipo === "recebimento"
+        const titulo = t === "recebimento"
             ? "TERMO DE RECEBIMENTO DE MATERIAL PARA ASSISTÊNCIA"
             : "REQUISIÇÃO DE VEÍCULO FUNERÁRIO PARA SEPULTAMENTO";
         const tW = ctx.measureText(titulo).width;
@@ -629,7 +649,7 @@ export default function SignatureModal({
             y += used + 6;
         };
 
-        if (tipo === "recebimento") {
+        if (t === "recebimento") {
             linha("Responsável", nome);
             linha("CPF", formatCpf(cpf));
             linha("Falecido(a)", registro?.falecido || "");
@@ -697,7 +717,7 @@ export default function SignatureModal({
         } catch { /* ok */ }
 
         ctx.font = "normal 20px Helvetica, Arial, sans-serif";
-        const rotulo = tipo === "recebimento" ? "Responsável pelo recebimento (assinatura)" : "Requerente (assinatura)";
+        const rotulo = t === "recebimento" ? "Responsável pelo recebimento (assinatura)" : "Requerente (assinatura)";
         const rotW = ctx.measureText(rotulo).width;
         ctx.fillText(rotulo, center - rotW / 2, LINE_Y + 10);
 
@@ -714,14 +734,14 @@ export default function SignatureModal({
         return c.toDataURL(format, format === "image/jpeg" ? 0.92 : undefined);
     }
 
-    async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png") {
-        const dataUrl = await gerarTermoDataUrl(format);
+    async function baixarTermoImagem(format: "image/png" | "image/jpeg" = "image/png", t: TipoTermo = tipo) {
+        const dataUrl = await gerarTermoDataUrl(format, t);
         if (!dataUrl) {
             setMsg({ text: "Assine e salve primeiro para liberar o download do termo.", ok: false });
             return;
         }
         const a = document.createElement("a");
-        const tipoNome = tipo === "recebimento" ? "termo-recebimento" : "termo-requisicao";
+        const tipoNome = t === "recebimento" ? "termo-recebimento" : "termo-requisicao";
         const base = (registro?.falecido || "documento").toString().trim().replace(/\s+/g, "_").toLowerCase();
         a.download = `${tipoNome}-${base}.${format === "image/png" ? "png" : "jpg"}`;
         a.href = dataUrl;
@@ -732,8 +752,10 @@ export default function SignatureModal({
     useEffect(() => {
         if (!open || step !== 3) return;
         let vivo = true;
-        void gerarTermoDataUrl("image/png").then((u) => {
-            if (vivo) setTermoPreview(u);
+        void Promise.all(juntos.map((t) => gerarTermoDataUrl("image/png", t))).then((us) => {
+            if (!vivo) return;
+            setTermoPreview(us[0] || "");
+            setTermosPreview(us);
         });
         return () => {
             vivo = false;
@@ -746,9 +768,16 @@ export default function SignatureModal({
     return (
         <Modal open={open} onClose={onClose} ariaLabel="Assinatura" maxWidth={1024}>
             <h3 className="text-lg font-semibold">
-                {tipo === "recebimento" ? "Assinar Termo de Recebimento" : "Assinar Termo de Requisição de Veículo"}
+                {juntos.length > 1
+                    ? "Assinar os termos do atendimento"
+                    : tipo === "recebimento" ? "Assinar Termo de Recebimento" : "Assinar Termo de Requisição de Veículo"}
             </h3>
 
+            {juntos.length > 1 ? (
+                <div className="mt-1 text-sm font-semibold text-[#313C55] dark:text-white">
+                    Uma assinatura vale para: {juntos.map((t) => NOME_TERMO[t]).join(" e ")}.
+                </div>
+            ) : null}
             <div className="mt-2 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                 {step === 0 && "Passo 1 de 3 - Identificação: Nome"}
                 {step === 1 && "Passo 2 de 3 - Identificação: CPF"}
@@ -870,22 +899,29 @@ export default function SignatureModal({
                         </div>
                     </div>
 
-                    <div className="mt-3 max-h-[60vh] overflow-auto rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]">
+                    <div className="mt-3 flex max-h-[60vh] flex-col gap-3 overflow-auto rounded-xl border border-[#E3E8F0] bg-white dark:border-white/[0.12]">
                         {termoPreview ? (
-                            <img src={termoPreview} alt={tipo === "recebimento" ? "Termo de recebimento assinado" : "Termo de requisição assinado"} className="block w-full" />
+                            juntos.map((t, i) =>
+                                termosPreview[i] ? (
+                                    <img key={t} src={termosPreview[i]} alt={t === "recebimento" ? "Termo de recebimento assinado" : "Termo de requisição assinado"} className="block w-full" />
+                                ) : null,
+                            )
                         ) : (
                             <p className="p-6 text-center text-sm text-[#5B6478]">Montando o termo assinado…</p>
                         )}
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                            className="rounded-xl bg-[#313C55] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
-                            disabled={!termoPreview}
-                            onClick={() => baixarTermoImagem("image/png")}
-                        >
-                            Baixar termo (PNG)
-                        </button>
+                        {juntos.map((t) => (
+                            <button
+                                key={t}
+                                className="rounded-xl bg-[#313C55] px-4 py-2.5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
+                                disabled={!termoPreview}
+                                onClick={() => baixarTermoImagem("image/png", t)}
+                            >
+                                {juntos.length > 1 ? `Baixar ${NOME_TERMO[t].toLowerCase()} (PNG)` : "Baixar termo (PNG)"}
+                            </button>
+                        ))}
                         <button
                             className="rounded-xl border-[1.5px] border-[#C9D1DE] px-4 py-2.5 text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:text-white dark:hover:bg-white/10"
                             onClick={() => {

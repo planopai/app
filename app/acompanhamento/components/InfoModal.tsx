@@ -3,7 +3,7 @@
 import React from "react";
 import Modal from "./Modal";
 import type { Registro } from "./types";
-import { situacaoTermo } from "./termos";
+import { situacaoTermo, termosDoAtendimento } from "./termos";
 
 export default function InfoModal({
     open,
@@ -53,8 +53,9 @@ export default function InfoModal({
 
             <div className="my-4 h-px bg-[#E3E8F0] dark:bg-white/15" />
 
-            {/* AÇÕES DE ASSINATURA */}
+            {/* AÇÕES DE ASSINATURA — só os termos que o atendimento tem; uma assinatura vale para os pendentes (08/10/2026) */}
             <div className="grid gap-2">
+                {termosDoAtendimento(registro).includes("recebimento") && (<>
                 <button
                     className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#313C55] hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
                     onClick={() => {
@@ -72,6 +73,8 @@ export default function InfoModal({
                         ✓ Termo de recebimento assinado — toque no termo para ver ou baixar
                     </p>
                 )}
+                </>)}
+                {termosDoAtendimento(registro).includes("requisicao") && (<>
 
                 <button
                     className="w-full rounded-md border border-transparent px-3 py-2 text-sm text-left text-white bg-[#313C55] hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
@@ -90,6 +93,7 @@ export default function InfoModal({
                         ✓ Termo de requisição assinado — toque no termo para ver ou baixar
                     </p>
                 )}
+                </>)}
             </div>
         </Modal>
     );

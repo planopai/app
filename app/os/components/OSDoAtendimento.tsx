@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ItensOSAjuste from "./ItensOSAjuste";
+import { baixarPdfDaOS } from "./ListaOS";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -84,9 +85,28 @@ function IconeAjuste() {
 
 /* ---------------------------------------------------------------- Folha (iframe) ---------------------------------------------------------------- */
 
+/** Largura da folha no servidor (720 px de papel + margens): a folha é montada nessa largura e reduzida para caber na tela. */
+const LARGURA_FOLHA = 752;
+
 function FolhaOS({ osId, numero, versao, onAjuste }: { osId: number; numero: string; versao: number; onAjuste: (alvo: string) => void }) {
     const ref = useRef<HTMLIFrameElement>(null);
+    const caixa = useRef<HTMLDivElement>(null);
     const [altura, setAltura] = useState(1100);
+    /* Folha enquadrada (08/10/2026): no celular a folha inteira cabe na largura da tela, como uma página (sem rolar para o lado). */
+    const [escala, setEscala] = useState(1);
+    useEffect(() => {
+        const el = caixa.current;
+        if (!el) return;
+        const medir = () => setEscala(Math.min(1, el.clientWidth / LARGURA_FOLHA));
+        medir();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(medir) : null;
+        ro?.observe(el);
+        window.addEventListener("resize", medir);
+        return () => {
+            ro?.disconnect();
+            window.removeEventListener("resize", medir);
+        };
+    }, []);
     useEffect(() => {
         const ouvir = (e: MessageEvent) => {
             if (e.origin !== ORIGEM_API || e.source !== ref.current?.contentWindow) return;
@@ -98,13 +118,15 @@ function FolhaOS({ osId, numero, versao, onAjuste }: { osId: number; numero: str
         return () => window.removeEventListener("message", ouvir);
     }, [onAjuste]);
     return (
-        <iframe
-            ref={ref}
-            title={`Folha da OS ${numero}`}
-            src={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar&ajuste=1&_=${versao}`}
-            style={{ height: altura }}
-            className="block w-full rounded-xl border border-[#E1E5EC] bg-white dark:border-white/[0.12]"
-        />
+        <div ref={caixa} className="w-full overflow-hidden rounded-xl border border-[#E1E5EC] bg-white dark:border-white/[0.12]" style={{ height: Math.ceil(altura * escala) }}>
+            <iframe
+                ref={ref}
+                title={`Folha da OS ${numero}`}
+                src={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar&ajuste=1&_=${versao}`}
+                style={{ width: escala < 1 ? LARGURA_FOLHA : "100%", height: altura, transform: escala < 1 ? `scale(${escala})` : undefined, transformOrigin: "0 0" }}
+                className="block border-0 bg-white"
+            />
+        </div>
     );
 }
 
@@ -120,6 +142,7 @@ function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; nume
     const [assinar, setAssinar] = useState(false);
     const [versao, setVersao] = useState(0);
     const [pedido, setPedido] = useState<{ alvo: string; n: number } | null>(null);
+    const [gerandoPdf, setGerandoPdf] = useState(false);
 
     const carregar = useCallback(async () => {
         try {
@@ -203,8 +226,25 @@ function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; nume
                         ) : null}
                         <span className="text-[#5B6478] dark:text-[#AEB9CF]">{info}</span>
                     </div>
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                         <a className={BTN_SEC} target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=impressao`}>Imprimir</a>
+                        {/* PDF para mandar ao cliente: compartilhar no celular, baixar no computador (fica no histórico da OS) */}
+                        <button
+                            type="button"
+                            className={BTN_SEC}
+                            disabled={gerandoPdf}
+                            onClick={async () => {
+                                setGerandoPdf(true);
+                                try {
+                                    const m = await baixarPdfDaOS(osId, numero);
+                                    if (m) setMsg(m);
+                                } finally {
+                                    setGerandoPdf(false);
+                                }
+                            }}
+                        >
+                            {gerandoPdf ? "Gerando…" : "PDF"}
+                        </button>
                         {aberta && particular ? (
                             <button type="button" className={BTN_SEC} onClick={() => setPedido((p) => ({ alvo: "geral", n: (p?.n ?? 0) + 1 }))}>
                                 <IconeAjuste /> Desconto geral
@@ -317,11 +357,12 @@ export default function OSDoAtendimento({
         >
             <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[#E3E8F0] px-4 py-3 dark:border-white/[0.12] sm:px-5">
                 <div className="min-w-0 flex-1">
-                    <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]">Atendimento nº {atendimentoId}</div>
-                    <h2 className="text-xl font-extrabold leading-tight">OS do atendimento</h2>
+                    <h2 className="truncate text-lg font-extrabold leading-tight sm:text-xl">
+                        OS do atendimento <span className="text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">· Nº {atendimentoId}</span>
+                    </h2>
                 </div>
                 {lista && lista.length ? (
-                    <div role="tablist" aria-label="OS do atendimento" className="flex flex-wrap gap-1 rounded-2xl bg-[#EEF2F7] p-1 dark:bg-[#1C2334]">
+                    <div role="tablist" aria-label="OS do atendimento" className={`order-last grid w-full gap-1 rounded-2xl bg-[#EEF2F7] p-1 dark:bg-[#1C2334] sm:order-none sm:flex sm:w-auto sm:flex-wrap ${lista.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                         {lista.map((o) => (
                             <button
                                 key={o.id}

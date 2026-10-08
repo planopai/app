@@ -95,6 +95,18 @@ export function BotaoEditar({ onClick, href, grande }: { onClick?: () => void; h
     );
 }
 
+/** OS do atendimento (documento com cifrão): abre direto a folha da OS. Azul aço translúcido, sem ciano (08/10/2026). */
+export const IcOS = () => (<Ic><path d="M14 3H6v18h12V7z" /><path d="M14 3v4h4" /><path d="M12 9.5v8" /><path d="M14 11.3c-.4-.6-1.1-.9-2-.9-1.2 0-2 .6-2 1.4 0 1.9 4 1 4 2.9 0 .8-.8 1.4-2 1.4-.9 0-1.7-.4-2.1-1" /></Ic>);
+export const COR_OS = "border-[1.5px] border-[#3D6A99] bg-[#E9EFF6] text-[#3D6A99] hover:bg-[#DCE5F0] dark:bg-[#3D6A99]/20 dark:text-[#A9C3E0] dark:hover:bg-[#3D6A99]/30";
+
+export function BotaoOS({ onClick, grande }: { onClick: () => void; grande?: boolean }) {
+    return (
+        <button type="button" className={`${btnBase(grande)} ${COR_OS}`} onClick={onClick} title="Ver a OS do atendimento" aria-label="Ver a OS do atendimento">
+            <IcOS />
+        </button>
+    );
+}
+
 export function BotaoCompartilhar({ onClick, grande }: { onClick: () => void; grande?: boolean }) {
     return (
         <button type="button" className={`${btnBase(grande)} ${COR_COMPARTILHAR}`} onClick={onClick} title="Compartilhar" aria-label="Compartilhar atendimento">
