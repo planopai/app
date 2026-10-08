@@ -4,7 +4,7 @@
  * Padrão das telas de lista da OS (Financeiro da OS, Minhas OS, Relatório de OS) — prévia aprovada em 08/10/2026:
  *  - botão Filtros (com o número de filtros ativos) que abre a janela de filtros; seleção múltipla em Tipo, Situação,
  *    Agente e Convênio (campo "escreve e a lista filtra"); filtros ativos em etiquetas com ✕ logo abaixo;
- *  - botão Exportar: imprimir a lista, PDF (pela impressão do aparelho) e planilha (Excel), só a lista filtrada;
+ *  - botão Exportar: imprimir a lista, baixar PDF direto (jsPDF) e planilha (Excel), só a lista filtrada;
  *  - cartões compactos em grade (2 colunas no celular);
  *  - lista que cabe na largura da tela (sem rolagem para o lado) com o botão ⋮ (vertical) que abre o resumo da OS.
  * Também tem o PDF da folha da OS para mandar ao cliente (baixarPdfDaOS).
@@ -181,11 +181,10 @@ function Chips({ opcoes, marcados, onTrocar }: { opcoes: Opcao[]; marcados: stri
                         type="button"
                         aria-pressed={on}
                         onClick={() => onTrocar(on ? marcados.filter((x) => x !== o.v) : [...marcados, o.v])}
-                        className={`inline-flex h-10 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-sm font-bold ${
-                            on
+                        className={`inline-flex h-10 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-sm font-bold ${on
                                 ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
                                 : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-white"
-                        }`}
+                            }`}
                     >
                         {on ? <Icone d={Ic.check} tam={16} /> : null}
                         {o.r}
@@ -362,8 +361,7 @@ export function exportarPlanilha(t: TabelaExport) {
 }
 
 /**
- * Imprimir a lista (A4 deitado). O PDF sai pela mesma folha: na janela de impressão, "Salvar como PDF"
- * (no iPhone: Compartilhar → Imprimir → abrir a prévia e compartilhar como PDF).
+ * Imprimir a lista (A4 deitado). A impressão continua separada do PDF direto.
  */
 export function imprimirLista(t: TabelaExport, comoPdf = false) {
     const esc = (s: any) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
@@ -403,10 +401,73 @@ ${t.rodape ? `<div class="rod">${esc(t.rodape)}</div>` : ""}<div class="sub" sty
     }, 400);
 }
 
+/** Gera e baixa a lista filtrada como PDF real, sem abrir a janela de impressão. */
+export async function exportarPDF(t: TabelaExport): Promise<void> {
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+    ]);
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const largura = doc.internal.pageSize.getWidth();
+    const altura = doc.internal.pageSize.getHeight();
+    const margem = 12;
+
+    doc.setFillColor(49, 60, 85);
+    doc.rect(0, 0, largura * 0.4, 3, "F");
+    doc.setFillColor(179, 206, 82);
+    doc.rect(largura * 0.4, 0, largura * 0.25, 3, "F");
+    doc.setFillColor(242, 203, 63);
+    doc.rect(largura * 0.65, 0, largura * 0.2, 3, "F");
+    doc.setFillColor(61, 106, 153);
+    doc.rect(largura * 0.85, 0, largura * 0.15, 3, "F");
+
+    doc.setTextColor(49, 60, 85);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.text(t.titulo, margem, 14);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(t.subtitulo, margem, 21);
+
+    autoTable(doc, {
+        head: [t.cabecalho],
+        body: t.linhas.map((linha) => linha.map((valor) => String(valor ?? ""))),
+        startY: 27,
+        margin: { left: margem, right: margem, top: 12, bottom: 16 },
+        theme: "striped",
+        styles: { font: "helvetica", fontSize: 8, cellPadding: 2.2, overflow: "linebreak", textColor: [49, 60, 85] },
+        headStyles: { fillColor: [49, 60, 85], textColor: [255, 255, 255], fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [244, 246, 249] },
+        didDrawPage: (dados) => {
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(90, 100, 120);
+            doc.text(`Sistema PAI · ${new Date().toLocaleString("pt-BR")}`, margem, altura - 7);
+            doc.text(`Página ${dados.pageNumber}`, largura - margem, altura - 7, { align: "right" });
+        },
+    });
+
+    if (t.rodape) {
+        const ultimaTabela = (doc as typeof doc & { lastAutoTable?: { finalY?: number } }).lastAutoTable;
+        let y = (ultimaTabela?.finalY ?? 27) + 8;
+        if (y > altura - 19) {
+            doc.addPage();
+            y = 17;
+        }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(49, 60, 85);
+        doc.text(t.rodape, largura - margem, y, { align: "right" });
+    }
+
+    const nomeSeguro = t.arquivo.replace(/[\\/:*?"<>|]/g, "-") || "lista-os";
+    doc.save(`${nomeSeguro}.pdf`);
+}
+
 export function itensExportar(t: () => TabelaExport): ItemExportar[] {
     return [
         { icone: <Icone d={Ic.imprimir} />, rotulo: "Imprimir lista", sub: "A4 deitado", onClick: () => imprimirLista(t()) },
-        { icone: <Icone d={Ic.pdf} />, rotulo: "PDF", sub: "pela impressão: Salvar como PDF", onClick: () => imprimirLista(t(), true) },
+        { icone: <Icone d={Ic.pdf} />, rotulo: "PDF", sub: "Baixar PDF diretamente", onClick: () => { void exportarPDF(t()).catch((erro) => { console.error("Erro ao exportar PDF da lista:", erro); window.alert("Não foi possível gerar o PDF da lista."); }); } },
         { icone: <Icone d={Ic.planilha} />, rotulo: "Planilha (Excel)", sub: `${t().arquivo}.csv`, onClick: () => exportarPlanilha(t()) },
     ];
 }
@@ -429,12 +490,10 @@ export async function baixarPdfDaOS(osId: number | string, numero?: string): Pro
         return "Sem conexão com o gerador de PDF: abri a folha para salvar como PDF pela impressão.";
     }
     const tipo = res.headers.get("Content-Type") || "";
-    if (!res.ok || !tipo.includes("pdf")) {
+    if (!res.ok || !tipo.toLowerCase().includes("application/pdf")) {
         const j = await res.json().catch(() => null);
-        if (res.status === 501 || !res.ok) {
-            imprimir();
-            return j?.msg ? `${j.msg}` : "Abri a folha para salvar como PDF pela impressão.";
-        }
+        imprimir();
+        return j?.msg || "O servidor não devolveu um PDF válido. Abri a folha para impressão.";
     }
     const blob = await res.blob();
     const arquivo = new File([blob], nome, { type: "application/pdf" });
