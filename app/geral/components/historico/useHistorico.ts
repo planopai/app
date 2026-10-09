@@ -1,16 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet } from "../api";
 import { clampInt } from "../formato";
 import { brl } from "../produtos/useAbaProdutos";
-import { normalizar } from "../ui/BuscaLista";
 import type { HistoricoResp, HistoricoRow } from "../tipos";
 import type { EstoqueDados } from "../useEstoqueDados";
 
 // Histórico por lançamento (repaginada): cada linha é um lançamento com os seus itens.
 // Junta pelo código do lançamento (TRF-, ENT-, AJ-), pela requisição (REQ-), pelo atendimento e pela confecção;
 // os movimentos antigos sem código continuam juntos pelo mesmo segundo, tipo, pessoas, locais e observação.
+// Período (De/Até) e paginação (09/10/2026): o servidor filtra por data, tipo e busca e devolve uma página
+// de POR_PAGINA movimentos com o total; antes a tela pegava só os 500 mais recentes.
 
 type Tipo = "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "CONFECCAO" | "AJUSTE";
 type Item = { n: string; q: number | null; local?: string; cu?: number | null };
@@ -18,6 +19,30 @@ type Lancamento = { chave: string; cod: string; sub?: string; t: Tipo; o: string
 
 const ROTULO: Record<Tipo, string> = { ENTRADA: "Entrada", SAIDA: "Saída", TRANSFERENCIA: "Transferência", CONFECCAO: "Confecção", AJUSTE: "Ajuste" };
 const TIPOS: Array<"TODOS" | Tipo> = ["TODOS", "ENTRADA", "SAIDA", "TRANSFERENCIA", "CONFECCAO", "AJUSTE"];
+
+const POR_PAGINA = 100;
+type Periodo = "HOJE" | "7D" | "MES" | "TUDO";
+const PERIODOS: Array<[Periodo, string]> = [
+    ["HOJE", "Hoje"],
+    ["7D", "7 dias"],
+    ["MES", "Mês"],
+    ["TUDO", "Tudo"],
+];
+type Filtros = { tipo: "TODOS" | Tipo; busca: string; ini: string; fim: string; offset: number };
+type RespPaginada = HistoricoResp & { total?: number };
+
+// Data local (AAAA-MM-DD). Não usa toISOString: depois das 21h na Bahia ele já daria o dia seguinte.
+const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function intervalo(p: Periodo): { ini: string; fim: string } {
+    const hoje = new Date();
+    if (p === "TUDO") return { ini: "", fim: "" };
+    if (p === "HOJE") return { ini: isoLocal(hoje), fim: isoLocal(hoje) };
+    if (p === "7D") return { ini: isoLocal(new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 6)), fim: isoLocal(hoje) };
+    return { ini: isoLocal(new Date(hoje.getFullYear(), hoje.getMonth(), 1)), fim: isoLocal(hoje) };
+}
+// O chip Ajuste também mostra os cadastros de produto (agrupar() trata CADASTRO_PRODUTO como AJUSTE).
+const tipoApi = (t: Filtros["tipo"]) => (t === "TODOS" ? undefined : t === "AJUSTE" ? "AJUSTE,CADASTRO_PRODUTO" : t);
+const milhar = (x: number) => x.toLocaleString("pt-BR");
 
 const segundo = (iso: string) => String(iso || "").slice(0, 19);
 const quando = (iso: string) => {
@@ -91,81 +116,150 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
 export function useHistorico(n: EstoqueDados) {
     void n;
     const [rows, setRows] = useState<HistoricoRow[]>([]);
+    const [total, setTotal] = useState<number | null>(null);
     const [carregando, setCarregando] = useState(false);
     const [erro, setErro] = useState("");
-    const [tipo, setTipo] = useState<"TODOS" | Tipo>("TODOS");
-    const [busca, setBusca] = useState("");
     const [aberto, setAberto] = useState("");
+    const [f, setF] = useState<Filtros>(() => ({ tipo: "TODOS", busca: "", ...intervalo("MES"), offset: 0 }));
+    const fRef = useRef(f);
+    const pedido = useRef(0); // só a última consulta vale (evita a resposta antiga chegar por cima da nova)
+    const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    async function carregar() {
+    useEffect(() => () => {
+        if (espera.current) clearTimeout(espera.current);
+    }, []);
+
+    async function buscar(nf: Filtros) {
+        // De depois do Até: troca os dois em vez de mostrar lista vazia.
+        if (nf.ini && nf.fim && nf.ini > nf.fim) nf = { ...nf, ini: nf.fim, fim: nf.ini };
+        fRef.current = nf;
+        setF(nf);
+        const id = ++pedido.current;
         setCarregando(true);
         setErro("");
         try {
-            const r = await apiGet<HistoricoResp>({ historico: 1, limit: 500 });
+            const r = await apiGet<RespPaginada>({
+                historico: 1,
+                limit: POR_PAGINA,
+                offset: nf.offset,
+                tipo: tipoApi(nf.tipo),
+                q: nf.busca.trim() || undefined,
+                data_ini: nf.ini || undefined,
+                data_fim: nf.fim || undefined,
+            });
+            if (id !== pedido.current) return;
             if (!r.ok) throw new Error(r.msg || "Falha ao carregar o histórico.");
             setRows(r.rows || []);
+            // Sem "total", o materiais_gerais.php do servidor ainda é o antigo (sem período nem páginas).
+            setTotal(typeof r.total === "number" ? r.total : null);
+            setAberto("");
         } catch (e: unknown) {
+            if (id !== pedido.current) return;
             setErro(e instanceof Error ? e.message : "Erro ao carregar o histórico.");
         } finally {
-            setCarregando(false);
+            if (id === pedido.current) setCarregando(false);
         }
     }
 
-    const lancamentos = useMemo(() => agrupar(rows), [rows]);
-    const termo = normalizar(busca).trim();
+    // Chamado pela página ao abrir a aba e no Atualizar: recarrega a página atual com os filtros atuais.
+    async function carregar() {
+        if (espera.current) clearTimeout(espera.current);
+        await buscar(fRef.current);
+    }
 
-    const histRows = lancamentos
-        .filter((l) => tipo === "TODOS" || l.t === tipo)
-        .filter((l) => !termo || normalizar(`${l.cod} ${l.sub || ""} ${l.o} ${l.d} ${l.u} ${l.itens.map((i) => i.n).join(" ")}`).includes(termo))
-        .map((l) => {
-            const comES = l.t === "CONFECCAO" || (l.t === "AJUSTE" && l.itens.some((i) => i.q != null));
-            const comLocal = l.itens.some((i) => !!i.local);
-            const comCusto = l.t === "ENTRADA" && l.itens.some((i) => i.cu != null);
-            const totQ = l.itens.reduce((a, i) => a + (i.q || 0), 0);
-            const totV = l.itens.reduce((a, i) => a + (i.q || 0) * (i.cu || 0), 0);
-            return {
-                chave: l.chave,
-                cod: l.cod,
-                tc: `t-${l.t}`,
-                tl: ROTULO[l.t],
-                rota: l.sub ? l.sub : l.o && l.d ? `${l.o} → ${l.d}` : l.d || l.o,
-                comES,
-                comLocal: comLocal && !comES,
-                comCusto: comCusto && !comES,
-                semLocal: !comES && !comLocal && !comCusto,
-                totQ: String(totQ),
-                totV: brl(totV),
-                temFrete: l.frete > 0,
-                frete: brl(l.frete),
-                u: l.u,
-                dt: quando(l.quando),
-                n: `${l.itens.length} ${l.itens.length === 1 ? "item" : "itens"}`,
-                resumo: l.itens.slice(0, 2).map((i) => i.n).join(", ") + (l.itens.length > 2 ? ` e mais ${l.itens.length - 2}` : ""),
-                aberto: aberto === l.chave,
-                go: () => setAberto(aberto === l.chave ? "" : l.chave),
-                secs: [
-                    { t: "Entrada", itens: l.itens.filter((i) => (i.q || 0) > 0).map((i) => ({ n: i.n, q: String(i.q) })) },
-                    { t: "Saída", itens: l.itens.filter((i) => (i.q || 0) < 0).map((i) => ({ n: i.n, q: String(-(i.q || 0)) })) },
-                ].filter((s) => s.itens.length),
-                itens: l.itens.map((i) => ({
-                    n: i.n,
-                    local: i.local || "",
-                    cu: i.cu != null ? brl(i.cu) : "",
-                    tot: i.cu != null ? brl(i.cu * (i.q || 0)) : "",
-                    q: i.q == null ? "—" : String(i.q),
-                })),
-            };
-        });
+    // Qualquer filtro novo volta para a primeira página.
+    const filtrar = (mud: Partial<Filtros>) => void buscar({ ...fRef.current, ...mud, offset: 0 });
+
+    const onBusca = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const valor = e.target.value;
+        fRef.current = { ...fRef.current, busca: valor };
+        setF(fRef.current);
+        if (espera.current) clearTimeout(espera.current);
+        espera.current = setTimeout(() => filtrar({ busca: valor }), 400);
+    };
+
+    const paginas = total == null ? 1 : Math.max(1, Math.ceil(total / POR_PAGINA));
+    const pagina = Math.floor(f.offset / POR_PAGINA) + 1;
+    const irPagina = (p: number) => {
+        const alvo = Math.min(Math.max(1, p), paginas);
+        if (alvo !== pagina) void buscar({ ...fRef.current, offset: (alvo - 1) * POR_PAGINA });
+    };
+    const periodoAtual = (PERIODOS.find(([k]) => {
+        const i = intervalo(k);
+        return i.ini === f.ini && i.fim === f.fim;
+    }) || [null])[0];
+
+    const lancamentos = useMemo(() => agrupar(rows), [rows]);
+
+    // Tipo e busca já vêm filtrados do servidor; aqui só monta as linhas.
+    const histRows = lancamentos.map((l) => {
+        const comES = l.t === "CONFECCAO" || (l.t === "AJUSTE" && l.itens.some((i) => i.q != null));
+        const comLocal = l.itens.some((i) => !!i.local);
+        const comCusto = l.t === "ENTRADA" && l.itens.some((i) => i.cu != null);
+        const totQ = l.itens.reduce((a, i) => a + (i.q || 0), 0);
+        const totV = l.itens.reduce((a, i) => a + (i.q || 0) * (i.cu || 0), 0);
+        return {
+            chave: l.chave,
+            cod: l.cod,
+            tc: `t-${l.t}`,
+            tl: ROTULO[l.t],
+            rota: l.sub ? l.sub : l.o && l.d ? `${l.o} → ${l.d}` : l.d || l.o,
+            comES,
+            comLocal: comLocal && !comES,
+            comCusto: comCusto && !comES,
+            semLocal: !comES && !comLocal && !comCusto,
+            totQ: String(totQ),
+            totV: brl(totV),
+            temFrete: l.frete > 0,
+            frete: brl(l.frete),
+            u: l.u,
+            dt: quando(l.quando),
+            n: `${l.itens.length} ${l.itens.length === 1 ? "item" : "itens"}`,
+            resumo: l.itens.slice(0, 2).map((i) => i.n).join(", ") + (l.itens.length > 2 ? ` e mais ${l.itens.length - 2}` : ""),
+            aberto: aberto === l.chave,
+            go: () => setAberto(aberto === l.chave ? "" : l.chave),
+            secs: [
+                { t: "Entrada", itens: l.itens.filter((i) => (i.q || 0) > 0).map((i) => ({ n: i.n, q: String(i.q) })) },
+                { t: "Saída", itens: l.itens.filter((i) => (i.q || 0) < 0).map((i) => ({ n: i.n, q: String(-(i.q || 0)) })) },
+            ].filter((s) => s.itens.length),
+            itens: l.itens.map((i) => ({
+                n: i.n,
+                local: i.local || "",
+                cu: i.cu != null ? brl(i.cu) : "",
+                tot: i.cu != null ? brl(i.cu * (i.q || 0)) : "",
+                q: i.q == null ? "—" : String(i.q),
+            })),
+        };
+    });
+
+    const de = rows.length ? f.offset + 1 : 0;
+    const ate = f.offset + rows.length;
 
     return {
         carregar,
         carregando,
         erro,
-        htipos: TIPOS.map((k) => ({ k, l: k === "TODOS" ? "Todos" : ROTULO[k], sel: tipo === k, go: () => setTipo(k) })),
-        hb: busca,
-        onHb: (e: React.ChangeEvent<HTMLInputElement>) => setBusca(e.target.value),
+        htipos: TIPOS.map((k) => ({ k, l: k === "TODOS" ? "Todos" : ROTULO[k], sel: f.tipo === k, go: () => filtrar({ tipo: k }) })),
+        hb: f.busca,
+        onHb: onBusca,
         histRows,
         vazioHist: !carregando && histRows.length === 0,
+        // Período
+        hIni: f.ini,
+        hFim: f.fim,
+        onIni: (e: React.ChangeEvent<HTMLInputElement>) => filtrar({ ini: e.target.value }),
+        onFim: (e: React.ChangeEvent<HTMLInputElement>) => filtrar({ fim: e.target.value }),
+        hperiodos: PERIODOS.map(([k, l]) => ({ k, l, sel: periodoAtual === k, go: () => filtrar(intervalo(k)) })),
+        // Paginação (só aparece com o materiais_gerais.php novo, que devolve o total)
+        temPaginas: total != null,
+        pagina,
+        paginas,
+        resumoPag: total == null ? "" : total === 0 ? "Nenhum movimento" : `${milhar(de)}–${milhar(ate)} de ${milhar(total)} ${total === 1 ? "movimento" : "movimentos"}`,
+        podeVoltar: !carregando && pagina > 1,
+        podeAvancar: !carregando && pagina < paginas,
+        voltar: () => irPagina(pagina - 1),
+        avancar: () => irPagina(pagina + 1),
+        semPeriodoNoServidor: !carregando && !erro && total == null && rows.length > 0,
     };
 }
 

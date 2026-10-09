@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Ic } from "../ui/Icones";
 import type { HistoricoV } from "./useHistorico";
 
@@ -145,7 +145,91 @@ function Itens({ h, m }: { h: Linha; m: boolean }) {
     );
 }
 
+// Período (De/Até + atalhos) e paginação (09/10/2026).
+function Periodo({ v, m }: { v: HistoricoV; m: boolean }) {
+    const campo: React.CSSProperties = m ? { height: "48px", fontSize: "16px" } : { height: "44px", fontSize: "14px", width: "170px" };
+    const datas = (
+        <>
+            <label style={m ? { minWidth: "0" } : { display: "flex", alignItems: "center", gap: "8px" }}>
+                <span className="kv" style={m ? { display: "block", marginBottom: "4px" } : undefined}>
+                    De
+                </span>
+                <input type="date" className="inp" value={v.hIni} max={v.hFim || undefined} onChange={v.onIni} aria-label="Data inicial" style={campo} />
+            </label>
+            <label style={m ? { minWidth: "0" } : { display: "flex", alignItems: "center", gap: "8px" }}>
+                <span className="kv" style={m ? { display: "block", marginBottom: "4px" } : undefined}>
+                    Até
+                </span>
+                <input type="date" className="inp" value={v.hFim} min={v.hIni || undefined} onChange={v.onFim} aria-label="Data final" style={campo} />
+            </label>
+        </>
+    );
+    const atalhos = (
+        <div style={{ display: "flex", gap: "6px", flexWrap: m ? "nowrap" : "wrap", overflowX: m ? "auto" : undefined }} role="group" aria-label="Período">
+            {v.hperiodos.map((p) => (
+                <button type="button" key={p.k} className="fchip" aria-pressed={p.sel} onClick={p.go} style={m ? { height: "44px", fontSize: "13px", padding: "0 14px", flex: "none" } : undefined}>
+                    {p.l}
+                </button>
+            ))}
+        </div>
+    );
+    if (m) {
+        return (
+            <>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "8px" }}>{datas}</div>
+                {atalhos}
+            </>
+        );
+    }
+    return (
+        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+            {datas}
+            {atalhos}
+        </div>
+    );
+}
+
+function Paginacao({ v, m }: { v: HistoricoV; m: boolean }) {
+    if (!v.temPaginas) return null;
+    const navegar = v.paginas > 1;
+    return (
+        <nav
+            aria-label="Páginas do histórico"
+            style={{ display: "flex", alignItems: "center", gap: m ? "8px" : "12px", flexWrap: m ? "nowrap" : "wrap", padding: m ? "4px 0 0" : undefined }}
+        >
+            {navegar && (
+                <button type="button" className={m ? "btn sq" : "btn"} onClick={v.voltar} disabled={!v.podeVoltar} aria-label="Página anterior">
+                    {m ? "‹" : "‹ Anterior"}
+                </button>
+            )}
+            <span className="sm" style={{ flex: "1", textAlign: m && navegar ? "center" : undefined, fontVariantNumeric: "tabular-nums" }} aria-live="polite">
+                {v.resumoPag}
+                {navegar ? <span style={{ display: m ? "block" : "inline" }}>{m ? "" : " · "}Página {v.pagina} de {v.paginas}</span> : null}
+            </span>
+            {navegar && (
+                <button type="button" className={m ? "btn sq" : "btn"} onClick={v.avancar} disabled={!v.podeAvancar} aria-label="Próxima página">
+                    {m ? "›" : "Próxima ›"}
+                </button>
+            )}
+        </nav>
+    );
+}
+
 export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
+    // Ao trocar de página, volta para o topo da lista.
+    const topo = useRef<HTMLElement | null>(null);
+    const paginaAnterior = useRef(v.pagina);
+    useEffect(() => {
+        if (paginaAnterior.current === v.pagina) return;
+        paginaAnterior.current = v.pagina;
+        topo.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }, [v.pagina]);
+
+    const avisoServidor = v.semPeriodoNoServidor ? (
+        <div className="msg-err" role="status">
+            O servidor ainda não tem o filtro de período: suba o materiais_gerais.php novo. Por enquanto aparecem só os movimentos mais recentes.
+        </div>
+    ) : null;
     const erro = v.erro ? (
         <div className="msg-err" role="alert">
             {v.erro}
@@ -155,7 +239,7 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
     if (m) {
         return (
-            <section style={{ display: "flex", flexDirection: "column", gap: "10px" }} aria-label="Histórico">
+            <section ref={topo} style={{ display: "flex", flexDirection: "column", gap: "10px", scrollMarginTop: "12px" }} aria-label="Histórico">
                 <label className="cbin">
                     <Ic n="busca" />
                     <input type="search" value={v.hb} onChange={v.onHb} placeholder="Lançamento, produto ou nome" aria-label="Buscar no histórico" style={{ fontSize: "16px" }} />
@@ -167,9 +251,11 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
                         </button>
                     ))}
                 </div>
+                <Periodo v={v} m />
+                {avisoServidor}
                 {erro}
                 {carregando}
-                <div className="box" style={{ overflow: "hidden" }}>
+                <div className="box" style={{ overflow: "hidden", opacity: v.carregando && v.histRows.length ? 0.55 : undefined }}>
                     {v.histRows.map((h) => (
                         <div key={h.chave} style={{ borderBottom: "1px solid var(--line)" }}>
                             <button type="button" className="rowlink" onClick={h.go} style={{ padding: "10px 12px", flexDirection: "column", alignItems: "stretch", gap: "3px" }}>
@@ -191,16 +277,17 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
                     ))}
                     {v.vazioHist && (
                         <div style={{ padding: "20px", textAlign: "center" }} className="sm">
-                            Nada encontrado.
+                            Nada encontrado no período.
                         </div>
                     )}
                 </div>
+                <Paginacao v={v} m />
             </section>
         );
     }
 
     return (
-        <section className="box" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }} aria-label="Histórico">
+        <section ref={topo} className="box" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", scrollMarginTop: "16px" }} aria-label="Histórico">
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
                 <label
                     style={{
@@ -235,9 +322,16 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
                     ))}
                 </div>
             </div>
+            <Periodo v={v} m={false} />
+            {avisoServidor}
             {erro}
             {carregando}
-            <div className="gt" role="table" aria-label="Lançamentos" style={{ "--cols": "150px 110px 120px minmax(0,1.6fr) minmax(0,1.4fr) 110px" } as React.CSSProperties}>
+            <div
+                className="gt"
+                role="table"
+                aria-label="Lançamentos"
+                style={{ "--cols": "150px 110px 120px minmax(0,1.6fr) minmax(0,1.4fr) 110px", opacity: v.carregando && v.histRows.length ? 0.55 : undefined } as React.CSSProperties}
+            >
                 <div className="gh" role="row">
                     <span role="columnheader">Lançamento</span>
                     <span role="columnheader">Quando</span>
@@ -269,10 +363,11 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
                 ))}
                 {v.vazioHist && (
                     <div style={{ padding: "28px", textAlign: "center" }} className="sm">
-                        Nada encontrado.
+                        Nada encontrado no período.
                     </div>
                 )}
             </div>
+            <Paginacao v={v} m={false} />
         </section>
     );
 }
