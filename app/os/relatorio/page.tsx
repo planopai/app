@@ -81,7 +81,7 @@ export default function RelatorioAtendimentosPage() {
                     extra={<a href="/os/financeiro" className="inline-flex h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25">Financeiro</a>}
                 />
 
-                {erro && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+                {erro && <div className="rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
                 {aviso && <div className="rounded-lg border border-[#E3E8F0] bg-white p-3 text-sm font-semibold dark:border-white/[0.12] dark:bg-[#232B3F]">{aviso}</div>}
 
                 {rel && (

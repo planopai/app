@@ -218,7 +218,7 @@ function EscolhaComBusca({ opcoes, marcados, onTrocar, vazio }: { opcoes: Opcao[
         <div>
             <label className="flex h-11 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3 dark:border-white/25 dark:bg-[#1C2334]">
                 <Icone d={Ic.busca} tam={18} />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={marcados.length ? "Acrescentar" : vazio} className="h-full w-full min-w-0 bg-transparent text-[15px] font-semibold outline-none" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={marcados.length ? "Acrescentar" : vazio} className="h-full w-full min-w-0 bg-transparent text-base font-semibold outline-none" />
             </label>
             {marcados.length ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -266,7 +266,7 @@ export function JanelaFiltrosOS({ valor, mostrar, onAplicar, onFechar }: { valor
     const [f, setF] = useState<FiltroOS>(valor);
     const atalhos: [string, string][] = [["hoje", "Hoje"], ["7", "7 dias"], ["mes", "Este mês"], ["passado", "Mês passado"]];
     const sec = "mb-2 text-[11.5px] font-extrabold uppercase tracking-[0.1em] text-[#5B6478] dark:text-[#AEB9CF]";
-    const campoData = "h-11 w-full min-w-0 rounded-xl border border-[#C9D1DE] bg-white px-3 text-[15px] font-semibold dark:border-white/25 dark:bg-[#1C2334] dark:text-white";
+    const campoData = "h-11 w-full min-w-0 rounded-xl border border-[#C9D1DE] bg-white px-3 text-base font-semibold dark:border-white/25 dark:bg-[#1C2334] dark:text-white";
     return (
         <div data-pai-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,14,24,0.55)] sm:items-center" onClick={onFechar}>
             <div role="dialog" aria-modal="true" aria-label="Filtros" className="flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
@@ -724,7 +724,8 @@ const CSS_TEMA_OS = [
     [".bg-\\[\\#F4F6F9\\]", "background-color:#161C2A"],
     [".bg-\\[\\#EEF2F7\\]", "background-color:rgba(255,255,255,.08)"],
     [".bg-\\[\\#FFF8E1\\], .bg-\\[\\#FCF3CC\\]", "background-color:rgba(242,203,63,.16);color:#FFFFFF"],
-    [".text-\\[\\#313C55\\]", "color:#FFFFFF"],
+    // etiqueta com fundo próprio (style background, ex.: NP ABERTA, ABERTA) mantém o texto escuro — senão fica branco no claro
+    ['.text-\\[\\#313C55\\]:not([style*="background"])', "color:#FFFFFF"],
     [".text-\\[\\#6B7488\\], .text-\\[\\#5B6478\\]", "color:#AEB9CF"],
     [".border-\\[\\#E1E5EC\\], .border-\\[\\#E3E8F0\\], .border-\\[\\#C9D1DE\\]", "border-color:rgba(255,255,255,.14)"],
 ]

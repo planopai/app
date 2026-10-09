@@ -55,7 +55,7 @@ const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "curre
 const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const inputCls =
-    "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#3D6A99] dark:focus:border-[#3D6A99]";
+    "w-full min-w-0 rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-base sm:text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#3D6A99] dark:focus:border-[#3D6A99]";
 const FORMAS = ["PIX", "DINHEIRO", "CARTAO_DEBITO", "CARTAO_CREDITO", "TRANSFERENCIA", "CHEQUE", "BOLETO", "OUTRO"];
 const BTN_PRI = "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#313C55] px-5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-50 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]";
 const BTN_SEC = "inline-flex h-11 items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
@@ -635,9 +635,9 @@ export function ConcluirVendaModal({
                                     <button type="button" aria-label={`Tirar o pagamento ${i + 1}`} onClick={() => setLinhas((ls) => ls.filter((_, k) => k !== i))} className="flex h-10 items-center justify-center rounded-lg text-[#6B7488] hover:bg-[#EEF2F7] dark:text-[#AEB9CF] dark:hover:bg-white/10">✕</button>
                                 </div>
                                 {l.forma === "CARTAO_CREDITO" ? (
-                                    <label className="mt-2 flex items-center justify-end gap-2 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
+                                    <label className="mt-2 flex flex-wrap items-center justify-end gap-2 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                                         Parcelas no cartão
-                                        <select className={`${inputCls} w-auto`} value={l.parcelas} onChange={(e) => mudar(i, { parcelas: Number(e.target.value) })}>
+                                        <select className={`${inputCls} w-auto max-w-full`} value={l.parcelas} onChange={(e) => mudar(i, { parcelas: Number(e.target.value) })}>
                                             {Array.from({ length: 12 }, (_, k) => k + 1).map((n) => (
                                                 <option key={n} value={n}>{n === 1 ? "1x (à vista)" : `${n}x de ${brl(num(l.valor) / n)}`}</option>
                                             ))}
@@ -702,7 +702,7 @@ export function JanelaOSPorId({ osId, numero, onFechar, onMudou }: { osId: numbe
 export function ModalSimples({ titulo, sub, children, onFechar }: { titulo: string; sub?: string; children: React.ReactNode; onFechar: () => void }) {
     return (
         <div data-os-janela-interna className="fixed inset-0 z-[85] flex items-center justify-center bg-[rgba(49,60,85,0.45)] p-4" onClick={onFechar}>
-            <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white" onClick={(e) => e.stopPropagation()}>
+            <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-2xl bg-white p-4 text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white sm:p-6" onClick={(e) => e.stopPropagation()}>
                 <div className="text-xl font-extrabold">{titulo}</div>
                 {sub && <div className="mb-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">{sub}</div>}
                 {children}
