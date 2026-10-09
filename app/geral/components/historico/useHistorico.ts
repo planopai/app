@@ -1,7 +1,5 @@
 "use client";
 
-
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiGet } from "../api";
@@ -14,12 +12,14 @@ import type { HistoricoResp, HistoricoRow } from "../tipos";
 
 import type { EstoqueDados } from "../useEstoqueDados";
 
+// BUILD DO HISTÓRICO: HISTORICO-PAGINACAO-2026-10-09-V4
 
-
-// BUILD DO HISTÓRICO: HISTORICO-PAGINACAO-2026-10-09-V3
 // Este identificador também aparece no atributo data-historico-build da interface.
+
 // IMPORTANTE: o Dashboard usa outra consulta (limit=500, sem offset).
+
 // Para verificar este módulo no Network, abra Estoque > Histórico e procure limit=100&offset=0.
+
 // A rota PHP paginada deve responder com rows, total (número), offset e limit.
 
 // Histórico por lançamento (repaginada): cada linha é um lançamento com os seus itens.
@@ -32,21 +32,15 @@ import type { EstoqueDados } from "../useEstoqueDados";
 
 // de POR_PAGINA movimentos com o total; antes a tela pegava só os 500 mais recentes.
 
-
-
 type Tipo = "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "CONFECCAO" | "AJUSTE";
 
 type Item = { n: string; q: number | null; local?: string; cu?: number | null };
 
 type Lancamento = { chave: string; cod: string; sub?: string; t: Tipo; o: string; d: string; u: string; quando: string; itens: Item[]; frete: number };
 
-
-
 const ROTULO: Record<Tipo, string> = { ENTRADA: "Entrada", SAIDA: "Saída", TRANSFERENCIA: "Transferência", CONFECCAO: "Confecção", AJUSTE: "Ajuste" };
 
 const TIPOS: Array<"TODOS" | Tipo> = ["TODOS", "ENTRADA", "SAIDA", "TRANSFERENCIA", "CONFECCAO", "AJUSTE"];
-
-
 
 const POR_PAGINA = 100;
 
@@ -67,8 +61,6 @@ const PERIODOS: Array<[Periodo, string]> = [
 type Filtros = { tipo: "TODOS" | Tipo; busca: string; ini: string; fim: string; offset: number };
 
 type RespPaginada = HistoricoResp & { total?: number };
-
-
 
 // Data local (AAAA-MM-DD). Não usa toISOString: depois das 21h na Bahia ele já daria o dia seguinte.
 
@@ -94,8 +86,6 @@ const tipoApi = (t: Filtros["tipo"]) => (t === "TODOS" ? undefined : t === "AJUS
 
 const milhar = (x: number) => x.toLocaleString("pt-BR");
 
-
-
 const segundo = (iso: string) => String(iso || "").slice(0, 19);
 
 const quando = (iso: string) => {
@@ -112,15 +102,11 @@ const quando = (iso: string) => {
 
 const titulo = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, (w) => w.toLowerCase());
 
-
-
 function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
     const mapa = new Map<string, Lancamento>();
 
     const ordem: string[] = [];
-
-
 
     for (const h of rows) {
 
@@ -137,8 +123,6 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
         let chave: string;
 
         let base: Omit<Lancamento, "itens" | "frete">;
-
-
 
         if (h.tipo === "CONFECCAO") {
 
@@ -176,7 +160,7 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
             chave = `A:${atend[1]}:${segundo(h.criado_em)}`;
 
-            const fal = String(h.observacao || "").match(/Falecido\(a\):\s*([^|]+)/i);
+            const fal = String(h.observacao || "").match(/Falecido\\(a\\):\s*([^|]+)/i);
 
             base = { chave, cod: fal ? `Atendimento: ${titulo(fal[1].trim())}` : `Atendimento #${atend[1]}`, sub: `Atendimento #${atend[1]}`, t: "SAIDA", o: "", d: "", u: h.operador_nome || "", quando: h.criado_em };
 
@@ -193,8 +177,6 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
             base = { chave, cod: `#${h.id}`, t: tipo, o: h.deposito_origem_nome || "", d: h.deposito_destino_nome || dest, u: h.operador_nome || "", quando: h.criado_em };
 
         }
-
-
 
         let l = mapa.get(chave);
 
@@ -226,13 +208,9 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
     }
 
-
-
     return ordem.map((k) => mapa.get(k) as Lancamento);
 
 }
-
-
 
 export function useHistorico(n: EstoqueDados) {
 
@@ -256,15 +234,11 @@ export function useHistorico(n: EstoqueDados) {
 
     const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
-
     useEffect(() => () => {
 
         if (espera.current) clearTimeout(espera.current);
 
     }, []);
-
-
 
     async function buscar(nf: Filtros) {
 
@@ -307,15 +281,23 @@ export function useHistorico(n: EstoqueDados) {
             if (!r.ok) throw new Error(r.msg || "Falha ao carregar o histórico.");
 
             // Valida o contrato da rota PAGINADA antes de atualizar o estado.
+
             // Sem total numérico, o componente não tem como calcular as páginas.
 
             if (typeof r.total !== "number" || !Number.isFinite(r.total) || r.total < 0) {
+
                 throw new Error(
+
                     "A API de Histórico não retornou o total da paginação. " +
+
                     "Confirme que o materiais_gerais.php atualizado está publicado."
+
                 );
+
             }
+
             setRows(r.rows || []);
+
             setTotal(r.total);
 
             setAberto("");
@@ -325,6 +307,8 @@ export function useHistorico(n: EstoqueDados) {
             if (id !== pedido.current) return;
 
             setTotal(null);
+            setRows([]); // limpa registros antigos caso a API falhe
+
             setErro(e instanceof Error ? e.message : "Erro ao carregar o histórico.");
 
         } finally {
@@ -334,8 +318,6 @@ export function useHistorico(n: EstoqueDados) {
         }
 
     }
-
-
 
     // Chamado pela página ao abrir a aba e no Atualizar: recarrega a página atual com os filtros atuais.
 
@@ -347,13 +329,9 @@ export function useHistorico(n: EstoqueDados) {
 
     }
 
-
-
     // Qualquer filtro novo volta para a primeira página.
 
     const filtrar = (mud: Partial<Filtros>) => void buscar({ ...fRef.current, ...mud, offset: 0 });
-
-
 
     const onBusca = (e: React.ChangeEvent<HTMLInputElement>) => {
 
@@ -368,8 +346,6 @@ export function useHistorico(n: EstoqueDados) {
         espera.current = setTimeout(() => filtrar({ busca: valor }), 400);
 
     };
-
-
 
     const paginas = total == null ? 1 : Math.max(1, Math.ceil(total / POR_PAGINA));
 
@@ -391,11 +367,7 @@ export function useHistorico(n: EstoqueDados) {
 
     }) || [null])[0];
 
-
-
     const lancamentos = useMemo(() => agrupar(rows), [rows]);
-
-
 
     // Tipo e busca já vêm filtrados do servidor; aqui só monta as linhas.
 
@@ -477,13 +449,9 @@ export function useHistorico(n: EstoqueDados) {
 
     });
 
-
-
     const de = rows.length ? f.offset + 1 : 0;
 
     const ate = f.offset + rows.length;
-
-
 
     return {
 
@@ -538,7 +506,5 @@ export function useHistorico(n: EstoqueDados) {
     };
 
 }
-
-
 
 export type HistoricoV = ReturnType<typeof useHistorico>;

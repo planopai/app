@@ -1,25 +1,20 @@
 "use client";
 
-
-
 import React, { useEffect, useRef } from "react";
 
 import { Ic } from "../ui/Icones";
 
 import type { HistoricoV } from "./useHistorico";
 
+// BUILD DO HISTÓRICO: HISTORICO-PAGINACAO-2026-10-09-V4
 
-
-// BUILD DO HISTÓRICO: HISTORICO-PAGINACAO-2026-10-09-V3
 // data-historico-build permite comprovar no DevTools que esta versão do componente foi publicada.
+
 // A paginação aparece apenas quando a API devolve total numérico.
+
 // Aba Histórico: um lançamento por linha; ao abrir, a tabela de itens do lançamento.
 
-
-
 type Linha = HistoricoV["histRows"][number];
-
-
 
 function Itens({ h, m }: { h: Linha; m: boolean }) {
 
@@ -293,8 +288,6 @@ function Itens({ h, m }: { h: Linha; m: boolean }) {
 
 }
 
-
-
 // Período (De/Até + atalhos) e paginação (09/10/2026).
 
 function Periodo({ v, m }: { v: HistoricoV; m: boolean }) {
@@ -381,60 +374,32 @@ function Periodo({ v, m }: { v: HistoricoV; m: boolean }) {
 
 }
 
-
-
+// Paginação visual no mesmo padrão da aba Produtos.
+// A quantidade é fixa em 100 movimentos; os registros são buscados no servidor.
 function Paginacao({ v, m }: { v: HistoricoV; m: boolean }) {
-
-    // Sem total válido não inventamos páginas: mostramos o erro da API na tela.
+    // Enquanto o PHP não devolver `total`, não há como calcular o número real de páginas.
+    // O erro da integração é mostrado acima da tabela; jamais inventamos páginas.
     if (!v.temPaginas) return null;
 
-    const navegar = v.paginas > 1;
-
     return (
-
         <nav
-
-            aria-label="Páginas do histórico"
-
-            style={{ display: "flex", alignItems: "center", gap: m ? "8px" : "12px", flexWrap: m ? "nowrap" : "wrap", padding: m ? "4px 0 0" : undefined }}
-
+            aria-label="Paginação do histórico"
+            className="sm"
+            style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px", flexWrap: "wrap" }}
         >
-
-            {navegar && (
-
-                <button type="button" className={m ? "btn sq" : "btn"} onClick={v.voltar} disabled={!v.podeVoltar} aria-label="Página anterior">
-
-                    {m ? "‹" : "‹ Anterior"}
-
-                </button>
-
-            )}
-
-            <span className="sm" style={{ flex: "1", textAlign: m && navegar ? "center" : undefined, fontVariantNumeric: "tabular-nums" }} aria-live="polite">
-
-                {v.resumoPag}
-
-                {navegar ? <span style={{ display: m ? "block" : "inline" }}>{m ? "" : " · "}Página {v.pagina} de {v.paginas}</span> : null}
-
-            </span>
-
-            {navegar && (
-
-                <button type="button" className={m ? "btn sq" : "btn"} onClick={v.avancar} disabled={!v.podeAvancar} aria-label="Próxima página">
-
-                    {m ? "›" : "Próxima ›"}
-
-                </button>
-
-            )}
-
+            <span>Movimentos por página</span>
+            <span className="inp" aria-label="100 movimentos por página" style={{ width: "64px", minHeight: "40px", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>100</span>
+            <button type="button" className="ib" onClick={v.voltar} disabled={!v.podeVoltar} aria-label="Página anterior" title="Página anterior">
+                <Ic n="esquerda" />
+            </button>
+            <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>Página {v.pagina} de {v.paginas}</span>
+            <button type="button" className="ib" onClick={v.avancar} disabled={!v.podeAvancar} aria-label="Próxima página" title="Próxima página">
+                <Ic n="direita" />
+            </button>
+            {!m && <span style={{ marginLeft: "6px", whiteSpace: "nowrap" }}>{v.resumoPag}</span>}
         </nav>
-
     );
-
 }
-
-
 
 export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
@@ -453,8 +418,6 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
         topo.current?.scrollIntoView({ block: "start", behavior: "smooth" });
 
     }, [v.pagina]);
-
-
 
     const avisoServidor = v.semPeriodoNoServidor ? (
 
@@ -478,13 +441,11 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
     const carregando = v.carregando && !v.histRows.length ? <div className="sm">Carregando…</div> : null;
 
-
-
     if (m) {
 
         return (
 
-            <section ref={topo} data-historico-build="HISTORICO-PAGINACAO-2026-10-09-V3" style={{ display: "flex", flexDirection: "column", gap: "10px", scrollMarginTop: "12px" }} aria-label="Histórico">
+            <section ref={topo} data-historico-build="HISTORICO-PAGINACAO-2026-10-09-V4" style={{ display: "flex", flexDirection: "column", gap: "10px", scrollMarginTop: "12px" }} aria-label="Histórico">
 
                 <label className="cbin">
 
@@ -576,11 +537,9 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
     }
 
-
-
     return (
 
-        <section ref={topo} data-historico-build="HISTORICO-PAGINACAO-2026-10-09-V3" className="box" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", scrollMarginTop: "16px" }} aria-label="Histórico">
+        <section ref={topo} data-historico-build="HISTORICO-PAGINACAO-2026-10-09-V4" className="box" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", scrollMarginTop: "16px" }} aria-label="Histórico">
 
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
 
