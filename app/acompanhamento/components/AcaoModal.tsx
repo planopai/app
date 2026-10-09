@@ -6,6 +6,7 @@ import TextFeedback from "./TextFeedback";
 import { Registro } from "./types";
 import { fases } from "./constants";
 import { dadosFaltandoParaOrnamentacao, itensBaixaCorpoPronto } from "./avisosAcao";
+import { BotaoCorrecoesAtendimento } from "@/components/correcoes/CorrecoesAtendimento";
 import {
     acaoToStatus,
     isTanatoNo,
@@ -82,6 +83,7 @@ export default function AcaoModal({
     onVeiculoRequired,
     onFotoAcaoRequired,
     onAbrirCadastro,
+    onCorrecaoFeita,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
@@ -107,6 +109,8 @@ export default function AcaoModal({
     ) => void;
     /** Abre o cadastro completo do atendimento para edição. Sem esta função, vai para /acompanhamento?editar=<id> (o mesmo endereço do Quadro). */
     onAbrirCadastro?: (id: string) => void;
+    /** Depois de uma correção da Gestão (voltar etapa / cancelar). Sem esta função, a página recarrega. */
+    onCorrecaoFeita?: (msg: string) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [me, setMe] = useState<OfflineSession | null>(null);
@@ -609,6 +613,20 @@ export default function AcaoModal({
                             </button>
                         </div>
                     </div>
+                )}
+
+                {/* Correções da Gestão (09/10/2026): voltar uma etapa ou cancelar o atendimento. Só aparece com a página Gestão. */}
+                {efetivo && networkOnline && (
+                    <BotaoCorrecoesAtendimento
+                        className="mt-4"
+                        id={acaoId}
+                        falecido={(efetivo as any)?.falecido}
+                        onFeito={(msg) => {
+                            setOpen(false);
+                            if (onCorrecaoFeita) onCorrecaoFeita(msg);
+                            else if (typeof window !== "undefined") window.location.reload();
+                        }}
+                    />
                 )}
 
                 {concluido && (

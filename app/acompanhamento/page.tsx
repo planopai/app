@@ -36,6 +36,7 @@ import {
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
 import OSDoAtendimento from "@/app/os/components/OSDoAtendimento";
 import { BotoesTopoAtendimentos } from "@/components/atendimentos/BotoesAtendimento";
+import { BotaoAtendimentosCancelados } from "@/components/correcoes/CorrecoesAtendimento";
 import {
   OS_CAMPOS_VAZIO,
   SecaoOSAtendimento,
@@ -3043,8 +3044,18 @@ export default function AcompanhamentoPage() {
           }
         }
 
+        // Corrigir baixa (09/10/2026): a Gestão trocou item travado e o informativo.php acertou o estoque.
+        const est = (json as any)?.estoque_corrigido;
+        const textoEstoque =
+          est && ((est.voltaram?.length ?? 0) + (est.sairam?.length ?? 0)) > 0
+            ? ` Estoque acertado: ${[
+                est.voltaram?.length ? `voltou ${est.voltaram.join(", ")}` : "",
+                est.sairam?.length ? `saiu ${est.sairam.join(", ")}` : "",
+              ].filter(Boolean).join("; ")}.`
+            : "";
+
         setWizardMsg({
-          text: (options?.mensagemSucesso || "Registro salvo!") + textoOS + textoLocal,
+          text: (options?.mensagemSucesso || "Registro salvo!") + textoEstoque + textoOS + textoLocal,
           ok: !textoOS.includes("não foi atualizada") && !textoLocal,
         });
 
@@ -4304,6 +4315,10 @@ export default function AcompanhamentoPage() {
             Registre cada etapa e mantenha as informações do atendimento em dia.
           </p>
         </div>
+        {/* Cancelados (09/10/2026): consulta, só Gestão, no computador. */}
+        <div className="hidden lg:flex">
+          <BotaoAtendimentosCancelados />
+        </div>
         <BotoesTopoAtendimentos onNovoRegistro={() => iniciarNovoRegistro("funerario")} />
       </header>
 
@@ -4335,6 +4350,10 @@ export default function AcompanhamentoPage() {
         onVeiculoRequired={handleVeiculoRequired}
         onFotoAcaoRequired={handleFotoAcaoRequired}
         onAbrirCadastro={(id) => editarPorId(id)}
+        onCorrecaoFeita={(msg) => {
+          setAcaoOpen(false);
+          void fetchRegistros();
+        }}
       />
 
       <Wizard

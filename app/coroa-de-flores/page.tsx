@@ -27,6 +27,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
 import { JanelaOSPorId } from "@/app/os/components/OSDoAtendimento";
+import { BotaoCancelarPedidoCoroa } from "@/components/correcoes/CancelarPedidoCoroa";
 import { classeOpcaoSimNao, MarcaSimNao } from "@/app/acompanhamento/components/simNaoCores";
 import {
     IconCamera,
@@ -4399,6 +4400,20 @@ export default function Page() {
                                             Criado em {formatDate(manualDetail.criado_em)} — Total <b>{totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</b>
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Cancelar pedido (09/10/2026): só Gestão; coroa do atendimento cancela pelo registro. */}
+                                <div className="flex justify-end">
+                                    <BotaoCancelarPedidoCoroa
+                                        pedidoId={Number(manualDetail.id)}
+                                        atendimentoOrigemId={(manualDetail as any).atendimento_origem_id ?? null}
+                                        onFeito={() => {
+                                            setManualPanel(null);
+                                            setManualDetail(null);
+                                            void fetchManualOrders(true);
+                                            void fetchConfeccaoOrders(true);
+                                        }}
+                                    />
                                 </div>
 
                                 {/* Pagamento e comprovante ficam no Ver */}

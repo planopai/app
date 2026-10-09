@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ItensOSAjuste from "../components/ItensOSAjuste";
+import ReembolsosPendentes from "@/components/correcoes/ReembolsosPendentes";
 import {
     BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, PAGAMENTOS_OS, ResumoOS, SITUACOES_OS, TIPOS_OS,
     baixarPdfDaOS, dataBROS, metaFinanceiraOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
@@ -113,7 +114,7 @@ function Tag({
     const bg = {
         amarelo: "#FBEFC4",
         verde: "#E6F0C9",
-        azul: "#DCE5F0",
+        azul: "#E0F3FA",
         laranja: "#FDECD8",
         neutro: "#EEF1F5",
     }[tom];
@@ -172,7 +173,7 @@ function Campo({
 }
 
 const inputCls =
-    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-base sm:text-sm font-semibold text-[#313C55] outline-none focus:border-[#3D6A99]";
+    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#3D6A99]";
 
 const TIPOS = [
     { v: "", r: "Todos" },
@@ -298,8 +299,8 @@ export default function FinanceiroOSPage() {
                     }
                 />
 
-                {erro && <div className="rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
-                {msg && <div className="rounded-xl border border-[#B3CE52]/60 bg-[#EEF5D6] p-3 text-sm font-semibold text-[#313C55] dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:!text-white">{msg}</div>}
+                {erro && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+                {msg && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
 
                 {ind && (
                     <>
@@ -325,6 +326,9 @@ export default function FinanceiroOSPage() {
                         )}
                     </>
                 )}
+
+                {/* Reembolsos de atendimentos e coroas cancelados (09/10/2026) */}
+                <ReembolsosPendentes onAlterou={(m) => setMsg(m)} />
 
                 <ListaCompactaOS
                     titulo={`${linhasOS.length} OS`}
@@ -596,7 +600,7 @@ function DetalheOS({
                 </div>
 
                 {erro && (
-                    <div className="mb-4 rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                         {erro}
                     </div>
                 )}
@@ -1440,7 +1444,7 @@ function ComposicaoContrato({ osId, versao = 0 }: { osId: number; versao?: numbe
         };
     }, [osId, versao]);
 
-    if (erro) return <div className="rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>;
+    if (erro) return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>;
     if (!d) return <div className="py-2 text-sm text-[#6B7488]">Carregando…</div>;
     if (!d.grupos.length) return <div className="py-2 text-sm text-[#6B7488]">Nenhum pacote ou serviço lançado nesta OS.</div>;
     const diverge = Math.abs(Number(d.soma) - Number(d.valor_total)) > 0.005;

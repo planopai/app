@@ -3913,7 +3913,7 @@ function AvisoTravaItens({ podeAlterar, baixaFeita }: { podeAlterar: boolean; ba
                     <>
                         Você pode alterar porque tem acesso à Gestão.
                         {baixaFeita
-                            ? " A baixa no estoque já foi feita no Corpo Pronto: trocar um item aqui não mexe no estoque. Corrija a saída pela movimentação."
+                            ? " A baixa no estoque já foi feita no Corpo Pronto: ao salvar, o estoque é acertado sozinho (o item trocado volta para o local de onde saiu e o novo sai do local escolhido). Se faltar saldo do item novo, nada é salvo."
                             : " A baixa no estoque acontece no Corpo Pronto, com os itens que estiverem aqui."}
                     </>
                 ) : (
