@@ -87,8 +87,18 @@ const BTN_SEC =
 const BTN_PRI =
     "inline-flex h-11 items-center justify-center rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-50 dark:bg-[#3D6A99] dark:text-white";
 const CAMPO =
-    "w-full rounded-xl border border-[#E3E8F0] bg-white px-3 py-2.5 text-[16px] text-[#313C55] outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/30 dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-white sm:text-sm";
+    "w-full rounded-xl border border-[#E3E8F0] bg-white px-3 py-2.5 text-[16px] text-[#313C55] outline-none focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/30 dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-white sm:text-sm";
 const ROTULO = "mb-1.5 mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
+
+/** Item: $ (ajusta o valor — acréscimo ou desconto, 09/10/2026). O Desconto geral continua com o %. */
+function IconeValor() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+            <path d="M12 3v18" />
+            <path d="M16.5 7.4c-.6-1.4-2.3-2.3-4.4-2.3-2.5 0-4.4 1.3-4.4 3.2 0 4.4 9 2.4 9 6.9 0 1.9-1.9 3.3-4.6 3.3-2.3 0-4.2-1-4.9-2.6" />
+        </svg>
+    );
+}
 
 function IconeAjuste() {
     return (
@@ -315,7 +325,7 @@ export default function ItensOSAjuste({
                                                 title="Valor / desconto"
                                                 className="inline-flex size-9 items-center justify-center rounded-lg border-[1.5px] border-[#C9D1DE] text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:text-white dark:hover:bg-white/10"
                                             >
-                                                <IconeAjuste />
+                                                <IconeValor />
                                             </button>
                                         ) : null}
                                     </td>

@@ -2,8 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    BarraFiltrosOS, CartoesOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, ResumoOS, SITUACOES_OS, TIPOS_OS,
-    baixarPdfDaOS, dataBROS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
+    BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, ResumoOS, SITUACOES_OS, TIPOS_OS,
+    baixarPdfDaOS, dataBROS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
 } from "../components/ListaOS";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
@@ -23,13 +23,13 @@ async function apiJson(url: string, init?: RequestInit) {
 
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const TIPOS_REL = TIPOS_OS.filter((t) => ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(t.v));
-/* Relatório: sem situação escolhida vêm só as assinadas (como antes). Com situação, as escolhidas (ex.: também as abertas). */
+/* Relatório = vendas: abre com as concluídas e as assinadas (09/10/2026). Para ver as abertas, acrescentar a situação no filtro. */
 const SITUACOES_REL = SITUACOES_OS.filter((s) => s.v !== "CONVERTIDA");
 const ROTULO: Record<string, string> = { PRT: "Particular", DIF_SOC: "Dif — Associado", DIF_PRF: "Dif — Prefeitura", COR: "Coroa" };
 
 export default function RelatorioAtendimentosPage() {
     /* Padrão de 08/10/2026: filtros no botão Filtros, Exportar (imprimir, PDF, planilha) e lista que cabe na tela. */
-    const [filtro, setFiltro] = useState<FiltroOS>(() => filtroInicial({ situacoes: ["FECHADA", "ABERTA", "AGUARDANDO_ASSINATURA"] }));
+    const [filtro, setFiltro] = useState<FiltroOS>(() => filtroInicial({ situacoes: ["CONCLUIDA", "ASSINADA"] }));
     const [janelaFiltros, setJanelaFiltros] = useState(false);
     const [rel, setRel] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -69,7 +69,8 @@ export default function RelatorioAtendimentosPage() {
     const porTipo = Object.entries(rel?.totais_por_tipo || {}) as [string, any][];
 
     return (
-        <main className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+        <main data-os-tela className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <EstiloTemaOS />
             <div className="mx-auto flex max-w-6xl flex-col gap-3">
                 <BarraFiltrosOS
                     filtro={filtro}
@@ -105,7 +106,11 @@ export default function RelatorioAtendimentosPage() {
                         nome: l.falecido || "—",
                         meta: [l.tipo_rotulo, l.agente, dataL(l.data)].filter(Boolean).join(" · "),
                     }))}
-                    onMais={(ch) => setResumo(linhas.find((l, i) => (l.os_id ?? `${l.numero_os}-${i}`) === ch))}
+                    onMais={(ch) => {
+                        const l = linhas.find((x, i) => (x.os_id ?? `${x.numero_os}-${i}`) === ch);
+                        if (l?.os_id) prepararPdfDaOS(l.os_id);
+                        setResumo(linhas.find((l, i) => (l.os_id ?? `${l.numero_os}-${i}`) === ch));
+                    }}
                 />
                 {rel && linhas.length ? (
                     <div className="text-right text-lg font-black tabular-nums">Total sem translado: {brl(g?.valor_sem_translado)}</div>

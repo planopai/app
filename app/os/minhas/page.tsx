@@ -2,10 +2,10 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import ItensOSAjuste from "../components/ItensOSAjuste";
-import OSDoAtendimento, { AssinaturaModal } from "../components/OSDoAtendimento";
+import OSDoAtendimento, { JanelaOSPorId } from "../components/OSDoAtendimento";
 import {
-    BarraFiltrosOS, CartoesOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, ResumoOS, SITUACOES_OS, TIPOS_OS,
-    baixarPdfDaOS, dataBROS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
+    BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, PAGAMENTOS_OS, ResumoOS, SITUACOES_OS, TIPOS_OS,
+    baixarPdfDaOS, dataBROS, metaFinanceiraOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
 } from "../components/ListaOS";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
@@ -37,7 +37,7 @@ function osPost(acao: string, params: Record<string, any> = {}) {
 
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const hoje = () => new Date().toLocaleDateString("sv-SE");
-const inputCls = "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC]";
+const inputCls = "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#3D6A99] dark:focus:border-[#3D6A99]";
 
 function Tag({ children, bg = "#EEF1F5" }: { children: React.ReactNode; bg?: string }) {
     return <span className="inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-extrabold text-[#313C55]" style={{ background: bg }}>{children}</span>;
@@ -93,11 +93,12 @@ export default function MinhasOSPage() {
             else if (window.history.length > 1) window.history.back();
             else window.location.href = "/quadro-acompanhamento";
         };
-        return <OSDoAtendimento atendimentoId={atendimentoDaUrl} onFechar={fechar} onMudou={avisarJanelaDeOrigem} />;
+        // Aberta pelo atalho (Quadro, Atendimentos): por cima da tela, para os botões de baixo não ficarem atrás da barra do celular.
+        return <OSDoAtendimento sobreposto atendimentoId={atendimentoDaUrl} onFechar={fechar} onMudou={avisarJanelaDeOrigem} />;
     }
     const emAberto = lista.filter((l) => l.status === "ABERTA").length;
     const assinadas = lista.filter((l) => l.status === "FECHADA");
-    const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS };
+    const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS, pagamento: PAGAMENTOS_OS };
     const totalLista = lista.reduce((a, l) => a + (l.status === "CONVERTIDA" ? 0 : Number(l.valor_total) || 0), 0);
     const acompanhamento = (l: any) =>
         l.status === "ABERTA" ? "Confirmar valores e colher assinatura" : l.saldo ? `Saldo ${brl(l.saldo)} (financeiro)` : l.nota_promissoria ? `NP ${brl(l.nota_promissoria.valor)}` : "—";
@@ -111,7 +112,8 @@ export default function MinhasOSPage() {
     });
 
     return (
-        <main className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+        <main data-os-tela className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <EstiloTemaOS />
             <div className="mx-auto flex max-w-6xl flex-col gap-3">
                 <BarraFiltrosOS filtro={filtro} mostrar={mostrar} onAbrirFiltros={() => setJanelaFiltros(true)} onMudar={setFiltro} exportar={itensExportar(tabela)} />
 
@@ -137,11 +139,14 @@ export default function MinhasOSPage() {
                         situacao: situacaoDaOS(l),
                         valor: brl(l.valor_total),
                         nome: l.falecido || "—",
-                        meta: [l.tipo_rotulo, dataBROS(l.criado_em)].filter(Boolean).join(" · "),
+                        meta: metaFinanceiraOS(l),
                         destaque: l.status === "ABERTA",
                     }))}
                     onAbrir={(id) => setAberta(Number(id))}
-                    onMais={(id) => setResumo(lista.find((l) => l.os_id === id))}
+                    onMais={(id) => {
+                        prepararPdfDaOS(id);
+                        setResumo(lista.find((l) => l.os_id === id));
+                    }}
                 />
             </div>
 
@@ -170,97 +175,15 @@ export default function MinhasOSPage() {
                 />
             )}
 
-            {aberta && <OSAgente osId={aberta} onFechar={() => { setAberta(null); void carregar(); }} />}
+            {/* A OS abre na mesma janela da OS do atendimento: Concluir venda → Colher assinatura (09/10/2026). */}
+            {aberta && (
+                <JanelaOSPorId
+                    osId={aberta}
+                    numero={lista.find((l) => l.os_id === aberta)?.numero_os || ""}
+                    onFechar={() => { setAberta(null); void carregar(); }}
+                    onMudou={() => void carregar()}
+                />
+            )}
         </main>
-    );
-}
-
-
-/* ====================================================================== */
-/* OS do agente: itens (valor e desconto), confirmação e assinatura com pagamento no ato */
-
-function OSAgente({ osId, onFechar }: { osId: number; onFechar: () => void }) {
-    const [d, setD] = useState<any>(null);
-    const [erro, setErro] = useState("");
-    const [msg, setMsg] = useState("");
-    const [salvando, setSalvando] = useState(false);
-    const [assinar, setAssinar] = useState(false);
-
-    const carregar = useCallback(async () => {
-        try {
-            setD((await osGet("listar", { os_id: osId })).dados);
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível abrir a OS.");
-        }
-    }, [osId]);
-    useEffect(() => { void carregar(); }, [carregar]);
-
-    const run = async (fn: () => Promise<any>) => {
-        if (salvando) return;
-        setSalvando(true);
-        setErro("");
-        setMsg("");
-        try {
-            const r = await fn();
-            setMsg(r?.msg || "Salvo.");
-            await carregar();
-            return true;
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível concluir.");
-            return false;
-        } finally {
-            setSalvando(false);
-        }
-    };
-
-    const os = d?.os;
-    const aberta = os?.status === "ABERTA";
-    const particular = os?.natureza === "PARTICULAR";
-    const confirmada = !!os?.confirmada_em;
-
-
-    return (
-        <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(49,60,85,0.45)]" onClick={onFechar}>
-            <div className="h-full w-full max-w-4xl overflow-y-auto bg-[#F4F6F9] dark:bg-[#161C2A] p-6" onClick={(e) => e.stopPropagation()}>
-                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Minhas OS</div>
-                        <h2 className="text-2xl font-extrabold">OS {os?.numero_os || "…"}</h2>
-                    </div>
-                    <div className="flex gap-2">
-                        <a className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-bold" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar`}>Ver folha</a>
-                        <a className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-bold" target="_blank" rel="noreferrer" href={`${OS_API}?documento_os=1&os_id=${osId}&formato=impressao`}>Imprimir</a>
-                        <button type="button" className="rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-4 py-2 text-sm font-bold" onClick={onFechar}>Fechar</button>
-                    </div>
-                </div>
-
-                {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
-                {msg && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
-
-                <div className="mb-4 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
-                    {/* Qtd · Valor · Desconto · Final; ajuste pelo ícone (valor só aumenta, desconto em R$) e desconto geral (% ou R$). */}
-                    <ItensOSAjuste osId={osId} editavel={aberta && particular} onMudou={() => void carregar()} />
-                    {!particular && <div className="mt-3 flex justify-end text-xl font-extrabold">Total: {brl(os?.valor_total)}</div>}
-                </div>
-
-                {aberta && particular && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
-                        <div className="text-sm">{confirmada ? <><b>Valores confirmados.</b> Qualquer alteração desfaz a confirmação.</> : "Confira os itens com a família e confirme os valores antes de assinar."}</div>
-                        <div className="flex gap-2">
-                            {!confirmada && <button type="button" disabled={salvando} onClick={() => void run(() => osPost("confirmar_os", { os_id: osId }))} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55] disabled:opacity-50">Confirmar valores</button>}
-                            {confirmada && <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>}
-                        </div>
-                    </div>
-                )}
-                {aberta && !particular && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] p-4">
-                        <div className="text-sm">OS de convênio: o responsável assina como ciência{os?.convenio?.startsWith("ASSOCIADO") && !os?.contrato_numero ? " — informe o contrato do titular no atendimento antes." : "."}</div>
-                        <button type="button" onClick={() => setAssinar(true)} className="rounded-lg bg-[#313C55] px-4 py-2 text-sm font-bold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]">Colher assinatura</button>
-                    </div>
-                )}
-
-                {assinar && os && <AssinaturaModal os={os} particular={particular} onFechar={() => setAssinar(false)} onAssinado={() => { setAssinar(false); setMsg("OS assinada."); void carregar(); }} />}
-            </div>
-        </div>
     );
 }

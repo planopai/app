@@ -29,6 +29,9 @@ type WcOrderForProduction = {
     id: number;
     number?: string;
     status?: string;
+    /** Total pago no site (com frete) e o frete — vão para o pedido de coroa e para a OS Cor (09/10/2026). */
+    total?: string | number;
+    shipping_total?: string | number;
     customer_note?: string;
     billing?: {
         first_name?: string;
@@ -187,6 +190,8 @@ function payloadImportacao(order: WcOrderForProduction): Record<string, unknown>
         observacoes: String(order.customer_note || "").trim(),
         falecido: falecido(order),
         status_pagamento: "pago",
+        total_pago: Number(order.total || 0) || null,
+        frete: Number(order.shipping_total || 0) || null,
         itens,
     };
 }

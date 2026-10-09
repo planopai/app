@@ -791,7 +791,7 @@ export function SecaoOSAtendimento({
         void carregarResumo();
     }, [carregarResumo, versao, recarga]);
 
-    /** "Ver OS": as folhas das OS do atendimento por cima desta tela, com ajuste de valores, confirmação e assinatura. */
+    /** "Ver OS": as folhas das OS do atendimento por cima desta tela, com ajuste de valores, conclusão da venda e assinatura. */
     const [verOS, setVerOS] = useState(false);
     const abrirJanelaOS = () => {
         if (atendimentoId == null || atendimentoId === "") return;
@@ -1057,7 +1057,12 @@ export function SecaoOSAtendimento({
                                     onClick={() => abrirJanelaOS()}
                                     className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#313C55] text-sm font-extrabold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/40 dark:text-white dark:hover:bg-white/10"
                                 >
-                                    {onAtualizarOS ? "Ver OS e assinar" : "Ver OS e colher assinatura"}
+                                    {/* Conclusão da venda (09/10/2026): aberta → concluir; concluída sem assinatura → assinar */}
+                                    {os.some((o) => o?.status === "ABERTA")
+                                        ? "Ver OS e concluir"
+                                        : os.some((o) => o?.status === "FECHADA" && !o?.assinada_em)
+                                            ? "Ver OS e assinar"
+                                            : "Ver OS"}
                                 </button>
                             ) : null}
                         </div>

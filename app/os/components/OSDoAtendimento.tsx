@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ItensOSAjuste from "./ItensOSAjuste";
-import { baixarPdfDaOS } from "./ListaOS";
+import { baixarPdfDaOS, prepararPdfDaOS } from "./ListaOS";
 
 const API_BASE = "https://api.planoassistencialintegrado.com.br";
 const OS_API = `${API_BASE}/os_principal.php`;
@@ -55,7 +55,7 @@ const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "curre
 const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const inputCls =
-    "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#00AEEC] dark:focus:border-[#00AEEC]";
+    "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#3D6A99] dark:focus:border-[#3D6A99]";
 const FORMAS = ["PIX", "DINHEIRO", "CARTAO_DEBITO", "CARTAO_CREDITO", "TRANSFERENCIA", "CHEQUE", "BOLETO", "OUTRO"];
 const BTN_PRI = "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#313C55] px-5 text-sm font-extrabold text-white hover:bg-[#232B40] disabled:opacity-50 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]";
 const BTN_SEC = "inline-flex h-11 items-center justify-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10";
@@ -63,11 +63,18 @@ const BTN_SEC = "inline-flex h-11 items-center justify-center gap-2 rounded-xl b
 function Tag({ children, bg = "#EEF1F5" }: { children: React.ReactNode; bg?: string }) {
     return <span className="inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-extrabold text-[#313C55]" style={{ background: bg }}>{children}</span>;
 }
+/** Situação (09/10/2026): Aberta (creme) → Concluída (azul aço) → Assinada (verde). */
 export function situacaoOS(l: any) {
     if (l.status === "CONVERTIDA") return <Tag>CONVERTIDA</Tag>;
-    if (l.status === "FECHADA") return <Tag bg="#E6F0C9">ASSINADA</Tag>;
+    if (l.status === "FECHADA") return l.assinada_em ? <Tag bg="#E6F0C9">ASSINADA</Tag> : <Tag bg="#DCE5F0">CONCLUÍDA</Tag>;
     if (l.status === "AGUARDANDO_ASSINATURA") return <Tag bg="#FBEFC4">AGUARDANDO ASSINATURA</Tag>;
-    return <Tag bg="#FFF8E1">RASCUNHO</Tag>;
+    if (l.status === "CANCELADA") return <Tag>CANCELADA</Tag>;
+    return <Tag bg="#FFF8E1">ABERTA</Tag>;
+}
+
+/** Etiqueta "A RECEBER R$ x" (amarelo) da OS concluída com saldo. */
+function TagAReceber({ valor }: { valor: number }) {
+    return valor > 0.004 ? <Tag bg="#FCF3CC">A RECEBER {brl(valor)}</Tag> : <Tag bg="#E6F0C9">QUITADA</Tag>;
 }
 
 function IconeAjuste() {
@@ -129,15 +136,20 @@ function FolhaOS({ osId, numero, versao, onAjuste }: { osId: number; numero: str
 
 type Responsavel = { nome: string; cpf: string };
 
-function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; numero: string; responsavel: Responsavel; onMudou: () => void }) {
+function OSComAcoes({ osId, numero, responsavel, onMudou, familia = null }: { osId: number; numero: string; responsavel: Responsavel; onMudou: () => void; familia?: OSResumida | null }) {
     const [os, setOs] = useState<any>(null);
     const [erro, setErro] = useState("");
     const [msg, setMsg] = useState("");
     const [salvando, setSalvando] = useState(false);
     const [assinar, setAssinar] = useState(false);
+    const [concluir, setConcluir] = useState(false);
     const [versao, setVersao] = useState(0);
     const [pedido, setPedido] = useState<{ alvo: string; n: number } | null>(null);
     const [gerandoPdf, setGerandoPdf] = useState(false);
+    // Folha preparada ao abrir (e a cada mudança): no toque em PDF só falta gerar o arquivo — o iPhone exige o Compartilhar logo após o toque.
+    useEffect(() => {
+        prepararPdfDaOS(osId);
+    }, [osId, versao]);
 
     const carregar = useCallback(async () => {
         try {
@@ -163,41 +175,32 @@ function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; nume
 
     const aberta = os?.status === "ABERTA";
     const particular = os?.natureza === "PARTICULAR";
-    const confirmada = !!os?.confirmada_em;
+    /* Conclusão da venda (09/10/2026): Aberta → Concluir venda (pagamentos) → Colher assinatura (NP do saldo). */
+    const concluida = os?.status === "FECHADA" && !os?.assinada_em;
+    const assinada = os?.status === "FECHADA" && !!os?.assinada_em;
+    const saldo = particular && os ? Math.max(0, (Number(os.valor_total) || 0) - (Number(os.recebido) || 0)) : 0;
     const prefeitura = !!os && !particular && String(os.convenio || "").startsWith("PREFEITURA");
     const associadoSemContrato = !!os && !particular && String(os.convenio || "").startsWith("ASSOCIADO") && !os.contrato_numero;
 
-    const confirmar = async () => {
-        if (salvando) return;
-        setSalvando(true);
-        setErro("");
-        setMsg("");
-        try {
-            const r = await osPost("confirmar_os", { os_id: osId });
-            setMsg(r?.msg || "Valores confirmados.");
-            atualizar();
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível confirmar.");
-        } finally {
-            setSalvando(false);
-        }
-    };
-
     const info = !os
         ? ""
-        : !aberta
-            ? os.status === "FECHADA"
-                ? "OS assinada. Para alterar, o Financeiro reabre a OS."
-                : "Esta OS não está aberta para alteração."
-            : particular
-                ? confirmada
-                    ? "Valores confirmados. Colha a assinatura do responsável (o pagamento no ato e a nota promissória do saldo são informados na assinatura). Qualquer ajuste desfaz a confirmação."
-                    : "Altere valor e desconto pelo ícone ao lado de cada item da folha e pelo Desconto geral. Depois confirme os valores para liberar a assinatura."
-                : prefeitura
-                    ? "OS da Prefeitura: sem valores. O responsável assina como ciência dos serviços."
-                    : associadoSemContrato
-                        ? "Informe o contrato do titular no atendimento antes de colher a assinatura."
-                        : "OS de convênio: o responsável assina como ciência.";
+        : assinada
+            ? "OS assinada. Para alterar, o Financeiro reabre a OS."
+            : concluida
+                ? particular
+                    ? saldo > 0
+                        ? `Venda concluída. Falta receber ${brl(saldo)}: colha a assinatura do responsável para a nota promissória do saldo.`
+                        : "Venda concluída e quitada. A assinatura é opcional."
+                    : "Venda concluída. Colha a assinatura do responsável como ciência dos serviços."
+                : !aberta
+                    ? "Esta OS não está aberta para alteração."
+                    : particular
+                        ? "Ajuste os valores pelo $ de cada item ou pelo Desconto geral. Concluir fecha a venda: os valores travam e a OS vai para o financeiro."
+                        : prefeitura
+                            ? "OS da Prefeitura: sem valores. Concluir fecha a OS; depois o responsável assina como ciência."
+                            : associadoSemContrato
+                                ? "Concluir fecha a OS. Antes da assinatura, informe o contrato do titular no atendimento."
+                                : "OS de convênio: concluir fecha a OS; depois o responsável assina como ciência.";
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -216,6 +219,7 @@ function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; nume
                             <div className="mb-1 flex flex-wrap items-center gap-2">
                                 <b>OS {os.numero_os}</b>
                                 {situacaoOS(os)}
+                                {particular && (concluida || assinada) ? <TagAReceber valor={saldo} /> : null}
                                 {particular ? <span className="font-extrabold">Total {brl(os.valor_total)}</span> : null}
                             </div>
                         ) : null}
@@ -245,24 +249,36 @@ function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; nume
                                 <IconeAjuste /> Desconto geral
                             </button>
                         ) : null}
-                        {aberta && particular && !confirmada ? (
-                            <button type="button" className={BTN_PRI} disabled={salvando || !os} onClick={() => void confirmar()}>
-                                {salvando ? "Confirmando…" : "Confirmar valores"}
+                        {aberta ? (
+                            <button type="button" className={BTN_PRI} disabled={!os} onClick={() => setConcluir(true)}>
+                                <IconeCheck /> Concluir venda
                             </button>
                         ) : null}
-                        {aberta && (!particular || confirmada) ? (
+                        {concluida ? (
                             <button type="button" className={BTN_PRI} disabled={associadoSemContrato} onClick={() => setAssinar(true)}>
-                                Colher assinatura
+                                {particular && saldo > 0 ? "Colher assinatura (nota promissória)" : "Colher assinatura"}
                             </button>
                         ) : null}
                     </div>
                 </div>
             </div>
 
+            {concluir && os ? (
+                <ConcluirVendaModal
+                    os={os}
+                    familia={particular || !familia ? null : { id: familia.id, numero: familia.numero_os, total: familia.valor_total }}
+                    onFechar={() => setConcluir(false)}
+                    onConcluido={(m) => {
+                        setConcluir(false);
+                        setMsg(m);
+                        atualizar();
+                    }}
+                />
+            ) : null}
             {assinar && os ? (
                 <AssinaturaModal
                     os={os}
-                    particular={particular}
+                    saldo={saldo}
                     responsavel={responsavel}
                     onFechar={() => setAssinar(false)}
                     onAssinado={() => {
@@ -278,7 +294,7 @@ function OSComAcoes({ osId, numero, responsavel, onMudou }: { osId: number; nume
 
 /* ---------------------------------------------------------------- Painel com as abas das OS ---------------------------------------------------------------- */
 
-type OSResumida = { id: number; numero_os: string; natureza: string; convenio: string; status: string };
+type OSResumida = { id: number; numero_os: string; natureza: string; convenio: string; status: string; valor_total: number };
 
 function rotuloAba(o: OSResumida) {
     if (o.natureza === "PARTICULAR") return String(o.convenio || "").startsWith("PARTICULAR") ? "Família" : "Diferença da família";
@@ -310,7 +326,7 @@ export default function OSDoAtendimento({
                 if (!vivo) return;
                 const d = r?.dados || {};
                 const l = [d.os_convenio, d.os_particular].filter(Boolean).map((o: any) => ({
-                    id: Number(o.id), numero_os: String(o.numero_os ?? ""), natureza: String(o.natureza ?? ""), convenio: String(o.convenio ?? ""), status: String(o.status ?? ""),
+                    id: Number(o.id), numero_os: String(o.numero_os ?? ""), natureza: String(o.natureza ?? ""), convenio: String(o.convenio ?? ""), status: String(o.status ?? ""), valor_total: Number(o.valor_total) || 0,
                 }));
                 setLista(l);
                 setResp({ nome: String(d.responsavel?.nome ?? ""), cpf: String(d.responsavel?.cpf ?? "") });
@@ -384,7 +400,7 @@ export default function OSDoAtendimento({
             {lista && lista.length === 0 ? <div className="m-4 rounded-xl border border-[#E3E8F0] p-6 text-center text-sm dark:border-white/[0.12]">Este atendimento ainda não tem OS. Salve o registro para gerar.</div> : null}
             {!lista && !erro ? <div className="m-4 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando as OS…</div> : null}
 
-            {atual ? <OSComAcoes key={atual.id} osId={atual.id} numero={atual.numero_os} responsavel={resp} onMudou={() => onMudou?.()} /> : null}
+            {atual ? <OSComAcoes key={atual.id} osId={atual.id} numero={atual.numero_os} responsavel={resp} onMudou={() => onMudou?.()} familia={(lista || []).find((o) => o.natureza === "PARTICULAR" && o.status === "ABERTA") ?? null} /> : null}
         </div>
     );
 
@@ -402,13 +418,14 @@ export default function OSDoAtendimento({
 
 export function AssinaturaModal({
     os,
-    particular,
+    saldo = 0,
     responsavel,
     onFechar,
     onAssinado,
 }: {
     os: any;
-    particular: boolean;
+    /** Saldo da OS da família (total − tudo o que já entrou): vira a nota promissória à vista. O pagamento é lançado na conclusão. */
+    saldo?: number;
     responsavel?: Responsavel;
     onFechar: () => void;
     onAssinado: () => void;
@@ -416,12 +433,10 @@ export function AssinaturaModal({
     const canvas = useRef<HTMLCanvasElement>(null);
     const desenhando = useRef(false);
     const [temTraco, setTemTraco] = useState(false);
-    const [f, setF] = useState({ nome: responsavel?.nome ?? "", cpf: responsavel?.cpf ?? "", pago: "", forma: "PIX" });
+    const [f, setF] = useState({ nome: responsavel?.nome ?? "", cpf: responsavel?.cpf ?? "" });
     const [erro, setErro] = useState("");
     const [salvando, setSalvando] = useState(false);
-
-    const total = Number(os.valor_total) || 0;
-    const saldo = Math.max(0, total - num(f.pago));
+    const particular = os?.natureza === "PARTICULAR";
 
     const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
         const r = e.currentTarget.getBoundingClientRect();
@@ -462,9 +477,8 @@ export function AssinaturaModal({
                 nome_responsavel: f.nome.trim(),
                 cpf_responsavel: f.cpf,
                 assinatura_base64: imagem,
-                // uma assinatura para as OS abertas do mesmo atendimento (convênio e família) — 08/10/2026
+                // uma assinatura para as OS concluídas do mesmo atendimento (convênio e família) — 08/10/2026
                 assinar_juntas: 1,
-                ...(particular && num(f.pago) > 0 ? { pagamento_valor: num(f.pago), pagamento_forma: f.forma, pagamento_data: hoje() } : {}),
             });
             onAssinado();
         } catch (e: any) {
@@ -475,27 +489,20 @@ export function AssinaturaModal({
     };
 
     return (
-        <ModalSimples titulo="Assinatura da OS" sub={`OS ${os.numero_os} · uma assinatura vale para as OS deste atendimento${particular ? ", o pagamento e a nota promissória do saldo" : ""}`} onFechar={onFechar}>
+        <ModalSimples titulo="Assinatura da OS" sub={`OS ${os.numero_os} · uma assinatura vale para as OS concluídas deste atendimento${particular ? " e para a nota promissória do saldo" : ""}`} onFechar={onFechar}>
             {erro && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
             <div className="mb-3 grid grid-cols-2 gap-2">
                 <input className={inputCls} placeholder="Nome do responsável" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} />
                 <input className={inputCls} placeholder="CPF (opcional)" value={f.cpf} onChange={(e) => setF({ ...f, cpf: e.target.value })} />
             </div>
             {particular && (
-                <div className="mb-3 rounded-xl border border-[#E1E5EC] p-3 dark:border-white/[0.12]">
-                    <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">Pagamento no ato (opcional)</div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <input inputMode="decimal" className={inputCls} placeholder="0,00" value={f.pago} onChange={(e) => setF({ ...f, pago: e.target.value })} />
-                        <select className={inputCls} value={f.forma} onChange={(e) => setF({ ...f, forma: e.target.value })}>
-                            {FORMAS.map((x) => <option key={x} value={x}>{x.replace("_", " ")}</option>)}
-                        </select>
-                    </div>
-                    <div className="mt-2 text-sm">Total {brl(total)} · {saldo > 0 ? <>nota promissória à vista de <b>{brl(saldo)}</b></> : <b>quitada no ato, sem nota promissória</b>}</div>
+                <div className={`mb-3 rounded-xl p-3 text-sm ${saldo > 0 ? "bg-[#FCF3CC] text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white" : "bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/15 dark:text-white"}`}>
+                    {saldo > 0 ? <>A assinatura emite a <b>nota promissória à vista de {brl(saldo)}</b> (o saldo que falta receber).</> : <>OS quitada: <b>sem nota promissória</b>.</>}
                 </div>
             )}
             <div className="mb-1 flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]">
                 <span>Assine no quadro</span>
-                <button type="button" onClick={limpar} className="normal-case text-[#00AEEC] dark:text-[#66CFF5]">Limpar</button>
+                <button type="button" onClick={limpar} className="normal-case text-[#3D6A99] dark:text-[#A9C3E0]">Limpar</button>
             </div>
             <canvas
                 ref={canvas}
@@ -514,6 +521,181 @@ export function AssinaturaModal({
                 </button>
             </div>
         </ModalSimples>
+    );
+}
+
+/* ---------------------------------------------------------------- Concluir venda (09/10/2026) ---------------------------------------------------------------- */
+
+function IconeCheck() {
+    return (
+        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12l5 5 9-10" />
+        </svg>
+    );
+}
+
+const ROTULO_FORMA: Record<string, string> = {
+    PIX: "PIX", CARTAO_CREDITO: "Cartão de crédito", CARTAO_DEBITO: "Cartão de débito", DINHEIRO: "Dinheiro",
+    TRANSFERENCIA: "Transferência", BOLETO: "Boleto", CHEQUE: "Cheque", OUTRO: "Outro",
+};
+/** Dinheiro não tem comprovante (decisão de 09/10/2026); as demais formas exigem a foto ou o PDF. */
+const SEM_COMPROVANTE = ["DINHEIRO"];
+const COMPROVANTE_MAX = 15 * 1024 * 1024;
+
+type LinhaPagamento = { forma: string; valor: string; parcelas: number; arquivo: File | null };
+
+/**
+ * Concluir venda: fecha a OS (valores travados, vai para o financeiro). Pagamento do momento opcional, em uma ou mais formas,
+ * com parcelas no cartão de crédito e o comprovante de cada forma (menos dinheiro). Vale também para a outra OS do atendimento.
+ */
+export function ConcluirVendaModal({
+    os,
+    familia = null,
+    onFechar,
+    onConcluido,
+}: {
+    os: any;
+    /** Concluindo pela aba do convênio: os pagamentos vão para a OS da família (aberta) deste atendimento. */
+    familia?: { id: number; numero: string; total: number } | null;
+    onFechar: () => void;
+    onConcluido: (msg: string) => void;
+}) {
+    const particular = os?.natureza === "PARTICULAR";
+    const recebePagamento = particular || !!familia;
+    const total = familia ? Number(familia.total) || 0 : Math.max(0, (Number(os?.valor_total) || 0) - (Number(os?.recebido) || 0));
+    const [linhas, setLinhas] = useState<LinhaPagamento[]>([]);
+    const [erro, setErro] = useState("");
+    const [salvando, setSalvando] = useState(false);
+
+    const pago = linhas.reduce((a, l) => a + num(l.valor), 0);
+    const saldo = Math.max(0, Math.round((total - pago) * 100) / 100);
+    const mudar = (i: number, d: Partial<LinhaPagamento>) => setLinhas((ls) => ls.map((l, k) => (k === i ? { ...l, ...d } : l)));
+    const problema = (() => {
+        for (const [i, l] of linhas.entries()) {
+            if (!(num(l.valor) > 0)) return `Pagamento ${i + 1}: informe o valor.`;
+            if (!SEM_COMPROVANTE.includes(l.forma) && !l.arquivo) return `Pagamento ${i + 1} (${ROTULO_FORMA[l.forma]}): anexe a foto do comprovante.`;
+        }
+        if (pago > total + 0.009) return `Os pagamentos somam ${brl(pago)}, mais que o total (${brl(total)}).`;
+        return "";
+    })();
+
+    const escolherArquivo = (i: number, file: File | null) => {
+        if (!file) return mudar(i, { arquivo: null });
+        if (!/^image\//.test(file.type) && file.type !== "application/pdf") {
+            setErro("O comprovante deve ser uma foto ou PDF.");
+            return;
+        }
+        if (file.size > COMPROVANTE_MAX) {
+            setErro("O comprovante deve ter no máximo 15 MB.");
+            return;
+        }
+        setErro("");
+        mudar(i, { arquivo: file });
+    };
+
+    const enviar = async () => {
+        if (salvando || problema) return;
+        setSalvando(true);
+        setErro("");
+        try {
+            const fd = new FormData();
+            fd.append("concluir", "1");
+            fd.append("os_id", String(os.id));
+            fd.append("concluir_juntas", "1");
+            fd.append("pagamentos", JSON.stringify(linhas.map((l) => ({ forma: l.forma, valor: num(l.valor), parcelas: l.forma === "CARTAO_CREDITO" ? l.parcelas : null }))));
+            linhas.forEach((l, i) => l.arquivo && fd.append(`comprovante_${i}`, l.arquivo, l.arquivo.name || `comprovante_${i}.jpg`));
+            const r = await apiJson(OS_API, { method: "POST", body: fd });
+            onConcluido(r?.msg || "Venda concluída.");
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível concluir a venda.");
+        } finally {
+            setSalvando(false);
+        }
+    };
+
+    const rotulo = "text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488] dark:text-[#AEB9CF]";
+    return (
+        <ModalSimples titulo="Concluir venda" sub={`OS ${os.numero_os} · vale também para a outra OS aberta deste atendimento`} onFechar={onFechar}>
+            {erro && <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+            {recebePagamento ? (
+                <>
+                    <div className="mb-3 flex items-center justify-between border-b border-[#E1E5EC] pb-2 dark:border-white/[0.12]">
+                        <span className="text-[#6B7488] dark:text-[#AEB9CF]">Total{familia ? ` · OS ${familia.numero}` : ""}</span>
+                        <b className="text-lg">{brl(total)}</b>
+                    </div>
+                    <div className={`${rotulo} mb-2`}>Pagamento agora (opcional)</div>
+                    <div className="flex flex-col gap-3">
+                        {linhas.map((l, i) => (
+                            <div key={i} className="rounded-xl border border-[#E1E5EC] p-2.5 dark:border-white/[0.12]">
+                                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px] gap-2">
+                                    <input inputMode="decimal" aria-label={`Valor do pagamento ${i + 1}`} className={inputCls} placeholder="0,00" value={l.valor} onChange={(e) => mudar(i, { valor: e.target.value })} />
+                                    <select aria-label={`Forma do pagamento ${i + 1}`} className={inputCls} value={l.forma} onChange={(e) => mudar(i, { forma: e.target.value, parcelas: 1 })}>
+                                        {FORMAS.map((x) => <option key={x} value={x}>{ROTULO_FORMA[x] || x}</option>)}
+                                    </select>
+                                    <button type="button" aria-label={`Tirar o pagamento ${i + 1}`} onClick={() => setLinhas((ls) => ls.filter((_, k) => k !== i))} className="flex h-10 items-center justify-center rounded-lg text-[#6B7488] hover:bg-[#EEF2F7] dark:text-[#AEB9CF] dark:hover:bg-white/10">✕</button>
+                                </div>
+                                {l.forma === "CARTAO_CREDITO" ? (
+                                    <label className="mt-2 flex items-center justify-end gap-2 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
+                                        Parcelas no cartão
+                                        <select className={`${inputCls} w-auto`} value={l.parcelas} onChange={(e) => mudar(i, { parcelas: Number(e.target.value) })}>
+                                            {Array.from({ length: 12 }, (_, k) => k + 1).map((n) => (
+                                                <option key={n} value={n}>{n === 1 ? "1x (à vista)" : `${n}x de ${brl(num(l.valor) / n)}`}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                ) : null}
+                                {SEM_COMPROVANTE.includes(l.forma) ? (
+                                    <div className="mt-2 text-xs text-[#6B7488] dark:text-[#AEB9CF]">Dinheiro: sem comprovante (o Financeiro confere pelo caixa).</div>
+                                ) : (
+                                    <label className={`mt-2 flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-[1.5px] border-dashed px-3 text-sm font-bold ${l.arquivo ? "border-[#7BA11A] text-[#313C55] dark:text-white" : "border-[#C9D1DE] text-[#313C55] dark:border-white/25 dark:text-white"}`}>
+                                        <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={(e) => escolherArquivo(i, e.target.files?.[0] ?? null)} />
+                                        {l.arquivo ? <>✓ <span className="truncate">{l.arquivo.name}</span><span className="ml-auto text-xs font-semibold text-[#6B7488] dark:text-[#AEB9CF]">trocar</span></> : <>📎 Foto do comprovante (obrigatória)</>}
+                                    </label>
+                                )}
+                            </div>
+                        ))}
+                        <button type="button" onClick={() => setLinhas((ls) => [...ls, { forma: "PIX", valor: ls.length ? "" : total ? String(total.toFixed(2)).replace(".", ",") : "", parcelas: 1, arquivo: null }])}
+                            className="h-10 rounded-xl border-[1.5px] border-dashed border-[#C9D1DE] text-sm font-bold text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/25 dark:text-white dark:hover:bg-white/10">
+                            + {linhas.length ? "Outra forma de pagamento" : "Lançar pagamento"}
+                        </button>
+                    </div>
+                    <div className="mt-3 flex justify-between text-sm"><span className="text-[#6B7488] dark:text-[#AEB9CF]">Pago agora</span><b>{brl(pago)}</b></div>
+                    <div className={`mt-2 rounded-xl p-3 text-sm ${saldo > 0 ? "bg-[#FCF3CC] text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white" : "bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/15 dark:text-white"}`}>
+                        {saldo > 0 ? <>Fica <b>a receber {brl(saldo)}</b>. A nota promissória desse saldo sai na <b>assinatura</b> do responsável, agora ou depois.</> : <>Pagamento cobre o total: a OS sai <b>quitada</b> e não precisa de assinatura.</>}
+                    </div>
+                </>
+            ) : (
+                <div className="mb-2 rounded-xl bg-[#E9EFF6] p-3 text-sm text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">OS de convênio: concluir fecha a OS. Sem pagamento.</div>
+            )}
+            <div className="mt-3 text-xs text-[#6B7488] dark:text-[#AEB9CF]">Depois de concluída, os valores ficam travados. Para alterar, o Financeiro reabre a OS.</div>
+            {problema && linhas.length ? <div className="mt-2 text-sm font-semibold text-[#B42318] dark:text-[#FF9C92]">{problema}</div> : null}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" onClick={onFechar} className={BTN_SEC}>Cancelar</button>
+                <button type="button" disabled={salvando || !!problema} onClick={() => void enviar()} className={BTN_PRI}>
+                    {salvando ? "Concluindo…" : "Concluir venda"}
+                </button>
+            </div>
+        </ModalSimples>
+    );
+}
+
+/** A OS sozinha (pelo id), por cima da tela — usada pelo pedido de coroa (venda direta) e pela Minhas OS. */
+export function JanelaOSPorId({ osId, numero, onFechar, onMudou }: { osId: number; numero: string; onFechar: () => void; onMudou?: () => void }) {
+    useEffect(() => {
+        const esc = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+        window.addEventListener("keydown", esc);
+        return () => window.removeEventListener("keydown", esc);
+    }, [onFechar]);
+    return (
+        <div data-pai-overlay className="fixed inset-0 z-50 flex items-stretch justify-center bg-[rgba(10,14,24,0.55)] sm:items-center sm:p-4" onClick={onFechar}>
+            <div role="dialog" aria-modal="true" aria-label={`OS ${numero}`} className="flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white sm:h-[94dvh] sm:max-w-[960px] sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex shrink-0 items-center gap-2 border-b border-[#E3E8F0] py-2 pl-4 pr-2 dark:border-white/[0.12]">
+                    <h2 className="flex-1 truncate text-lg font-extrabold">OS {numero}</h2>
+                    <button type="button" aria-label="Fechar" onClick={onFechar} className="flex size-11 items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/10">✕</button>
+                </div>
+                <OSComAcoes osId={osId} numero={numero} responsavel={{ nome: "", cpf: "" }} onMudou={() => onMudou?.()} />
+            </div>
+        </div>
     );
 }
 

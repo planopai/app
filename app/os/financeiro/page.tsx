@@ -2,8 +2,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ItensOSAjuste from "../components/ItensOSAjuste";
 import {
-    BarraFiltrosOS, CartoesOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, ResumoOS, SITUACOES_OS, TIPOS_OS,
-    baixarPdfDaOS, dataBROS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
+    BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, PAGAMENTOS_OS, ResumoOS, SITUACOES_OS, TIPOS_OS,
+    baixarPdfDaOS, dataBROS, metaFinanceiraOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
     type FiltroOS, type TabelaExport,
 } from "../components/ListaOS";
 
@@ -72,7 +72,7 @@ const COR = {
     navy: "#313C55",
     amarelo: "#F2CB3F",
     verde: "#B3CE52",
-    azul: "#00AEEC",
+    azul: "#3D6A99",   // sem ciano nas telas (regra de cores)
     muted: "#6B7488",
 };
 
@@ -172,7 +172,7 @@ function Campo({
 }
 
 const inputCls =
-    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#00AEEC]";
+    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#3D6A99]";
 
 const TIPOS = [
     { v: "", r: "Todos" },
@@ -258,7 +258,8 @@ export default function FinanceiroOSPage() {
                 .map((c: any) => ({ v: String(c.codigo), r: c.tipo === "PREFEITURA" ? `Prefeitura de ${c.nome}` : `Plano ${c.nome}` })),
         [convenios],
     );
-    const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS, agente: opAgentes, convenio: opConvenios };
+    const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS, pagamento: PAGAMENTOS_OS, agente: opAgentes, convenio: opConvenios };
+    const soAReceber = filtro.pagamentos.length === 1 && filtro.pagamentos[0] === "A_RECEBER";
 
     const ind = painel?.indicadores;
     const vt = ind?.vendas_por_tipo || {};
@@ -279,7 +280,8 @@ export default function FinanceiroOSPage() {
     const linhaDe = (osId: any) => linhasOS.find((l) => l.os_id === osId);
 
     return (
-        <main className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+        <main data-os-tela className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <EstiloTemaOS />
             <div className="mx-auto flex max-w-6xl flex-col gap-3">
                 <BarraFiltrosOS
                     filtro={filtro}
@@ -304,10 +306,14 @@ export default function FinanceiroOSPage() {
                         <CartoesOS
                             itens={[
                                 { rotulo: "Total de vendas", valor: brl(ind.total_vendas), cor: "#313C55", sub: `Prt ${brl(vt.PRT)} · Dif ${brl((vt.DIF_SOC || 0) + (vt.DIF_PRF || 0))} · Cor ${brl(vt.COR)} · Prf ${brl(vt.PRF)}` },
-                                { rotulo: "A receber", valor: brl(ind.a_receber), cor: "#F2CB3F", sub: "saldo das OS assinadas" },
+                                {
+                                    rotulo: "A receber", valor: brl(ind.a_receber), cor: "#F2CB3F", sub: soAReceber ? "lista filtrada · toque para tirar" : "toque para ver as OS",
+                                    ativo: soAReceber, onClick: () => setFiltro({ ...filtro, pagamentos: soAReceber ? [] : ["A_RECEBER"] }),
+                                },
                                 { rotulo: "Recebido no período", valor: brl(ind.recebido_no_periodo), cor: "#B3CE52" },
                                 { rotulo: "NPs abertas", valor: String(ind.nps_abertas?.quantidade || 0), cor: "#3D6A99", sub: `${brl(ind.nps_abertas?.valor)} à vista` },
-                                { rotulo: "Aguardando assinatura", valor: String(ind.aguardando_assinatura?.quantidade || 0), cor: "#C9CFD9", sub: `${brl(ind.aguardando_assinatura?.valor)} sem NP` },
+                                // OS ainda abertas (a venda só conta depois de concluída — 09/10/2026)
+                                { rotulo: "A concluir", valor: String(ind.aguardando_assinatura?.quantidade || 0), cor: "#C9CFD9", sub: `${brl(ind.aguardando_assinatura?.valor)} em OS abertas` },
                                 { rotulo: "Cobertura dos planos", valor: brl(ind.cobertura_planos), cor: "#B3CE52", sub: "no período" },
                             ]}
                         />
@@ -331,10 +337,13 @@ export default function FinanceiroOSPage() {
                         situacao: situacaoDaOS(l),
                         valor: brl(l.valor_total),
                         nome: l.falecido || "—",
-                        meta: [l.tipo_rotulo, l.agente, dataBROS(l.criado_em)].filter(Boolean).join(" · "),
+                        meta: metaFinanceiraOS(l),
                     }))}
                     onAbrir={(id) => setAberta(linhaDe(id))}
-                    onMais={(id) => setResumo(linhaDe(id))}
+                    onMais={(id) => {
+                        prepararPdfDaOS(id);
+                        setResumo(linhaDe(id));
+                    }}
                 />
             </div>
 
@@ -828,6 +837,9 @@ function DetalheOS({
                                                         "_",
                                                         " ",
                                                     )}
+                                                    {/* parcelas do cartão e origem (conclusão da venda / site) — 09/10/2026 */}
+                                                    {Number(p.parcelas) > 1 ? ` · ${p.parcelas}x` : ""}
+                                                    {p.origem === "CONCLUSAO" ? <span className="ml-1 text-xs text-[#6B7488]">(na conclusão)</span> : p.origem === "SITE" ? <span className="ml-1 text-xs text-[#6B7488]">(site)</span> : null}
                                                 </td>
                                                 <td className="whitespace-nowrap text-right font-bold">
                                                     {brl(p.valor)}
@@ -846,7 +858,7 @@ function DetalheOS({
                                                                     c.id ||
                                                                     c.arquivo_url
                                                                 }
-                                                                className="ml-2 font-bold text-[#00AEEC]"
+                                                                className="ml-2 font-bold text-[#3D6A99] dark:text-[#A9C3E0]"
                                                                 target="_blank"
                                                                 rel="noreferrer"
                                                                 href={

@@ -26,6 +26,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
+import { JanelaOSPorId } from "@/app/os/components/OSDoAtendimento";
 import { classeOpcaoSimNao, MarcaSimNao } from "@/app/acompanhamento/components/simNaoCores";
 import {
     IconCamera,
@@ -80,6 +81,24 @@ async function lancarOSCoroaPrefeitura(pedidoId: number): Promise<string> {
     const json = await res.json().catch(() => null);
     if (!res.ok || json?.erro || json?.sucesso === false) throw new Error(json?.msg || `Falha ao lançar a OS (${res.status}).`);
     return String(json?.msg || "OS da Prefeitura lançada.");
+}
+
+/**
+ * Venda direta (09/10/2026): o pagamento é lançado na OS de coroa (Cor) — "Concluir venda", com as formas, as parcelas e o
+ * comprovante. Esta chamada devolve a OS do pedido (cria se ainda não existir).
+ */
+async function osDaCoroa(pedidoId: number): Promise<{ id: number; numero: string }> {
+    const body = new URLSearchParams({ os_da_coroa: "1", coroa_pedido_id: String(pedidoId) });
+    const res = await fetch(OS_API, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.erro || json?.sucesso === false || !json?.dados?.os?.id) throw new Error(json?.msg || `Falha ao abrir a OS (${res.status}).`);
+    return { id: Number(json.dados.os.id), numero: String(json.dados.os.numero_os || "") };
 }
 
 /* =========================================================
@@ -721,13 +740,12 @@ function pedidoFrasesManual(order?: ManualOrder | null) {
 }
 
 function pagamentoAutomaticoManual(order?: ManualOrder | null) {
-    if (pedidoEhOnline(order) && order?.status_pagamento === "pago") return "Pago";
+    if (order?.status_pagamento === "pago") return "Pago";
     return order?.comprovante_url ? "Pago" : "Aguardando Comprovante";
 }
 
 function pagamentoAutomaticoClass(order?: ManualOrder | null) {
-    const pago = Boolean(order?.comprovante_url) ||
-        (pedidoEhOnline(order) && order?.status_pagamento === "pago");
+    const pago = Boolean(order?.comprovante_url) || order?.status_pagamento === "pago";
 
     return pago
         ? "bg-emerald-100 text-emerald-900 border-emerald-200"
@@ -2085,6 +2103,17 @@ export default function Page() {
     const [quantidadeCoroas, setQuantidadeCoroas] = React.useState(1);
     const [newItems, setNewItems] = React.useState<NovoCoroaItem[]>([criarNovoCoroaItem()]);
     const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
+    /** OS de coroa aberta por cima da tela (Concluir venda). Pedido antigo (sem OS): volta o anexo de comprovante de antes. */
+    const [osCoroaAberta, setOsCoroaAberta] = React.useState<{ id: number; numero: string } | null>(null);
+    const [osCoroaErro, setOsCoroaErro] = React.useState<string | null>(null);
+    const abrirOSDaCoroa = React.useCallback(async (pedidoId: number) => {
+        setOsCoroaErro(null);
+        try {
+            setOsCoroaAberta(await osDaCoroa(pedidoId));
+        } catch (e: any) {
+            setOsCoroaErro(e?.message || "Não foi possível abrir a OS do pedido.");
+        }
+    }, []);
     /* Convênio do pedido avulso: Particular ("") ou uma Prefeitura com pacote de coroa; com Prefeitura, a pergunta da autorização. */
     const [newConvenioId, setNewConvenioId] = React.useState("");
     const [newCoroaAut, setNewCoroaAut] = React.useState<"" | "Sim" | "Não">("");
@@ -2277,6 +2306,8 @@ export default function Page() {
                 window.alert(erroPush);
             }
             if (avisoOS) window.alert(avisoOS);
+            // Venda direta: abre a OS de coroa para concluir a venda (formas de pagamento, parcelas e comprovante).
+            if (!newAutorizada && json?.id) void abrirOSDaCoroa(Number(json.id));
         } catch (e: any) {
             setNewError(e?.message || "Não foi possível criar o pedido.");
         } finally {
@@ -2885,6 +2916,19 @@ export default function Page() {
     }
 
     return (
+        <>
+        {osCoroaAberta ? (
+            <JanelaOSPorId
+                osId={osCoroaAberta.id}
+                numero={osCoroaAberta.numero}
+                onFechar={() => {
+                    const pedido = manualDetail?.id;
+                    setOsCoroaAberta(null);
+                    setConfeccaoRefreshToken((v) => v + 1);
+                    if (pedido) void carregarManualDetail(Number(pedido), true);
+                }}
+            />
+        ) : null}
         <div
             ref={pageScrollRef}
             className="mobile-y-scroll flex h-full min-h-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain"
@@ -3849,39 +3893,8 @@ export default function Page() {
                             </div>
 
                             {!newAutorizada && (
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Comprovante</label>
-                                <ComprovanteUploadButtons
-                                    disabled={newSaving}
-                                    onFile={(file) => {
-                                        try {
-                                            validarComprovanteFile(file);
-                                            setNewComprovante(file);
-                                            setNewError(null);
-                                        } catch (e: any) {
-                                            setNewComprovante(null);
-                                            setNewError(e?.message || "Comprovante inválido.");
-                                        }
-                                    }}
-                                />
-
-                                {newComprovante && (
-                                    <div className="mt-2 flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm">
-                                        <div className="min-w-0">
-                                            <div className="truncate font-medium">{newComprovante.name}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {formatFileSize(newComprovante.size)}
-                                            </div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            className="shrink-0 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                                            onClick={() => setNewComprovante(null)}
-                                        >
-                                            Remover
-                                        </button>
-                                    </div>
-                                )}
+                            <div className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                                Pagamento: depois de salvar, a OS do pedido abre para <b>Concluir venda</b> — formas de pagamento, parcelas e a foto do comprovante.
                             </div>
                             )}
 
@@ -4406,10 +4419,23 @@ export default function Page() {
                                                     Pagamento confirmado pelo WooCommerce. Não é necessário anexar comprovante manual.
                                                 </div>
                                             ) : (
-                                                <ComprovanteUploadButtons
-                                                    disabled={manualActionLoading}
-                                                    onFile={anexarComprovanteManual}
-                                                />
+                                                <div className="flex flex-col gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={manualActionLoading}
+                                                        onClick={() => void abrirOSDaCoroa(Number(manualDetail.id))}
+                                                        className="inline-flex h-10 items-center justify-center rounded-md bg-[#F2CB3F] px-4 text-sm font-bold text-[#313C55] hover:bg-[#E4BC30] disabled:opacity-50"
+                                                    >
+                                                        {manualDetail.status_pagamento === "pago" ? "Ver OS" : "Concluir venda"}
+                                                    </button>
+                                                    {osCoroaErro ? (
+                                                        <>
+                                                            <div className="max-w-xs text-xs text-muted-foreground">{osCoroaErro}</div>
+                                                            {/* pedido anterior à OS de coroa: segue o anexo de comprovante de antes */}
+                                                            <ComprovanteUploadButtons disabled={manualActionLoading} onFile={anexarComprovanteManual} />
+                                                        </>
+                                                    ) : null}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -4613,5 +4639,6 @@ export default function Page() {
                 </NoCorpo>
             )}
         </div>
+        </>
     );
 }

@@ -24,13 +24,19 @@ const COR_TEXTO: [number, number, number] = [49, 60, 85];
 const COR_CINZA: [number, number, number] = [74, 84, 104];
 
 /** Só caracteres que a Helvetica do PDF tem (WinAnsi). */
+const FORA_DA_FONTE = /[^\x09\x0a\x0d\x20-\x7e\u00a0-\u00ff\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026\u20ac]/gu;
+
 function limpar(s: string): string {
     return s
         .replace(/[\u00a0\u2007\u2009\u202f]/g, " ")
         .replace(/\u2212/g, "-")
         .replace(/[\u2010\u2011]/g, "-")
         .replace(/[\u2713\u2714]/g, "OK")
-        .replace(/[^\x09\x0a\x0d\x20-\x7e\u00a0-\u00ff\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026\u20ac]/g, "")
+        // letra que a fonte não tem vira a letra base (ex.: "ẽ" → "e", "ő" → "o"); o resto (emoji etc.) vira "?"
+        .replace(FORA_DA_FONTE, (c) => {
+            const base = c.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return base && !new RegExp(FORA_DA_FONTE.source, "u").test(base) ? base : /\p{Extended_Pictographic}|[\u200d\ufe0f]/u.test(c) ? "" : "?";
+        })
         .replace(/\s+/g, " ");
 }
 

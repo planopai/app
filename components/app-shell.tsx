@@ -46,12 +46,20 @@ export default function AppShell({
             }
         >
             <AppSidebar variant="inset" />
-            <SidebarInset>
+            {/*
+             * iPhone (09/10/2026): no celular/tablet (< 1024 px) a PÁGINA não rola mais — rola só a área do conteúdo.
+             * Com a página rolando, o Safari do iPhone recolhe a barra de endereço e redesenha o que é fixo: a barra de baixo
+             * ia para o meio da tela. Com a página parada, a barra fica sempre no rodapé. No computador nada muda.
+             */}
+            <style>{`@media (max-width: 1023.98px) { html, body { height: 100%; overflow: hidden; overscroll-behavior: none; } }`}</style>
+            <SidebarInset className="max-lg:h-[100dvh] max-lg:min-h-0 max-lg:overflow-hidden md:max-lg:h-[calc(100dvh-1rem)]">
                 {/* Header global (remova se não quiser) */}
                 <SiteHeader />
-                <div className="flex flex-1 flex-col">{children}</div>
-                {/* Barra de baixo do celular (5 atalhos + Menu); some no computador */}
-                <BarraCelular />
+                <div data-pai-rolagem className="flex flex-1 flex-col max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain">
+                    {children}
+                    {/* Barra de baixo do celular (5 atalhos + Menu); some no computador. O espaço dela fica no fim da área que rola. */}
+                    <BarraCelular />
+                </div>
             </SidebarInset>
         </SidebarProvider>
     );

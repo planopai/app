@@ -25,6 +25,8 @@ export type FiltroOS = {
     data_fim: string;
     tipos: string[];
     situacoes: string[];
+    /** Situação do pagamento (A_RECEBER, PARCIAL, QUITADA) — mesmo saldo do cartão "A receber". */
+    pagamentos: string[];
     agentes: string[];
     convenios: string[];
 };
@@ -38,17 +40,23 @@ export const TIPOS_OS: Opcao[] = [
     { v: "DIF_PRF", r: "Dif.Prf" },
     { v: "COR", r: "Coroa (Cor)" },
 ];
+/** Situações (09/10/2026): Aberta → Concluída (venda fechada, sem assinatura) → Assinada. */
 export const SITUACOES_OS: Opcao[] = [
     { v: "ABERTA", r: "Aberta" },
-    { v: "AGUARDANDO_ASSINATURA", r: "Aguardando assinatura" },
-    { v: "FECHADA", r: "Assinada" },
-    { v: "PAGA", r: "Paga" },
+    { v: "CONCLUIDA", r: "Concluída" },
+    { v: "ASSINADA", r: "Assinada" },
     { v: "CONVERTIDA", r: "Convertida" },
+];
+/** Situação do pagamento (o "Paga" saiu da Situação e veio para cá, como "Quitada"). */
+export const PAGAMENTOS_OS: Opcao[] = [
+    { v: "A_RECEBER", r: "A receber" },
+    { v: "PARCIAL", r: "Recebida em parte" },
+    { v: "QUITADA", r: "Quitada" },
 ];
 
 export function filtroInicial(extra?: Partial<FiltroOS>): FiltroOS {
     const h = hojeISO();
-    return { data_inicio: h.slice(0, 8) + "01", data_fim: h, tipos: [], situacoes: [], agentes: [], convenios: [], ...extra };
+    return { data_inicio: h.slice(0, 8) + "01", data_fim: h, tipos: [], situacoes: [], pagamentos: [], agentes: [], convenios: [], ...extra };
 }
 
 /** Parâmetros para o os_principal.php (vários valores separados por vírgula). */
@@ -56,12 +64,13 @@ export function paramsDoFiltro(f: FiltroOS): Record<string, string> {
     const p: Record<string, string> = { data_inicio: f.data_inicio, data_fim: f.data_fim };
     if (f.tipos.length) p.tipo = f.tipos.join(",");
     if (f.situacoes.length) p.situacao = f.situacoes.join(",");
+    if (f.pagamentos.length) p.pagamento = f.pagamentos.join(",");
     if (f.agentes.length) p.agente_id = f.agentes.join(",");
     if (f.convenios.length) p.convenio = f.convenios.join(",");
     return p;
 }
 
-type Mostrar = { tipo?: Opcao[]; situacao?: Opcao[]; agente?: Opcao[]; convenio?: Opcao[] };
+type Mostrar = { tipo?: Opcao[]; situacao?: Opcao[]; pagamento?: Opcao[]; agente?: Opcao[]; convenio?: Opcao[] };
 
 /** Etiquetas dos filtros ativos (cada uma com o seu ✕). O período sempre aparece. */
 function etiquetasAtivas(f: FiltroOS, m: Mostrar) {
@@ -71,6 +80,7 @@ function etiquetasAtivas(f: FiltroOS, m: Mostrar) {
     ];
     if (f.tipos.length) e.push({ chave: "tipos", texto: `Tipo: ${nomes(f.tipos, m.tipo)}` });
     if (f.situacoes.length) e.push({ chave: "situacoes", texto: `Situação: ${nomes(f.situacoes, m.situacao)}` });
+    if (f.pagamentos.length) e.push({ chave: "pagamentos", texto: `Pagamento: ${nomes(f.pagamentos, m.pagamento)}` });
     if (f.agentes.length) e.push({ chave: "agentes", texto: `Agente: ${nomes(f.agentes, m.agente)}` });
     if (f.convenios.length) e.push({ chave: "convenios", texto: `Convênio: ${nomes(f.convenios, m.convenio)}` });
     return e;
@@ -133,7 +143,10 @@ export function BarraFiltrosOS({
     const etiquetas = etiquetasAtivas(filtro, mostrar);
     const [menu, setMenu] = useState(false);
     const tirar = (chave: string) => {
-        if (chave === "periodo") onMudar({ ...filtro, ...filtroInicial(), tipos: filtro.tipos, situacoes: filtro.situacoes, agentes: filtro.agentes, convenios: filtro.convenios });
+        if (chave === "periodo") {
+            const p = filtroInicial();
+            onMudar({ ...filtro, data_inicio: p.data_inicio, data_fim: p.data_fim });
+        }
         else onMudar({ ...filtro, [chave]: [] } as FiltroOS);
     };
     return (
@@ -295,6 +308,12 @@ export function JanelaFiltrosOS({ valor, mostrar, onAplicar, onFechar }: { valor
                             <Chips opcoes={mostrar.situacao} marcados={f.situacoes} onTrocar={(v) => setF({ ...f, situacoes: v })} />
                         </section>
                     ) : null}
+                    {mostrar.pagamento ? (
+                        <section>
+                            <div className={sec}>Pagamento</div>
+                            <Chips opcoes={mostrar.pagamento} marcados={f.pagamentos} onTrocar={(v) => setF({ ...f, pagamentos: v })} />
+                        </section>
+                    ) : null}
                     {mostrar.agente ? (
                         <section>
                             <div className={sec}>Agente</div>
@@ -349,7 +368,12 @@ export type TabelaExport = { titulo: string; subtitulo: string; cabecalho: strin
 
 /** Planilha (abre no Excel): CSV com ; e BOM, como o relatório do servidor. */
 export function exportarPlanilha(t: TabelaExport) {
-    const q = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    // Célula que começa com = + @ (ou tab/enter) vira fórmula no Excel: um apóstrofo na frente impede (injeção de CSV).
+    const q = (v: any) => {
+        let t = String(v ?? "");
+        if (/^[=+@\t\r]/.test(t)) t = "'" + t;
+        return `"${t.replace(/"/g, '""')}"`;
+    };
     const csv = "\uFEFF" + [t.cabecalho.map(q).join(";"), ...t.linhas.map((l) => l.map(q).join(";"))].join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
@@ -407,35 +431,63 @@ export function itensExportar(t: () => TabelaExport): ItemExportar[] {
     return [
         { icone: <Icone d={Ic.imprimir} />, rotulo: "Imprimir lista", sub: "A4 deitado", onClick: () => imprimirLista(t()) },
         { icone: <Icone d={Ic.pdf} />, rotulo: "PDF", sub: "pela impressão: Salvar como PDF", onClick: () => imprimirLista(t(), true) },
-        { icone: <Icone d={Ic.planilha} />, rotulo: "Planilha (Excel)", sub: `${t().arquivo}.csv`, onClick: () => exportarPlanilha(t()) },
+        { icone: <Icone d={Ic.planilha} />, rotulo: "Planilha (Excel)", sub: "arquivo .csv", onClick: () => exportarPlanilha(t()) },
     ];
 }
 
 /* ------------------------------------------------------------------ PDF da folha da OS (para mandar ao cliente) */
 
-/**
+/*
  * PDF da folha da OS para mandar ao cliente, gerado no próprio aparelho com o jsPDF (08/10/2026).
- * O servidor entrega a folha pronta (as regras ficam lá) e registra no histórico da OS que o PDF foi gerado;
- * aqui ela vira A4 e vai para o Compartilhar do celular (WhatsApp, e-mail...) ou é baixada no computador.
+ * O servidor entrega a folha pronta (as regras ficam lá); aqui ela vira A4 e vai para o Compartilhar do celular
+ * (WhatsApp, e-mail...) ou é baixada no computador.
+ *
+ * O iPhone só abre o Compartilhar logo depois do toque. Por isso a folha e o jsPDF são preparados antes
+ * (prepararPdfDaOS, ao abrir a OS ou o resumo) e, no toque, só falta gerar o arquivo.
  */
+type Preparo = { quando: number; html: Promise<string> };
+const PREPARADAS = new Map<string, Preparo>();
+const VALIDADE_PREPARO_MS = 60_000;
+
+async function buscarFolha(osId: number | string): Promise<string> {
+    const res = await fetch(`${API_OS}?documento_os=1&os_id=${osId}&formato=visualizar&_=${Date.now()}`, { credentials: "include", cache: "no-store" });
+    const html = await res.text();
+    if (!res.ok || !html.includes("<body")) {
+        let msg = "";
+        try {
+            msg = JSON.parse(html)?.msg || "";
+        } catch {
+            /* não era JSON */
+        }
+        throw new Error(msg || `Não foi possível montar a folha (${res.status}).`);
+    }
+    return html;
+}
+
+/** Busca a folha e carrega o jsPDF antes do toque. Pode chamar várias vezes: reaproveita o que estiver fresco. */
+export function prepararPdfDaOS(osId: number | string, forcar = false) {
+    const k = String(osId);
+    const atual = PREPARADAS.get(k);
+    if (!forcar && atual && Date.now() - atual.quando < VALIDADE_PREPARO_MS) return;
+    const html = buscarFolha(osId);
+    html.catch(() => PREPARADAS.delete(k));
+    PREPARADAS.set(k, { quando: Date.now(), html });
+    void import("./pdfFolha").catch(() => { });
+}
+
 export async function baixarPdfDaOS(osId: number | string, numero?: string): Promise<string> {
     const nome = `OS-${numero || osId}.pdf`;
+    const k = String(osId);
+    const pronta = PREPARADAS.get(k);
     let html = "";
     try {
-        const res = await fetch(`${API_OS}?documento_os=1&os_id=${osId}&formato=visualizar&para_pdf=1&_=${Date.now()}`, { credentials: "include", cache: "no-store" });
-        html = await res.text();
-        if (!res.ok || !html.includes("<body")) {
-            let msg = "";
-            try {
-                msg = JSON.parse(html)?.msg || "";
-            } catch {
-                /* não era JSON */
-            }
-            return msg || `Não foi possível montar a folha (${res.status}).`;
-        }
-    } catch {
-        return "Sem conexão com o servidor para montar a folha.";
+        html = await (pronta && Date.now() - pronta.quando < VALIDADE_PREPARO_MS ? pronta.html : buscarFolha(osId));
+    } catch (e: any) {
+        PREPARADAS.delete(k);
+        return e?.message || "Sem conexão com o servidor para montar a folha.";
     }
+    // Registro no histórico da OS ("PDF"), sem esperar a resposta.
+    void fetch(`${API_OS}?documento_os=1&os_id=${osId}&formato=visualizar&para_pdf=1&_=${Date.now()}`, { credentials: "include", cache: "no-store", keepalive: true }).catch(() => { });
     let blob: Blob;
     try {
         const { pdfDaFolhaHtml } = await import("./pdfFolha");
@@ -451,6 +503,7 @@ export async function baixarPdfDaOS(osId: number | string, numero?: string): Pro
             return "";
         } catch (e: any) {
             if (e?.name === "AbortError") return "";
+            // NotAllowedError (o toque "expirou"): segue para abrir/baixar o arquivo
         }
     }
     const url = URL.createObjectURL(blob);
@@ -464,31 +517,63 @@ export async function baixarPdfDaOS(osId: number | string, numero?: string): Pro
     return "";
 }
 
+/**
+ * Linha de informação da lista (pedido de 08/10/2026): data dd/mm/aa · quem abriu a OS · pago · em aberto.
+ * OS de convênio: o que cabe ao convênio no lugar do "em aberto".
+ */
+export function metaFinanceiraOS(l: any): string {
+    const d = String(l.criado_em || "").slice(0, 10);
+    const data = d.length === 10 ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(2, 4)}` : "";
+    const pago = Number(l.recebido) || 0;
+    let aberto: string;
+    if (l.status === "CONVERTIDA") aberto = "convertida";
+    else if (l.tipo === "SOC") aberto = "coberto pelo plano";
+    else if (l.saldo !== null && l.saldo !== undefined) aberto = `em aberto ${brlOS(l.saldo)}`;
+    else aberto = `em aberto ${brlOS(Math.max(0, (Number(l.valor_total) || 0) - pago))}`;
+    return [data, l.agente || "", `pago ${brlOS(pago)}`, aberto].filter(Boolean).join(" · ");
+}
+
 /* ------------------------------------------------------------------ cartões, lista e resumo */
 
-export type Cartao = { rotulo: string; valor: string; sub?: string; cor: string };
+export type Cartao = { rotulo: string; valor: string; sub?: string; cor: string; onClick?: () => void; ativo?: boolean };
 
 /** Cartões compactos: 2 por linha no celular, todos numa linha no computador (até 6). */
 export function CartoesOS({ itens }: { itens: Cartao[] }) {
     const lg = { 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4", 5: "lg:grid-cols-5", 6: "lg:grid-cols-6" }[Math.min(6, Math.max(2, itens.length))];
     return (
         <div className={`grid gap-2 ${itens.length === 3 ? "grid-cols-3" : "grid-cols-2"} ${lg}`}>
-            {itens.map((k) => (
-                <div key={k.rotulo} className={`min-w-0 px-3 py-2.5 ${CARTAO}`} style={{ borderTop: `3px solid ${k.cor}` }}>
-                    <div className={`truncate text-[10.5px] font-extrabold uppercase tracking-[0.08em] ${MUTED}`}>{k.rotulo}</div>
-                    <div className="mt-0.5 truncate text-lg font-black tabular-nums lg:text-[22px]">{k.valor}</div>
-                    {k.sub ? <div className={`truncate text-[11.5px] ${MUTED}`}>{k.sub}</div> : null}
-                </div>
-            ))}
+            {itens.map((k) => {
+                const corpo = (
+                    <>
+                        <div className={`truncate text-[10.5px] font-extrabold uppercase tracking-[0.08em] ${MUTED}`}>{k.rotulo}</div>
+                        <div className="mt-0.5 truncate text-lg font-black tabular-nums lg:text-[22px]">{k.valor}</div>
+                        {k.sub ? <div className={`truncate text-[11.5px] ${MUTED}`}>{k.sub}</div> : null}
+                    </>
+                );
+                // Cartão com lista por trás (ex.: A receber): o toque filtra a lista por ele.
+                return k.onClick ? (
+                    <button key={k.rotulo} type="button" onClick={k.onClick} aria-pressed={!!k.ativo} title="Ver estas OS na lista"
+                        className={`min-w-0 px-3 py-2.5 text-left hover:brightness-95 dark:hover:brightness-125 ${CARTAO} ${k.ativo ? "ring-2 ring-[#F2CB3F]" : ""}`} style={{ borderTop: `3px solid ${k.cor}` }}>
+                        {corpo}
+                    </button>
+                ) : (
+                    <div key={k.rotulo} className={`min-w-0 px-3 py-2.5 ${CARTAO}`} style={{ borderTop: `3px solid ${k.cor}` }}>
+                        {corpo}
+                    </div>
+                );
+            })}
         </div>
     );
 }
 
-export type Situacao = { texto: string; tom: "amarelo" | "creme" | "verde" | "verdeCheio" | "neutro" };
+export type Situacao = { texto: string; tom: "amarelo" | "creme" | "verde" | "verdeCheio" | "neutro" | "azul" };
 
 export function situacaoDaOS(l: any): Situacao {
     if (l.status === "CONVERTIDA") return { texto: "Convertida", tom: "neutro" };
-    if (l.status === "FECHADA") return l.status_pagamento === "PAGO" ? { texto: "Paga", tom: "verdeCheio" } : { texto: "Assinada", tom: "verde" };
+    if (l.status === "FECHADA") {
+        if (!l.assinada_em) return { texto: "Concluída", tom: "azul" };
+        return l.status_pagamento === "PAGO" ? { texto: "Paga", tom: "verdeCheio" } : { texto: "Assinada", tom: "verde" };
+    }
     if (l.status === "AGUARDANDO_ASSINATURA") return { texto: "Aguard. assinatura", tom: "amarelo" };
     if (l.status === "CANCELADA") return { texto: "Cancelada", tom: "neutro" };
     return { texto: "Aberta", tom: "creme" };
@@ -500,6 +585,7 @@ const TOM: Record<Situacao["tom"], string> = {
     verde: "bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/20 dark:text-[#B3CE52]",
     verdeCheio: "bg-[#B3CE52] text-[#313C55]",
     neutro: "bg-[#EEF1F5] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]",
+    azul: "bg-[#DCE5F0] text-[#313C55] dark:bg-[#3D6A99]/35 dark:text-[#C9DAEC]",
 };
 
 export type LinhaLista = { chave: string | number; numero: string; situacao: Situacao; valor: string; nome: string; meta: string; destaque?: boolean };
@@ -627,4 +713,24 @@ export function useOpcoesAgente(linhas: any[] | undefined): Opcao[] {
             .map(([v, r]) => ({ v, r }))
             .sort((a, b) => a.r.localeCompare(b.r, "pt-BR"));
     }, [linhas]);
+}
+
+/**
+ * Tema escuro das telas da OS (08/10/2026): as janelas antigas do Financeiro/Minhas OS (detalhe da OS, recebimento,
+ * proposta...) usam cores fixas do tema claro. Dentro de [data-os-tela], no tema escuro, essas cores viram as do escuro —
+ * sem mexer no globals.css (compartilhado) e sem reescrever cada janela.
+ */
+const CSS_TEMA_OS = [
+    [".bg-\\[\\#F4F6F9\\]", "background-color:#161C2A"],
+    [".bg-\\[\\#EEF2F7\\]", "background-color:rgba(255,255,255,.08)"],
+    [".bg-\\[\\#FFF8E1\\], .bg-\\[\\#FCF3CC\\]", "background-color:rgba(242,203,63,.16);color:#FFFFFF"],
+    [".text-\\[\\#313C55\\]", "color:#FFFFFF"],
+    [".text-\\[\\#6B7488\\], .text-\\[\\#5B6478\\]", "color:#AEB9CF"],
+    [".border-\\[\\#E1E5EC\\], .border-\\[\\#E3E8F0\\], .border-\\[\\#C9D1DE\\]", "border-color:rgba(255,255,255,.14)"],
+]
+    .map(([sel, regra]) => sel.split(",").map((x) => `.dark [data-os-tela] ${x.trim()}`).join(",") + `{${regra.split(";").map((r) => r + " !important").join(";")}}`)
+    .join("\n");
+
+export function EstiloTemaOS() {
+    return <style dangerouslySetInnerHTML={{ __html: CSS_TEMA_OS }} />;
 }
