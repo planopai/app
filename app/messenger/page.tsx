@@ -10,6 +10,7 @@ import { enviarArquivo, msgGet, msgPost, novoUuid } from "@/components/messenger
 import { comprimirFoto } from "@/components/messenger/compressao";
 import { ativarNotificacoes, ouvir, ouvirNotificacoes, ouvirSeguranca, type EstadoNotificacoes } from "@/components/messenger/tempoReal";
 import { ocultarBarraCelular } from "@/components/barra/BarraCelular";
+import { useSemZoom } from "@/components/messenger/semZoom";
 import type { Aba, Conversa, Mensagem, Perfil } from "@/components/messenger/tipos";
 import { Abas, Icone, LinhaConversa } from "./components/Lista";
 import JanelaConversa from "./components/Conversa";
@@ -119,6 +120,7 @@ export default function MessengerPage() {
     const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes">(null);
     const [verHistorico, setVerHistorico] = useState(false);
     const presenca = usePresencas();
+    useSemZoom();
     const [notif, setNotif] = useState<{ estado: EstadoNotificacoes; detalhe?: string }>({ estado: "desligadas" });
     const selRef = useRef<number | null>(null);
     selRef.current = selId;
@@ -157,7 +159,7 @@ export default function MessengerPage() {
             if (ultimo && d.conversa.participo) {
                 await msgPost("marcar_lida", { conversa_id: id, ate_id: ultimo.id }).catch(() => {});
                 window.dispatchEvent(new Event("messenger:lida"));
-                setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, nao_lidas: 0 } : c)));
+                setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, nao_lidas: 0, marcada_nao_lida: false } : c)));
             }
         } catch (e: any) {
             if (e.status === 403 || e.status === 404) {
@@ -336,6 +338,32 @@ export default function MessengerPage() {
     };
 
     /* ---------- ações ---------- */
+    /* ---------- fixar e marcar como não lida (deslizar no celular, menu no computador) ---------- */
+    const fixarConversa = async (c: Conversa) => {
+        try {
+            await msgPost("fixar", { conversa_id: c.id, fixar: !c.fixada });
+            setAviso(c.fixada ? "Conversa desafixada." : "Conversa fixada no topo.");
+            await carregarListas();
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    };
+    const marcarConversa = async (c: Conversa) => {
+        try {
+            if (c.nao_lidas > 0 && c.ultima_mensagem) {
+                await msgPost("marcar_lida", { conversa_id: c.id, ate_id: c.ultima_mensagem.id });
+                setConversas((cs) => cs.map((x) => (x.id === c.id ? { ...x, nao_lidas: 0, marcada_nao_lida: false } : x)));
+            } else {
+                const marcar = !c.marcada_nao_lida;
+                await msgPost("marcar_nao_lida", { conversa_id: c.id, nao_lida: marcar });
+                setConversas((cs) => cs.map((x) => (x.id === c.id ? { ...x, marcada_nao_lida: marcar } : x)));
+            }
+            window.dispatchEvent(new Event("messenger:lida")); // atualiza o contador do menu
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    };
+
     const executar = async (fn: () => Promise<any>, ok?: string) => {
         try {
             const r = await fn();
@@ -410,9 +438,9 @@ export default function MessengerPage() {
                         <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10" aria-label="Histórico de clientes" title="Histórico de clientes"><Icone nome="clock" className="h-[22px] w-[22px]" /></button>
                     </div>
                     <div className="flex flex-col gap-2.5 px-4 pb-2.5 pt-1">
-                        <label className="flex h-12 items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                        <label className="flex h-[52px] items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                             <Icone nome="search" />
-                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[17px] text-[#1F2638] outline-none dark:text-white" />
+                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[18px] text-[#1F2638] outline-none dark:text-white" />
                         </label>
                         <Abas aba={aba} setAba={setAba} contagem={contagem} />
                     </div>
@@ -447,7 +475,7 @@ export default function MessengerPage() {
                             </>
                         )}
                         {perfil && listaAtual.map((c) => (
-                            <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} online={c.tipo === "individual" && presenca.online(c.outro_usuario_id)} />
+                            <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} online={c.tipo === "individual" && presenca.online(c.outro_usuario_id)} acoes={c.participo ? { onFixar: () => fixarConversa(c), onMarcar: () => marcarConversa(c) } : undefined} />
                         ))}
                         {!listaAtual.length && !carregando && (
                             <p className="px-4 py-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">

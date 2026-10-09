@@ -8,6 +8,7 @@
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { msgGet } from "@/components/messenger/api";
+import { useSemZoom } from "@/components/messenger/semZoom";
 import type { Mensagem } from "@/components/messenger/tipos";
 import { Icone } from "./Lista";
 
@@ -27,6 +28,7 @@ const inicioMes = () => hoje().slice(0, 8) + "01";
 
 export default function HistoricoClientes({ embutido = false, onVoltar }: { embutido?: boolean; onVoltar?: () => void }) {
     const [gestao, setGestao] = useState<boolean | null>(null);
+    useSemZoom();
     const [q, setQ] = useState("");
     const [de, setDe] = useState(inicioMes());
     const [ate, setAte] = useState(hoje());

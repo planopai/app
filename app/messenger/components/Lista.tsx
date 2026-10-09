@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Aba, Conversa, Mensagem } from "@/components/messenger/tipos";
 
 export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#3D6A99", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
@@ -34,6 +34,9 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
         lock: (<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>),
         wifi: (<><path d="M12 20h.01" /><path d="M8.5 16.4a5 5 0 0 1 7 0" /><path d="M2 8.8a15 15 0 0 1 20 0" /><path d="M5 12.9a10 10 0 0 1 14 0" /><path d="m2 2 20 20" /></>),
         tpl: (<><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 8h10" /><path d="M7 12h10" /><path d="M7 16h6" /></>),
+        pin: (<><path d="M12 17v5" /><path d="M9 10.8V4h6v6.8l3 3.2v2H6v-2z" /></>),
+        naolida: (<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" fill="currentColor" /></>),
+        chevron: (<path d="m6 9 6 6 6-6" />),
         camera: (<><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></>),
         mais: (<><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>),
         novaconversa: (<><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z" /><path d="M12 9v6" /><path d="M9 12h6" /></>),
@@ -53,7 +56,7 @@ function PontoOnline({ tamanho }: { tamanho: number }) {
     return <span className="absolute bottom-0 right-0 rounded-full border-2 border-white bg-[#4C9A2A] dark:border-[#232B3F]" style={{ width: d, height: d }} aria-hidden="true" />;
 }
 
-export function Avatar({ conversa, tamanho = 50, online = false }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number; online?: boolean }) {
+export function Avatar({ conversa, tamanho = 54, online = false }: { conversa: Pick<Conversa, "id" | "tipo" | "titulo">; tamanho?: number; online?: boolean }) {
     if (conversa.tipo === "grupo") {
         return (
             <div className="flex flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" style={{ width: tamanho, height: tamanho }} aria-hidden="true">
@@ -116,7 +119,7 @@ export function previa(m: Mensagem | null): string {
 
 function Badge({ n }: { n: number }) {
     if (!n) return null;
-    return <span className="inline-flex h-[22px] min-w-[22px] flex-none items-center justify-center rounded-full bg-[#B3CE52] px-1.5 text-xs font-extrabold text-[#1F2638]">{n > 99 ? "99+" : n}</span>;
+    return <span className="inline-flex h-6 min-w-6 flex-none items-center justify-center rounded-full bg-[#B3CE52] px-1.5 text-[13px] font-extrabold text-[#1F2638]">{n > 99 ? "99+" : n}</span>;
 }
 
 /** Filtros em pílula, como no WhatsApp: Tudo · Equipe · Grupos · Clientes (com contador). */
@@ -135,47 +138,137 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
                     type="button"
                     aria-pressed={aba === i.id}
                     onClick={() => setAba(i.id)}
-                    className={`flex h-[34px] flex-none items-center gap-1.5 rounded-full px-3.5 text-sm ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}
+                    className={`flex h-[38px] flex-none items-center gap-1.5 rounded-full px-4 text-[15.5px] ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}
                 >
                     {i.rotulo}
-                    {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[13px] font-extrabold">{contagem[i.id]}</span>}
+                    {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[14px] font-extrabold">{contagem[i.id]}</span>}
                 </button>
             ))}
         </div>
     );
 }
 
-export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = false }: { c: Conversa; selecionada: boolean; onAbrir: () => void; eu: number; acao?: React.ReactNode; online?: boolean }) {
+/** Ações de deslizar (celular) e do menu (computador): fixar no topo e marcar como não lida/lida. */
+export type AcoesLinha = { onFixar: () => void; onMarcar: () => void };
+
+const LARGURA_ACOES = 172;
+
+export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = false, acoes }: { c: Conversa; selecionada: boolean; onAbrir: () => void; eu: number; acao?: React.ReactNode; online?: boolean; acoes?: AcoesLinha }) {
     const m = c.ultima_mensagem;
     const minha = m?.autor_usuario_id === eu && m?.autor_tipo === "usuario";
+    const naoLidaMarcada = !!c.marcada_nao_lida && !c.nao_lidas;
+    const [dx, setDx] = useState(0);
+    const [arrastando, setArrastando] = useState(false);
+    const [menu, setMenu] = useState(false);
+    const toque = useRef<{ x: number; y: number; dx: number; horizontal: boolean | null } | null>(null);
+    const caixa = useRef<HTMLDivElement>(null);
+
+    // fecha as ações ao tocar fora da linha
+    useEffect(() => {
+        if (dx === 0 && !menu) return;
+        const fora = (e: Event) => {
+            if (caixa.current && !caixa.current.contains(e.target as Node)) {
+                setDx(0);
+                setMenu(false);
+            }
+        };
+        document.addEventListener("pointerdown", fora);
+        return () => document.removeEventListener("pointerdown", fora);
+    }, [dx, menu]);
+
     let etiqueta: React.ReactNode = null;
     if (c.tipo === "externo") {
-        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[11.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
-        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
-        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[11.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
+        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
+        else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[12.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
+        else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[12.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
     }
+    const executar = (f: () => void) => {
+        setDx(0);
+        setMenu(false);
+        f();
+    };
+    const destaque = c.nao_lidas > 0 || naoLidaMarcada;
     return (
-        <div className={`flex w-full items-center gap-3 px-3 ${selecionada ? "bg-[#F0F2F5] dark:bg-[#3D6A99]/20" : "hover:bg-[#F5F6F8] dark:hover:bg-white/10"}`}>
-            <button type="button" onClick={onAbrir} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
-                <Avatar conversa={c} online={online} />
-                <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-2.5 dark:border-white/10">
-                    <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[16.5px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</div>
-                        <div className={`flex-none text-[12.5px] font-bold ${c.nao_lidas ? "text-[#4E6B0A] dark:text-[#B3CE52]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-1.5">
-                        {etiqueta}
-                        <TiquesLista estado={estadoUltima(c, eu)} />
-                        <div className="min-w-0 flex-1 truncate text-[14.5px] text-[#5B6478] dark:text-[#AEB9CF]">
-                            {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
-                            {previa(m)}
-                        </div>
-                        {c.silenciada && <Icone nome="belloff" className="h-4 w-4 flex-none text-[#6B7488] dark:text-[#AEB9CF]" />}
-                        <Badge n={c.nao_lidas} />
-                    </div>
+        <div ref={caixa} className="group relative w-full overflow-hidden">
+            {acoes && (
+                <div className="absolute inset-y-0 right-0 flex md:hidden" style={{ width: LARGURA_ACOES }} aria-hidden={dx === 0}>
+                    <button type="button" tabIndex={dx === 0 ? -1 : 0} onClick={() => executar(acoes.onMarcar)} className="flex flex-1 flex-col items-center justify-center gap-1 bg-[#3D6A99] text-[13px] font-bold text-white">
+                        <Icone nome={naoLidaMarcada || c.nao_lidas ? "checks" : "naolida"} className="h-6 w-6" />
+                        {naoLidaMarcada || c.nao_lidas ? "Lida" : "Não lida"}
+                    </button>
+                    <button type="button" tabIndex={dx === 0 ? -1 : 0} onClick={() => executar(acoes.onFixar)} className="flex flex-1 flex-col items-center justify-center gap-1 bg-[#6B7488] text-[13px] font-bold text-white">
+                        <Icone nome="pin" className="h-6 w-6" />
+                        {c.fixada ? "Desafixar" : "Fixar"}
+                    </button>
                 </div>
-            </button>
-            {acao}
+            )}
+            <div
+                className={`relative flex w-full items-center gap-3 bg-white px-3 dark:bg-[#232B3F] ${arrastando ? "" : "transition-transform duration-200"}`}
+                style={{ transform: dx ? `translateX(${dx}px)` : undefined, touchAction: "pan-y" }}
+                onTouchStart={(e) => {
+                    if (!acoes) return;
+                    const t = e.touches[0];
+                    toque.current = { x: t.clientX, y: t.clientY, dx, horizontal: null };
+                }}
+                onTouchMove={(e) => {
+                    const ini = toque.current;
+                    if (!ini) return;
+                    const t = e.touches[0];
+                    const ddx = t.clientX - ini.x;
+                    const ddy = t.clientY - ini.y;
+                    if (ini.horizontal === null && (Math.abs(ddx) > 8 || Math.abs(ddy) > 8)) ini.horizontal = Math.abs(ddx) > Math.abs(ddy);
+                    if (ini.horizontal) {
+                        setArrastando(true);
+                        setDx(Math.max(-LARGURA_ACOES, Math.min(0, ini.dx + ddx)));
+                    }
+                }}
+                onTouchEnd={() => {
+                    const ini = toque.current;
+                    toque.current = null;
+                    setArrastando(false);
+                    if (ini?.horizontal) setDx((v) => (v < -LARGURA_ACOES / 2.5 ? -LARGURA_ACOES : 0));
+                }}
+            >
+                <div className={`pointer-events-none absolute inset-0 ${selecionada ? "bg-[#F0F2F5] dark:bg-[#3D6A99]/20" : "group-hover:bg-[#F5F6F8] dark:group-hover:bg-white/10"}`} />
+                <button type="button" onClick={() => (dx !== 0 ? setDx(0) : onAbrir())} className="relative flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
+                    <Avatar conversa={c} online={online} />
+                    <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-3 dark:border-white/10">
+                        <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</div>
+                            <div className={`flex-none text-[13.5px] font-bold ${destaque ? "text-[#4E6B0A] dark:text-[#B3CE52]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5">
+                            {etiqueta}
+                            <TiquesLista estado={estadoUltima(c, eu)} />
+                            <div className="min-w-0 flex-1 truncate text-[16px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
+                                {previa(m)}
+                            </div>
+                            {c.silenciada && <Icone nome="belloff" className="h-[18px] w-[18px] flex-none text-[#6B7488] dark:text-[#AEB9CF]" />}
+                            {c.fixada && <span aria-label="Fixada"><Icone nome="pin" className="h-[18px] w-[18px] flex-none text-[#6B7488] dark:text-[#AEB9CF]" /></span>}
+                            {naoLidaMarcada ? <span className="h-[14px] w-[14px] flex-none rounded-full bg-[#B3CE52]" aria-label="Marcada como não lida" /> : <Badge n={c.nao_lidas} />}
+                        </div>
+                    </div>
+                </button>
+                {acoes && (
+                    <div className="relative hidden flex-none md:block">
+                        <button type="button" onClick={() => setMenu((v) => !v)} aria-label="Opções da conversa" aria-expanded={menu} className={`flex h-9 w-9 items-center justify-center rounded-full text-[#5B6478] hover:bg-black/5 dark:text-[#AEB9CF] dark:hover:bg-white/10 ${menu ? "flex" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
+                            <Icone nome="chevron" className="h-5 w-5" />
+                        </button>
+                        {menu && (
+                            <div role="menu" className="absolute right-0 top-10 z-20 w-56 overflow-hidden rounded-xl border border-[#E1E5EC] bg-white py-1 shadow-xl dark:border-white/12 dark:bg-[#1C2334]">
+                                <button type="button" role="menuitem" onClick={() => executar(acoes.onFixar)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] font-bold text-[#1F2638] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10">
+                                    <Icone nome="pin" className="h-5 w-5" />{c.fixada ? "Desafixar conversa" : "Fixar conversa"}
+                                </button>
+                                <button type="button" role="menuitem" onClick={() => executar(acoes.onMarcar)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] font-bold text-[#1F2638] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10">
+                                    <Icone nome={naoLidaMarcada || c.nao_lidas ? "checks" : "naolida"} className="h-5 w-5" />{naoLidaMarcada || c.nao_lidas ? "Marcar como lida" : "Marcar como não lida"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {acao && <div className="relative">{acao}</div>}
+            </div>
         </div>
     );
 }

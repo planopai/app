@@ -54,6 +54,11 @@ export type Conversa = {
     atendimento_id: number | null;
     /** Gestão vendo um atendimento em andamento sem participar: pode transferir e encerrar, não responde */
     gestao_acompanha?: boolean;
+    /** fixada no topo da lista por mim (até 3) */
+    fixada?: boolean;
+    fixada_em?: string | null;
+    /** marcada por mim como "não lida" (bolinha verde sem número) */
+    marcada_nao_lida?: boolean;
 };
 
 export type Perfil = {

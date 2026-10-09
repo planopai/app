@@ -74,7 +74,7 @@ function Tiques({ estado }: { estado: "enviando" | "enviada" | "entregue" | "lid
 
 function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean }) {
     if (m.autor_tipo === "sistema") {
-        return <div className="my-1 self-center rounded-lg bg-white/90 px-3 py-1 text-center text-[12.5px] font-bold text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{m.texto}</div>;
+        return <div className="my-1 self-center rounded-lg bg-white/90 px-3 py-1 text-center text-[14px] font-bold text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{m.texto}</div>;
     }
     const minha = m.autor_tipo === "usuario" && m.autor_usuario_id === eu;
     const hora = new Date(m.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -101,8 +101,8 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco }: { m: Mensagem; co
     const cantos = primeiraDoBloco ? (minha ? "rounded-[10px] rounded-tr-none" : "rounded-[10px] rounded-tl-none") : "rounded-[10px]";
     return (
         <div className={`group max-w-[85%] md:max-w-[65%] ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""}`}>
-            <div className={`px-2.5 pb-1.5 pt-1.5 text-[15.5px] leading-snug text-[#1F2638] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
-                {!minha && conversa.tipo !== "individual" && primeiraDoBloco && <div className="mb-0.5 text-[13px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{m.autor_nome || "—"}</div>}
+            <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
+                {!minha && conversa.tipo !== "individual" && primeiraDoBloco && <div className="mb-0.5 text-[14.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{m.autor_nome || "—"}</div>}
                 {m.apagada ? (
                     <span className="italic text-[#6B7488] dark:text-[#C9D1DE]">Mensagem apagada</span>
                 ) : (
@@ -111,7 +111,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco }: { m: Mensagem; co
                         {m.texto && m.tipo !== "audio" && <span className="whitespace-pre-wrap break-words">{m.texto}</span>}
                     </>
                 )}
-                <span className="float-right ml-2.5 mt-1.5 flex translate-y-0.5 items-center gap-1 text-[11.5px] font-semibold text-[#5B6478] dark:text-[#C9D1DE]">
+                <span className="float-right ml-2.5 mt-1.5 flex translate-y-0.5 items-center gap-1 text-[12.5px] font-semibold text-[#5B6478] dark:text-[#C9D1DE]">
                     {podeApagar && (
                         <button type="button" onClick={() => onApagar(m)} className="hidden items-center rounded px-1 hover:bg-black/5 group-hover:flex" aria-label="Apagar mensagem">
                             <Icone nome="trash" className="h-3.5 w-3.5" />
@@ -173,7 +173,7 @@ function Gravador({ onPronto, onCancelar }: { onPronto: (b: Blob, mime: string, 
         onCancelar();
     };
     return (
-        <div className="flex min-h-[48px] flex-1 items-center gap-3 rounded-full bg-white px-4 py-1.5 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
+        <div className="flex min-h-[54px] flex-1 items-center gap-3 rounded-full bg-white px-4 py-1.5 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
             {erro ? <span className="flex-1 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">{erro}</span> : (
                 <>
                     <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#B42318]" aria-hidden="true" />
@@ -297,7 +297,7 @@ export default function JanelaConversa(props: {
         if (d !== dia) {
             dia = d;
             autorAnterior = "";
-            itens.push(<div key={`d${m.id}`} className="my-2 self-center rounded-lg bg-white px-3 py-1 text-[12.5px] font-extrabold uppercase text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{d === hoje ? "Hoje" : d === ontem ? "Ontem" : d}</div>);
+            itens.push(<div key={`d${m.id}`} className="my-2 self-center rounded-lg bg-white px-3 py-1 text-[13.5px] font-extrabold uppercase text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{d === hoje ? "Hoje" : d === ontem ? "Ontem" : d}</div>);
         }
         const autor = m.autor_tipo === "sistema" ? "" : `${m.autor_tipo}:${m.autor_usuario_id ?? m.autor_contato_id ?? ""}`;
         itens.push(<Bolha key={m.cliente_uuid || m.id} m={m} conversa={c} eu={perfil.id} onApagar={props.onApagar} primeiraDoBloco={autor !== autorAnterior} />);
@@ -320,10 +320,10 @@ export default function JanelaConversa(props: {
                 <Avatar conversa={c} tamanho={40} online={!!props.online} />
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                        <span className="truncate text-[17px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</span>
+                        <span className="truncate text-[19px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</span>
                         {externo && <span className="hidden flex-none items-center gap-1 rounded-full bg-[#EEF5D6] px-2 py-0.5 text-[11.5px] font-extrabold sm:inline-flex dark:bg-[#B3CE52]/15"><Icone nome="phone" className="h-3 w-3" />WhatsApp</span>}
                     </div>
-                    <div className="truncate text-[13px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
+                    <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
                 {externo && c.status_atendimento === "aguardando" && perfil.atendente && (
                     <button type="button" onClick={props.onAssumir} className="h-10 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Assumir</button>
@@ -383,8 +383,8 @@ export default function JanelaConversa(props: {
                             <Gravador onCancelar={() => setGravando(false)} onPronto={(b, mime, seg) => { setGravando(false); props.onEnviarArquivo(b, { mime, duracao_s: seg }); }} />
                         ) : (
                             <>
-                                <div className="flex min-h-[48px] min-w-0 flex-1 items-end rounded-3xl bg-white px-1 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
-                                    <button type="button" onClick={() => setEmoji((v) => !v)} aria-pressed={emoji} className={`flex h-12 w-10 flex-none items-center justify-center ${emoji ? "text-[#313C55] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF]"}`} aria-label="Emojis"><Icone nome="smile" className="h-[23px] w-[23px]" /></button>
+                                <div className="flex min-h-[54px] min-w-0 flex-1 items-end rounded-[27px] bg-white px-1.5 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
+                                    <button type="button" onClick={() => setEmoji((v) => !v)} aria-pressed={emoji} className={`flex h-[54px] w-11 flex-none items-center justify-center ${emoji ? "text-[#313C55] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF]"}`} aria-label="Emojis"><Icone nome="smile" className="h-[26px] w-[26px]" /></button>
                                     {/* 16 px: com menos, o iPhone dá zoom ao tocar no campo e a tela sai do lugar */}
                                     <textarea
                                         rows={1}
@@ -393,19 +393,19 @@ export default function JanelaConversa(props: {
                                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); enviar(); } }}
                                         placeholder={externo ? "Responder pelo WhatsApp" : "Mensagem"}
                                         aria-label="Mensagem"
-                                        className="max-h-32 min-w-0 flex-1 resize-none bg-transparent py-3 text-[16px] leading-6 text-[#1F2638] outline-none dark:text-white"
+                                        className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-[13px] text-[18px] leading-7 text-[#1F2638] outline-none dark:text-white"
                                     />
-                                    <button type="button" onClick={() => arquivo.current?.click()} disabled={!perfil.midias} className="flex h-12 w-10 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Anexar foto ou documento" title={perfil.midias ? "Anexar" : "Mídias não configuradas"}><Icone nome="clip" className="h-[22px] w-[22px]" /></button>
+                                    <button type="button" onClick={() => arquivo.current?.click()} disabled={!perfil.midias} className="flex h-[54px] w-11 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Anexar foto ou documento" title={perfil.midias ? "Anexar" : "Mídias não configuradas"}><Icone nome="clip" className="h-[25px] w-[25px]" /></button>
                                     {!texto.trim() && (
-                                        <button type="button" onClick={() => camera.current?.click()} disabled={!perfil.midias} className="flex h-12 w-10 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Tirar foto"><Icone nome="camera" className="h-[22px] w-[22px]" /></button>
+                                        <button type="button" onClick={() => camera.current?.click()} disabled={!perfil.midias} className="flex h-[54px] w-11 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Tirar foto"><Icone nome="camera" className="h-[25px] w-[25px]" /></button>
                                     )}
                                     <input ref={arquivo} type="file" hidden accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,video/mp4" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) props.onEnviarArquivo(f); }} />
                                     <input ref={camera} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) props.onEnviarArquivo(f); }} />
                                 </div>
                                 {texto.trim() ? (
-                                    <button type="button" onClick={enviar} className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" aria-label="Enviar"><Icone nome="send" /></button>
+                                    <button type="button" onClick={enviar} className="flex h-[54px] w-[54px] flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" aria-label="Enviar"><Icone nome="send" /></button>
                                 ) : (
-                                    <button type="button" onClick={() => setGravando(true)} disabled={!perfil.midias || typeof MediaRecorder === "undefined"} className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-[#313C55] text-white disabled:opacity-40 dark:bg-[#3D6A99]" aria-label="Gravar áudio"><Icone nome="mic" /></button>
+                                    <button type="button" onClick={() => setGravando(true)} disabled={!perfil.midias || typeof MediaRecorder === "undefined"} className="flex h-[54px] w-[54px] flex-none items-center justify-center rounded-full bg-[#313C55] text-white disabled:opacity-40 dark:bg-[#3D6A99]" aria-label="Gravar áudio"><Icone nome="mic" /></button>
                                 )}
                             </>
                         )}
