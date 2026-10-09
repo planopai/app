@@ -30,7 +30,7 @@ export type OsCampos = {
     /** Tipo do convênio no cadastro (vem do cadastro, não é gravado no atendimento). */
     convenio_tipo: TipoCadastro;
     pacote_id: string;
-    /** Prefeitura: a Prefeitura autorizou o PACOTE de atendimento? Sem autorização o pacote não cobre nada. */
+    /** Prefeitura: a Prefeitura autorizou o ATENDIMENTO funerário (pacote)? Sem autorização o pacote não cobre nada. */
     pacote_autorizado_prefeitura: SimNao;
     convenio_os: string;
     contrato_numero: string;
@@ -152,7 +152,10 @@ export async function lerOSDoAtendimento(atendimentoId: number | string): Promis
 }
 
 /** Valida o que a OS precisa antes de salvar o atendimento. Devolve a mensagem de erro ou null. */
-/** Prefeitura com o pacote de atendimento NÃO autorizado: tudo vai para a família e as perguntas de tanatopraxia e translado somem. */
+/**
+ * Prefeitura com o atendimento funerário NÃO autorizado: o pacote não cobre nada (os itens vão para a família).
+ * Tanatopraxia, translado e coroa continuam com a pergunta de autorização própria (09/10/2026).
+ */
 export function pacoteNegado(c: OsCampos): boolean {
     return !!c.convenio_id && !!c.pacote_id && c.pacote_autorizado_prefeitura === "Não";
 }
@@ -165,25 +168,24 @@ export function perguntaCoroa(convenioTexto: string, coroaFlores: string, c: OsC
 export function validarCamposOS(convenioTexto: string, tanato: string, c: OsCampos, coroaFlores = ""): string | null {
     const tipo = tipoConvenio(convenioTexto, c.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
-    const negado = pacoteNegado(c);
 
     if (tipo === "associado" && !c.convenio_os.startsWith("ASSOCIADO_")) {
         return "OS: informe o plano do associado (Itens → Dados da OS).";
     }
     if (tipo === "prefeitura" && c.convenio_id && c.pacote_id && !c.pacote_autorizado_prefeitura) {
-        return "OS: informe se a Prefeitura autorizou o pacote de atendimento (aba Atendimento).";
+        return "OS: informe se a Prefeitura autorizou o atendimento funerário (aba Atendimento).";
     }
     if (tanatoSim && !c.tanato_produto_id) {
         return "OS: selecione o Tipo de procedimento da conservação.";
     }
-    if (tipo === "prefeitura" && !negado && tanatoSim && !c.tanato_autorizado_prefeitura) {
+    if (tipo === "prefeitura" && tanatoSim && !c.tanato_autorizado_prefeitura) {
         return "OS: informe se a Prefeitura autorizou a tanatopraxia.";
     }
     if (c.translado === "Sim") {
         if (!c.translado_origem.trim() || !c.translado_destino.trim() || !c.translado_km.trim()) {
             return "OS: informe partida, destino e distância do translado.";
         }
-        if (tipo === "prefeitura" && !negado && !c.translado_autorizado_prefeitura) {
+        if (tipo === "prefeitura" && !c.translado_autorizado_prefeitura) {
             return "OS: informe se a Prefeitura autorizou o translado.";
         }
     }
@@ -207,7 +209,6 @@ export async function salvarEsincronizarOS(
     const tipo = tipoConvenio(convenioTexto, c.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
     const transladoSim = c.translado === "Sim";
-    const negado = pacoteNegado(c);
     // A coluna da coroa só é enviada quando o convênio tem pacote de coroa: sem pacote de coroa nada muda no que é gravado.
     const coroa: Record<string, string> = c.pacote_coroa === "1"
         ? { coroa_autorizada_prefeitura: perguntaCoroa(convenioTexto, coroaFlores, c) ? c.coroa_autorizada_prefeitura : "" }
@@ -224,13 +225,13 @@ export async function salvarEsincronizarOS(
             convenio_os: tipo === "associado" ? c.convenio_os : "",
             contrato_numero: tipo === "associado" ? c.contrato_numero : "",
             tanato_produto_id: tanatoSim ? c.tanato_produto_id : "",
-            tanato_autorizado_prefeitura: tipo === "prefeitura" && tanatoSim && !negado ? c.tanato_autorizado_prefeitura : "",
+            tanato_autorizado_prefeitura: tipo === "prefeitura" && tanatoSim ? c.tanato_autorizado_prefeitura : "",
             reconstituicao_facial: tanatoSim ? c.reconstituicao_facial : "",
             translado: c.translado,
             translado_origem: transladoSim ? c.translado_origem : "",
             translado_destino: transladoSim ? c.translado_destino : "",
             translado_km: transladoSim ? c.translado_km : "",
-            translado_autorizado_prefeitura: tipo === "prefeitura" && transladoSim && !negado ? c.translado_autorizado_prefeitura : "",
+            translado_autorizado_prefeitura: tipo === "prefeitura" && transladoSim ? c.translado_autorizado_prefeitura : "",
         },
         true,
     );
@@ -476,8 +477,9 @@ function resumoItensPacote(p: PacoteOpcao): string {
 }
 
 /**
- * Campo "Convênio" do registro, ligado ao cadastro de Convênios: escolhe o convênio, o pacote e (Prefeitura)
- * responde se a Prefeitura autorizou o pacote. O <select id="wizard-convenio"> continua guardando o NOME do convênio,
+ * Campo "Convênio" do registro, ligado ao cadastro de Convênios: escolhe o convênio e o pacote. Na Prefeitura, primeiro
+ * responde se a Prefeitura autorizou o atendimento funerário; o pacote só é escolhido com "Sim" (09/10/2026).
+ * O <select id="wizard-convenio"> continua guardando o NOME do convênio,
  * que é o que o atendimento já gravava.
  */
 export function ConvenioVinculo({
@@ -556,7 +558,25 @@ export function ConvenioVinculo({
                 </p>
             ) : null}
 
-            {conv && (conv.tipo === "ASSOCIADO" || conv.tipo === "PREFEITURA") ? (
+            {ehPref && conv && conv.pacotes.length > 0 ? (
+                <LinhaSimNao
+                    rotulo="A Prefeitura autorizou o atendimento funerário? *"
+                    valor={valores.pacote_autorizado_prefeitura}
+                    onChange={(v) => onChange({ pacote_autorizado_prefeitura: v })}
+                    disabled={disabled}
+                >
+                    <p className="mt-1.5 px-1 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
+                        {valores.pacote_autorizado_prefeitura === "Sim"
+                            ? "Escolha abaixo o pacote de atendimento. Os itens do pacote entram na OS da Prefeitura; o que passar do pacote vai para a diferença da família."
+                            : valores.pacote_autorizado_prefeitura === "Não"
+                                ? "Sem a autorização, o pacote não cobre nada: os itens ficam com a família, pelo preço particular. Tanatopraxia, translado" + (conv.tem_pacote_coroa ? " e coroa" : "") + " continuam com a pergunta de autorização própria."
+                                : "Obrigatório: define como a OS é dividida entre a Prefeitura e a família."}
+                    </p>
+                </LinhaSimNao>
+            ) : null}
+
+            {/* Prefeitura: a escolha do pacote só aparece depois de "Sim" na autorização do atendimento (09/10/2026). */}
+            {conv && (conv.tipo === "ASSOCIADO" || (conv.tipo === "PREFEITURA" && (conv.pacotes.length === 0 || valores.pacote_autorizado_prefeitura === "Sim"))) ? (
                 conv.pacotes.length === 0 ? (
                     <p className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-xs font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
                         Este convênio ainda não tem pacote ativo em Convênios. Sem pacote, todos os itens vão para a diferença da família.
@@ -593,23 +613,6 @@ export function ConvenioVinculo({
                         {pacote ? <p className="mt-2.5 text-xs leading-relaxed text-[#5B6478] dark:text-[#AEB9CF]">Inclui: {resumoItensPacote(pacote) || "—"}</p> : null}
                     </div>
                 )
-            ) : null}
-
-            {ehPref && conv && conv.pacotes.length > 0 ? (
-                <LinhaSimNao
-                    rotulo="A Prefeitura autorizou o pacote de atendimento? *"
-                    valor={valores.pacote_autorizado_prefeitura}
-                    onChange={(v) => onChange({ pacote_autorizado_prefeitura: v })}
-                    disabled={disabled}
-                >
-                    <p className="mt-1.5 px-1 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                        {valores.pacote_autorizado_prefeitura === "Sim"
-                            ? "Os itens do pacote entram na OS da Prefeitura; o que passar do pacote vai para a diferença da família."
-                            : valores.pacote_autorizado_prefeitura === "Não"
-                                ? "Sem a autorização, o pacote não cobre nada: toda a OS fica com a família, pelo preço particular." + (conv.tem_pacote_coroa ? " A coroa segue a pergunta própria." : "")
-                                : "Obrigatório: define como a OS é dividida entre a Prefeitura e a família."}
-                    </p>
-                </LinhaSimNao>
             ) : null}
         </div>
     );
@@ -754,7 +757,6 @@ export function SecaoOSAtendimento({
     const mostraDados = parte === "tudo" || parte === "resumo";
     /** Resumo da OS e "Ver OS" (coluna lateral). */
     const mostraResumo = parte === "tudo" || parte === "lateral";
-    const negado = pacoteNegado(valores);
 
     const [modelos, setModelos] = useState<{ produto_id: number; nome: string }[]>([]);
     const [modelosErro, setModelosErro] = useState("");
@@ -882,7 +884,7 @@ export function SecaoOSAtendimento({
                             {opcoes.length === 0 && !modelosErro ? <span className="py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando as opções…</span> : null}
                         </div>
                         {modelosErro ? <p className="mt-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{modelosErro}</p> : null}
-                        {ehPref && !negado ? (
+                        {ehPref ? (
                             <Autorizacao servico="tanatopraxia" valor={valores.tanato_autorizado_prefeitura} onChange={(v) => onChange({ tanato_autorizado_prefeitura: v })} disabled={disabled} />
                         ) : null}
                     </div>
@@ -929,7 +931,7 @@ export function SecaoOSAtendimento({
                                         />
                                     </label>
                                 </div>
-                                {ehPref && !negado ? (
+                                {ehPref ? (
                                     <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
                                 ) : null}
                             </div>
