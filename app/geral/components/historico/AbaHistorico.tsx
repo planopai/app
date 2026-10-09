@@ -10,6 +10,9 @@ import type { HistoricoV } from "./useHistorico";
 
 
 
+// BUILD DO HISTÓRICO: HISTORICO-PAGINACAO-2026-10-09-V3
+// data-historico-build permite comprovar no DevTools que esta versão do componente foi publicada.
+// A paginação aparece apenas quando a API devolve total numérico.
 // Aba Histórico: um lançamento por linha; ao abrir, a tabela de itens do lançamento.
 
 
@@ -382,6 +385,7 @@ function Periodo({ v, m }: { v: HistoricoV; m: boolean }) {
 
 function Paginacao({ v, m }: { v: HistoricoV; m: boolean }) {
 
+    // Sem total válido não inventamos páginas: mostramos o erro da API na tela.
     if (!v.temPaginas) return null;
 
     const navegar = v.paginas > 1;
@@ -480,7 +484,7 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
         return (
 
-            <section ref={topo} style={{ display: "flex", flexDirection: "column", gap: "10px", scrollMarginTop: "12px" }} aria-label="Histórico">
+            <section ref={topo} data-historico-build="HISTORICO-PAGINACAO-2026-10-09-V3" style={{ display: "flex", flexDirection: "column", gap: "10px", scrollMarginTop: "12px" }} aria-label="Histórico">
 
                 <label className="cbin">
 
@@ -576,7 +580,7 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
     return (
 
-        <section ref={topo} className="box" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", scrollMarginTop: "16px" }} aria-label="Histórico">
+        <section ref={topo} data-historico-build="HISTORICO-PAGINACAO-2026-10-09-V3" className="box" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", scrollMarginTop: "16px" }} aria-label="Histórico">
 
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
 

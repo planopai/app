@@ -16,6 +16,12 @@ import type { EstoqueDados } from "../useEstoqueDados";
 
 
 
+// BUILD DO HISTÓRICO: HISTORICO-PAGINACAO-2026-10-09-V3
+// Este identificador também aparece no atributo data-historico-build da interface.
+// IMPORTANTE: o Dashboard usa outra consulta (limit=500, sem offset).
+// Para verificar este módulo no Network, abra Estoque > Histórico e procure limit=100&offset=0.
+// A rota PHP paginada deve responder com rows, total (número), offset e limit.
+
 // Histórico por lançamento (repaginada): cada linha é um lançamento com os seus itens.
 
 // Junta pelo código do lançamento (TRF-, ENT-, AJ-), pela requisição (REQ-), pelo atendimento e pela confecção;
@@ -284,7 +290,7 @@ export function useHistorico(n: EstoqueDados) {
 
                 limit: POR_PAGINA,
 
-                offset: nf.offset,
+                offset: nf.offset, // inclusive zero: ativa a rota paginada do PHP
 
                 tipo: tipoApi(nf.tipo),
 
@@ -300,9 +306,8 @@ export function useHistorico(n: EstoqueDados) {
 
             if (!r.ok) throw new Error(r.msg || "Falha ao carregar o histórico.");
 
-            setRows(r.rows || []);
-
-            // Sem "total", o materiais_gerais.php do servidor ainda é o antigo (sem período nem páginas).
+            // Valida o contrato da rota PAGINADA antes de atualizar o estado.
+            // Sem total numérico, o componente não tem como calcular as páginas.
 
             if (typeof r.total !== "number" || !Number.isFinite(r.total) || r.total < 0) {
                 throw new Error(
@@ -310,6 +315,7 @@ export function useHistorico(n: EstoqueDados) {
                     "Confirme que o materiais_gerais.php atualizado está publicado."
                 );
             }
+            setRows(r.rows || []);
             setTotal(r.total);
 
             setAberto("");
