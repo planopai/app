@@ -47,7 +47,29 @@ type ReqListRow = {
     enviado_em?: string | null;
     recebido_em?: string | null;
     atrasada_24h?: 0 | 1 | number | string;
+    /** 1 = criada pela reposição automática (13/10/2026). */
+    automatica?: 0 | 1 | number | string;
+    destino_tipo?: "DEPOSITO" | "CONSUMO" | string;
 };
+
+/** Item do detalhe (detalhar_minha), usado na janela de recebimento. */
+type ReqItem = {
+    id: ID;
+    produto_nome_snapshot?: string | null;
+    quantidade_solicitada?: number | string | null;
+    quantidade_enviada?: number | string | null;
+    deposito_origem_nome?: string | null;
+};
+
+type DetalheResp = {
+    ok: boolean;
+    msg?: string;
+    row?: ReqListRow & { items?: ReqItem[] };
+    need_login?: 1;
+};
+
+/** O que a pessoa digitou para cada item: texto puro, só números. */
+type Contagem = { estoque: string; chegou: string; diferente: boolean };
 
 type ListResp = {
     ok: boolean;
@@ -285,7 +307,8 @@ function RequestCard({
 }) {
     const solicitante = row.solicitante_nome || "Solicitante não informado";
     const status = toStatus(row.status);
-    const canCancel = status === "PENDENTE" || status === "EM_SEPARACAO";
+    const automatica = isTruthy(row.automatica);
+    const canCancel = !automatica && (status === "PENDENTE" || status === "EM_SEPARACAO");
     const canReceive = status === "EM_TRANSITO";
 
     return (
@@ -298,6 +321,12 @@ function RequestCard({
                         </span>
 
                         <RequestStatusBadge status={row.status} />
+
+                        {automatica ? (
+                            <span className="inline-flex h-[26px] items-center rounded-full border-[1.5px] border-[#C9D1DE] bg-[#EEF2F7] px-2.5 text-[12.5px] font-extrabold text-[#313C55] dark:border-white/25 dark:bg-white/10 dark:text-white">
+                                Automática
+                            </span>
+                        ) : null}
 
                         {isTruthy(row.atrasada_24h) ? (
                             <span className="inline-flex h-[26px] items-center rounded-full border-[1.5px] border-[#F2CB3F] bg-[#F2CB3F] px-2.5 text-[12.5px] font-extrabold text-[#313C55]">
@@ -365,7 +394,9 @@ function RequestCard({
 
             {status === "EM_TRANSITO" ? (
                 <div className="mt-2.5 rounded-xl border border-[#E3E8F0] bg-[#EEF2F7] px-3 py-2 text-[13px] font-bold text-[#313C55] dark:border-white/[0.12] dark:bg-white/[0.08] dark:text-white lg:mt-3.5 lg:px-3.5 lg:py-2.5 lg:text-sm">
-                    O material foi enviado. Somente você, como solicitante, pode confirmar o recebimento.
+                    {automatica
+                        ? "Reposição automática enviada. Quem receber confirma e informa o estoque atualizado de cada item."
+                        : "O material foi enviado. Somente você, como solicitante, pode confirmar o recebimento."}
                 </div>
             ) : null}
 
@@ -490,6 +521,194 @@ function CancelModal({
     );
 }
 
+const SO_NUMERO = /^\d+([.,]\d+)?$/;
+
+function numero(v: unknown) {
+    const n = Number(String(v ?? "").replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+}
+
+function fmtQtd(v: unknown) {
+    return numero(v).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+
+/**
+ * Janela de recebimento (13/10/2026).
+ * Transferência para um local: para cada item, "Estoque atualizado:" às cegas (obrigatório)
+ * e "Chegou quantidade diferente?" para informar quantos chegaram. A tela nunca mostra o saldo do sistema.
+ * Consumo: só a confirmação (antes era o window.confirm).
+ */
+function ReceberModal({
+    open,
+    row,
+    itens,
+    carregando,
+    contagens,
+    saving,
+    erro,
+    onChange,
+    onClose,
+    onConfirm,
+}: {
+    open: boolean;
+    row: ReqListRow | null;
+    itens: ReqItem[];
+    carregando: boolean;
+    contagens: Record<number, Contagem>;
+    saving: boolean;
+    erro: string;
+    onChange: (itemId: number, patch: Partial<Contagem>) => void;
+    onClose: () => void;
+    onConfirm: () => void;
+}) {
+    useEffect(() => {
+        if (!open) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => {
+            document.body.style.overflow = prev;
+            window.removeEventListener("keydown", onKey);
+        };
+    }, [open, onClose]);
+
+    if (!open || !row) return null;
+
+    const transferencia = String(row.destino_tipo || "").toUpperCase() === "DEPOSITO";
+    let faltam = 0;
+    if (transferencia) {
+        for (const it of itens) {
+            const c = contagens[it.id];
+            if (!c || !SO_NUMERO.test(c.estoque.trim())) faltam++;
+            if (c?.diferente && !SO_NUMERO.test(c.chegou.trim())) faltam++;
+        }
+    }
+    const bloqueado = saving || carregando || (transferencia && (itens.length === 0 || faltam > 0));
+
+    const CAMPO =
+        "h-12 w-[88px] shrink-0 rounded-xl border border-transparent bg-[#F1F4F8] text-center text-[18px] font-extrabold text-[#313C55] outline-none focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white";
+
+    return (
+        <NoCorpo>
+            <div
+                role="dialog" data-pai-overlay
+                aria-modal="true"
+                aria-label="Confirmar recebimento"
+                className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6"
+            >
+                <div className="flex max-h-[90dvh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:max-w-[560px] lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]">
+                    <div className="flex items-start gap-2 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:gap-3 lg:px-6 lg:py-5">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-[19px] font-extrabold leading-tight lg:text-xl">Receber {reqCode(row)}</h2>
+                            <p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1 lg:text-sm">
+                                {transferencia
+                                    ? `Para ${destinationText(row)}. Digite o estoque atualizado de cada item, já contando o que chegou.`
+                                    : "Confirme que o material chegou. Esta ação finaliza a requisição."}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={saving}
+                            className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:text-white dark:hover:bg-white/[0.08]"
+                            aria-label="Fechar"
+                        >
+                            <IconX size={20} stroke={1.8} />
+                        </button>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2 lg:px-6 lg:py-3">
+                        {carregando ? (
+                            <p className="py-4 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Carregando itens...</p>
+                        ) : transferencia ? (
+                            <ul className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">
+                                {itens.map((it) => {
+                                    const c = contagens[it.id] || { estoque: "", chegou: "", diferente: false };
+                                    const nome = it.produto_nome_snapshot || `Item ${it.id}`;
+                                    return (
+                                        <li key={it.id} className="py-3">
+                                            <p className="break-words text-[15px] font-extrabold">{nome}</p>
+                                            <p className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                                Enviado: <b className="text-[#313C55] dark:text-white">{fmtQtd(it.quantidade_enviada ?? it.quantidade_solicitada)}</b>
+                                            </p>
+
+                                            {c.diferente ? (
+                                                <label className="mt-2 flex items-center justify-between gap-3">
+                                                    <span className="text-sm font-bold">Quantos chegaram?</span>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]*"
+                                                        autoComplete="off"
+                                                        value={c.chegou}
+                                                        onChange={(e) => onChange(it.id, { chegou: e.target.value.replace(/[^0-9.,]/g, "") })}
+                                                        placeholder="—"
+                                                        aria-label={`Quantos chegaram de ${nome}`}
+                                                        className={CAMPO}
+                                                    />
+                                                </label>
+                                            ) : null}
+
+                                            <label className="mt-2 flex items-center justify-between gap-3">
+                                                <span className="text-sm font-bold">Estoque atualizado:</span>
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    pattern="[0-9]*"
+                                                    autoComplete="off"
+                                                    value={c.estoque}
+                                                    onChange={(e) => onChange(it.id, { estoque: e.target.value.replace(/[^0-9.,]/g, "") })}
+                                                    placeholder="—"
+                                                    aria-label={`Estoque atualizado de ${nome}`}
+                                                    className={CAMPO}
+                                                />
+                                            </label>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => onChange(it.id, { diferente: !c.diferente, chegou: "" })}
+                                                className="mt-1 min-h-9 text-[13px] font-extrabold text-[#3D6A99] underline underline-offset-2 dark:text-[#9DBBE0]"
+                                            >
+                                                {c.diferente ? "Chegou certo" : "Chegou quantidade diferente?"}
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : (
+                            <ItensTabela resumo={row.itens_resumo} className="my-2" />
+                        )}
+
+                        {erro ? (
+                            <div role="alert" className="my-2 rounded-xl border border-[#B42318] bg-[#FDECEA] px-3 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                                {erro}
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <div className="border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:px-6 lg:py-4">
+                        {transferencia && !carregando ? (
+                            <p className="mb-2 text-center text-[13px] font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:text-right">
+                                {faltam > 0 ? `Falta preencher ${faltam} ${faltam === 1 ? "campo" : "campos"}` : "Tudo preenchido"}
+                            </p>
+                        ) : null}
+                        <div className="flex gap-2 lg:justify-end lg:gap-3">
+                            <ActionButton type="button" variant="secondary" onClick={onClose} disabled={saving} className="flex-1 lg:flex-none">
+                                Voltar
+                            </ActionButton>
+                            <ActionButton type="button" onClick={onConfirm} disabled={bloqueado} className="flex-1 lg:flex-none">
+                                {saving ? "Confirmando..." : "Confirmar recebimento"}
+                            </ActionButton>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </NoCorpo>
+    );
+}
 
 export default function RequisicaoPage() {
     const { perms, has } = usePerms();
@@ -504,12 +723,19 @@ export default function RequisicaoPage() {
     const [cancelRow, setCancelRow] = useState<ReqListRow | null>(null);
     const [cancelMotivo, setCancelMotivo] = useState("");
 
+    const [receberRow, setReceberRow] = useState<ReqListRow | null>(null);
+    const [receberItens, setReceberItens] = useState<ReqItem[]>([]);
+    const [receberCarregando, setReceberCarregando] = useState(false);
+    const [receberErro, setReceberErro] = useState("");
+    const [contagens, setContagens] = useState<Record<number, Contagem>>({});
+
     const loadRequisicoes = useCallback(async () => {
         setError("");
 
         try {
             const data = await apiGet<ListResp>({
                 action: "minhas",
+                incluir_automaticas: 1,
                 status: "PENDENTE,EM_SEPARACAO,EM_TRANSITO",
                 limit: 50,
             });
@@ -596,33 +822,85 @@ export default function RequisicaoPage() {
         }
     }
 
+    const closeReceber = useCallback(() => {
+        if (saving) return;
+        setReceberRow(null);
+        setReceberItens([]);
+        setReceberErro("");
+        setContagens({});
+    }, [saving]);
+
     async function receiveReq(row: ReqListRow) {
         if (saving) return;
 
-        const confirmed = window.confirm(
-            `Confirmar o recebimento de ${reqCode(row)}? Esta ação finaliza a requisição.`
-        );
-
-        if (!confirmed) return;
-
-        setSaving(true);
         setError("");
         setOkMsg("");
+        setReceberErro("");
+        setContagens({});
+        setReceberItens([]);
+        setReceberRow(row);
+
+        if (String(row.destino_tipo || "").toUpperCase() !== "DEPOSITO") return;
+
+        setReceberCarregando(true);
+        try {
+            const data = await apiGet<DetalheResp>({ action: "detalhar_minha", id: row.id });
+            if (!data.ok || !data.row) {
+                throw new Error(data.msg || "Não foi possível carregar os itens.");
+            }
+            setReceberItens(data.row.items || []);
+        } catch (e: any) {
+            setReceberErro(e?.message || "Não foi possível carregar os itens.");
+        } finally {
+            setReceberCarregando(false);
+        }
+    }
+
+    function changeContagem(itemId: number, patch: Partial<Contagem>) {
+        setContagens((prev) => ({
+            ...prev,
+            [itemId]: { ...(prev[itemId] || { estoque: "", chegou: "", diferente: false }), ...patch },
+        }));
+    }
+
+    async function confirmReceber() {
+        const row = receberRow;
+        if (!row || saving) return;
+
+        const transferencia = String(row.destino_tipo || "").toUpperCase() === "DEPOSITO";
+
+        setSaving(true);
+        setReceberErro("");
 
         try {
             const data = await apiPost<MutResp>({
                 action: "confirmar_recebimento",
                 id: row.id,
+                ...(transferencia
+                    ? {
+                          itens: receberItens.map((it) => {
+                              const c = contagens[it.id] || { estoque: "", chegou: "", diferente: false };
+                              return {
+                                  id: it.id,
+                                  estoque_atualizado: c.estoque.trim(),
+                                  ...(c.diferente ? { quantidade_recebida: c.chegou.trim() } : {}),
+                              };
+                          }),
+                      }
+                    : {}),
             });
 
             if (!data.ok) {
                 throw new Error(data.msg || "Não foi possível confirmar o recebimento.");
             }
 
+            setReceberRow(null);
+            setReceberItens([]);
+            setContagens({});
             setOkMsg(data.msg || "Recebimento confirmado.");
             await loadRequisicoes();
         } catch (e: any) {
-            setError(e?.message || "Não foi possível confirmar o recebimento.");
+            setReceberErro(e?.message || "Não foi possível confirmar o recebimento.");
         } finally {
             setSaving(false);
         }
@@ -710,6 +988,19 @@ export default function RequisicaoPage() {
                     )}
                 </section>
             </div>
+
+            <ReceberModal
+                open={!!receberRow}
+                row={receberRow}
+                itens={receberItens}
+                carregando={receberCarregando}
+                contagens={contagens}
+                saving={saving}
+                erro={receberErro}
+                onChange={changeContagem}
+                onClose={closeReceber}
+                onConfirm={confirmReceber}
+            />
 
             <CancelModal
                 open={cancelOpen}
