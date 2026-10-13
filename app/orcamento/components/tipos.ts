@@ -35,7 +35,15 @@ export type Rascunho = {
     coroas: CoroaOrc[];
     /** Itens Sim/Não com produto fixo do servidor (ex.: assistencia, kit_lanche). */
     extras: Record<string, SimNao>;
+    /** Ajuste de valor por linha da folha (id da linha), preso ao produto — regras da OS (14/10/2026). */
+    ajustes: Record<string, Ajuste>;
+    /** Desconto geral: % ou R$, depois dos descontos dos itens. */
+    desconto_geral: DescontoGeral | null;
 };
+
+/** valor_unit: valor do item com acréscimo (translado: valor do km); 0 = tabela. desconto: R$. */
+export type Ajuste = { produto_id: number; valor_unit: number; desconto: number };
+export type DescontoGeral = { tipo: "PERCENTUAL" | "VALOR"; valor: number };
 
 export const RASCUNHO_VAZIO: Rascunho = {
     urna: null,
@@ -59,6 +67,8 @@ export const RASCUNHO_VAZIO: Rascunho = {
     translado_destino: "",
     coroas: [],
     extras: {},
+    ajustes: {},
+    desconto_geral: null,
 };
 
 /** Formato que o servidor espera (o da prévia da OS). */
@@ -83,6 +93,8 @@ export function rascunhoParaServidor(r: Rascunho): Record<string, unknown> {
         translado_destino: r.translado === "Sim" ? r.translado_destino : "",
         coroas: r.coroas.filter((c) => c.produto_id > 0).map((c) => ({ tipo: c.tipo, produto_id: c.produto_id, nome: c.nome, local: c.local || "" })),
         ...r.extras,
+        ajustes: r.ajustes,
+        desconto_geral: r.desconto_geral,
     };
 }
 
@@ -116,12 +128,78 @@ export function rascunhoDoServidor(s: Record<string, any> | null | undefined, ca
             ? d.coroas.map((c: any) => ({ tipo: c?.tipo === "artificial" ? "artificial" : "natural", produto_id: Number(c?.produto_id) || 0, nome: String(c?.nome || ""), local: String(c?.local || "") || undefined }))
             : [],
         extras,
+        ajustes: d.ajustes && typeof d.ajustes === "object" && !Array.isArray(d.ajustes) ? (d.ajustes as Record<string, Ajuste>) : {},
+        desconto_geral: d.desconto_geral?.tipo ? { tipo: d.desconto_geral.tipo === "VALOR" ? "VALOR" : "PERCENTUAL", valor: Number(d.desconto_geral.valor) || 0 } : null,
     };
 }
 
-export type Linha = { chave: string; rotulo: string; nome: string; qtd: number; valor: number | null; obs?: string };
+/**
+ * Linha da folha. valor = com acréscimo (base do desconto); final = valor − desconto. Orçamento salvo antes de 14/10 não tem
+ * id/desconto/final (vale o valor).
+ */
+export type Linha = {
+    id?: string;
+    chave: string;
+    rotulo: string;
+    nome: string;
+    produto_id?: number;
+    qtd: number;
+    unidade?: "un" | "km";
+    km?: number | null;
+    valor_tabela?: number | null;
+    valor_tabela_unit?: number | null;
+    valor: number | null;
+    desconto?: number;
+    final?: number | null;
+    obs?: string;
+    ajustavel?: boolean;
+};
 
-export type Previa = { linhas: Linha[]; total: number; valores_pendentes: number; avisos: string[] };
+/** Resumo dos descontos (mesmo cálculo do resumoDescontoOS da OS). */
+export type ResumoDesconto = {
+    bruto: number;
+    desconto_itens: number;
+    subtotal: number;
+    desconto_global_tipo: "PERCENTUAL" | "VALOR" | null;
+    desconto_global_percentual: number;
+    desconto_global: number;
+    reducao: number;
+    percentual: number;
+    base_limite: number;
+    abaixo_do_minimo: number;
+    reducao_no_limite: number;
+    percentual_no_limite: number;
+    limite_percentual: number;
+    limite_valor: number;
+    disponivel: number;
+    minimos: { produto_id: number; nome: string; valor: number }[];
+};
+
+export type Previa = {
+    linhas: Linha[];
+    total: number;
+    resumo?: ResumoDesconto;
+    valores_pendentes: number;
+    avisos: string[];
+    pode_passar_limite?: boolean;
+    /** Só na conferência da janela de ajuste: motivo de não poder aplicar ("" = pode). */
+    bloqueio?: string;
+};
+
+/** Resumo a partir das linhas salvas (detalhe do orçamento): o desconto geral é o que falta para o total. */
+export function resumoDasLinhas(linhas: Linha[], total: number, dg?: DescontoGeral | null) {
+    let bruto = 0;
+    let itens = 0;
+    linhas.forEach((l) => {
+        if (l.valor === null || l.valor === undefined) return;
+        bruto += Number(l.valor) || 0;
+        itens += Number(l.desconto) || 0;
+    });
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const subtotal = r2(bruto - itens);
+    const geral = Math.max(0, r2(subtotal - total));
+    return { bruto: r2(bruto), desconto_itens: r2(itens), subtotal, desconto_global: geral, desconto_global_tipo: geral > 0 ? dg?.tipo ?? "VALOR" : null, desconto_global_percentual: dg?.tipo === "PERCENTUAL" ? dg.valor : 0 };
+}
 
 export type OpcaoProduto = { valor?: string; produto_id: number; nome: string; preco: number | null };
 
@@ -133,6 +211,8 @@ export type Opcoes = {
     tanato_modelos: OpcaoProduto[];
     reconstituicao_preco: number | null;
     translado_km_preco: number | null;
+    /** Quem está fazendo o orçamento (responsável no orçamento novo). */
+    usuario_nome?: string;
 };
 
 export type Situacao = "ABERTO" | "VENCIDO" | "CONVERTIDO" | "CANCELADO";

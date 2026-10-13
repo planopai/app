@@ -1,11 +1,12 @@
 "use client";
 
-/* Orçamento aberto: folha calculada e as ações (folha/imprimir, editar, virar atendimento, cancelar). */
+/* Orçamento aberto: folha calculada e as ações (folha na tela com PDF e Imprimir, editar, virar atendimento, cancelar). */
 
 import React, { useEffect, useState } from "react";
-import { cancelarOrcamento, lerOrcamento, urlFolha } from "./api";
+import { cancelarOrcamento, lerOrcamento } from "./api";
+import FolhaOrcamento from "./FolhaOrcamento";
 import ResumoOrcamento from "./ResumoOrcamento";
-import { dataBR, type Orcamento } from "./tipos";
+import { dataBR, rascunhoDoServidor, type Orcamento } from "./tipos";
 import { Aviso, BTN_PERIGO, BTN_PRI, BTN_SEC, CAMPO, Campo, EtiquetaSituacao, Ic, Icone, Janela, MUTED } from "./ui";
 
 /** Endereço do Novo registro preenchido com o orçamento (Atendimento). */
@@ -20,6 +21,7 @@ export default function DetalheOrcamento({ id, onFechar, onEditar, onAlterou }: 
     const [o, setO] = useState<Orcamento | null>(null);
     const [erro, setErro] = useState("");
     const [cancelar, setCancelar] = useState(false);
+    const [folha, setFolha] = useState(false);
 
     useEffect(() => {
         let vivo = true;
@@ -42,9 +44,9 @@ export default function DetalheOrcamento({ id, onFechar, onEditar, onAlterou }: 
             rodape={
                 o ? (
                     <>
-                        <button type="button" className={BTN_SEC} onClick={() => window.open(urlFolha(o.id, true), "_blank")}>
-                            <Icone d={Ic.imprimir} />
-                            Folha
+                        <button type="button" className={BTN_SEC} onClick={() => setFolha(true)}>
+                            <Icone d={Ic.folha} />
+                            Folha / PDF
                         </button>
                         {aberto ? (
                             <button type="button" className={BTN_SEC} onClick={() => onEditar(o)}>
@@ -86,14 +88,14 @@ export default function DetalheOrcamento({ id, onFechar, onEditar, onAlterou }: 
                         </Aviso>
                     ) : null}
                     {o.situacao === "CONVERTIDO" ? (
-                        <Aviso tom="ok">Virou o atendimento #{o.atendimento_id} em {dataBR(o.convertido_em)}. A OS do atendimento tem os valores do dia da contratação.</Aviso>
+                        <Aviso tom="ok">Virou o atendimento #{o.atendimento_id} em {dataBR(o.convertido_em)}. Os valores tratados no orçamento foram para a OS do atendimento.</Aviso>
                     ) : null}
                     {aberto ? (
                         <p className={`text-xs ${MUTED}`}>
-                            Virar atendimento abre o Novo registro já preenchido com o falecido, o contato e os itens. A OS é calculada com o preço do dia.
+                            Virar atendimento abre o Novo registro já preenchido com o falecido, o contato e os itens. Ao salvar, os valores tratados aqui (acréscimos e descontos) vão para a OS; depois, desconto a mais só a Gestão.
                         </p>
                     ) : null}
-                    <ResumoOrcamento linhas={o.linhas} total={o.valor_total} titulo="Folha do orçamento" />
+                    <ResumoOrcamento linhas={o.linhas} total={o.valor_total} descontoGeral={rascunhoDoServidor(o.rascunho).desconto_geral} titulo="Folha do orçamento" />
                     {o.observacao ? (
                         <p className="text-sm">
                             <b>Observação:</b> {o.observacao}
@@ -106,6 +108,8 @@ export default function DetalheOrcamento({ id, onFechar, onEditar, onAlterou }: 
                     ) : null}
                 </div>
             ) : null}
+
+            {folha && o ? <FolhaOrcamento id={o.id} numero={o.numero} onFechar={() => setFolha(false)} /> : null}
 
             {cancelar && o ? (
                 <JanelaCancelar

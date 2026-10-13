@@ -3054,9 +3054,11 @@ export default function AcompanhamentoPage() {
         const orcEmUso = orcamentoEmUsoRef.current;
         if (orcEmUso && !wizardEditing && atendimentoId != null && !String(atendimentoId).startsWith("local")) {
           try {
-            await marcarOrcamentoConvertido(orcEmUso.id, atendimentoId);
+            // O servidor liga o orçamento e leva para a OS os valores tratados nele (acréscimos e descontos, 14/10/2026).
+            const rc = await marcarOrcamentoConvertido(orcEmUso.id, atendimentoId);
             orcamentoEmUsoRef.current = null;
-            textoOrc = ` Orçamento ${orcEmUso.numero} ligado a este atendimento.`;
+            textoOrc = ` ${rc.msg || `Orçamento ${orcEmUso.numero} ligado a este atendimento.`}`;
+            setOsVersao((n) => n + 1);
           } catch (orcError: any) {
             textoOrc = ` Mas o orçamento ${orcEmUso.numero} não foi marcado como convertido: ${orcError?.message || "erro desconhecido"}.`;
           }
@@ -3074,7 +3076,7 @@ export default function AcompanhamentoPage() {
 
         setWizardMsg({
           text: (options?.mensagemSucesso || "Registro salvo!") + textoEstoque + textoOS + textoLocal + textoOrc,
-          ok: !textoOS.includes("não foi atualizada") && !textoLocal && !textoOrc.includes("não foi marcado"),
+          ok: !textoOS.includes("não foi atualizada") && !textoLocal && !textoOrc.includes("não foi marcado") && !textoOrc.includes("não foram"),
         });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {

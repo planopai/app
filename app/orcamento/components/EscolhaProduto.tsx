@@ -29,10 +29,11 @@ export default function EscolhaProduto({ rotulo, fonte, valor, preco, onMudar, o
                 <button
                     type="button"
                     onClick={() => setAberto(true)}
-                    className={`${CAMPO} flex items-center justify-between gap-2 text-left`}
+                    className={`${CAMPO.replace("h-12 ", "")} flex min-h-12 items-center justify-between gap-2 py-2.5 text-left`}
                 >
-                    <span className={`min-w-0 truncate ${valor ? "" : "font-normal text-[#8A93A6]"}`}>{valor ? valor.nome : "Escolher no estoque…"}</span>
-                    {valor && preco !== undefined ? <span className={`shrink-0 text-sm font-bold ${MUTED}`}>{brl(preco)}</span> : <Icone d={Ic.busca} tam={18} />}
+                    {/* Nome inteiro (quebra a linha, um pouco menor), para ler sem cortar (14/10/2026) */}
+                    <span className={`min-w-0 flex-1 break-words ${valor ? "text-[14px] leading-snug" : "font-normal text-[#8A93A6]"}`}>{valor ? valor.nome : "Escolher no estoque…"}</span>
+                    {valor && preco !== undefined ? <span className={`shrink-0 text-[13px] font-bold ${MUTED}`}>{brl(preco)}</span> : <Icone d={Ic.busca} tam={18} />}
                 </button>
                 {valor ? (
                     <button type="button" aria-label={`Tirar ${rotulo}`} onClick={() => onMudar(null)} className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#F1F4F8] text-[#5B6478] hover:bg-[#E3E8F0] dark:bg-[#1C2334] dark:text-[#AEB9CF]">

@@ -1,6 +1,6 @@
 "use client";
 
-/* Orçamento (13/10/2026) — peças de tela no padrão da repaginada: campos de 48 px sem borda, rótulo em maiúsculas,
+/* Orçamento (13/10/2026; enquadramento no celular em 14/10) — peças de tela no padrão da repaginada: campos de 48 px sem borda, rótulo em maiúsculas,
    botão principal azul-escuro (claro) / amarelo (escuro), janelas por portal no <body> (z-70), Esc fecha. */
 
 import React, { useEffect, useState } from "react";
@@ -55,22 +55,21 @@ export function Campo({ rotulo, children, dica }: { rotulo: string; children: Re
     );
 }
 
-/** Sim | Não com o mesmo jeito do registro do atendimento (✓ no escolhido, ✕ no Não). */
-export function EscolhaSimNao({ valor, onMudar, rotulo }: { valor: SimNao; onMudar: (v: SimNao) => void; rotulo: string }) {
+/** Sim | Não segmentado, igual ao registro do atendimento (CheckboxChoiceGroup): ✓ no Sim escolhido, ✕ no Não. "" = sem resposta. */
+export function EscolhaSimNao({ valor, onMudar, rotulo }: { valor: SimNao | ""; onMudar: (v: SimNao) => void; rotulo: string }) {
     return (
-        <div role="group" aria-label={rotulo} className="inline-flex shrink-0 gap-1.5">
-            {(["Sim", "Não"] as SimNao[]).map((v) => {
+        <div role="group" aria-label={rotulo} className="inline-flex shrink-0 overflow-hidden rounded-xl border-[1.5px] border-[#C9D1DE] dark:border-white/25">
+            {(["Sim", "Não"] as SimNao[]).map((v, i) => {
                 const on = valor === v;
                 return (
                     <button
                         key={v}
                         type="button"
                         aria-pressed={on}
+                        aria-label={`${rotulo}: ${v}`}
                         onClick={() => onMudar(v)}
-                        className={`inline-flex h-11 min-w-[76px] items-center justify-center gap-1 rounded-xl border-[1.5px] px-3 text-[15px] font-bold ${
-                            on
-                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
-                                : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-white"
+                        className={`inline-flex h-11 min-w-[64px] items-center justify-center gap-1 px-2.5 text-sm font-extrabold ${i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : ""} ${
+                            on ? "bg-[#313C55] text-white dark:bg-[#3D6A99]" : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10"
                         }`}
                     >
                         {on ? <Icone d={v === "Sim" ? <path d="M5 12l5 5 9-10" /> : Ic.x} tam={16} /> : null}
@@ -100,7 +99,7 @@ export function Opcoes<T extends string>({ valor, opcoes, onMudar, rotulo, colun
                         type="button"
                         aria-pressed={on}
                         onClick={() => onMudar(o.v)}
-                        className={`flex min-h-12 flex-col items-center justify-center rounded-xl border-[1.5px] px-3 py-2 text-center ${
+                        className={`flex min-h-12 min-w-0 flex-col items-center justify-center rounded-xl border-[1.5px] px-2 py-2 text-center ${
                             on
                                 ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
                                 : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-white"
@@ -182,20 +181,20 @@ export function Janela({ titulo, subtitulo, onFechar, rodape, largura = "max-w-2
                 aria-modal="true"
                 aria-label={titulo}
                 onClick={(e) => e.stopPropagation()}
-                className={`flex max-h-[90dvh] w-full ${largura} flex-col rounded-t-3xl bg-white text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white lg:rounded-3xl`}
+                className={`flex max-h-[90dvh] w-full min-w-0 ${largura} flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white lg:rounded-3xl`}
             >
                 <div className="flex items-start gap-2 border-b border-[#E3E8F0] py-3 pl-5 pr-2 dark:border-white/[0.12]">
                     <div className="min-w-0 flex-1 pt-1">
-                        <h2 className="text-[19px] font-black leading-tight">{titulo}</h2>
-                        {subtitulo ? <div className={`mt-0.5 text-sm ${MUTED}`}>{subtitulo}</div> : null}
+                        <h2 className="break-words text-[19px] font-black leading-tight">{titulo}</h2>
+                        {subtitulo ? <div className={`mt-0.5 break-words text-sm ${MUTED}`}>{subtitulo}</div> : null}
                     </div>
                     <button type="button" aria-label="Fechar" onClick={onFechar} className="flex size-11 items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/10">
                         <Icone d={Ic.x} tam={22} />
                     </button>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-4">{children}</div>
                 {rodape ? (
-                    <div className="flex gap-2.5 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:justify-end lg:rounded-b-3xl lg:pb-3 [&>*]:flex-1 lg:[&>*]:flex-none">
+                    <div className="flex flex-wrap gap-2.5 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:flex-nowrap lg:justify-end lg:rounded-b-3xl lg:pb-3 [&>*]:min-w-[calc(50%-0.625rem)] [&>*]:flex-1 lg:[&>*]:min-w-0 lg:[&>*]:flex-none">
                         {rodape}
                     </div>
                 ) : null}

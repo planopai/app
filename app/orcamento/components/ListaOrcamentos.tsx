@@ -1,6 +1,6 @@
 "use client";
 
-/* Lista dos orçamentos: chips de situação, busca e linhas que cabem na tela (computador em grade, celular em cartões). */
+/* Lista dos orçamentos: chips de situação (quebram linha no celular, sem rolagem lateral), busca e linhas que cabem na tela (computador em grade, celular em cartões). */
 
 import React from "react";
 import { brl, dataBR, type ResumoLista } from "./tipos";
@@ -41,7 +41,7 @@ export default function ListaOrcamentos({ linhas, carregando, filtro, onFiltro, 
                         <Icone d={Ic.atualizar} />
                     </button>
                 </div>
-                <div className="-mx-4 mt-2.5 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0" role="group" aria-label="Situação">
+                <div className="mt-2.5 flex flex-wrap gap-2" role="group" aria-label="Situação">
                     {FILTROS.map((f) => {
                         const on = f.v === filtro;
                         return (
@@ -50,7 +50,7 @@ export default function ListaOrcamentos({ linhas, carregando, filtro, onFiltro, 
                                 type="button"
                                 aria-pressed={on}
                                 onClick={() => onFiltro(f.v)}
-                                className={`h-11 shrink-0 whitespace-nowrap rounded-full border-[1.5px] px-3.5 text-sm font-bold ${
+                                className={`h-11 whitespace-nowrap rounded-full border-[1.5px] px-3.5 text-sm font-bold ${
                                     on
                                         ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
                                         : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white"
@@ -91,7 +91,10 @@ export default function ListaOrcamentos({ linhas, carregando, filtro, onFiltro, 
                         </span>
                         <span className="mt-0.5 block truncate text-sm font-bold lg:hidden">{o.falecido}</span>
                         <span className={`block truncate text-[12.5px] lg:hidden ${MUTED}`}>
-                            {o.contato} · {o.telefone} · válido até {dataBR(o.validade)}
+                            {o.contato} · {o.telefone}
+                        </span>
+                        <span className={`block truncate text-[12.5px] lg:hidden ${MUTED}`}>
+                            {dataBR(o.criado_em)} · {o.criado_por_nome || "—"} · válido até {dataBR(o.validade)}
                         </span>
                         {/* computador */}
                         <b className="hidden whitespace-nowrap text-[15px] lg:block">{o.numero}</b>

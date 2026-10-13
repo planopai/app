@@ -42,7 +42,9 @@ async function orcPost<T>(corpo: Record<string, unknown>): Promise<{ dados: T; m
 export const carregarOpcoes = () => orcGet<Opcoes>({ opcoes: 1 });
 export const listarOrcamentos = (status: string, busca: string) => orcGet<ResumoLista[]>({ listar: 1, status, busca });
 export const lerOrcamento = (id: number) => orcGet<Orcamento>({ detalhe: 1, id });
-export const calcularPrevia = (rascunho: Rascunho) => orcPost<Previa>({ acao: "previa", rascunho }).then((r) => r.dados);
+/** Calcula a folha. Com 'antes', o servidor diz se este usuário pode aplicar o ajuste (bloqueio = motivo; "" = pode). */
+export const calcularPrevia = (rascunho: Rascunho | Record<string, unknown>, antes?: Record<string, unknown>) =>
+    orcPost<Previa>(antes ? { acao: "previa", rascunho, antes } : { acao: "previa", rascunho }).then((r) => r.dados);
 export const salvarOrcamento = (dados: { id?: number; falecido: string; contato: string; telefone: string; observacao: string; rascunho: Rascunho }) =>
     orcPost<Orcamento>({ acao: "salvar", ...dados });
 export const cancelarOrcamento = (id: number, motivo: string) => orcPost<{ id: number }>({ acao: "cancelar", id, motivo });
@@ -54,6 +56,26 @@ export async function precosDe(ids: number[]): Promise<Record<string, number | n
 }
 
 export const urlFolha = (id: number, imprimir = false) => `${ORC_API}?folha=1&id=${id}${imprimir ? "&formato=impressao" : ""}&_=${Date.now()}`;
+
+/** Folha pronta (HTML do servidor, sem abrir a impressão) para mostrar na tela e gerar o PDF. */
+export async function buscarFolhaHtml(id: number): Promise<string> {
+    const res = await fetch(urlFolha(id), { credentials: "include", cache: "no-store" });
+    const html = await res.text();
+    if (res.status === 401) {
+        if (typeof window !== "undefined") window.location.href = LOGIN;
+        throw new Error("Sessão expirada. Faça login novamente.");
+    }
+    if (!res.ok || !html.includes("<body")) {
+        let msg = "";
+        try {
+            msg = JSON.parse(html)?.msg || "";
+        } catch {
+            /* não era JSON */
+        }
+        throw new Error(msg || `Não foi possível montar a folha (${res.status}).`);
+    }
+    return html;
+}
 
 /* ---------------------------------------------------------------- estoque */
 

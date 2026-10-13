@@ -76,7 +76,7 @@ export default function OrcamentoPage() {
     };
 
     return (
-        <main className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:pb-12">
+        <main className="min-h-[100dvh] w-full overflow-x-clip bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:pb-12">
             <div className="mx-auto w-full max-w-[1120px] lg:px-10 lg:pt-8">
                 {tela.tipo === "lista" ? (
                     <>
