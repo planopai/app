@@ -30,7 +30,7 @@ export type OsCampos = {
     /** Tipo do convênio no cadastro (vem do cadastro, não é gravado no atendimento). */
     convenio_tipo: TipoCadastro;
     pacote_id: string;
-    /** Prefeitura: a Prefeitura autorizou o ATENDIMENTO funerário (pacote)? Sem autorização o pacote não cobre nada. */
+    /** Prefeitura: a Prefeitura autorizou o PACOTE de atendimento? Sem autorização o pacote não cobre nada. */
     pacote_autorizado_prefeitura: SimNao;
     convenio_os: string;
     contrato_numero: string;
@@ -47,6 +47,11 @@ export type OsCampos = {
     coroa_autorizada_prefeitura: SimNao;
     /** "1" quando o convênio escolhido tem pacote de coroa (vem do cadastro, não é gravado no atendimento). */
     pacote_coroa: "" | "1";
+    /**
+     * Associado (09/10/2026): Prefeitura (id no cadastro de Convênios) que paga a tanatopraxia e/ou o translado que o plano não cobre.
+     * Vale com tanato_autorizado_prefeitura / translado_autorizado_prefeitura = "Sim" (botão Particular | Prefeitura).
+     */
+    prefeitura_apoio_convenio_id: string;
 };
 
 export const OS_CAMPOS_VAZIO: OsCampos = {
@@ -66,6 +71,7 @@ export const OS_CAMPOS_VAZIO: OsCampos = {
     translado_autorizado_prefeitura: "",
     coroa_autorizada_prefeitura: "",
     pacote_coroa: "",
+    prefeitura_apoio_convenio_id: "",
 };
 
 export const PLANOS = ["LIGHT", "FLEX", "PLUS", "MAX"] as const;
@@ -144,18 +150,22 @@ export async function listarModelosTanato(): Promise<{ produto_id: number; nome:
     return r.dados?.modelos || [];
 }
 
-export type OsResumo = { os_convenio: any | null; os_particular: any | null };
+/** os_prefeitura: associado com apoio da Prefeitura (09/10/2026) — a terceira OS do atendimento (Prf). */
+export type OsResumo = { os_convenio: any | null; os_particular: any | null; os_prefeitura?: any | null };
 
 export async function lerOSDoAtendimento(atendimentoId: number | string): Promise<OsResumo> {
     const r = await osChamar("os_do_atendimento", { atendimento_id: atendimentoId });
-    return r.dados || { os_convenio: null, os_particular: null };
+    return r.dados || { os_convenio: null, os_particular: null, os_prefeitura: null };
+}
+
+/** Associado: a Prefeitura paga a tanatopraxia e/ou o translado (botão Prefeitura marcado)? */
+export function apoioPrefeituraMarcado(c: OsCampos, tanato: string): boolean {
+    const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
+    return (tanatoSim && c.tanato_autorizado_prefeitura === "Sim") || (c.translado === "Sim" && c.translado_autorizado_prefeitura === "Sim");
 }
 
 /** Valida o que a OS precisa antes de salvar o atendimento. Devolve a mensagem de erro ou null. */
-/**
- * Prefeitura com o atendimento funerário NÃO autorizado: o pacote não cobre nada (os itens vão para a família).
- * Tanatopraxia, translado e coroa continuam com a pergunta de autorização própria (09/10/2026).
- */
+/** Prefeitura com o pacote de atendimento NÃO autorizado: tudo vai para a família e as perguntas de tanatopraxia e translado somem. */
 export function pacoteNegado(c: OsCampos): boolean {
     return !!c.convenio_id && !!c.pacote_id && c.pacote_autorizado_prefeitura === "Não";
 }
@@ -168,29 +178,33 @@ export function perguntaCoroa(convenioTexto: string, coroaFlores: string, c: OsC
 export function validarCamposOS(convenioTexto: string, tanato: string, c: OsCampos, coroaFlores = ""): string | null {
     const tipo = tipoConvenio(convenioTexto, c.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
+    const negado = pacoteNegado(c);
 
     if (tipo === "associado" && !c.convenio_os.startsWith("ASSOCIADO_")) {
         return "OS: informe o plano do associado (Itens → Dados da OS).";
     }
     if (tipo === "prefeitura" && c.convenio_id && c.pacote_id && !c.pacote_autorizado_prefeitura) {
-        return "OS: informe se a Prefeitura autorizou o atendimento funerário (aba Atendimento).";
+        return "OS: informe se a Prefeitura autorizou o pacote de atendimento (aba Atendimento).";
     }
     if (tanatoSim && !c.tanato_produto_id) {
         return "OS: selecione o Tipo de procedimento da conservação.";
     }
-    if (tipo === "prefeitura" && tanatoSim && !c.tanato_autorizado_prefeitura) {
+    if (tipo === "prefeitura" && !negado && tanatoSim && !c.tanato_autorizado_prefeitura) {
         return "OS: informe se a Prefeitura autorizou a tanatopraxia.";
     }
     if (c.translado === "Sim") {
         if (!c.translado_origem.trim() || !c.translado_destino.trim() || !c.translado_km.trim()) {
             return "OS: informe partida, destino e distância do translado.";
         }
-        if (tipo === "prefeitura" && !c.translado_autorizado_prefeitura) {
+        if (tipo === "prefeitura" && !negado && !c.translado_autorizado_prefeitura) {
             return "OS: informe se a Prefeitura autorizou o translado.";
         }
     }
     if (perguntaCoroa(convenioTexto, coroaFlores, c) && !c.coroa_autorizada_prefeitura) {
         return "OS: informe se a Prefeitura autorizou a coroa (aba Itens, Coroa de flores).";
+    }
+    if (tipo === "associado" && apoioPrefeituraMarcado(c, tanato) && !c.prefeitura_apoio_convenio_id) {
+        return "OS: escolha a Prefeitura que paga a diferença (aba Itens, Tanatopraxia ou Translado).";
     }
     return null;
 }
@@ -209,6 +223,10 @@ export async function salvarEsincronizarOS(
     const tipo = tipoConvenio(convenioTexto, c.convenio_tipo);
     const tanatoSim = String(tanato).trim().toLowerCase() === "sim";
     const transladoSim = c.translado === "Sim";
+    const negado = pacoteNegado(c);
+    // Associado com apoio da Prefeitura (09/10/2026): os mesmos campos de autorização guardam o botão Particular | Prefeitura.
+    const assoc = tipo === "associado";
+    const apoio = assoc && apoioPrefeituraMarcado(c, tanato);
     // A coluna da coroa só é enviada quando o convênio tem pacote de coroa: sem pacote de coroa nada muda no que é gravado.
     const coroa: Record<string, string> = c.pacote_coroa === "1"
         ? { coroa_autorizada_prefeitura: perguntaCoroa(convenioTexto, coroaFlores, c) ? c.coroa_autorizada_prefeitura : "" }
@@ -225,13 +243,14 @@ export async function salvarEsincronizarOS(
             convenio_os: tipo === "associado" ? c.convenio_os : "",
             contrato_numero: tipo === "associado" ? c.contrato_numero : "",
             tanato_produto_id: tanatoSim ? c.tanato_produto_id : "",
-            tanato_autorizado_prefeitura: tipo === "prefeitura" && tanatoSim ? c.tanato_autorizado_prefeitura : "",
+            tanato_autorizado_prefeitura: (tipo === "prefeitura" && !negado) || assoc ? (tanatoSim ? c.tanato_autorizado_prefeitura : "") : "",
             reconstituicao_facial: tanatoSim ? c.reconstituicao_facial : "",
             translado: c.translado,
             translado_origem: transladoSim ? c.translado_origem : "",
             translado_destino: transladoSim ? c.translado_destino : "",
             translado_km: transladoSim ? c.translado_km : "",
-            translado_autorizado_prefeitura: tipo === "prefeitura" && transladoSim ? c.translado_autorizado_prefeitura : "",
+            translado_autorizado_prefeitura: (tipo === "prefeitura" && !negado) || assoc ? (transladoSim ? c.translado_autorizado_prefeitura : "") : "",
+            prefeitura_apoio_convenio_id: apoio ? c.prefeitura_apoio_convenio_id : "",
         },
         true,
     );
@@ -239,7 +258,7 @@ export async function salvarEsincronizarOS(
     const r = await osChamar("sincronizar_os_atendimento", { atendimento_id: atendimentoId }, true);
     return {
         alteracoes: r.dados?.alteracoes || [],
-        resumo: { os_convenio: r.dados?.os_convenio ?? null, os_particular: r.dados?.os_particular ?? null },
+        resumo: { os_convenio: r.dados?.os_convenio ?? null, os_particular: r.dados?.os_particular ?? null, os_prefeitura: r.dados?.os_prefeitura ?? null },
     };
 }
 
@@ -297,6 +316,101 @@ function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatop
             {valor === "Sim" ? <span className="rounded-full bg-[#EEF5D6] px-3 py-1 text-xs font-extrabold text-[#313C55]">entra no contrato</span> : null}
             {valor === "Não" ? <span className="rounded-full bg-[#E9EFF6] px-3 py-1 text-xs font-extrabold text-[#313C55]">{servico === "coroa" ? "vai para a família (preço particular)" : "vai para a diferença da família"}</span> : null}
             {valor === "" ? <span className="text-xs font-extrabold text-[#B42318] dark:text-[#FF9C92]">obrigatório</span> : null}
+        </div>
+    );
+}
+
+/* ---------- Quem paga: botão Particular | Prefeitura (09/10/2026) ----------
+ * Associado: na tanatopraxia e no translado que o plano não cobre. Pedido de coroa direto: na tela Coroa de Flores.
+ * Particular já vem marcado; a Prefeitura só é marcada nas exceções. A lista de Prefeituras vem do cadastro de Convênios
+ * (tipo Prefeitura, ativas): Prefeitura nova ou desativada entra ou sai da lista sozinha. */
+
+export type Pagador = "PARTICULAR" | "PREFEITURA";
+
+export function PagadorBotoes({ valor, onChange, disabled, rotulo = "Quem paga" }: { valor: Pagador; onChange: (v: Pagador) => void; disabled?: boolean; rotulo?: string }) {
+    return (
+        <div role="radiogroup" aria-label={rotulo} className="inline-flex shrink-0 overflow-hidden rounded-xl border-[1.5px] border-[#C9D1DE] dark:border-white/25">
+            {(["PARTICULAR", "PREFEITURA"] as const).map((v, i) => (
+                <button
+                    key={v}
+                    type="button"
+                    role="radio"
+                    aria-checked={valor === v}
+                    disabled={disabled}
+                    onClick={() => onChange(v)}
+                    className={[
+                        "inline-flex h-11 min-w-[112px] items-center justify-center gap-1.5 px-3 text-sm font-extrabold transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                        i > 0 ? "border-l-[1.5px] border-[#C9D1DE] dark:border-white/25" : "",
+                        valor === v
+                            ? "bg-[#313C55] text-white dark:bg-[#3D6A99] dark:text-white"
+                            : "bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/10",
+                    ].join(" ")}
+                >
+                    {valor === v ? <IconeMarcado valor="Sim" /> : null}
+                    {v === "PARTICULAR" ? "Particular" : "Prefeitura"}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+/** Prefeitura que paga: com uma só, mostra o nome; com mais de uma, a lista. Sem nenhuma ativa, avisa. */
+export function EscolhaPrefeitura({
+    prefeituras,
+    valor,
+    onChange,
+    disabled,
+    carregando,
+}: {
+    prefeituras: { id: number; nome: string; desabilitada?: string }[];
+    valor: string;
+    onChange: (id: string) => void;
+    disabled?: boolean;
+    carregando?: boolean;
+}) {
+    if (carregando) return <span className="text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Carregando as Prefeituras…</span>;
+    if (prefeituras.length === 0) {
+        return <span className="text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">Nenhuma Prefeitura ativa no cadastro de Convênios.</span>;
+    }
+    const validas = prefeituras.filter((p) => !p.desabilitada);
+    if (prefeituras.length === 1 && validas.length === 1) {
+        return <span className="text-sm font-extrabold text-[#313C55] dark:text-white">{validas[0].nome}</span>;
+    }
+    return (
+        <select
+            aria-label="Prefeitura que paga"
+            className={`${CAMPO_V2} w-auto min-w-[220px] max-w-full`}
+            disabled={disabled}
+            value={valor}
+            onChange={(e) => onChange(e.target.value)}
+        >
+            <option value="">Escolha a Prefeitura *</option>
+            {prefeituras.map((p) => (
+                <option key={p.id} value={String(p.id)} disabled={!!p.desabilitada}>
+                    {p.nome}
+                    {p.desabilitada ? ` (${p.desabilitada})` : ""}
+                </option>
+            ))}
+        </select>
+    );
+}
+
+/** Registro do associado: botão da tanatopraxia ou do translado + a Prefeitura escolhida (a mesma para os dois serviços). */
+function PagadorApoio({ campo, valores, onChange, disabled }: { campo: "tanato_autorizado_prefeitura" | "translado_autorizado_prefeitura"; valores: OsCampos; onChange: (parcial: Partial<OsCampos>) => void; disabled?: boolean }) {
+    const { convenios, carregando } = useOpcoesConvenio();
+    const prefeituras = convenios.filter((c) => c.tipo === "PREFEITURA");
+    const pagador: Pagador = valores[campo] === "Sim" ? "PREFEITURA" : "PARTICULAR";
+    const escolher = (v: Pagador) => {
+        if (v === "PARTICULAR") return onChange({ [campo]: "" } as Partial<OsCampos>);
+        const atual = valores.prefeitura_apoio_convenio_id && prefeituras.some((p) => String(p.id) === valores.prefeitura_apoio_convenio_id) ? valores.prefeitura_apoio_convenio_id : "";
+        onChange({ [campo]: "Sim", prefeitura_apoio_convenio_id: atual || (prefeituras.length === 1 ? String(prefeituras[0].id) : "") } as Partial<OsCampos>);
+    };
+    return (
+        <div data-os-parte="pagador" className="mt-3 flex flex-wrap items-center gap-3">
+            <PagadorBotoes valor={pagador} onChange={escolher} disabled={disabled} rotulo={campo === "tanato_autorizado_prefeitura" ? "Quem paga a tanatopraxia" : "Quem paga os km acima do plano"} />
+            {pagador === "PREFEITURA" ? (
+                <EscolhaPrefeitura prefeituras={prefeituras} carregando={carregando} valor={valores.prefeitura_apoio_convenio_id} onChange={(id) => onChange({ prefeitura_apoio_convenio_id: id })} disabled={disabled} />
+            ) : null}
         </div>
     );
 }
@@ -477,9 +591,8 @@ function resumoItensPacote(p: PacoteOpcao): string {
 }
 
 /**
- * Campo "Convênio" do registro, ligado ao cadastro de Convênios: escolhe o convênio e o pacote. Na Prefeitura, primeiro
- * responde se a Prefeitura autorizou o atendimento funerário; o pacote só é escolhido com "Sim" (09/10/2026).
- * O <select id="wizard-convenio"> continua guardando o NOME do convênio,
+ * Campo "Convênio" do registro, ligado ao cadastro de Convênios: escolhe o convênio, o pacote e (Prefeitura)
+ * responde se a Prefeitura autorizou o pacote. O <select id="wizard-convenio"> continua guardando o NOME do convênio,
  * que é o que o atendimento já gravava.
  */
 export function ConvenioVinculo({
@@ -518,6 +631,10 @@ export function ConvenioVinculo({
             pacote_autorizado_prefeitura: "",
             pacote_coroa: c?.tem_pacote_coroa ? "1" : "",
             coroa_autorizada_prefeitura: "",
+            // As respostas de Prefeitura (autorização ou quem paga a diferença do associado) não passam de um convênio para outro.
+            tanato_autorizado_prefeitura: "",
+            translado_autorizado_prefeitura: "",
+            prefeitura_apoio_convenio_id: "",
         });
     };
 
@@ -558,25 +675,7 @@ export function ConvenioVinculo({
                 </p>
             ) : null}
 
-            {ehPref && conv && conv.pacotes.length > 0 ? (
-                <LinhaSimNao
-                    rotulo="A Prefeitura autorizou o atendimento funerário? *"
-                    valor={valores.pacote_autorizado_prefeitura}
-                    onChange={(v) => onChange({ pacote_autorizado_prefeitura: v })}
-                    disabled={disabled}
-                >
-                    <p className="mt-1.5 px-1 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
-                        {valores.pacote_autorizado_prefeitura === "Sim"
-                            ? "Escolha abaixo o pacote de atendimento. Os itens do pacote entram na OS da Prefeitura; o que passar do pacote vai para a diferença da família."
-                            : valores.pacote_autorizado_prefeitura === "Não"
-                                ? "Sem a autorização, o pacote não cobre nada: os itens ficam com a família, pelo preço particular. Tanatopraxia, translado" + (conv.tem_pacote_coroa ? " e coroa" : "") + " continuam com a pergunta de autorização própria."
-                                : "Obrigatório: define como a OS é dividida entre a Prefeitura e a família."}
-                    </p>
-                </LinhaSimNao>
-            ) : null}
-
-            {/* Prefeitura: a escolha do pacote só aparece depois de "Sim" na autorização do atendimento (09/10/2026). */}
-            {conv && (conv.tipo === "ASSOCIADO" || (conv.tipo === "PREFEITURA" && (conv.pacotes.length === 0 || valores.pacote_autorizado_prefeitura === "Sim"))) ? (
+            {conv && (conv.tipo === "ASSOCIADO" || conv.tipo === "PREFEITURA") ? (
                 conv.pacotes.length === 0 ? (
                     <p className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-xs font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
                         Este convênio ainda não tem pacote ativo em Convênios. Sem pacote, todos os itens vão para a diferença da família.
@@ -614,6 +713,23 @@ export function ConvenioVinculo({
                     </div>
                 )
             ) : null}
+
+            {ehPref && conv && conv.pacotes.length > 0 ? (
+                <LinhaSimNao
+                    rotulo="A Prefeitura autorizou o pacote de atendimento? *"
+                    valor={valores.pacote_autorizado_prefeitura}
+                    onChange={(v) => onChange({ pacote_autorizado_prefeitura: v })}
+                    disabled={disabled}
+                >
+                    <p className="mt-1.5 px-1 text-xs font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
+                        {valores.pacote_autorizado_prefeitura === "Sim"
+                            ? "Os itens do pacote entram na OS da Prefeitura; o que passar do pacote vai para a diferença da família."
+                            : valores.pacote_autorizado_prefeitura === "Não"
+                                ? "Sem a autorização, o pacote não cobre nada: toda a OS fica com a família, pelo preço particular." + (conv.tem_pacote_coroa ? " A coroa segue a pergunta própria." : "")
+                                : "Obrigatório: define como a OS é dividida entre a Prefeitura e a família."}
+                    </p>
+                </LinhaSimNao>
+            ) : null}
         </div>
     );
 }
@@ -642,6 +758,7 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         pacote_id: id(os.pacote_id),
         pacote_autorizado_prefeitura: os.pacote_autorizado_prefeitura,
         urna_produto_id: s.urnaUso === "Sim" ? id(wd.urna_produto_id) : 0,
+        roupa: sim(s.roupaUso), // sem roupa (Não) não entra pelo pacote da Prefeitura (13/10/2026)
         roupa_propria: s.roupaUso === "Sim" && roupaPropria ? 1 : 0,
         roupa_produto_id: s.roupaUso === "Sim" && !roupaPropria ? id(wd.roupa_produto_id) : 0,
         veu: sim(s.veu), veu_produto_id: id(wd.veu_produto_id),
@@ -656,6 +773,7 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         translado: os.translado || "Não", translado_km: os.translado_km,
         translado_autorizado_prefeitura: os.translado_autorizado_prefeitura,
         coroa_autorizada_prefeitura: os.coroa_autorizada_prefeitura,
+        prefeitura_apoio_convenio_id: id(os.prefeitura_apoio_convenio_id),
         realiza_velorio: sim(s.realizaVelorio), realiza_sepultamento: sim(s.realizaSepultamento),
         // Sala do Memorial (produto na OS): só com velório = Sim.
         sala_velorio: sim(s.realizaVelorio) === "Sim" ? String(wd.sala_velorio ?? "").trim() : "",
@@ -669,7 +787,23 @@ function rascunhoTemConteudo(r: RascunhoOS | null): boolean {
         (r.coroas && r.coroas.length) || r.assistencia === "Sim" || r.kit_lanche === "Sim" || r.ornamentacao === "Sim" || r.tanato === "Sim" || r.translado === "Sim" || !!r.sala_velorio);
 }
 
-type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
+type LinhaPrevia = { chave: string; rotulo: string; nome: string; qtd: number; destino: "CONVENIO" | "FAMILIA" | "PREFEITURA" | "SEM_COBRANCA"; motivo: string; valor: number | null; valor_oculto: boolean; valor_pendente: boolean };
+
+/**
+ * A prévia é usada por mais de uma parte da tela ao mesmo tempo (Resumo da OS e, no associado, os botões Particular | Prefeitura
+ * da tanatopraxia e do translado): o mesmo rascunho faz uma chamada só, compartilhada.
+ */
+let previaEmVoo: { chave: string; p: Promise<any> } | null = null;
+function previaCompartilhada(chave: string, rascunho: RascunhoOS): Promise<any> {
+    if (!previaEmVoo || previaEmVoo.chave !== chave) {
+        const p = previaChamar("previa", rascunho);
+        previaEmVoo = { chave, p };
+        p.catch(() => {
+            if (previaEmVoo?.p === p) previaEmVoo = null; // erro: a próxima tentativa chama de novo
+        });
+    }
+    return previaEmVoo.p;
+}
 
 /**
  * Cálculo da OS com o que está na tela agora (os_principal.php?previa_os_atendimento; nada é gravado).
@@ -691,7 +825,8 @@ export function usePreviaOS(ativo = true) {
         const h = window.setTimeout(async () => {
             setS((x) => ({ ...x, carregando: true }));
             try {
-                const d = await previaChamar("previa", rascunho, ctl.signal);
+                const d = await previaCompartilhada(chave, rascunho);
+                if (ctl.signal.aborted) return;
                 setS({ carregando: false, erro: "", d });
             } catch (e: any) {
                 if (ctl.signal.aborted) return;
@@ -757,6 +892,7 @@ export function SecaoOSAtendimento({
     const mostraDados = parte === "tudo" || parte === "resumo";
     /** Resumo da OS e "Ver OS" (coluna lateral). */
     const mostraResumo = parte === "tudo" || parte === "lateral";
+    const negado = pacoteNegado(valores);
 
     const [modelos, setModelos] = useState<{ produto_id: number; nome: string }[]>([]);
     const [modelosErro, setModelosErro] = useState("");
@@ -810,7 +946,7 @@ export function SecaoOSAtendimento({
         return () => window.removeEventListener("message", ouvir);
     }, [mostraResumo, atendimentoId]);
 
-    const os = [resumo?.os_convenio, resumo?.os_particular].filter(Boolean) as any[];
+    const os = [resumo?.os_convenio, resumo?.os_particular, resumo?.os_prefeitura].filter(Boolean) as any[];
     const ehPref = tipo === "prefeitura";
     const osPartId = resumo?.os_particular?.id ?? null;
 
@@ -831,11 +967,19 @@ export function SecaoOSAtendimento({
     }, [mostraResumo, osPartId, versao, recarga, calcularAjuste]);
     const opcoes = modelosProcedimento(modelos);
 
-    /* Resumo da OS: valores do cálculo com a tela atual; sem cálculo, os valores da OS salva. */
-    const previa = usePreviaOS(mostraResumo);
+    /* Resumo da OS: valores do cálculo com a tela atual; sem cálculo, os valores da OS salva.
+       Associado (09/10/2026): a mesma prévia diz se a tanatopraxia e o translado têm parte sem cobertura do plano (botão Particular | Prefeitura). */
+    const assoc = tipo === "associado";
+    const precisaApoio = assoc && ((mostraProc && tanatoSim) || (mostraTransl && valores.translado === "Sim"));
+    const previa = usePreviaOS(mostraResumo || precisaApoio);
     const dp = previa.d;
+    const apoioPossivel: { tanatopraxia?: boolean; translado?: boolean } | null = dp?.apoio_prefeitura ?? null;
+    // O botão aparece só quando o plano não cobre tudo; marcado em Prefeitura, continua visível (para poder voltar a Particular).
+    const mostraApoioTan = assoc && tanatoSim && (!!apoioPossivel?.tanatopraxia || valores.tanato_autorizado_prefeitura === "Sim");
+    const mostraApoioTra = assoc && valores.translado === "Sim" && (!!apoioPossivel?.translado || valores.translado_autorizado_prefeitura === "Sim");
     const linhasPrevia: LinhaPrevia[] = dp?.linhas ?? [];
     const temConvenioAgora = dp ? linhasPrevia.some((l) => l.destino === "CONVENIO") : !!resumo?.os_convenio;
+    const temPrefeituraAgora = dp ? linhasPrevia.some((l) => l.destino === "PREFEITURA") : !!resumo?.os_prefeitura;
     const prefAgora = dp ? dp.convenio?.tipo === "PREFEITURA" : ehPref;
     const familiaAgora: number | null = dp ? Math.max(0, Number(dp.totais?.familia ?? 0) + (osPartId ? ajusteFamilia : 0)) : null;
     const pendFamilia = Number(dp?.totais?.familia_valores_pendentes ?? 0);
@@ -848,7 +992,9 @@ export function SecaoOSAtendimento({
         (familiaDiverge ||
             (temFamiliaAgora && !resumo?.os_particular) ||
             (temConvenioAgora && !resumo?.os_convenio) ||
-            (!temConvenioAgora && !!resumo?.os_convenio));
+            (!temConvenioAgora && !!resumo?.os_convenio) ||
+            (temPrefeituraAgora && !resumo?.os_prefeitura) ||
+            (!temPrefeituraAgora && !!resumo?.os_prefeitura));
 
     return (
         <>
@@ -884,9 +1030,10 @@ export function SecaoOSAtendimento({
                             {opcoes.length === 0 && !modelosErro ? <span className="py-2 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando as opções…</span> : null}
                         </div>
                         {modelosErro ? <p className="mt-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{modelosErro}</p> : null}
-                        {ehPref ? (
+                        {ehPref && !negado ? (
                             <Autorizacao servico="tanatopraxia" valor={valores.tanato_autorizado_prefeitura} onChange={(v) => onChange({ tanato_autorizado_prefeitura: v })} disabled={disabled} />
                         ) : null}
+                        {mostraApoioTan ? <PagadorApoio campo="tanato_autorizado_prefeitura" valores={valores} onChange={onChange} disabled={disabled} /> : null}
                     </div>
 
                     <LinhaSimNao rotulo="Reconstituição facial" valor={valores.reconstituicao_facial} onChange={(v) => onChange({ reconstituicao_facial: v })} disabled={disabled}>
@@ -931,9 +1078,10 @@ export function SecaoOSAtendimento({
                                         />
                                     </label>
                                 </div>
-                                {ehPref ? (
+                                {ehPref && !negado ? (
                                     <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
                                 ) : null}
+                                {mostraApoioTra ? <PagadorApoio campo="translado_autorizado_prefeitura" valores={valores} onChange={onChange} disabled={disabled} /> : null}
                             </div>
                         ) : null}
                     </LinhaSimNao>
@@ -1027,6 +1175,15 @@ export function SecaoOSAtendimento({
                                                 ? `OS salva: ${brl(salvoFamilia)} — salve o registro para atualizar.`
                                                 : "Confira e colha a assinatura em Ver OS.")
                                         }
+                                    />
+                                ) : null}
+                                {/* Associado com apoio da Prefeitura: a OS Prf, sem valor (o contrato fica no financeiro) */}
+                                {assoc && temPrefeituraAgora ? (
+                                    <CartaoResumo
+                                        rotulo="Faturar à Prefeitura"
+                                        os={resumo?.os_prefeitura ?? { numero_os: "Nova OS ao salvar" }}
+                                        tom="azul"
+                                        texto="O valor do contrato fica no financeiro."
                                     />
                                 ) : null}
                             </div>
