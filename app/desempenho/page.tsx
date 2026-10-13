@@ -127,9 +127,10 @@ const STATUS_COR: Record<string, string> = {
    - historico_sepultamentos.php?log=1&id= → fases, responsáveis e horários
 ========================================================= */
 
-const INFORMATIVO_URL = "/api/php/informativo.php?listar=1";
+// Direto na API (13/10/2026): o proxy /api/php lia cópias antigas, sem o filtro dos cancelados e das etapas desfeitas.
+const INFORMATIVO_URL = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
 const BALANCO_URL = "https://api.planoassistencialintegrado.com.br/balanco.php";
-const HISTORICO_URL = "/api/php/historico_sepultamentos.php?log=1&id=";
+const HISTORICO_URL = "https://api.planoassistencialintegrado.com.br/historico_sepultamentos.php?log=1&id=";
 
 type Registro = { [k: string]: any };
 type LogItem = { id?: number | string; datahora?: string; acao?: string; status_anterior?: string | null; status_novo?: string | null; detalhes?: any; usuario?: string };

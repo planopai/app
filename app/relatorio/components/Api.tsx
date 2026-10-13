@@ -3,13 +3,20 @@ import { FalecidoItem, LogItem, RegistroAnalise } from "./TiposHistorico";
 
 /* ======================== Endpoints ======================== */
 
-export const LISTAR_FALECIDOS =
-    "/api/php/historico_sepultamentos.php?listar_falecidos=1";
+/**
+ * Atendimentos e histórico: direto na API (13/10/2026). O proxy /api/php aponta para
+ * planoassistencialintegrado.com.br, onde ficaram cópias antigas do informativo.php e do
+ * historico_sepultamentos.php, sem o filtro dos cancelados e das etapas desfeitas.
+ */
+const API_DIRETA = "https://api.planoassistencialintegrado.com.br";
 
-export const LISTAR_ANALITICO = "/api/php/informativo.php?listar=1";
+export const LISTAR_FALECIDOS =
+    `${API_DIRETA}/historico_sepultamentos.php?listar_falecidos=1`;
+
+export const LISTAR_ANALITICO = `${API_DIRETA}/informativo.php?listar=1`;
 
 export const LOG_POR_ID = (id: string) =>
-    `/api/php/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
+    `${API_DIRETA}/historico_sepultamentos.php?log=1&id=${encodeURIComponent(id)}`;
 
 /** ✅ Materiais (árvore) — usado para mapear item/subitem -> categoria */
 export const LISTAR_MATERIAIS_ALL =

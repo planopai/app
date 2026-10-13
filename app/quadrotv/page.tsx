@@ -251,8 +251,9 @@ type CoroasTvResponse = {
 type QaDensity = "normal" | "compact" | "dense" | "ultra" | "micro";
 
 /* Endereço da API (um código só para as duas rotas):
- * - rota do Quadro (celular e desktop): usa o proxy do próprio site (/api/php);
- * - rota da TV: usa o endereço direto da API.
+ * - as duas rotas (Quadro e TV) usam o endereço direto da API (13/10/2026).
+ *   O proxy /api/php do site aponta para planoassistencialintegrado.com.br, onde ficou uma cópia
+ *   antiga do informativo.php, sem o filtro dos cancelados: o Quadro mostrava atendimento cancelado.
  * A rota da TV é reconhecida pelo endereço da página (contém "tv") ou por ?tv=1.
  * Para forçar, troque FORCAR_ROTA_TV por true ou false. */
 const FORCAR_ROTA_TV: boolean | null = null;
@@ -468,7 +469,7 @@ function ehRotaTv(): boolean {
     }
     return /tv/i.test(window.location.pathname);
 }
-const API_PHP = ehRotaTv() ? API_DIRETA : "/api/php";
+const API_PHP = API_DIRETA;
 
 /* ===== Endereços das telas do app =====
  * Pela skill do front (lista de páginas do pai_api.php): a tela de atendimento é a chave `atendimento` → rota "/atendimento".

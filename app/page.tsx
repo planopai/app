@@ -193,6 +193,13 @@ export default function HomePage() {
                                     Novo atendimento
                                 </Link>
                             ) : null}
+                            {/* 13/10/2026: atalho do Orçamento (página "orcamento") */}
+                            {pronto && has("orcamento") ? (
+                                <Link href="/orcamento?novo=1" className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-[15px] font-extrabold text-white hover:bg-white/10">
+                                    <IconPlus size={18} />
+                                    Novo orçamento
+                                </Link>
+                            ) : null}
                             <Link href="/quadro-acompanhamento" className="hidden h-11 items-center whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-sm font-bold text-white lg:inline-flex">
                                 Quadro de Atendimentos
                             </Link>

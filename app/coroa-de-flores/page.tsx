@@ -2308,7 +2308,17 @@ export default function Page() {
             }
             if (avisoOS) window.alert(avisoOS);
             // Venda direta: abre a OS de coroa para concluir a venda (formas de pagamento, parcelas e comprovante).
-            if (!newAutorizada && json?.id) void abrirOSDaCoroa(Number(json.id));
+            // Se o servidor não criar a OS, avisa na hora (antes o erro ficava escondido no detalhe do pedido).
+            if (!newAutorizada && json?.id) {
+                setOsCoroaErro(null);
+                try {
+                    setOsCoroaAberta(await osDaCoroa(Number(json.id)));
+                } catch (osErr: any) {
+                    const motivo = osErr?.message || "erro desconhecido";
+                    setOsCoroaErro(motivo);
+                    window.alert(`O pedido foi salvo, mas a OS da coroa não foi criada: ${motivo}. Avise o financeiro.`);
+                }
+            }
         } catch (e: any) {
             setNewError(e?.message || "Não foi possível criar o pedido.");
         } finally {

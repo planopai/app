@@ -259,12 +259,13 @@ export default function FinanceiroOSPage() {
                 .map((c: any) => ({ v: String(c.codigo), r: c.tipo === "PREFEITURA" ? `Prefeitura de ${c.nome}` : `Plano ${c.nome}` })),
         [convenios],
     );
-    const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS, pagamento: PAGAMENTOS_OS, agente: opAgentes, convenio: opConvenios };
+    // "Cancelada" só no Financeiro: atendimento ou pedido de coroa cancelado (13/10/2026)
+    const mostrar = { tipo: TIPOS_OS, situacao: [...SITUACOES_OS, { v: "CANCELADA", r: "Cancelada" }], pagamento: PAGAMENTOS_OS, agente: opAgentes, convenio: opConvenios };
     const soAReceber = filtro.pagamentos.length === 1 && filtro.pagamentos[0] === "A_RECEBER";
 
     const ind = painel?.indicadores;
     const vt = ind?.vendas_por_tipo || {};
-    const totalLista = linhasOS.reduce((a, l) => a + (l.status === "CONVERTIDA" ? 0 : Number(l.valor_total) || 0), 0);
+    const totalLista = linhasOS.reduce((a, l) => a + (l.status === "CONVERTIDA" || l.status === "CANCELADA" ? 0 : Number(l.valor_total) || 0), 0);
 
     const tabela = (): TabelaExport => ({
         titulo: "Financeiro da OS",
@@ -372,7 +373,11 @@ export default function FinanceiroOSPage() {
                         ["Saldo", resumo.saldo === null ? (resumo.tipo === "SOC" ? "Coberto pelo plano" : "—") : brl(resumo.saldo), true],
                         ...(resumo.nota_promissoria ? ([["Nota promissória", tagNP(resumo.nota_promissoria)]] as [string, React.ReactNode][]) : []),
                         ...(resumo.credito_a_devolver > 0 ? ([["Crédito a devolver", brl(resumo.credito_a_devolver)]] as [string, React.ReactNode][]) : []),
+                        ...(resumo.status === "CANCELADA" && Number(resumo.reembolso_valor) > 0
+                            ? ([["Reembolso", `${brl(resumo.reembolso_valor)} · ${resumo.reembolso_status === "FEITO" ? "feito" : "pendente"}`]] as [string, React.ReactNode][])
+                            : []),
                     ]}
+                    aviso={resumo.status === "CANCELADA" ? "OS cancelada: não entra nos totais do painel." : undefined}
                     acoes={[
                         { rotulo: "PDF", icone: <Icone d={Ic.pdf} tam={18} />, onClick: () => void baixarPdfDaOS(resumo.os_id, resumo.numero_os).then((m) => m && setMsg(m)) },
                         { rotulo: "Imprimir", icone: <Icone d={Ic.imprimir} tam={18} />, onClick: () => window.open(`${OS_API}?documento_os=1&os_id=${resumo.os_id}&formato=impressao`, "_blank") },
@@ -494,7 +499,8 @@ function DetalheOS({
 
     const podeReceber =
         ["PRT", "DIF_SOC", "DIF_PRF", "COR", "PRF"].includes(linha.tipo) &&
-        linha.status !== "CONVERTIDA";
+        linha.status !== "CONVERTIDA" &&
+        linha.status !== "CANCELADA";
 
     const lancar = () =>
         executar(async () => {
@@ -602,6 +608,17 @@ function DetalheOS({
                 {erro && (
                     <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                         {erro}
+                    </div>
+                )}
+
+                {/* OS cancelada (13/10/2026): atendimento ou pedido de coroa cancelado pela Gestão */}
+                {linha.status === "CANCELADA" && (
+                    <div className="mb-4 rounded-xl border-[1.5px] border-[#B42318]/50 bg-[#FDECEA] p-4 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/50 dark:bg-[#FF9C92]/10 dark:text-[#FF9C92]">
+                        <div className="text-base font-extrabold">OS cancelada</div>
+                        Não recebe mais lançamentos e não entra nos totais do painel. O motivo está na linha do tempo.
+                        {Number(linha.reembolso_valor) > 0 && (
+                            <> Reembolso ao cliente: <b>{brl(linha.reembolso_valor)}</b> ({linha.reembolso_status === "FEITO" ? "feito" : "pendente"}).</>
+                        )}
                     </div>
                 )}
 

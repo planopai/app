@@ -57,6 +57,8 @@ import Visita, {
 } from "./components/visita";
 
 import Wizard, { type CampoFaltando, type TravaItens } from "./components/Wizard";
+// Orçamento → Novo registro (13/10/2026): as ferramentas ficam na pasta do Orçamento.
+import { camposDoOrcamento, marcarOrcamentoConvertido } from "@/app/orcamento/components/paraAtendimento";
 import MateriaisModal from "./components/MateriaisModal";
 import ArrumacaoModal from "./components/ArrumacaoModal";
 import AcaoModal, {
@@ -714,6 +716,9 @@ export default function AcompanhamentoPage() {
   const localCerimoniaCarregadoRef = useRef(false);
   const [osColunasFaltando, setOsColunasFaltando] = useState<string[]>([]);
   const [osVersao, setOsVersao] = useState(0);
+  /** Novo registro aberto a partir de um orçamento (?orcamento=<id>): campos da OS a preencher e o orçamento a marcar como convertido. */
+  const orcamentoOsRef = useRef<Partial<OsCampos> | null>(null);
+  const orcamentoEmUsoRef = useRef<{ id: number; numero: string } | null>(null);
   // Convênios e pacotes do cadastro (os_previa.php). Uma busca só, compartilhada com o campo Convênio e a prévia da OS.
   const opcoesConv = useOpcoesConvenio(wizardOpen);
 
@@ -3044,6 +3049,19 @@ export default function AcompanhamentoPage() {
           }
         }
 
+        // Orçamento → atendimento (13/10/2026): o orçamento passa a "Virou atendimento" com o número deste registro.
+        let textoOrc = "";
+        const orcEmUso = orcamentoEmUsoRef.current;
+        if (orcEmUso && !wizardEditing && atendimentoId != null && !String(atendimentoId).startsWith("local")) {
+          try {
+            await marcarOrcamentoConvertido(orcEmUso.id, atendimentoId);
+            orcamentoEmUsoRef.current = null;
+            textoOrc = ` Orçamento ${orcEmUso.numero} ligado a este atendimento.`;
+          } catch (orcError: any) {
+            textoOrc = ` Mas o orçamento ${orcEmUso.numero} não foi marcado como convertido: ${orcError?.message || "erro desconhecido"}.`;
+          }
+        }
+
         // Corrigir baixa (09/10/2026): a Gestão trocou item travado e o informativo.php acertou o estoque.
         const est = (json as any)?.estoque_corrigido;
         const textoEstoque =
@@ -3055,8 +3073,8 @@ export default function AcompanhamentoPage() {
             : "";
 
         setWizardMsg({
-          text: (options?.mensagemSucesso || "Registro salvo!") + textoEstoque + textoOS + textoLocal,
-          ok: !textoOS.includes("não foi atualizada") && !textoLocal,
+          text: (options?.mensagemSucesso || "Registro salvo!") + textoEstoque + textoOS + textoLocal + textoOrc,
+          ok: !textoOS.includes("não foi atualizada") && !textoLocal && !textoOrc.includes("não foi marcado"),
         });
 
         if ((dataAtualizada as any).tipo_atendimento === "terceiro") {
@@ -4103,6 +4121,39 @@ export default function AcompanhamentoPage() {
     [registros, abrirWizard],
   );
 
+  /* Orçamento → "Virar atendimento" chega com ?orcamento=<id>: abre o Novo registro já preenchido (uma vez). */
+  const orcamentoDaUrlRef = useRef(false);
+  useEffect(() => {
+    if (orcamentoDaUrlRef.current || typeof window === "undefined") return;
+    orcamentoDaUrlRef.current = true;
+    const url = new URL(window.location.href);
+    const alvo = Number(url.searchParams.get("orcamento") || 0);
+    if (!alvo) return;
+    url.searchParams.delete("orcamento");
+    window.history.replaceState(window.history.state, "", url.pathname + (url.search ? url.search : "") + url.hash);
+    camposDoOrcamento(alvo)
+      .then(({ orcamento, registro, os }) => {
+        orcamentoOsRef.current = os as Partial<OsCampos>;
+        orcamentoEmUsoRef.current = { id: orcamento.id, numero: orcamento.numero };
+        iniciarNovoRegistro("funerario");
+        setWizardData((prev: any) => ({ ...prev, ...registro }));
+        setAssistenciaVal(String((registro as any).assistencia ?? ""));
+        setTanatoVal(String((registro as any).tanato ?? ""));
+        setWizardMsg({ text: `Preenchido com o orçamento ${orcamento.numero}. Confira os itens e complete o registro.`, ok: true });
+      })
+      .catch((e: any) => {
+        window.alert(e?.message || "Não foi possível abrir o orçamento.");
+      });
+  }, [iniciarNovoRegistro]);
+
+  // Fechou o registro sem salvar: o próximo Novo registro abre vazio.
+  useEffect(() => {
+    if (!wizardOpen) {
+      orcamentoOsRef.current = null;
+      orcamentoEmUsoRef.current = null;
+    }
+  }, [wizardOpen]);
+
   /* Quadro de atendimentos → "Editar" chega com ?editar=<id>: abre o Editar registro desse atendimento direto (uma vez). */
   const editarDaUrlRef = useRef(false);
   useEffect(() => {
@@ -4206,7 +4257,8 @@ export default function AcompanhamentoPage() {
   useEffect(() => {
     if (!wizardOpen) return;
     let vivo = true;
-    setOsCampos(OS_CAMPOS_VAZIO);
+    // Novo registro vindo do orçamento: tanatopraxia e translado já preenchidos (o resto vem no wizardData).
+    setOsCampos(!wizardEditing && orcamentoOsRef.current ? { ...OS_CAMPOS_VAZIO, ...orcamentoOsRef.current } : OS_CAMPOS_VAZIO);
     setOsColunasFaltando([]);
     localCerimoniaCarregadoRef.current = !wizardEditing;
     if (!wizardEditing || wizardRegistroId == null || String(wizardRegistroId).startsWith("local")) return;

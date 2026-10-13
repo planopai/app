@@ -27,6 +27,7 @@ import {
     IconBook,
     IconBrain,
     IconBuildingStore,
+    IconCalculator,
     IconCar,
     IconChartBar,
     IconClipboardList,
@@ -109,6 +110,8 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/servicos-funerarios", slug: "servicos-funerarios" },
         itens: [
             { id: "atendimentos", titulo: "Atendimentos", desc: "Registro e histórico", href: "/acompanhamento", slugs: ["acompanhamento"], icone: IconClipboardList, selo: "aguardando" },
+            // 13/10/2026: Orçamento para a família (Particular, vale 7 dias, pode virar atendimento)
+            { id: "orcamento", titulo: "Orçamento", desc: "Orçamento para a família", href: "/orcamento", slugs: ["orcamento"], icone: IconCalculator },
             { id: "homenagens", titulo: "Homenagens", desc: "Livro de homenagens", href: "/mensagens", slugs: ["mensagens"], icone: IconHeartHandshake },
             { id: "visita-avaliacao", titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao", "avaliacao"], icone: IconEye },
             { id: "coroas", titulo: "Coroa de Flores", desc: "Coroas naturais e artificiais", href: "/coroa-de-flores", slugs: ["coroa-de-flores"], icone: IconFlower, selo: "coroas" },

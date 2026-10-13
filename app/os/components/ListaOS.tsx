@@ -527,6 +527,11 @@ export function metaFinanceiraOS(l: any): string {
     const pago = Number(l.recebido) || 0;
     let aberto: string;
     if (l.status === "CONVERTIDA") aberto = "convertida";
+    else if (l.status === "CANCELADA") {
+        // OS cancelada (13/10/2026): não há o que receber; mostra o reembolso, se houve recebimento
+        const rv = Number(l.reembolso_valor) || 0;
+        aberto = rv > 0 ? `cancelada · reembolso ${brlOS(rv)} ${l.reembolso_status === "FEITO" ? "feito" : "pendente"}` : "cancelada";
+    }
     else if (l.tipo === "SOC") aberto = "coberto pelo plano";
     else if (l.saldo !== null && l.saldo !== undefined) aberto = `em aberto ${brlOS(l.saldo)}`;
     else aberto = `em aberto ${brlOS(Math.max(0, (Number(l.valor_total) || 0) - pago))}`;
@@ -566,7 +571,7 @@ export function CartoesOS({ itens }: { itens: Cartao[] }) {
     );
 }
 
-export type Situacao = { texto: string; tom: "amarelo" | "creme" | "verde" | "verdeCheio" | "neutro" | "azul" };
+export type Situacao = { texto: string; tom: "amarelo" | "creme" | "verde" | "verdeCheio" | "neutro" | "azul" | "vermelho" };
 
 export function situacaoDaOS(l: any): Situacao {
     if (l.status === "CONVERTIDA") return { texto: "Convertida", tom: "neutro" };
@@ -575,7 +580,7 @@ export function situacaoDaOS(l: any): Situacao {
         return l.status_pagamento === "PAGO" ? { texto: "Paga", tom: "verdeCheio" } : { texto: "Assinada", tom: "verde" };
     }
     if (l.status === "AGUARDANDO_ASSINATURA") return { texto: "Aguard. assinatura", tom: "amarelo" };
-    if (l.status === "CANCELADA") return { texto: "Cancelada", tom: "neutro" };
+    if (l.status === "CANCELADA") return { texto: "Cancelada", tom: "vermelho" };
     return { texto: "Aberta", tom: "creme" };
 }
 
@@ -586,6 +591,7 @@ const TOM: Record<Situacao["tom"], string> = {
     verdeCheio: "bg-[#B3CE52] text-[#313C55]",
     neutro: "bg-[#EEF1F5] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]",
     azul: "bg-[#DCE5F0] text-[#313C55] dark:bg-[#3D6A99]/35 dark:text-[#C9DAEC]",
+    vermelho: "bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]",   // OS cancelada (13/10/2026)
 };
 
 export type LinhaLista = { chave: string | number; numero: string; situacao: Situacao; valor: string; nome: string; meta: string; destaque?: boolean };
