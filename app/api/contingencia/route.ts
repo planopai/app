@@ -19,6 +19,101 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    const { data: usuario, error: usuarioError } = await supabase
+        .schema("pai")
+        .from("usuarios")
+        .select("id, nome, usuario, cargo")
+        .eq("usuario", sessao.usuario)
+        .maybeSingle();
+
+    if (usuarioError) {
+        return NextResponse.json(
+            {
+                ok: false,
+                erro: "Erro ao localizar usuário",
+            },
+            {
+                status: 500,
+            }
+        );
+    }
+
+    if (!usuario) {
+        return NextResponse.json(
+            {
+                ok: false,
+                erro: "Usuário não encontrado",
+            },
+            {
+                status: 403,
+            }
+        );
+    }
+
+    const { data: cargo, error: cargoError } = await supabase
+        .schema("pai")
+        .from("cargos")
+        .select("id, nome, slug, ativo")
+        .eq("slug", usuario.cargo)
+        .eq("ativo", true)
+        .maybeSingle();
+
+    if (cargoError) {
+        return NextResponse.json(
+            {
+                ok: false,
+                erro: "Erro ao verificar cargo",
+            },
+            {
+                status: 500,
+            }
+        );
+    }
+
+    if (!cargo) {
+        return NextResponse.json(
+            {
+                ok: false,
+                erro: "Cargo inválido ou inativo",
+            },
+            {
+                status: 403,
+            }
+        );
+    }
+
+    const { data: permissao, error: permissaoError } = await supabase
+        .schema("pai")
+        .from("cargo_paginas")
+        .select("pagina")
+        .eq("cargo_id", cargo.id)
+        .eq("pagina", "atendimento")
+        .maybeSingle();
+
+    if (permissaoError) {
+        return NextResponse.json(
+            {
+                ok: false,
+                erro: "Erro ao verificar permissão",
+            },
+            {
+                status: 500,
+            }
+        );
+    }
+
+    if (!permissao) {
+        return NextResponse.json(
+            {
+                ok: false,
+                erro: "Usuário sem permissão para atendimento",
+            },
+            {
+                status: 403,
+            }
+        );
+    }
+
     const { searchParams } = new URL(request.url);
 
     const recurso = searchParams.get("recurso");
@@ -56,7 +151,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
         ok: true,
         modo: "contingencia",
-        usuario: sessao.usuario,
+        usuario: {
+            id: usuario.id,
+            nome: usuario.nome,
+            usuario: usuario.usuario,
+            cargo: usuario.cargo,
+        },
+        permissao: "atendimento",
         recurso,
         dados: data,
     });
