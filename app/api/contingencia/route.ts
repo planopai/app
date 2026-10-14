@@ -120,7 +120,8 @@ export async function GET(request: NextRequest) {
 
     if (
         recurso !== "os_ordens" &&
-        recurso !== "sepultamentos"
+        recurso !== "sepultamentos" &&
+        recurso !== "homenagens"
     ) {
         return NextResponse.json(
             {
@@ -136,7 +137,9 @@ export async function GET(request: NextRequest) {
     const tabela =
         recurso === "sepultamentos"
             ? "sepultamentos"
-            : "os_ordens";
+            : recurso === "homenagens"
+                ? "homenagens"
+                : "os_ordens";
 
     let query = supabase
         .schema("pai")
