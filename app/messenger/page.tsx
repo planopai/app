@@ -14,7 +14,7 @@ import { useSemZoom } from "@/components/messenger/semZoom";
 import type { Aba, Conversa, Mensagem, Perfil } from "@/components/messenger/tipos";
 import { Abas, Icone, LinhaConversa } from "./components/Lista";
 import JanelaConversa from "./components/Conversa";
-import { DetalhesGrupo, NovaConversa, Transferir } from "./components/Modais";
+import { DetalhesGrupo, Encaminhar, EnviarContato, NovaConversa, Transferir } from "./components/Modais";
 import HistoricoClientes from "./components/Historico";
 
 /**
@@ -32,14 +32,28 @@ function useAreaVisivel(ativo: boolean) {
         const celular = window.matchMedia("(max-width: 767px)");
         const medir = () => setArea(celular.matches ? { altura: Math.round(vv.height), topo: Math.round(vv.offsetTop) } : null);
         medir();
+        // o iPhone nem sempre avisa quando o teclado fecha: mede de novo logo depois de sair/entrar no campo
+        const remedir = () => [60, 300, 700].forEach((ms) => setTimeout(medir, ms));
+        const aoSairDoCampo = () => {
+            remedir();
+            setTimeout(() => window.scrollTo(0, 0), 120); // a página não fica rolada depois que o teclado some
+        };
         vv.addEventListener("resize", medir);
         vv.addEventListener("scroll", medir);
+        window.addEventListener("resize", remedir);
+        window.addEventListener("orientationchange", remedir);
+        document.addEventListener("focusin", remedir);
+        document.addEventListener("focusout", aoSairDoCampo);
         celular.addEventListener?.("change", medir);
         const antes = document.documentElement.style.overflow;
         document.documentElement.style.overflow = "hidden";
         return () => {
             vv.removeEventListener("resize", medir);
             vv.removeEventListener("scroll", medir);
+            window.removeEventListener("resize", remedir);
+            window.removeEventListener("orientationchange", remedir);
+            document.removeEventListener("focusin", remedir);
+            document.removeEventListener("focusout", aoSairDoCampo);
             celular.removeEventListener?.("change", medir);
             document.documentElement.style.overflow = antes;
         };
@@ -117,8 +131,13 @@ export default function MessengerPage() {
     const [carregando, setCarregando] = useState(true);
     const [seguranca, setSeguranca] = useState(false);
     const [digitando, setDigitando] = useState<Record<number, { nome: string; ate: number }>>({});
-    const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes">(null);
+    const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes" | "contato" | "encaminhar">(null);
+    const [paraEncaminhar, setParaEncaminhar] = useState<Mensagem | null>(null);
     const [verHistorico, setVerHistorico] = useState(false);
+    const [pastaEquipeAberta, setPastaEquipeAberta] = useState(false);
+    // mensagem que está sendo respondida (responder direcionado, como no WhatsApp)
+    const [respondendo, setRespondendo] = useState<Mensagem | null>(null);
+    useEffect(() => setRespondendo(null), [selId]);
     const presenca = usePresencas();
     useSemZoom();
     const [notif, setNotif] = useState<{ estado: EstadoNotificacoes; detalhe?: string }>({ estado: "desligadas" });
@@ -240,6 +259,9 @@ export default function MessengerPage() {
                     }
                 }
                 agendarRecarga();
+            } else if (nome === "reacao") {
+                // reação com emoji feita por alguém (ou por mim em outro aparelho)
+                if (dados.conversa_id === aberta) setMensagens((ms) => ms.map((x) => (x.id === dados.mensagem_id ? { ...x, reacoes: dados.reacoes || [] } : x)));
             } else if (nome === "mensagem_apagada") {
                 if (dados.conversa_id === aberta) setMensagens((ms) => ms.map((x) => (x.id === dados.mensagem_id ? { ...x, apagada: true, texto: null, anexos: [] } : x)));
                 agendarRecarga();
@@ -272,10 +294,12 @@ export default function MessengerPage() {
         const q = busca.trim().toLowerCase();
         const f = (c: Conversa) => !q || c.titulo.toLowerCase().includes(q) || (c.contato?.telefone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "") || "#");
         return {
-            tudo: conversas.filter(f),
+            // atendimentos que a Gestão só acompanha ficam numa pasta à parte (não misturam com as conversas dela)
+            tudo: conversas.filter((c) => !c.gestao_acompanha && f(c)),
             equipe: conversas.filter((c) => c.canal === "interno" && f(c)),
             grupos: conversas.filter((c) => c.tipo === "grupo" && f(c)),
-            clientes: conversas.filter((c) => c.canal === "whatsapp" && f(c)),
+            clientes: conversas.filter((c) => c.canal === "whatsapp" && !c.gestao_acompanha && f(c)),
+            daEquipe: conversas.filter((c) => !!c.gestao_acompanha && f(c)),
             fila: fila.filter(f),
         };
     }, [conversas, fila, busca]);
@@ -305,8 +329,10 @@ export default function MessengerPage() {
     };
     const enviarTexto = (t: string) => {
         const uuid = novoUuid();
-        acrescentarLocal(mensagemLocal(uuid, "texto", t));
-        enviarCorpo(uuid, { tipo: "texto", texto: t });
+        const resposta = respondendo?.id ?? null;
+        setRespondendo(null);
+        acrescentarLocal({ ...mensagemLocal(uuid, "texto", t), responde_a_id: resposta });
+        enviarCorpo(uuid, { tipo: "texto", texto: t, responde_a_id: resposta });
     };
     const enviarModelo = (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => {
         const uuid = novoUuid();
@@ -319,7 +345,9 @@ export default function MessengerPage() {
         let mime = (opcoes.mime || f.type || "").split(";")[0];
         if (!mime && nome) mime = TIPOS_DOC[nome.split(".").pop()!.toLowerCase()] || "";
         const tipo: Mensagem["tipo"] = mime.startsWith("image/") ? "imagem" : mime.startsWith("audio/") ? "audio" : "documento";
-        acrescentarLocal({ ...mensagemLocal(uuid, tipo, tipo === "documento" ? nome : null), texto: tipo === "imagem" ? "Enviando foto…" : tipo === "audio" ? "Enviando áudio…" : `Enviando ${nome}…` });
+        const resposta = respondendo?.id ?? null;
+        setRespondendo(null);
+        acrescentarLocal({ ...mensagemLocal(uuid, tipo, tipo === "documento" ? nome : null), responde_a_id: resposta, texto: tipo === "imagem" ? "Enviando foto…" : tipo === "audio" ? "Enviando áudio…" : `Enviando ${nome}…` });
         try {
             const anexo: Record<string, any> = { nome_original: nome || null, duracao_s: opcoes.duracao_s };
             if (tipo === "imagem" && mime !== "image/gif") {
@@ -330,26 +358,97 @@ export default function MessengerPage() {
                 anexo.altura = foto.altura;
             } else if (tipo === "audio" && conversaSel?.tipo === "externo" && !["audio/mpeg", "audio/ogg", "audio/aac", "audio/amr"].includes(mime)) {
                 // WhatsApp: o áudio do Safari (MP4) e do Chrome (WebM) é recusado pela Meta; vai em MP3
-                let arquivo: Blob = f;
-                let tipoArquivo = mime;
+                // áudio anexado pelo clipe (a gravação do Messenger já sai em MP3)
+                let arquivo: Blob;
                 try {
                     arquivo = await audioParaMp3(f);
-                    tipoArquivo = "audio/mpeg";
-                    anexo.nome_original = "audio.mp3";
                 } catch {
-                    /* não converteu: envia como gravou (o servidor avisa se o WhatsApp não aceitar) */
+                    throw new Error("Este áudio não pôde ser convertido para o WhatsApp. Grave pelo microfone do Messenger.");
                 }
-                anexo.chave = await enviarArquivo(arquivo, tipoArquivo);
+                anexo.nome_original = "audio.mp3";
+                anexo.chave = await enviarArquivo(arquivo, "audio/mpeg");
             } else {
                 anexo.chave = await enviarArquivo(f, mime);
             }
-            await enviarCorpo(uuid, { tipo, anexo });
+            await enviarCorpo(uuid, { tipo, anexo, responde_a_id: resposta });
         } catch (e: any) {
             trocarLocal(uuid, { _enviando: false, _falhaLocal: e.message });
         }
     };
 
     /* ---------- ações ---------- */
+    /* ---------- pacote 3: nota interna, localização, contato, reação, encaminhar, salvar contato ---------- */
+    const enviarNota = (t: string) => {
+        const uuid = novoUuid();
+        const resposta = respondendo?.id ?? null;
+        setRespondendo(null);
+        acrescentarLocal({ ...mensagemLocal(uuid, "texto", t), responde_a_id: resposta, interna: true });
+        enviarCorpo(uuid, { tipo: "texto", texto: t, interna: true, responde_a_id: resposta });
+    };
+    const enviarLocalizacao = () => {
+        if (!navigator.geolocation) {
+            setErro("Este aparelho não informa a localização.");
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                if (!window.confirm("Enviar a sua localização atual nesta conversa?")) return;
+                const uuid = novoUuid();
+                acrescentarLocal(mensagemLocal(uuid, "texto", "📍 Enviando localização…"));
+                enviarCorpo(uuid, { tipo: "localizacao", latitude: pos.coords.latitude, longitude: pos.coords.longitude, nome: "Localização atual" });
+            },
+            (e) => setErro(e.code === 1 ? "Permita o acesso à localização nas configurações do aparelho/navegador para enviar." : "Não foi possível obter a localização agora."),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+        );
+    };
+    const enviarContato = (nome: string, telefone: string) => {
+        setModal(null);
+        const uuid = novoUuid();
+        acrescentarLocal(mensagemLocal(uuid, "texto", `👤 ${nome}`));
+        enviarCorpo(uuid, { tipo: "contato", contato: { nome, telefone } });
+    };
+    const reagir = async (m: Mensagem, emoji: string) => {
+        const eu = perfil!.id;
+        const antes = m.reacoes || [];
+        const depois = [...antes.filter((r) => r.usuario_id !== eu), ...(emoji ? [{ emoji, usuario_id: eu, nome: perfil!.nome }] : [])];
+        setMensagens((ms) => ms.map((x) => (x.id === m.id ? { ...x, reacoes: depois } : x)));
+        try {
+            const r = await msgPost("reagir", { mensagem_id: m.id, emoji });
+            setMensagens((ms) => ms.map((x) => (x.id === m.id ? { ...x, reacoes: r.dados.reacoes || [] } : x)));
+        } catch (e: any) {
+            setMensagens((ms) => ms.map((x) => (x.id === m.id ? { ...x, reacoes: antes } : x)));
+            setErro(e.message);
+        }
+    };
+    const encaminhar = async (ids: number[]) => {
+        const m = paraEncaminhar;
+        setModal(null);
+        setParaEncaminhar(null);
+        if (!m) return;
+        try {
+            const r = await msgPost("encaminhar", { mensagem_id: m.id, conversa_ids: ids });
+            setAviso(r.dados.recusadas?.length ? `${r.msg} (${r.dados.recusadas.length} conversa(s) não aceitaram.)` : r.msg);
+            carregarListas();
+            if (selId && ids.includes(selId)) abrirConversa(selId, true);
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    };
+    const salvarContato = async () => {
+        if (!conversaSel?.contato) return;
+        const atual = conversaSel.contato.salvo ? conversaSel.contato.nome || "" : conversaSel.contato.nome_whatsapp || conversaSel.contato.nome || "";
+        const nome = window.prompt(`Nome para ${conversaSel.contato.telefone}${conversaSel.contato.nome_whatsapp ? ` (no WhatsApp: ${conversaSel.contato.nome_whatsapp})` : ""}:`, atual);
+        if (nome === null) return;
+        try {
+            const r = await msgPost("contato_salvar", { conversa_id: conversaSel.id, nome: nome.trim() });
+            setConversaSel(r.dados);
+            setAviso(r.msg);
+            carregarListas();
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    };
+
     /* ---------- fixar e marcar como não lida (deslizar no celular, menu no computador) ---------- */
     const fixarConversa = async (c: Conversa) => {
         try {
@@ -489,6 +588,19 @@ export default function MessengerPage() {
                         {perfil && listaAtual.map((c) => (
                             <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} online={c.tipo === "individual" && presenca.online(c.outro_usuario_id)} acoes={c.participo ? { onFixar: () => fixarConversa(c), onMarcar: () => marcarConversa(c) } : undefined} />
                         ))}
+                        {aba === "clientes" && perfil?.gestao && porAba.daEquipe.length > 0 && (
+                            <>
+                                <button type="button" onClick={() => setPastaEquipeAberta((v) => !v)} aria-expanded={pastaEquipeAberta} className="mx-2 mt-3 flex items-center gap-2 rounded-xl bg-[#F0F2F5] px-3 py-2.5 text-left text-[14px] font-extrabold text-[#313C55] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-white dark:hover:bg-white/10">
+                                    <Icone nome="users" className="h-5 w-5 flex-none" />
+                                    <span className="flex-1">Em atendimento pela equipe</span>
+                                    <span className="rounded-full bg-[#313C55] px-2 py-0.5 text-[12.5px] text-white dark:bg-[#3D6A99]">{porAba.daEquipe.length}</span>
+                                    <span className={`transition-transform ${pastaEquipeAberta ? "rotate-180" : ""}`}><Icone nome="chevron" className="h-4 w-4" /></span>
+                                </button>
+                                {pastaEquipeAberta && porAba.daEquipe.map((c) => (
+                                    <LinhaConversa key={`g${c.id}`} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} />
+                                ))}
+                            </>
+                        )}
                         {!listaAtual.length && !carregando && (
                             <p className="px-4 py-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                                 {aba === "clientes" ? (perfil?.atendente ? "Nenhum atendimento com você." : "Você não atende clientes do WhatsApp.") : aba === "grupos" ? "Você ainda não participa de grupos." : "Nenhuma conversa ainda. Toque no botão de nova conversa para começar."}
@@ -508,8 +620,11 @@ export default function MessengerPage() {
                             presenca={conversaSel.tipo === "individual" ? presenca.texto(conversaSel.outro_usuario_id) : ""}
                             online={conversaSel.tipo === "individual" && presenca.online(conversaSel.outro_usuario_id)}
                             conversa={conversaSel} mensagens={mensagens} perfil={perfil} temMais={temMais} digitando={digitandoAgora} seguranca={seguranca}
+                            respondendo={respondendo} onResponder={setRespondendo}
                             onVoltar={fecharConversa} onCarregarMais={carregarMais}
                             onEnviarTexto={enviarTexto} onEnviarModelo={enviarModelo} onEnviarArquivo={enviarMidia} onApagar={apagar}
+                            onReagir={reagir} onEncaminhar={(m) => { setParaEncaminhar(m); setModal("encaminhar"); }} onEnviarNota={enviarNota}
+                            onEnviarLocalizacao={enviarLocalizacao} onPedirContato={() => setModal("contato")} onSalvarContato={salvarContato}
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
                             onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}
@@ -527,8 +642,10 @@ export default function MessengerPage() {
                 <NovaConversa online={presenca.online} grupoInicial={modal === "grupo"} onFechar={() => setModal(null)} onAberta={(c) => { setModal(null); carregarListas(); setAba(c.tipo === "grupo" ? "grupos" : "equipe"); abrirConversa(c.id); }} />
             )}
             {modal === "transferir" && conversaSel && (
-                <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida. Você continua acompanhando, sem responder."); carregarListas(); abrirConversa(conversaSel.id, true); }} />
+                <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida."); if (perfil?.gestao) abrirConversa(conversaSel.id, true); else fecharConversa(); carregarListas(); }} />
             )}
+            {modal === "contato" && <EnviarContato onFechar={() => setModal(null)} onEnviar={enviarContato} />}
+            {modal === "encaminhar" && paraEncaminhar && <Encaminhar conversas={conversas} onFechar={() => { setModal(null); setParaEncaminhar(null); }} onEnviar={encaminhar} />}
             {modal === "detalhes" && conversaSel && perfil && (
                 <DetalhesGrupo conversa={conversaSel} perfil={perfil} onFechar={() => setModal(null)} onMudou={(c) => { setConversaSel(c); carregarListas(); }} onSaiu={() => { setModal(null); fecharConversa(); carregarListas(); }} />
             )}

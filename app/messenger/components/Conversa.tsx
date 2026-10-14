@@ -2,9 +2,10 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { msgGet } from "@/components/messenger/api";
-import { formatoAudio } from "@/components/messenger/compressao";
+import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
-import { Avatar, Icone } from "./Lista";
+import { Avatar, Icone, previa } from "./Lista";
+import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
 
 const EMOJIS: Record<string, string[]> = {
     Rostos: ["😀", "😂", "😊", "😍", "🥲", "😢", "😔", "😮", "🙂", "😉", "🤗", "😴"],
@@ -72,7 +73,22 @@ function Tiques({ estado }: { estado: "enviando" | "enviada" | "entregue" | "lid
     return <span className={estado === "lida" ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#6B7488] dark:text-[#C9D1DE]"} aria-label={estado === "lida" ? "Lida" : "Entregue"}><Icone nome="checks" className="h-4 w-4" /></span>;
 }
 
-function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean }) {
+/** Trecho da mensagem respondida, dentro do balão (como no WhatsApp). */
+function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
+    const autor = !m ? "" : m.autor_tipo === "usuario" && m.autor_usuario_id === eu ? "Você" : m.autor_nome || "—";
+    return (
+        <div className="mb-1 rounded-md border-l-4 border-[#3D6A99] bg-black/5 px-2.5 py-1.5 text-[14px] dark:border-[#A9BED6] dark:bg-white/10">
+            <div className="font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{autor || "Mensagem"}</div>
+            <div className="line-clamp-2 break-words text-[#4A5468] dark:text-[#C9D1DE]">{m ? previa(m) : "Mensagem anterior"}</div>
+        </div>
+    );
+}
+
+function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null }) {
+    const [puxar, setPuxar] = useState(0);
+    const [menu, setMenu] = useState(false);
+    const toqueLongo = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const toque = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
     if (m.autor_tipo === "sistema") {
         return <div className="my-1 self-center rounded-lg bg-white/90 px-3 py-1 text-center text-[14px] font-bold text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{m.texto}</div>;
     }
@@ -98,42 +114,163 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco }: { m: Mensagem; co
         }
     }
     const podeApagar = minha && !m.apagada && !m._enviando && conversa.canal === "interno" && Date.now() - new Date(m.criado_em).getTime() < 15 * 60000;
+    const podeResponder = !!onResponder && !m.apagada && !m._enviando && m.id < Number.MAX_SAFE_INTEGER;
+    const salva = !m.apagada && !m._enviando && m.id < Number.MAX_SAFE_INTEGER;
+    const temMenu = salva && (!!onReagir || podeResponder || (!!onEncaminhar && !m.interna) || !!m.texto || podeApagar);
+    const cancelarToqueLongo = () => {
+        if (toqueLongo.current) clearTimeout(toqueLongo.current);
+        toqueLongo.current = null;
+    };
     const cantos = primeiraDoBloco ? (minha ? "rounded-[10px] rounded-tr-none" : "rounded-[10px] rounded-tl-none") : "rounded-[10px]";
     return (
-        <div className={`group max-w-[85%] md:max-w-[65%] ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""}`}>
-            <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
+        <div
+            id={`msg-${m.id}`}
+            className={`group relative max-w-[85%] md:max-w-[65%] ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
+            style={{ transform: puxar ? `translateX(${puxar}px)` : undefined, transition: toque.current ? undefined : "transform .2s", touchAction: "pan-y" }}
+            onTouchStart={(e) => {
+                if (podeResponder) toque.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, horizontal: null };
+                // toque longo (meio segundo) abre o menu: reagir, responder, encaminhar, copiar, apagar
+                if (temMenu) {
+                    cancelarToqueLongo();
+                    toqueLongo.current = setTimeout(() => {
+                        toque.current = null;
+                        setPuxar(0);
+                        setMenu(true);
+                    }, 480);
+                }
+            }}
+            onContextMenu={(e) => { if (temMenu && "ontouchstart" in window) e.preventDefault(); }}
+            onTouchMove={(e) => {
+                const t = toque.current;
+                if (!t) return;
+                const dx = e.touches[0].clientX - t.x;
+                const dy = e.touches[0].clientY - t.y;
+                if (Math.abs(dx) > 8 || Math.abs(dy) > 8) cancelarToqueLongo();
+                if (t.horizontal === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) t.horizontal = Math.abs(dx) > Math.abs(dy) && dx > 0;
+                if (t.horizontal) setPuxar(Math.max(0, Math.min(80, dx)));
+            }}
+            onTouchEnd={() => {
+                cancelarToqueLongo();
+                const passou = puxar > 55;
+                toque.current = null;
+                setPuxar(0);
+                if (passou && onResponder) onResponder(m); // deslizar para a direita = responder (como no WhatsApp)
+            }}
+        >
+            {puxar > 0 && (
+                <span className="absolute -left-9 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/10 text-[#3D6A99] dark:bg-white/15 dark:text-[#A9BED6]" style={{ opacity: Math.min(1, puxar / 55) }} aria-hidden="true">
+                    <Icone nome="responder" className="h-4 w-4" />
+                </span>
+            )}
+            <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${m.interna ? "border border-dashed border-[#C9A21E] bg-[#FFF4C2] dark:border-[#F2CB3F]/60 dark:bg-[#4A3F12] dark:text-white" : minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
+                {m.interna && <div className="mb-0.5 flex items-center gap-1 text-[12.5px] font-extrabold uppercase tracking-wide text-[#8A6A00] dark:text-[#F7E39A]"><Icone nome="nota" className="h-3.5 w-3.5" />Nota interna · só a equipe vê{!minha && m.autor_nome ? ` · ${m.autor_nome.split(" ")[0]}` : ""}</div>}
+                {temMenu && (
+                    <button type="button" onClick={() => setMenu((v) => !v)} className={`absolute right-1 top-1 z-10 hidden h-7 w-7 items-center justify-center rounded-full bg-black/10 text-[#313C55] md:group-hover:flex dark:bg-white/15 dark:text-white ${menu ? "md:flex" : ""}`} aria-label="Opções da mensagem" aria-expanded={menu}>
+                        <Icone nome="chevron" className="h-4 w-4" />
+                    </button>
+                )}
                 {!minha && conversa.tipo !== "individual" && primeiraDoBloco && <div className="mb-0.5 text-[14.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{m.autor_nome || "—"}</div>}
                 {m.apagada ? (
                     <span className="italic text-[#6B7488] dark:text-[#C9D1DE]">Mensagem apagada</span>
                 ) : (
                     <>
+                        {m.responde_a_id ? <Citacao m={citada} eu={eu} /> : null}
                         {m.anexos.map((a) => <Anexo key={a.id} a={a} minha={minha} />)}
                         {m.texto && m.tipo !== "audio" && <span className="whitespace-pre-wrap break-words">{m.texto}</span>}
                     </>
                 )}
                 <span className="float-right ml-2.5 mt-1.5 flex translate-y-0.5 items-center gap-1 text-[12.5px] font-semibold text-[#5B6478] dark:text-[#C9D1DE]">
-                    {podeApagar && (
-                        <button type="button" onClick={() => onApagar(m)} className="hidden items-center rounded px-1 hover:bg-black/5 group-hover:flex" aria-label="Apagar mensagem">
-                            <Icone nome="trash" className="h-3.5 w-3.5" />
+                    {podeResponder && (
+                        <button type="button" onClick={() => onResponder!(m)} className="hidden items-center rounded px-1 hover:bg-black/5 md:group-hover:flex" aria-label="Responder esta mensagem" title="Responder">
+                            <Icone nome="responder" className="h-3.5 w-3.5" />
                         </button>
                     )}
+
                     {hora} {leitura}
                 </span>
             </div>
+            {menu && (
+                <MenuMensagem
+                    m={m}
+                    minha={minha}
+                    eu={eu}
+                    onFechar={() => setMenu(false)}
+                    onReagir={onReagir && !m.interna ? (e) => onReagir(m, e) : undefined}
+                    onResponder={podeResponder ? () => onResponder!(m) : undefined}
+                    onEncaminhar={onEncaminhar && !m.interna && m.tipo !== "modelo" ? () => onEncaminhar(m) : undefined}
+                    onApagar={podeApagar ? () => onApagar(m) : undefined}
+                />
+            )}
+            <Reacoes m={m} eu={eu} minha={minha} onReagir={onReagir ? (e) => onReagir(m, e) : undefined} />
             {m._falhaLocal && <div className="mt-1 text-right text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{m._falhaLocal}</div>}
         </div>
     );
 }
 
 /* ---------------- gravador de áudio ---------------- */
-function Gravador({ onPronto, onCancelar }: { onPronto: (b: Blob, mime: string, seg: number) => void; onCancelar: () => void }) {
+/**
+ * Conversa com cliente do WhatsApp (mp3 = true): capta o microfone direto e entrega MP3, o formato que o WhatsApp
+ * sempre aceita (o MP4 do Safari e o WebM do Chrome são recusados pela Meta). Conversa da equipe: MediaRecorder, como antes.
+ */
+function Gravador({ onPronto, onCancelar, mp3 = false }: { onPronto: (b: Blob, mime: string, seg: number) => void; onCancelar: () => void; mp3?: boolean }) {
     const [seg, setSeg] = useState(0);
     const [erro, setErro] = useState("");
+    const [preparando, setPreparando] = useState(false);
     const rec = useRef<MediaRecorder | null>(null);
+    const gravMp3 = useRef<GravadorMp3 | null>(null);
     const partes = useRef<Blob[]>([]);
     const inicio = useRef(Date.now());
     const cancelado = useRef(false);
+    const pararMp3Ref = useRef<() => void>(() => {});
     useEffect(() => {
+        if (!mp3) return;
+        let stream: MediaStream | null = null;
+        let t: ReturnType<typeof setInterval> | null = null;
+        navigator.mediaDevices?.getUserMedia({ audio: true }).then(async (s) => {
+            stream = s;
+            const g = new GravadorMp3();
+            await g.iniciar(s);
+            gravMp3.current = g;
+            inicio.current = Date.now();
+            t = setInterval(() => {
+                const s2 = Math.round((Date.now() - inicio.current) / 1000);
+                setSeg(s2);
+                if (s2 >= 300) pararMp3(); // limite de 5 minutos
+            }, 500);
+        }).catch(() => setErro("Sem acesso ao microfone. Libere o microfone para o app nas configurações do aparelho."));
+        const pararMp3 = async () => {
+            const g = gravMp3.current;
+            if (!g) return;
+            gravMp3.current = null;
+            if (t) clearInterval(t);
+            stream?.getTracks().forEach((tr) => tr.stop());
+            if (cancelado.current) {
+                await g.parar(true);
+                return;
+            }
+            setPreparando(true);
+            try {
+                const b = await g.parar();
+                if (b) onPronto(b, "audio/mpeg", Math.round((Date.now() - inicio.current) / 1000));
+            } catch (e: any) {
+                setPreparando(false);
+                setErro(e?.message || "Não foi possível preparar o áudio.");
+            }
+        };
+        pararMp3Ref.current = pararMp3;
+        return () => {
+            if (t) clearInterval(t);
+            if (gravMp3.current) {
+                cancelado.current = true;
+                gravMp3.current.parar(true);
+                gravMp3.current = null;
+            }
+            stream?.getTracks().forEach((tr) => tr.stop());
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    useEffect(() => {
+        if (mp3) return;
         const mime = formatoAudio();
         let stream: MediaStream | null = null;
         let t: ReturnType<typeof setInterval> | null = null;
@@ -166,10 +303,11 @@ function Gravador({ onPronto, onCancelar }: { onPronto: (b: Blob, mime: string, 
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    const parar = () => rec.current?.state === "recording" && rec.current.stop();
+    const parar = () => (mp3 ? pararMp3Ref.current() : rec.current?.state === "recording" && rec.current.stop());
     const cancelar = () => {
         cancelado.current = true;
-        if (rec.current?.state === "recording") rec.current.stop();
+        if (mp3) pararMp3Ref.current();
+        else if (rec.current?.state === "recording") rec.current.stop();
         onCancelar();
     };
     return (
@@ -177,11 +315,11 @@ function Gravador({ onPronto, onCancelar }: { onPronto: (b: Blob, mime: string, 
             {erro ? <span className="flex-1 text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">{erro}</span> : (
                 <>
                     <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#B42318]" aria-hidden="true" />
-                    <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">Gravando {Math.floor(seg / 60)}:{String(seg % 60).padStart(2, "0")}</span>
+                    <span className="flex-1 text-sm font-extrabold text-[#313C55] dark:text-white">{preparando ? "Preparando áudio…" : `Gravando ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}`}</span>
                 </>
             )}
             <button type="button" onClick={cancelar} className="rounded-lg px-3 py-1.5 text-sm font-bold text-[#5B6478] hover:bg-white dark:text-[#AEB9CF] dark:hover:bg-[#232B3F]">Cancelar</button>
-            {!erro && <button type="button" onClick={parar} className="rounded-lg bg-[#313C55] px-3 py-1.5 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Enviar</button>}
+            {!erro && !preparando && <button type="button" onClick={parar} className="rounded-lg bg-[#313C55] px-3 py-1.5 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Enviar</button>}
         </div>
     );
 }
@@ -235,6 +373,16 @@ export default function JanelaConversa(props: {
     onEnviarModelo: (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => void;
     onEnviarArquivo: (f: File | Blob, opcoes?: { mime?: string; duracao_s?: number }) => void;
     onApagar: (m: Mensagem) => void;
+    /** responder direcionado: mensagem escolhida (ou null) */
+    respondendo?: Mensagem | null;
+    onResponder?: (m: Mensagem | null) => void;
+    /** pacote 3: reações, encaminhar, nota interna, localização, contato e salvar contato */
+    onReagir?: (m: Mensagem, emoji: string) => void;
+    onEncaminhar?: (m: Mensagem) => void;
+    onEnviarNota?: (t: string) => void;
+    onEnviarLocalizacao?: () => void;
+    onPedirContato?: () => void;
+    onSalvarContato?: () => void;
     onDigitando: () => void;
     onAssumir: () => void;
     onTransferir: () => void;
@@ -244,12 +392,35 @@ export default function JanelaConversa(props: {
 }) {
     const { conversa: c, mensagens, perfil } = props;
     const [texto, setTexto] = useState("");
+    const [modoNota, setModoNota] = useState(false);
+    const [menuAnexar, setMenuAnexar] = useState(false);
+    const [buscando, setBuscando] = useState(false);
+    const [termo, setTermo] = useState("");
+    const [atual, setAtual] = useState(0);
     const [emoji, setEmoji] = useState(false);
     const [catEmoji, setCatEmoji] = useState("Rostos");
     const [gravando, setGravando] = useState(false);
     const fim = useRef<HTMLDivElement>(null);
     const caixa = useRef<HTMLDivElement>(null);
     const arquivo = useRef<HTMLInputElement>(null);
+    const campo = useRef<HTMLTextAreaElement>(null);
+    // faixa da janela de 24 h: recolhe para um selo pequeno; a escolha fica guardada neste aparelho
+    const [janelaRecolhida, setJanelaRecolhida] = useState(false);
+    useEffect(() => {
+        try {
+            setJanelaRecolhida(localStorage.getItem("pai.msg.janela24h.recolhida") === "1");
+        } catch {
+            /* sem armazenamento */
+        }
+    }, []);
+    const recolherJanela = (v: boolean) => {
+        setJanelaRecolhida(v);
+        try {
+            localStorage.setItem("pai.msg.janela24h.recolhida", v ? "1" : "0");
+        } catch {
+            /* sem armazenamento */
+        }
+    };
     const camera = useRef<HTMLInputElement>(null);
     const ultimoDig = useRef(0);
     const ultimoIdVisto = useRef(0);
@@ -268,6 +439,9 @@ export default function JanelaConversa(props: {
         setTexto("");
         setEmoji(false);
         setGravando(false);
+        setModoNota(false);
+        setBuscando(false);
+        setTermo("");
     }, [c.id]);
 
     const externo = c.tipo === "externo";
@@ -275,7 +449,8 @@ export default function JanelaConversa(props: {
     const enviar = () => {
         const t = texto.trim();
         if (!t) return;
-        props.onEnviarTexto(t);
+        if (modoNota) props.onEnviarNota?.(t);
+        else props.onEnviarTexto(t);
         setTexto("");
         setEmoji(false);
     };
@@ -292,6 +467,17 @@ export default function JanelaConversa(props: {
     const itens: React.ReactNode[] = [];
     const hoje = new Date().toLocaleDateString("pt-BR");
     const ontem = new Date(Date.now() - 86400000).toLocaleDateString("pt-BR");
+    // busca na conversa (mensagens já carregadas), sem diferenciar acentos e maiúsculas
+    const normalizar = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const achados = buscando && termo.trim().length >= 2 ? mensagens.filter((m) => !m.apagada && normalizar(`${m.texto || ""} ${m.anexos.map((a) => a.nome_original || "").join(" ")}`).includes(normalizar(termo.trim()))).map((m) => m.id) : [];
+    const idAtual = achados.length ? achados[Math.min(atual, achados.length - 1)] : 0;
+    useEffect(() => {
+        if (idAtual) document.getElementById(`msg-${idAtual}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, [idAtual]);
+    // só dá para responder onde se pode escrever (cliente: só o responsável, com a janela de 24 h aberta)
+    const podeEscrever = c.participo !== false && (c.tipo !== "externo" || (!!c.posso_responder && !!c.janela_aberta));
+    const porId = new Map(mensagens.map((x) => [x.id, x]));
+    const responder = props.onResponder ? (m: Mensagem) => { props.onResponder!(m); setTimeout(() => campo.current?.focus(), 50); } : undefined;
     mensagens.forEach((m) => {
         const d = new Date(m.criado_em).toLocaleDateString("pt-BR");
         if (d !== dia) {
@@ -300,7 +486,7 @@ export default function JanelaConversa(props: {
             itens.push(<div key={`d${m.id}`} className="my-2 self-center rounded-lg bg-white px-3 py-1 text-[13.5px] font-extrabold uppercase text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{d === hoje ? "Hoje" : d === ontem ? "Ontem" : d}</div>);
         }
         const autor = m.autor_tipo === "sistema" ? "" : `${m.autor_tipo}:${m.autor_usuario_id ?? m.autor_contato_id ?? ""}`;
-        itens.push(<Bolha key={m.cliente_uuid || m.id} m={m} conversa={c} eu={perfil.id} onApagar={props.onApagar} primeiraDoBloco={autor !== autorAnterior} />);
+        itens.push(<Bolha key={m.cliente_uuid || m.id} m={m} conversa={c} eu={perfil.id} onApagar={props.onApagar} primeiraDoBloco={autor !== autorAnterior} citada={m.responde_a_id ? porId.get(m.responde_a_id) : null} onResponder={podeEscrever ? responder : undefined} onReagir={props.onReagir} onEncaminhar={props.onEncaminhar} destaque={m.id === idAtual ? "atual" : achados.includes(m.id) ? "outro" : null} />);
         autorAnterior = autor;
     });
 
@@ -325,6 +511,10 @@ export default function JanelaConversa(props: {
                     </div>
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
+                <button type="button" onClick={() => { setBuscando((v) => !v); setTermo(""); setAtual(0); }} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
+                {externo && props.onSalvarContato && (
+                    <button type="button" onClick={props.onSalvarContato} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label={c.contato?.salvo ? "Editar nome do contato" : "Salvar contato"} title={c.contato?.salvo ? "Editar contato" : "Salvar contato"}><Icone nome={c.contato?.salvo ? "editar" : "contato"} /></button>
+                )}
                 {externo && c.status_atendimento === "aguardando" && perfil.atendente && (
                     <button type="button" onClick={props.onAssumir} className="h-10 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Assumir</button>
                 )}
@@ -341,12 +531,29 @@ export default function JanelaConversa(props: {
                     </>
                 )}
             </div>
-            {externo && c.status_atendimento !== "aguardando" && (
-                <div className={`flex items-center gap-2 border-b border-[#E3E8F0] px-4 py-2 text-[13.5px] font-bold dark:border-white/12 ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} role="status">
-                    <Icone nome="clock" className="h-[18px] w-[18px]" />
-                    {c.janela_aberta ? `Janela de 24 h aberta até ${new Date(c.janela_ate || "").toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Janela de 24 h fechada: só modelos aprovados pela Meta"}
-                </div>
+            {buscando && (
+                <BarraBusca
+                    termo={termo}
+                    setTermo={(t) => { setTermo(t); setAtual(0); }}
+                    total={achados.length}
+                    atual={Math.min(atual, Math.max(0, achados.length - 1))}
+                    temMais={props.temMais}
+                    onAnterior={() => setAtual((a) => (achados.length ? (a - 1 + achados.length) % achados.length : 0))}
+                    onProxima={() => setAtual((a) => (achados.length ? (a + 1) % achados.length : 0))}
+                    onFechar={() => { setBuscando(false); setTermo(""); }}
+                />
             )}
+            {externo && c.status_atendimento !== "aguardando" && (janelaRecolhida ? (
+                <button type="button" onClick={() => recolherJanela(false)} className={`mx-3 mt-1.5 flex items-center gap-1.5 self-end rounded-full px-2.5 py-1 text-[12.5px] font-bold shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} aria-label="Mostrar a janela de 24 horas do WhatsApp">
+                    <Icone nome="clock" className="h-4 w-4" />{c.janela_aberta ? "24 h" : "Janela fechada"}<Icone nome="chevron" className="h-3.5 w-3.5" />
+                </button>
+            ) : (
+                <div className={`flex items-center gap-2 border-b border-[#E3E8F0] py-1.5 pl-4 pr-1.5 text-[13.5px] font-bold dark:border-white/12 ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} role="status">
+                    <Icone nome="clock" className="h-[18px] w-[18px] flex-none" />
+                    <span className="min-w-0 flex-1">{c.janela_aberta ? `Janela de 24 h aberta até ${new Date(c.janela_ate || "").toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Janela de 24 h fechada: só modelos aprovados pela Meta"}</span>
+                    <button type="button" onClick={() => recolherJanela(true)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10" aria-label="Recolher aviso da janela de 24 horas" title="Recolher"><Icone nome="x" className="h-4 w-4" /></button>
+                </div>
+            ))}
 
             <div ref={caixa} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2.5 py-3 md:px-[8%]">
                 {props.temMais && <button type="button" onClick={props.onCarregarMais} className="self-center rounded-full bg-white px-4 py-1.5 text-sm font-bold shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">Carregar mensagens anteriores</button>}
@@ -355,13 +562,19 @@ export default function JanelaConversa(props: {
             </div>
 
             {/* campo de envio */}
-            {externo && !c.posso_responder ? (
+            {externo && !c.posso_responder && !modoNota ? (
                 <div className="flex items-center gap-2 bg-[#F0F2F5] px-4 py-3 text-sm font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]">
                     <Icone nome="lock" className="h-[18px] w-[18px] flex-none" />
-                    {c.status_atendimento === "aguardando" ? "Assuma o atendimento para responder ao cliente." : c.gestao_acompanha ? "Você vê esta conversa como Gestão: pode transferir ou encerrar, sem responder." : c.meu_papel === "observador" ? "Você acompanha esta conversa. Para responder, ela precisa ser transferida para você." : "Só o responsável pelo atendimento responde ao cliente."}
+                    <span className="flex-1">{c.status_atendimento === "aguardando" ? "Assuma o atendimento para responder ao cliente." : c.gestao_acompanha ? "Você vê esta conversa como Gestão: pode transferir ou encerrar, sem responder." : c.meu_papel === "observador" ? "Você acompanha esta conversa. Para responder, ela precisa ser transferida para você." : "Só o responsável pelo atendimento responde ao cliente."}</span>
+                    {c.status_atendimento !== "aguardando" && props.onEnviarNota && (
+                        <button type="button" onClick={() => setModoNota(true)} className="flex h-9 flex-none items-center gap-1.5 rounded-xl bg-[#FFF4C2] px-3 text-[13px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]"><Icone nome="nota" className="h-4 w-4" />Nota interna</button>
+                    )}
                 </div>
-            ) : janelaFechada ? (
-                <div className="border-t border-[#E3E8F0] bg-white p-3 dark:border-white/12 dark:bg-[#232B3F]"><EscolherModelo onEnviar={props.onEnviarModelo} /></div>
+            ) : janelaFechada && !modoNota ? (
+                <div className="border-t border-[#E3E8F0] bg-white p-3 dark:border-white/12 dark:bg-[#232B3F]">
+                    <EscolherModelo onEnviar={props.onEnviarModelo} />
+                    {props.onEnviarNota && <button type="button" onClick={() => setModoNota(true)} className="mt-2 flex h-9 items-center gap-1.5 rounded-xl bg-[#FFF4C2] px-3 text-[13px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]"><Icone nome="nota" className="h-4 w-4" />Escrever nota interna</button>}
+                </div>
             ) : (
                 <>
                     {emoji && (
@@ -378,31 +591,69 @@ export default function JanelaConversa(props: {
                             </div>
                         </div>
                     )}
+                    {modoNota && (
+                        <div className="mx-2 -mb-0.5 mt-1.5 flex items-center gap-2 rounded-2xl bg-[#FFF4C2] px-3 py-1.5 text-[13.5px] font-extrabold text-[#5C4600] md:mx-4 dark:bg-[#4A3F12] dark:text-[#F7E39A]">
+                            <Icone nome="nota" className="h-5 w-5 flex-none" />
+                            <span className="flex-1">Nota interna: só a equipe vê{externo ? ", não vai para o cliente" : ""}.</span>
+                            <button type="button" onClick={() => setModoNota(false)} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5" aria-label="Sair da nota interna"><Icone nome="x" className="h-4 w-4" /></button>
+                        </div>
+                    )}
+                    {!modoNota && <SugestoesRespostas texto={texto} onEscolher={(t) => { setTexto(t); setTimeout(() => campo.current?.focus(), 30); }} />}
+                    {props.respondendo && (
+                        <div className="mx-2 -mb-0.5 mt-1.5 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] md:mx-4 dark:bg-[#232B3F]">
+                            <Icone nome="responder" className="h-5 w-5 flex-none text-[#3D6A99] dark:text-[#A9BED6]" />
+                            <div className="min-w-0 flex-1"><Citacao m={props.respondendo} eu={perfil.id} /></div>
+                            <button type="button" onClick={() => props.onResponder?.(null)} className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-[#5B6478] hover:bg-black/5 dark:text-[#AEB9CF]" aria-label="Cancelar resposta"><Icone nome="x" className="h-5 w-5" /></button>
+                        </div>
+                    )}
                     <div className="flex items-end gap-1.5 px-2 pb-2 pt-1.5 md:px-4">
                         {gravando ? (
-                            <Gravador onCancelar={() => setGravando(false)} onPronto={(b, mime, seg) => { setGravando(false); props.onEnviarArquivo(b, { mime, duracao_s: seg }); }} />
+                            <Gravador mp3={externo} onCancelar={() => setGravando(false)} onPronto={(b, mime, seg) => { setGravando(false); props.onEnviarArquivo(b, { mime, duracao_s: seg }); }} />
                         ) : (
                             <>
                                 <div className="flex min-h-[54px] min-w-0 flex-1 items-end rounded-[27px] bg-white px-1.5 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
                                     <button type="button" onClick={() => setEmoji((v) => !v)} aria-pressed={emoji} className={`flex h-[54px] w-11 flex-none items-center justify-center ${emoji ? "text-[#313C55] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF]"}`} aria-label="Emojis"><Icone nome="smile" className="h-[26px] w-[26px]" /></button>
                                     {/* 16 px: com menos, o iPhone dá zoom ao tocar no campo e a tela sai do lugar */}
                                     <textarea
+                                        ref={campo}
                                         rows={1}
                                         value={texto}
+                                        onPaste={(e) => {
+                                            // colar imagem ou arquivo (print, foto copiada): envia como anexo; texto cola normalmente
+                                            const arquivos = Array.from(e.clipboardData?.files || []);
+                                            if (!arquivos.length) return;
+                                            e.preventDefault();
+                                            if (!perfil.midias) return;
+                                            const pergunta = arquivos.length > 1 ? `Enviar os ${arquivos.length} arquivos colados?` : arquivos[0].type.startsWith("image/") ? "Enviar a imagem colada?" : `Enviar "${arquivos[0].name}"?`;
+                                            if (window.confirm(pergunta)) arquivos.forEach((f) => props.onEnviarArquivo(f));
+                                        }}
                                         onChange={(e) => aoDigitar(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); enviar(); } }}
-                                        placeholder={externo ? "Responder pelo WhatsApp" : "Mensagem"}
+                                        placeholder={modoNota ? "Nota interna (só a equipe vê)" : externo ? "Responder pelo WhatsApp  ·  / para respostas rápidas" : "Mensagem  ·  / para respostas rápidas"}
                                         aria-label="Mensagem"
                                         className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-[13px] text-[18px] leading-7 text-[#1F2638] outline-none dark:text-white"
                                     />
-                                    <button type="button" onClick={() => arquivo.current?.click()} disabled={!perfil.midias} className="flex h-[54px] w-11 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Anexar foto ou documento" title={perfil.midias ? "Anexar" : "Mídias não configuradas"}><Icone nome="clip" className="h-[25px] w-[25px]" /></button>
-                                    {!texto.trim() && (
+                                    <div className="relative flex-none">
+                                        <button type="button" onClick={() => setMenuAnexar((v) => !v)} aria-expanded={menuAnexar} className="flex h-[54px] w-11 items-center justify-center text-[#5B6478] dark:text-[#AEB9CF]" aria-label="Anexar: foto, documento, localização, contato ou nota" title="Anexar"><Icone nome="clip" className="h-[25px] w-[25px]" /></button>
+                                        {menuAnexar && (
+                                            <MenuAnexar
+                                                onFechar={() => setMenuAnexar(false)}
+                                                midias={perfil.midias}
+                                                podeEnviar={!modoNota}
+                                                onArquivo={() => arquivo.current?.click()}
+                                                onLocalizacao={() => props.onEnviarLocalizacao?.()}
+                                                onContato={() => props.onPedirContato?.()}
+                                                onNota={() => { setModoNota(true); setTimeout(() => campo.current?.focus(), 30); }}
+                                            />
+                                        )}
+                                    </div>
+                                    {!texto.trim() && !modoNota && (
                                         <button type="button" onClick={() => camera.current?.click()} disabled={!perfil.midias} className="flex h-[54px] w-11 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Tirar foto"><Icone nome="camera" className="h-[25px] w-[25px]" /></button>
                                     )}
                                     <input ref={arquivo} type="file" hidden accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,video/mp4" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) props.onEnviarArquivo(f); }} />
                                     <input ref={camera} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) props.onEnviarArquivo(f); }} />
                                 </div>
-                                {texto.trim() ? (
+                                {texto.trim() || modoNota ? (
                                     <button type="button" onClick={enviar} className="flex h-[54px] w-[54px] flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" aria-label="Enviar"><Icone nome="send" /></button>
                                 ) : (
                                     <button type="button" onClick={() => setGravando(true)} disabled={!perfil.midias || typeof MediaRecorder === "undefined"} className="flex h-[54px] w-[54px] flex-none items-center justify-center rounded-full bg-[#313C55] text-white disabled:opacity-40 dark:bg-[#3D6A99]" aria-label="Gravar áudio"><Icone nome="mic" /></button>

@@ -25,6 +25,10 @@ export type Mensagem = {
     apagada: boolean;
     criado_em: string;
     anexos: Anexo[];
+    /** nota interna: só a equipe vê, nunca vai ao WhatsApp (14/10/2026) */
+    interna?: boolean;
+    /** reações com emoji (uma por pessoa) */
+    reacoes?: { emoji: string; usuario_id: number; nome: string | null }[];
     /** só no app: mensagem ainda sendo enviada */
     _enviando?: boolean;
     _falhaLocal?: string;
@@ -46,7 +50,8 @@ export type Conversa = {
     nao_lidas: number;
     ultima_mensagem: Mensagem | null;
     ultima_mensagem_em: string | null;
-    contato: { id: number; nome: string | null; telefone: string } | null;
+    /** nome = o salvo pela equipe, se houver; nome_whatsapp = o do perfil do cliente */
+    contato: { id: number; nome: string | null; nome_whatsapp?: string | null; salvo?: boolean; telefone: string } | null;
     status_atendimento: "aguardando" | "em_atendimento" | "encerrado" | null;
     responsavel: { id: number; nome: string | null } | null;
     janela_ate: string | null;
@@ -66,6 +71,8 @@ export type Perfil = {
     nome: string;
     atendente: boolean;
     gestao: boolean;
+    /** pode mexer em Configurações do Messenger (respostas da empresa, assinatura) */
+    configurar?: boolean;
     tempo_real: boolean;
     midias: boolean;
     whatsapp: boolean;

@@ -136,7 +136,7 @@ export function Transferir({ conversa, onFechar, onFeito }: { conversa: Conversa
             ))}
             {!lista.length && !erro && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum outro atendente com a permissão de atender clientes.</p>}
             <label className="block"><span className={rotulo}>Observação para o colega</span><textarea className="mt-1 w-full rounded-xl bg-[#F1F4F8] px-3.5 py-3 text-[16px] outline-none dark:bg-[#1C2334]" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} placeholder="Ex.: a família quer falar sobre translado" /></label>
-            <p className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Você continua acompanhando a conversa, mas sem responder. Para voltar a falar, ela precisa ser transferida de novo para você.</p>
+            <p className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">A conversa sai da sua lista. O novo responsável vê todas as mensagens deste atendimento, inclusive as que você trocou com o cliente.</p>
         </Janela>
     );
 }
@@ -200,6 +200,72 @@ export function DetalhesGrupo({ conversa, perfil, onFechar, onMudou, onSaiu }: {
                     <button type="button" className={btnPri} disabled={!novo} onClick={() => { editar({ operacao: "adicionar", usuario_ids: [novo] }); setNovo(0); }}>Adicionar</button>
                 </div>
             )}
+        </Janela>
+    );
+}
+
+/** Pacote 3: enviar um contato (cliente já conhecido ou digitado). No WhatsApp vai como cartão de contato. */
+export function EnviarContato({ onFechar, onEnviar }: { onFechar: () => void; onEnviar: (nome: string, telefone: string) => void }) {
+    const [busca, setBusca] = useState("");
+    const [lista, setLista] = useState<{ id: number; nome: string | null; telefone: string }[]>([]);
+    const [nome, setNome] = useState("");
+    const [telefone, setTelefone] = useState("");
+    useEffect(() => {
+        const t = setTimeout(() => {
+            msgGet<any[]>("contatos", { q: busca }).then(setLista).catch(() => setLista([]));
+        }, 250);
+        return () => clearTimeout(t);
+    }, [busca]);
+    const digitos = telefone.replace(/\D/g, "");
+    return (
+        <Janela titulo="Enviar contato" sub="Escolha um cliente ou digite o nome e o telefone." onFechar={onFechar}
+            rodape={<><button type="button" className={btn} onClick={onFechar}>Cancelar</button><button type="button" className={btnPri} disabled={!nome.trim() || digitos.length < 10} onClick={() => onEnviar(nome.trim(), digitos)}>Enviar contato</button></>}>
+            <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block"><span className={rotulo}>Nome</span><input className="mt-1 h-12 w-full rounded-xl bg-[#F1F4F8] px-3.5 text-[16px] outline-none dark:bg-[#1C2334]" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Maria Souza" maxLength={120} /></label>
+                <label className="block"><span className={rotulo}>Telefone com DDD</span><input className="mt-1 h-12 w-full rounded-xl bg-[#F1F4F8] px-3.5 text-[16px] outline-none dark:bg-[#1C2334]" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(77) 99999-9999" inputMode="tel" /></label>
+            </div>
+            <label className="mt-1 flex h-12 flex-none items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                <Icone nome="search" />
+                <input type="search" className="min-w-0 flex-1 bg-transparent text-[16px] text-[#1F2638] outline-none dark:text-white" placeholder="Buscar cliente por nome ou telefone" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar cliente" />
+            </label>
+            <div className="flex flex-col">
+                {lista.map((c) => (
+                    <button key={c.id} type="button" onClick={() => { setNome(c.nome || ""); setTelefone(c.telefone.replace(/^\+55/, "")); }} className="flex min-h-[56px] items-center gap-3 rounded-xl px-2 text-left hover:bg-[#EEF2F7] dark:hover:bg-white/10">
+                        <Avatar conversa={{ id: c.id, tipo: "individual", titulo: c.nome || c.telefone }} tamanho={40} />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-[16px] font-extrabold">{c.nome || "Sem nome"}</span><span className="block text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">{c.telefone}</span></span>
+                    </button>
+                ))}
+                {!lista.length && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum cliente encontrado. Digite o nome e o telefone acima.</p>}
+            </div>
+        </Janela>
+    );
+}
+
+/** Pacote 3: encaminhar uma mensagem para até 10 conversas. */
+export function Encaminhar({ conversas, onFechar, onEnviar }: { conversas: Conversa[]; onFechar: () => void; onEnviar: (ids: number[]) => void }) {
+    const [busca, setBusca] = useState("");
+    const [marcadas, setMarcadas] = useState<number[]>([]);
+    const possiveis = conversas.filter((c) => c.participo && (c.tipo !== "externo" || (c.posso_responder && c.janela_aberta)));
+    const filtradas = possiveis.filter((c) => c.titulo.toLowerCase().includes(busca.toLowerCase()));
+    const alternar = (id: number) => setMarcadas((m) => (m.includes(id) ? m.filter((x) => x !== id) : m.length < 10 ? [...m, id] : m));
+    return (
+        <Janela titulo="Encaminhar mensagem" sub="Escolha até 10 conversas. Clientes só aparecem com a janela de 24 h aberta." onFechar={onFechar}
+            rodape={<><button type="button" className={btn} onClick={onFechar}>Cancelar</button><button type="button" className={btnPri} disabled={!marcadas.length} onClick={() => onEnviar(marcadas)}>Encaminhar{marcadas.length ? ` (${marcadas.length})` : ""}</button></>}>
+            <label className="flex h-12 flex-none items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                <Icone nome="search" />
+                <input type="search" className="min-w-0 flex-1 bg-transparent text-[16px] text-[#1F2638] outline-none dark:text-white" placeholder="Buscar conversa" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar conversa" />
+            </label>
+            <div className="flex flex-col">
+                {filtradas.map((c) => (
+                    <label key={c.id} className="flex min-h-[60px] cursor-pointer items-center gap-3 rounded-xl px-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10">
+                        <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={marcadas.includes(c.id)} onChange={() => alternar(c.id)} />
+                        <Avatar conversa={c} tamanho={42} />
+                        <span className="min-w-0 flex-1 truncate text-[16.5px] font-extrabold">{c.titulo}</span>
+                        {c.tipo === "externo" && <span className="flex-none rounded-full bg-[#EEF5D6] px-2 py-0.5 text-[11.5px] font-extrabold dark:bg-[#B3CE52]/15">Cliente</span>}
+                    </label>
+                ))}
+                {!filtradas.length && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma conversa disponível.</p>}
+            </div>
         </Janela>
     );
 }
