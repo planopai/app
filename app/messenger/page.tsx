@@ -7,7 +7,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { enviarArquivo, msgGet, msgPost, novoUuid } from "@/components/messenger/api";
-import { comprimirFoto } from "@/components/messenger/compressao";
+import { audioParaMp3, comprimirFoto } from "@/components/messenger/compressao";
 import { ativarNotificacoes, ouvir, ouvirNotificacoes, ouvirSeguranca, type EstadoNotificacoes } from "@/components/messenger/tempoReal";
 import { ocultarBarraCelular } from "@/components/barra/BarraCelular";
 import { useSemZoom } from "@/components/messenger/semZoom";
@@ -328,6 +328,18 @@ export default function MessengerPage() {
                 anexo.miniatura_chave = await enviarArquivo(foto.miniatura, "image/jpeg", "miniatura").catch(() => null);
                 anexo.largura = foto.largura;
                 anexo.altura = foto.altura;
+            } else if (tipo === "audio" && conversaSel?.tipo === "externo" && !["audio/mpeg", "audio/ogg", "audio/aac", "audio/amr"].includes(mime)) {
+                // WhatsApp: o áudio do Safari (MP4) e do Chrome (WebM) é recusado pela Meta; vai em MP3
+                let arquivo: Blob = f;
+                let tipoArquivo = mime;
+                try {
+                    arquivo = await audioParaMp3(f);
+                    tipoArquivo = "audio/mpeg";
+                    anexo.nome_original = "audio.mp3";
+                } catch {
+                    /* não converteu: envia como gravou (o servidor avisa se o WhatsApp não aceitar) */
+                }
+                anexo.chave = await enviarArquivo(arquivo, tipoArquivo);
             } else {
                 anexo.chave = await enviarArquivo(f, mime);
             }

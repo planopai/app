@@ -50,3 +50,43 @@ export function formatoAudio(): string {
     if (typeof MediaRecorder === "undefined") return "";
     return opcoes.find((t) => MediaRecorder.isTypeSupported(t)) || "";
 }
+
+/**
+ * Converte um áudio gravado no navegador para MP3 (mono, 64 kbps) antes de mandar ao WhatsApp (14/10/2026).
+ * O Safari grava MP4 "fragmentado" e o Chrome grava WebM: o WhatsApp recusa os dois
+ * ("Media file scrutiny ... failed"). MP3 o WhatsApp aceita sempre. Tudo acontece no próprio aparelho.
+ */
+export async function audioParaMp3(arquivo: Blob): Promise<Blob> {
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) throw new Error("Navegador sem suporte a áudio.");
+    const ctx: AudioContext = new Ctx();
+    try {
+        const dados = await arquivo.arrayBuffer();
+        const buf: AudioBuffer = await new Promise((ok, falha) => {
+            // forma com callback: funciona também no Safari mais antigo
+            const p = ctx.decodeAudioData(dados, ok, falha);
+            if (p && typeof (p as any).then === "function") (p as Promise<AudioBuffer>).then(ok, falha);
+        });
+        const n = buf.length;
+        const canais = buf.numberOfChannels;
+        const pcm = new Int16Array(n);
+        for (let i = 0; i < n; i++) {
+            let s = 0;
+            for (let c = 0; c < canais; c++) s += buf.getChannelData(c)[i];
+            s = Math.max(-1, Math.min(1, s / canais));
+            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        const { Mp3Encoder } = await import("@breezystack/lamejs");
+        const codificador = new Mp3Encoder(1, buf.sampleRate, 64);
+        const partes: Uint8Array[] = [];
+        for (let i = 0; i < n; i += 1152) {
+            const bloco = codificador.encodeBuffer(pcm.subarray(i, i + 1152));
+            if (bloco.length) partes.push(new Uint8Array(bloco));
+        }
+        const fim = codificador.flush();
+        if (fim.length) partes.push(new Uint8Array(fim));
+        return new Blob(partes as BlobPart[], { type: "audio/mpeg" });
+    } finally {
+        ctx.close?.().catch(() => {});
+    }
+}
