@@ -1,192 +1,196 @@
+import { campoNoEscopo } from "./escopo";
+import { chaveNormalizada } from "./normalizacao";
+import { RegraNegocioError } from "./erro-regra";
+
 export function normalizeStatusCode(status: unknown): string | null {
-    if (!status) return null;
+  if (!status) return null;
 
-    let s = String(status).trim().toLowerCase();
+  let s = String(status).trim().toLowerCase();
 
-    if (s.startsWith("fase")) {
-        const num = s.replace(/\D+/g, "");
-        if (!num) return s;
-        return `fase${num.padStart(2, "0")}`;
-    }
+  if (/^fase\d+$/i.test(s)) {
+    const n = s.replace(/\D+/g, "");
+    return `fase${n.padStart(2, "0")}`;
+  }
 
-    s = s
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+  s = chaveNormalizada(s);
 
-    const map: Record<string, string> = {
-        removendo: "fase01",
-        "aguardando procedimento": "fase02",
-        preparando: "fase03",
-        "aguardando ornamentacao": "fase04",
-        ornamentando: "fase05",
-        "fim da ornamentacao": "fase06",
-        "aguardando corpo pronto": "fase06",
-        "corpo pronto": "fase12",
-        transportando: "fase07",
-        "transportando obito p/velorio": "fase07",
-        "transportando obito para velorio": "fase07",
-        velando: "fase08",
-        sepultando: "fase09",
-        "sepultamento concluido": "fase10",
-        "material recolhido": "fase11",
-    };
+  const map: Record<string, string> = {
+    removendo: "fase01",
+    "aguardando procedimento": "fase02",
+    preparando: "fase03",
+    "aguardando ornamentacao": "fase04",
+    ornamentando: "fase05",
+    "fim da ornamentacao": "fase06",
+    "aguardando corpo pronto": "fase06",
+    "corpo pronto": "fase12",
+    transportando: "fase07",
+    "transportando obito p/velorio": "fase07",
+    "transportando obito para velorio": "fase07",
+    velando: "fase08",
+    sepultando: "fase09",
+    "sepultamento concluido": "fase10",
+    "material recolhido": "fase11",
+  };
 
-    return map[s] ?? null;
+  return map[s] ?? null;
 }
 
 export function numeroFaseStatus(status: unknown): number {
-    const code = normalizeStatusCode(status) ?? "";
-    const match = code.match(/^fase(\d+)$/i);
-
-    return match ? Number(match[1]) || 0 : 0;
+  const code = normalizeStatusCode(status) ?? "";
+  const match = code.match(/^fase(\d+)$/i);
+  return match ? Number(match[1]) || 0 : 0;
 }
 
 export function obrigatoriedadeAtivaPorStatus(
-    status: unknown,
+  status: unknown,
 ): boolean {
-    return numeroFaseStatus(status) >= 2;
+  return numeroFaseStatus(status) >= 2;
 }
 
 export function payloadTipoTerceiro(
-    payload: Record<string, any>,
+  payload: Record<string, any>,
 ): boolean {
-    return (
-        String(payload?.tipo_atendimento ?? "")
-            .trim()
-            .toLowerCase() === "terceiro"
-    );
+  return (
+    String(payload.tipo_atendimento ?? "")
+      .trim()
+      .toLowerCase() === "terceiro"
+  );
 }
 
 export function payloadCampoVazio(
-    payload: Record<string, any>,
-    campo: string,
+  payload: Record<string, any>,
+  campo: string,
 ): boolean {
-    if (!Object.prototype.hasOwnProperty.call(payload, campo)) {
-        return true;
-    }
+  if (!Object.prototype.hasOwnProperty.call(payload, campo)) {
+    return true;
+  }
 
-    return String(payload[campo] ?? "").trim() === "";
+  return String(payload[campo] ?? "").trim() === "";
 }
 
 export function payloadSimNaoValido(value: unknown): boolean {
-    const s = String(value ?? "")
-        .trim()
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
-
-    return [
-        "sim",
-        "nao",
-        "s",
-        "n",
-        "1",
-        "0",
-        "true",
-        "false",
-    ].includes(s);
+  const s = chaveNormalizada(value);
+  return [
+    "sim",
+    "nao",
+    "s",
+    "n",
+    "1",
+    "0",
+    "true",
+    "false",
+  ].includes(s);
 }
 
 export function asDateOrNull(value: unknown): string | null {
-    if (value === undefined || value === null || value === false) {
-        return null;
-    }
-
-    const v = String(value).trim();
-
-    if (!v) return null;
-
-    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        return v;
-    }
-
-    const match = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-
-    if (match) {
-        return `${match[3]}-${match[2]}-${match[1]}`;
-    }
-
+  if (value === null || value === undefined || value === false) {
     return null;
+  }
+
+  const v = String(value).trim();
+  if (!v) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [y, m, d] = v.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return (
+      dt.getUTCFullYear() === y &&
+      dt.getUTCMonth() === m - 1 &&
+      dt.getUTCDate() === d
+    )
+      ? v
+      : null;
+  }
+
+  const match = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const d = Number(match[1]);
+  const m = Number(match[2]);
+  const y = Number(match[3]);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== m - 1 ||
+    dt.getUTCDate() !== d
+  ) {
+    return null;
+  }
+
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(
+    2,
+    "0",
+  )}-${String(d).padStart(2, "0")}`;
 }
 
 export function validarObrigatoriosFase02(
-    payload: Record<string, any>,
-    scopeIds: string[] | null = null,
+  payload: Record<string, any>,
+  scopeIds: string[] | null = null,
 ): void {
-    if (payloadTipoTerceiro(payload)) {
-        return;
+  if (payloadTipoTerceiro(payload)) return;
+
+  const obrigatorios: Record<string, string> = {
+    falecido: "Nome do Falecido(a)",
+    data_nascimento: "Data de Nascimento",
+    data_falecimento: "Data de Falecimento",
+    nome_responsavel: "Nome do Responsável",
+    contato: "Contato",
+    convenio: "Convênio",
+    religiao: "Religião",
+  };
+
+  for (const [campo, label] of Object.entries(obrigatorios)) {
+    if (!campoNoEscopo(scopeIds, campo)) continue;
+
+    if (payloadCampoVazio(payload, campo)) {
+      throw new RegraNegocioError(
+        `Campo obrigatório após Corpo na Clínica: ${label}.`,
+      );
     }
+  }
 
-    const campoNoEscopo = (campo: string) =>
-        scopeIds === null || scopeIds.includes(campo);
+  if (
+    campoNoEscopo(scopeIds, "data_nascimento") &&
+    asDateOrNull(payload.data_nascimento) === null
+  ) {
+    throw new RegraNegocioError(
+      "Data de Nascimento inválida ou não informada.",
+    );
+  }
 
-    const camposObrigatorios: Record<string, string> = {
-        falecido: "Nome do Falecido(a)",
-        data_nascimento: "Data de Nascimento",
-        data_falecimento: "Data de Falecimento",
-        nome_responsavel: "Nome do Responsável",
-        contato: "Contato",
-        convenio: "Convênio",
-        religiao: "Religião",
-    };
+  if (
+    campoNoEscopo(scopeIds, "data_falecimento") &&
+    asDateOrNull(payload.data_falecimento) === null
+  ) {
+    throw new RegraNegocioError(
+      "Data de Falecimento inválida ou não informada.",
+    );
+  }
 
-    for (const [campo, label] of Object.entries(
-        camposObrigatorios,
-    )) {
-        if (!campoNoEscopo(campo)) continue;
+  const simNao: Record<string, string> = {
+    assistencia: "Assistência",
+    tanato: "Tanatopraxia",
+    ornamentacao: "Ornamentação",
+    invol: "Invol",
+    veu: "Véu",
+    cordao: "Cordão São Francisco",
+    kit_lanche: "KIT LANCHE",
+    coroa_flores: "Coroa de Flores",
+    realiza_velorio: "Velório",
+    realiza_sepultamento: "Sepultamento",
+  };
 
-        if (payloadCampoVazio(payload, campo)) {
-            throw new Error(
-                `Campo obrigatório após Corpo na Clínica: ${label}.`,
-            );
-        }
-    }
+  for (const [campo, label] of Object.entries(simNao)) {
+    if (!campoNoEscopo(scopeIds, campo)) continue;
 
     if (
-        campoNoEscopo("data_nascimento") &&
-        asDateOrNull(payload.data_nascimento) === null
+      payloadCampoVazio(payload, campo) ||
+      !payloadSimNaoValido(payload[campo])
     ) {
-        throw new Error(
-            "Data de Nascimento inválida ou não informada.",
-        );
+      throw new RegraNegocioError(
+        `Selecione Sim ou Não em ${label}.`,
+      );
     }
-
-    if (
-        campoNoEscopo("data_falecimento") &&
-        asDateOrNull(payload.data_falecimento) === null
-    ) {
-        throw new Error(
-            "Data de Falecimento inválida ou não informada.",
-        );
-    }
-
-    const camposSimNao: Record<string, string> = {
-        assistencia: "Assistência",
-        tanato: "Tanatopraxia",
-        ornamentacao: "Ornamentação",
-        invol: "Invol",
-        veu: "Véu",
-        cordao: "Cordão São Francisco",
-        kit_lanche: "KIT LANCHE",
-        coroa_flores: "Coroa de Flores",
-        realiza_velorio: "Velório",
-        realiza_sepultamento: "Sepultamento",
-    };
-
-    for (const [campo, label] of Object.entries(
-        camposSimNao,
-    )) {
-        if (!campoNoEscopo(campo)) continue;
-
-        if (
-            payloadCampoVazio(payload, campo) ||
-            !payloadSimNaoValido(payload[campo])
-        ) {
-            throw new Error(
-                `Selecione Sim ou Não em ${label}.`,
-            );
-        }
-    }
+  }
 }
