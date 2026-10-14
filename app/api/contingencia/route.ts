@@ -78,7 +78,6 @@ async function podeAlterarItensTravados(
 
 export async function GET(request: NextRequest) {
     const token = request.cookies.get("pai_session")?.value;
-
     const sessao = validarPaiSession(token);
 
     if (!sessao) {
@@ -87,9 +86,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Sessão inválida ou expirada",
             },
-            {
-                status: 401,
-            },
+            { status: 401 },
         );
     }
 
@@ -106,9 +103,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Erro ao localizar usuário",
             },
-            {
-                status: 500,
-            },
+            { status: 500 },
         );
     }
 
@@ -118,9 +113,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Usuário não encontrado",
             },
-            {
-                status: 403,
-            },
+            { status: 403 },
         );
     }
 
@@ -138,9 +131,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Erro ao verificar cargo",
             },
-            {
-                status: 500,
-            },
+            { status: 500 },
         );
     }
 
@@ -150,9 +141,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Cargo inválido ou inativo",
             },
-            {
-                status: 403,
-            },
+            { status: 403 },
         );
     }
 
@@ -189,10 +178,6 @@ export async function GET(request: NextRequest) {
         });
     }
 
-    /*
-     * A partir daqui continuam os recursos normais.
-     */
-
     const { data: permissao, error: permissaoError } = await supabase
         .schema("pai")
         .from("cargo_paginas")
@@ -207,9 +192,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Erro ao verificar permissão",
             },
-            {
-                status: 500,
-            },
+            { status: 500 },
         );
     }
 
@@ -219,9 +202,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Usuário sem permissão para atendimento",
             },
-            {
-                status: 403,
-            },
+            { status: 403 },
         );
     }
 
@@ -236,9 +217,7 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: "Recurso não suportado",
             },
-            {
-                status: 400,
-            },
+            { status: 400 },
         );
     }
 
@@ -269,18 +248,12 @@ export async function GET(request: NextRequest) {
                 ok: false,
                 erro: error.message,
             },
-            {
-                status: 500,
-            },
+            { status: 500 },
         );
     }
 
     let dados = data ?? [];
 
-    /*
-     * Enriquece sepultamentos com dados seguros de homenagem.
-     * Não expõe senha_familiar_hash.
-     */
     if (
         recurso === "sepultamentos" &&
         dados.length > 0
@@ -298,12 +271,8 @@ export async function GET(request: NextRequest) {
                 )
                 .in("atendimento_id", ids)
                 .eq("atendimento_tabela", "sepultamentos")
-                .order("atendimento_id", {
-                    ascending: true,
-                })
-                .order("id", {
-                    ascending: false,
-                });
+                .order("atendimento_id", { ascending: true })
+                .order("id", { ascending: false });
 
         if (homenagensError) {
             return NextResponse.json(
@@ -311,40 +280,27 @@ export async function GET(request: NextRequest) {
                     ok: false,
                     erro: "Erro ao carregar homenagens",
                 },
-                {
-                    status: 500,
-                },
+                { status: 500 },
             );
         }
 
-        const homenagensPorAtendimento =
-            new Map<number, any>();
+        const homenagensPorAtendimento = new Map<number, any>();
 
         for (const homenagem of homenagens ?? []) {
-            const atendimentoId = Number(
-                homenagem.atendimento_id,
-            );
+            const atendimentoId = Number(homenagem.atendimento_id);
 
             if (
                 atendimentoId > 0 &&
-                !homenagensPorAtendimento.has(
-                    atendimentoId,
-                )
+                !homenagensPorAtendimento.has(atendimentoId)
             ) {
-                homenagensPorAtendimento.set(
-                    atendimentoId,
-                    homenagem,
-                );
+                homenagensPorAtendimento.set(atendimentoId, homenagem);
             }
         }
 
         dados = dados.map((registro: any) => {
             const atendimentoId = Number(registro.id);
-
             const homenagem =
-                homenagensPorAtendimento.get(
-                    atendimentoId,
-                );
+                homenagensPorAtendimento.get(atendimentoId);
 
             const slug = String(
                 homenagem?.slug ?? "",
@@ -387,5 +343,247 @@ export async function GET(request: NextRequest) {
         permissao: "atendimento",
         recurso,
         dados,
+    });
+}
+
+export async function POST(request: NextRequest) {
+    const token = request.cookies.get("pai_session")?.value;
+    const sessao = validarPaiSession(token);
+
+    if (!sessao) {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg: "Sessão inválida ou expirada",
+            },
+            { status: 401 },
+        );
+    }
+
+    const { data: usuario, error: usuarioError } = await supabase
+        .schema("pai")
+        .from("usuarios")
+        .select("id, nome, usuario, cargo")
+        .eq("usuario", sessao.usuario)
+        .maybeSingle();
+
+    if (usuarioError || !usuario) {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg: "Usuário autenticado não identificado.",
+            },
+            { status: 401 },
+        );
+    }
+
+    const { data: cargo, error: cargoError } = await supabase
+        .schema("pai")
+        .from("cargos")
+        .select("id, slug, ativo")
+        .eq("slug", usuario.cargo)
+        .eq("ativo", true)
+        .maybeSingle();
+
+    if (cargoError || !cargo) {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg: "Cargo inválido ou inativo.",
+            },
+            { status: 403 },
+        );
+    }
+
+    const { data: permissao, error: permissaoError } = await supabase
+        .schema("pai")
+        .from("cargo_paginas")
+        .select("pagina")
+        .eq("cargo_id", cargo.id)
+        .eq("pagina", "atendimento")
+        .maybeSingle();
+
+    if (permissaoError || !permissao) {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg: "Usuário sem permissão para atendimento.",
+            },
+            { status: 403 },
+        );
+    }
+
+    const json = await request.json().catch(() => null);
+
+    if (!json || typeof json !== "object") {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg: "Dados inválidos.",
+            },
+            { status: 400 },
+        );
+    }
+
+    const acao = String(json.acao ?? "").trim();
+
+    if (acao !== "novo" && acao !== "editar") {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg: "Ação de teste não suportada.",
+            },
+            { status: 400 },
+        );
+    }
+
+    let obrigatoriedadeAtiva = false;
+    let statusAtual: string | null = null;
+
+    if (acao === "editar") {
+        const id = Number(json.id ?? 0);
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return NextResponse.json(
+                {
+                    sucesso: false,
+                    erro: true,
+                    msg: "ID inválido.",
+                },
+                { status: 400 },
+            );
+        }
+
+        const { data: registro, error: registroError } = await supabase
+            .schema("pai")
+            .from("sepultamentos")
+            .select("id, status, cancelado_em")
+            .eq("id", id)
+            .maybeSingle();
+
+        if (registroError) {
+            return NextResponse.json(
+                {
+                    sucesso: false,
+                    erro: true,
+                    msg: "Erro ao localizar atendimento.",
+                },
+                { status: 500 },
+            );
+        }
+
+        if (!registro) {
+            return NextResponse.json(
+                {
+                    sucesso: false,
+                    erro: true,
+                    msg: "Registro não encontrado.",
+                },
+                { status: 404 },
+            );
+        }
+
+        if (registro.cancelado_em) {
+            return NextResponse.json(
+                {
+                    sucesso: false,
+                    erro: true,
+                    codigo: "ATENDIMENTO_CANCELADO",
+                    msg:
+                        "Este atendimento foi cancelado. Não é possível alterar nem registrar ações.",
+                },
+                { status: 409 },
+            );
+        }
+
+        statusAtual = String(registro.status ?? "");
+        obrigatoriedadeAtiva =
+            obrigatoriedadeAtivaPorStatus(statusAtual);
+    }
+
+    let scopeIds: string[] | null = null;
+
+    if (
+        Object.prototype.hasOwnProperty.call(
+            json,
+            "_wizard_restrict_ids",
+        )
+    ) {
+        let raw = json._wizard_restrict_ids;
+
+        if (typeof raw === "string") {
+            const texto = raw.trim();
+
+            if (texto) {
+                try {
+                    const parsed = JSON.parse(texto);
+
+                    raw = Array.isArray(parsed)
+                        ? parsed
+                        : texto.split(",");
+                } catch {
+                    raw = texto.split(",");
+                }
+            }
+        }
+
+        if (Array.isArray(raw)) {
+            const ids = raw
+                .map((item: unknown) =>
+                    String(item ?? "").trim(),
+                )
+                .filter(Boolean);
+
+            scopeIds = Array.from(new Set(ids));
+        }
+    }
+
+    try {
+        if (obrigatoriedadeAtiva) {
+            validarObrigatoriosFase02(
+                json as Record<string, any>,
+                scopeIds,
+            );
+        }
+    } catch (error) {
+        return NextResponse.json(
+            {
+                sucesso: false,
+                erro: true,
+                msg:
+                    error instanceof Error
+                        ? error.message
+                        : "Falha na validação.",
+            },
+            { status: 400 },
+        );
+    }
+
+    return NextResponse.json({
+        sucesso: true,
+        modo: "contingencia",
+        apenas_validacao: true,
+        acao,
+        atendimento_id:
+            acao === "editar"
+                ? Number(json.id)
+                : null,
+        status_atual: statusAtual,
+        fase_atual:
+            statusAtual !== null
+                ? numeroFaseStatus(statusAtual)
+                : null,
+        obrigatoriedade_ativa:
+            obrigatoriedadeAtiva,
+        tipo_terceiro:
+            payloadTipoTerceiro(json),
+        scope_ids: scopeIds,
+        msg: "Payload validado. Nenhuma gravação foi realizada.",
     });
 }
