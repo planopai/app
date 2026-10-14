@@ -169,6 +169,92 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    let dados = data ?? [];
+
+    if (recurso === "sepultamentos" && dados.length > 0) {
+        const ids = dados
+            .map((registro: any) => Number(registro.id))
+            .filter((id: number) => id > 0);
+
+        const { data: homenagens, error: homenagensError } =
+            await supabase
+                .schema("pai")
+                .from("homenagens")
+                .select(
+                    "id, atendimento_id, atendimento_tabela, slug, link_publico, status"
+                )
+                .in("atendimento_id", ids)
+                .eq("atendimento_tabela", "sepultamentos")
+                .order("atendimento_id", { ascending: true })
+                .order("id", { ascending: false });
+
+        if (homenagensError) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    erro: "Erro ao carregar homenagens",
+                },
+                {
+                    status: 500,
+                }
+            );
+        }
+
+        const homenagensPorAtendimento = new Map<number, any>();
+
+        for (const homenagem of homenagens ?? []) {
+            const atendimentoId = Number(homenagem.atendimento_id);
+
+            if (
+                atendimentoId > 0 &&
+                !homenagensPorAtendimento.has(atendimentoId)
+            ) {
+                homenagensPorAtendimento.set(
+                    atendimentoId,
+                    homenagem
+                );
+            }
+        }
+
+        dados = dados.map((registro: any) => {
+            const atendimentoId = Number(registro.id);
+
+            const homenagem =
+                homenagensPorAtendimento.get(atendimentoId);
+
+            const slug = String(
+                homenagem?.slug ?? ""
+            ).trim();
+
+            const linkPublico =
+                atendimentoId > 0
+                    ? `https://planoassistencialintegrado.com.br/legado-de-luz/?atendimento_id=${encodeURIComponent(
+                        String(atendimentoId)
+                    )}`
+                    : "";
+
+            return {
+                ...registro,
+
+                homenagem_slug: slug,
+                codigo_homenagem: slug,
+                legado_luz_slug: slug,
+
+                homenagem_link_publico: linkPublico,
+                legado_luz_link: linkPublico,
+
+                legado_luz_atendimento_id:
+                    atendimentoId > 0
+                        ? String(atendimentoId)
+                        : "",
+
+                homenagem_status: String(
+                    homenagem?.status ?? ""
+                ),
+            };
+        });
+    }
+
     return NextResponse.json({
         ok: true,
         modo: "contingencia",
@@ -180,6 +266,6 @@ export async function GET(request: NextRequest) {
         },
         permissao: "atendimento",
         recurso,
-        dados: data,
+        dados,
     });
 }
