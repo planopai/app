@@ -57,9 +57,14 @@ export default function AppShell({
                 <SiteHeader />
                 <div data-pai-rolagem className="flex flex-1 flex-col max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain">
                     {children}
-                    {/* Barra de baixo do celular (5 atalhos + Menu); some no computador. O espaço dela fica no fim da área que rola. */}
-                    <BarraCelular />
                 </div>
+                {/*
+                 * Barra de baixo do celular (5 atalhos + Menu); some no computador.
+                 * 14/10/2026: fica FORA da área que rola. O espaço que ela reserva vem logo abaixo da área de rolagem, então a tela
+                 * fica enquadrada entre o cabeçalho e a barra. Dentro da área que rola (coluna flex com altura fixa), esse espaço
+                 * encolhia até 0 e o fim de toda tela longa ficava atrás da barra.
+                 */}
+                <BarraCelular />
             </SidebarInset>
         </SidebarProvider>
     );
