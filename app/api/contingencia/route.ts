@@ -118,7 +118,10 @@ export async function GET(request: NextRequest) {
 
     const recurso = searchParams.get("recurso");
 
-    if (recurso !== "os_ordens") {
+    if (
+        recurso !== "os_ordens" &&
+        recurso !== "sepultamentos"
+    ) {
         return NextResponse.json(
             {
                 ok: false,
@@ -130,9 +133,14 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    const tabela =
+        recurso === "sepultamentos"
+            ? "sepultamentos"
+            : "os_ordens";
+
     const { data, error } = await supabase
         .schema("pai")
-        .from("os_ordens")
+        .from(tabela)
         .select("*")
         .order("id", { ascending: false });
 
