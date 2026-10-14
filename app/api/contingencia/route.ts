@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase-server";
 import { validarPaiSession } from "@/lib/pai-session";
 
+import {
+    normalizeStatusCode,
+    numeroFaseStatus,
+    obrigatoriedadeAtivaPorStatus,
+    payloadTipoTerceiro,
+    payloadCampoVazio,
+    payloadSimNaoValido,
+    asDateOrNull,
+    validarObrigatoriosFase02,
+} from "@/lib/contingencia/regras-atendimento";
+
 const CARGOS_GESTAO = [
     "adm",
     "admin",
@@ -162,30 +173,18 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             sucesso: true,
-
             id: usuarioId,
-
             usuario: String(usuario.usuario ?? ""),
-
             nome: String(usuario.nome ?? ""),
-
             cargo: String(usuario.cargo ?? ""),
-
-            deposito_insumos:
-                depositoInsumosPorUsuarioId(usuarioId),
-
-            pode_conservacao:
-                podeConservacao(
-                    usuarioId,
-                    String(usuario.cargo ?? ""),
-                ),
-
+            deposito_insumos: depositoInsumosPorUsuarioId(usuarioId),
+            pode_conservacao: podeConservacao(
+                usuarioId,
+                String(usuario.cargo ?? ""),
+            ),
             pode_alterar_itens_travados: podeAlterar,
-
             server_time: new Date().toISOString(),
-
             server_time_unix_ms: Date.now(),
-
             modo: "contingencia",
         });
     }
@@ -360,22 +359,15 @@ export async function GET(request: NextRequest) {
 
             return {
                 ...registro,
-
                 homenagem_slug: slug,
-
                 codigo_homenagem: slug,
-
                 legado_luz_slug: slug,
-
                 homenagem_link_publico: linkPublico,
-
                 legado_luz_link: linkPublico,
-
                 legado_luz_atendimento_id:
                     atendimentoId > 0
                         ? String(atendimentoId)
                         : "",
-
                 homenagem_status: String(
                     homenagem?.status ?? "",
                 ),
@@ -385,20 +377,15 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
         ok: true,
-
         modo: "contingencia",
-
         usuario: {
             id: usuario.id,
             nome: usuario.nome,
             usuario: usuario.usuario,
             cargo: usuario.cargo,
         },
-
         permissao: "atendimento",
-
         recurso,
-
         dados,
     });
 }
