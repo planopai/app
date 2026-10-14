@@ -1555,7 +1555,8 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
                 </details>
             ) : null}
 
-            <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] p-3 shadow-lg">
+            {/* 14/10/2026: no celular fica acima da barra de baixo (--pai-barra-celular, globals.css); no computador continua a 0,5rem do fundo. */}
+            <div className="sticky bottom-[calc(var(--pai-barra-celular,0px)+0.5rem)] z-10flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] p-3 shadow-lg">
                 <div>
                     <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">Selecionado para compra</div>
                     <div className="text-lg font-black tabular-nums text-[#313C55] dark:text-white">

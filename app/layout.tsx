@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Nunito } from "next/font/google";
 
@@ -30,13 +30,20 @@ const nunito = Nunito({
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+/* 14/10/2026: viewport e themeColor saíram do metadata. A partir do Next 14 eles são ignorados ali,
+   e sem o viewport-fit=cover o iPhone devolve 0 para env(safe-area-inset-*) (barra de baixo e janelas). */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#313C55",
+};
+
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
-  themeColor: "#313C55",
   manifest: "/manifest.webmanifest",
-  viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
       { url: "/favicon.ico" },
