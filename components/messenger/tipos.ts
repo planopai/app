@@ -59,6 +59,10 @@ export type Conversa = {
     atendimento_id: number | null;
     /** Gestão vendo um atendimento em andamento sem participar: pode transferir e encerrar, não responde */
     gestao_acompanha?: boolean;
+    /** pacote 4A: setor da conversa de cliente e etiquetas (as da empresa + as minhas) */
+    setor_id?: number | null;
+    setor?: { id: number; nome: string; cor: string } | null;
+    etiquetas?: EtiquetaCurta[];
     /** fixada no topo da lista por mim (até 3) */
     fixada?: boolean;
     fixada_em?: string | null;
@@ -83,3 +87,34 @@ export type Perfil = {
 };
 
 export type Aba = "tudo" | "equipe" | "grupos" | "clientes";
+
+/* ---------- pacote 4A (15/10/2026): setores e etiquetas ---------- */
+export type EtiquetaCurta = { id: number; nome: string; cor: string };
+export type Etiqueta = EtiquetaCurta & { pessoal: boolean; uso: number };
+export type HorarioSetor = { dia: number; inicio: string; fim: string };
+export type ExcecaoSetor = { data: string; descricao: string | null; fechado: boolean; inicio: string | null; fim: string | null };
+export type Setor = {
+    id: number;
+    nome: string;
+    cor: string;
+    ativo: boolean;
+    plantao: boolean;
+    ordem: number;
+    msg_boas_vindas: string | null;
+    msg_fora_horario: string | null;
+    membros: { id: number; nome: string }[];
+    horarios: HorarioSetor[];
+    excecoes: ExcecaoSetor[];
+    aberto: boolean;
+    situacao: string;
+};
+
+/** Fundo claro e texto escuro a partir da cor da etiqueta/setor (para o selo ficar legível). */
+export function tonsDaCor(hex: string): { fundo: string; texto: string } {
+    const n = parseInt((hex || "#3D6A99").slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const mistura = (c: number, alvo: number, p: number) => Math.round(c + (alvo - c) * p);
+    const fundo = `rgb(${mistura(r, 255, 0.84)}, ${mistura(g, 255, 0.84)}, ${mistura(b, 255, 0.84)})`;
+    const texto = `rgb(${mistura(r, 0, 0.45)}, ${mistura(g, 0, 0.45)}, ${mistura(b, 0, 0.45)})`;
+    return { fundo, texto };
+}

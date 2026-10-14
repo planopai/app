@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { msgGet, msgPost } from "@/components/messenger/api";
-import type { Conversa, Perfil } from "@/components/messenger/tipos";
-import { Avatar, Icone } from "./Lista";
+import type { Conversa, Etiqueta, Perfil, Setor } from "@/components/messenger/tipos";
+import { Avatar, Icone, SeloCor } from "./Lista";
 
 function Janela({ titulo, sub, onFechar, children, rodape }: { titulo: string; sub?: string; onFechar: () => void; children: React.ReactNode; rodape?: React.ReactNode }) {
     return (
@@ -106,16 +106,22 @@ export function NovaConversa({ grupoInicial, onFechar, onAberta, online = () => 
 export function Transferir({ conversa, onFechar, onFeito }: { conversa: Conversa; onFechar: () => void; onFeito: () => void }) {
     const [lista, setLista] = useState<{ usuario_id: number; nome: string; em_atendimento: number }[]>([]);
     const [para, setPara] = useState(0);
+    // 15/10/2026: transferir para uma pessoa ou para a fila de um setor
+    const [modo, setModo] = useState<"pessoa" | "setor">("pessoa");
+    const [setores, setSetores] = useState<Setor[]>([]);
+    const [setorId, setSetorId] = useState(0);
     const [obs, setObs] = useState("");
     const [erro, setErro] = useState("");
     const [salvando, setSalvando] = useState(false);
     useEffect(() => {
         msgGet<any[]>("atendentes").then((l) => setLista(l.filter((a) => a.usuario_id !== conversa.responsavel?.id))).catch((e) => setErro(e.message));
+        msgGet<{ setores: Setor[] }>("setores").then((d) => setSetores(d.setores.filter((x) => x.ativo))).catch(() => setSetores([]));
     }, [conversa.responsavel?.id]);
     const confirmar = async () => {
         setSalvando(true);
         try {
-            await msgPost("transferir", { conversa_id: conversa.id, para_usuario_id: para, observacao: obs });
+            if (modo === "setor") await msgPost("transferir_setor", { conversa_id: conversa.id, setor_id: setorId, observacao: obs });
+            else await msgPost("transferir", { conversa_id: conversa.id, para_usuario_id: para, observacao: obs });
             onFeito();
         } catch (e: any) {
             setErro(e.message);
@@ -124,8 +130,29 @@ export function Transferir({ conversa, onFechar, onFeito }: { conversa: Conversa
     };
     return (
         <Janela titulo="Transferir conversa" sub={`${conversa.titulo} · o novo responsável recebe todo o atendimento em andamento.`} onFechar={onFechar}
-            rodape={<><button type="button" className={btn} onClick={onFechar}>Cancelar</button><button type="button" className={btnPri} disabled={!para || salvando} onClick={confirmar}>Transferir</button></>}>
+            rodape={<><button type="button" className={btn} onClick={onFechar}>Cancelar</button><button type="button" className={btnPri} disabled={(modo === "pessoa" ? !para : !setorId) || salvando} onClick={confirmar}>Transferir</button></>}>
             {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
+            {setores.length > 0 && (
+                <div className="grid grid-cols-2 gap-1 rounded-2xl bg-[#F1F4F8] p-1 dark:bg-[#1C2334]" role="tablist">
+                    {(["pessoa", "setor"] as const).map((m) => (
+                        <button key={m} type="button" role="tab" aria-selected={modo === m} onClick={() => setModo(m)} className={`h-10 rounded-xl text-sm font-extrabold ${modo === m ? "bg-white shadow dark:bg-[#3D6A99]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{m === "pessoa" ? "Para uma pessoa" : "Para um setor"}</button>
+                    ))}
+                </div>
+            )}
+            {modo === "setor" ? (
+                <>
+                    <span className={rotulo}>O cliente volta para a fila do setor e os atendentes dele são avisados</span>
+                    {setores.map((x) => (
+                        <label key={x.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#E3E8F0] px-3 py-2.5 text-[15px] font-bold dark:border-white/12">
+                            <input type="radio" name="setor" className="h-5 w-5 accent-[#313C55]" checked={setorId === x.id} onChange={() => setSetorId(x.id)} />
+                            <span className="h-3 w-3 flex-none rounded-full" style={{ background: x.cor }} aria-hidden="true" />
+                            <span className="flex-1">{x.nome}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-extrabold ${x.aberto ? "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#DCEBAA]" : "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]"}`}>{x.situacao}</span>
+                        </label>
+                    ))}
+                </>
+            ) : (
+            <>
             <span className={rotulo}>Transferir para (atendentes do WhatsApp)</span>
             {lista.map((a) => (
                 <label key={a.usuario_id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#E3E8F0] px-3 py-2.5 text-[15px] font-bold dark:border-white/12">
@@ -135,6 +162,8 @@ export function Transferir({ conversa, onFechar, onFeito }: { conversa: Conversa
                 </label>
             ))}
             {!lista.length && !erro && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum outro atendente com a permissão de atender clientes.</p>}
+            </>
+            )}
             <label className="block"><span className={rotulo}>Observação para o colega</span><textarea className="mt-1 w-full rounded-xl bg-[#F1F4F8] px-3.5 py-3 text-[16px] outline-none dark:bg-[#1C2334]" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} maxLength={500} placeholder="Ex.: a família quer falar sobre translado" /></label>
             <p className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">A conversa sai da sua lista. O novo responsável vê todas as mensagens deste atendimento, inclusive as que você trocou com o cliente.</p>
         </Janela>
@@ -265,6 +294,46 @@ export function Encaminhar({ conversas, onFechar, onEnviar }: { conversas: Conve
                     </label>
                 ))}
                 {!filtradas.length && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma conversa disponível.</p>}
+            </div>
+        </Janela>
+    );
+}
+
+
+/** Pacote 4A: marcar as etiquetas da conversa. */
+export function EtiquetasConversa({ conversa, onFechar, onSalvo }: { conversa: Conversa; onFechar: () => void; onSalvo: (c: Conversa) => void }) {
+    const [lista, setLista] = useState<Etiqueta[] | null>(null);
+    const [marcadas, setMarcadas] = useState<number[]>((conversa.etiquetas || []).map((e) => e.id));
+    const [erro, setErro] = useState("");
+    const [salvando, setSalvando] = useState(false);
+    useEffect(() => {
+        msgGet<Etiqueta[]>("etiquetas").then(setLista).catch((e) => setErro(e.message));
+    }, []);
+    const salvar = async () => {
+        setSalvando(true);
+        try {
+            const r = await msgPost("conversa_etiquetas", { conversa_id: conversa.id, etiqueta_ids: marcadas });
+            onSalvo(r.dados);
+        } catch (e: any) {
+            setErro(e.message);
+            setSalvando(false);
+        }
+    };
+    return (
+        <Janela titulo="Etiquetas" sub={conversa.titulo} onFechar={onFechar}
+            rodape={<><button type="button" className={btn} onClick={onFechar}>Cancelar</button><button type="button" className={btnPri} disabled={salvando || !lista} onClick={salvar}>Salvar</button></>}>
+            {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
+            {!lista && !erro && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Carregando…</p>}
+            {lista && !lista.length && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma etiqueta cadastrada. Crie em Messenger · Configurações › Etiquetas.</p>}
+            <div className="flex flex-col">
+                {(lista || []).map((e) => (
+                    <label key={e.id} className="flex min-h-[54px] cursor-pointer items-center gap-3 rounded-xl px-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10">
+                        <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={marcadas.includes(e.id)} onChange={() => setMarcadas((m) => (m.includes(e.id) ? m.filter((x) => x !== e.id) : [...m, e.id]))} />
+                        <SeloCor nome={e.nome} cor={e.cor} ponto />
+                        <span className="flex-1" />
+                        {e.pessoal && <span className="rounded-full bg-[#F0F2F5] px-2 py-0.5 text-[12px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Minha</span>}
+                    </label>
+                ))}
             </div>
         </Janela>
     );

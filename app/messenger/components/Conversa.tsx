@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { msgGet } from "@/components/messenger/api";
 import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
-import { Avatar, Icone, previa } from "./Lista";
+import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
 
 const EMOJIS: Record<string, string[]> = {
@@ -386,6 +386,8 @@ export default function JanelaConversa(props: {
     onEnviarLocalizacao?: () => void;
     onPedirContato?: () => void;
     onSalvarContato?: () => void;
+    /** pacote 4A: abrir as etiquetas da conversa */
+    onEtiquetas?: () => void;
     /** mensagens fixadas no topo (até 3) e fixar/desafixar */
     fixadas?: Mensagem[];
     onFixarMensagem?: (m: Mensagem, fixar: boolean) => void;
@@ -525,6 +527,9 @@ export default function JanelaConversa(props: {
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
                 <button type="button" onClick={() => { setBuscando((v) => !v); setTermo(""); setAtual(0); }} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
+                {externo && props.onEtiquetas && (
+                    <button type="button" onClick={props.onEtiquetas} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Etiquetas da conversa" title="Etiquetas"><Icone nome="tag" /></button>
+                )}
                 {externo && props.onSalvarContato && (
                     <button type="button" onClick={props.onSalvarContato} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label={c.contato?.salvo ? "Editar nome do contato" : "Salvar contato"} title={c.contato?.salvo ? "Editar contato" : "Salvar contato"}><Icone nome={c.contato?.salvo ? "editar" : "contato"} /></button>
                 )}
@@ -544,6 +549,12 @@ export default function JanelaConversa(props: {
                     </>
                 )}
             </div>
+            {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0)) && (
+                <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
+                    {c.setor && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
+                    <SelosEtiquetas etiquetas={c.etiquetas} max={6} />
+                </div>
+            )}
             {fixadas.length > 0 && (() => {
                 const f = fixadas[Math.min(fixadaAtual, fixadas.length - 1)];
                 return (

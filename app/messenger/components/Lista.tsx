@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import type { Aba, Conversa, Mensagem } from "@/components/messenger/tipos";
+import { tonsDaCor, type Aba, type Conversa, type EtiquetaCurta, type Mensagem } from "@/components/messenger/tipos";
 
 export const COR = { azul: "#313C55", amarelo: "#F2CB3F", verde: "#B3CE52", ciano: "#3D6A99", fundo: "#F4F6F9", borda: "#E1E5EC", texto2: "#6B7488" };
 
@@ -42,6 +42,7 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
         encaminhar: (<><path d="m15 14 5-5-5-5" /><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5V20" /></>),
         emojimais: (<><circle cx="11" cy="13" r="8" /><path d="M8 15s1 1.5 3 1.5 3-1.5 3-1.5" /><path d="M8.5 11h.01" /><path d="M13.5 11h.01" /><path d="M19 2v5" /><path d="M16.5 4.5h5" /></>),
         editar: (<><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z" /></>),
+        tag: (<><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></>),
         pin: (<><path d="M12 17v5" /><path d="M9 10.8V4h6v6.8l3 3.2v2H6v-2z" /></>),
         naolida: (<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" fill="currentColor" /></>),
         chevron: (<path d="m6 9 6 6 6-6" />),
@@ -157,6 +158,27 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
     );
 }
 
+/** Selo com a cor do setor ou da etiqueta (fundo claro, texto escuro; no modo escuro, fundo translúcido). */
+export function SeloCor({ nome, cor, ponto = false, pequeno = false }: { nome: string; cor: string; ponto?: boolean; pequeno?: boolean }) {
+    const t = tonsDaCor(cor);
+    return (
+        <span className={`inline-flex flex-none items-center gap-1 rounded-full font-extrabold ${pequeno ? "h-[22px] px-2 text-[12px]" : "h-7 px-2.5 text-[13px]"}`} style={{ background: t.fundo, color: t.texto }}>
+            {ponto && <span className="h-2 w-2 flex-none rounded-full" style={{ background: cor }} aria-hidden="true" />}
+            {nome}
+        </span>
+    );
+}
+
+export function SelosEtiquetas({ etiquetas, max = 2 }: { etiquetas?: EtiquetaCurta[]; max?: number }) {
+    if (!etiquetas?.length) return null;
+    return (
+        <>
+            {etiquetas.slice(0, max).map((e) => <SeloCor key={e.id} nome={e.nome} cor={e.cor} pequeno />)}
+            {etiquetas.length > max && <span className="flex-none text-[12px] font-extrabold text-[#5B6478] dark:text-[#AEB9CF]">+{etiquetas.length - max}</span>}
+        </>
+    );
+}
+
 /** Ações de deslizar (celular) e do menu (computador): fixar no topo e marcar como não lida/lida. */
 export type AcoesLinha = { onFixar: () => void; onMarcar: () => void };
 
@@ -248,6 +270,8 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                         </div>
                         <div className="mt-1 flex items-center gap-1.5">
                             {etiqueta}
+                            {c.setor && c.status_atendimento === "aguardando" && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
+                            <SelosEtiquetas etiquetas={c.etiquetas} />
                             <TiquesLista estado={estadoUltima(c, eu)} />
                             <div className="min-w-0 flex-1 truncate text-[16px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}

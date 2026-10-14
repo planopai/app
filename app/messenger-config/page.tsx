@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { msgGet, msgPost } from "@/components/messenger/api";
 import { Icone } from "../messenger/components/Lista";
 import { limparCacheRespostas } from "../messenger/components/Acoes";
+import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
 type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; pode_editar: boolean };
@@ -23,7 +24,7 @@ const btnPri = "h-11 rounded-xl bg-[#313C55] px-5 text-sm font-extrabold text-wh
 const btnSec = "h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
 
 export default function MessengerConfigPage() {
-    const [aba, setAba] = useState<"respostas" | "geral">("respostas");
+    const [aba, setAba] = useState<"respostas" | "setores" | "etiquetas" | "geral">("respostas");
     const [config, setConfig] = useState<Config | null>(null);
     const [respostas, setRespostas] = useState<Resposta[]>([]);
     const [erro, setErro] = useState("");
@@ -81,6 +82,15 @@ export default function MessengerConfigPage() {
     };
 
     const podeEmpresa = !!config?.pode_editar;
+    const avisar = useCallback((msg: string, comErro = false) => {
+        if (comErro) {
+            setErro(msg);
+            setAviso("");
+        } else {
+            setAviso(msg);
+            setErro("");
+        }
+    }, []);
     const daEmpresa = respostas.filter((r) => !r.pessoal);
     const minhas = respostas.filter((r) => r.pessoal);
 
@@ -112,7 +122,7 @@ export default function MessengerConfigPage() {
 
     return (
         <div className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] md:p-8 dark:bg-[#1C2334] dark:text-white">
-            <div className="mx-auto flex max-w-[960px] flex-col gap-4">
+            <div className="mx-auto flex max-w-[1220px] flex-col gap-4">
                 <div className="flex items-center gap-4">
                     <div className="hidden h-14 w-14 flex-none items-center justify-center rounded-[18px] bg-[#313C55] text-white md:flex dark:bg-[#3D6A99]"><Icone nome="msg" className="h-[26px] w-[26px]" /></div>
                     <div className="min-w-0 flex-1">
@@ -122,8 +132,8 @@ export default function MessengerConfigPage() {
                     <a href="/messenger" className="hidden h-11 items-center rounded-xl border border-[#C9D1DE] bg-white px-4 text-sm font-bold md:flex dark:border-white/25 dark:bg-[#232B3F]">Voltar ao Messenger</a>
                 </div>
 
-                <div className="flex gap-2" role="tablist" aria-label="Seções">
-                    {([["respostas", "Respostas rápidas"], ["geral", "Geral"]] as const).map(([id, nome]) => (
+                <div className="flex flex-wrap gap-2" role="tablist" aria-label="Seções">
+                    {([["respostas", "Respostas rápidas"], ["setores", "Setores"], ["etiquetas", "Etiquetas"], ["geral", "Geral"]] as const).map(([id, nome]) => (
                         <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)} className={`h-[40px] rounded-full px-4 text-[15.5px] ${aba === id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-white font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]"}`}>{nome}</button>
                     ))}
                 </div>
@@ -142,6 +152,9 @@ export default function MessengerConfigPage() {
                         <ListaRespostas titulo="Minhas respostas" itens={minhas} editavel pessoal />
                     </>
                 )}
+
+                {aba === "setores" && <AbaSetores podeEditar={podeEmpresa} avisar={avisar} />}
+                {aba === "etiquetas" && <AbaEtiquetas podeEditar={podeEmpresa} avisar={avisar} />}
 
                 {aba === "geral" && config && (
                     <section className={cartao}>

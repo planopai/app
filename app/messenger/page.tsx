@@ -11,10 +11,10 @@ import { audioParaMp3, comprimirFoto } from "@/components/messenger/compressao";
 import { ativarNotificacoes, ouvir, ouvirNotificacoes, ouvirSeguranca, type EstadoNotificacoes } from "@/components/messenger/tempoReal";
 import { ocultarBarraCelular } from "@/components/barra/BarraCelular";
 import { useSemZoom } from "@/components/messenger/semZoom";
-import type { Aba, Conversa, Mensagem, Perfil } from "@/components/messenger/tipos";
-import { Abas, Icone, LinhaConversa } from "./components/Lista";
+import type { Aba, Conversa, EtiquetaCurta, Mensagem, Perfil, Setor } from "@/components/messenger/tipos";
+import { Abas, Icone, LinhaConversa, SeloCor } from "./components/Lista";
 import JanelaConversa from "./components/Conversa";
-import { DetalhesGrupo, Encaminhar, EnviarContato, NovaConversa, Transferir } from "./components/Modais";
+import { DetalhesGrupo, Encaminhar, EnviarContato, EtiquetasConversa, NovaConversa, Transferir } from "./components/Modais";
 import HistoricoClientes from "./components/Historico";
 
 /**
@@ -132,7 +132,11 @@ export default function MessengerPage() {
     const [carregando, setCarregando] = useState(true);
     const [seguranca, setSeguranca] = useState(false);
     const [digitando, setDigitando] = useState<Record<number, { nome: string; ate: number }>>({});
-    const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes" | "contato" | "encaminhar">(null);
+    const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes" | "contato" | "encaminhar" | "etiquetas">(null);
+    // pacote 4A: filtros da aba Clientes por setor (0 = todos, -1 = sem setor) e por etiqueta
+    const [setores, setSetores] = useState<Setor[]>([]);
+    const [filtroSetor, setFiltroSetor] = useState(0);
+    const [filtroEtiqueta, setFiltroEtiqueta] = useState(0);
     const [paraEncaminhar, setParaEncaminhar] = useState<Mensagem | null>(null);
     const [verHistorico, setVerHistorico] = useState(false);
     const [pastaEquipeAberta, setPastaEquipeAberta] = useState(false);
@@ -152,6 +156,7 @@ export default function MessengerPage() {
             setConversas(lista);
             if (!perfil) setPerfil(pf);
             if (pf.atendente) setFila(await msgGet<Conversa[]>("fila").catch(() => []));
+            msgGet<{ setores: Setor[] }>("setores", {}, false).then((d) => setSetores(d.setores.filter((x) => x.ativo))).catch(() => setSetores([]));
             setErro("");
         } catch (e: any) {
             setErro(e.message);
@@ -295,6 +300,8 @@ export default function MessengerPage() {
     }, [agendarRecarga, abrirConversa]);
 
     /* ---------- listas por aba ---------- */
+    const porSetor = (c: Conversa) => filtroSetor === 0 || (filtroSetor === -1 ? !c.setor_id : c.setor_id === filtroSetor);
+    const porEtiqueta = (c: Conversa) => filtroEtiqueta === 0 || (c.etiquetas || []).some((e) => e.id === filtroEtiqueta);
     const porAba = useMemo(() => {
         const q = busca.trim().toLowerCase();
         const f = (c: Conversa) => !q || c.titulo.toLowerCase().includes(q) || (c.contato?.telefone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "") || "#");
@@ -303,11 +310,17 @@ export default function MessengerPage() {
             tudo: conversas.filter((c) => !c.gestao_acompanha && f(c)),
             equipe: conversas.filter((c) => c.canal === "interno" && f(c)),
             grupos: conversas.filter((c) => c.tipo === "grupo" && f(c)),
-            clientes: conversas.filter((c) => c.canal === "whatsapp" && !c.gestao_acompanha && f(c)),
-            daEquipe: conversas.filter((c) => !!c.gestao_acompanha && f(c)),
-            fila: fila.filter(f),
+            clientes: conversas.filter((c) => c.canal === "whatsapp" && !c.gestao_acompanha && f(c) && porEtiqueta(c)),
+            daEquipe: conversas.filter((c) => !!c.gestao_acompanha && f(c) && porEtiqueta(c)),
+            fila: fila.filter((c) => f(c) && porSetor(c) && porEtiqueta(c)),
         };
-    }, [conversas, fila, busca]);
+    }, [conversas, fila, busca, filtroSetor, filtroEtiqueta]);
+    // etiquetas em uso nas conversas de clientes (para os botões de filtro)
+    const etiquetasEmUso = useMemo(() => {
+        const mapa = new Map<number, EtiquetaCurta>();
+        [...conversas, ...fila].forEach((c) => (c.etiquetas || []).forEach((e) => mapa.set(e.id, e)));
+        return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome));
+    }, [conversas, fila]);
     const contagem: Record<Aba, number> = {
         tudo: conversas.filter((c) => c.nao_lidas > 0).length + fila.length,
         equipe: conversas.filter((c) => c.canal === "interno" && c.nao_lidas > 0).length,
@@ -571,6 +584,29 @@ export default function MessengerPage() {
                             <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[18px] text-[#1F2638] outline-none dark:text-white" />
                         </label>
                         <Abas aba={aba} setAba={setAba} contagem={contagem} />
+                        {aba === "clientes" && (setores.length > 0 || etiquetasEmUso.length > 0) && (
+                            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5" aria-label="Filtrar clientes">
+                                {setores.length > 0 && (
+                                    <>
+                                        <button type="button" onClick={() => setFiltroSetor(0)} aria-pressed={filtroSetor === 0} className={`h-8 flex-none rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === 0 ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]" : "border-[#E1E5EC] text-[#313C55] dark:border-white/15 dark:text-white"}`}>Todos os setores {fila.length || ""}</button>
+                                        {setores.map((x) => {
+                                            const qtd = fila.filter((c) => c.setor_id === x.id).length;
+                                            return (
+                                                <button key={x.id} type="button" onClick={() => setFiltroSetor(filtroSetor === x.id ? 0 : x.id)} aria-pressed={filtroSetor === x.id} title={x.situacao} className={`flex h-8 flex-none items-center gap-1.5 rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === x.id ? "border-[#313C55] bg-[#E9EFF6] dark:border-[#A9BED6] dark:bg-[#3D6A99]/30" : "border-[#E1E5EC] dark:border-white/15"} ${x.aberto ? "" : "opacity-70"}`}>
+                                                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: x.cor }} aria-hidden="true" />{x.nome}{qtd ? ` ${qtd}` : ""}
+                                                </button>
+                                            );
+                                        })}
+                                        {fila.some((c) => !c.setor_id) && <button type="button" onClick={() => setFiltroSetor(filtroSetor === -1 ? 0 : -1)} aria-pressed={filtroSetor === -1} className={`h-8 flex-none rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === -1 ? "border-[#313C55] bg-[#E9EFF6] dark:bg-[#3D6A99]/30" : "border-[#E1E5EC] dark:border-white/15"}`}>Sem setor {fila.filter((c) => !c.setor_id).length}</button>}
+                                    </>
+                                )}
+                                {etiquetasEmUso.map((e) => (
+                                    <button key={`e${e.id}`} type="button" onClick={() => setFiltroEtiqueta(filtroEtiqueta === e.id ? 0 : e.id)} aria-pressed={filtroEtiqueta === e.id} className={`flex-none rounded-full ${filtroEtiqueta === e.id ? "ring-2 ring-[#313C55] dark:ring-white" : ""}`} aria-label={`Filtrar pela etiqueta ${e.nome}`}>
+                                        <SeloCor nome={e.nome} cor={e.cor} ponto />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24 md:pb-3">
                         {seguranca && <div className="mx-2 mb-1 rounded-lg bg-[#FCF3CC] px-3 py-1.5 text-xs font-bold dark:bg-[#F2CB3F]/15">Modo de segurança: atualizando a cada 5 s.</div>}
@@ -642,7 +678,7 @@ export default function MessengerPage() {
                             onEnviarTexto={enviarTexto} onEnviarModelo={enviarModelo} onEnviarArquivo={enviarMidia} onApagar={apagar}
                             onReagir={reagir} onEncaminhar={(m) => { setParaEncaminhar(m); setModal("encaminhar"); }} onEnviarNota={enviarNota}
                             onEnviarLocalizacao={enviarLocalizacao} onPedirContato={() => setModal("contato")} onSalvarContato={salvarContato}
-                            fixadas={fixadas} onFixarMensagem={fixarMensagem}
+                            fixadas={fixadas} onFixarMensagem={fixarMensagem} onEtiquetas={() => setModal("etiquetas")}
                             tecladoAberto={!!area && typeof window !== "undefined" && area.altura < window.innerHeight * 0.8}
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
                             onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
@@ -663,6 +699,7 @@ export default function MessengerPage() {
             {modal === "transferir" && conversaSel && (
                 <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida."); if (perfil?.gestao) abrirConversa(conversaSel.id, true); else fecharConversa(); carregarListas(); }} />
             )}
+            {modal === "etiquetas" && conversaSel && <EtiquetasConversa conversa={conversaSel} onFechar={() => setModal(null)} onSalvo={(c) => { setModal(null); setConversaSel(c); setAviso("Etiquetas atualizadas."); carregarListas(); }} />}
             {modal === "contato" && <EnviarContato onFechar={() => setModal(null)} onEnviar={enviarContato} />}
             {modal === "encaminhar" && paraEncaminhar && <Encaminhar conversas={conversas} onFechar={() => { setModal(null); setParaEncaminhar(null); }} onEnviar={encaminhar} />}
             {modal === "detalhes" && conversaSel && perfil && (
