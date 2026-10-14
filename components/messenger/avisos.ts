@@ -16,7 +16,7 @@ import { msgGet } from "./api";
 import type { Conversa, Mensagem } from "./tipos";
 
 type Ouvir = (fn: (e: { nome: string; dados: any }) => void) => () => void;
-type InfoConversa = { titulo: string; tipo: string; silenciada: boolean };
+type InfoConversa = { titulo: string; tipo: string; silenciada: boolean; participo: boolean };
 
 let ligado = false;
 let eu = 0;
@@ -56,7 +56,7 @@ async function carregarConversas(forcar = false): Promise<Conversa[]> {
     try {
         const lista = await msgGet<Conversa[]>("conversas", {}, false);
         conversas.clear();
-        lista.forEach((c) => conversas.set(c.id, { titulo: c.titulo, tipo: c.tipo, silenciada: !!c.silenciada }));
+        lista.forEach((c) => conversas.set(c.id, { titulo: c.titulo, tipo: c.tipo, silenciada: !!c.silenciada, participo: c.participo !== false }));
         carregadoEm = Date.now();
         return lista;
     } catch {
@@ -144,9 +144,57 @@ function mostrarAviso(conversaId: number, titulo: string, texto: string) {
     t2.style.cssText = `font-size:14px;color:${dark ? "#AEB9CF" : "#5B6478"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
     t2.textContent = texto;
     corpo.append(t1, t2);
-    b.append(icone, corpo);
+    // 14/10/2026: fechar na hora (X) e, no celular, arrastar para cima para recolher
+    const fechar = document.createElement("span");
+    fechar.setAttribute("role", "button");
+    fechar.setAttribute("aria-label", "Fechar aviso");
+    fechar.tabIndex = 0;
+    fechar.style.cssText = `flex:none;width:36px;height:36px;margin:-6px -6px -6px 0;border-radius:18px;display:flex;align-items:center;justify-content:center;color:${dark ? "#AEB9CF" : "#5B6478"};cursor:pointer`;
+    fechar.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+    const sumir = () => {
+        b.style.opacity = "0";
+        b.style.transform = "translateY(-12px)";
+        setTimeout(() => b.remove(), 250);
+    };
+    fechar.onclick = (e) => {
+        e.stopPropagation();
+        sumir();
+    };
+    fechar.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            sumir();
+        }
+    };
+    let inicioY = 0;
+    let arrastou = false;
+    b.addEventListener("touchstart", (e) => { inicioY = e.touches[0].clientY; arrastou = false; }, { passive: true });
+    b.addEventListener("touchmove", (e) => {
+        const dy = e.touches[0].clientY - inicioY;
+        if (dy < -6) {
+            arrastou = true;
+            b.style.transition = "none";
+            b.style.transform = `translateY(${dy}px)`;
+            b.style.opacity = String(Math.max(0, 1 + dy / 80));
+        }
+    }, { passive: true });
+    b.addEventListener("touchend", (e) => {
+        if (!arrastou) return;
+        e.preventDefault();
+        b.style.transition = "opacity .25s,transform .25s";
+        const dy = parseFloat((b.style.transform.match(/-?\d+(\.\d+)?/) || ["0"])[0]);
+        if (dy < -30) sumir();
+        else {
+            b.style.transform = "none";
+            b.style.opacity = "1";
+        }
+    });
+    b.append(icone, corpo, fechar);
     b.setAttribute("aria-label", `Nova mensagem de ${titulo}: ${texto}. Abrir conversa`);
-    b.onclick = () => abrirConversa(conversaId);
+    b.onclick = () => {
+        if (!arrastou) abrirConversa(conversaId);
+    };
     caixa.appendChild(b);
     requestAnimationFrame(() => {
         b.style.opacity = "1";
@@ -158,8 +206,10 @@ function mostrarAviso(conversaId: number, titulo: string, texto: string) {
     }, 6000);
 }
 
-async function aoChegarMensagem(m: Mensagem) {
+async function aoChegarMensagem(m: Mensagem & { notificar?: boolean }) {
     if (!m?.id || jaAvisadas.has(m.id)) return;
+    // o servidor diz se ESTA pessoa deve ser avisada (participa da conversa ou é fila de atendentes)
+    if (m.notificar === false) return;
     jaAvisadas.add(m.id);
     if (m.autor_tipo === "sistema" || (m.autor_tipo === "usuario" && m.autor_usuario_id === eu)) return;
     if (document.visibilityState !== "visible") return; // fora da tela: quem avisa é a notificação do aparelho
@@ -171,6 +221,8 @@ async function aoChegarMensagem(m: Mensagem) {
         info = conversas.get(m.conversa_id);
     }
     if (info?.silenciada) return;
+    // sem a indicação do servidor (modo de segurança): só avisa quem participa (a Gestão que só acompanha, não)
+    if (m.notificar === undefined && info && !info.participo) return;
     const autor = m.autor_nome || "Nova mensagem";
     let titulo = autor;
     let texto = previa(m);

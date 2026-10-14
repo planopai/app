@@ -126,6 +126,8 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/comunicacao", slug: "comunicacao" },
         itens: [
             { id: "messenger", titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
+            // 14/10/2026: Configurações do Messenger (respostas rápidas, assinatura…). Nasce aqui; a Gestão move pelo Organizar menu.
+            { id: "messenger-config", titulo: "Configurações do Messenger", desc: "Respostas rápidas e ajustes do atendimento", href: "/messenger-config", slugs: ["messenger-config"], icone: IconSettings },
             { id: "chat", titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
             { id: "avisos", titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],

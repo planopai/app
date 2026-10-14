@@ -101,15 +101,19 @@ let presencaLigada = false;
 function ligarPresenca() {
     if (presencaLigada) return;
     presencaLigada = true;
-    const avisar = () => {
-        if (document.visibilityState !== "visible") return;
-        apiJson(`${MESSENGER_API}?action=presenca`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, false).catch(() => {});
+    // visivel = true: app na tela (o servidor não manda notificação do aparelho, o aviso aparece dentro do app);
+    // visivel = false: saiu do app (tela bloqueada, outra aba) → volta a receber a notificação do aparelho na hora.
+    const avisar = (visivel: boolean) => {
+        apiJson(
+            `${MESSENGER_API}?action=presenca`,
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visivel }), keepalive: true },
+            false
+        ).catch(() => {});
     };
-    avisar();
-    setInterval(avisar, 60000);
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") avisar();
-    });
+    if (document.visibilityState === "visible") avisar(true);
+    setInterval(() => document.visibilityState === "visible" && avisar(true), 30000);
+    document.addEventListener("visibilitychange", () => avisar(document.visibilityState === "visible"));
+    window.addEventListener("pagehide", () => avisar(false));
 }
 
 async function iniciar() {
