@@ -138,11 +138,21 @@ export async function GET(request: NextRequest) {
             ? "sepultamentos"
             : "os_ordens";
 
-    const { data, error } = await supabase
+    let query = supabase
         .schema("pai")
         .from(tabela)
         .select("*")
         .order("id", { ascending: false });
+
+    if (recurso === "sepultamentos") {
+        query = query
+            .or(
+                "material_recolhido.eq.false,material_recolhido.is.null"
+            )
+            .is("cancelado_em", null);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
         return NextResponse.json(
