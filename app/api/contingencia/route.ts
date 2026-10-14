@@ -581,17 +581,146 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const gravarContingencia =
+    json.gravar_contingencia === true;
+
+  if (!gravarContingencia) {
+    return NextResponse.json({
+      sucesso: true,
+      modo: "contingencia",
+      apenas_validacao: true,
+      acao,
+      atendimento_id:
+        acao === "editar"
+          ? Number(json.id)
+          : null,
+      status_atual: statusAtual,
+      fase_atual:
+        statusAtual !== null
+          ? numeroFaseStatus(statusAtual)
+          : null,
+      obrigatoriedade_ativa:
+        obrigatoriedadeAtiva,
+      tipo_terceiro:
+        payloadTipoTerceiro(json),
+      scope_ids: scopeIds,
+      msg:
+        "Payload validado. Envie gravar_contingencia=true para efetivar a gravação.",
+    });
+  }
+
+  const fotoFalecido = String(
+    json.foto_falecido ?? "",
+  ).trim();
+
+  if (fotoFalecido.startsWith("data:")) {
+    return NextResponse.json(
+      {
+        sucesso: false,
+        erro: true,
+        codigo: "FOTO_CONTINGENCIA_PENDENTE",
+        msg:
+          "A gravação de nova foto em base64 ainda não está habilitada na contingência.",
+      },
+      { status: 409 },
+    );
+  }
+
+  if (
+    Array.isArray(json.coroas_itens) &&
+    json.coroas_itens.length > 0
+  ) {
+    return NextResponse.json(
+      {
+        sucesso: false,
+        erro: true,
+        codigo: "COROAS_PERSISTENCIA_PENDENTE",
+        msg:
+          "Os itens detalhados de coroas ainda não podem ser gravados na contingência.",
+      },
+      { status: 409 },
+    );
+  }
+
+  const payloadRpc = {
+    ...json,
+  };
+
+  delete payloadRpc.usuario_id;
+
+  const { data: resultadoRpc, error: rpcError } =
+    await supabase
+      .schema("pai")
+      .rpc(
+        "salvar_atendimento_contingencia",
+        {
+          p_payload: payloadRpc,
+          p_usuario_id: Number(usuario.id),
+          p_usuario_nome: String(
+            usuario.nome ?? usuario.usuario ?? "",
+          ),
+        },
+      );
+
+  if (rpcError) {
+    const mensagem = String(
+      rpcError.message ?? "Falha ao gravar atendimento.",
+    );
+
+    let status = 500;
+    let codigo = "GRAVACAO_CONTINGENCIA";
+
+    if (mensagem.includes("ATENDIMENTO_CANCELADO:")) {
+      status = 409;
+      codigo = "ATENDIMENTO_CANCELADO";
+    } else if (
+      mensagem.includes("ITENS_TRAVADOS_CONTINGENCIA:")
+    ) {
+      status = 409;
+      codigo = "ITENS_TRAVADOS";
+    } else if (
+      mensagem.includes("OPERATION_ID_CONFLITO:")
+    ) {
+      status = 409;
+      codigo = "OPERATION_ID_CONFLITO";
+    } else if (
+      mensagem.includes("REGISTRO_NAO_ENCONTRADO:")
+    ) {
+      status = 404;
+      codigo = "REGISTRO_NAO_ENCONTRADO";
+    } else if (
+      mensagem.includes("ID_INVALIDO:") ||
+      mensagem.includes("PAYLOAD_INVALIDO:") ||
+      mensagem.includes("ACAO_INVALIDA:")
+    ) {
+      status = 400;
+      codigo = "DADOS_INVALIDOS";
+    }
+
+    console.error(
+      "[contingencia] Erro RPC salvar atendimento:",
+      rpcError,
+    );
+
+    return NextResponse.json(
+      {
+        sucesso: false,
+        erro: true,
+        codigo,
+        msg: mensagem.replace(/^[A-Z0-9_]+:\s*/, ""),
+      },
+      { status },
+    );
+  }
+
   return NextResponse.json({
-    sucesso: true,
+    ...(resultadoRpc && typeof resultadoRpc === "object"
+      ? resultadoRpc
+      : { sucesso: true }),
     modo: "contingencia",
-    apenas_validacao: true,
-    acao,
-    atendimento_id:
-      acao === "editar"
-        ? Number(json.id)
-        : null,
-    status_atual: statusAtual,
-    fase_atual:
+    gravado: true,
+    status_anterior: statusAtual,
+    fase_anterior:
       statusAtual !== null
         ? numeroFaseStatus(statusAtual)
         : null,
@@ -600,6 +729,5 @@ export async function POST(request: NextRequest) {
     tipo_terceiro:
       payloadTipoTerceiro(json),
     scope_ids: scopeIds,
-    msg: "Payload validado. Nenhuma gravação foi realizada.",
   });
 }

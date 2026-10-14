@@ -125,6 +125,7 @@ export default function MessengerPage() {
     const [conversaSel, setConversaSel] = useState<Conversa | null>(null);
     const [mensagens, setMensagens] = useState<Mensagem[]>([]);
     const [temMais, setTemMais] = useState(false);
+    const [fixadas, setFixadas] = useState<Mensagem[]>([]);
     const [busca, setBusca] = useState("");
     const [erro, setErro] = useState("");
     const [aviso, setAviso] = useState("");
@@ -164,14 +165,16 @@ export default function MessengerPage() {
         if (!manterMensagens) {
             setMensagens([]);
             setTemMais(false);
+            setFixadas([]);
         }
         const u = new URL(window.location.href);
         u.searchParams.set("conversa", String(id));
         window.history.replaceState(null, "", u.toString());
         try {
-            const d = await msgGet<{ conversa: Conversa; mensagens: Mensagem[]; tem_mais: boolean }>("mensagens", { conversa_id: id });
+            const d = await msgGet<{ conversa: Conversa; mensagens: Mensagem[]; tem_mais: boolean; fixadas?: Mensagem[] }>("mensagens", { conversa_id: id });
             if (selRef.current !== id) return;
             setConversaSel(d.conversa);
+            setFixadas(d.fixadas || []);
             setMensagens(d.mensagens);
             setTemMais(d.tem_mais);
             const ultimo = d.mensagens[d.mensagens.length - 1];
@@ -259,6 +262,8 @@ export default function MessengerPage() {
                     }
                 }
                 agendarRecarga();
+            } else if (nome === "fixadas") {
+                if (dados.conversa_id === aberta) setFixadas(dados.fixadas || []);
             } else if (nome === "reacao") {
                 // reação com emoji feita por alguém (ou por mim em outro aparelho)
                 if (dados.conversa_id === aberta) setMensagens((ms) => ms.map((x) => (x.id === dados.mensagem_id ? { ...x, reacoes: dados.reacoes || [] } : x)));
@@ -429,7 +434,19 @@ export default function MessengerPage() {
             const r = await msgPost("encaminhar", { mensagem_id: m.id, conversa_ids: ids });
             setAviso(r.dados.recusadas?.length ? `${r.msg} (${r.dados.recusadas.length} conversa(s) não aceitaram.)` : r.msg);
             carregarListas();
-            if (selId && ids.includes(selId)) abrirConversa(selId, true);
+            // como no WhatsApp: encaminhou para uma conversa só, ela abre com a mensagem encaminhada
+            const aceitas = ids.filter((i) => !(r.dados.recusadas || []).includes(i));
+            if (aceitas.length === 1) abrirConversa(aceitas[0], aceitas[0] === selId);
+            else if (selId && ids.includes(selId)) abrirConversa(selId, true);
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    };
+    const fixarMensagem = async (m: Mensagem, fixar: boolean) => {
+        try {
+            const r = await msgPost("fixar_mensagem", { mensagem_id: m.id, fixar });
+            setFixadas(r.dados.fixadas || []);
+            setAviso(r.msg);
         } catch (e: any) {
             setErro(e.message);
         }
@@ -625,6 +642,8 @@ export default function MessengerPage() {
                             onEnviarTexto={enviarTexto} onEnviarModelo={enviarModelo} onEnviarArquivo={enviarMidia} onApagar={apagar}
                             onReagir={reagir} onEncaminhar={(m) => { setParaEncaminhar(m); setModal("encaminhar"); }} onEnviarNota={enviarNota}
                             onEnviarLocalizacao={enviarLocalizacao} onPedirContato={() => setModal("contato")} onSalvarContato={salvarContato}
+                            fixadas={fixadas} onFixarMensagem={fixarMensagem}
+                            tecladoAberto={!!area && typeof window !== "undefined" && area.altura < window.innerHeight * 0.8}
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
                             onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}

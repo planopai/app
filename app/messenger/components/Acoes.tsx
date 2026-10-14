@@ -44,6 +44,8 @@ export function MenuMensagem(props: {
     onReagir?: (emoji: string) => void;
     onResponder?: () => void;
     onEncaminhar?: () => void;
+    onFixar?: () => void;
+    fixada?: boolean;
     onApagar?: () => void;
 }) {
     const ref = useFecharFora(true, props.onFechar);
@@ -70,6 +72,7 @@ export function MenuMensagem(props: {
             )}
             {props.onResponder && <button type="button" role="menuitem" onClick={fazer(props.onResponder)} className={itemMenu}><Icone nome="responder" className="h-5 w-5" />Responder</button>}
             {props.onEncaminhar && <button type="button" role="menuitem" onClick={fazer(props.onEncaminhar)} className={itemMenu}><Icone nome="encaminhar" className="h-5 w-5" />Encaminhar</button>}
+            {props.onFixar && <button type="button" role="menuitem" onClick={fazer(props.onFixar)} className={itemMenu}><Icone nome="pin" className="h-5 w-5" />{props.fixada ? "Desafixar" : "Fixar na conversa"}</button>}
             {props.m.texto && <button type="button" role="menuitem" onClick={fazer(copiar)} className={itemMenu}><Icone nome="copiar" className="h-5 w-5" />Copiar texto</button>}
             {props.onApagar && <button type="button" role="menuitem" onClick={fazer(props.onApagar)} className={`${itemMenu} !text-[#B42318] dark:!text-[#FF9C92]`}><Icone nome="trash" className="h-5 w-5" />Apagar</button>}
         </div>

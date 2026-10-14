@@ -84,7 +84,7 @@ function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
     );
 }
 
-function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null }) {
+function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque, onFixar, fixada }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null; onFixar?: (m: Mensagem) => void; fixada?: boolean }) {
     const [puxar, setPuxar] = useState(0);
     const [menu, setMenu] = useState(false);
     const toqueLongo = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,8 +125,9 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
     return (
         <div
             id={`msg-${m.id}`}
-            className={`group relative max-w-[85%] md:max-w-[65%] ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
-            style={{ transform: puxar ? `translateX(${puxar}px)` : undefined, transition: toque.current ? undefined : "transform .2s", touchAction: "pan-y" }}
+            // no celular o toque longo abre o menu sem selecionar o texto (copiar fica no menu); no computador dá para selecionar
+            className={`group relative max-w-[85%] select-none md:max-w-[65%] md:select-text ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
+            style={{ transform: puxar ? `translateX(${puxar}px)` : undefined, transition: toque.current ? undefined : "transform .2s", touchAction: "pan-y", WebkitTouchCallout: "none" }}
             onTouchStart={(e) => {
                 if (podeResponder) toque.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, horizontal: null };
                 // toque longo (meio segundo) abre o menu: reagir, responder, encaminhar, copiar, apagar
@@ -198,6 +199,8 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                     onReagir={onReagir && !m.interna ? (e) => onReagir(m, e) : undefined}
                     onResponder={podeResponder ? () => onResponder!(m) : undefined}
                     onEncaminhar={onEncaminhar && !m.interna && m.tipo !== "modelo" ? () => onEncaminhar(m) : undefined}
+                    onFixar={onFixar ? () => onFixar(m) : undefined}
+                    fixada={fixada}
                     onApagar={podeApagar ? () => onApagar(m) : undefined}
                 />
             )}
@@ -383,6 +386,11 @@ export default function JanelaConversa(props: {
     onEnviarLocalizacao?: () => void;
     onPedirContato?: () => void;
     onSalvarContato?: () => void;
+    /** mensagens fixadas no topo (até 3) e fixar/desafixar */
+    fixadas?: Mensagem[];
+    onFixarMensagem?: (m: Mensagem, fixar: boolean) => void;
+    /** celular com o teclado aberto: a barra de digitação encosta no teclado; fechado, fica acima da barra do iPhone */
+    tecladoAberto?: boolean;
     onDigitando: () => void;
     onAssumir: () => void;
     onTransferir: () => void;
@@ -397,6 +405,7 @@ export default function JanelaConversa(props: {
     const [buscando, setBuscando] = useState(false);
     const [termo, setTermo] = useState("");
     const [atual, setAtual] = useState(0);
+    const [fixadaAtual, setFixadaAtual] = useState(0);
     const [emoji, setEmoji] = useState(false);
     const [catEmoji, setCatEmoji] = useState("Rostos");
     const [gravando, setGravando] = useState(false);
@@ -440,6 +449,7 @@ export default function JanelaConversa(props: {
         setEmoji(false);
         setGravando(false);
         setModoNota(false);
+        setFixadaAtual(0);
         setBuscando(false);
         setTermo("");
     }, [c.id]);
@@ -477,6 +487,8 @@ export default function JanelaConversa(props: {
     // só dá para responder onde se pode escrever (cliente: só o responsável, com a janela de 24 h aberta)
     const podeEscrever = c.participo !== false && (c.tipo !== "externo" || (!!c.posso_responder && !!c.janela_aberta));
     const porId = new Map(mensagens.map((x) => [x.id, x]));
+    const fixadas = props.fixadas || [];
+    const idsFixadas = fixadas.map((x) => x.id);
     const responder = props.onResponder ? (m: Mensagem) => { props.onResponder!(m); setTimeout(() => campo.current?.focus(), 50); } : undefined;
     mensagens.forEach((m) => {
         const d = new Date(m.criado_em).toLocaleDateString("pt-BR");
@@ -486,7 +498,8 @@ export default function JanelaConversa(props: {
             itens.push(<div key={`d${m.id}`} className="my-2 self-center rounded-lg bg-white px-3 py-1 text-[13.5px] font-extrabold uppercase text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{d === hoje ? "Hoje" : d === ontem ? "Ontem" : d}</div>);
         }
         const autor = m.autor_tipo === "sistema" ? "" : `${m.autor_tipo}:${m.autor_usuario_id ?? m.autor_contato_id ?? ""}`;
-        itens.push(<Bolha key={m.cliente_uuid || m.id} m={m} conversa={c} eu={perfil.id} onApagar={props.onApagar} primeiraDoBloco={autor !== autorAnterior} citada={m.responde_a_id ? porId.get(m.responde_a_id) : null} onResponder={podeEscrever ? responder : undefined} onReagir={props.onReagir} onEncaminhar={props.onEncaminhar} destaque={m.id === idAtual ? "atual" : achados.includes(m.id) ? "outro" : null} />);
+        itens.push(<Bolha key={m.cliente_uuid || m.id} m={m} conversa={c} eu={perfil.id} onApagar={props.onApagar} primeiraDoBloco={autor !== autorAnterior} citada={m.responde_a_id ? porId.get(m.responde_a_id) : null} onResponder={podeEscrever ? responder : undefined} onReagir={props.onReagir} onEncaminhar={props.onEncaminhar} destaque={m.id === idAtual ? "atual" : achados.includes(m.id) ? "outro" : null}
+            onFixar={props.onFixarMensagem ? (x) => props.onFixarMensagem!(x, !idsFixadas.includes(x.id)) : undefined} fixada={idsFixadas.includes(m.id)} />);
         autorAnterior = autor;
     });
 
@@ -531,6 +544,32 @@ export default function JanelaConversa(props: {
                     </>
                 )}
             </div>
+            {fixadas.length > 0 && (() => {
+                const f = fixadas[Math.min(fixadaAtual, fixadas.length - 1)];
+                return (
+                    <div className="flex items-center gap-2 border-b border-[#E6E9EE] bg-white py-1 pl-3 pr-1 dark:border-white/12 dark:bg-[#232B3F]">
+                        <span className="flex flex-col gap-0.5 self-stretch py-1.5" aria-hidden="true">
+                            {fixadas.map((x, i) => <span key={x.id} className={`w-[3px] flex-1 rounded-full ${i === Math.min(fixadaAtual, fixadas.length - 1) ? "bg-[#3D6A99] dark:bg-[#A9BED6]" : "bg-[#C9D1DE] dark:bg-white/20"}`} />)}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                document.getElementById(`msg-${f.id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+                                setFixadaAtual((i) => (i + 1) % fixadas.length); // toque seguinte mostra a próxima, como no WhatsApp
+                            }}
+                            className="flex min-h-[48px] min-w-0 flex-1 items-center gap-2 text-left"
+                            aria-label={`Mensagem fixada: ${previa(f)}. Ir para a mensagem`}
+                        >
+                            <Icone nome="pin" className="h-[18px] w-[18px] flex-none text-[#5B6478] dark:text-[#AEB9CF]" />
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[12.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{fixadas.length > 1 ? `Fixada ${Math.min(fixadaAtual, fixadas.length - 1) + 1} de ${fixadas.length}` : "Mensagem fixada"}</span>
+                                <span className="block truncate text-[15px] text-[#1F2638] dark:text-white">{previa(f)}</span>
+                            </span>
+                        </button>
+                        {props.onFixarMensagem && <button type="button" onClick={() => props.onFixarMensagem!(f, false)} className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-[#5B6478] hover:bg-black/5 dark:text-[#AEB9CF]" aria-label="Desafixar esta mensagem" title="Desafixar"><Icone nome="x" className="h-4 w-4" /></button>}
+                    </div>
+                );
+            })()}
             {buscando && (
                 <BarraBusca
                     termo={termo}
@@ -606,7 +645,7 @@ export default function JanelaConversa(props: {
                             <button type="button" onClick={() => props.onResponder?.(null)} className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-[#5B6478] hover:bg-black/5 dark:text-[#AEB9CF]" aria-label="Cancelar resposta"><Icone nome="x" className="h-5 w-5" /></button>
                         </div>
                     )}
-                    <div className="flex items-end gap-1.5 px-2 pb-2 pt-1.5 md:px-4">
+                    <div className="flex items-end gap-1.5 px-2 pt-1.5 md:px-4 md:!pb-2" style={{ paddingBottom: props.tecladoAberto ? 8 : "calc(env(safe-area-inset-bottom, 0px) + 14px)" }}>
                         {gravando ? (
                             <Gravador mp3={externo} onCancelar={() => setGravando(false)} onPronto={(b, mime, seg) => { setGravando(false); props.onEnviarArquivo(b, { mime, duracao_s: seg }); }} />
                         ) : (
@@ -629,7 +668,7 @@ export default function JanelaConversa(props: {
                                         }}
                                         onChange={(e) => aoDigitar(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); enviar(); } }}
-                                        placeholder={modoNota ? "Nota interna (só a equipe vê)" : externo ? "Responder pelo WhatsApp  ·  / para respostas rápidas" : "Mensagem  ·  / para respostas rápidas"}
+                                        placeholder={modoNota ? "Nota interna" : externo ? "Responder pelo WhatsApp" : "Mensagem"}
                                         aria-label="Mensagem"
                                         className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-[13px] text-[18px] leading-7 text-[#1F2638] outline-none dark:text-white"
                                     />
