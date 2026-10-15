@@ -6,6 +6,8 @@ import {
     IconChevronDown,
     IconChevronLeft,
     IconChevronRight,
+    IconEye,
+    IconEyeOff,
     IconFilter,
     IconMaximize,
     IconMinimize,
@@ -92,6 +94,23 @@ type InitResp = {
 };
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
+
+/**
+ * 15/10/2026: a Consulta mostra só o que a empresa vende (é a tela para mostrar ao cliente).
+ * Entram as classificações abaixo (pelo nome do cadastro); uso e consumo, insumos e ativo imobilizado ficam de fora,
+ * e produto sem classificação também. Se os nomes não forem achados, valem os ids do cadastro (3, 6 e 5).
+ */
+const CLASSES_VENDA = ["MERCADORIA PARA REVENDA", "PRODUTO ACABADO", "SERVICOS"];
+const CLASSES_VENDA_IDS_RESERVA = [3, 6, 5];
+
+function normalizarNome(v: string) {
+    return String(v || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toUpperCase();
+}
 const API_BASE = `${ENDPOINT}/materiais_gerais.php`;
 const IMG_BASE = ENDPOINT;
 
@@ -552,9 +571,6 @@ function FilterModal({
     fabricantes,
     fabFiltroEstoque,
     setFabFiltroEstoque,
-    classificacoes,
-    classFiltroEstoque,
-    setClassFiltroEstoque,
     onlyLow,
     setOnlyLow,
     onlyPositive,
@@ -575,9 +591,6 @@ function FilterModal({
     fabricantes: Fabricante[];
     fabFiltroEstoque: ID[];
     setFabFiltroEstoque: (ids: ID[]) => void;
-    classificacoes: Classificacao[];
-    classFiltroEstoque: ID[];
-    setClassFiltroEstoque: (ids: ID[]) => void;
     onlyLow: boolean;
     setOnlyLow: (v: boolean) => void;
     onlyPositive: boolean;
@@ -669,7 +682,6 @@ function FilterModal({
                 onChangeIds={setFabFiltroEstoque}
                 allLabel="Todos"
             />
-            <ChipsMulti label="Classificação" options={classificacoes} selectedIds={classFiltroEstoque} onChangeIds={setClassFiltroEstoque} />
         </Janela>
     );
 }
@@ -696,6 +708,8 @@ function ProdutoDetalhesModal({
 }) {
     const [idx, setIdx] = useState(0);
     const [full, setFull] = useState(false);
+    /* 15/10/2026: o preço não fica exposto; aparece só ao tocar em "Ver preço" e volta a esconder a cada produto aberto. */
+    const [verPreco, setVerPreco] = useState(false);
 
     const fotos = useMemo(
         () =>
@@ -709,6 +723,7 @@ function ProdutoDetalhesModal({
         if (open) {
             setIdx(0);
             setFull(false);
+            setVerPreco(false);
         }
     }, [open, produto?.id]);
 
@@ -828,11 +843,15 @@ function ProdutoDetalhesModal({
                         )}
                     </div>
 
-                    {/* PREÇO E DISTRIBUIÇÃO */}
+                    {/* DESCRIÇÃO, DISTRIBUIÇÃO E PREÇO (15/10/2026: preço num botão discreto no fim) */}
                     <div className="flex min-w-0 flex-col gap-4">
-                        <div className="rounded-[14px] border border-[#E3E8F0] bg-[#F6F8FB] px-4 py-3 dark:border-white/[0.12] dark:bg-[#1C2334]">
-                            <div className={KV_CLS}>Preço de venda</div>
-                            <div className="text-[30px] font-extrabold leading-tight">{moneyBRL(Number(produto.valor) || 0)}</div>
+                        <div>
+                            <div className={[KV_CLS, "mb-2"].join(" ")}>Descrição</div>
+                            {String(produto.descricao || "").trim() ? (
+                                <p className="whitespace-pre-line text-[15px] leading-relaxed">{String(produto.descricao).trim()}</p>
+                            ) : (
+                                <p className="text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">Sem descrição.</p>
+                            )}
                         </div>
 
                         <div>
@@ -865,6 +884,22 @@ function ProdutoDetalhesModal({
                                     ))}
                                 </div>
                             )}
+                        </div>
+
+                        <div className="flex min-h-11 items-center justify-end gap-2">
+                            {verPreco ? (
+                                <span className="text-[15px] font-extrabold tabular-nums">{moneyBRL(Number(produto.valor) || 0)}</span>
+                            ) : null}
+                            <button
+                                type="button"
+                                onClick={() => setVerPreco((v) => !v)}
+                                aria-label={verPreco ? "Esconder preço" : "Ver preço"}
+                                aria-pressed={verPreco}
+                                className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-[13px] font-bold text-[#5B6478] hover:bg-[#EEF2F7] dark:text-[#AEB9CF] dark:hover:bg-white/[0.08]"
+                            >
+                                {verPreco ? <IconEyeOff size={18} stroke={1.8} aria-hidden="true" /> : <IconEye size={18} stroke={1.8} aria-hidden="true" />}
+                                {verPreco ? "" : "Ver preço"}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -962,7 +997,6 @@ export default function Page() {
     const [depFiltroEstoque, setDepFiltroEstoque] = useState<ID[]>([]);
     const [catFiltroEstoque, setCatFiltroEstoque] = useState<ID[]>([]);
     const [fabFiltroEstoque, setFabFiltroEstoque] = useState<ID[]>([]);
-    const [classFiltroEstoque, setClassFiltroEstoque] = useState<ID[]>([]);
     const [onlyLow, setOnlyLow] = useState(false);
     const [onlyPositive, setOnlyPositive] = useState(false);
     const [filterOpen, setFilterOpen] = useState(false);
@@ -986,10 +1020,22 @@ export default function Page() {
         () => new Map(fabricantes.map((f) => [f.id, f])),
         [fabricantes],
     );
-    const classById = useMemo(
-        () => new Map(classificacoes.map((c) => [c.id, c])),
-        [classificacoes],
-    );
+    /* Classificações que entram na Consulta (produtos de venda). */
+    const classesVenda = useMemo(() => {
+        const ids = classificacoes.filter((c) => CLASSES_VENDA.includes(normalizarNome(c.nome))).map((c) => Number(c.id));
+        return new Set<number>(ids.length ? ids : CLASSES_VENDA_IDS_RESERVA);
+    }, [classificacoes]);
+    const ehDeVenda = useCallback((p: Produto) => classesVenda.has(Number(p.classificacao_id || 0)), [classesVenda]);
+
+    /* Categorias e fabricantes dos filtros: só os que têm produto de venda. */
+    const categoriasVenda = useMemo(() => {
+        const usados = new Set(produtos.filter(ehDeVenda).map((p) => Number(p.categoria_id || 0)));
+        return categorias.filter((c) => usados.has(Number(c.id)));
+    }, [categorias, produtos, ehDeVenda]);
+    const fabricantesVenda = useMemo(() => {
+        const usados = new Set(produtos.filter(ehDeVenda).map((p) => Number(p.fabricante_id || 0)));
+        return fabricantes.filter((f) => usados.has(Number(f.id)));
+    }, [fabricantes, produtos, ehDeVenda]);
 
     async function refreshInit() {
         setLoading(true);
@@ -1042,9 +1088,6 @@ export default function Page() {
         const fabSet = fabFiltroEstoque.length
             ? new Set(fabFiltroEstoque.map(Number))
             : null;
-        const clsSet = classFiltroEstoque.length
-            ? new Set(classFiltroEstoque.map(Number))
-            : null;
 
         const porProduto = new Map<ID, { p: Produto; total: number; low: boolean }>();
 
@@ -1056,7 +1099,7 @@ export default function Page() {
             if (depSet && !depSet.has(d.id)) continue;
             if (catSet && !catSet.has(Number(p.categoria_id || 0))) continue;
             if (fabSet && !fabSet.has(Number(p.fabricante_id || 0))) continue;
-            if (clsSet && !clsSet.has(Number(p.classificacao_id || 0))) continue;
+            if (!ehDeVenda(p)) continue;
 
             const qtd = clampInt(s.quantidade);
             const min = clampInt((s as any).minimo ?? 0);
@@ -1086,7 +1129,7 @@ export default function Page() {
         depFiltroEstoque,
         catFiltroEstoque,
         fabFiltroEstoque,
-        classFiltroEstoque,
+        ehDeVenda,
         onlyLow,
         onlyPositive,
     ]);
@@ -1131,7 +1174,6 @@ export default function Page() {
         setDepFiltroEstoque([]);
         setCatFiltroEstoque([]);
         setFabFiltroEstoque([]);
-        setClassFiltroEstoque([]);
         setOnlyLow(false);
         setOnlyPositive(false);
     }
@@ -1141,12 +1183,11 @@ export default function Page() {
         (onlyPositive ? 1 : 0) +
         (depFiltroEstoque.length ? 1 : 0) +
         (catFiltroEstoque.length ? 1 : 0) +
-        (fabFiltroEstoque.length ? 1 : 0) +
-        (classFiltroEstoque.length ? 1 : 0);
+        (fabFiltroEstoque.length ? 1 : 0);
 
     const contagem = loading ? "Carregando..." : `${produtosAgregados.length} produto(s) encontrado(s).`;
     const vazio = !loading && produtosAgregados.length === 0;
-    const DESK_COLS = "grid-cols-[3fr_1.7fr_1fr_.7fr_1.1fr]";
+    const DESK_COLS = "grid-cols-[3fr_1.7fr_1fr_.7fr]";
     const thCls = "text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
 
     const nomeCategoria = (p: Produto) =>
@@ -1228,7 +1269,6 @@ export default function Page() {
                                     <div className={thCls}>Categoria</div>
                                     <div className={thCls}>Fabricante</div>
                                     <div className={[thCls, "text-right"].join(" ")}>Qtd</div>
-                                    <div className={[thCls, "text-right"].join(" ")}>Valor un.</div>
                                 </div>
                             </div>
 
@@ -1263,7 +1303,6 @@ export default function Page() {
                                         <span className="text-[13px]">{nomeCategoria(p)}</span>
                                         <span className="text-[13px]">{nomeFabricante(p)}</span>
                                         <span className="text-right text-lg font-extrabold">{total}</span>
-                                        <span className="text-right">{moneyBRL(Number(p.valor) || 0)}</span>
                                     </span>
                                 </button>
                             ))}
@@ -1293,14 +1332,13 @@ export default function Page() {
                                 <span className="block min-w-0 flex-1">
                                     <span className="block text-[15px] font-extrabold leading-tight">{p.nome}</span>
                                     <span className="mt-0.5 block truncate text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{nomeCategoria(p)}</span>
-                                    <span className="mt-0.5 flex items-center gap-2 text-[12.5px] font-bold">
-                                        {moneyBRL(Number(p.valor) || 0)}
-                                        {low ? (
+                                    {low ? (
+                                        <span className="mt-0.5 flex items-center gap-2 text-[12.5px] font-bold">
                                             <span className="inline-flex h-5 items-center rounded-full bg-[#F2CB3F] px-2 text-[11.5px] font-extrabold text-[#313C55]">
                                                 alerta
                                             </span>
-                                        ) : null}
-                                    </span>
+                                        </span>
+                                    ) : null}
                                 </span>
                                 <span className="min-w-11 shrink-0 text-right">
                                     <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">Qtd</span>
@@ -1326,15 +1364,12 @@ export default function Page() {
                 depositos={depositos}
                 depFiltroEstoque={depFiltroEstoque}
                 setDepFiltroEstoque={setDepFiltroEstoque}
-                categorias={categorias}
+                categorias={categoriasVenda}
                 catFiltroEstoque={catFiltroEstoque}
                 setCatFiltroEstoque={setCatFiltroEstoque}
-                fabricantes={fabricantes}
+                fabricantes={fabricantesVenda}
                 fabFiltroEstoque={fabFiltroEstoque}
                 setFabFiltroEstoque={setFabFiltroEstoque}
-                classificacoes={classificacoes}
-                classFiltroEstoque={classFiltroEstoque}
-                setClassFiltroEstoque={setClassFiltroEstoque}
                 onlyLow={onlyLow}
                 setOnlyLow={setOnlyLow}
                 onlyPositive={onlyPositive}
