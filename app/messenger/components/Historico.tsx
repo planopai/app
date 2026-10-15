@@ -14,7 +14,7 @@ import { Icone } from "./Lista";
 
 type Item = {
     id: number; conversa_id: number; cliente: { nome: string | null; telefone: string }; responsavel: { id: number; nome: string } | null;
-    aberto_em: string; encerrado_em: string; encerrado_por: string | null; mensagens: number;
+    aberto_em: string; encerrado_em: string; encerrado_por: string | null; mensagens: number; avaliacao?: number | null;
 };
 type Detalhe = {
     atendimento: { id: number; status: string; aberto_em: string; encerrado_em: string | null; cliente: { nome: string | null; telefone: string } };
@@ -100,7 +100,7 @@ export default function HistoricoClientes({ embutido = false, onVoltar }: { embu
                             <button key={a.id} type="button" onClick={() => abrir(a.id)} className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-[#E3E8F0] px-4 py-3 text-left text-sm md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_60px] dark:border-white/12 ${sel?.atendimento.id === a.id ? "bg-[#E9EFF6] dark:bg-[#3D6A99]/20" : "hover:bg-[#EEF2F7] dark:hover:bg-white/10"}`}>
                                 <span className="min-w-0"><span className="block truncate font-extrabold">{a.cliente.nome || a.cliente.telefone}</span><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{a.cliente.telefone}</span></span>
                                 <span className="hidden truncate md:block">{a.responsavel?.nome || "—"}</span>
-                                <span className="text-[13px]">{dataHora(a.encerrado_em)}</span>
+                                <span className="text-[13px]">{dataHora(a.encerrado_em)}{a.avaliacao ? <b className="ml-1.5 whitespace-nowrap text-[#8A6A00] dark:text-[#F7E39A]" title={`Avaliação do cliente: ${a.avaliacao} de 5`}>★ {a.avaliacao}</b> : null}</span>
                                 <span className="hidden text-right font-extrabold md:block">{a.mensagens}</span>
                             </button>
                         ))}

@@ -89,10 +89,11 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
     const [menu, setMenu] = useState(false);
     const toqueLongo = useRef<ReturnType<typeof setTimeout> | null>(null);
     const toque = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
-    if (m.autor_tipo === "sistema") {
+    const automatica = m.autor_tipo === "sistema" && m.tipo !== "sistema"; // pacote 4B: boas-vindas, menu, fora do horário, avaliação
+    if (m.autor_tipo === "sistema" && !automatica) {
         return <div className="my-1 self-center rounded-lg bg-white/90 px-3 py-1 text-center text-[14px] font-bold text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{m.texto}</div>;
     }
-    const minha = m.autor_tipo === "usuario" && m.autor_usuario_id === eu;
+    const minha = (m.autor_tipo === "usuario" && m.autor_usuario_id === eu) || automatica;
     const hora = new Date(m.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     let leitura: React.ReactNode = null;
     if (minha && !m.apagada) {
@@ -164,6 +165,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                 </span>
             )}
             <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${m.interna ? "border border-dashed border-[#C9A21E] bg-[#FFF4C2] dark:border-[#F2CB3F]/60 dark:bg-[#4A3F12] dark:text-white" : minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
+                {automatica && <div className="mb-0.5 text-[12.5px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">🤖 Mensagem automática</div>}
                 {m.interna && <div className="mb-0.5 flex items-center gap-1 text-[12.5px] font-extrabold uppercase tracking-wide text-[#8A6A00] dark:text-[#F7E39A]"><Icone nome="nota" className="h-3.5 w-3.5" />Nota interna · só a equipe vê{!minha && m.autor_nome ? ` · ${m.autor_nome.split(" ")[0]}` : ""}</div>}
                 {temMenu && (
                     <button type="button" onClick={() => setMenu((v) => !v)} className={`absolute right-1 top-1 z-10 hidden h-7 w-7 items-center justify-center rounded-full bg-black/10 text-[#313C55] md:group-hover:flex dark:bg-white/15 dark:text-white ${menu ? "md:flex" : ""}`} aria-label="Opções da mensagem" aria-expanded={menu}>
