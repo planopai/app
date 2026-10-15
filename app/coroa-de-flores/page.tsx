@@ -1019,7 +1019,7 @@ function CameraCaptureDialog({
 
     return (
         <NoCorpo>
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3">
             <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-950">
                 <div className="flex items-center justify-between border-b px-4 py-3">
                     <div className="font-semibold">Tirar foto</div>
