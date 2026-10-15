@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
         const { data: registro, error } = await supabase
           .schema("pai")
           .from("sepultamentos")
-          .select("id,status,cancelado_em")
+          .select("*")
           .eq("id", id)
           .maybeSingle();
 
@@ -313,10 +313,49 @@ export async function POST(request: NextRequest) {
 
         statusAtual = String(registro.status ?? "");
         obrigatoriedadeAtiva = obrigatoriedadeAtivaPorStatus(statusAtual);
+
+        // Edição é parcial (PATCH): para validar regras posteriores,
+        // combine o estado existente com os campos enviados pelo cliente.
+        const payloadValidacao: Record<string, any> = {
+          ...registro,
+          ...payload,
+        };
+
+        try {
+          await aplicarRegrasAtendimento(
+            payloadValidacao,
+            obrigatoriedadeAtiva,
+            coroaRepositorySupabase,
+          );
+
+          // Mantém no payload real somente as chaves que o cliente enviou,
+          // mas aproveita normalizações feitas pelo pipeline.
+          for (const key of Object.keys(payload)) {
+            if (Object.prototype.hasOwnProperty.call(payloadValidacao, key)) {
+              payload[key] = payloadValidacao[key];
+            }
+          }
+        } catch (error) {
+          if (error instanceof RegraNegocioError) {
+            return NextResponse.json(
+              {
+                sucesso: false,
+                erro: true,
+                ...(error.codigo ? { codigo: error.codigo } : {}),
+                ...(error.detalhes !== undefined ? { detalhes: error.detalhes } : {}),
+                msg: error.message,
+              },
+              { status: error.status },
+            );
+          }
+          throw error;
+        }
       }
 
       try {
-        await aplicarRegrasAtendimento(payload, obrigatoriedadeAtiva, coroaRepositorySupabase);
+        if (acao === "novo") {
+          await aplicarRegrasAtendimento(payload, obrigatoriedadeAtiva, coroaRepositorySupabase);
+        }
       } catch (error) {
         if (error instanceof RegraNegocioError) {
           return NextResponse.json(
