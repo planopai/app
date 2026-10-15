@@ -157,7 +157,7 @@ function jsonError(msg: string, status: number, codigo?: string) {
 
 export async function GET(request: NextRequest) {
   const auth = await resolverUsuario(request);
-  if ("error" in auth) return jsonError(auth.error, auth.status);
+  if ("error" in auth) return jsonError(String(auth.error), Number(auth.status ?? 401));
 
   const { usuario, cargo } = auth;
   const { searchParams } = new URL(request.url);
@@ -253,7 +253,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const auth = await resolverUsuario(request);
-  if ("error" in auth) return jsonError(auth.error, auth.status);
+  if ("error" in auth) return jsonError(String(auth.error), Number(auth.status ?? 401));
 
   const { usuario, cargo } = auth;
   if (!(await temPermissaoAtendimento(Number(usuario.id), Number(cargo.id)))) {
