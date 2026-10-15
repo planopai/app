@@ -495,6 +495,8 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
                                 </span>
 
+                                {h.nota ? <span className="cbx">{h.nota}</span> : null}
+
                                 <span className="cbx">
 
                                     {h.dt} · {h.u} · {h.rota}
@@ -651,7 +653,14 @@ export function AbaHistorico({ v, m }: { v: HistoricoV; m: boolean }) {
 
                         <button type="button" className="gr hov rowbtn2" onClick={h.go} aria-expanded={h.aberto}>
 
-                            <span className="pn">{h.cod}</span>
+                            <span className="pn">
+                                {h.cod}
+                                {h.nota ? (
+                                    <span className="tx2" style={{ display: "block", fontSize: "12px", fontWeight: 500, marginTop: "2px" }}>
+                                        {h.nota}
+                                    </span>
+                                ) : null}
+                            </span>
 
                             <span className="tx2">{h.dt}</span>
 

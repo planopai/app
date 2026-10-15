@@ -36,7 +36,8 @@ type Tipo = "ENTRADA" | "SAIDA" | "TRANSFERENCIA" | "CONFECCAO" | "AJUSTE";
 
 type Item = { n: string; q: number | null; local?: string; cu?: number | null };
 
-type Lancamento = { chave: string; cod: string; sub?: string; t: Tipo; o: string; d: string; u: string; quando: string; itens: Item[]; frete: number };
+/** atend: saída para atendimento (Origem → Destino mostra o local de saída → falecido). nota: explicação curta abaixo do lançamento. */
+type Lancamento = { chave: string; cod: string; atend?: boolean; nota?: string; t: Tipo; o: string; d: string; u: string; quando: string; itens: Item[]; frete: number };
 
 const ROTULO: Record<Tipo, string> = { ENTRADA: "Entrada", SAIDA: "Saída", TRANSFERENCIA: "Transferência", CONFECCAO: "Confecção", AJUSTE: "Ajuste" };
 
@@ -100,7 +101,23 @@ const quando = (iso: string) => {
 
 };
 
+/** Nome do falecido: vem do servidor (falecido_nome); sem ele, tenta a observação "Falecido(a): NOME"; sem os dois, "Atendimento #N". */
+function nomeFalecido(h: HistoricoRow, atendId: string): string {
+    const obsFal = String(h.observacao || "").match(/Falecido\(a\):\s*([^|]+)/i);
+    const fal = String(h.falecido_nome || "").trim() || (obsFal ? obsFal[1].trim() : "");
+    return fal ? titulo(fal) : `Atendimento #${atendId}`;
+}
+
 const titulo = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, (w) => w.toLowerCase());
+
+/** Origem → Destino. Saída para atendimento: local de saída → falecido (só o nome quando saiu de mais de um local). */
+function rotaDe(l: Lancamento): string {
+    if (l.atend) {
+        const locais = Array.from(new Set(l.itens.map((i) => i.local || "").filter(Boolean)));
+        return locais.length === 1 ? `${locais[0]} → ${l.d}` : l.d;
+    }
+    return l.o && l.d ? `${l.o} → ${l.d}` : l.d || l.o;
+}
 
 function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
@@ -158,13 +175,26 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
         } else if (atend && h.tipo === "SAIDA") {
 
+            // 15/10/2026: Lançamento = nome do falecido; Origem → Destino = local de saída → nome do falecido.
             chave = `A:${atend[1]}:${segundo(h.criado_em)}`;
 
-            // Nome do falecido: vem do servidor (falecido_nome); sem ele, tenta a observação "Falecido(a): NOME".
-            const obsFal = String(h.observacao || "").match(/Falecido\(a\):\s*([^|]+)/i);
-            const fal = String(h.falecido_nome || "").trim() || (obsFal ? obsFal[1].trim() : "");
+            const nome = nomeFalecido(h, atend[1]);
 
-            base = { chave, cod: fal ? `Atendimento: ${titulo(fal)}` : `Atendimento #${atend[1]}`, sub: `Atendimento #${atend[1]}`, t: "SAIDA", o: "", d: "", u: h.operador_nome || "", quando: h.criado_em };
+            base = { chave, cod: nome, atend: true, t: "SAIDA", o: "", d: nome, u: h.operador_nome || "", quando: h.criado_em };
+
+        } else if (atend && h.tipo === "ENTRADA") {
+
+            // Entrada ligada a um atendimento = devolução ao estoque. Hoje acontece quando a Gestão troca um item
+            // depois do Corpo Pronto: o item antigo volta (estorno da saída) e o novo sai. Antes caía no "#id" sem explicação.
+            chave = `AE:${atend[1]}:${segundo(h.criado_em)}`;
+
+            const nome = nomeFalecido(h, atend[1]);
+
+            const nota = h.estorno_de_id
+                ? `Devolução ao estoque: item trocado no atendimento (desfaz a saída #${h.estorno_de_id})`
+                : "Devolução ao estoque de item do atendimento";
+
+            base = { chave, cod: nome, nota, t: "ENTRADA", o: nome, d: h.deposito_destino_nome || "", u: h.operador_nome || "", quando: h.criado_em };
 
         } else if (tipo === "AJUSTE" && (q == null || h.tipo === "CADASTRO_PRODUTO")) {
 
@@ -176,7 +206,7 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
             chave = ["M", h.tipo, segundo(h.criado_em), h.operador_usuario_id || 0, h.solicitante_usuario_id || 0, h.deposito_origem_id || 0, h.deposito_destino_id || 0, dest, h.observacao || ""].join("|");
 
-            base = { chave, cod: `#${h.id}`, t: tipo, o: h.deposito_origem_nome || "", d: h.deposito_destino_nome || dest, u: h.operador_nome || "", quando: h.criado_em };
+            base = { chave, cod: `#${h.id}`, nota: h.estorno_de_id ? `Estorno do lançamento #${h.estorno_de_id}` : undefined, t: tipo, o: h.deposito_origem_nome || "", d: h.deposito_destino_nome || dest, u: h.operador_nome || "", quando: h.criado_em };
 
         }
 
@@ -395,7 +425,9 @@ export function useHistorico(n: EstoqueDados) {
 
             tl: ROTULO[l.t],
 
-            rota: l.sub ? l.sub : l.o && l.d ? `${l.o} → ${l.d}` : l.d || l.o,
+            rota: rotaDe(l),
+
+            nota: l.nota || "",
 
             comES,
 
