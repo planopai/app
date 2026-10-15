@@ -91,6 +91,8 @@ type Orcamento = {
     status?: string;
     valorTotal?: number;
     observacoes?: string;
+    formaPagamento?: string;
+    pagamentoObs?: string;
 
     itens: OrcamentoItem[];
 };
@@ -114,6 +116,21 @@ type FluxoStep = {
 
 const API_URL = "https://api.planoassistencialintegrado.com.br/pai_api.php";
 const CATALOGO_API_URL = "https://api.planoassistencialintegrado.com.br/catalogo_api.php";
+
+// Forma de pagamento combinada no orçamento (só informação; não gera cobrança)
+const FORMAS_PAGAMENTO = ["PIX", "Dinheiro", "Cartão de débito", "Cartão de crédito", "Nota promissória"];
+const FORMA_CREDITO = "Cartão de crédito";
+const PARCELAS_MAX = 24;
+
+function montarFormaPagamento(formas: string[], parcelas: string): string {
+    return FORMAS_PAGAMENTO.filter((f) => formas.includes(f))
+        .map((f) => {
+            if (f !== FORMA_CREDITO) return f;
+            const n = Math.floor(Number(parcelas) || 0);
+            return n > 1 ? `${f} em ${n}x` : `${f} à vista`;
+        })
+        .join(" + ");
+}
 
 const BG_IMAGE = "https://pai.planoassistencialintegrado.com.br/catalogo.png";
 const LOGO_URL_UI = "https://pai.planoassistencialintegrado.com.br/logo.png";
@@ -269,6 +286,8 @@ function mapOrcamentoRowToState(r: any): Orcamento {
         status: r?.status ? String(r.status) : undefined,
         valorTotal: Number(r?.valor_total ?? r?.valorTotal) || 0,
         observacoes: r?.observacoes ? String(r.observacoes) : undefined,
+        formaPagamento: r?.forma_pagamento ? String(r.forma_pagamento) : undefined,
+        pagamentoObs: r?.pagamento_obs ? String(r.pagamento_obs) : undefined,
         itens: [],
     };
 }
@@ -611,6 +630,10 @@ export default function Page() {
     const [formFalecido, setFormFalecido] = useState("");
     const [formTel, setFormTel] = useState("");
 
+    const [formPagFormas, setFormPagFormas] = useState<string[]>([]);
+    const [formPagParcelas, setFormPagParcelas] = useState("1");
+    const [formPagObs, setFormPagObs] = useState("");
+
     const [openConcluir, setOpenConcluir] = useState(false);
     const [savingOrcamento, setSavingOrcamento] = useState(false);
 
@@ -674,6 +697,11 @@ export default function Page() {
             const falecido = String(parsed?.formFalecido ?? "");
             const telefone = String(parsed?.formTel ?? "");
             const itens = Array.isArray(parsed?.draftItens) ? parsed.draftItens : [];
+            const pagFormas = Array.isArray(parsed?.formPagFormas)
+                ? parsed.formPagFormas.map((x: any) => String(x)).filter((x: string) => FORMAS_PAGAMENTO.includes(x))
+                : [];
+            const pagParcelas = String(parsed?.formPagParcelas ?? "1");
+            const pagObs = String(parsed?.formPagObs ?? "");
 
             if (
                 operador &&
@@ -691,6 +719,9 @@ export default function Page() {
             setFormResp(responsavel);
             setFormFalecido(falecido);
             setFormTel(telefone);
+            setFormPagFormas(pagFormas);
+            setFormPagParcelas(pagParcelas || "1");
+            setFormPagObs(pagObs);
             setDraftItens(
                 itens.map((x: any) => ({
                     produtoId: Number(x?.produtoId) || 0,
@@ -728,12 +759,15 @@ export default function Page() {
                     formFalecido,
                     formTel,
                     draftItens,
+                    formPagFormas,
+                    formPagParcelas,
+                    formPagObs,
                 })
             );
         } catch {
             // ignore
         }
-    }, [operadorSel, formResp, formFalecido, formTel, draftItens]);
+    }, [operadorSel, formResp, formFalecido, formTel, draftItens, formPagFormas, formPagParcelas, formPagObs]);
 
     useEffect(() => {
         try {
@@ -1351,6 +1385,18 @@ export default function Page() {
             return alert("Dados da homenagem incompletos.");
         }
 
+        if (formPagFormas.length === 0) {
+            return alert("Informe a forma de pagamento combinada.");
+        }
+        if (formPagFormas.includes(FORMA_CREDITO)) {
+            const n = Math.floor(Number(formPagParcelas) || 0);
+            if (n < 1 || n > PARCELAS_MAX) {
+                return alert(`Informe o número de parcelas do cartão de crédito (1 a ${PARCELAS_MAX}).`);
+            }
+        }
+        const formaPagamento = montarFormaPagamento(formPagFormas, formPagParcelas);
+        const pagamentoObs = formPagObs.trim();
+
         try {
             setSavingOrcamento(true);
 
@@ -1360,6 +1406,8 @@ export default function Page() {
                 responsavel,
                 falecido,
                 telefone,
+                forma_pagamento: formaPagamento,
+                pagamento_obs: pagamentoObs,
                 itens: draftItens.map((x) => ({
                     produto_id: x.produtoId,
                     nome: x.nome,
@@ -1390,6 +1438,9 @@ export default function Page() {
             setFormResp("");
             setFormFalecido("");
             setFormTel("");
+            setFormPagFormas([]);
+            setFormPagParcelas("1");
+            setFormPagObs("");
 
             resetFluxoState();
 
@@ -1416,7 +1467,7 @@ export default function Page() {
         } finally {
             setSavingOrcamento(false);
         }
-    }, [operadorSel, formResp, formFalecido, formTel, draftItens, fetchOrcamentos, resetFluxoState]);
+    }, [operadorSel, formResp, formFalecido, formTel, draftItens, formPagFormas, formPagParcelas, formPagObs, fetchOrcamentos, resetFluxoState]);
 
     const openOrcamentoResumo = useCallback(
         async (id: string) => {
@@ -2217,6 +2268,16 @@ export default function Page() {
                                 <div className="resumoLine">
                                     <b>Telefone:</b> {orcamentoSelecionado.telefone}
                                 </div>
+                                {orcamentoSelecionado.formaPagamento ? (
+                                    <div className="resumoLine">
+                                        <b>Pagamento:</b> {orcamentoSelecionado.formaPagamento}
+                                    </div>
+                                ) : null}
+                                {orcamentoSelecionado.pagamentoObs ? (
+                                    <div className="resumoLine">
+                                        <b>Obs. pagamento:</b> {orcamentoSelecionado.pagamentoObs}
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div className="resumoDate">
@@ -2513,6 +2574,56 @@ export default function Page() {
                         <div className="reviewLine">
                             <b>Operador:</b> {operadorSel ? `${operadorSel.nome} (@${operadorSel.usuario})` : "-"}
                         </div>
+                    </div>
+                </div>
+
+                <div className="pagBox">
+                    <div className="pagTitulo">FORMA DE PAGAMENTO COMBINADA</div>
+                    <div className="pagChips">
+                        {FORMAS_PAGAMENTO.map((f) => {
+                            const on = formPagFormas.includes(f);
+                            return (
+                                <button
+                                    key={f}
+                                    type="button"
+                                    className={cn("pagChip", on && "pagChipOn")}
+                                    aria-pressed={on}
+                                    onClick={() =>
+                                        setFormPagFormas((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]))
+                                    }
+                                >
+                                    {on ? "✓ " : ""}
+                                    {f}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="pagCampos">
+                        {formPagFormas.includes(FORMA_CREDITO) ? (
+                            <label className="formField pagParcelas">
+                                <span>PARCELAS NO CRÉDITO</span>
+                                <input
+                                    value={formPagParcelas}
+                                    onChange={(e) => setFormPagParcelas(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                                    className="formInput"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="1"
+                                />
+                            </label>
+                        ) : null}
+
+                        <label className="formField pagObs">
+                            <span>OBSERVAÇÃO DO PAGAMENTO</span>
+                            <input
+                                value={formPagObs}
+                                onChange={(e) => setFormPagObs(e.target.value.slice(0, 255))}
+                                className="formInput"
+                                placeholder="Ex.: entrada de R$ 500 no PIX e o restante no cartão"
+                            />
+                        </label>
                     </div>
                 </div>
 
@@ -3734,6 +3845,37 @@ const css = `
 
   .reviewLine{ font-weight: 900; }
 
+  .pagBox{
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    display:grid;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .pagTitulo{ font-size: 12px; letter-spacing: 0.6px; font-weight: 900; color: rgba(255,255,255,0.95); }
+  .pagChips{ display:flex; flex-wrap: wrap; gap: 8px; }
+  .pagChip{
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.95);
+    font-weight: 900;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .pagChipOn{
+    background: rgba(255,255,255,0.92);
+    border-color: rgba(255,255,255,0.92);
+    color: #0b2b4d;
+  }
+  .pagCampos{ display:grid; grid-template-columns: 160px 1fr; gap: 10px; }
+  .pagCampos .pagObs:only-child{ grid-column: 1 / -1; }
+  .pagParcelas .formInput, .pagObs .formInput{ font-size: 16px; }
+
   .reviewWrap{
     display:grid;
     gap: 12px;
@@ -3958,6 +4100,7 @@ const css = `
   .stepBtn{ min-width: 0; width: 100%; }
 
   .reviewHeaderRow{ grid-template-columns: 1fr; }
+  .pagCampos{ grid-template-columns: 1fr; }
 
   .pagerRow{
     justify-content: flex-end;
