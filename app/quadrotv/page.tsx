@@ -1120,6 +1120,46 @@ function LocalVelorioValue({ value, fallback = "a definir" }: { value?: string; 
     return <span>{shown(raw, fallback)}</span>;
 }
 
+/**
+ * Local do velório no Quadro (15/10/2026).
+ * - Memorial: "Memorial Senhor do Bonfim · Sala 02 - Encontro" (sala ainda vazia: "sala a definir").
+ * - Outro local: tipo escolhido no registro (local_cerimonia) + endereço (local_velorio).
+ * - Registro antigo sem local_cerimonia: Memorial se tiver sala ou endereço "Memorial…" (igual ao Editar registro).
+ */
+const NOMES_SALA_VELORIO: Record<string, string> = {
+    "sala 01": "Sala 01 - Presença",
+    "sala 02": "Sala 02 - Encontro",
+    "sala 03": "Sala 03 - Refúgio",
+};
+
+function nomeSalaVelorio(sala?: string): string {
+    const raw = decodeHtmlEntitiesDeep(String(sala ?? "")).trim();
+    if (!raw) return "";
+    const m = raw.match(/(\d+)/);
+    const chave = m ? `sala ${m[1].padStart(2, "0")}` : raw.toLowerCase();
+    return NOMES_SALA_VELORIO[chave] || raw;
+}
+
+function LocalVelorioQuadro({ r, fallback = "a definir" }: { r?: Registro | null; fallback?: string }) {
+    const tipo = decodeHtmlEntitiesDeep(String((r as any)?.local_cerimonia ?? "")).trim();
+    const endereco = decodeHtmlEntitiesDeep(String(r?.local_velorio ?? "")).trim();
+    const sala = nomeSalaVelorio((r as any)?.sala_velorio);
+    const memorial = tipo ? /memorial/i.test(tipo) : !!sala || /memorial/i.test(endereco);
+
+    if (memorial) {
+        return <span>Memorial Senhor do Bonfim · {sala || "sala a definir"}</span>;
+    }
+
+    const temTipo = !!tipo && !/^outro$/i.test(tipo);
+    if (!temTipo) return <LocalVelorioValue value={endereco} fallback={fallback} />;
+
+    return (
+        <span>
+            {tipo} · <LocalVelorioValue value={endereco} fallback="endereço a definir" />
+        </span>
+    );
+}
+
 /* Datas/horas → “a definir” para zeros e vazios */
 const formatDateBr = (d?: string) =>
     !d ? "" : d.split("-").length === 3 ? `${d.split("-")[2]}/${d.split("-")[1]}/${d.split("-")[0]}` : d;
@@ -4574,7 +4614,7 @@ function DetalheAtendimentoDrawer({
                     <div className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1.5 text-sm">
                         <span className="font-extrabold text-[var(--d-muted)]">Velório</span>
                         <span className="font-extrabold">
-                            <LocalVelorioValue value={detail.local_velorio} />
+                            <LocalVelorioQuadro r={detail} />
                             {" · "}
                             {dateOr(detail.data_inicio_velorio)} {timeOr(detail.hora_inicio_velorio)}
                         </span>
@@ -6275,7 +6315,7 @@ function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect
             <dl className="qm-where">
                 <div>
                     <dt>Velório</dt>
-                    <dd>{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</dd>
+                    <dd>{semVelorio ? "Sem velório" : <LocalVelorioQuadro r={r} />}</dd>
                 </div>
                 <div>
                     <dt>Sepult.</dt>
@@ -6941,7 +6981,7 @@ function DeskCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelec
                     })}
                 </ol>
                 <dl className="qd-where">
-                    <div><dt>Velório</dt><dd>{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</dd></div>
+                    <div><dt>Velório</dt><dd>{semVelorio ? "Sem velório" : <LocalVelorioQuadro r={r} />}</dd></div>
                     <div><dt>Sepult.</dt><dd>{sepultamentoTxt}</dd></div>
                 </dl>
             </div>
