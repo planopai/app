@@ -160,9 +160,11 @@ function agrupar(rows: HistoricoRow[]): Lancamento[] {
 
             chave = `A:${atend[1]}:${segundo(h.criado_em)}`;
 
-            const fal = String(h.observacao || "").match(/Falecido\\(a\\):\s*([^|]+)/i);
+            // Nome do falecido: vem do servidor (falecido_nome); sem ele, tenta a observação "Falecido(a): NOME".
+            const obsFal = String(h.observacao || "").match(/Falecido\(a\):\s*([^|]+)/i);
+            const fal = String(h.falecido_nome || "").trim() || (obsFal ? obsFal[1].trim() : "");
 
-            base = { chave, cod: fal ? `Atendimento: ${titulo(fal[1].trim())}` : `Atendimento #${atend[1]}`, sub: `Atendimento #${atend[1]}`, t: "SAIDA", o: "", d: "", u: h.operador_nome || "", quando: h.criado_em };
+            base = { chave, cod: fal ? `Atendimento: ${titulo(fal)}` : `Atendimento #${atend[1]}`, sub: `Atendimento #${atend[1]}`, t: "SAIDA", o: "", d: "", u: h.operador_nome || "", quando: h.criado_em };
 
         } else if (tipo === "AJUSTE" && (q == null || h.tipo === "CADASTRO_PRODUTO")) {
 

@@ -107,6 +107,8 @@ export type HistoricoRow = {
     deposito_destino_nome?: string | null;
     confeccao_id?: number | null;
     confeccao_tipo?: "KIT_LANCHE" | "COROA_ARTIFICIAL" | "PRODUTO" | string | null;
+    /** Saída para atendimento: nome do falecido (sepultamentos.falecido), enviado pelo materiais_gerais.php. */
+    falecido_nome?: string | null;
 
     /** Repaginada: código do lançamento (TRF-000001, ENT-000001, AJ-000001). */
     lancamento_codigo?: string | null;
