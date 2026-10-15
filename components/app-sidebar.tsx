@@ -250,6 +250,12 @@ export function AppSidebar(
     setDisplayName(formatted);
   }, []);
 
+  /* Nome cadastrado (15/10/2026): o whoami (usuarios.nome) vale sobre o login do cookie. */
+  React.useEffect(() => {
+    const completo = String(numeros.nome || "").trim();
+    if (completo) setDisplayName(completo);
+  }, [numeros.nome]);
+
   const userInitials = React.useMemo(() => initialsFromName(displayName).slice(0, 1), [displayName]);
 
   /**

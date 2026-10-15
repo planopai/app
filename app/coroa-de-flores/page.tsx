@@ -922,6 +922,8 @@ function CameraCaptureDialog({
     onClose: () => void;
     onFile: (file: File) => Promise<void> | void;
 }) {
+    const [portalMontado, setPortalMontado] = React.useState(false);
+    React.useEffect(() => setPortalMontado(true), []);
     const videoRef = React.useRef<HTMLVideoElement>(null);
     const streamRef = React.useRef<MediaStream | null>(null);
     const fallbackRef = React.useRef<HTMLInputElement>(null);
@@ -939,7 +941,7 @@ function CameraCaptureDialog({
     }, []);
 
     React.useEffect(() => {
-        if (!open) {
+        if (!open || !portalMontado) {
             stopCamera();
             return;
         }
@@ -984,9 +986,9 @@ function CameraCaptureDialog({
             cancelled = true;
             stopCamera();
         };
-    }, [open, stopCamera]);
+    }, [open, portalMontado, stopCamera]);
 
-    if (!open) return null;
+    if (!open || !portalMontado) return null;
 
     async function capture() {
         if (capturing || !videoRef.current) return;
@@ -1017,9 +1019,14 @@ function CameraCaptureDialog({
         }
     }
 
-    return (
-        <NoCorpo>
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-3">
+    return createPortal(
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tirar foto"
+            className="fixed inset-0 flex items-center justify-center bg-black/80 p-3"
+            style={{ zIndex: 2147483647, isolation: "isolate" }}
+        >
             <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-950">
                 <div className="flex items-center justify-between border-b px-4 py-3">
                     <div className="font-semibold">Tirar foto</div>
@@ -1083,17 +1090,19 @@ function CameraCaptureDialog({
                     </div>
                 </div>
             </div>
-        </div>
-        </NoCorpo>
+        </div>,
+        document.body,
     );
 }
 
 function ImageUploadButtons({
     disabled,
     onFile,
+    onCameraVisibilityChange,
 }: {
     disabled?: boolean;
     onFile: (file: File) => Promise<void> | void;
+    onCameraVisibilityChange?: (open: boolean) => void;
 }) {
     const galleryRef = React.useRef<HTMLInputElement>(null);
     const [cameraOpen, setCameraOpen] = React.useState(false);
@@ -1122,13 +1131,23 @@ function ImageUploadButtons({
                     type="button"
                     className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50"
                     disabled={disabled}
-                    onClick={() => setCameraOpen(true)}
+                    onClick={() => {
+                        onCameraVisibilityChange?.(true);
+                        setCameraOpen(true);
+                    }}
                 >
                     <IconCamera className="size-4" />
                     Tirar foto
                 </button>
             </div>
-            <CameraCaptureDialog open={cameraOpen} onClose={() => setCameraOpen(false)} onFile={onFile} />
+            <CameraCaptureDialog
+                open={cameraOpen}
+                onClose={() => {
+                    setCameraOpen(false);
+                    onCameraVisibilityChange?.(false);
+                }}
+                onFile={onFile}
+            />
         </>
     );
 }
@@ -2340,6 +2359,7 @@ export default function Page() {
     const manualItemIdRef = React.useRef<number | null>(null);
 
     const [finalizarOpen, setFinalizarOpen] = React.useState(false);
+    const [cameraFinalizacaoAberta, setCameraFinalizacaoAberta] = React.useState(false);
     const [finalizarFile, setFinalizarFile] = React.useState<File | null>(null);
     const [finalizarPreview, setFinalizarPreview] = React.useState<string | null>(null);
     const [finalizarError, setFinalizarError] = React.useState<string | null>(null);
@@ -2928,28 +2948,28 @@ export default function Page() {
 
     return (
         <>
-        {osCoroaAberta ? (
-            <JanelaOSPorId
-                osId={osCoroaAberta.id}
-                numero={osCoroaAberta.numero}
-                onFechar={() => {
-                    const pedido = manualDetail?.id;
-                    setOsCoroaAberta(null);
-                    setConfeccaoRefreshToken((v) => v + 1);
-                    if (pedido) void carregarManualDetail(Number(pedido), true);
+            {osCoroaAberta ? (
+                <JanelaOSPorId
+                    osId={osCoroaAberta.id}
+                    numero={osCoroaAberta.numero}
+                    onFechar={() => {
+                        const pedido = manualDetail?.id;
+                        setOsCoroaAberta(null);
+                        setConfeccaoRefreshToken((v) => v + 1);
+                        if (pedido) void carregarManualDetail(Number(pedido), true);
+                    }}
+                />
+            ) : null}
+            <div
+                ref={pageScrollRef}
+                className="mobile-y-scroll flex h-full min-h-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain"
+                style={{
+                    WebkitOverflowScrolling: "touch",
+                    touchAction: "pan-y",
+                    overscrollBehaviorY: "contain",
                 }}
-            />
-        ) : null}
-        <div
-            ref={pageScrollRef}
-            className="mobile-y-scroll flex h-full min-h-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain"
-            style={{
-                WebkitOverflowScrolling: "touch",
-                touchAction: "pan-y",
-                overscrollBehaviorY: "contain",
-            }}
-        >
-            <style jsx global>{`
+            >
+                <style jsx global>{`
                 html,
                 body {
                     max-width: 100%;
@@ -2986,1078 +3006,1133 @@ export default function Page() {
                 }
             `}</style>
 
-            {/* Cabeçalho */}
-            <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
-                <div className="flex items-center justify-between gap-3">
-                    <h1 className="min-w-0 text-xl font-semibold">Pedidos</h1>
+                {/* Cabeçalho */}
+                <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <h1 className="min-w-0 text-xl font-semibold">Pedidos</h1>
 
-                    <button
-                        className="inline-flex shrink-0 items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
-                        onClick={() => {
-                            resetNewForm();
-                            void carregarFalecidosQuadro();
-                            setNewOpen(true);
-                        }}
-                    >
-                        <IconPlus className="size-4" />
-                        NOVO
-                    </button>
+                        <button
+                            className="inline-flex shrink-0 items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:brightness-95"
+                            onClick={() => {
+                                resetNewForm();
+                                void carregarFalecidosQuadro();
+                                setNewOpen(true);
+                            }}
+                        >
+                            <IconPlus className="size-4" />
+                            NOVO
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            {/* Duas áreas operacionais: produção e histórico finalizado. */}
-            <div className="px-4 pb-3 lg:px-6">
-                <div className="grid w-full grid-cols-2 gap-1 rounded-lg border bg-muted/30 p-1">
-                    <button
-                        type="button"
-                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "confeccao"
-                            ? "bg-background shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        onClick={() => setTab("confeccao")}
-                    >
-                        Confecção
-                    </button>
-                    <button
-                        type="button"
-                        className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "finalizadas"
-                            ? "bg-background shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        onClick={() => setTab("finalizadas")}
-                    >
-                        Finalizadas
-                    </button>
+                {/* Duas áreas operacionais: produção e histórico finalizado. */}
+                <div className="px-4 pb-3 lg:px-6">
+                    <div className="grid w-full grid-cols-2 gap-1 rounded-lg border bg-muted/30 p-1">
+                        <button
+                            type="button"
+                            className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "confeccao"
+                                ? "bg-background shadow-sm"
+                                : "text-muted-foreground hover:text-foreground"
+                                }`}
+                            onClick={() => setTab("confeccao")}
+                        >
+                            Confecção
+                        </button>
+                        <button
+                            type="button"
+                            className={`min-w-0 rounded-md px-2 py-2 text-center text-xs font-medium sm:px-4 sm:text-sm ${tab === "finalizadas"
+                                ? "bg-background shadow-sm"
+                                : "text-muted-foreground hover:text-foreground"
+                                }`}
+                            onClick={() => setTab("finalizadas")}
+                        >
+                            Finalizadas
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            {/* =====================================================
+                {/* =====================================================
                 CONFECÇÃO — somente pedidos ainda em produção
                 ===================================================== */}
-            {tab === "confeccao" && (
-                <>
-                    <form
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3 lg:mx-6"
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            setConfeccaoAppliedQ(confeccaoQ.trim());
-                            setConfeccaoAppliedStatus(confeccaoStatusFilter);
-                            setConfeccaoPage(1);
-                            setConfeccaoRefreshToken((v) => v + 1);
-                        }}
-                    >
-                        <div className="sm:col-span-2">
-                            <label className="mb-1 block text-xs font-medium">Buscar</label>
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                                <input
-                                    value={confeccaoQ}
-                                    onChange={(e) => setConfeccaoQ(e.target.value)}
-                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                                    placeholder="Solicitante, falecido, modelo..."
-                                />
+                {tab === "confeccao" && (
+                    <>
+                        <form
+                            className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3 lg:mx-6"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                setConfeccaoAppliedQ(confeccaoQ.trim());
+                                setConfeccaoAppliedStatus(confeccaoStatusFilter);
+                                setConfeccaoPage(1);
+                                setConfeccaoRefreshToken((v) => v + 1);
+                            }}
+                        >
+                            <div className="sm:col-span-2">
+                                <label className="mb-1 block text-xs font-medium">Buscar</label>
+                                <div className="relative">
+                                    <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
+                                    <input
+                                        value={confeccaoQ}
+                                        onChange={(e) => setConfeccaoQ(e.target.value)}
+                                        className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
+                                        placeholder="Solicitante, falecido, modelo..."
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-medium">Status</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        value={confeccaoStatusFilter}
+                                        onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa" | "finalizada")}
+                                        className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                    >
+                                        <option value="todos">Todos</option>
+                                        <option value="novo">Aguardando Confecção</option>
+                                        <option value="coroa">Coroa em Confecção</option>
+                                        <option value="faixa">Faixa em Confecção</option>
+                                        <option value="finalizada">Coroa Finalizada</option>
+                                    </select>
+                                    <button type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">
+                                        Buscar
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+
+                        {/* Confecção mobile */}
+                        <div className="px-4 pb-6 md:hidden lg:px-6">
+                            <div className="space-y-3">
+                                {(!isDesktop ? confeccaoOrders : []).map((o) => (
+                                    <div key={o._chave ?? o.id} className="rounded-lg border bg-card p-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="font-medium">{o.solicitante}</div>
+                                                <div className="mt-1 text-xs text-muted-foreground">{o.falecido}</div>
+                                            </div>
+                                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
+                                                {manualStatusLabel(o.status)}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 text-xs text-muted-foreground">
+                                            {quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"} • {resumoModelosManual(o)}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
+                                                {pagamentoAutomaticoManual(o)}
+                                            </span>
+                                            <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemPedidoLabel(o)}</span>
+                                            {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
+                                                <span className="rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
+                                            ) : null}
+                                        </div>
+                                        <div className="mt-3 flex gap-2">
+                                            <button
+                                                className="inline-flex flex-1 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white"
+                                                onClick={() => openManualActions(o)}
+                                            >
+                                                Ações
+                                            </button>
+                                            <button
+                                                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
+                                                onClick={() => openManualView(o)}
+                                            >
+                                                <IconEye className="size-4" />
+                                                Ver
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {!confeccaoLoading && confeccaoOrders.length === 0 && (
+                                    <div className="py-6 text-center text-sm text-muted-foreground">
+                                        Nenhum pedido em confecção.
+                                    </div>
+                                )}
+                                {confeccaoLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando…</div>}
+                                {confeccaoError && <div className="text-sm text-rose-600">{confeccaoError}</div>}
                             </div>
                         </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Status</label>
-                            <div className="flex gap-2">
+
+                        {/* Confecção desktop */}
+                        <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
+                            <div className="overflow-hidden rounded-lg border bg-card">
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-muted/50 text-left">
+                                            <tr>
+                                                <th className="px-3 py-2 font-medium">Status</th>
+                                                <th className="px-3 py-2 font-medium">Solicitante</th>
+                                                <th className="px-3 py-2 font-medium">Falecido(a)</th>
+                                                <th className="px-3 py-2 font-medium">Coroas</th>
+                                                <th className="px-3 py-2 font-medium">Pagamento</th>
+                                                <th className="px-3 py-2 font-medium">Origem</th>
+                                                <th className="px-3 py-2 font-medium text-right">Ações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(isDesktop ? confeccaoOrders : []).map((o) => (
+                                                <tr key={o._chave ?? o.id} className="border-t">
+                                                    <td className="px-3 py-2">
+                                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
+                                                            {manualStatusLabel(o.status)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2">{o.solicitante}</td>
+                                                    <td className="px-3 py-2">{o.falecido}</td>
+                                                    <td className="px-3 py-2">
+                                                        <div>{quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"}</div>
+                                                        <div className="mt-0.5 text-xs text-muted-foreground">{resumoModelosManual(o)}</div>
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
+                                                            {pagamentoAutomaticoManual(o)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        {origemPedidoLabel(o)}
+                                                        {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
+                                                            <span className="ml-1.5 rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
+                                                        ) : null}
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
+                                                                onClick={() => openManualActions(o)}
+                                                            >
+                                                                Ações
+                                                            </button>
+                                                            <button
+                                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
+                                                                onClick={() => openManualView(o)}
+                                                            >
+                                                                <IconEye className="size-4" /> Ver
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {!confeccaoLoading && confeccaoOrders.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                                                        Nenhum pedido em confecção.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                    {confeccaoLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando…</div>}
+                                    {confeccaoError && <div className="px-3 pb-3 text-sm text-rose-600">{confeccaoError}</div>}
+                                </div>
+                                <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
+                                    <div>
+                                        Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoTotal} {confeccaoTotal === 1 ? "pedido" : "pedidos"} · {confeccaoOrders.length} {confeccaoOrders.length === 1 ? "coroa" : "coroas"}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            className="rounded-md border px-2 py-1 disabled:opacity-50"
+                                            disabled={confeccaoPage <= 1 || confeccaoLoading}
+                                            onClick={() => setConfeccaoPage((p) => Math.max(1, p - 1))}
+                                        >
+                                            Anterior
+                                        </button>
+                                        <button
+                                            className="rounded-md border px-2 py-1 disabled:opacity-50"
+                                            disabled={confeccaoPage >= confeccaoTotalPages || confeccaoLoading}
+                                            onClick={() => setConfeccaoPage((p) => Math.min(confeccaoTotalPages, p + 1))}
+                                        >
+                                            Próxima
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* =====================================================
+                FINALIZADAS — Venda Direta + Loja On-line
+                ===================================================== */}
+                {tab === "finalizadas" && (
+                    <>
+                        {/* Filtros das finalizadas */}
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+
+                                const busca = manualQ.trim();
+                                const statusOnline: "all" | WcOrder["status"] =
+                                    manualStatusFilter === "entregue" ? "completed" : "all";
+
+                                setManualAppliedQ(busca);
+                                setManualAppliedStatus(manualStatusFilter);
+                                setManualAppliedOrigem(manualOrigemFilter);
+                                setManualAppliedAfter(manualAfter);
+                                setManualAppliedBefore(manualBefore);
+
+                                setOnlineAppliedQ(busca);
+                                setOnlineAppliedStatus(statusOnline);
+                                setOnlineAppliedAfter(manualAfter);
+                                setOnlineAppliedBefore(manualBefore);
+
+                                setManualPage(1);
+                                setPage(1);
+                                setManualRefreshToken((v) => v + 1);
+                                setOnlineRefreshToken((v) => v + 1);
+                            }}
+                            className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-7"
+                        >
+                            <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+                                <label className="mb-1 block text-xs font-medium">Buscar</label>
+                                <div className="relative">
+                                    <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
+                                    <input
+                                        className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
+                                        placeholder="Solicitante, falecido, modelo, nº do pedido..."
+                                        value={manualQ}
+                                        onChange={(e) => setManualQ(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-medium">Status</label>
                                 <select
-                                    value={confeccaoStatusFilter}
-                                    onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa" | "finalizada")}
                                     className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                    value={manualStatusFilter}
+                                    onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "entregue")}
                                 >
                                     <option value="todos">Todos</option>
-                                    <option value="novo">Aguardando Confecção</option>
-                                    <option value="coroa">Coroa em Confecção</option>
-                                    <option value="faixa">Faixa em Confecção</option>
-                                    <option value="finalizada">Coroa Finalizada</option>
+                                    <option value="entregue">Entregue</option>
                                 </select>
-                                <button type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-medium">Origem</label>
+                                <select
+                                    className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                    value={manualOrigemFilter}
+                                    onChange={(e) =>
+                                        setManualOrigemFilter(
+                                            e.target.value as "todos" | "venda_direta" | "loja_online",
+                                        )
+                                    }
+                                >
+                                    <option value="todos">Todas</option>
+                                    <option value="venda_direta">Venda Direta</option>
+                                    <option value="loja_online">Loja On-line</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-medium">De</label>
+                                <input
+                                    type="date"
+                                    className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                    value={manualAfter}
+                                    onChange={(e) => setManualAfter(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-medium">Até</label>
+                                <input
+                                    type="date"
+                                    className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
+                                    value={manualBefore}
+                                    onChange={(e) => setManualBefore(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    type="submit"
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                                    disabled={finalizadasLoading}
+                                >
+                                    <IconSearch className="size-4" />
                                     Buscar
                                 </button>
-                            </div>
-                        </div>
-                    </form>
+                                <button
+                                    type="button"
+                                    className="inline-flex w-full items-center justify-center rounded-md border px-3 py-2 text-sm"
+                                    onClick={() => {
+                                        setManualQ("");
+                                        setManualStatusFilter("todos");
+                                        setManualOrigemFilter("todos");
+                                        setManualAfter("");
+                                        setManualBefore("");
 
-                    {/* Confecção mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
-                        <div className="space-y-3">
-                            {(!isDesktop ? confeccaoOrders : []).map((o) => (
-                                <div key={o._chave ?? o.id} className="rounded-lg border bg-card p-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <div className="font-medium">{o.solicitante}</div>
-                                            <div className="mt-1 text-xs text-muted-foreground">{o.falecido}</div>
+                                        setManualAppliedQ("");
+                                        setManualAppliedStatus("todos");
+                                        setManualAppliedOrigem("todos");
+                                        setManualAppliedAfter("");
+                                        setManualAppliedBefore("");
+
+                                        setOnlineAppliedQ("");
+                                        setOnlineAppliedStatus("all");
+                                        setOnlineAppliedAfter("");
+                                        setOnlineAppliedBefore("");
+
+                                        setManualPage(1);
+                                        setPage(1);
+                                        setManualRefreshToken((v) => v + 1);
+                                        setOnlineRefreshToken((v) => v + 1);
+                                    }}
+                                >
+                                    Limpar
+                                </button>
+                            </div>
+                        </form>
+
+                        {/* Finalizadas mobile */}
+                        <div className="px-4 pb-6 md:hidden lg:px-6">
+                            <div className="space-y-3">
+                                {(!isDesktop ? finalizadasRows : []).map((row) => (
+                                    <div key={row.key} className="rounded-lg border bg-card p-3">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="text-xs text-muted-foreground">
+                                                <b>{row.origem}</b> • {row.dataLabel}
+                                            </div>
+                                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${row.statusClass}`}>
+                                                {row.statusLabel}
+                                            </span>
                                         </div>
-                                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
-                                            {manualStatusLabel(o.status)}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 text-xs text-muted-foreground">
-                                        {quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"} • {resumoModelosManual(o)}
-                                    </div>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
-                                            {pagamentoAutomaticoManual(o)}
-                                        </span>
-                                        <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemPedidoLabel(o)}</span>
-                                        {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
-                                            <span className="rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
-                                        ) : null}
-                                    </div>
-                                    <div className="mt-3 flex gap-2">
-                                        <button
-                                            className="inline-flex flex-1 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white"
-                                            onClick={() => openManualActions(o)}
-                                        >
-                                            Ações
-                                        </button>
-                                        <button
-                                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                            onClick={() => openManualView(o)}
-                                        >
-                                            <IconEye className="size-4" />
-                                            Ver
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
 
-                            {!confeccaoLoading && confeccaoOrders.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">
-                                    Nenhum pedido em confecção.
-                                </div>
-                            )}
-                            {confeccaoLoading && <div className="py-6 text-center text-sm text-muted-foreground">Carregando…</div>}
-                            {confeccaoError && <div className="text-sm text-rose-600">{confeccaoError}</div>}
-                        </div>
-                    </div>
+                                        <div className="mt-2 text-sm">
+                                            <div className="font-medium">{row.cliente}</div>
+                                            <div className="mt-1 text-muted-foreground">{row.totalLabel}</div>
+                                        </div>
 
-                    {/* Confecção desktop */}
-                    <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
-                        <div className="overflow-hidden rounded-lg border bg-card">
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-3 py-2 font-medium">Status</th>
-                                            <th className="px-3 py-2 font-medium">Solicitante</th>
-                                            <th className="px-3 py-2 font-medium">Falecido(a)</th>
-                                            <th className="px-3 py-2 font-medium">Coroas</th>
-                                            <th className="px-3 py-2 font-medium">Pagamento</th>
-                                            <th className="px-3 py-2 font-medium">Origem</th>
-                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(isDesktop ? confeccaoOrders : []).map((o) => (
-                                            <tr key={o._chave ?? o.id} className="border-t">
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(o.status)}`}>
-                                                        {manualStatusLabel(o.status)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">{o.solicitante}</td>
-                                                <td className="px-3 py-2">{o.falecido}</td>
-                                                <td className="px-3 py-2">
-                                                    <div>{quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"}</div>
-                                                    <div className="mt-0.5 text-xs text-muted-foreground">{resumoModelosManual(o)}</div>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
-                                                        {pagamentoAutomaticoManual(o)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    {origemPedidoLabel(o)}
-                                                    {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
-                                                        <span className="ml-1.5 rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
-                                                    ) : null}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <div className="flex justify-end gap-2">
-                                                        <button
-                                                            className="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
-                                                            onClick={() => openManualActions(o)}
-                                                        >
-                                                            Ações
-                                                        </button>
-                                                        <button
-                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
-                                                            onClick={() => openManualView(o)}
-                                                        >
-                                                            <IconEye className="size-4" /> Ver
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {!confeccaoLoading && confeccaoOrders.length === 0 && (
-                                            <tr>
-                                                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido em confecção.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                                {confeccaoLoading && <div className="py-5 text-center text-sm text-muted-foreground">Carregando…</div>}
-                                {confeccaoError && <div className="px-3 pb-3 text-sm text-rose-600">{confeccaoError}</div>}
-                            </div>
-                            <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
-                                <div>
-                                    Página {Math.min(confeccaoPage, confeccaoTotalPages)} de {confeccaoTotalPages} — {confeccaoTotal} {confeccaoTotal === 1 ? "pedido" : "pedidos"} · {confeccaoOrders.length} {confeccaoOrders.length === 1 ? "coroa" : "coroas"}
-                                </div>
-                                <div className="flex gap-2">
+                                        <div className="mt-3">
+                                            <button
+                                                type="button"
+                                                className="inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
+                                                onClick={() => {
+                                                    if (row.source === "manual") {
+                                                        void openManualView(row.order as ManualOrder);
+                                                    } else {
+                                                        void openDetail(row.order.id);
+                                                    }
+                                                }}
+                                            >
+                                                <IconEye className="size-4" /> Ver
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {!finalizadasLoading && finalizadasRows.length === 0 && (
+                                    <div className="py-6 text-center text-sm text-muted-foreground">
+                                        Nenhum pedido encontrado.
+                                    </div>
+                                )}
+
+                                {finalizadasLoading && (
+                                    <div className="py-6 text-center text-sm text-muted-foreground">
+                                        Carregando pedidos…
+                                    </div>
+                                )}
+
+                                {finalizadasError && (
+                                    <div className="text-sm text-rose-600">{finalizadasError}</div>
+                                )}
+
+                                <div className="flex items-center justify-between gap-2 pt-2 text-xs">
                                     <button
-                                        className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={confeccaoPage <= 1 || confeccaoLoading}
-                                        onClick={() => setConfeccaoPage((p) => Math.max(1, p - 1))}
+                                        type="button"
+                                        className="rounded-md border px-3 py-2 disabled:opacity-50"
+                                        disabled={finalizadasCurrentPage <= 1 || finalizadasLoading}
+                                        onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage - 1)}
                                     >
                                         Anterior
                                     </button>
+
+                                    <span className="text-muted-foreground">
+                                        Página {Math.min(finalizadasCurrentPage, finalizadasTotalPages)} de {finalizadasTotalPages}
+                                    </span>
+
                                     <button
-                                        className="rounded-md border px-2 py-1 disabled:opacity-50"
-                                        disabled={confeccaoPage >= confeccaoTotalPages || confeccaoLoading}
-                                        onClick={() => setConfeccaoPage((p) => Math.min(confeccaoTotalPages, p + 1))}
+                                        type="button"
+                                        className="rounded-md border px-3 py-2 disabled:opacity-50"
+                                        disabled={
+                                            finalizadasCurrentPage >= finalizadasTotalPages ||
+                                            finalizadasLoading
+                                        }
+                                        onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage + 1)}
                                     >
                                         Próxima
                                     </button>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </>
-            )}
 
-            {/* =====================================================
-                FINALIZADAS — Venda Direta + Loja On-line
-                ===================================================== */}
-            {tab === "finalizadas" && (
-                <>
-                    {/* Filtros das finalizadas */}
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-
-                            const busca = manualQ.trim();
-                            const statusOnline: "all" | WcOrder["status"] =
-                                manualStatusFilter === "entregue" ? "completed" : "all";
-
-                            setManualAppliedQ(busca);
-                            setManualAppliedStatus(manualStatusFilter);
-                            setManualAppliedOrigem(manualOrigemFilter);
-                            setManualAppliedAfter(manualAfter);
-                            setManualAppliedBefore(manualBefore);
-
-                            setOnlineAppliedQ(busca);
-                            setOnlineAppliedStatus(statusOnline);
-                            setOnlineAppliedAfter(manualAfter);
-                            setOnlineAppliedBefore(manualBefore);
-
-                            setManualPage(1);
-                            setPage(1);
-                            setManualRefreshToken((v) => v + 1);
-                            setOnlineRefreshToken((v) => v + 1);
-                        }}
-                        className="mx-4 mb-3 grid grid-cols-1 items-end gap-3 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:mx-6 lg:grid-cols-7"
-                    >
-                        <div className="col-span-1 sm:col-span-2 lg:col-span-2">
-                            <label className="mb-1 block text-xs font-medium">Buscar</label>
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-                                <input
-                                    className="w-full rounded-md border bg-background py-2 pl-8 pr-2 text-sm outline-none"
-                                    placeholder="Solicitante, falecido, modelo, nº do pedido..."
-                                    value={manualQ}
-                                    onChange={(e) => setManualQ(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Status</label>
-                            <select
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualStatusFilter}
-                                onChange={(e) => setManualStatusFilter(e.target.value as "todos" | "entregue")}
-                            >
-                                <option value="todos">Todos</option>
-                                <option value="entregue">Entregue</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Origem</label>
-                            <select
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualOrigemFilter}
-                                onChange={(e) =>
-                                    setManualOrigemFilter(
-                                        e.target.value as "todos" | "venda_direta" | "loja_online",
-                                    )
-                                }
-                            >
-                                <option value="todos">Todas</option>
-                                <option value="venda_direta">Venda Direta</option>
-                                <option value="loja_online">Loja On-line</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">De</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualAfter}
-                                onChange={(e) => setManualAfter(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-xs font-medium">Até</label>
-                            <input
-                                type="date"
-                                className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
-                                value={manualBefore}
-                                onChange={(e) => setManualBefore(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                type="submit"
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
-                                disabled={finalizadasLoading}
-                            >
-                                <IconSearch className="size-4" />
-                                Buscar
-                            </button>
-                            <button
-                                type="button"
-                                className="inline-flex w-full items-center justify-center rounded-md border px-3 py-2 text-sm"
-                                onClick={() => {
-                                    setManualQ("");
-                                    setManualStatusFilter("todos");
-                                    setManualOrigemFilter("todos");
-                                    setManualAfter("");
-                                    setManualBefore("");
-
-                                    setManualAppliedQ("");
-                                    setManualAppliedStatus("todos");
-                                    setManualAppliedOrigem("todos");
-                                    setManualAppliedAfter("");
-                                    setManualAppliedBefore("");
-
-                                    setOnlineAppliedQ("");
-                                    setOnlineAppliedStatus("all");
-                                    setOnlineAppliedAfter("");
-                                    setOnlineAppliedBefore("");
-
-                                    setManualPage(1);
-                                    setPage(1);
-                                    setManualRefreshToken((v) => v + 1);
-                                    setOnlineRefreshToken((v) => v + 1);
-                                }}
-                            >
-                                Limpar
-                            </button>
-                        </div>
-                    </form>
-
-                    {/* Finalizadas mobile */}
-                    <div className="px-4 pb-6 md:hidden lg:px-6">
-                        <div className="space-y-3">
-                            {(!isDesktop ? finalizadasRows : []).map((row) => (
-                                <div key={row.key} className="rounded-lg border bg-card p-3">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="text-xs text-muted-foreground">
-                                            <b>{row.origem}</b> • {row.dataLabel}
-                                        </div>
-                                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${row.statusClass}`}>
-                                            {row.statusLabel}
-                                        </span>
-                                    </div>
-
-                                    <div className="mt-2 text-sm">
-                                        <div className="font-medium">{row.cliente}</div>
-                                        <div className="mt-1 text-muted-foreground">{row.totalLabel}</div>
-                                    </div>
-
-                                    <div className="mt-3">
-                                        <button
-                                            type="button"
-                                            className="inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-xs"
-                                            onClick={() => {
-                                                if (row.source === "manual") {
-                                                    void openManualView(row.order as ManualOrder);
-                                                } else {
-                                                    void openDetail(row.order.id);
-                                                }
-                                            }}
-                                        >
-                                            <IconEye className="size-4" /> Ver
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-
-                            {!finalizadasLoading && finalizadasRows.length === 0 && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">
-                                    Nenhum pedido encontrado.
-                                </div>
-                            )}
-
-                            {finalizadasLoading && (
-                                <div className="py-6 text-center text-sm text-muted-foreground">
-                                    Carregando pedidos…
-                                </div>
-                            )}
-
-                            {finalizadasError && (
-                                <div className="text-sm text-rose-600">{finalizadasError}</div>
-                            )}
-
-                            <div className="flex items-center justify-between gap-2 pt-2 text-xs">
-                                <button
-                                    type="button"
-                                    className="rounded-md border px-3 py-2 disabled:opacity-50"
-                                    disabled={finalizadasCurrentPage <= 1 || finalizadasLoading}
-                                    onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage - 1)}
-                                >
-                                    Anterior
-                                </button>
-
-                                <span className="text-muted-foreground">
-                                    Página {Math.min(finalizadasCurrentPage, finalizadasTotalPages)} de {finalizadasTotalPages}
-                                </span>
-
-                                <button
-                                    type="button"
-                                    className="rounded-md border px-3 py-2 disabled:opacity-50"
-                                    disabled={
-                                        finalizadasCurrentPage >= finalizadasTotalPages ||
-                                        finalizadasLoading
-                                    }
-                                    onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage + 1)}
-                                >
-                                    Próxima
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Finalizadas desktop */}
-                    <div className="hidden flex-1 px-4 pb-6 md:block lg:px-6">
-                        <div className="overflow-hidden rounded-lg border bg-card">
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full text-sm">
-                                    <thead className="bg-muted/50 text-left">
-                                        <tr>
-                                            <th className="px-3 py-2 font-medium">Origem</th>
-                                            <th className="px-3 py-2 font-medium">Data</th>
-                                            <th className="px-3 py-2 font-medium">Cliente</th>
-                                            <th className="px-3 py-2 font-medium">Total</th>
-                                            <th className="px-3 py-2 font-medium">Status</th>
-                                            <th className="px-3 py-2 font-medium text-right">Ações</th>
-                                        </tr>
-                                    </thead>
-
-                                    <tbody>
-                                        {(isDesktop ? finalizadasRows : []).map((row) => (
-                                            <tr key={row.key} className="border-t">
-                                                <td className="px-3 py-2 font-medium">{row.origem}</td>
-                                                <td className="px-3 py-2">{row.dataLabel}</td>
-                                                <td className="px-3 py-2">{row.cliente}</td>
-                                                <td className="px-3 py-2">{row.totalLabel}</td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`rounded-full border px-2 py-0.5 text-xs ${row.statusClass}`}>
-                                                        {row.statusLabel}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <div className="flex justify-end">
-                                                        <button
-                                                            type="button"
-                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
-                                                            onClick={() => {
-                                                                if (row.source === "manual") {
-                                                                    void openManualView(row.order as ManualOrder);
-                                                                } else {
-                                                                    void openDetail(row.order.id);
-                                                                }
-                                                            }}
-                                                        >
-                                                            <IconEye className="size-4" /> Ver
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-
-                                        {!finalizadasLoading && finalizadasRows.length === 0 && (
+                        {/* Finalizadas desktop */}
+                        <div className="hidden flex-1 px-4 pb-6 md:block lg:px-6">
+                            <div className="overflow-hidden rounded-lg border bg-card">
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-muted/50 text-left">
                                             <tr>
-                                                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                                                    Nenhum pedido encontrado.
-                                                </td>
+                                                <th className="px-3 py-2 font-medium">Origem</th>
+                                                <th className="px-3 py-2 font-medium">Data</th>
+                                                <th className="px-3 py-2 font-medium">Cliente</th>
+                                                <th className="px-3 py-2 font-medium">Total</th>
+                                                <th className="px-3 py-2 font-medium">Status</th>
+                                                <th className="px-3 py-2 font-medium text-right">Ações</th>
                                             </tr>
-                                        )}
-                                    </tbody>
-                                </table>
+                                        </thead>
 
-                                {finalizadasLoading && (
-                                    <div className="py-5 text-center text-sm text-muted-foreground">
-                                        Carregando pedidos…
-                                    </div>
-                                )}
+                                        <tbody>
+                                            {(isDesktop ? finalizadasRows : []).map((row) => (
+                                                <tr key={row.key} className="border-t">
+                                                    <td className="px-3 py-2 font-medium">{row.origem}</td>
+                                                    <td className="px-3 py-2">{row.dataLabel}</td>
+                                                    <td className="px-3 py-2">{row.cliente}</td>
+                                                    <td className="px-3 py-2">{row.totalLabel}</td>
+                                                    <td className="px-3 py-2">
+                                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${row.statusClass}`}>
+                                                            {row.statusLabel}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <div className="flex justify-end">
+                                                            <button
+                                                                type="button"
+                                                                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
+                                                                onClick={() => {
+                                                                    if (row.source === "manual") {
+                                                                        void openManualView(row.order as ManualOrder);
+                                                                    } else {
+                                                                        void openDetail(row.order.id);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <IconEye className="size-4" /> Ver
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
 
-                                {finalizadasError && (
-                                    <div className="px-3 pb-3 text-sm text-rose-600">
-                                        {finalizadasError}
-                                    </div>
-                                )}
-                            </div>
+                                            {!finalizadasLoading && finalizadasRows.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                                                        Nenhum pedido encontrado.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
 
-                            <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
-                                <div className="text-xs text-muted-foreground">
-                                    Página {Math.min(finalizadasCurrentPage, finalizadasTotalPages)} de {finalizadasTotalPages}
+                                    {finalizadasLoading && (
+                                        <div className="py-5 text-center text-sm text-muted-foreground">
+                                            Carregando pedidos…
+                                        </div>
+                                    )}
+
+                                    {finalizadasError && (
+                                        <div className="px-3 pb-3 text-sm text-rose-600">
+                                            {finalizadasError}
+                                        </div>
+                                    )}
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage - 1)}
-                                        disabled={finalizadasCurrentPage <= 1 || finalizadasLoading}
-                                    >
-                                        <IconChevronLeft className="size-4" /> Anterior
-                                    </button>
+                                <div className="flex items-center justify-between gap-3 border-t px-3 py-2">
+                                    <div className="text-xs text-muted-foreground">
+                                        Página {Math.min(finalizadasCurrentPage, finalizadasTotalPages)} de {finalizadasTotalPages}
+                                    </div>
 
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                        onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage + 1)}
-                                        disabled={
-                                            finalizadasCurrentPage >= finalizadasTotalPages ||
-                                            finalizadasLoading
-                                        }
-                                    >
-                                        Próxima <IconChevronRight className="size-4" />
-                                    </button>
-
-                                    <select
-                                        className="rounded-md border bg-background px-2 py-1 text-xs"
-                                        value={manualPerPage}
-                                        onChange={(e) =>
-                                            alterarQuantidadeFinalizadas(Number(e.target.value))
-                                        }
-                                    >
-                                        {[10, 20, 50, 100].map((n) => (
-                                            <option key={n} value={n}>
-                                                {n} por origem/página
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {/* Modal NOVO */}
-            {newOpen && (
-                <NoCorpo>
-                <div className="fixed inset-0 z-50 grid place-items-center p-4">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => !newSaving && setNewOpen(false)} />
-                    <form
-                        onSubmit={salvarNovoPedido}
-                        className="mobile-y-scroll relative z-10 max-h-[92dvh] w-full max-w-2xl touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-background shadow-xl"
-                    >
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-lg font-semibold">Novo Pedido de Coroa</div>
-                            </div>
-                            <button type="button" className="rounded-md p-2 hover:bg-muted" onClick={() => setNewOpen(false)}>
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
-                            {/* 1. Atendimento existente */}
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Atendimento</label>
-                                <select
-                                    value={newAtendimentoSelecionado}
-                                    onChange={(e) => {
-                                        const chave = e.target.value;
-                                        setNewAtendimentoSelecionado(chave);
-
-                                        if (!chave) return;
-
-                                        const atendimento = falecidosQuadro.find(
-                                            (r) => String(r.id || r.falecido || "") === chave,
-                                        );
-
-                                        if (!atendimento) return;
-
-                                        const nomeFalecido = String(atendimento.falecido || "").trim();
-                                        const localVelorio = String(atendimento.local_velorio || "").trim();
-
-                                        setNewForm((p) => ({
-                                            ...p,
-                                            falecido: nomeFalecido,
-                                            // O Local do Velório é o Local de Entrega.
-                                            // Se o atendimento ainda não tiver local, permanece vazio
-                                            // para preenchimento manual.
-                                            local_entrega: localVelorio,
-                                        }));
-                                    }}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    disabled={falecidosLoading && falecidosQuadro.length === 0}
-                                >
-                                    <option value="">
-                                        {falecidosLoading
-                                            ? "Consultando o quadro de atendimentos..."
-                                            : "Selecione um atendimento"}
-                                    </option>
-                                    {falecidosQuadro.map((r) => (
-                                        <option
-                                            key={String(r.id || r.falecido)}
-                                            value={String(r.id || r.falecido || "")}
-                                        >
-                                            {String(r.falecido || "")}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                {falecidosError && (
-                                    <div className="mt-1 text-xs text-rose-600">
-                                        {falecidosError}
+                                    <div className="flex items-center gap-2">
                                         <button
                                             type="button"
-                                            className="ml-2 underline underline-offset-2"
-                                            onClick={() => void carregarFalecidosQuadro(true)}
+                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                                            onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage - 1)}
+                                            disabled={finalizadasCurrentPage <= 1 || finalizadasLoading}
                                         >
-                                            Tentar novamente
+                                            <IconChevronLeft className="size-4" /> Anterior
                                         </button>
+
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                                            onClick={() => irParaPaginaFinalizadas(finalizadasCurrentPage + 1)}
+                                            disabled={
+                                                finalizadasCurrentPage >= finalizadasTotalPages ||
+                                                finalizadasLoading
+                                            }
+                                        >
+                                            Próxima <IconChevronRight className="size-4" />
+                                        </button>
+
+                                        <select
+                                            className="rounded-md border bg-background px-2 py-1 text-xs"
+                                            value={manualPerPage}
+                                            onChange={(e) =>
+                                                alterarQuantidadeFinalizadas(Number(e.target.value))
+                                            }
+                                        >
+                                            {[10, 20, 50, 100].map((n) => (
+                                                <option key={n} value={n}>
+                                                    {n} por origem/página
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
-                                )}
-                            </div>
-
-                            {/* 2. Falecido, também permite preenchimento livre */}
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
-                                <input
-                                    value={newForm.falecido}
-                                    onChange={(e) => {
-                                        setNewAtendimentoSelecionado("");
-                                        setNewForm((p) => ({ ...p, falecido: e.target.value }));
-                                    }}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite o nome do falecido ou selecione um atendimento acima"
-                                />
-                            </div>
-
-                            {/* 3. Local do velório = local de entrega */}
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Local de Entrega *</label>
-                                <input
-                                    value={newForm.local_entrega}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Local da entrega"
-                                />
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente.
                                 </div>
                             </div>
+                        </div>
+                    </>
+                )}
 
-                            {/* 4. Quantidade e dados de cada coroa */}
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={20}
-                                    inputMode="numeric"
-                                    value={quantidadeCoroas}
-                                    onChange={(e) => atualizarQuantidadeCoroas(Number(e.target.value))}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                />
-                            </div>
+                {/* Modal NOVO */}
+                {newOpen && (
+                    <NoCorpo>
+                        <div className="fixed inset-0 z-50 grid place-items-center p-4">
+                            <div className="absolute inset-0 bg-black/40" onClick={() => !newSaving && setNewOpen(false)} />
+                            <form
+                                onSubmit={salvarNovoPedido}
+                                className="mobile-y-scroll relative z-10 max-h-[92dvh] w-full max-w-2xl touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-background shadow-xl"
+                            >
+                                <div className="flex items-center justify-between border-b px-4 py-3">
+                                    <div>
+                                        <div className="text-lg font-semibold">Novo Pedido de Coroa</div>
+                                    </div>
+                                    <button type="button" className="rounded-md p-2 hover:bg-muted" onClick={() => setNewOpen(false)}>
+                                        <IconX className="size-5" />
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
+                                    {/* 1. Atendimento existente */}
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-sm font-medium">Atendimento</label>
+                                        <select
+                                            value={newAtendimentoSelecionado}
+                                            onChange={(e) => {
+                                                const chave = e.target.value;
+                                                setNewAtendimentoSelecionado(chave);
 
-                            <div className="sm:col-span-2 space-y-4">
-                                {newItems.map((item, index) => {
-                                    const produto = item.produto;
-                                    const foto = fotoPrincipalProduto(produto);
+                                                if (!chave) return;
 
-                                    return (
-                                        <div key={index} className="rounded-xl border bg-muted/10 p-3">
-                                            <div className="mb-3 flex items-center justify-between gap-3">
-                                                <div className="font-semibold">
-                                                    Coroa {index + 1}
+                                                const atendimento = falecidosQuadro.find(
+                                                    (r) => String(r.id || r.falecido || "") === chave,
+                                                );
+
+                                                if (!atendimento) return;
+
+                                                const nomeFalecido = String(atendimento.falecido || "").trim();
+                                                const localVelorio = String(atendimento.local_velorio || "").trim();
+
+                                                setNewForm((p) => ({
+                                                    ...p,
+                                                    falecido: nomeFalecido,
+                                                    // O Local do Velório é o Local de Entrega.
+                                                    // Se o atendimento ainda não tiver local, permanece vazio
+                                                    // para preenchimento manual.
+                                                    local_entrega: localVelorio,
+                                                }));
+                                            }}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            disabled={falecidosLoading && falecidosQuadro.length === 0}
+                                        >
+                                            <option value="">
+                                                {falecidosLoading
+                                                    ? "Consultando o quadro de atendimentos..."
+                                                    : "Selecione um atendimento"}
+                                            </option>
+                                            {falecidosQuadro.map((r) => (
+                                                <option
+                                                    key={String(r.id || r.falecido)}
+                                                    value={String(r.id || r.falecido || "")}
+                                                >
+                                                    {String(r.falecido || "")}
+                                                </option>
+                                            ))}
+                                        </select>
+
+                                        {falecidosError && (
+                                            <div className="mt-1 text-xs text-rose-600">
+                                                {falecidosError}
+                                                <button
+                                                    type="button"
+                                                    className="ml-2 underline underline-offset-2"
+                                                    onClick={() => void carregarFalecidosQuadro(true)}
+                                                >
+                                                    Tentar novamente
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 2. Falecido, também permite preenchimento livre */}
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-sm font-medium">Falecido(a) *</label>
+                                        <input
+                                            value={newForm.falecido}
+                                            onChange={(e) => {
+                                                setNewAtendimentoSelecionado("");
+                                                setNewForm((p) => ({ ...p, falecido: e.target.value }));
+                                            }}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            placeholder="Digite o nome do falecido ou selecione um atendimento acima"
+                                        />
+                                    </div>
+
+                                    {/* 3. Local do velório = local de entrega */}
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-sm font-medium">Local de Entrega *</label>
+                                        <input
+                                            value={newForm.local_entrega}
+                                            onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            placeholder="Local da entrega"
+                                        />
+                                        <div className="mt-1 text-xs text-muted-foreground">
+                                            Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente.
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Quantidade e dados de cada coroa */}
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={20}
+                                            inputMode="numeric"
+                                            value={quantidadeCoroas}
+                                            onChange={(e) => atualizarQuantidadeCoroas(Number(e.target.value))}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                        />
+                                    </div>
+
+                                    <div className="sm:col-span-2 space-y-4">
+                                        {newItems.map((item, index) => {
+                                            const produto = item.produto;
+                                            const foto = fotoPrincipalProduto(produto);
+
+                                            return (
+                                                <div key={index} className="rounded-xl border bg-muted/10 p-3">
+                                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                                        <div className="font-semibold">
+                                                            Coroa {index + 1}
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {index + 1} de {quantidadeCoroas}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <label className="mb-1 block text-sm font-medium">Tipo *</label>
+                                                            <select
+                                                                value={item.tipo_coroa}
+                                                                onChange={(e) => {
+                                                                    const tipo = e.target.value as CoroaTipo;
+                                                                    atualizarItemCoroa(index, {
+                                                                        tipo_coroa: tipo,
+                                                                        deposito_nome: "",
+                                                                        produto: null,
+                                                                    });
+
+                                                                    if (tipo === "natural") {
+                                                                        abrirSeletorModelo(index, tipo, "");
+                                                                    }
+                                                                }}
+                                                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                            >
+                                                                <option value="">Selecione o tipo da coroa</option>
+                                                                <option value="natural">Natural</option>
+                                                                <option value="artificial">Artificial</option>
+                                                            </select>
+                                                        </div>
+
+                                                        {item.tipo_coroa === "artificial" && (
+                                                            <div>
+                                                                <label className="mb-1 block text-sm font-medium">Depósito *</label>
+                                                                <select
+                                                                    value={item.deposito_nome}
+                                                                    onChange={(e) => {
+                                                                        const deposito = e.target.value as CoroaDeposito;
+                                                                        atualizarItemCoroa(index, { deposito_nome: deposito, produto: null });
+                                                                        if (deposito) abrirSeletorModelo(index, "artificial", deposito);
+                                                                    }}
+                                                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                                >
+                                                                    <option value="">Selecione o depósito</option>
+                                                                    <option value="MEMORIAL">MEMORIAL</option>
+                                                                    <option value="FUNERARIA">FUNERÁRIA</option>
+                                                                </select>
+                                                            </div>
+                                                        )}
+
+                                                        <div>
+                                                            <label className="mb-1 block text-sm font-medium">Modelo *</label>
+
+                                                            {produto ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => abrirSeletorModelo(index, item.tipo_coroa, item.deposito_nome)}
+                                                                    className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
+                                                                >
+                                                                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
+                                                                        {foto ? (
+                                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                                            <img
+                                                                                src={foto}
+                                                                                alt={produto.nome}
+                                                                                className="h-full w-full object-cover"
+                                                                            />
+                                                                        ) : (
+                                                                            <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                                                                                Sem foto
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="truncate font-medium">{produto.nome}</div>
+                                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                                            {rotuloTipoCoroa(item.tipo_coroa)}
+                                                                            {item.tipo_coroa === "artificial" && item.deposito_nome ? ` • ${item.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : item.deposito_nome}` : ""}
+                                                                            {produto.codigo_barras ? ` • ${produto.codigo_barras}` : ""}
+                                                                        </div>
+                                                                        <div className="mt-1 font-semibold text-emerald-700">
+                                                                            {dinheiroBRL(produto.valor)}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="shrink-0 text-xs text-blue-600">
+                                                                        Alterar
+                                                                    </div>
+                                                                </button>
+                                                            ) : item.tipo_coroa ? (
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={item.tipo_coroa === "artificial" && !item.deposito_nome}
+                                                                    onClick={() => abrirSeletorModelo(index, item.tipo_coroa, item.deposito_nome)}
+                                                                    className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40 disabled:opacity-50"
+                                                                >
+                                                                    <IconSearch className="size-4" />
+                                                                    {item.tipo_coroa === "artificial" && !item.deposito_nome
+                                                                        ? "Selecione primeiro o depósito"
+                                                                        : `Escolher modelo ${rotuloTipoCoroa(item.tipo_coroa)}`}
+                                                                </button>
+                                                            ) : (
+                                                                <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
+                                                                    Primeiro selecione Natural ou Artificial.
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div>
+                                                            <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
+                                                            <select
+                                                                value={item.frase_sugestao}
+                                                                onChange={(e) => {
+                                                                    const frase = e.target.value;
+                                                                    atualizarItemCoroa(index, {
+                                                                        frase_sugestao: frase,
+                                                                        ...(frase ? { frase } : {}),
+                                                                    });
+                                                                }}
+                                                                className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                            >
+                                                                <option value="">Selecione uma sugestão ou escreva a sua própria frase abaixo</option>
+                                                                {FRASES_SUGERIDAS.map((sugestao) => (
+                                                                    <option key={sugestao.numero} value={sugestao.texto}>
+                                                                        {sugestao.numero} — {sugestao.texto}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+
+                                                            <label className="mb-1 block text-sm font-medium">Frase *</label>
+                                                            <textarea
+                                                                value={item.frase}
+                                                                onChange={(e) =>
+                                                                    atualizarItemCoroa(index, {
+                                                                        frase: e.target.value,
+                                                                        frase_sugestao: "",
+                                                                    })
+                                                                }
+                                                                className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                                placeholder={`Frase da Coroa ${index + 1}`}
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs text-muted-foreground">
-                                                    {index + 1} de {quantidadeCoroas}
-                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Informações complementares do pedido */}
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-sm font-medium">Observações</label>
+                                        <textarea
+                                            value={newForm.observacoes}
+                                            onChange={(e) => setNewForm((p) => ({ ...p, observacoes: e.target.value }))}
+                                            className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                            placeholder="Digite observações do pedido (opcional)"
+                                        />
+                                    </div>
+
+
+                                    {/* Convênio: pedido de uma Prefeitura (com pacote de coroa). Autorizado → OS da Prefeitura, sem comprovante. */}
+                                    <div className="sm:col-span-2">
+                                        <label className="mb-1 block text-sm font-medium">Convênio</label>
+                                        <select
+                                            value={newConvenioId}
+                                            disabled={newSaving}
+                                            onChange={(e) => {
+                                                setNewConvenioId(e.target.value);
+                                                setNewCoroaAut("");
+                                            }}
+                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                        >
+                                            <option value="">Particular (venda direta)</option>
+                                            {prefeiturasCoroa.map((c) => (
+                                                <option key={c.id} value={String(c.id)}>
+                                                    {c.nome}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {opcoesConvenio.erro ? (
+                                            <div className="mt-1 text-xs text-muted-foreground">Não foi possível carregar as Prefeituras ({opcoesConvenio.erro}).</div>
+                                        ) : null}
+                                        {newConvenioId ? (
+                                            <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
+                                                <span className="min-w-[180px] flex-1 text-sm font-semibold">A Prefeitura autorizou a coroa? *</span>
+                                                <span className="inline-flex gap-2">
+                                                    {(["Sim", "Não"] as const).map((v) => (
+                                                        <button
+                                                            key={v}
+                                                            type="button"
+                                                            disabled={newSaving}
+                                                            aria-pressed={newCoroaAut === v}
+                                                            onClick={() => setNewCoroaAut(v)}
+                                                            className={`h-9 min-w-[60px] rounded-md border px-3 text-sm font-semibold ${newCoroaAut === v ? "border-transparent" : "border-[#C9D1DE] dark:border-white/25"} ${classeOpcaoSimNao(v, newCoroaAut === v)}`}
+                                                        >
+                                                            <MarcaSimNao valor={v} marcado={newCoroaAut === v} />
+                                                            {v}
+                                                        </button>
+                                                    ))}
+                                                </span>
+                                                <span className="w-full text-xs">
+                                                    {newCoroaAut === "Sim"
+                                                        ? "A coroa é faturada à Prefeitura (OS Prf). Modelo fora do pacote de coroa: a família paga só a diferença."
+                                                        : newCoroaAut === "Não"
+                                                            ? "Sem autorização, o pedido segue como venda direta, pago pela família pelo preço particular."
+                                                            : "Obrigatório."}
+                                                </span>
+                                            </div>
+                                        ) : null}
+                                    </div>
+
+                                    {!newAutorizada && (
+                                        <div className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                                            Pagamento: depois de salvar, a OS do pedido abre para <b>Concluir venda</b> — formas de pagamento, parcelas e a foto do comprovante.
+                                        </div>
+                                    )}
+
+                                    {/* 5. Solicitante por último, conforme o fluxo operacional */}
+                                    <div className="sm:col-span-2 border-t pt-4">
+                                        <div className="mb-3 text-sm font-semibold">Dados do solicitante</div>
+                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                            <div>
+                                                <label className="mb-1 block text-sm font-medium">Solicitante *</label>
+                                                <input
+                                                    value={newForm.solicitante}
+                                                    onChange={(e) => setNewForm((p) => ({ ...p, solicitante: e.target.value }))}
+                                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                    placeholder="Nome do solicitante"
+                                                />
                                             </div>
 
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="mb-1 block text-sm font-medium">Tipo *</label>
-                                                    <select
-                                                        value={item.tipo_coroa}
-                                                        onChange={(e) => {
-                                                            const tipo = e.target.value as CoroaTipo;
-                                                            atualizarItemCoroa(index, {
-                                                                tipo_coroa: tipo,
-                                                                deposito_nome: "",
-                                                                produto: null,
-                                                            });
-
-                                                            if (tipo === "natural") {
-                                                                abrirSeletorModelo(index, tipo, "");
-                                                            }
-                                                        }}
-                                                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                    >
-                                                        <option value="">Selecione o tipo da coroa</option>
-                                                        <option value="natural">Natural</option>
-                                                        <option value="artificial">Artificial</option>
-                                                    </select>
-                                                </div>
-
-                                                {item.tipo_coroa === "artificial" && (
-                                                    <div>
-                                                        <label className="mb-1 block text-sm font-medium">Depósito *</label>
-                                                        <select
-                                                            value={item.deposito_nome}
-                                                            onChange={(e) => {
-                                                                const deposito = e.target.value as CoroaDeposito;
-                                                                atualizarItemCoroa(index, { deposito_nome: deposito, produto: null });
-                                                                if (deposito) abrirSeletorModelo(index, "artificial", deposito);
-                                                            }}
-                                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                        >
-                                                            <option value="">Selecione o depósito</option>
-                                                            <option value="MEMORIAL">MEMORIAL</option>
-                                                            <option value="FUNERARIA">FUNERÁRIA</option>
-                                                        </select>
-                                                    </div>
-                                                )}
-
-                                                <div>
-                                                    <label className="mb-1 block text-sm font-medium">Modelo *</label>
-
-                                                    {produto ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa, item.deposito_nome)}
-                                                            className="flex w-full items-center gap-3 rounded-xl border bg-background p-3 text-left transition hover:bg-muted/40"
-                                                        >
-                                                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                                                {foto ? (
-                                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                                    <img
-                                                                        src={foto}
-                                                                        alt={produto.nome}
-                                                                        className="h-full w-full object-cover"
-                                                                    />
-                                                                ) : (
-                                                                    <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                                                                        Sem foto
-                                                                    </div>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="truncate font-medium">{produto.nome}</div>
-                                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                                    {rotuloTipoCoroa(item.tipo_coroa)}
-                                                                    {item.tipo_coroa === "artificial" && item.deposito_nome ? ` • ${item.deposito_nome === "FUNERARIA" ? "FUNERÁRIA" : item.deposito_nome}` : ""}
-                                                                    {produto.codigo_barras ? ` • ${produto.codigo_barras}` : ""}
-                                                                </div>
-                                                                <div className="mt-1 font-semibold text-emerald-700">
-                                                                    {dinheiroBRL(produto.valor)}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="shrink-0 text-xs text-blue-600">
-                                                                Alterar
-                                                            </div>
-                                                        </button>
-                                                    ) : item.tipo_coroa ? (
-                                                        <button
-                                                            type="button"
-                                                            disabled={item.tipo_coroa === "artificial" && !item.deposito_nome}
-                                                            onClick={() => abrirSeletorModelo(index, item.tipo_coroa, item.deposito_nome)}
-                                                            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm hover:bg-muted/40 disabled:opacity-50"
-                                                        >
-                                                            <IconSearch className="size-4" />
-                                                            {item.tipo_coroa === "artificial" && !item.deposito_nome
-                                                                ? "Selecione primeiro o depósito"
-                                                                : `Escolher modelo ${rotuloTipoCoroa(item.tipo_coroa)}`}
-                                                        </button>
-                                                    ) : (
-                                                        <div className="rounded-md border border-dashed px-3 py-3 text-center text-sm text-muted-foreground">
-                                                            Primeiro selecione Natural ou Artificial.
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div>
-                                                    <label className="mb-1 block text-sm font-medium">Sugestões de frases</label>
-                                                    <select
-                                                        value={item.frase_sugestao}
-                                                        onChange={(e) => {
-                                                            const frase = e.target.value;
-                                                            atualizarItemCoroa(index, {
-                                                                frase_sugestao: frase,
-                                                                ...(frase ? { frase } : {}),
-                                                            });
-                                                        }}
-                                                        className="mb-2 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                    >
-                                                        <option value="">Selecione uma sugestão ou escreva a sua própria frase abaixo</option>
-                                                        {FRASES_SUGERIDAS.map((sugestao) => (
-                                                            <option key={sugestao.numero} value={sugestao.texto}>
-                                                                {sugestao.numero} — {sugestao.texto}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-
-                                                    <label className="mb-1 block text-sm font-medium">Frase *</label>
-                                                    <textarea
-                                                        value={item.frase}
-                                                        onChange={(e) =>
-                                                            atualizarItemCoroa(index, {
-                                                                frase: e.target.value,
-                                                                frase_sugestao: "",
-                                                            })
-                                                        }
-                                                        className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                                        placeholder={`Frase da Coroa ${index + 1}`}
-                                                    />
-                                                </div>
+                                            <div>
+                                                <label className="mb-1 block text-sm font-medium">Telefone *</label>
+                                                <input
+                                                    type="tel"
+                                                    inputMode="tel"
+                                                    value={newForm.telefone}
+                                                    onChange={(e) => setNewForm((p) => ({ ...p, telefone: e.target.value }))}
+                                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                    placeholder="Telefone do solicitante"
+                                                />
                                             </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Informações complementares do pedido */}
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Observações</label>
-                                <textarea
-                                    value={newForm.observacoes}
-                                    onChange={(e) => setNewForm((p) => ({ ...p, observacoes: e.target.value }))}
-                                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Digite observações do pedido (opcional)"
-                                />
-                            </div>
-
-
-                            {/* Convênio: pedido de uma Prefeitura (com pacote de coroa). Autorizado → OS da Prefeitura, sem comprovante. */}
-                            <div className="sm:col-span-2">
-                                <label className="mb-1 block text-sm font-medium">Convênio</label>
-                                <select
-                                    value={newConvenioId}
-                                    disabled={newSaving}
-                                    onChange={(e) => {
-                                        setNewConvenioId(e.target.value);
-                                        setNewCoroaAut("");
-                                    }}
-                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                >
-                                    <option value="">Particular (venda direta)</option>
-                                    {prefeiturasCoroa.map((c) => (
-                                        <option key={c.id} value={String(c.id)}>
-                                            {c.nome}
-                                        </option>
-                                    ))}
-                                </select>
-                                {opcoesConvenio.erro ? (
-                                    <div className="mt-1 text-xs text-muted-foreground">Não foi possível carregar as Prefeituras ({opcoesConvenio.erro}).</div>
-                                ) : null}
-                                {newConvenioId ? (
-                                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
-                                        <span className="min-w-[180px] flex-1 text-sm font-semibold">A Prefeitura autorizou a coroa? *</span>
-                                        <span className="inline-flex gap-2">
-                                            {(["Sim", "Não"] as const).map((v) => (
-                                                <button
-                                                    key={v}
-                                                    type="button"
-                                                    disabled={newSaving}
-                                                    aria-pressed={newCoroaAut === v}
-                                                    onClick={() => setNewCoroaAut(v)}
-                                                    className={`h-9 min-w-[60px] rounded-md border px-3 text-sm font-semibold ${newCoroaAut === v ? "border-transparent" : "border-[#C9D1DE] dark:border-white/25"} ${classeOpcaoSimNao(v, newCoroaAut === v)}`}
-                                                >
-                                                    <MarcaSimNao valor={v} marcado={newCoroaAut === v} />
-                                                    {v}
-                                                </button>
-                                            ))}
-                                        </span>
-                                        <span className="w-full text-xs">
-                                            {newCoroaAut === "Sim"
-                                                ? "A coroa é faturada à Prefeitura (OS Prf). Modelo fora do pacote de coroa: a família paga só a diferença."
-                                                : newCoroaAut === "Não"
-                                                    ? "Sem autorização, o pedido segue como venda direta, pago pela família pelo preço particular."
-                                                    : "Obrigatório."}
-                                        </span>
                                     </div>
-                                ) : null}
-                            </div>
 
-                            {!newAutorizada && (
-                            <div className="sm:col-span-2 rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                                Pagamento: depois de salvar, a OS do pedido abre para <b>Concluir venda</b> — formas de pagamento, parcelas e a foto do comprovante.
-                            </div>
-                            )}
+                                    {newError && <div className="sm:col-span-2 text-sm text-rose-600">{newError}</div>}
+                                </div>
+                                <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t bg-background px-4 py-3">
+                                    <button type="button" className="rounded-md border px-4 py-2 text-sm" onClick={() => setNewOpen(false)} disabled={newSaving}>
+                                        Cancelar
+                                    </button>
+                                    <button type="submit" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" disabled={newSaving}>
+                                        {newSaving ? "Salvando..." : "Criar Pedido"}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </NoCorpo>
+                )}
 
-                            {/* 5. Solicitante por último, conforme o fluxo operacional */}
-                            <div className="sm:col-span-2 border-t pt-4">
-                                <div className="mb-3 text-sm font-semibold">Dados do solicitante</div>
-                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                    <div>
-                                        <label className="mb-1 block text-sm font-medium">Solicitante *</label>
+                {/* Drawer manual */}
+                {modeloModalOpen && (
+                    <NoCorpo>
+                        <div
+                            className="fixed inset-0 z-[80] flex min-h-0 items-center justify-center overflow-hidden bg-black/50 p-2 sm:p-4"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={`Selecionar Coroa ${rotuloTipoCoroa(modeloTipo)}`}
+                        >
+                            <div className="flex h-[calc(100vh-1rem)] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl sm:h-auto sm:max-h-[94dvh]" style={{ height: "calc(100dvh - 1rem)" }}>
+                                <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
+                                    <div className="min-w-0">
+                                        <h2 className="text-lg font-semibold">
+                                            Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
+                                        </h2>
+                                        {modeloTipo === "artificial" && modeloDeposito && (
+                                            <div className="mt-1 text-xs text-muted-foreground">Depósito: {modeloDeposito === "FUNERARIA" ? "FUNERÁRIA" : modeloDeposito}</div>
+                                        )}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        className="rounded-md p-2 hover:bg-muted"
+                                        onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
+                                        aria-label="Fechar"
+                                    >
+                                        <IconX className="size-5" />
+                                    </button>
+                                </div>
+
+                                <div className="shrink-0 border-b p-4">
+                                    <div className="relative">
+                                        <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                                         <input
-                                            value={newForm.solicitante}
-                                            onChange={(e) => setNewForm((p) => ({ ...p, solicitante: e.target.value }))}
-                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                            placeholder="Nome do solicitante"
+                                            value={modeloBusca}
+                                            onChange={(e) => setModeloBusca(e.target.value)}
+                                            className="w-full rounded-xl border bg-background py-2 pl-9 pr-3 text-[16px] sm:text-sm"
+                                            placeholder="Pesquisar modelo pelo nome ou código..."
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="mb-1 block text-sm font-medium">Telefone *</label>
-                                        <input
-                                            type="tel"
-                                            inputMode="tel"
-                                            value={newForm.telefone}
-                                            onChange={(e) => setNewForm((p) => ({ ...p, telefone: e.target.value }))}
-                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                            placeholder="Telefone do solicitante"
-                                        />
+                                    <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                                        <span>
+                                            {modeloLoading
+                                                ? "Consultando estoque..."
+                                                : `${modelosDisponiveis.length} modelo(s) disponível(is).`}
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted"
+                                            onClick={() => void carregarModelosCoroa(true)}
+                                            disabled={modeloLoading}
+                                        >
+                                            <IconRefresh className={`size-3.5 ${modeloLoading ? "animate-spin" : ""}`} />
+                                            Atualizar
+                                        </button>
                                     </div>
+
+                                    {modeloError && (
+                                        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                            {modeloError}
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
 
-                            {newError && <div className="sm:col-span-2 text-sm text-rose-600">{newError}</div>}
-                        </div>
-                        <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t bg-background px-4 py-3">
-                            <button type="button" className="rounded-md border px-4 py-2 text-sm" onClick={() => setNewOpen(false)} disabled={newSaving}>
-                                Cancelar
-                            </button>
-                            <button type="submit" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" disabled={newSaving}>
-                                {newSaving ? "Salvando..." : "Criar Pedido"}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-                </NoCorpo>
-            )}
+                                <div className="mobile-y-scroll min-h-0 flex-1 touch-pan-y overflow-y-scroll overscroll-contain" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "contain" }}>
+                                    {modeloLoading && modelosDisponiveis.length === 0 ? (
+                                        <div className="p-8 text-center text-sm text-muted-foreground">
+                                            Carregando modelos...
+                                        </div>
+                                    ) : !modeloError && modelosDisponiveis.length === 0 ? (
+                                        <div className="p-8 text-center text-sm text-muted-foreground">
+                                            {modeloTipo === "artificial"
+                                                ? "Nenhuma coroa artificial com estoque disponível."
+                                                : "Nenhum modelo cadastrado em COROAS NATURAIS."}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {/* Desktop: tabela simples */}
+                                            <div className="hidden overflow-x-auto lg:block">
+                                                <table className="min-w-full text-left text-sm">
+                                                    <thead className="sticky top-0 bg-muted/80 text-xs">
+                                                        <tr>
+                                                            <th className="w-24 px-4 py-3">Foto</th>
+                                                            <th className="px-4 py-3">Modelo</th>
+                                                            <th className="px-4 py-3">Categoria</th>
+                                                            {modeloTipo === "artificial" && (
+                                                                <th className="px-4 py-3 text-right">Qtd.</th>
+                                                            )}
+                                                            <th className="px-4 py-3 text-right">Preço</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y">
+                                                        {modelosDisponiveis.map((produto) => {
+                                                            const foto = fotoPrincipalProduto(produto);
+                                                            const saldo = saldoModeloSelecionado(Number(produto.id));
 
-            {/* Drawer manual */}
-            {modeloModalOpen && (
-                <NoCorpo>
-                <div
-                    className="fixed inset-0 z-[80] flex min-h-0 items-center justify-center overflow-hidden bg-black/50 p-2 sm:p-4"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={`Selecionar Coroa ${rotuloTipoCoroa(modeloTipo)}`}
-                >
-                    <div className="flex h-[calc(100vh-1rem)] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-background shadow-2xl sm:h-auto sm:max-h-[94dvh]" style={{ height: "calc(100dvh - 1rem)" }}>
-                        <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
-                            <div className="min-w-0">
-                                <h2 className="text-lg font-semibold">
-                                    Selecionar Coroa {rotuloTipoCoroa(modeloTipo)}
-                                </h2>
-                                {modeloTipo === "artificial" && modeloDeposito && (
-                                    <div className="mt-1 text-xs text-muted-foreground">Depósito: {modeloDeposito === "FUNERARIA" ? "FUNERÁRIA" : modeloDeposito}</div>
-                                )}
-                            </div>
+                                                            return (
+                                                                <tr
+                                                                    key={produto.id}
+                                                                    onClick={() => selecionarModeloCoroa(produto)}
+                                                                    className="cursor-pointer transition hover:bg-muted/50"
+                                                                >
+                                                                    <td className="px-4 py-3">
+                                                                        <div className="h-16 w-16 overflow-hidden rounded-xl border bg-muted/30">
+                                                                            {foto ? (
+                                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                                <img
+                                                                                    src={foto}
+                                                                                    alt={produto.nome}
+                                                                                    className="h-full w-full object-cover"
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+                                                                                    Sem foto
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-4 py-3">
+                                                                        <div className="font-semibold">{produto.nome}</div>
+                                                                        {produto.codigo_barras ? (
+                                                                            <div className="mt-1 text-xs text-muted-foreground">
+                                                                                CB: {produto.codigo_barras}
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-muted-foreground">
+                                                                        {produto.categoria_nome || "—"}
+                                                                    </td>
+                                                                    {modeloTipo === "artificial" && (
+                                                                        <td className="px-4 py-3 text-right font-semibold">
+                                                                            {saldo}
+                                                                        </td>
+                                                                    )}
+                                                                    <td className="px-4 py-3 text-right font-semibold">
+                                                                        {dinheiroBRL(produto.valor)}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
 
-                            <button
-                                type="button"
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
-                                aria-label="Fechar"
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-
-                        <div className="shrink-0 border-b p-4">
-                            <div className="relative">
-                                <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                                <input
-                                    value={modeloBusca}
-                                    onChange={(e) => setModeloBusca(e.target.value)}
-                                    className="w-full rounded-xl border bg-background py-2 pl-9 pr-3 text-[16px] sm:text-sm"
-                                    placeholder="Pesquisar modelo pelo nome ou código..."
-                                />
-                            </div>
-
-                            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                                <span>
-                                    {modeloLoading
-                                        ? "Consultando estoque..."
-                                        : `${modelosDisponiveis.length} modelo(s) disponível(is).`}
-                                </span>
-
-                                <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted"
-                                    onClick={() => void carregarModelosCoroa(true)}
-                                    disabled={modeloLoading}
-                                >
-                                    <IconRefresh className={`size-3.5 ${modeloLoading ? "animate-spin" : ""}`} />
-                                    Atualizar
-                                </button>
-                            </div>
-
-                            {modeloError && (
-                                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                    {modeloError}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="mobile-y-scroll min-h-0 flex-1 touch-pan-y overflow-y-scroll overscroll-contain" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "contain" }}>
-                            {modeloLoading && modelosDisponiveis.length === 0 ? (
-                                <div className="p-8 text-center text-sm text-muted-foreground">
-                                    Carregando modelos...
-                                </div>
-                            ) : !modeloError && modelosDisponiveis.length === 0 ? (
-                                <div className="p-8 text-center text-sm text-muted-foreground">
-                                    {modeloTipo === "artificial"
-                                        ? "Nenhuma coroa artificial com estoque disponível."
-                                        : "Nenhum modelo cadastrado em COROAS NATURAIS."}
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Desktop: tabela simples */}
-                                    <div className="hidden overflow-x-auto lg:block">
-                                        <table className="min-w-full text-left text-sm">
-                                            <thead className="sticky top-0 bg-muted/80 text-xs">
-                                                <tr>
-                                                    <th className="w-24 px-4 py-3">Foto</th>
-                                                    <th className="px-4 py-3">Modelo</th>
-                                                    <th className="px-4 py-3">Categoria</th>
-                                                    {modeloTipo === "artificial" && (
-                                                        <th className="px-4 py-3 text-right">Qtd.</th>
-                                                    )}
-                                                    <th className="px-4 py-3 text-right">Preço</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y">
+                                            {/* Mobile/tablet: mesmo padrão de cartões da consulta de produtos */}
+                                            <div className="grid grid-cols-1 gap-3 p-3 lg:hidden">
                                                 {modelosDisponiveis.map((produto) => {
                                                     const foto = fotoPrincipalProduto(produto);
                                                     const saldo = saldoModeloSelecionado(Number(produto.id));
 
                                                     return (
-                                                        <tr
+                                                        <button
                                                             key={produto.id}
+                                                            type="button"
                                                             onClick={() => selecionarModeloCoroa(produto)}
-                                                            className="cursor-pointer transition hover:bg-muted/50"
+                                                            className="w-full rounded-2xl border bg-background p-3 text-left outline-none transition hover:border-slate-300 hover:shadow-sm focus:ring-2 focus:ring-slate-200"
                                                         >
-                                                            <td className="px-4 py-3">
-                                                                <div className="h-16 w-16 overflow-hidden rounded-xl border bg-muted/30">
+                                                            <div className="flex gap-4">
+                                                                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
                                                                     {foto ? (
                                                                         // eslint-disable-next-line @next/next/no-img-element
                                                                         <img
@@ -4071,599 +4146,548 @@ export default function Page() {
                                                                         </div>
                                                                     )}
                                                                 </div>
-                                                            </td>
-                                                            <td className="px-4 py-3">
-                                                                <div className="font-semibold">{produto.nome}</div>
-                                                                {produto.codigo_barras ? (
-                                                                    <div className="mt-1 text-xs text-muted-foreground">
-                                                                        CB: {produto.codigo_barras}
-                                                                    </div>
-                                                                ) : null}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-muted-foreground">
-                                                                {produto.categoria_nome || "—"}
-                                                            </td>
-                                                            {modeloTipo === "artificial" && (
-                                                                <td className="px-4 py-3 text-right font-semibold">
-                                                                    {saldo}
-                                                                </td>
-                                                            )}
-                                                            <td className="px-4 py-3 text-right font-semibold">
-                                                                {dinheiroBRL(produto.valor)}
-                                                            </td>
-                                                        </tr>
+
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="line-clamp-2 font-semibold">
+                                                                        {produto.nome}
+                                                                    </p>
+                                                                    <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
+                                                                        {produto.categoria_nome || "—"}
+                                                                    </p>
+                                                                    {produto.codigo_barras ? (
+                                                                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                                                            CB: {produto.codigo_barras}
+                                                                        </p>
+                                                                    ) : null}
+                                                                    <p className="mt-1 text-sm font-semibold">
+                                                                        {dinheiroBRL(produto.valor)}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="shrink-0 text-right">
+                                                                    {modeloTipo === "artificial" ? (
+                                                                        <>
+                                                                            <p className="text-xs text-muted-foreground">Qtd</p>
+                                                                            <p className="text-xl font-bold">{saldo}</p>
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="inline-flex rounded-full border px-2 py-1 text-[11px] font-medium">
+                                                                            Natural
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </button>
                                                     );
                                                 })}
-                                            </tbody>
-                                        </table>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <div className="shrink-0 border-t p-3 text-right">
+                                    <button
+                                        type="button"
+                                        className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
+                                        onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
+                                    >
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </NoCorpo>
+                )}
+
+                {/* Ações do pedido manual */}
+                {manualPanel === "acoes" && (
+                    <NoCorpo>
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
+                            <div className="w-full max-w-xl overflow-hidden rounded-xl border bg-background shadow-xl">
+                                <div className="flex items-center justify-between border-b px-4 py-3">
+                                    <div>
+                                        <div className="text-lg font-semibold">Registrar uma ação</div>
+                                        <div className="mt-0.5 text-xs text-muted-foreground">
+                                            {manualDetail
+                                                ? `${pedidoModelosManual(manualDetail)}${rotuloCoroaDe(manualDetail) ? ` · ${rotuloCoroaDe(manualDetail)}` : ""}`
+                                                : "Status sincronizado com o servidor."}
+                                        </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        className="rounded-md p-2 hover:bg-muted"
+                                        onClick={() => setManualPanel(null)}
+                                    >
+                                        <IconX className="size-5" />
+                                    </button>
+                                </div>
 
-                                    {/* Mobile/tablet: mesmo padrão de cartões da consulta de produtos */}
-                                    <div className="grid grid-cols-1 gap-3 p-3 lg:hidden">
-                                        {modelosDisponiveis.map((produto) => {
-                                            const foto = fotoPrincipalProduto(produto);
-                                            const saldo = saldoModeloSelecionado(Number(produto.id));
+                                <div className="p-4">
+                                    {manualDetailLoading ? (
+                                        <div className="py-6 text-center text-sm text-muted-foreground">
+                                            Carregando...
+                                        </div>
+                                    ) : manualDetail ? (
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            {acoesManualDoPedido(manualDetail).map(([target, label]) => {
+                                                const concluida = acaoManualConcluida(manualDetail, target);
+                                                const liberada = acaoManualLiberada(manualDetail, target);
 
-                                            return (
-                                                <button
-                                                    key={produto.id}
-                                                    type="button"
-                                                    onClick={() => selecionarModeloCoroa(produto)}
-                                                    className="w-full rounded-2xl border bg-background p-3 text-left outline-none transition hover:border-slate-300 hover:shadow-sm focus:ring-2 focus:ring-slate-200"
-                                                >
-                                                    <div className="flex gap-4">
-                                                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border bg-muted/30">
-                                                            {foto ? (
-                                                                // eslint-disable-next-line @next/next/no-img-element
-                                                                <img
-                                                                    src={foto}
-                                                                    alt={produto.nome}
-                                                                    className="h-full w-full object-cover"
-                                                                />
-                                                            ) : (
-                                                                <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
-                                                                    Sem foto
+                                                return (
+                                                    <button
+                                                        key={target}
+                                                        type="button"
+                                                        disabled={manualActionLoading || concluida || !liberada}
+                                                        onClick={() => clicarAcaoManual(target)}
+                                                        className={[
+                                                            "min-h-12 rounded-md border px-3 py-2 text-sm font-medium transition",
+                                                            concluida
+                                                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                                : liberada
+                                                                    ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                                                                    : "bg-muted/20 text-muted-foreground opacity-60",
+                                                        ].join(" ")}
+                                                    >
+                                                        <span className="inline-flex items-center gap-2">
+                                                            {concluida ? <IconCheck className="size-4" /> : null}
+                                                            {label}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-rose-600">
+                                            {manualDetailMsg || "Pedido não encontrado."}
+                                        </div>
+                                    )}
+
+                                    {manualDetailMsg && manualDetail && (
+                                        <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                            {manualDetailMsg}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </NoCorpo>
+                )}
+
+                {/* Foto obrigatória para Finalizada */}
+                {finalizarOpen && (
+                    <NoCorpo>
+                        <div
+                            className={`fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-3 ${cameraFinalizacaoAberta ? "invisible pointer-events-none" : ""}`}
+                            aria-hidden={cameraFinalizacaoAberta}
+                        >
+                            <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
+                                <div className="flex items-center justify-between border-b px-4 py-3">
+                                    <div>
+                                        <div className="text-lg font-semibold">Coroa Finalizada</div>
+                                        <div className="mt-0.5 text-xs text-muted-foreground">
+                                            Anexe a foto da coroa pronta para confirmar.
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="rounded-md p-2 hover:bg-muted"
+                                        disabled={manualActionLoading}
+                                        onClick={() => {
+                                            setFinalizarOpen(false);
+                                            setFinalizarFile(null);
+                                            limparPreviewFinalizacao();
+                                            setFinalizarError(null);
+                                        }}
+                                    >
+                                        <IconX className="size-5" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4 p-4">
+                                    <ImageUploadButtons
+                                        disabled={manualActionLoading}
+                                        onFile={selecionarFotoFinalizacao}
+                                        onCameraVisibilityChange={setCameraFinalizacaoAberta}
+                                    />
+
+                                    {finalizarFile && (
+                                        <div className="rounded-lg border bg-emerald-50 p-3 text-sm text-emerald-800">
+                                            <div className="font-medium">Foto pronta para envio</div>
+                                            <div className="mt-1 text-xs">
+                                                {finalizarFile.name} · {formatFileSize(finalizarFile.size)}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {finalizarError && (
+                                        <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                            {finalizarError}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex justify-end gap-2 border-t px-4 py-3">
+                                    <button
+                                        type="button"
+                                        className="rounded-md border px-4 py-2 text-sm"
+                                        disabled={manualActionLoading}
+                                        onClick={() => {
+                                            setFinalizarOpen(false);
+                                            setFinalizarFile(null);
+                                            limparPreviewFinalizacao();
+                                            setFinalizarError(null);
+                                        }}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                                        disabled={manualActionLoading || !finalizarFile}
+                                        onClick={confirmarFinalizacaoManual}
+                                    >
+                                        {manualActionLoading ? "Finalizando..." : "Confirmar Coroa Finalizada"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </NoCorpo>
+                )}
+
+                {/* Ver pedido manual — mesmo padrão visual do pedido online */}
+                {manualPanel === "ver" && (
+                    <NoCorpo>
+                        <div className="fixed inset-0 z-50">
+                            <div className="absolute inset-0 bg-black/40" onClick={() => setManualPanel(null)} />
+                            <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl">
+                                <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
+                                    <div>
+                                        <div className="text-sm text-muted-foreground">
+                                            {pedidoEhOnline(manualDetail) ? "Pedido online em produção" : "Pedido manual"}
+                                        </div>
+                                        <div className="text-lg font-semibold">
+                                            #{manualDetail?.id || "—"}
+                                            {pedidoEhOnline(manualDetail) && manualDetail?.origem_externa_id
+                                                ? ` • Woo #${manualDetail.origem_externa_id}`
+                                                : ""}
+                                            {rotuloCoroaDe(manualDetail) ? ` • ${rotuloCoroaDe(manualDetail)}` : ""}
+                                        </div>
+                                    </div>
+                                    <button
+                                        className="rounded-md p-2 hover:bg-muted"
+                                        onClick={() => setManualPanel(null)}
+                                    >
+                                        <IconX className="size-5" />
+                                    </button>
+                                </div>
+
+                                {manualDetailLoading ? (
+                                    <div className="p-4 text-sm text-muted-foreground">Carregando...</div>
+                                ) : manualDetail ? (
+                                    <div className="space-y-4 p-4">
+                                        {/* Fotos dos modelos */}
+                                        {itensManual(manualDetail).some((item) => item.foto_produto_url) && (
+                                            <div className="space-y-3">
+                                                {itensManual(manualDetail).map((item, index) =>
+                                                    item.foto_produto_url ? (
+                                                        <div key={item.id || `${item.ordem}-${index}`} className="overflow-hidden rounded-lg border bg-white">
+                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                            <img
+                                                                src={item.foto_produto_url}
+                                                                alt={item.modelo_coroa || `Coroa ${index + 1}`}
+                                                                className="w-full object-cover"
+                                                            />
+                                                            {itensManual(manualDetail).length > 1 && (
+                                                                <div className="border-t px-3 py-2 text-xs font-medium">
+                                                                    Coroa {item.ordem || index + 1} — {item.modelo_coroa}
                                                                 </div>
                                                             )}
                                                         </div>
+                                                    ) : null,
+                                                )}
+                                            </div>
+                                        )}
 
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="line-clamp-2 font-semibold">
-                                                                {produto.nome}
-                                                            </p>
-                                                            <p className="mt-1 truncate text-xs font-medium text-muted-foreground">
-                                                                {produto.categoria_nome || "—"}
-                                                            </p>
-                                                            {produto.codigo_barras ? (
-                                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                                                    CB: {produto.codigo_barras}
-                                                                </p>
-                                                            ) : null}
-                                                            <p className="mt-1 text-sm font-semibold">
-                                                                {dinheiroBRL(produto.valor)}
-                                                            </p>
-                                                        </div>
+                                        {/* Informações do pedido — mesma ordem do Online */}
+                                        <div className="rounded-lg border p-3 text-sm leading-6">
+                                            <div><b>Pedido:</b> {pedidoModelosManual(manualDetail)}</div>
+                                            <div><b>Origem:</b> {origemPedidoLabel(manualDetail)}</div>
+                                            {pedidoEhOnline(manualDetail) && manualDetail.origem_externa_id && (
+                                                <div><b>Pedido WooCommerce:</b> #{manualDetail.origem_externa_id}</div>
+                                            )}
+                                            <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
+                                            <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
+                                            <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
+                                            <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
+                                            <div className="whitespace-pre-wrap"><b>Observações:</b> {manualDetail.observacoes || "—"}</div>
+                                            <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
+                                            <div className="whitespace-pre-wrap"><b>Frase da Coroa:</b> {pedidoFrasesManual(manualDetail)}</div>
+                                        </div>
 
-                                                        <div className="shrink-0 text-right">
-                                                            {modeloTipo === "artificial" ? (
-                                                                <>
-                                                                    <p className="text-xs text-muted-foreground">Qtd</p>
-                                                                    <p className="text-xl font-bold">{saldo}</p>
-                                                                </>
-                                                            ) : (
-                                                                <span className="inline-flex rounded-full border px-2 py-1 text-[11px] font-medium">
-                                                                    Natural
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="shrink-0 border-t p-3 text-right">
-                            <button
-                                type="button"
-                                className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
-                                onClick={() => { setModeloModalOpen(false); setModeloItemIndex(null); }}
-                            >
-                                Cancelar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                </NoCorpo>
-            )}
-
-            {/* Ações do pedido manual */}
-            {manualPanel === "acoes" && (
-                <NoCorpo>
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
-                    <div className="w-full max-w-xl overflow-hidden rounded-xl border bg-background shadow-xl">
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-lg font-semibold">Registrar uma ação</div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                    {manualDetail
-                                        ? `${pedidoModelosManual(manualDetail)}${rotuloCoroaDe(manualDetail) ? ` · ${rotuloCoroaDe(manualDetail)}` : ""}`
-                                        : "Status sincronizado com o servidor."}
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setManualPanel(null)}
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-4">
-                            {manualDetailLoading ? (
-                                <div className="py-6 text-center text-sm text-muted-foreground">
-                                    Carregando...
-                                </div>
-                            ) : manualDetail ? (
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                    {acoesManualDoPedido(manualDetail).map(([target, label]) => {
-                                        const concluida = acaoManualConcluida(manualDetail, target);
-                                        const liberada = acaoManualLiberada(manualDetail, target);
-
-                                        return (
-                                            <button
-                                                key={target}
-                                                type="button"
-                                                disabled={manualActionLoading || concluida || !liberada}
-                                                onClick={() => clicarAcaoManual(target)}
-                                                className={[
-                                                    "min-h-12 rounded-md border px-3 py-2 text-sm font-medium transition",
-                                                    concluida
-                                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                                        : liberada
-                                                            ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
-                                                            : "bg-muted/20 text-muted-foreground opacity-60",
-                                                ].join(" ")}
-                                            >
-                                                <span className="inline-flex items-center gap-2">
-                                                    {concluida ? <IconCheck className="size-4" /> : null}
-                                                    {label}
+                                        {/* Status do pedido */}
+                                        <div className="rounded-lg border p-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(manualDetail.status)}`}>
+                                                    {manualStatusLabel(manualDetail.status)}
                                                 </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-sm text-rose-600">
-                                    {manualDetailMsg || "Pedido não encontrado."}
-                                </div>
-                            )}
+                                                <div className="text-xs text-muted-foreground">
+                                                    Criado em {formatDate(manualDetail.criado_em)} — Total <b>{totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</b>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                            {manualDetailMsg && manualDetail && (
-                                <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                    {manualDetailMsg}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                </NoCorpo>
-            )}
+                                        {/* Cancelar pedido (09/10/2026): só Gestão; coroa do atendimento cancela pelo registro. */}
+                                        <div className="flex justify-end">
+                                            <BotaoCancelarPedidoCoroa
+                                                pedidoId={Number(manualDetail.id)}
+                                                atendimentoOrigemId={(manualDetail as any).atendimento_origem_id ?? null}
+                                                onFeito={() => {
+                                                    setManualPanel(null);
+                                                    setManualDetail(null);
+                                                    void fetchManualOrders(true);
+                                                    void fetchConfeccaoOrders(true);
+                                                }}
+                                            />
+                                        </div>
 
-            {/* Foto obrigatória para Finalizada */}
-            {finalizarOpen && (
-                <NoCorpo>
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-3">
-                    <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-lg font-semibold">Coroa Finalizada</div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                    Anexe a foto da coroa pronta para confirmar.
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                className="rounded-md p-2 hover:bg-muted"
-                                disabled={manualActionLoading}
-                                onClick={() => {
-                                    setFinalizarOpen(false);
-                                    setFinalizarFile(null);
-                                    limparPreviewFinalizacao();
-                                    setFinalizarError(null);
-                                }}
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
+                                        {/* Pagamento e comprovante ficam no Ver */}
+                                        <div className="rounded-lg border p-3">
+                                            <div className="mb-2 font-medium">Pagamento</div>
+                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                                                <div>
+                                                    <div className="mb-1 text-xs font-medium">Status</div>
+                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${pagamentoAutomaticoClass(manualDetail)}`}>
+                                                        {pagamentoAutomaticoManual(manualDetail)}
+                                                    </span>
+                                                </div>
 
-                        <div className="space-y-4 p-4">
-                            <ImageUploadButtons
-                                disabled={manualActionLoading}
-                                onFile={selecionarFotoFinalizacao}
-                            />
-
-                            {finalizarFile && (
-                                <div className="rounded-lg border bg-emerald-50 p-3 text-sm text-emerald-800">
-                                    <div className="font-medium">Foto pronta para envio</div>
-                                    <div className="mt-1 text-xs">
-                                        {finalizarFile.name} · {formatFileSize(finalizarFile.size)}
-                                    </div>
-                                </div>
-                            )}
-
-                            {finalizarError && (
-                                <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                    {finalizarError}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex justify-end gap-2 border-t px-4 py-3">
-                            <button
-                                type="button"
-                                className="rounded-md border px-4 py-2 text-sm"
-                                disabled={manualActionLoading}
-                                onClick={() => {
-                                    setFinalizarOpen(false);
-                                    setFinalizarFile(null);
-                                    limparPreviewFinalizacao();
-                                    setFinalizarError(null);
-                                }}
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                type="button"
-                                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                                disabled={manualActionLoading || !finalizarFile}
-                                onClick={confirmarFinalizacaoManual}
-                            >
-                                {manualActionLoading ? "Finalizando..." : "Confirmar Coroa Finalizada"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                </NoCorpo>
-            )}
-
-            {/* Ver pedido manual — mesmo padrão visual do pedido online */}
-            {manualPanel === "ver" && (
-                <NoCorpo>
-                <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setManualPanel(null)} />
-                    <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl">
-                        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-4 py-3">
-                            <div>
-                                <div className="text-sm text-muted-foreground">
-                                    {pedidoEhOnline(manualDetail) ? "Pedido online em produção" : "Pedido manual"}
-                                </div>
-                                <div className="text-lg font-semibold">
-                                    #{manualDetail?.id || "—"}
-                                    {pedidoEhOnline(manualDetail) && manualDetail?.origem_externa_id
-                                        ? ` • Woo #${manualDetail.origem_externa_id}`
-                                        : ""}
-                                    {rotuloCoroaDe(manualDetail) ? ` • ${rotuloCoroaDe(manualDetail)}` : ""}
-                                </div>
-                            </div>
-                            <button
-                                className="rounded-md p-2 hover:bg-muted"
-                                onClick={() => setManualPanel(null)}
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-
-                        {manualDetailLoading ? (
-                            <div className="p-4 text-sm text-muted-foreground">Carregando...</div>
-                        ) : manualDetail ? (
-                            <div className="space-y-4 p-4">
-                                {/* Fotos dos modelos */}
-                                {itensManual(manualDetail).some((item) => item.foto_produto_url) && (
-                                    <div className="space-y-3">
-                                        {itensManual(manualDetail).map((item, index) =>
-                                            item.foto_produto_url ? (
-                                                <div key={item.id || `${item.ordem}-${index}`} className="overflow-hidden rounded-lg border bg-white">
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img
-                                                        src={item.foto_produto_url}
-                                                        alt={item.modelo_coroa || `Coroa ${index + 1}`}
-                                                        className="w-full object-cover"
-                                                    />
-                                                    {itensManual(manualDetail).length > 1 && (
-                                                        <div className="border-t px-3 py-2 text-xs font-medium">
-                                                            Coroa {item.ordem || index + 1} — {item.modelo_coroa}
+                                                <div>
+                                                    <div className="mb-1 text-xs font-medium">Comprovante</div>
+                                                    {pedidoEhOnline(manualDetail) ? (
+                                                        <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                                                            Pagamento confirmado pelo WooCommerce. Não é necessário anexar comprovante manual.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col gap-2">
+                                                            <button
+                                                                type="button"
+                                                                disabled={manualActionLoading}
+                                                                onClick={() => void abrirOSDaCoroa(Number(manualDetail.id))}
+                                                                className="inline-flex h-10 items-center justify-center rounded-md bg-[#F2CB3F] px-4 text-sm font-bold text-[#313C55] hover:bg-[#E4BC30] disabled:opacity-50"
+                                                            >
+                                                                {manualDetail.status_pagamento === "pago" ? "Ver OS" : "Concluir venda"}
+                                                            </button>
+                                                            {osCoroaErro ? (
+                                                                <>
+                                                                    <div className="max-w-xs text-xs text-muted-foreground">{osCoroaErro}</div>
+                                                                    {/* pedido anterior à OS de coroa: segue o anexo de comprovante de antes */}
+                                                                    <ComprovanteUploadButtons disabled={manualActionLoading} onFile={anexarComprovanteManual} />
+                                                                </>
+                                                            ) : null}
                                                         </div>
                                                     )}
                                                 </div>
-                                            ) : null,
-                                        )}
-                                    </div>
-                                )}
+                                            </div>
 
-                                {/* Informações do pedido — mesma ordem do Online */}
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <div><b>Pedido:</b> {pedidoModelosManual(manualDetail)}</div>
-                                    <div><b>Origem:</b> {origemPedidoLabel(manualDetail)}</div>
-                                    {pedidoEhOnline(manualDetail) && manualDetail.origem_externa_id && (
-                                        <div><b>Pedido WooCommerce:</b> #{manualDetail.origem_externa_id}</div>
-                                    )}
-                                    <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
-                                    <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
-                                    <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
-                                    <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
-                                    <div className="whitespace-pre-wrap"><b>Observações:</b> {manualDetail.observacoes || "—"}</div>
-                                    <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
-                                    <div className="whitespace-pre-wrap"><b>Frase da Coroa:</b> {pedidoFrasesManual(manualDetail)}</div>
-                                </div>
-
-                                {/* Status do pedido */}
-                                <div className="rounded-lg border p-3">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <span className={`rounded-full border px-2 py-0.5 text-xs ${manualStatusClass(manualDetail.status)}`}>
-                                            {manualStatusLabel(manualDetail.status)}
-                                        </span>
-                                        <div className="text-xs text-muted-foreground">
-                                            Criado em {formatDate(manualDetail.criado_em)} — Total <b>{totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</b>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Cancelar pedido (09/10/2026): só Gestão; coroa do atendimento cancela pelo registro. */}
-                                <div className="flex justify-end">
-                                    <BotaoCancelarPedidoCoroa
-                                        pedidoId={Number(manualDetail.id)}
-                                        atendimentoOrigemId={(manualDetail as any).atendimento_origem_id ?? null}
-                                        onFeito={() => {
-                                            setManualPanel(null);
-                                            setManualDetail(null);
-                                            void fetchManualOrders(true);
-                                            void fetchConfeccaoOrders(true);
-                                        }}
-                                    />
-                                </div>
-
-                                {/* Pagamento e comprovante ficam no Ver */}
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-2 font-medium">Pagamento</div>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                                        <div>
-                                            <div className="mb-1 text-xs font-medium">Status</div>
-                                            <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${pagamentoAutomaticoClass(manualDetail)}`}>
-                                                {pagamentoAutomaticoManual(manualDetail)}
-                                            </span>
-                                        </div>
-
-                                        <div>
-                                            <div className="mb-1 text-xs font-medium">Comprovante</div>
-                                            {pedidoEhOnline(manualDetail) ? (
-                                                <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                                                    Pagamento confirmado pelo WooCommerce. Não é necessário anexar comprovante manual.
-                                                </div>
-                                            ) : (
-                                                <div className="flex flex-col gap-2">
-                                                    <button
-                                                        type="button"
-                                                        disabled={manualActionLoading}
-                                                        onClick={() => void abrirOSDaCoroa(Number(manualDetail.id))}
-                                                        className="inline-flex h-10 items-center justify-center rounded-md bg-[#F2CB3F] px-4 text-sm font-bold text-[#313C55] hover:bg-[#E4BC30] disabled:opacity-50"
+                                            {manualDetail.comprovante_url && (
+                                                comprovanteEhPdf(manualDetail) ? (
+                                                    <a
+                                                        href={manualDetail.comprovante_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="mt-3 flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm hover:bg-muted/40"
                                                     >
-                                                        {manualDetail.status_pagamento === "pago" ? "Ver OS" : "Concluir venda"}
+                                                        <div className="min-w-0">
+                                                            <div className="font-medium">Comprovante em PDF</div>
+                                                            <div className="truncate text-xs text-muted-foreground">
+                                                                {manualDetail.comprovante_nome || "Abrir arquivo"}
+                                                            </div>
+                                                        </div>
+                                                        <span className="shrink-0 text-blue-600">Abrir</span>
+                                                    </a>
+                                                ) : (
+                                                    <a
+                                                        href={manualDetail.comprovante_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="mt-3 block overflow-hidden rounded-lg border"
+                                                    >
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={manualDetail.comprovante_url}
+                                                            alt="Comprovante"
+                                                            className="max-h-72 w-full object-contain bg-muted/20"
+                                                        />
+                                                    </a>
+                                                )
+                                            )}
+                                        </div>
+
+                                        {/* Foto final, somente visualização */}
+                                        {manualDetail.foto_coroa_url && (
+                                            <div className="rounded-lg border p-3">
+                                                <div className="mb-2 font-medium">Coroa Pronta</div>
+                                                <a
+                                                    href={manualDetail.foto_coroa_url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="block overflow-hidden rounded-lg border"
+                                                >
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={manualDetail.foto_coroa_url}
+                                                        alt="Coroa pronta"
+                                                        className="max-h-96 w-full object-contain bg-muted/20"
+                                                    />
+                                                </a>
+                                            </div>
+                                        )}
+
+                                        {manualDetailMsg && (
+                                            <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                                {manualDetailMsg}
+                                            </div>
+                                        )}
+
+                                        {/* Mesmo padrão de utilidades do pedido online */}
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                                onClick={copyManualToClipboard}
+                                            >
+                                                <IconCopy className="size-4" />
+                                                {manualCopied ? "Copiado!" : "Copiar Pedido"}
+                                            </button>
+
+                                            {itensManual(manualDetail)
+                                                .filter((item) => Boolean(item.foto_produto_url))
+                                                .map((item, index, fotos) => (
+                                                    <button
+                                                        key={`share-${item.id || item.ordem || index}`}
+                                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                                        onClick={() => item.foto_produto_url && shareImageUrl(item.foto_produto_url)}
+                                                    >
+                                                        <IconPhoto className="size-4" />
+                                                        {fotos.length === 1
+                                                            ? "Compartilhar Foto"
+                                                            : `Compartilhar Foto ${index + 1}`}
                                                     </button>
-                                                    {osCoroaErro ? (
-                                                        <>
-                                                            <div className="max-w-xs text-xs text-muted-foreground">{osCoroaErro}</div>
-                                                            {/* pedido anterior à OS de coroa: segue o anexo de comprovante de antes */}
-                                                            <ComprovanteUploadButtons disabled={manualActionLoading} onFile={anexarComprovanteManual} />
-                                                        </>
-                                                    ) : null}
-                                                </div>
+                                                ))}
+
+                                            {manualDetail.foto_coroa_url && (
+                                                <button
+                                                    className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                                    onClick={() => manualDetail.foto_coroa_url && shareImageUrl(manualDetail.foto_coroa_url)}
+                                                >
+                                                    <IconPhoto className="size-4" />
+                                                    Compartilhar Foto Final
+                                                </button>
                                             )}
                                         </div>
                                     </div>
-
-                                    {manualDetail.comprovante_url && (
-                                        comprovanteEhPdf(manualDetail) ? (
-                                            <a
-                                                href={manualDetail.comprovante_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="mt-3 flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm hover:bg-muted/40"
-                                            >
-                                                <div className="min-w-0">
-                                                    <div className="font-medium">Comprovante em PDF</div>
-                                                    <div className="truncate text-xs text-muted-foreground">
-                                                        {manualDetail.comprovante_nome || "Abrir arquivo"}
-                                                    </div>
-                                                </div>
-                                                <span className="shrink-0 text-blue-600">Abrir</span>
-                                            </a>
-                                        ) : (
-                                            <a
-                                                href={manualDetail.comprovante_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="mt-3 block overflow-hidden rounded-lg border"
-                                            >
-                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
-                                                    src={manualDetail.comprovante_url}
-                                                    alt="Comprovante"
-                                                    className="max-h-72 w-full object-contain bg-muted/20"
-                                                />
-                                            </a>
-                                        )
-                                    )}
-                                </div>
-
-                                {/* Foto final, somente visualização */}
-                                {manualDetail.foto_coroa_url && (
-                                    <div className="rounded-lg border p-3">
-                                        <div className="mb-2 font-medium">Coroa Pronta</div>
-                                        <a
-                                            href={manualDetail.foto_coroa_url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="block overflow-hidden rounded-lg border"
-                                        >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={manualDetail.foto_coroa_url}
-                                                alt="Coroa pronta"
-                                                className="max-h-96 w-full object-contain bg-muted/20"
-                                            />
-                                        </a>
+                                ) : (
+                                    <div className="p-4 text-sm text-rose-600">
+                                        {manualDetailMsg || "Pedido não encontrado."}
                                     </div>
                                 )}
-
-                                {manualDetailMsg && (
-                                    <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                                        {manualDetailMsg}
-                                    </div>
-                                )}
-
-                                {/* Mesmo padrão de utilidades do pedido online */}
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                                        onClick={copyManualToClipboard}
-                                    >
-                                        <IconCopy className="size-4" />
-                                        {manualCopied ? "Copiado!" : "Copiar Pedido"}
-                                    </button>
-
-                                    {itensManual(manualDetail)
-                                        .filter((item) => Boolean(item.foto_produto_url))
-                                        .map((item, index, fotos) => (
-                                            <button
-                                                key={`share-${item.id || item.ordem || index}`}
-                                                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                                                onClick={() => item.foto_produto_url && shareImageUrl(item.foto_produto_url)}
-                                            >
-                                                <IconPhoto className="size-4" />
-                                                {fotos.length === 1
-                                                    ? "Compartilhar Foto"
-                                                    : `Compartilhar Foto ${index + 1}`}
-                                            </button>
-                                        ))}
-
-                                    {manualDetail.foto_coroa_url && (
-                                        <button
-                                            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                                            onClick={() => manualDetail.foto_coroa_url && shareImageUrl(manualDetail.foto_coroa_url)}
-                                        >
-                                            <IconPhoto className="size-4" />
-                                            Compartilhar Foto Final
-                                        </button>
-                                    )}
-                                </div>
                             </div>
-                        ) : (
-                            <div className="p-4 text-sm text-rose-600">
-                                {manualDetailMsg || "Pedido não encontrado."}
-                            </div>
-                        )}
-                    </div>
-                </div>
-                </NoCorpo>
-            )}
-
-            {/* Drawer online — mantém a experiência existente */}
-            {open && (
-                <NoCorpo>
-                <div className="fixed inset-0 z-50">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-                    <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "contain" }}>
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div>
-                                <div className="text-sm text-muted-foreground">Pedido</div>
-                                <div className="text-lg font-semibold">#{detail?.number || detail?.id || "—"}</div>
-                            </div>
-                            <button className="rounded-md p-2 hover:bg-muted" onClick={() => setOpen(false)}>
-                                <IconX className="size-5" />
-                            </button>
                         </div>
+                    </NoCorpo>
+                )}
 
-                        {!detail || detailLoading ? (
-                            <div className="p-4 text-sm text-muted-foreground">Carregando…</div>
-                        ) : (
-                            <div className="space-y-4 p-4">
-                                {detailImage && (
-                                    <div className="overflow-hidden rounded-lg border bg-white">
-                                        <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
-                                    </div>
-                                )}
-                                <div className="rounded-lg border p-3 text-sm leading-6">
-                                    <div><b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}</div>
-                                    <div><b>Origem:</b> Loja On-line</div>
-                                    <div><b>Cliente:</b> {(detail.billing?.first_name || "") + " " + (detail.billing?.last_name || "")}</div>
-                                    <div><b>Telefone:</b> {detail.billing?.phone || "—"}</div>
-                                    <div><b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}</div>
-                                    <div><b>Local de Entrega:</b> {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}</div>
+                {/* Drawer online — mantém a experiência existente */}
+                {open && (
+                    <NoCorpo>
+                        <div className="fixed inset-0 z-50">
+                            <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+                            <div className="mobile-y-scroll absolute right-0 top-0 h-full w-full touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain bg-white shadow-xl md:max-w-xl" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "contain" }}>
+                                <div className="flex items-center justify-between border-b px-4 py-3">
                                     <div>
-                                        <b>Falecido(a):</b>{" "}
-                                        {findMetaValue(detail.meta_data, ["shipping_falecido_nome", "falecido_nome", "nome_falecido", "nome_do_falecido"]) || detail.shipping?.first_name || "—"}
+                                        <div className="text-sm text-muted-foreground">Pedido</div>
+                                        <div className="text-lg font-semibold">#{detail?.number || detail?.id || "—"}</div>
                                     </div>
-                                    <div>
-                                        <b>Frase da Coroa:</b>{" "}
-                                        {findMetaValue(detail.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
-                                            findMetaValue(detail.line_items?.flatMap((li) => li.meta_data || []), ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
-                                            "—"}
-                                    </div>
+                                    <button className="rounded-md p-2 hover:bg-muted" onClick={() => setOpen(false)}>
+                                        <IconX className="size-5" />
+                                    </button>
                                 </div>
-                                <div className="rounded-lg border p-3">
-                                    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                        <span className={`w-fit rounded-full border px-2 py-0.5 text-xs ${clsWcStatusBadge(detail.status)}`}>
-                                            {WC_STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
-                                        </span>
+
+                                {!detail || detailLoading ? (
+                                    <div className="p-4 text-sm text-muted-foreground">Carregando…</div>
+                                ) : (
+                                    <div className="space-y-4 p-4">
+                                        {detailImage && (
+                                            <div className="overflow-hidden rounded-lg border bg-white">
+                                                <img src={detailImage} alt={detail.line_items?.[0]?.name || "Produto"} className="w-full object-cover" />
+                                            </div>
+                                        )}
+                                        <div className="rounded-lg border p-3 text-sm leading-6">
+                                            <div><b>Pedido:</b> {detail.line_items?.map((i) => i.name).filter(Boolean).join(", ") || `#${detail.number || detail.id}`}</div>
+                                            <div><b>Origem:</b> Loja On-line</div>
+                                            <div><b>Cliente:</b> {(detail.billing?.first_name || "") + " " + (detail.billing?.last_name || "")}</div>
+                                            <div><b>Telefone:</b> {detail.billing?.phone || "—"}</div>
+                                            <div><b>Valor:</b> {formatCurrency(detail.total, detail.currency || "BRL")}</div>
+                                            <div><b>Local de Entrega:</b> {[detail.shipping?.address_1, detail.shipping?.address_2].filter(Boolean).join(" - ") || "—"}</div>
+                                            <div>
+                                                <b>Falecido(a):</b>{" "}
+                                                {findMetaValue(detail.meta_data, ["shipping_falecido_nome", "falecido_nome", "nome_falecido", "nome_do_falecido"]) || detail.shipping?.first_name || "—"}
+                                            </div>
+                                            <div>
+                                                <b>Frase da Coroa:</b>{" "}
+                                                {findMetaValue(detail.meta_data, ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
+                                                    findMetaValue(detail.line_items?.flatMap((li) => li.meta_data || []), ["frase_para_a_faixa", "frase da coroa", "frase da faixa", "faixa", "mensagem"]) ||
+                                                    "—"}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-lg border p-3">
+                                            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                <span className={`w-fit rounded-full border px-2 py-0.5 text-xs ${clsWcStatusBadge(detail.status)}`}>
+                                                    {WC_STATUS_OPTIONS.find((s) => s.value === detail.status)?.label ?? detail.status}
+                                                </span>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
+                                                        <button
+                                                            key={s}
+                                                            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
+                                                            onClick={() => updateStatus(detail.id, s)}
+                                                            disabled={updating || detail.status === s}
+                                                        >
+                                                            <IconCheck className="size-4" />
+                                                            {WC_STATUS_OPTIONS.find((o) => o.value === s)?.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="text-sm text-muted-foreground">
+                                                Criado em {formatDate(detail.date_created)} — Total <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
+                                            </div>
+                                        </div>
                                         <div className="flex flex-wrap gap-2">
-                                            {(["processing", "completed", "cancelled", "on-hold"] as const).map((s) => (
-                                                <button
-                                                    key={s}
-                                                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50"
-                                                    onClick={() => updateStatus(detail.id, s)}
-                                                    disabled={updating || detail.status === s}
-                                                >
-                                                    <IconCheck className="size-4" />
-                                                    {WC_STATUS_OPTIONS.find((o) => o.value === s)?.label}
-                                                </button>
-                                            ))}
+                                            <button className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm" onClick={copyDetailToClipboard}>
+                                                <IconCopy className="size-4" /> {copied ? "Copiado!" : "Copiar Pedido"}
+                                            </button>
+                                            <button
+                                                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+                                                onClick={() => detailImage && shareImageUrl(detailImage)}
+                                                disabled={!detailImage}
+                                            >
+                                                <IconPhoto className="size-4" /> Compartilhar Foto
+                                            </button>
+                                            <button
+                                                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
+                                                onClick={() => detail && notifyWhatsApp(detail.id)}
+                                                disabled={!canNotifyDetail}
+                                                title={canNotifyDetail ? "Compartilhar mensagem" : "Só é possível notificar pedidos Entregues."}
+                                            >
+                                                <IconSend className="size-4" /> Notificar (WhatsApp)
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground">
-                                        Criado em {formatDate(detail.date_created)} — Total <b>{formatCurrency(detail.total, detail.currency || "BRL")}</b>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <button className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm" onClick={copyDetailToClipboard}>
-                                        <IconCopy className="size-4" /> {copied ? "Copiado!" : "Copiar Pedido"}
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-                                        onClick={() => detailImage && shareImageUrl(detailImage)}
-                                        disabled={!detailImage}
-                                    >
-                                        <IconPhoto className="size-4" /> Compartilhar Foto
-                                    </button>
-                                    <button
-                                        className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
-                                        onClick={() => detail && notifyWhatsApp(detail.id)}
-                                        disabled={!canNotifyDetail}
-                                        title={canNotifyDetail ? "Compartilhar mensagem" : "Só é possível notificar pedidos Entregues."}
-                                    >
-                                        <IconSend className="size-4" /> Notificar (WhatsApp)
-                                    </button>
-                                </div>
+                                )}
                             </div>
-                        )}
-                    </div>
-                </div>
-                </NoCorpo>
-            )}
-        </div>
+                        </div>
+                    </NoCorpo>
+                )}
+            </div>
         </>
     );
 }
