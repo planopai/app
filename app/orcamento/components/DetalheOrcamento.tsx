@@ -96,6 +96,12 @@ export default function DetalheOrcamento({ id, onFechar, onEditar, onAlterou }: 
                         </p>
                     ) : null}
                     <ResumoOrcamento linhas={o.linhas} total={o.valor_total} descontoGeral={rascunhoDoServidor(o.rascunho).desconto_geral} titulo="Folha do orçamento" />
+                    {o.forma_pagamento ? (
+                        <p className="text-sm">
+                            <b>Pagamento combinado:</b> {o.forma_pagamento}
+                            {o.pagamento_obs ? <span className={`block ${MUTED}`}>{o.pagamento_obs}</span> : null}
+                        </p>
+                    ) : null}
                     {o.observacao ? (
                         <p className="text-sm">
                             <b>Observação:</b> {o.observacao}

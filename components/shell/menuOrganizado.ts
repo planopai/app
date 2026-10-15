@@ -10,7 +10,7 @@
  * Tela nova no código, que a organização salva ainda não conhece, entra sozinha no módulo padrão dela.
  */
 import { IconFolder } from "@tabler/icons-react";
-import { FIXOS, MODULOS, type ItemModulo, type Modulo } from "./modulos";
+import { FIXOS, FIXOS_PADRAO_IDS, MODULOS, type ItemModulo, type Modulo } from "./modulos";
 import { iconePorNome, nomeDoIcone } from "./icones";
 
 export type ItemConfig = { id: string; secao?: string };
@@ -77,6 +77,12 @@ export function secoesDe(itens: { secao?: string }[]): string[] {
     return out;
 }
 
+/** Itens fixos padrão (Acesso rápido do Início), na ordem de FIXOS_PADRAO_IDS (15/10/2026). */
+export function fixosPadrao(): ItemModulo[] {
+    const cat = catalogoTelas();
+    return FIXOS_PADRAO_IDS.map((id) => FIXOS.find((f) => f.id === id) || cat.get(id)?.item).filter((f): f is ItemModulo => !!f);
+}
+
 function hubDe(id: string, base?: Modulo): Modulo["hub"] {
     return base ? base.hub : { href: `/modulo/${id}`, slug: "" };
 }
@@ -84,7 +90,7 @@ function hubDe(id: string, base?: Modulo): Modulo["hub"] {
 /** Junta o padrão do código com a organização salva pela Gestão. Sem organização (ou com padrao: true), devolve o padrão. */
 export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Modulo[]; fixos: ItemModulo[] } {
     if (!config || config.padrao || !Array.isArray(config.modulos) || !config.modulos.length) {
-        return { modulos: MODULOS, fixos: FIXOS };
+        return { modulos: MODULOS, fixos: fixosPadrao() };
     }
     const cat = catalogoTelas();
     const padrao = new Map(MODULOS.map((m) => [m.id, m]));
@@ -130,7 +136,7 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
     }
     for (const r of res) r.itens = agruparPorSecao(r.itens);
 
-    const fixosIds = Array.isArray(config.fixos) ? config.fixos : FIXOS.map((f) => f.id);
+    const fixosIds = Array.isArray(config.fixos) ? config.fixos : FIXOS_PADRAO_IDS;
     const fixos = fixosIds
         .map((id) => FIXOS.find((f) => f.id === id) || cat.get(id)?.item)
         .filter((f): f is ItemModulo => !!f)

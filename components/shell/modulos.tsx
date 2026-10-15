@@ -101,6 +101,13 @@ export const FIXOS: ItemModulo[] = [
     { id: "chat", titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
 ];
 
+/**
+ * 15/10/2026: itens fixos PADRÃO (Acesso rápido do Início), na ordem, quando a Gestão não salvou outros no Organizar menu
+ * (ou voltou ao padrão). FIXOS acima continua sendo o catálogo das telas que só existem como fixas (Quadro, Minhas OS...).
+ * O Quadro e a Coroa ficam fora do padrão porque já abrem pelos cartões de número do Início.
+ */
+export const FIXOS_PADRAO_IDS: string[] = ["inicio", "minhasos", "consulta", "solicitar-produto", "minhas-solicitacoes", "messenger", "chat"];
+
 export const MODULOS: Modulo[] = [
     {
         id: "atendimento",

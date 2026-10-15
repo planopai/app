@@ -6,12 +6,11 @@ import {
     IconAlertTriangle,
     IconBuildingSkyscraper,
     IconChevronRight,
+    IconFileText,
     IconFlower,
-    IconPackageExport,
     IconPlus,
     IconSearch,
     IconTruckDelivery,
-    IconUserCheck,
     IconX,
 } from "@tabler/icons-react";
 import { usePerms } from "./_perms/PermsProvider";
@@ -25,8 +24,14 @@ import { formatarSelo, useContadores } from "@/components/shell/useContadores";
  *
  * Da home anterior ficaram: o relógio, a pesquisa de funções (só entram páginas permitidas; casa pelo começo do título),
  * o contador do Messenger (não lidas + fila de clientes) e o filtro por permissões (`usePerms`).
- * Novos: boas-vindas com o nome, resumo de números, "Acesso rápido" (Quadro, Minhas OS, Messenger e Chat) e os
- * módulos do organograma.
+ * Novos: boas-vindas com o nome, resumo de números, "Acesso rápido" e os módulos do organograma.
+ *
+ * 15/10/2026 (navegação do Início, sem repetição):
+ *  - o Quadro de Atendimentos abre só pelo cartão "Serviços funerários" (saiu o botão do topo e o item do Acesso rápido);
+ *  - "Novo orçamento" virou "Orçamentos" (abre a tela com os orçamentos salvos; o novo é criado lá);
+ *  - saíram os cartões "Material a recolher" e "Aguardando sua ação";
+ *  - "Requisições para separar" só para quem tem a página "requisicoes"; "Alertas de estoque" só para quem tem o Estoque;
+ *  - Acesso rápido continua vindo do Organizar menu; o padrão novo está em FIXOS_PADRAO_IDS (modulos.tsx).
  *
  * Os números vêm de useContadores (mesmas consultas da home anterior; atendimentos pela regra do Quadro, concluídos não contam).
  * Quando a consulta falha, mostra "—". Não existe mais a rota /inicio: o Início é esta tela.
@@ -35,7 +40,7 @@ import { formatarSelo, useContadores } from "@/components/shell/useContadores";
 type Tom = "azul" | "verde" | "amarelo";
 
 const CHIP: Record<Tom, string> = {
-    azul: "bg-[#E6F7FE] dark:bg-[#00AEEC]/20",
+    azul: "bg-[#E9EFF6] dark:bg-[#3D6A99]/30",
     verde: "bg-[#EEF5D6] dark:bg-[#B3CE52]/20",
     amarelo: "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15",
 };
@@ -123,17 +128,16 @@ export default function HomePage() {
         const itens: { label: string; valor: number | null; href: string; tom: Tom; icon: Icone; mostrar: boolean }[] = [
             { label: "Serviços funerários", valor: c.servicos, href: "/quadro-acompanhamento", tom: "azul", icon: IconBuildingSkyscraper, mostrar: true },
             { label: "Coroas de flores", valor: c.coroas, href: "/coroa-de-flores", tom: "verde", icon: IconFlower, mostrar: pronto && has("coroa-de-flores") },
-            { label: "Requisições de material", valor: c.requisicoes, href: has("requisicoes") ? "/requisicoes" : "/requisicao", tom: "azul", icon: IconTruckDelivery, mostrar: pronto && (has("requisicoes") || has("requisicao")) },
-            { label: "Alertas de estoque", valor: c.estoque, href: has("estoque") ? "/estoque" : "/produtos", tom: "amarelo", icon: IconAlertTriangle, mostrar: pronto && (has("geral") || has("estoque") || has("produtos")) },
-            { label: "Material a recolher", valor: c.recolher, href: "/acompanhamento", tom: "azul", icon: IconPackageExport, mostrar: pronto && has("acompanhamento") },
-            { label: "Aguardando sua ação", valor: c.aguardando, href: "/acompanhamento", tom: "amarelo", icon: IconUserCheck, mostrar: pronto && has("acompanhamento") },
+            { label: "Requisições para separar", valor: c.requisicoes, href: "/requisicoes", tom: "azul", icon: IconTruckDelivery, mostrar: pronto && has("requisicoes") },
+            { label: "Alertas de estoque", valor: c.estoque, href: has("estoque") ? "/estoque" : "/geral", tom: "amarelo", icon: IconAlertTriangle, mostrar: pronto && (has("geral") || has("estoque")) },
         ];
         return itens.filter((i) => i.mostrar);
     }, [c, pronto, has]);
 
     /*
-     * Acesso rápido: os itens fixos do menu, menos o Início (padrão: Quadro, Minhas OS, Messenger só com a página, e Chat).
-     * 08/10/2026: a Gestão escolhe os fixos e a ordem em Organizar menu; os módulos seguem a ordem e o que o usuário escondeu.
+     * Acesso rápido: os itens fixos do menu, menos o Início. A Gestão escolhe os fixos e a ordem em Organizar menu (08/10/2026).
+     * 15/10/2026: o padrão passou a ser Minhas OS, Consulta, Solicitar Produto, Minhas Solicitações, Messenger e Chat
+     * (FIXOS_PADRAO_IDS no modulos.tsx); Minhas Solicitações mostra o número das requisições abertas do usuário.
      */
     const menu = useMenu();
     const rapidos = useMemo(() => menu.fixos.filter((i) => i.href !== "/" && pronto && itemVisivel(i, has)), [menu.fixos, pronto, has]);
@@ -193,16 +197,13 @@ export default function HomePage() {
                                     Novo atendimento
                                 </Link>
                             ) : null}
-                            {/* 13/10/2026: atalho do Orçamento (página "orcamento") */}
+                            {/* 13/10/2026: atalho do Orçamento (página "orcamento"). 15/10/2026: abre a lista dos salvos; o novo é criado lá. */}
                             {pronto && has("orcamento") ? (
-                                <Link href="/orcamento?novo=1" className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-[15px] font-extrabold text-white hover:bg-white/10">
-                                    <IconPlus size={18} />
-                                    Novo orçamento
+                                <Link href="/orcamento" className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-[15px] font-extrabold text-white hover:bg-white/10">
+                                    <IconFileText size={18} />
+                                    Orçamentos
                                 </Link>
                             ) : null}
-                            <Link href="/quadro-acompanhamento" className="hidden h-11 items-center whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-sm font-bold text-white lg:inline-flex">
-                                Quadro de Atendimentos
-                            </Link>
                         </div>
                     </div>
                 </section>
@@ -262,7 +263,7 @@ export default function HomePage() {
                     <>
                         {/* RESUMO */}
                         {resumo.length ? (
-                            <section aria-label="Resumo" className="mt-5 grid grid-cols-2 gap-3 sm:landscape:grid-cols-3 lg:grid-cols-4 lg:gap-4">
+                            <section aria-label="Resumo" className="mt-5 grid grid-cols-2 gap-3 sm:landscape:grid-cols-4 lg:grid-cols-4 lg:gap-4">
                                 {resumo.map((r) => {
                                     const Icon = r.icon;
                                     return (
@@ -283,16 +284,17 @@ export default function HomePage() {
 
                         {/* ACESSO RÁPIDO */}
                         <h2 className="mb-3 mt-8 text-xl font-extrabold lg:mb-4 lg:mt-9">Acesso rápido</h2>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
                             {rapidos.map((f) => {
                                 const Icon = f.icone;
                                 const selo =
                                     f.selo === "avisos" ? formatarSelo(c.avisos)
-                                    : f.selo === "messenger" ? formatarSelo(contMessenger)
-                                    : f.selo === "aguardando" ? formatarSelo(c.aguardando)
-                                    : f.selo === "coroas" ? formatarSelo(c.coroas)
-                                    : f.selo === "estoque" ? formatarSelo(c.estoque)
-                                    : "";
+                                        : f.selo === "messenger" ? formatarSelo(contMessenger)
+                                            : f.selo === "aguardando" ? formatarSelo(c.aguardando)
+                                                : f.selo === "coroas" ? formatarSelo(c.coroas)
+                                                    : f.selo === "estoque" ? formatarSelo(c.estoque)
+                                                        : f.id === "minhas-solicitacoes" ? formatarSelo(c.minhasRequisicoes)
+                                                            : "";
                                 return (
                                     <Link key={f.id} href={hrefDoItem(f, has)} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
                                         <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP.azul].join(" ")}>

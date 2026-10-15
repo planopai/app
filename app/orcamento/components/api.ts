@@ -45,7 +45,7 @@ export const lerOrcamento = (id: number) => orcGet<Orcamento>({ detalhe: 1, id }
 /** Calcula a folha. Com 'antes', o servidor diz se este usuário pode aplicar o ajuste (bloqueio = motivo; "" = pode). */
 export const calcularPrevia = (rascunho: Rascunho | Record<string, unknown>, antes?: Record<string, unknown>) =>
     orcPost<Previa>(antes ? { acao: "previa", rascunho, antes } : { acao: "previa", rascunho }).then((r) => r.dados);
-export const salvarOrcamento = (dados: { id?: number; falecido: string; contato: string; telefone: string; observacao: string; rascunho: Rascunho }) =>
+export const salvarOrcamento = (dados: { id?: number; falecido: string; contato: string; telefone: string; observacao: string; forma_pagamento: string; pagamento_obs: string; rascunho: Rascunho }) =>
     orcPost<Orcamento>({ acao: "salvar", ...dados });
 export const cancelarOrcamento = (id: number, motivo: string) => orcPost<{ id: number }>({ acao: "cancelar", id, motivo });
 

@@ -29,6 +29,7 @@ import { FIXOS, MODULOS, type ItemModulo, type Modulo } from "@/components/shell
 import {
     agruparPorSecao,
     catalogoTelas,
+    fixosPadrao,
     idParaModulo,
     paraConfig,
     nomeOriginal,
@@ -237,7 +238,7 @@ export default function OrganizarMenuPage() {
         setSalvando(true);
         setErro("");
         try {
-            const config = padrao ? { ...paraConfig(MODULOS, FIXOS, []), padrao: true } : paraConfig(modulos, fixos, removidos);
+            const config = padrao ? { ...paraConfig(MODULOS, fixosPadrao(), []), padrao: true } : paraConfig(modulos, fixos, removidos);
             const r = await menuPost("salvar_organizacao", { config });
             await recarregarMenu();
             setAlterado(false);

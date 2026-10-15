@@ -235,6 +235,9 @@ export type ResumoLista = {
 
 export type Orcamento = ResumoLista & {
     observacao: string;
+    /** Forma de pagamento combinada (só informação), ex.: "PIX + Cartão de crédito em 3x". */
+    forma_pagamento?: string;
+    pagamento_obs?: string;
     rascunho: Record<string, any>;
     linhas: Linha[];
     convertido_em: string | null;
@@ -242,6 +245,41 @@ export type Orcamento = ResumoLista & {
     cancelado_por_nome: string | null;
     motivo_cancelamento: string | null;
 };
+
+/* Forma de pagamento combinada (15/10/2026): só informação, não gera cobrança nem vai para a OS. */
+export const FORMAS_PAGAMENTO = ["PIX", "Dinheiro", "Cartão de débito", "Cartão de crédito", "Nota promissória"] as const;
+export const FORMA_CREDITO = "Cartão de crédito";
+export const PARCELAS_MAX = 24;
+export type Pagamento = { formas: string[]; parcelas: string; obs: string };
+export const PAGAMENTO_VAZIO: Pagamento = { formas: [], parcelas: "1", obs: "" };
+
+/** Texto gravado: formas na ordem da lista, crédito com as parcelas ("Cartão de crédito em 3x" / "à vista"). */
+export function textoPagamento(p: Pagamento): string {
+    return FORMAS_PAGAMENTO.filter((f) => p.formas.includes(f))
+        .map((f) => {
+            if (f !== FORMA_CREDITO) return f;
+            const n = Math.floor(Number(p.parcelas) || 0);
+            return n > 1 ? `${f} em ${n}x` : `${f} à vista`;
+        })
+        .join(" + ");
+}
+
+/** Volta do texto gravado para a tela (editar orçamento). */
+export function pagamentoDoTexto(forma?: string | null, obs?: string | null): Pagamento {
+    const partes = String(forma || "").split(" + ").map((x) => x.trim()).filter(Boolean);
+    let parcelas = "1";
+    const formas = FORMAS_PAGAMENTO.filter((f) =>
+        partes.some((p) => {
+            if (!p.startsWith(f)) return false;
+            if (f === FORMA_CREDITO) {
+                const m = /em\s+(\d+)x/i.exec(p);
+                if (m) parcelas = m[1];
+            }
+            return true;
+        }),
+    ) as string[];
+    return { formas, parcelas, obs: String(obs || "") };
+}
 
 export const brl = (v: number | null | undefined) =>
     v === null || v === undefined ? "a confirmar" : (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

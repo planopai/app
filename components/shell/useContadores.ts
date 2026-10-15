@@ -9,6 +9,7 @@
  *  - servicos / recolher / aguardando: informativo.php?listar=1, com a MESMA regra do Quadro (concluídos não contam)
  *  - coroas: coroas.php?listar=1&grupo=confeccao (fila de confecção)
  *  - requisicoes: requisicoes.php (fila, para quem opera; senão, as minhas abertas)
+ *  - minhasRequisicoes: requisicoes.php?action=minhas (as requisições abertas do próprio usuário; atalho do Início, 15/10/2026)
  *  - estoque: materiais_gerais.php?init=1 (produtos no mínimo ou abaixo)
  *  - avisos: avisos.php?listar=1 (os que ainda não foram finalizados)
  *
@@ -28,11 +29,12 @@ export type Contadores = {
     aguardando: number | null;
     coroas: number | null;
     requisicoes: number | null;
+    minhasRequisicoes: number | null;
     estoque: number | null;
     avisos: number | null;
 };
 
-const VAZIO: Contadores = { nome: "", servicos: null, recolher: null, aguardando: null, coroas: null, requisicoes: null, estoque: null, avisos: null };
+const VAZIO: Contadores = { nome: "", servicos: null, recolher: null, aguardando: null, coroas: null, requisicoes: null, minhasRequisicoes: null, estoque: null, avisos: null };
 
 let estado: Contadores = { ...VAZIO };
 const ouvintes = new Set<() => void>();
@@ -120,13 +122,22 @@ async function atualizar() {
             }
         }
 
+        const urlMinhas = `${ENDPOINT}/requisicoes.php?action=minhas&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=50&_=${t}`;
+        let minhasJaContadas = false;
         if (has("requisicoes") || has("requisicao")) {
             const operador = has("requisicoes");
-            const url = operador
-                ? `${ENDPOINT}/requisicoes.php?action=fila&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=200&_ts=${t}`
-                : `${ENDPOINT}/requisicoes.php?action=minhas&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=50&_=${t}`;
+            const url = operador ? `${ENDPOINT}/requisicoes.php?action=fila&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=200&_ts=${t}` : urlMinhas;
             const j = await getJson<{ ok?: boolean; rows?: unknown[] }>(url, sig);
-            if (j?.ok && Array.isArray(j.rows)) publicar({ requisicoes: j.rows.length });
+            if (j?.ok && Array.isArray(j.rows)) {
+                publicar(operador ? { requisicoes: j.rows.length } : { requisicoes: j.rows.length, minhasRequisicoes: j.rows.length });
+                minhasJaContadas = !operador;
+            }
+        }
+
+        // Atalho "Minhas solicitações" do Início: requisições abertas do próprio usuário (reaproveita a consulta acima quando é a mesma).
+        if (has("minhas-solicitacoes") && !minhasJaContadas) {
+            const j = await getJson<{ ok?: boolean; rows?: unknown[] }>(urlMinhas, sig);
+            if (j?.ok && Array.isArray(j.rows)) publicar({ minhasRequisicoes: j.rows.length });
         }
 
         if (has("geral") || has("estoque") || has("produtos")) {

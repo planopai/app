@@ -12,7 +12,7 @@ import { JanelaAjusteItem, JanelaDescontoGeral } from "./AjusteValor";
 import { calcularPrevia, salvarOrcamento } from "./api";
 import EscolhaProduto from "./EscolhaProduto";
 import ResumoOrcamento from "./ResumoOrcamento";
-import { RASCUNHO_VAZIO, brl, dataBR, rascunhoDoServidor, rascunhoParaServidor, type CoroaOrc, type Linha as LinhaFolha, type Opcoes, type Orcamento, type Previa, type Rascunho, type SimNao } from "./tipos";
+import { FORMAS_PAGAMENTO, FORMA_CREDITO, PARCELAS_MAX, RASCUNHO_VAZIO, brl, dataBR, pagamentoDoTexto, rascunhoDoServidor, textoPagamento, type Pagamento, rascunhoParaServidor, type CoroaOrc, type Linha as LinhaFolha, type Opcoes, type Orcamento, type Previa, type Rascunho, type SimNao } from "./tipos";
 import { Aviso, BTN_PRI, BTN_SEC, CAMPO, CARTAO, Campo, EscolhaSimNao, Ic, Icone, Janela, MUTED, Opcoes as BotoesOpcoes, ROTULO, mascaraTelefone } from "./ui";
 
 const LOCAIS_URNA = ["MEMORIAL", "FUNERARIA"];
@@ -30,6 +30,9 @@ export default function EditorOrcamento({ inicial, opcoes, onSalvo, onVoltar }: 
     const [contato, setContato] = useState(inicial?.contato || "");
     const [telefone, setTelefone] = useState(inicial?.telefone || "");
     const [observacao, setObservacao] = useState(inicial?.observacao || "");
+    const [pagamento, setPagamento] = useState<Pagamento>(() => pagamentoDoTexto(inicial?.forma_pagamento, inicial?.pagamento_obs));
+    const credito = pagamento.formas.includes(FORMA_CREDITO);
+    const parcelasOk = !credito || (Number(pagamento.parcelas) >= 1 && Number(pagamento.parcelas) <= PARCELAS_MAX);
     const [r, setR] = useState<Rascunho>(() => (inicial ? rascunhoDoServidor(inicial.rascunho, camposExtras) : RASCUNHO_VAZIO));
     const [previa, setPrevia] = useState<Previa | null>(null);
     const [calculando, setCalculando] = useState(false);
@@ -98,6 +101,8 @@ export default function EditorOrcamento({ inicial, opcoes, onSalvo, onVoltar }: 
         uso.velorio === "Sim" && !r.sala_velorio && "a sala do velório",
         uso.coroas === "Sim" && r.coroas.some((c) => !c.produto_id) && "o modelo da coroa",
         !(previa?.linhas.length) && "pelo menos um item",
+        !pagamento.formas.length && "a forma de pagamento combinada",
+        !parcelasOk && `as parcelas do cartão de crédito (1 a ${PARCELAS_MAX})`,
     ].filter(Boolean) as string[];
 
     const salvar = async () => {
@@ -116,6 +121,8 @@ export default function EditorOrcamento({ inicial, opcoes, onSalvo, onVoltar }: 
                 contato: contato.trim(),
                 telefone: telefone.trim(),
                 observacao: observacao.trim(),
+                forma_pagamento: textoPagamento(pagamento),
+                pagamento_obs: pagamento.obs.trim(),
                 rascunho: rascunhoParaServidor(r) as any,
             });
             onSalvo(dados, msg);
@@ -336,6 +343,52 @@ export default function EditorOrcamento({ inicial, opcoes, onSalvo, onVoltar }: 
                                     ) : null}
                                 </div>
                             </ItemSimNao>
+                        </div>
+                    </Secao>
+
+                    <Secao titulo="Forma de pagamento combinada *">
+                        <div role="group" aria-label="Forma de pagamento" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {FORMAS_PAGAMENTO.map((f) => {
+                                const on = pagamento.formas.includes(f);
+                                return (
+                                    <button
+                                        key={f}
+                                        type="button"
+                                        aria-pressed={on}
+                                        onClick={() => setPagamento((p) => ({ ...p, formas: on ? p.formas.filter((x) => x !== f) : [...p.formas, f] }))}
+                                        className={`inline-flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl border-[1.5px] px-2 py-2 text-center text-[15px] font-extrabold leading-tight ${on
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
+                                                : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/25 dark:bg-transparent dark:text-white"
+                                            }`}
+                                    >
+                                        {on ? <Icone d={<path d="M5 12l5 5 9-10" />} tam={16} /> : null}
+                                        {f}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className={`mt-3 grid grid-cols-1 gap-3 ${credito ? "sm:grid-cols-[160px_minmax(0,1fr)]" : ""}`}>
+                            {credito ? (
+                                <Campo rotulo="Parcelas no crédito *">
+                                    <input
+                                        className={CAMPO}
+                                        inputMode="numeric"
+                                        value={pagamento.parcelas}
+                                        onChange={(e) => setPagamento((p) => ({ ...p, parcelas: e.target.value.replace(/\D/g, "").slice(0, 2) }))}
+                                        placeholder="1"
+                                    />
+                                </Campo>
+                            ) : null}
+                            <Campo rotulo="Observação do pagamento">
+                                <input
+                                    className={CAMPO}
+                                    value={pagamento.obs}
+                                    onChange={(e) => setPagamento((p) => ({ ...p, obs: e.target.value }))}
+                                    placeholder="Ex.: entrada de R$ 500 no PIX e o restante no cartão"
+                                    maxLength={255}
+                                    autoComplete="off"
+                                />
+                            </Campo>
                         </div>
                     </Secao>
 
