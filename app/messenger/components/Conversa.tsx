@@ -599,7 +599,7 @@ export default function JanelaConversa(props: {
                 {externo && (
                     <button type="button" onClick={() => setPainelCliente(true)} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Cliente na Unymos (contrato e parcelas)" title="Cliente · contrato e parcelas"><Icone nome="user" /></button>
                 )}
-                {painelCliente && <PainelCliente conversa={c} onFechar={() => setPainelCliente(false)} onInserirTexto={(t) => { setTexto(t); setPainelCliente(false); }} />}
+                {painelCliente && <PainelCliente conversa={c} onFechar={() => setPainelCliente(false)} onInserirTexto={(t) => { setTexto(t); setPainelCliente(false); }} onEnviarArquivo={props.onEnviarArquivo ? (f) => props.onEnviarArquivo(f) : undefined} />}
                 {externo && props.onEtiquetas && (
                     <button type="button" onClick={props.onEtiquetas} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Etiquetas da conversa" title="Etiquetas"><Icone nome="tag" /></button>
                 )}
