@@ -306,6 +306,10 @@ export function EtiquetasConversa({ conversa, onFechar, onSalvo }: { conversa: C
     const [marcadas, setMarcadas] = useState<number[]>((conversa.etiquetas || []).map((e) => e.id));
     const [erro, setErro] = useState("");
     const [salvando, setSalvando] = useState(false);
+    const [max, setMax] = useState(4); // limite de etiquetas por conversa (Configurações › Geral)
+    useEffect(() => {
+        msgGet<{ max_etiquetas?: number }>("config", {}, false).then((c) => c.max_etiquetas && setMax(c.max_etiquetas)).catch(() => {});
+    }, []);
     useEffect(() => {
         msgGet<Etiqueta[]>("etiquetas").then(setLista).catch((e) => setErro(e.message));
     }, []);
@@ -325,10 +329,11 @@ export function EtiquetasConversa({ conversa, onFechar, onSalvo }: { conversa: C
             {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
             {!lista && !erro && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Carregando…</p>}
             {lista && !lista.length && <p className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma etiqueta cadastrada. Crie em Messenger · Configurações › Etiquetas.</p>}
+            {lista && lista.length > 0 && <p className={`text-[13.5px] font-bold ${marcadas.length >= max ? "text-[#8A6A00] dark:text-[#F7E39A]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{marcadas.length} de {max} etiquetas{marcadas.length >= max ? " — limite atingido. Tire uma para marcar outra." : ""}</p>}
             <div className="flex flex-col">
                 {(lista || []).map((e) => (
-                    <label key={e.id} className="flex min-h-[54px] cursor-pointer items-center gap-3 rounded-xl px-2 hover:bg-[#EEF2F7] dark:hover:bg-white/10">
-                        <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={marcadas.includes(e.id)} onChange={() => setMarcadas((m) => (m.includes(e.id) ? m.filter((x) => x !== e.id) : [...m, e.id]))} />
+                    <label key={e.id} className={`flex min-h-[54px] items-center gap-3 rounded-xl px-2 ${!marcadas.includes(e.id) && marcadas.length >= max ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-[#EEF2F7] dark:hover:bg-white/10"}`}>
+                        <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={marcadas.includes(e.id)} disabled={!marcadas.includes(e.id) && marcadas.length >= max} onChange={() => setMarcadas((m) => (m.includes(e.id) ? m.filter((x) => x !== e.id) : m.length >= max ? m : [...m, e.id]))} />
                         <SeloCor nome={e.nome} cor={e.cor} ponto />
                         <span className="flex-1" />
                         {e.pessoal && <span className="rounded-full bg-[#F0F2F5] px-2 py-0.5 text-[12px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Minha</span>}

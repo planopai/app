@@ -15,7 +15,7 @@ import { limparCacheRespostas } from "../messenger/components/Acoes";
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
-type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number> };
+type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number> };
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5 dark:border-white/12 dark:bg-[#232B3F]";
 const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -86,7 +86,7 @@ export default function MessengerConfigPage() {
         setConfig(novo);
         try {
             const extra = (mudanca as any).precos ? { precos: (mudanca as any).precos } : {};
-            const r = await msgPost("config_salvar", { assinatura: novo.assinatura, max_fixadas: novo.max_fixadas, ...extra });
+            const r = await msgPost("config_salvar", { assinatura: novo.assinatura, max_fixadas: novo.max_fixadas, max_etiquetas: novo.max_etiquetas ?? 4, ...extra });
             setAviso(r.msg);
         } catch (e: any) {
             setErro(e.message);
@@ -252,6 +252,10 @@ export default function MessengerConfigPage() {
                         <label className="mt-4 block">
                             <span className={rotulo}>Quantas conversas cada pessoa pode fixar no topo</span>
                             <input type="number" min={1} max={10} className={`${campo} h-12 max-w-[160px]`} value={config.max_fixadas} disabled={!podeEmpresa} onChange={(e) => setConfig({ ...config, max_fixadas: Number(e.target.value) || 1 })} onBlur={() => salvarGeral({})} />
+                        </label>
+                        <label className="mt-4 block">
+                            <span className={rotulo}>Quantas etiquetas cada conversa pode ter</span>
+                            <input type="number" min={1} max={10} className={`${campo} h-12 max-w-[160px]`} value={config.max_etiquetas ?? 4} disabled={!podeEmpresa} onChange={(e) => setConfig({ ...config, max_etiquetas: Number(e.target.value) || 1 })} onBlur={() => salvarGeral({})} />
                         </label>
                         <div className="mt-6 border-t border-[#EEF0F3] pt-4 dark:border-white/10">
                             <span className={rotulo}>Preços da Meta por mensagem cobrada (R$) — usados no Monitoramento</span>
