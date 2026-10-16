@@ -140,6 +140,38 @@ export default function MessengerPage() {
     const [paraEncaminhar, setParaEncaminhar] = useState<Mensagem | null>(null);
     const [verHistorico, setVerHistorico] = useState(false);
     const [pastaEquipeAberta, setPastaEquipeAberta] = useState(false);
+    // computador: tela cheia (o Messenger cobre o menu lateral e o topo do app); a escolha fica guardada no aparelho
+    const [telaCheia, setTelaCheia] = useState(false);
+    useEffect(() => {
+        try {
+            setTelaCheia(localStorage.getItem("pai.msg.telacheia") === "1");
+        } catch {
+            /* sem armazenamento */
+        }
+    }, []);
+    // tela cheia: a página de trás não rola e o menu do app fica escondido debaixo do Messenger
+    useEffect(() => {
+        if (!telaCheia || !window.matchMedia("(min-width: 768px)").matches) return;
+        const antes = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const esc = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector('[role="dialog"]') && alternarTelaCheia();
+        window.addEventListener("keydown", esc);
+        return () => {
+            document.body.style.overflow = antes;
+            window.removeEventListener("keydown", esc);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [telaCheia]);
+    const alternarTelaCheia = () => {
+        setTelaCheia((v) => {
+            try {
+                localStorage.setItem("pai.msg.telacheia", v ? "0" : "1");
+            } catch {
+                /* sem armazenamento */
+            }
+            return !v;
+        });
+    };
     // mensagem que está sendo respondida (responder direcionado, como no WhatsApp)
     const [respondendo, setRespondendo] = useState<Mensagem | null>(null);
     useEffect(() => setRespondendo(null), [selId]);
@@ -563,7 +595,7 @@ export default function MessengerPage() {
     if (verHistorico) return <HistoricoClientes embutido onVoltar={() => setVerHistorico(false)} />;
 
     return (
-        <div className={`flex ${selId ? "h-[calc(100dvh-var(--header-height))]" : "h-[calc(100dvh-var(--header-height)-4.25rem-env(safe-area-inset-bottom))]"} flex-col overflow-x-hidden bg-white text-[#1F2638] md:h-[calc(100dvh-var(--header-height))] md:min-h-[560px] md:bg-[#F4F6F9] md:p-4 dark:bg-[#1C2334] dark:text-white md:dark:bg-[#1C2334]`}>
+        <div className={`flex ${selId ? "h-[calc(100dvh-var(--header-height))]" : "h-[calc(100dvh-var(--header-height)-4.25rem-env(safe-area-inset-bottom))]"} flex-col overflow-x-hidden bg-white text-[#1F2638] md:min-h-[560px] md:bg-[#F4F6F9] dark:bg-[#1C2334] dark:text-white md:dark:bg-[#1C2334] ${telaCheia ? "md:fixed md:inset-0 md:z-[1000] md:h-[100dvh] md:p-2" : "md:h-[calc(100dvh-var(--header-height))] md:p-4"}`}>
             {(erro || aviso) && (
                 <div className={`mx-2 mb-2 mt-2 flex items-center gap-3 rounded-xl border px-4 py-2 text-sm font-bold md:mx-0 md:mt-0 ${erro ? "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]" : "border-[#B3CE52] bg-[#EEF5D6] dark:bg-[#B3CE52]/15"}`}>
                     <span className="flex-1">{erro || aviso}</span>
@@ -574,9 +606,10 @@ export default function MessengerPage() {
                 {/* lista */}
                 <div className={`${selId ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-[#E6E9EE] dark:border-white/12`}>
                     <div className="flex items-center gap-1 pb-1 pl-4 pr-2 pt-3">
-                        <h1 className="m-0 flex-1 text-[26px] font-extrabold text-[#313C55] md:text-2xl dark:text-white">Conversas</h1>
-                        <button type="button" onClick={() => setModal("nova")} className="hidden h-11 items-center gap-2 rounded-full bg-[#313C55] px-4 text-[15px] font-extrabold text-white shadow-sm hover:bg-[#262F45] md:flex dark:bg-[#3D6A99] dark:hover:bg-[#4A7AAB]" aria-label="Nova conversa"><Icone nome="novaconversa" className="h-5 w-5" />Nova conversa</button>
+                        <h1 className="m-0 min-w-0 flex-1 truncate text-[26px] font-extrabold text-[#313C55] md:text-[22px] dark:text-white">Conversas</h1>
+                        <button type="button" onClick={() => setModal("nova")} className="hidden h-11 flex-none items-center gap-1.5 rounded-full bg-[#313C55] px-3.5 text-[14.5px] font-extrabold text-white shadow-sm hover:bg-[#262F45] md:flex dark:bg-[#3D6A99] dark:hover:bg-[#4A7AAB]" aria-label="Nova conversa"><Icone nome="novaconversa" className="h-5 w-5" />Nova conversa</button>
                         <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10" aria-label="Histórico de clientes" title="Histórico de clientes"><Icone nome="clock" className="h-[22px] w-[22px]" /></button>
+                        <button type="button" onClick={alternarTelaCheia} aria-pressed={telaCheia} className="hidden h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] md:flex dark:text-white dark:hover:bg-white/10" aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"} title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}><Icone nome={telaCheia ? "recolher" : "expandir"} className="h-[20px] w-[20px]" /></button>
                     </div>
                     <div className="flex flex-col gap-2.5 px-4 pb-2.5 pt-1">
                         <label className="flex h-[52px] items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">

@@ -96,6 +96,45 @@ export function TextoFormatado({ texto }: { texto: string }) {
     return <>{partes}</>;
 }
 
+/** "Dados da mensagem" (como no WhatsApp): quem leu, quem ainda não leu e quem reagiu com cada emoji. */
+function DadosMensagem({ m, conversa, eu, minha, onFechar }: { m: Mensagem; conversa: TConversa; eu: number; minha: boolean; onFechar: () => void }) {
+    const outros = conversa.membros.filter((p) => p.usuario_id !== eu && p.usuario_id !== m.autor_usuario_id && p.papel !== "observador");
+    const leram = outros.filter((p) => p.ultima_lida_id >= m.id);
+    const naoLeram = outros.filter((p) => p.ultima_lida_id < m.id);
+    const reacoes = m.reacoes || [];
+    const nomeDe = (id: number, nome?: string | null) => (id === eu ? "Você" : nome || conversa.membros.find((p) => p.usuario_id === id)?.nome || "—");
+    useEffect(() => {
+        const esc = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+        window.addEventListener("keydown", esc);
+        return () => window.removeEventListener("keydown", esc);
+    }, [onFechar]);
+    const lista = "rounded-2xl bg-white px-3 dark:bg-[#232B3F]";
+    const linha = "flex items-center gap-2 border-b border-[#F0F2F5] py-2.5 text-[15.5px] last:border-0 dark:border-white/10";
+    const titulo = "mt-3 px-1 text-[12px] font-extrabold uppercase tracking-wider";
+    return (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 md:items-center" onClick={onFechar}>
+            <div role="dialog" aria-modal="true" aria-label="Dados da mensagem" onClick={(e) => e.stopPropagation()} className="max-h-[85dvh] w-full overflow-y-auto rounded-t-3xl bg-[#F4F6F9] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:max-w-md md:rounded-3xl dark:bg-[#1C2334]">
+                <div className="flex items-center gap-2">
+                    <h2 className="m-0 flex-1 text-lg font-extrabold text-[#313C55] dark:text-white">Dados da mensagem</h2>
+                    <button type="button" onClick={onFechar} aria-label="Fechar" className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"><Icone nome="x" className="h-5 w-5" /></button>
+                </div>
+                <div className="mt-2 line-clamp-3 rounded-xl bg-[#E3EFC0] px-3 py-2 text-[15px] text-[#1F2638] dark:bg-[#3D6A99]/30 dark:text-white">{m.texto || (m.anexos[0]?.nome_original ?? "Anexo")}</div>
+                {minha && conversa.tipo === "grupo" && (
+                    <>
+                        <div className={`${titulo} text-[#3D6A99] dark:text-[#A9BED6]`}>✓✓ Lida por · {leram.length}</div>
+                        <div className={lista}>{leram.length ? leram.map((p) => <div key={p.usuario_id} className={linha}><b className="flex-1">{p.nome}</b></div>) : <p className="py-2.5 text-[14.5px] text-[#6B7488]">Ninguém leu ainda.</p>}</div>
+                        <div className={`${titulo} text-[#5B6478] dark:text-[#AEB9CF]`}>✓ Ainda não leu · {naoLeram.length}</div>
+                        <div className={lista}>{naoLeram.length ? naoLeram.map((p) => <div key={p.usuario_id} className={linha}><b className="flex-1">{p.nome}</b></div>) : <p className="py-2.5 text-[14.5px] text-[#6B7488]">Todos já leram.</p>}</div>
+                    </>
+                )}
+                {minha && conversa.tipo === "individual" && <div className={`${titulo} text-[#3D6A99] dark:text-[#A9BED6]`}>{leram.length ? "✓✓ Lida" : "✓ Ainda não lida"}</div>}
+                <div className={`${titulo} text-[#5B6478] dark:text-[#AEB9CF]`}>Reações · {reacoes.length}</div>
+                <div className={lista}>{reacoes.length ? reacoes.map((r) => <div key={`${r.usuario_id}${r.emoji}`} className={linha}><span className="w-8 text-xl">{r.emoji}</span><b className="flex-1">{nomeDe(r.usuario_id, r.nome)}</b></div>) : <p className="py-2.5 text-[14.5px] text-[#6B7488]">Sem reações.</p>}</div>
+            </div>
+        </div>
+    );
+}
+
 /** Trecho da mensagem respondida, dentro do balão (como no WhatsApp). */
 function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
     const autor = !m ? "" : m.autor_tipo === "usuario" && m.autor_usuario_id === eu ? "Você" : m.autor_nome || "—";
@@ -110,6 +149,7 @@ function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
 function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque, onFixar, fixada }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null; onFixar?: (m: Mensagem) => void; fixada?: boolean }) {
     const [puxar, setPuxar] = useState(0);
     const [menu, setMenu] = useState(false);
+    const [dados, setDados] = useState(false); // "Dados da mensagem": quem leu e quem reagiu
     const toqueLongo = useRef<ReturnType<typeof setTimeout> | null>(null);
     const toque = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
     const automatica = m.autor_tipo === "sistema" && m.tipo !== "sistema"; // pacote 4B: boas-vindas, menu, fora do horário, avaliação
@@ -227,9 +267,11 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                     onFixar={onFixar ? () => onFixar(m) : undefined}
                     fixada={fixada}
                     onApagar={podeApagar ? () => onApagar(m) : undefined}
+                    onDados={conversa.tipo !== "externo" && !m._enviando && (minha || (m.reacoes || []).length > 0) ? () => setDados(true) : undefined}
                 />
             )}
-            <Reacoes m={m} eu={eu} minha={minha} onReagir={onReagir ? (e) => onReagir(m, e) : undefined} />
+            <Reacoes m={m} eu={eu} minha={minha} onReagir={onReagir ? (e) => onReagir(m, e) : undefined} onVer={conversa.tipo === "grupo" ? () => setDados(true) : undefined} />
+            {dados && <DadosMensagem m={m} conversa={conversa} eu={eu} minha={minha} onFechar={() => setDados(false)} />}
             {m._falhaLocal && <div className="mt-1 text-right text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{m._falhaLocal}</div>}
         </div>
     );

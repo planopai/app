@@ -47,6 +47,7 @@ export function MenuMensagem(props: {
     onFixar?: () => void;
     fixada?: boolean;
     onApagar?: () => void;
+    onDados?: () => void;
 }) {
     const ref = useFecharFora(true, props.onFechar);
     const minhaReacao = props.m.reacoes?.find((r) => r.usuario_id === props.eu)?.emoji || "";
@@ -74,13 +75,14 @@ export function MenuMensagem(props: {
             {props.onEncaminhar && <button type="button" role="menuitem" onClick={fazer(props.onEncaminhar)} className={itemMenu}><Icone nome="encaminhar" className="h-5 w-5" />Encaminhar</button>}
             {props.onFixar && <button type="button" role="menuitem" onClick={fazer(props.onFixar)} className={itemMenu}><Icone nome="pin" className="h-5 w-5" />{props.fixada ? "Desafixar" : "Fixar na conversa"}</button>}
             {props.m.texto && <button type="button" role="menuitem" onClick={fazer(copiar)} className={itemMenu}><Icone nome="copiar" className="h-5 w-5" />Copiar texto</button>}
+            {props.onDados && <button type="button" role="menuitem" onClick={fazer(props.onDados)} className={itemMenu}><Icone nome="info" className="h-5 w-5" />Dados da mensagem</button>}
             {props.onApagar && <button type="button" role="menuitem" onClick={fazer(props.onApagar)} className={`${itemMenu} !text-[#B42318] dark:!text-[#FF9C92]`}><Icone nome="trash" className="h-5 w-5" />Apagar</button>}
         </div>
     );
 }
 
 /** Emojis da mensagem, agrupados (como no WhatsApp). Tocar no próprio emoji tira a reação. */
-export function Reacoes({ m, eu, minha, onReagir }: { m: Mensagem; eu: number; minha: boolean; onReagir?: (emoji: string) => void }) {
+export function Reacoes({ m, eu, minha, onReagir, onVer }: { m: Mensagem; eu: number; minha: boolean; onReagir?: (emoji: string) => void; onVer?: () => void }) {
     const lista = m.reacoes || [];
     if (!lista.length) return null;
     const grupos = new Map<string, { qtd: number; nomes: string[]; minha: boolean }>();
@@ -98,9 +100,9 @@ export function Reacoes({ m, eu, minha, onReagir }: { m: Mensagem; eu: number; m
                     key={emoji}
                     type="button"
                     title={g.nomes.join(", ")}
-                    onClick={() => g.minha && onReagir?.("")}
+                    onClick={() => (onVer ? onVer() : g.minha && onReagir?.(""))}
                     className={`flex h-7 items-center gap-1 rounded-full border px-2 text-[14px] shadow-sm ${g.minha ? "border-[#B3CE52] bg-[#E3EFC0] dark:bg-[#B3CE52]/25" : "border-[#E1E5EC] bg-white dark:border-white/12 dark:bg-[#232B3F]"}`}
-                    aria-label={`${emoji} de ${g.nomes.join(", ")}${g.minha ? ". Tocar para tirar a sua reação" : ""}`}
+                    aria-label={`${emoji} de ${g.nomes.join(", ")}${onVer ? ". Tocar para ver quem reagiu" : g.minha ? ". Tocar para tirar a sua reação" : ""}`}
                 >
                     <span>{emoji}</span>
                     {g.qtd > 1 && <span className="text-[12px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">{g.qtd}</span>}

@@ -1719,6 +1719,58 @@ function toolLabel(tool: string) {
     return TOOL_LABELS[tool] || tool.replace(/^consultar_/, "").replaceAll("_", " ");
 }
 
+function PaymentLinkActions({ url }: { url: string }) {
+    const [copied, setCopied] = useState(false);
+    const [copyError, setCopyError] = useState(false);
+
+    async function copyPaymentLink() {
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                // Compatibilidade com navegadores sem Clipboard API.
+                const field = document.createElement("textarea");
+                field.value = url;
+                field.setAttribute("readonly", "");
+                field.style.position = "fixed";
+                field.style.opacity = "0";
+                document.body.appendChild(field);
+                field.select();
+                const success = document.execCommand("copy");
+                field.remove();
+                if (!success) throw new Error("Falha ao copiar");
+            }
+            setCopied(true);
+            setCopyError(false);
+        } catch {
+            setCopied(false);
+            setCopyError(true);
+        }
+    }
+
+    return (
+        <span className="inline-flex max-w-full flex-wrap items-center gap-x-4 gap-y-2 align-middle">
+            <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all font-semibold text-[#0086B8] dark:text-[#5CCBF4] underline decoration-[#8FD6F4] underline-offset-2"
+            >
+                Abrir link de pagamento
+            </a>
+            <button
+                type="button"
+                onClick={() => void copyPaymentLink()}
+                className="cursor-pointer font-semibold text-[#0086B8] dark:text-[#5CCBF4] underline decoration-[#8FD6F4] underline-offset-2"
+                aria-label="Copiar Link de Pagamento"
+            >
+                {copied ? "Link copiado!" : "Copiar Link de Pagamento"}
+            </button>
+            {copyError && <span role="alert" className="text-sm text-red-600 dark:text-red-400">Não foi possível copiar o link.</span>}
+        </span>
+    );
+}
+
 function renderInlineMarkdown(text: string, keyPrefix: string) {
     const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s<]+)/g).filter(Boolean);
 
@@ -1731,14 +1783,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 
             return (
                 <React.Fragment key={key}>
-                    <a
-                        href={cleanUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="break-all font-semibold text-[#0086B8] dark:text-[#5CCBF4] underline decoration-[#8FD6F4] underline-offset-2 hover:text-[#0086B8] dark:hover:text-[#5CCBF4]"
-                    >
-                        Abrir link de pagamento
-                    </a>
+                    <PaymentLinkActions url={cleanUrl} />
                     {suffix}
                 </React.Fragment>
             );

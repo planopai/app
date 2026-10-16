@@ -15,7 +15,7 @@ import { limparCacheRespostas } from "../messenger/components/Acoes";
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
-type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string };
+type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number> };
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5 dark:border-white/12 dark:bg-[#232B3F]";
 const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -26,6 +26,15 @@ const btnSec = "h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-sm fo
 export default function MessengerConfigPage() {
     const [aba, setAba] = useState<"respostas" | "setores" | "etiquetas" | "automaticas" | "geral">("respostas");
     const [auto, setAuto] = useState<Record<string, string>>({});
+    const [precos, setPrecos] = useState<Record<string, string>>({});
+    // setores e etiquetas da empresa para os destinos de comprovante e áudio
+    const [opcoes, setOpcoes] = useState<{ setores: { id: number; nome: string }[]; etiquetas: { id: number; nome: string }[] }>({ setores: [], etiquetas: [] });
+    useEffect(() => {
+        Promise.all([
+            msgGet<{ setores: { id: number; nome: string; ativo: boolean }[] }>("setores", {}, false).catch(() => ({ setores: [] })),
+            msgGet<{ id: number; nome: string; pessoal: boolean }[]>("etiquetas", {}, false).catch(() => []),
+        ]).then(([a, b]: any[]) => setOpcoes({ setores: (a.setores || []).filter((x: any) => x.ativo), etiquetas: (Array.isArray(b) ? b : []).filter((x: any) => !x.pessoal) }));
+    }, []);
     const [config, setConfig] = useState<Config | null>(null);
     const [respostas, setRespostas] = useState<Resposta[]>([]);
     const [erro, setErro] = useState("");
@@ -37,6 +46,7 @@ export default function MessengerConfigPage() {
             const [c, r] = await Promise.all([msgGet<Config>("config"), msgGet<Resposta[]>("respostas")]);
             setConfig(c);
             setAuto(c.automaticas || {});
+            setPrecos(Object.fromEntries(Object.entries(c.precos || {}).map(([k, v]) => [k, String(v).replace(".", ",")])));
             setRespostas(r);
             setErro("");
         } catch (e: any) {
@@ -75,7 +85,8 @@ export default function MessengerConfigPage() {
         const novo = { ...config, ...mudanca };
         setConfig(novo);
         try {
-            const r = await msgPost("config_salvar", { assinatura: novo.assinatura, max_fixadas: novo.max_fixadas });
+            const extra = (mudanca as any).precos ? { precos: (mudanca as any).precos } : {};
+            const r = await msgPost("config_salvar", { assinatura: novo.assinatura, max_fixadas: novo.max_fixadas, ...extra });
             setAviso(r.msg);
         } catch (e: any) {
             setErro(e.message);
@@ -183,6 +194,28 @@ export default function MessengerConfigPage() {
                                     <label className="block"><span className={rotulo}>Depois de 2 tentativas (vai para a fila geral)</span><textarea className={`${campo} py-3`} rows={2} value={auto.auto_menu_desistiu || ""} onChange={(e) => setAuto({ ...auto, auto_menu_desistiu: e.target.value })} /></label>
                                 </div>
                             </div>
+                            <div className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] p-4 dark:border-white/12">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <span className="flex-1 text-[16px] font-extrabold">🧾 Comprovantes de pagamento</span>
+                                    <LigaDesliga ligado={auto.comprovante_ativo === "1"} texto={auto.comprovante_ativo === "1" ? "Ligado" : "Desligado"} onMudar={(v) => setAuto({ ...auto, comprovante_ativo: v ? "1" : "0" })} desativado={!podeEmpresa} />
+                                </div>
+                                <p className="-mt-1 text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Para quem paga por Pix direto no CNPJ: quando o cliente escreve "paguei", "comprovante", "fiz o pix"… (ou manda foto/PDF, se marcado abaixo), não passa pelo menu e vai direto para o setor escolhido.</p>
+                                <label className="flex items-center gap-2 text-[15px] font-bold"><input type="checkbox" className="h-5 w-5 accent-[#313C55]" checked={auto.comprovante_midia === "1"} onChange={(e) => setAuto({ ...auto, comprovante_midia: e.target.checked ? "1" : "0" })} />Foto ou PDF no começo da conversa também conta como comprovante</label>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <label className="block"><span className={rotulo}>Enviar para o setor</span><select className={`${campo} h-12`} value={auto.comprovante_setor || ""} onChange={(e) => setAuto({ ...auto, comprovante_setor: e.target.value })}><option value="">Fila geral (todos)</option>{opcoes.setores.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
+                                    <label className="block"><span className={rotulo}>Marcar a etiqueta</span><select className={`${campo} h-12`} value={auto.comprovante_etiqueta || ""} onChange={(e) => setAuto({ ...auto, comprovante_etiqueta: e.target.value })}><option value="">Nenhuma</option>{opcoes.etiquetas.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
+                                </div>
+                                <label className="block"><span className={rotulo}>Resposta ao cliente</span><textarea className={`${campo} py-3`} rows={2} value={auto.comprovante_resposta || ""} onChange={(e) => setAuto({ ...auto, comprovante_resposta: e.target.value })} /></label>
+                            </div>
+                            <div className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] p-4 dark:border-white/12">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <span className="flex-1 text-[16px] font-extrabold">🔊 Quem manda áudio</span>
+                                    <LigaDesliga ligado={auto.audio_pular_menu === "1"} texto={auto.audio_pular_menu === "1" ? "Pula o menu" : "Usa o menu"} onMudar={(v) => setAuto({ ...auto, audio_pular_menu: v ? "1" : "0" })} desativado={!podeEmpresa} />
+                                </div>
+                                <p className="-mt-1 text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Muitos associados não leem. Quem responde com áudio não fica preso no menu: vai direto para um atendente. (Com a Aurora, ela vai entender o áudio e escolher o setor.)</p>
+                                <label className="block"><span className={rotulo}>Enviar para</span><select className={`${campo} h-12`} value={auto.audio_destino || ""} onChange={(e) => setAuto({ ...auto, audio_destino: e.target.value })}><option value="">Fila geral (todos)</option>{opcoes.setores.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>
+                                <label className="block"><span className={rotulo}>Resposta ao cliente</span><textarea className={`${campo} py-3`} rows={2} value={auto.audio_resposta || ""} onChange={(e) => setAuto({ ...auto, audio_resposta: e.target.value })} /></label>
+                            </div>
                             <label className="block"><span className={rotulo}>Fora do horário (quando o setor não tem a sua própria)</span><textarea className={`${campo} py-3`} rows={3} value={auto.auto_fora_horario || ""} onChange={(e) => setAuto({ ...auto, auto_fora_horario: e.target.value })} /></label>
                             <p className="-mt-3 text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]"><b>{"{proximo_horario}"}</b> vira o próximo horário de abertura do setor (ex.: "amanhã às 08:00") e <b>{"{setor}"}</b> o nome do setor.</p>
                             <div className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] p-4 dark:border-white/12">
@@ -220,6 +253,15 @@ export default function MessengerConfigPage() {
                             <span className={rotulo}>Quantas conversas cada pessoa pode fixar no topo</span>
                             <input type="number" min={1} max={10} className={`${campo} h-12 max-w-[160px]`} value={config.max_fixadas} disabled={!podeEmpresa} onChange={(e) => setConfig({ ...config, max_fixadas: Number(e.target.value) || 1 })} onBlur={() => salvarGeral({})} />
                         </label>
+                        <div className="mt-6 border-t border-[#EEF0F3] pt-4 dark:border-white/10">
+                            <span className={rotulo}>Preços da Meta por mensagem cobrada (R$) — usados no Monitoramento</span>
+                            <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                {([["service", "Serviço (respostas na janela)"], ["utility", "Utilidade"], ["marketing", "Marketing"], ["authentication", "Autenticação"]] as const).map(([k, nome]) => (
+                                    <label key={k} className="block"><span className="text-[13.5px] font-bold">{nome}</span><input inputMode="decimal" className={`${campo} h-12`} value={precos[k] ?? ""} disabled={!podeEmpresa} onChange={(e) => setPrecos({ ...precos, [k]: e.target.value })} onBlur={() => salvarGeral({ precos } as any)} /></label>
+                                ))}
+                            </div>
+                            <p className="mt-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Quem diz se cada mensagem foi cobrada e de qual categoria é a própria Meta (no aviso de entrega). Aqui fica só o preço, para conferir com a fatura; a Meta muda a tabela de tempos em tempos.</p>
+                        </div>
                         {!podeEmpresa && <p className="mt-3 text-[14px] text-[#6B7488] dark:text-[#AEB9CF]">Só quem tem a página "Messenger · Configurações" altera estes itens.</p>}
                     </section>
                 )}

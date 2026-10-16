@@ -24,7 +24,18 @@ type Painel = {
     por_dia: { dia: string; total: number }[];
     por_etiqueta: { id: number; nome: string; cor: string; total: number }[];
     notas: { nota: number; total: number }[];
+    mensagens?: { recebidas: number; enviadas: number; equipe: number; automaticas: number; modelos: number; falhas: number };
+    custos?: { categorias: { categoria: string; entregues: number; cobradas: number; preco: number; total: number }[]; total: number; sem_informacao: number; projecao_mes: number | null };
+    por_usuario?: { id: number; nome: string; enviadas: number; recebidas: number; modelos: number; custo: number }[];
 };
+const NOME_CATEGORIA: Record<string, [string, string]> = {
+    service: ["Serviço", "respostas dentro da janela de 24 h"],
+    utility: ["Utilidade", "modelos: lembretes, boletos, avisos"],
+    marketing: ["Marketing", "modelos: campanhas e ofertas"],
+    authentication: ["Autenticação", "códigos de verificação"],
+};
+const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: v > 0 && v < 1 ? 4 : 2 });
+const numero = (v: number) => v.toLocaleString("pt-BR");
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]";
 const titulo = "m-0 text-[17px] font-extrabold";
@@ -73,13 +84,13 @@ function Barras({ itens, cor }: { itens: { rotulo: string; valor: number; cor?: 
 export default function MonitoramentoPage() {
     const [dados, setDados] = useState<Painel | null>(null);
     const [erro, setErro] = useState("");
-    const [periodo, setPeriodo] = useState<"hoje" | "7" | "30">("hoje");
+    const [periodo, setPeriodo] = useState<"hoje" | "7" | "30" | "mes">("hoje");
     const [atualizando, setAtualizando] = useState(false);
 
     const carregar = useCallback(async () => {
         setAtualizando(true);
         try {
-            const de = periodo === "hoje" ? hojeISO() : diasAtras(Number(periodo) - 1);
+            const de = periodo === "hoje" ? hojeISO() : periodo === "mes" ? `${hojeISO().slice(0, 8)}01` : diasAtras(Number(periodo) - 1);
             setDados(await msgGet<Painel>("painel", { de, ate: hojeISO() }));
             setErro("");
         } catch (e: any) {
@@ -95,7 +106,7 @@ export default function MonitoramentoPage() {
     }, [carregar]);
 
     const i = dados?.indicadores;
-    const nomePeriodo = periodo === "hoje" ? "hoje" : `últimos ${periodo} dias`;
+    const nomePeriodo = periodo === "hoje" ? "hoje" : periodo === "mes" ? "neste mês" : `últimos ${periodo} dias`;
 
     return (
         <div className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] md:p-8 dark:bg-[#1C2334] dark:text-white">
@@ -106,7 +117,7 @@ export default function MonitoramentoPage() {
                         <p className="mt-1 text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">Clientes do WhatsApp agora e no período. Atualiza sozinho a cada 30 segundos.</p>
                     </div>
                     <div className="flex flex-wrap gap-2" role="tablist" aria-label="Período">
-                        {([["hoje", "Hoje"], ["7", "7 dias"], ["30", "30 dias"]] as const).map(([id, nome]) => (
+                        {([["hoje", "Hoje"], ["7", "7 dias"], ["30", "30 dias"], ["mes", "Este mês"]] as const).map(([id, nome]) => (
                             <button key={id} type="button" role="tab" aria-selected={periodo === id} onClick={() => setPeriodo(id)} className={`h-10 rounded-full px-4 text-[15px] ${periodo === id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-white font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]"}`}>{nome}</button>
                         ))}
                     </div>
@@ -126,6 +137,64 @@ export default function MonitoramentoPage() {
                             <Indicador rotulo={`Atendimentos ${nomePeriodo}`} valor={String(i.abertos_periodo)} detalhe={`${i.encerrados_periodo} encerrados`} cor="#313C55" />
                             <Indicador rotulo="Nota média" valor={i.nota_media !== null ? `★ ${String(i.nota_media).replace(".", ",")}` : "—"} detalhe={i.avaliacoes ? `${i.avaliacoes} avaliações` : "sem avaliações"} cor="#6B4FA0" />
                         </div>
+
+                        {dados.mensagens && dados.custos && (
+                            <>
+                                <section aria-label="Mensagens no WhatsApp" className={`${cartao} flex flex-wrap items-center gap-5`}>
+                                    <div className="min-w-[220px] flex-1"><h2 className={titulo}>Mensagens no WhatsApp · {nomePeriodo}</h2><p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">A Meta cobra por mensagem entregue; as primeiras 1.000 de serviço de cada mês são grátis.</p></div>
+                                    {[["recebidas", dados.mensagens.recebidas, "#3D6A99"], [`enviadas (${numero(dados.mensagens.equipe)} equipe · ${numero(dados.mensagens.automaticas)} automáticas)`, dados.mensagens.enviadas, "#313C55"], ["modelos enviados", dados.mensagens.modelos, "#D9731A"], ["falharam", dados.mensagens.falhas, "#B42318"]].map(([r, v, c]) => (
+                                        <div key={String(r)} className="min-w-[110px] text-center"><div className="text-[26px] font-extrabold" style={{ color: String(c) }}>{numero(Number(v))}</div><div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{r}</div></div>
+                                    ))}
+                                </section>
+                                <div className="grid gap-4 xl:grid-cols-2">
+                                    <section aria-label="Custos da Meta" className={cartao}>
+                                        <div className="mb-2 flex flex-wrap items-baseline gap-2"><h2 className={`${titulo} flex-1`}>Custos da Meta · {nomePeriodo}</h2><span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">pelo aviso de entrega de cada mensagem</span></div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full border-collapse text-[14.5px]">
+                                                <thead><tr className="border-b border-[#EEF0F3] dark:border-white/10"><th className={rotuloTabela}>Categoria</th><th className={`${rotuloTabela} text-right`}>Entregues</th><th className={`${rotuloTabela} text-right`}>Cobradas</th><th className={`${rotuloTabela} text-right`}>Preço</th><th className={`${rotuloTabela} text-right`}>Total</th></tr></thead>
+                                                <tbody>
+                                                    {dados.custos.categorias.map((c) => (
+                                                        <tr key={c.categoria} className="border-b border-[#EEF0F3] dark:border-white/10">
+                                                            <td className="px-3 py-2"><b>{NOME_CATEGORIA[c.categoria]?.[0] || c.categoria}</b><div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{NOME_CATEGORIA[c.categoria]?.[1]}</div></td>
+                                                            <td className="px-3 py-2 text-right">{numero(c.entregues)}</td>
+                                                            <td className="px-3 py-2 text-right font-bold">{numero(c.cobradas)}</td>
+                                                            <td className="px-3 py-2 text-right">{reais(c.preco)}</td>
+                                                            <td className="px-3 py-2 text-right font-extrabold">{reais(c.total)}</td>
+                                                        </tr>
+                                                    ))}
+                                                    <tr><td className="px-3 py-2 font-extrabold" colSpan={4}>Total</td><td className="px-3 py-2 text-right text-[18px] font-extrabold">{reais(dados.custos.total)}</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-2 text-[13px]">
+                                            {dados.custos.projecao_mes !== null && <span className="rounded-lg bg-[#FBF0C9] px-2.5 py-1 dark:bg-[#F2CB3F]/15">Projeção para o mês: <b>{reais(dados.custos.projecao_mes)}</b></span>}
+                                            {dados.custos.sem_informacao > 0 && <span className="rounded-lg bg-[#F0F2F5] px-2.5 py-1 dark:bg-white/10">{numero(dados.custos.sem_informacao)} entregues sem informação de custo (anteriores a esta versão)</span>}
+                                            <span className="rounded-lg bg-[#F0F2F5] px-2.5 py-1 dark:bg-white/10">Preços em Configurações › Geral</span>
+                                        </div>
+                                    </section>
+                                    <section aria-label="Mensagens por usuário" className={cartao}>
+                                        <h2 className={`${titulo} mb-2`}>Mensagens por usuário · {nomePeriodo}</h2>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full border-collapse text-[14.5px]">
+                                                <thead><tr className="border-b border-[#EEF0F3] dark:border-white/10"><th className={rotuloTabela}>Quem enviou</th><th className={`${rotuloTabela} text-right`}>Enviadas</th><th className={`${rotuloTabela} text-right`} title="Mensagens dos clientes nos atendimentos de cada um">Recebidas</th><th className={`${rotuloTabela} text-right`}>Modelos</th><th className={`${rotuloTabela} text-right`}>Custo</th></tr></thead>
+                                                <tbody>
+                                                    {(dados.por_usuario || []).sort((a, b) => b.enviadas - a.enviadas).map((u) => (
+                                                        <tr key={u.id} className="border-b border-[#EEF0F3] last:border-0 dark:border-white/10">
+                                                            <td className="px-3 py-2 font-extrabold">{u.nome}</td>
+                                                            <td className="px-3 py-2 text-right">{numero(u.enviadas)}</td>
+                                                            <td className="px-3 py-2 text-right">{u.id ? numero(u.recebidas) : "—"}</td>
+                                                            <td className="px-3 py-2 text-right">{numero(u.modelos)}</td>
+                                                            <td className="px-3 py-2 text-right font-extrabold">{reais(u.custo)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {!(dados.por_usuario || []).length && <p className="px-3 py-4 text-center text-[14.5px] text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma mensagem no período.</p>}
+                                        </div>
+                                    </section>
+                                </div>
+                            </>
+                        )}
 
                         <section aria-label="Setores" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             {dados.setores.map((s) => (
