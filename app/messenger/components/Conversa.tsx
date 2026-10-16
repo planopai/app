@@ -7,6 +7,7 @@ import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@
 import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
 import { SeloUnymos } from "./PainelCliente";
+import { baixarAnexo } from "@/components/messenger/salvarArquivos";
 
 const EMOJIS: Record<string, string[]> = {
     Rostos: ["😀", "😂", "😊", "😍", "🥲", "😢", "😔", "😮", "🙂", "😉", "🤗", "😴"],
@@ -23,6 +24,17 @@ async function linkAnexo(id: number, miniatura = false): Promise<string> {
     const d = await msgGet<{ url: string; expira_em_s: number }>("anexo_url", { anexo_id: id, variante: miniatura ? "miniatura" : "" });
     cacheLinks.set(k, { url: d.url, ate: Date.now() + (d.expira_em_s - 120) * 1000 });
     return d.url;
+}
+
+function BotaoBaixar({ a, claro = false }: { a: TAnexo; claro?: boolean }) {
+    const [ocupado, setOcupado] = useState(false);
+    return (
+        <button type="button" disabled={ocupado} onClick={async (e) => { e.stopPropagation(); setOcupado(true); try { await baixarAnexo(a); } catch { window.alert("Não foi possível baixar o arquivo agora."); } finally { setOcupado(false); } }}
+            className={`flex h-8 w-8 flex-none items-center justify-center rounded-full disabled:opacity-60 ${claro ? "bg-black/55 text-white hover:bg-black/70" : "text-[#313C55] hover:bg-black/10 dark:text-white dark:hover:bg-white/10"}`}
+            aria-label={`Baixar ${a.nome_original || "arquivo"}`} title="Salvar no aparelho">
+            {ocupado ? <span className="text-[11px]">…</span> : <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>}
+        </button>
+    );
 }
 
 function Anexo({ a, minha }: { a: TAnexo; minha: boolean }) {
@@ -46,23 +58,29 @@ function Anexo({ a, minha }: { a: TAnexo; minha: boolean }) {
     };
     if (imagem) {
         return (
-            <button type="button" onClick={abrirOriginal} className="mb-1 block overflow-hidden rounded-lg bg-[#F0F2F5] dark:bg-[#1C2334]" style={{ width: 280, maxWidth: "100%", aspectRatio: a.largura && a.altura ? `${a.largura}/${a.altura}` : "4/3" }} aria-label="Abrir foto">
-                {url ? <img src={url} alt="Foto enviada" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-sm font-bold text-[#6B7488] dark:text-[#AEB9CF]">{erro ? "Foto indisponível" : "Carregando foto…"}</span>}
-            </button>
+            <div className="relative mb-1" style={{ width: 280, maxWidth: "100%" }}>
+                <button type="button" onClick={abrirOriginal} className="block w-full overflow-hidden rounded-lg bg-[#F0F2F5] dark:bg-[#1C2334]" style={{ aspectRatio: a.largura && a.altura ? `${a.largura}/${a.altura}` : "4/3" }} aria-label="Abrir foto">
+                    {url ? <img src={url} alt="Foto enviada" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-sm font-bold text-[#6B7488] dark:text-[#AEB9CF]">{erro ? "Foto indisponível" : "Carregando foto…"}</span>}
+                </button>
+                <span className="absolute right-1.5 top-1.5"><BotaoBaixar a={a} claro /></span>
+            </div>
         );
     }
     if (audio) {
-        return url ? <audio controls preload="metadata" src={url} className="my-1 w-[260px] max-w-full" /> : <span className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">{erro ? "Áudio indisponível" : "Carregando áudio…"}</span>;
+        return url ? <span className="my-1 flex items-center gap-1"><audio controls preload="metadata" src={url} className="w-[260px] max-w-full" /><BotaoBaixar a={a} /></span> : <span className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">{erro ? "Áudio indisponível" : "Carregando áudio…"}</span>;
     }
     const kb = Math.max(1, Math.round(a.tamanho_bytes / 1024));
     return (
-        <button type="button" onClick={abrirOriginal} className={`mb-1 flex min-w-[220px] items-center gap-3 rounded-lg p-2 text-left ${minha ? "bg-[#D4E5A2] dark:bg-white/10" : "bg-[#F0F2F5] dark:bg-[#1C2334]"}`}>
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] bg-[#3D6A99] text-white"><Icone nome="file" /></span>
-            <span className="min-w-0">
-                <span className="block truncate text-sm font-extrabold">{a.nome_original || "Documento"}</span>
-                <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">{kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`}</span>
-            </span>
-        </button>
+        <div className={`mb-1 flex min-w-[220px] items-center gap-2 rounded-lg p-2 ${minha ? "bg-[#D4E5A2] dark:bg-white/10" : "bg-[#F0F2F5] dark:bg-[#1C2334]"}`}>
+            <button type="button" onClick={abrirOriginal} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`Abrir ${a.nome_original || "documento"}`}>
+                <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[10px] bg-[#3D6A99] text-white"><Icone nome="file" /></span>
+                <span className="min-w-0">
+                    <span className="block truncate text-sm font-extrabold">{a.nome_original || "Documento"}</span>
+                    <span className="block text-xs text-[#5B6478] dark:text-[#AEB9CF]">{kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`}</span>
+                </span>
+            </button>
+            <BotaoBaixar a={a} />
+        </div>
     );
 }
 
@@ -191,7 +209,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
         <div
             id={`msg-${m.id}`}
             // no celular o toque longo abre o menu sem selecionar o texto (copiar fica no menu); no computador dá para selecionar
-            className={`group relative max-w-[85%] select-none md:max-w-[65%] md:select-text ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
+            className={`group relative max-w-[85%] select-none md:max-w-[75%] md:select-text ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
             style={{ transform: puxar ? `translateX(${puxar}px)` : undefined, transition: toque.current ? undefined : "transform .2s", touchAction: "pan-y", WebkitTouchCallout: "none" }}
             onTouchStart={(e) => {
                 if (podeResponder) toque.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, horizontal: null };
@@ -228,7 +246,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                     <Icone nome="responder" className="h-4 w-4" />
                 </span>
             )}
-            <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${m.interna ? "border border-dashed border-[#C9A21E] bg-[#FFF4C2] dark:border-[#F2CB3F]/60 dark:bg-[#4A3F12] dark:text-white" : minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
+            <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] md:text-[15.5px] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${m.interna ? "border border-dashed border-[#C9A21E] bg-[#FFF4C2] dark:border-[#F2CB3F]/60 dark:bg-[#4A3F12] dark:text-white" : minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
                 {automatica && <div className="mb-0.5 text-[12.5px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">🤖 Mensagem automática</div>}
                 {m.interna && <div className="mb-0.5 flex items-center gap-1 text-[12.5px] font-extrabold uppercase tracking-wide text-[#8A6A00] dark:text-[#F7E39A]"><Icone nome="nota" className="h-3.5 w-3.5" />Nota interna · só a equipe vê{!minha && m.autor_nome ? ` · ${m.autor_nome.split(" ")[0]}` : ""}</div>}
                 {temMenu && (
@@ -489,6 +507,24 @@ export default function JanelaConversa(props: {
     const [gravando, setGravando] = useState(false);
     const fim = useRef<HTMLDivElement>(null);
     const caixa = useRef<HTMLDivElement>(null);
+    // a conversa continua no fim quando a área muda de tamanho (painel do cliente abrindo, teclado, faixa de 24 h)
+    useEffect(() => {
+        const el = caixa.current;
+        if (!el || typeof ResizeObserver === "undefined") return;
+        let noFim = true;
+        const aoRolar = () => {
+            noFim = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        };
+        el.addEventListener("scroll", aoRolar, { passive: true });
+        const ro = new ResizeObserver(() => {
+            if (noFim) el.scrollTop = el.scrollHeight;
+        });
+        ro.observe(el);
+        return () => {
+            el.removeEventListener("scroll", aoRolar);
+            ro.disconnect();
+        };
+    }, []);
     const arquivo = useRef<HTMLInputElement>(null);
     const campo = useRef<HTMLTextAreaElement>(null);
     // faixa da janela de 24 h: recolhe para um selo pequeno; a escolha fica guardada neste aparelho
@@ -597,8 +633,8 @@ export default function JanelaConversa(props: {
                 <Avatar conversa={c} tamanho={40} online={!!props.online} />
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                        <span className="truncate text-[19px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</span>
-                        {externo && <span className="hidden flex-none items-center gap-1 rounded-full bg-[#EEF5D6] px-2 py-0.5 text-[11.5px] font-extrabold sm:inline-flex dark:bg-[#B3CE52]/15"><Icone nome="phone" className="h-3 w-3" />WhatsApp</span>}
+                        <span className="min-w-0 truncate text-[19px] font-extrabold text-[#1F2638] md:text-[17px] dark:text-white" title={c.titulo}>{c.titulo}</span>
+                        {externo && <span title="Cliente do WhatsApp" aria-label="WhatsApp" className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/15 dark:text-[#DCEBAA]"><Icone nome="phone" className="h-3 w-3" /></span>}
                     </div>
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
@@ -617,8 +653,8 @@ export default function JanelaConversa(props: {
                 )}
                 {externo && c.status_atendimento === "em_atendimento" && (c.posso_responder || perfil.gestao) && (
                     <>
-                        <button type="button" onClick={props.onTransferir} className="flex h-10 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white" aria-label="Transferir conversa"><Icone nome="transf" className="h-[18px] w-[18px]" /><span className="hidden sm:inline">Transferir</span></button>
-                        <button type="button" onClick={props.onEncerrar} className="flex h-10 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white" aria-label="Encerrar atendimento"><Icone nome="ok" className="h-[18px] w-[18px]" /><span className="hidden sm:inline">Encerrar</span></button>
+                        <button type="button" onClick={props.onTransferir} className="flex h-10 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white" aria-label="Transferir conversa"><Icone nome="transf" className="h-[18px] w-[18px]" /><span className="hidden 2xl:inline">Transferir</span></button>
+                        <button type="button" onClick={props.onEncerrar} className="flex h-10 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white" aria-label="Encerrar atendimento"><Icone nome="ok" className="h-[18px] w-[18px]" /><span className="hidden 2xl:inline">Encerrar</span></button>
                     </>
                 )}
                 {!externo && (
@@ -702,7 +738,7 @@ export default function JanelaConversa(props: {
                 </div>
             ))}
 
-            <div ref={caixa} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2.5 py-3 md:px-[8%]">
+            <div ref={caixa} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2.5 py-3 md:px-4">
                 {props.temMais && <button type="button" onClick={props.onCarregarMais} className="self-center rounded-full bg-white px-4 py-1.5 text-sm font-bold shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">Carregar mensagens anteriores</button>}
                 {itens}
                 <div ref={fim} />

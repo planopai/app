@@ -285,7 +285,7 @@ export default function PainelCliente({ conversa, coluna = false, onFechar, onIn
                 <aside aria-label="Cliente na Unymos" className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-[#E6E9EE] bg-white text-[#1F2638] dark:border-white/12 dark:bg-[#232B3F] dark:text-white">{conteudo}</aside>
             ) : (
                 <div className="fixed inset-0 z-[75] flex justify-end bg-black/30" onClick={onFechar}>
-                    <aside role="dialog" aria-modal="true" aria-label="Cliente na Unymos" onClick={(e) => e.stopPropagation()} className="flex h-full w-full max-w-[400px] flex-col overflow-hidden bg-white pb-[env(safe-area-inset-bottom)] text-[#1F2638] shadow-2xl dark:bg-[#232B3F] dark:text-white">{conteudo}</aside>
+                    <aside role="dialog" aria-modal="true" aria-label="Cliente na Unymos" onClick={(e) => e.stopPropagation()} className="flex h-full w-full max-w-[470px] flex-col overflow-hidden bg-white pb-[env(safe-area-inset-bottom)] text-[#1F2638] shadow-2xl dark:bg-[#232B3F] dark:text-white">{conteudo}</aside>
                 </div>
             )}
             {historico && f && atual && <HistoricoPagamentos f={f} contrato={atual.contrato} plano={plano} titular={dados?.contrato?.titular || atual.titular || ""} desde={dados?.contrato?.data_contrato || ""} ocupado={ocupado} onRecibo={(p) => cobrar("recibo", p)} onFechar={() => setHistorico(false)} />}

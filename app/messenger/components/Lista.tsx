@@ -138,19 +138,19 @@ function Badge({ n }: { n: number }) {
 export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => void; contagem: Record<Aba, number> }) {
     const itens: { id: Aba; rotulo: string }[] = [
         { id: "tudo", rotulo: "Tudo" },
-        { id: "equipe", rotulo: "Equipe" },
-        { id: "grupos", rotulo: "Grupos" },
         { id: "clientes", rotulo: "Clientes" },
+        { id: "grupos", rotulo: "Grupos" },
+        { id: "equipe", rotulo: "Equipe" },
     ];
     return (
-        <div className="flex gap-2 overflow-x-auto" role="group" aria-label="Filtrar conversas">
+        <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filtrar conversas">
             {itens.map((i) => (
                 <button
                     key={i.id}
                     type="button"
                     aria-pressed={aba === i.id}
                     onClick={() => setAba(i.id)}
-                    className={`flex h-[38px] flex-none items-center gap-1.5 rounded-full px-4 text-[15.5px] ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}
+                    className={`flex h-[38px] flex-none items-center gap-1.5 rounded-full px-4 text-[15.5px] md:h-9 md:px-3 md:text-[14px] ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}
                 >
                     {i.rotulo}
                     {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[14px] font-extrabold">{contagem[i.id]}</span>}
@@ -267,7 +267,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                     <Avatar conversa={c} online={online} />
                     <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-3 dark:border-white/10">
                         <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}{(c.contato?.contratos || []).length > 0 && <span className="ml-1.5 align-middle text-[13px]" title={`Contrato ${c.contato!.contratos!.map((k) => k.contrato).join(", ")}`} aria-label="Vinculado a contrato">📄</span>}</div>
+                            <div className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-[#1F2638] md:text-[16px] dark:text-white">{c.titulo}{(c.contato?.contratos || []).length > 0 && <span className="ml-1.5 align-middle text-[13px]" title={`Contrato ${c.contato!.contratos!.map((k) => k.contrato).join(", ")}`} aria-label="Vinculado a contrato">📄</span>}</div>
                             <div className={`flex-none text-[13.5px] font-bold ${destaque ? "text-[#4E6B0A] dark:text-[#B3CE52]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>
                         </div>
                         <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">
@@ -275,7 +275,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                             {c.setor && c.status_atendimento === "aguardando" && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                             <SelosEtiquetas etiquetas={c.etiquetas} />
                             <TiquesLista estado={estadoUltima(c, eu)} />
-                            <div className="min-w-0 flex-1 truncate text-[16px] text-[#5B6478] dark:text-[#AEB9CF]">
+                            <div className="min-w-0 flex-1 truncate text-[16px] text-[#5B6478] md:text-[14.5px] dark:text-[#AEB9CF]">
                                 {m && c.tipo === "grupo" && !minha && m.autor_nome && m.autor_tipo !== "sistema" ? `${m.autor_nome.split(" ")[0]}: ` : ""}
                                 {previa(m)}
                             </div>

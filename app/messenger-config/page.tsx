@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { msgGet, msgPost } from "@/components/messenger/api";
 import { Icone } from "../messenger/components/Lista";
 import { limparCacheRespostas } from "../messenger/components/Acoes";
+import { aceitaPasta, confirmarPermissao, desligarAutomatico, ligarAutomatico, modoSalvar, nomePasta } from "@/components/messenger/salvarArquivos";
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
@@ -257,6 +258,7 @@ export default function MessengerConfigPage() {
                             <span className={rotulo}>Quantas etiquetas cada conversa pode ter</span>
                             <input type="number" min={1} max={10} className={`${campo} h-12 max-w-[160px]`} value={config.max_etiquetas ?? 4} disabled={!podeEmpresa} onChange={(e) => setConfig({ ...config, max_etiquetas: Number(e.target.value) || 1 })} onBlur={() => salvarGeral({})} />
                         </label>
+                        <SalvarNoAparelho />
                         <CopiaContratos />
                         <div className="mt-6 border-t border-[#EEF0F3] pt-4 dark:border-white/10">
                             <span className={rotulo}>Preços da Meta por mensagem cobrada (R$) — usados no Monitoramento</span>
@@ -332,6 +334,45 @@ function CopiaContratos() {
             <p className="mt-1 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Situação, plano, etiquetas e aditivo só vêm na consulta geral da Unymos. A cópia é renovada uma vez por dia (cron às 3h ou, sem cron, aos poucos durante o dia).</p>
             {e.pode && <button type="button" onClick={atualizar} disabled={!!rodando && !rodando.startsWith("Erro")} className="mt-2 h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-[14.5px] font-extrabold text-[#313C55] disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white">{rodando && !rodando.startsWith("Erro") ? rodando : "Atualizar contratos agora"}</button>}
             {rodando.startsWith("Erro") && <p className="mt-1 text-[14px] font-bold text-[#B42318] dark:text-[#FF9C92]">{rodando}</p>}
+        </div>
+    );
+}
+
+/** Neste aparelho: salvar fotos e documentos recebidos manualmente (botão em cada anexo) ou sozinho numa pasta. */
+function SalvarNoAparelho() {
+    const [modo, setModo] = useState<"manual" | "auto">("manual");
+    const [pasta, setPasta] = useState("");
+    const [msg, setMsg] = useState("");
+    const [pode, setPode] = useState(false);
+    useEffect(() => {
+        setModo(modoSalvar());
+        setPode(aceitaPasta());
+        nomePasta().then(setPasta);
+    }, []);
+    const escolher = async () => {
+        setMsg("");
+        try {
+            setPasta(await ligarAutomatico());
+            setModo("auto");
+            setMsg("Pronto: fotos e documentos recebidos vão para esta pasta enquanto o Messenger estiver aberto neste computador.");
+        } catch (e: any) {
+            if (e?.name !== "AbortError") setMsg(e.message || "Não foi possível escolher a pasta.");
+        }
+    };
+    const opcao = (ativo: boolean) => `flex-1 rounded-xl border px-3 py-2.5 text-left text-[14.5px] ${ativo ? "border-[#313C55] bg-[#E9EFF6] font-extrabold dark:border-[#A9BED6] dark:bg-[#3D6A99]/25" : "border-[#E1E5EC] dark:border-white/15"}`;
+    return (
+        <div className="mt-6 border-t border-[#EEF0F3] pt-4 dark:border-white/10">
+            <span className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Neste aparelho · salvar fotos e documentos</span>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <button type="button" aria-pressed={modo === "manual"} className={opcao(modo === "manual")} onClick={async () => { await desligarAutomatico(); setModo("manual"); setPasta(""); setMsg(""); }}>
+                    <b>Manual</b><span className="block text-[13px] font-normal text-[#5B6478] dark:text-[#AEB9CF]">Botão de baixar em cada foto, áudio e documento. No celular abre o menu do sistema (Salvar imagem / Arquivos).</span>
+                </button>
+                <button type="button" aria-pressed={modo === "auto"} disabled={!pode} className={`${opcao(modo === "auto")} disabled:opacity-50`} onClick={escolher}>
+                    <b>Automático numa pasta</b><span className="block text-[13px] font-normal text-[#5B6478] dark:text-[#AEB9CF]">{pode ? (pasta ? `Pasta: ${pasta} · clique para trocar` : "Escolha a pasta do computador onde os arquivos recebidos serão salvos.") : "Disponível no Chrome ou no Edge do computador (o Safari e o celular não permitem)."}</span>
+                </button>
+            </div>
+            {modo === "auto" && pasta && <button type="button" className="mt-2 text-[13.5px] font-extrabold text-[#3D6A99] underline dark:text-[#A9BED6]" onClick={async () => setMsg((await confirmarPermissao()) ? "Permissão da pasta confirmada." : "O navegador não liberou a pasta. Escolha de novo.")}>Confirmar a permissão da pasta (depois de reiniciar o navegador)</button>}
+            {msg && <p className="mt-1 text-[13.5px] font-bold">{msg}</p>}
         </div>
     );
 }
