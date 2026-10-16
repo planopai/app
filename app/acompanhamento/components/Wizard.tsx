@@ -3704,7 +3704,7 @@ export default function Wizard({
                                                 {isRequired(step.id) && <span className="text-[#B42318] dark:text-[#FF9C92]"> *</span>}
                                             </label>
                                             <input
-                                                key={`${wizardStep}-${step.id}`} // ✅ remount por step (defaultValue confiável)
+                                                key={`${wizardStep}-${step.id}-${["falecido", "data_nascimento"].includes(step.id) ? String((wizardData as any)[step.id] ?? "") : ""}`} // Atualiza nome/nascimento após seleção do beneficiário
                                                 id={`wizard-${step.id}`}
                                                 type="text"
                                                 inputMode={isCpfResponsavel ? "numeric" : undefined}

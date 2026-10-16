@@ -57,6 +57,7 @@ import Visita, {
 } from "./components/visita";
 
 import Wizard, { type CampoFaltando, type TravaItens } from "./components/Wizard";
+import BuscaBeneficiarioPAI from "./components/BuscaBeneficiarioPAI";
 // Orçamento → Novo registro (13/10/2026): as ferramentas ficam na pasta do Orçamento.
 import { camposDoOrcamento, marcarOrcamentoConvertido } from "@/app/orcamento/components/paraAtendimento";
 import MateriaisModal from "./components/MateriaisModal";
@@ -4418,6 +4419,7 @@ export default function AcompanhamentoPage() {
         setWizardStep={setWizardStep}
         wizardRestrictGroup={wizardRestrictGroup}
         convenioSlot={
+          <div className="sm:col-span-2">
           <ConvenioVinculo
             valorTexto={convenioTextoWizard}
             valores={osCampos}
@@ -4427,6 +4429,17 @@ export default function AcompanhamentoPage() {
             disabled={wizardSubmitting}
             nomesAntigos={(((stepsForTipo as unknown as any[]).find((s) => s?.id === "convenio")?.options ?? []) as string[]).filter(Boolean)}
           />
+          {tipoConvenio(convenioTextoWizard, osCampos.convenio_tipo) === "associado" && (
+            <BuscaBeneficiarioPAI
+              grupo={String(osCampos.convenio_os).replace(/^ASSOCIADO_/i, "").toUpperCase() || "LIGHT"}
+              disabled={wizardSubmitting}
+              onEscolher={(p) => {
+                setWizardData((prev: any) => ({ ...prev, falecido: p.nome, data_nascimento: p.data_nascimento || "" }));
+                setOsCampos((prev) => ({ ...prev, contrato_numero: p.contrato, convenio_os: `ASSOCIADO_${p.grupo}` }));
+              }}
+            />
+          )}
+          </div>
         }
         osCampos={osCampos}
         osSlot={renderOs("resumo")}
