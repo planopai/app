@@ -16,6 +16,7 @@ import { Abas, Icone, LinhaConversa, SeloCor } from "./components/Lista";
 import JanelaConversa from "./components/Conversa";
 import { DetalhesGrupo, Encaminhar, EnviarContato, EtiquetasConversa, NovaConversa, Transferir } from "./components/Modais";
 import HistoricoClientes from "./components/Historico";
+import PainelCliente from "./components/PainelCliente";
 
 /**
  * Celular com a conversa aberta: a conversa ocupa só a parte visível da tela (acima do teclado),
@@ -175,6 +176,18 @@ export default function MessengerPage() {
     // mensagem que está sendo respondida (responder direcionado, como no WhatsApp)
     const [respondendo, setRespondendo] = useState<Mensagem | null>(null);
     useEffect(() => setRespondendo(null), [selId]);
+    // pacote 5B: painel do cliente (Unymos) — terceira coluna em tela larga, por cima nas demais
+    const [painelCli, setPainelCli] = useState(false);
+    const [textoPainel, setTextoPainel] = useState<{ texto: string; n: number }>({ texto: "", n: 0 });
+    useEffect(() => setPainelCli(false), [selId]);
+    const [largo, setLargo] = useState(false);
+    useEffect(() => {
+        const mq = window.matchMedia("(min-width: 1280px)");
+        const medir = () => setLargo(mq.matches);
+        medir();
+        mq.addEventListener?.("change", medir);
+        return () => mq.removeEventListener?.("change", medir);
+    }, []);
     const presenca = usePresencas();
     useSemZoom();
     const [notif, setNotif] = useState<{ estado: EstadoNotificacoes; detalhe?: string }>({ estado: "desligadas" });
@@ -602,7 +615,7 @@ export default function MessengerPage() {
                     <button type="button" onClick={() => { setErro(""); setAviso(""); }} aria-label="Fechar aviso"><Icone nome="x" className="h-4 w-4" /></button>
                 </div>
             )}
-            <div className="relative grid min-h-0 flex-1 overflow-hidden border-[#E1E5EC] bg-white md:grid-cols-[400px_minmax(0,1fr)] md:rounded-2xl md:border dark:border-white/12 dark:bg-[#232B3F]">
+            <div className={`relative grid min-h-0 flex-1 overflow-hidden border-[#E1E5EC] bg-white ${painelCli && largo && conversaSel?.tipo === "externo" ? "md:grid-cols-[340px_minmax(0,1fr)_400px]" : "md:grid-cols-[400px_minmax(0,1fr)]"} md:rounded-2xl md:border dark:border-white/12 dark:bg-[#232B3F]`}>
                 {/* lista */}
                 <div className={`${selId ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-[#E6E9EE] dark:border-white/12`}>
                     <div className="flex items-center gap-1 pb-1 pl-4 pr-2 pt-3">
@@ -716,6 +729,7 @@ export default function MessengerPage() {
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
                             onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}
+                            onAbrirCliente={() => setPainelCli((v) => !v)} painelClienteAberto={painelCli} textoParaInserir={textoPainel}
                         />
                     ) : (
                         <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-[#F0F2F5] p-8 text-center text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
@@ -724,6 +738,19 @@ export default function MessengerPage() {
                         </div>
                     )}
                 </div>
+                {/* pacote 5B: painel do cliente como terceira coluna (tela larga) ou por cima (demais) */}
+                {painelCli && conversaSel && conversaSel.tipo === "externo" && selId === conversaSel.id && (
+                    <div className={largo ? "hidden min-h-0 md:flex" : "contents"}>
+                        <PainelCliente
+                            key={conversaSel.id}
+                            conversa={conversaSel}
+                            coluna={largo}
+                            onFechar={() => setPainelCli(false)}
+                            onInserirTexto={(t) => { setTextoPainel((x) => ({ texto: t, n: x.n + 1 })); if (!largo) setPainelCli(false); }}
+                            onEnviarArquivo={(f) => enviarMidia(f)}
+                        />
+                    </div>
+                )}
             </div>
 
             {(modal === "nova" || modal === "grupo") && (

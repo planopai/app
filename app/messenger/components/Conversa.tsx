@@ -6,7 +6,7 @@ import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
 import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
-import PainelCliente from "./PainelCliente";
+import { SeloUnymos } from "./PainelCliente";
 
 const EMOJIS: Record<string, string[]> = {
     Rostos: ["😀", "😂", "😊", "😍", "🥲", "😢", "😔", "😮", "🙂", "😉", "🤗", "😴"],
@@ -443,6 +443,9 @@ export default function JanelaConversa(props: {
     onEnviarTexto: (t: string) => void;
     onEnviarModelo: (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => void;
     onEnviarArquivo: (f: File | Blob, opcoes?: { mime?: string; duracao_s?: number }) => void;
+    onAbrirCliente?: () => void;
+    painelClienteAberto?: boolean;
+    textoParaInserir?: { texto: string; n: number };
     onApagar: (m: Mensagem) => void;
     /** responder direcionado: mensagem escolhida (ou null) */
     respondendo?: Mensagem | null;
@@ -470,7 +473,11 @@ export default function JanelaConversa(props: {
 }) {
     const { conversa: c, mensagens, perfil } = props;
     const [texto, setTexto] = useState("");
-    const [painelCliente, setPainelCliente] = useState(false); // pacote 5B: contrato e parcelas na Unymos
+    // pacote 5B: o painel do cliente fica na página (terceira coluna ou por cima); o texto de cobrança volta por aqui
+    const abrirCliente = () => props.onAbrirCliente?.();
+    useEffect(() => {
+        if (props.textoParaInserir?.texto) setTexto(props.textoParaInserir.texto);
+    }, [props.textoParaInserir?.n]); // eslint-disable-line react-hooks/exhaustive-deps
     const [modoNota, setModoNota] = useState(false);
     const [menuAnexar, setMenuAnexar] = useState(false);
     const [buscando, setBuscando] = useState(false);
@@ -597,9 +604,8 @@ export default function JanelaConversa(props: {
                 </div>
                 <button type="button" onClick={() => { setBuscando((v) => !v); setTermo(""); setAtual(0); }} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
                 {externo && (
-                    <button type="button" onClick={() => setPainelCliente(true)} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Cliente na Unymos (contrato e parcelas)" title="Cliente · contrato e parcelas"><Icone nome="user" /></button>
+                    <button type="button" onClick={abrirCliente} aria-pressed={!!props.painelClienteAberto} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Cliente na Unymos (contrato e parcelas)" title="Cliente · contrato e parcelas"><Icone nome="user" /></button>
                 )}
-                {painelCliente && <PainelCliente conversa={c} onFechar={() => setPainelCliente(false)} onInserirTexto={(t) => { setTexto(t); setPainelCliente(false); }} onEnviarArquivo={props.onEnviarArquivo ? (f) => props.onEnviarArquivo(f) : undefined} />}
                 {externo && props.onEtiquetas && (
                     <button type="button" onClick={props.onEtiquetas} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Etiquetas da conversa" title="Etiquetas"><Icone nome="tag" /></button>
                 )}
@@ -625,15 +631,25 @@ export default function JanelaConversa(props: {
             {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0) || (c.contato?.contratos || []).length > 0) && (
                 <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
                     {(c.contato?.contratos || []).slice(0, 2).map((k) => (
-                        <button key={k.contrato} type="button" onClick={() => setPainelCliente(true)} title="Abrir o contrato na Unymos" className={`inline-flex h-[22px] flex-none items-center gap-1 rounded-full border px-2 text-[12px] font-extrabold ${/ATIV/i.test(k.situacao) || !k.situacao ? "border-[#3D6A99] text-[#1E3A5C] dark:border-[#A9BED6] dark:text-[#DDE7F3]" : "border-[#B42318] text-[#B42318] dark:border-[#FF9C92] dark:text-[#FF9C92]"}`}>
-                            📄 Contrato {k.contrato}{k.plano ? ` · ${k.plano}` : ""}{k.situacao && !/ATIV/i.test(k.situacao) ? ` · ${k.situacao}` : ""}
-                        </button>
+                        <React.Fragment key={k.contrato}>
+                            <button type="button" onClick={abrirCliente} title="Abrir o contrato na Unymos" className={`inline-flex h-[22px] flex-none items-center gap-1 rounded-full border px-2 text-[12px] font-extrabold ${/ATIV/i.test(k.situacao) || !k.situacao ? "border-[#3D6A99] text-[#1E3A5C] dark:border-[#A9BED6] dark:text-[#DDE7F3]" : "border-[#B42318] text-[#B42318] dark:border-[#FF9C92] dark:text-[#FF9C92]"}`}>
+                                📄 {k.contrato}{k.situacao && !/ATIV/i.test(k.situacao) ? ` · ${k.situacao}` : ""}
+                            </button>
+                            {k.plano && <SeloUnymos t={k.tags.find((t) => t.nome.toUpperCase() === k.plano.toUpperCase()) || { nome: k.plano, cor: "#313C55" }} pequeno />}
+                        </React.Fragment>
                     ))}
                     {c.setor && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                     <SelosEtiquetas etiquetas={c.etiquetas} max={6} />
-                    {(c.contato?.contratos?.[0]?.tags || []).slice(0, 3).map((t) => (
-                        <span key={t} title="Etiqueta do contrato na Unymos" className="inline-flex h-[22px] flex-none items-center rounded-full border border-dashed border-[#9AA3B5] px-2 text-[12px] font-bold text-[#4A5468] dark:border-white/30 dark:text-[#C9D1DE]">Unymos · {t}</span>
-                    ))}
+                    {(() => {
+                        const k = c.contato?.contratos?.[0];
+                        const tags = (k?.tags || []).filter((t) => t.nome.toUpperCase() !== (k?.plano || "").toUpperCase());
+                        return (
+                            <>
+                                {tags.slice(0, 3).map((t) => <SeloUnymos key={t.nome} t={t} pequeno />)}
+                                {tags.length > 3 && <button type="button" onClick={abrirCliente} className="flex-none text-[12px] font-extrabold text-[#5B6478] dark:text-[#AEB9CF]">+{tags.length - 3}</button>}
+                            </>
+                        );
+                    })()}
                 </div>
             )}
             {fixadas.length > 0 && (() => {

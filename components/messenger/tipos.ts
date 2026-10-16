@@ -90,7 +90,7 @@ export type Aba = "tudo" | "equipe" | "grupos" | "clientes";
 
 /* ---------- pacote 4A (15/10/2026): setores e etiquetas ---------- */
 /** Contrato da Unymos vinculado ao contato (selo na conversa); situação e etiquetas vêm da cópia diária. */
-export type ContratoVinculado = { contrato: string; plano: string; situacao: string; tags: string[] };
+export type ContratoVinculado = { contrato: string; plano: string; situacao: string; tags: { nome: string; cor: string | null }[] };
 
 export type EtiquetaCurta = { id: number; nome: string; cor: string };
 export type Etiqueta = EtiquetaCurta & { pessoal: boolean; uso: number; quando_usar?: string | null };
