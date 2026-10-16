@@ -777,6 +777,8 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         realiza_velorio: sim(s.realizaVelorio), realiza_sepultamento: sim(s.realizaSepultamento),
         // Sala do Memorial (produto na OS): só com velório = Sim.
         sala_velorio: sim(s.realizaVelorio) === "Sim" ? String(wd.sala_velorio ?? "").trim() : "",
+        // Vigência dos valores do convênio (16/10/2026): a prévia usa a mesma data da OS (data do falecimento).
+        data_falecimento: String(wd.data_falecimento ?? "").trim().slice(0, 10),
     };
 }
 

@@ -267,7 +267,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                     <Avatar conversa={c} online={online} />
                     <div className="min-w-0 flex-1 border-b border-[#EEF0F3] pb-3 dark:border-white/10">
                         <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</div>
+                            <div className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}{(c.contato?.contratos || []).length > 0 && <span className="ml-1.5 align-middle text-[13px]" title={`Contrato ${c.contato!.contratos!.map((k) => k.contrato).join(", ")}`} aria-label="Vinculado a contrato">📄</span>}</div>
                             <div className={`flex-none text-[13.5px] font-bold ${destaque ? "text-[#4E6B0A] dark:text-[#B3CE52]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>
                         </div>
                         <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">

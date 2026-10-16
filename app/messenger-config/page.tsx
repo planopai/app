@@ -257,6 +257,7 @@ export default function MessengerConfigPage() {
                             <span className={rotulo}>Quantas etiquetas cada conversa pode ter</span>
                             <input type="number" min={1} max={10} className={`${campo} h-12 max-w-[160px]`} value={config.max_etiquetas ?? 4} disabled={!podeEmpresa} onChange={(e) => setConfig({ ...config, max_etiquetas: Number(e.target.value) || 1 })} onBlur={() => salvarGeral({})} />
                         </label>
+                        <CopiaContratos />
                         <div className="mt-6 border-t border-[#EEF0F3] pt-4 dark:border-white/10">
                             <span className={rotulo}>Preços da Meta por mensagem cobrada (R$) — usados no Monitoramento</span>
                             <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -296,5 +297,41 @@ function LigaDesliga({ ligado, onMudar, texto, desativado }: { ligado: boolean; 
             </span>
             {texto}
         </button>
+    );
+}
+
+/** Cópia diária dos contratos da Unymos (situação, plano, etiquetas e aditivo no painel do cliente). */
+function CopiaContratos() {
+    const [e, setE] = useState<{ concluida_em: string | null; total: number | null; em_andamento: boolean; pode: boolean } | null>(null);
+    const [rodando, setRodando] = useState("");
+    const ler = () => msgGet<any>("contratos_copia", {}, false).then(setE).catch(() => setE(null));
+    useEffect(() => {
+        ler();
+    }, []);
+    const atualizar = async () => {
+        setRodando("Começando…");
+        try {
+            let primeira = true;
+            for (let volta = 0; volta < 60; volta++) {
+                const r = await msgPost("contratos_copia_atualizar", primeira ? { recomecar: true } : {});
+                primeira = false;
+                if (r.dados.fim) break;
+                setRodando(`Lendo contratos… página ${r.dados.pagina}`);
+            }
+            setRodando("");
+            ler();
+        } catch (err: any) {
+            setRodando(`Erro: ${err.message}`);
+        }
+    };
+    if (!e) return null;
+    return (
+        <div className="mt-6 border-t border-[#EEF0F3] pt-4 dark:border-white/10">
+            <span className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Cópia dos contratos da Unymos</span>
+            <p className="mt-1 text-[14.5px]">{e.concluida_em ? `Atualizada em ${new Date(e.concluida_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · ${e.total ?? 0} contratos` : "Ainda não foi feita."}{e.em_andamento ? " · atualizando aos poucos" : ""}</p>
+            <p className="mt-1 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Situação, plano, etiquetas e aditivo só vêm na consulta geral da Unymos. A cópia é renovada uma vez por dia (cron às 3h ou, sem cron, aos poucos durante o dia).</p>
+            {e.pode && <button type="button" onClick={atualizar} disabled={!!rodando && !rodando.startsWith("Erro")} className="mt-2 h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-[14.5px] font-extrabold text-[#313C55] disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white">{rodando && !rodando.startsWith("Erro") ? rodando : "Atualizar contratos agora"}</button>}
+            {rodando.startsWith("Erro") && <p className="mt-1 text-[14px] font-bold text-[#B42318] dark:text-[#FF9C92]">{rodando}</p>}
+        </div>
     );
 }

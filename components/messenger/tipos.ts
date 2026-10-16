@@ -51,7 +51,7 @@ export type Conversa = {
     ultima_mensagem: Mensagem | null;
     ultima_mensagem_em: string | null;
     /** nome = o salvo pela equipe, se houver; nome_whatsapp = o do perfil do cliente */
-    contato: { id: number; nome: string | null; nome_whatsapp?: string | null; salvo?: boolean; telefone: string } | null;
+    contato: { id: number; nome: string | null; nome_whatsapp?: string | null; salvo?: boolean; telefone: string; contratos?: ContratoVinculado[] } | null;
     status_atendimento: "aguardando" | "em_atendimento" | "encerrado" | null;
     responsavel: { id: number; nome: string | null } | null;
     janela_ate: string | null;
@@ -89,6 +89,9 @@ export type Perfil = {
 export type Aba = "tudo" | "equipe" | "grupos" | "clientes";
 
 /* ---------- pacote 4A (15/10/2026): setores e etiquetas ---------- */
+/** Contrato da Unymos vinculado ao contato (selo na conversa); situação e etiquetas vêm da cópia diária. */
+export type ContratoVinculado = { contrato: string; plano: string; situacao: string; tags: string[] };
+
 export type EtiquetaCurta = { id: number; nome: string; cor: string };
 export type Etiqueta = EtiquetaCurta & { pessoal: boolean; uso: number; quando_usar?: string | null };
 export type HorarioSetor = { dia: number; inicio: string; fim: string };

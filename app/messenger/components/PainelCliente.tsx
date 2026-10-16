@@ -20,7 +20,8 @@ type Painel = {
     nao_encontrado?: boolean;
     contrato?: { plano: string; titular: string; data_contrato: string; cidade: string };
     autorizacao?: { autorizado: boolean; motivos: string[] } | null;
-    beneficiarios?: { nome: string; tipo: string }[];
+    beneficiarios?: { nome: string; tipo: string; grau?: string; idade?: number | null }[];
+    copia?: { situacao: string; plano: string; cobertura: string; tags: string[]; aditivo_permite: boolean | null; atualizado_em: string } | null;
     financeiro?: { em_atraso: boolean; total_vencido: number; abertas: Parcela[]; vencidas_ids: number[]; total_lote: number; quantidade_lote: number; pagas: Parcela[] };
     notas?: { id: number; numero: string; data: string; valor: number }[];
     cobrancas?: { tipo: string; valor: number; situacao: string; por: string | null; criado_em: string; pago_em: string | null }[];
@@ -52,6 +53,7 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto, onEn
     const [ocupado, setOcupado] = useState("");
     const [contratoAtual, setContratoAtual] = useState("");
     const [qr, setQr] = useState("");
+    const [ate, setAte] = useState(0); // antecipação: cobrar até esta parcela (0 = só as do mês)
 
     const carregar = useCallback(async (contrato = "", procurar = false) => {
         setErro("");
@@ -76,13 +78,14 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto, onEn
         setOcupado(tipo + (conta?.id || ""));
         setErro("");
         try {
-            const r = await msgPost("cliente_cobrar", { conversa_id: conversa.id, contrato: dados.atual.contrato, tipo, conta_id: conta?.id });
+            const r = await msgPost("cliente_cobrar", { conversa_id: conversa.id, contrato: dados.atual.contrato, tipo, conta_id: conta?.id, ...((tipo === "link" || tipo === "pix") && ate ? { ate_conta_id: ate } : {}) });
             if (r.dados.pdf_base64) {
                 onEnviarArquivo?.(arquivoDe(r.dados.pdf_base64, r.dados.nome, "application/pdf"));
                 setAviso(tipo === "boleto" ? "Boleto enviado ao cliente." : "Recibo enviado ao cliente.");
             } else {
                 onInserirTexto(r.dados.texto);
                 setQr(r.dados.qr_base64 || "");
+                setAte(0);
                 setAviso(tipo === "pix" ? "Código Pix colocado no campo de mensagem. Revise e envie; se quiser, mande também o QR Code abaixo." : "Link colocado no campo de mensagem. Revise e envie.");
             }
             carregar(dados.atual.contrato);
@@ -142,7 +145,16 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto, onEn
                             </label>
                         )}
                         <div>
-                            <b className="text-[18px]">Contrato {atual.contrato}{dados.contrato?.plano || atual.plano ? ` · ${dados.contrato?.plano || atual.plano}` : ""}</b>
+                            <div className="flex items-start gap-2">
+                                <b className="flex-1 text-[18px]">Contrato {atual.contrato}{dados.copia?.plano || dados.contrato?.plano || atual.plano ? ` · ${dados.copia?.plano || dados.contrato?.plano || atual.plano}` : ""}</b>
+                                {dados.copia?.situacao && <span className={`mt-0.5 flex-none rounded-lg px-2 py-0.5 text-[12px] font-extrabold ${/ATIV/i.test(dados.copia.situacao) ? "bg-[#EEF5D6] text-[#2F4207]" : "bg-[#FDECEA] text-[#B42318]"}`}>{dados.copia.situacao}</span>}
+                            </div>
+                            {dados.copia?.cobertura && <div className="text-[14px] text-[#4A5468] dark:text-[#C9D1DE]">Cobertura: {dados.copia.cobertura}</div>}
+                            {dados.copia && dados.copia.aditivo_permite !== null && <div className="text-[13.5px] text-[#4A5468] dark:text-[#C9D1DE]">{dados.copia.aditivo_permite ? "Aceita aditivo (Tanatopraxia / Translado)" : "Não aceita aditivo"}</div>}
+                            {(dados.copia?.tags || []).length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">{dados.copia!.tags.map((t) => <span key={t} className="rounded-full border border-dashed border-[#9AA3B5] px-2 py-0.5 text-[12px] font-bold dark:border-white/30">Unymos · {t}</span>)}</div>
+                            )}
+                            {!dados.copia && <div className="text-[12.5px] text-[#6B7488] dark:text-[#AEB9CF]">Situação e etiquetas aparecem depois da cópia diária dos contratos (Configurações › Geral).</div>}
                             <div className="text-[14.5px] text-[#4A5468] dark:text-[#C9D1DE]">Titular: {dados.contrato?.titular || atual.titular || "—"}{dados.contrato?.data_contrato ? ` · desde ${data(dados.contrato.data_contrato)}` : ""}</div>
                             {dados.nao_encontrado && <p className="mt-1 text-[14px] font-bold text-[#B42318] dark:text-[#FF9C92]">Contrato não encontrado agora na Unymos.</p>}
                             {aut && (
@@ -161,11 +173,14 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto, onEn
                                 <div className={rotulo}>Mensalidades em aberto</div>
                                 {f.em_atraso && <div className="mt-1 rounded-lg bg-[#FDECEA] px-3 py-1.5 text-[14px] font-extrabold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">Em atraso: {reais(f.total_vencido)}</div>}
                                 <div className="mt-1 flex flex-col">
-                                    {f.abertas.map((p) => {
+                                    {f.abertas.map((p, i) => {
                                         const vencida = f.vencidas_ids.includes(p.id);
+                                        const posAte = ate ? f.abertas.findIndex((x) => x.id === ate) : -1;
+                                        const antecipada = !p.no_lote && posAte >= i;
                                         return (
                                             <div key={p.id} className="flex items-center gap-2 border-b border-[#F0F2F5] py-2 text-[15px] last:border-0 dark:border-white/10">
-                                                <span className={`flex-1 ${vencida ? "text-[#B42318] dark:text-[#FF9C92]" : ""}`}><b>{p.parcela || "Mensalidade"}</b> · {vencida ? "venceu" : "vence"} {data(p.vencimento)}</span>
+                                                {!p.no_lote && atual.pode_pagar && <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={antecipada} onChange={() => setAte(antecipada ? (i > 0 && !f.abertas[i - 1].no_lote ? f.abertas[i - 1].id : 0) : p.id)} aria-label={`Antecipar a parcela ${p.parcela || data(p.vencimento)}`} title="Antecipar (entra no link e no Pix)" />}
+                                                <span className={`flex-1 ${vencida ? "text-[#B42318] dark:text-[#FF9C92]" : ""}`}><b>{p.parcela || "Mensalidade"}</b> · {vencida ? "venceu" : "vence"} {data(p.vencimento)}{antecipada ? <span className="ml-1 text-[12px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">antecipar</span> : null}</span>
                                                 <b>{reais(p.valor)}</b>
                                                 {p.no_lote && <span title="Entra no link e no Pix" className="text-[#4C9A2A]">●</span>}
                                                 {atual.pode_pagar && <button type="button" title="Enviar boleto desta parcela" aria-label={`Enviar boleto da parcela ${p.parcela}`} disabled={!!ocupado} onClick={() => cobrar("boleto", p)} className="rounded-lg border border-[#C9D1DE] px-2 py-0.5 text-[12px] font-extrabold disabled:opacity-50 dark:border-white/25">{ocupado === `boleto${p.id}` ? "…" : "Boleto"}</button>}
@@ -180,7 +195,7 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto, onEn
                                             <button type="button" className={btnPri} disabled={!!ocupado} onClick={() => cobrar("link")}>{ocupado === "link" ? "Gerando…" : "Link Pix/cartão"}</button>
                                             <button type="button" className={btnPri} disabled={!!ocupado} onClick={() => cobrar("pix")}>{ocupado === "pix" ? "Gerando…" : "Pix copia e cola"}</button>
                                         </div>
-                                        <p className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Link e Pix de {reais(f.total_lote)}: juntam as parcelas com ● (da mais antiga até a do mês), como no sistema. O texto vai para o campo de mensagem para você revisar.</p>
+                                        <p className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Link e Pix de <b>{reais(f.total_lote + (ate ? f.abertas.filter((x, i) => !x.no_lote && i <= f.abertas.findIndex((y) => y.id === ate)).reduce((t, x) => t + x.valor, 0) : 0))}</b>: as parcelas com ● (da mais antiga até a do mês), como no sistema{ate ? ", mais as marcadas para antecipar" : ". Para antecipar, marque as próximas parcelas"}. O texto vai para o campo de mensagem para você revisar.</p>
                                     </div>
                                 )}
                                 {f.pagas.length > 0 && (
@@ -208,7 +223,7 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto, onEn
                         {(dados.beneficiarios || []).length > 0 && (
                             <section>
                                 <div className={rotulo}>Beneficiários</div>
-                                {dados.beneficiarios!.map((b, i) => <div key={i} className="py-1 text-[15px]">{b.tipo === "P" ? "🐾" : "👤"} {b.nome} <span className="text-[#6B7488] dark:text-[#AEB9CF]">· {TIPOS[b.tipo] || b.tipo || "—"}</span></div>)}
+                                {dados.beneficiarios!.map((b, i) => <div key={i} className="py-1 text-[15px]">{b.tipo === "P" ? "🐾" : "👤"} {b.nome} <span className="text-[#6B7488] dark:text-[#AEB9CF]">· {[b.grau ? b.grau.toLowerCase() : TIPOS[b.tipo] || b.tipo || "", b.idade !== null && b.idade !== undefined && b.tipo !== "P" ? `${b.idade} anos` : ""].filter(Boolean).join(" · ") || "—"}</span></div>)}
                             </section>
                         )}
                         <button type="button" className={btn} onClick={() => { setDados(null); carregar(atual.contrato); }}>Atualizar dados</button>

@@ -622,10 +622,18 @@ export default function JanelaConversa(props: {
                     </>
                 )}
             </div>
-            {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0)) && (
+            {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0) || (c.contato?.contratos || []).length > 0) && (
                 <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
+                    {(c.contato?.contratos || []).slice(0, 2).map((k) => (
+                        <button key={k.contrato} type="button" onClick={() => setPainelCliente(true)} title="Abrir o contrato na Unymos" className={`inline-flex h-[22px] flex-none items-center gap-1 rounded-full border px-2 text-[12px] font-extrabold ${/ATIV/i.test(k.situacao) || !k.situacao ? "border-[#3D6A99] text-[#1E3A5C] dark:border-[#A9BED6] dark:text-[#DDE7F3]" : "border-[#B42318] text-[#B42318] dark:border-[#FF9C92] dark:text-[#FF9C92]"}`}>
+                            📄 Contrato {k.contrato}{k.plano ? ` · ${k.plano}` : ""}{k.situacao && !/ATIV/i.test(k.situacao) ? ` · ${k.situacao}` : ""}
+                        </button>
+                    ))}
                     {c.setor && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                     <SelosEtiquetas etiquetas={c.etiquetas} max={6} />
+                    {(c.contato?.contratos?.[0]?.tags || []).slice(0, 3).map((t) => (
+                        <span key={t} title="Etiqueta do contrato na Unymos" className="inline-flex h-[22px] flex-none items-center rounded-full border border-dashed border-[#9AA3B5] px-2 text-[12px] font-bold text-[#4A5468] dark:border-white/30 dark:text-[#C9D1DE]">Unymos · {t}</span>
+                    ))}
                 </div>
             )}
             {fixadas.length > 0 && (() => {
