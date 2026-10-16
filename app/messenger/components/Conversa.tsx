@@ -73,6 +73,29 @@ function Tiques({ estado }: { estado: "enviando" | "enviada" | "entregue" | "lid
     return <span className={estado === "lida" ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#6B7488] dark:text-[#C9D1DE]"} aria-label={estado === "lida" ? "Lida" : "Entregue"}><Icone nome="checks" className="h-4 w-4" /></span>;
 }
 
+/**
+ * Texto com a formatação do WhatsApp (*negrito*, _itálico_, ~riscado~, ```monoespaçado```) e links clicáveis,
+ * para a mensagem aparecer no Messenger como aparece no celular do cliente.
+ */
+const PADRAO_FORMATO = /(https?:\/\/[^\s<]+)|```([^`]+)```|\*([^*\n]+)\*|_([^_\n]+)_|~([^~\n]+)~/g;
+export function TextoFormatado({ texto }: { texto: string }) {
+    const partes: React.ReactNode[] = [];
+    let ultimo = 0;
+    let n = 0;
+    for (const a of texto.matchAll(PADRAO_FORMATO)) {
+        const i = a.index ?? 0;
+        if (i > ultimo) partes.push(texto.slice(ultimo, i));
+        if (a[1]) partes.push(<a key={n++} href={a[1]} target="_blank" rel="noopener noreferrer" className="break-all underline">{a[1]}</a>);
+        else if (a[2]) partes.push(<code key={n++} className="rounded bg-black/10 px-1 font-mono text-[0.92em] dark:bg-white/15">{a[2]}</code>);
+        else if (a[3]) partes.push(<b key={n++}>{a[3]}</b>);
+        else if (a[4]) partes.push(<i key={n++}>{a[4]}</i>);
+        else if (a[5]) partes.push(<s key={n++}>{a[5]}</s>);
+        ultimo = i + a[0].length;
+    }
+    if (ultimo < texto.length) partes.push(texto.slice(ultimo));
+    return <>{partes}</>;
+}
+
 /** Trecho da mensagem respondida, dentro do balão (como no WhatsApp). */
 function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
     const autor = !m ? "" : m.autor_tipo === "usuario" && m.autor_usuario_id === eu ? "Você" : m.autor_nome || "—";
@@ -179,7 +202,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                     <>
                         {m.responde_a_id ? <Citacao m={citada} eu={eu} /> : null}
                         {m.anexos.map((a) => <Anexo key={a.id} a={a} minha={minha} />)}
-                        {m.texto && m.tipo !== "audio" && <span className="whitespace-pre-wrap break-words">{m.texto}</span>}
+                        {m.texto && m.tipo !== "audio" && <span className="whitespace-pre-wrap break-words"><TextoFormatado texto={m.texto} /></span>}
                     </>
                 )}
                 <span className="float-right ml-2.5 mt-1.5 flex translate-y-0.5 items-center gap-1 text-[12.5px] font-semibold text-[#5B6478] dark:text-[#C9D1DE]">

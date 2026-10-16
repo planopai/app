@@ -43,6 +43,8 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
         emojimais: (<><circle cx="11" cy="13" r="8" /><path d="M8 15s1 1.5 3 1.5 3-1.5 3-1.5" /><path d="M8.5 11h.01" /><path d="M13.5 11h.01" /><path d="M19 2v5" /><path d="M16.5 4.5h5" /></>),
         editar: (<><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z" /></>),
         tag: (<><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></>),
+        expandir: (<><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></>),
+        recolher: (<><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="m14 10 7-7" /><path d="m3 21 7-7" /></>),
         pin: (<><path d="M12 17v5" /><path d="M9 10.8V4h6v6.8l3 3.2v2H6v-2z" /></>),
         naolida: (<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" fill="currentColor" /></>),
         chevron: (<path d="m6 9 6 6 6-6" />),
@@ -209,7 +211,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
 
     let etiqueta: React.ReactNode = null;
     if (c.tipo === "externo") {
-        if (c.status_atendimento === "aguardando") etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
+        if (c.status_atendimento === "aguardando" && !acao) etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
         else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[12.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
         else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[12.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
     }
@@ -268,7 +270,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                             <div className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-[#1F2638] dark:text-white">{c.titulo}</div>
                             <div className={`flex-none text-[13.5px] font-bold ${destaque ? "text-[#4E6B0A] dark:text-[#B3CE52]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{hora(c.ultima_mensagem_em)}</div>
                         </div>
-                        <div className="mt-1 flex items-center gap-1.5">
+                        <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">
                             {etiqueta}
                             {c.setor && c.status_atendimento === "aguardando" && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                             <SelosEtiquetas etiquetas={c.etiquetas} />
