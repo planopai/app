@@ -38,10 +38,10 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto }: { 
     const [gerando, setGerando] = useState(false);
     const [contratoAtual, setContratoAtual] = useState(0);
 
-    const carregar = useCallback(async (idContrato = 0) => {
+    const carregar = useCallback(async (idContrato = 0, procurar = false) => {
         setErro("");
         try {
-            setDados(await msgGet<Painel>("cliente_painel", { conversa_id: conversa.id, ...(idContrato ? { id_contrato: idContrato } : {}) }));
+            setDados(await msgGet<Painel>("cliente_painel", { conversa_id: conversa.id, ...(idContrato ? { id_contrato: idContrato } : {}), ...(procurar ? { procurar: 1 } : {}) }));
         } catch (e: any) {
             setErro(e.message);
         }
@@ -91,13 +91,14 @@ export default function PainelCliente({ conversa, onFechar, onInserirTexto }: { 
                 </div>
                 {erro && <div className="mx-4 mt-3 rounded-xl border border-[#B42318] bg-[#FDECEA] px-3 py-2 text-[14px] font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
                 {aviso && <div className="mx-4 mt-3 rounded-xl border border-[#B3CE52] bg-[#EEF5D6] px-3 py-2 text-[14px] font-bold text-[#2F4207] dark:bg-[#B3CE52]/15 dark:text-[#DCEBAA]">{aviso}</div>}
-                {!dados && !erro && <p className="px-4 py-6 text-[15px]">Consultando a Unymos…</p>}
+                {!dados && !erro && <p className="px-4 py-6 text-[15px]">Consultando a Unymos (procurando o telefone nos contratos)…</p>}
 
                 {dados && !atual && (
                     <div className="flex flex-col gap-3 px-4 py-5">
-                        <p className="text-[15px]">Este contato ainda não está ligado a um contrato. Busque pelo número do contrato ou pelo nome do titular.</p>
+                        <p className="text-[15px]">O telefone deste contato não foi encontrado em nenhum contrato da Unymos. Busque pelo número do contrato ou pelo nome do titular.</p>
                         <p className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Serve também para quem não é titular nem dependente (filho, cônjuge, responsável pelo pagamento). O vínculo fica salvo para as próximas conversas.</p>
                         <button type="button" className={btnPri} onClick={() => setVincular(true)}>Vincular a um contrato</button>
+                        <button type="button" className={btn} onClick={() => { setDados(null); carregar(0, true); }}>Procurar o telefone de novo na Unymos</button>
                     </div>
                 )}
 
