@@ -101,13 +101,6 @@ export const FIXOS: ItemModulo[] = [
     { id: "chat", titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
 ];
 
-/**
- * 15/10/2026: itens fixos PADRÃO (Acesso rápido do Início), na ordem, quando a Gestão não salvou outros no Organizar menu
- * (ou voltou ao padrão). FIXOS acima continua sendo o catálogo das telas que só existem como fixas (Quadro, Minhas OS...).
- * O Quadro e a Coroa ficam fora do padrão porque já abrem pelos cartões de número do Início.
- */
-export const FIXOS_PADRAO_IDS: string[] = ["inicio", "minhasos", "consulta", "solicitar-produto", "minhas-solicitacoes", "messenger", "chat"];
-
 export const MODULOS: Modulo[] = [
     {
         id: "atendimento",
@@ -135,6 +128,8 @@ export const MODULOS: Modulo[] = [
             { id: "messenger", titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
             // 14/10/2026: Configurações do Messenger (respostas rápidas, assinatura…). Nasce aqui; a Gestão move pelo Organizar menu.
             { id: "messenger-config", titulo: "Configurações do Messenger", desc: "Respostas rápidas e ajustes do atendimento", href: "/messenger-config", slugs: ["messenger-config"], icone: IconSettings },
+            // 15/10/2026: painel de monitoramento do atendimento (Gestão: mesma página do Histórico de clientes). Nasce aqui; mova pelo Organizar menu.
+            { id: "messenger-monitor", titulo: "Monitoramento do atendimento", desc: "Fila, atendentes e avaliações", href: "/messenger-monitor", slugs: ["messenger-historico"], icone: IconChartBar },
             { id: "chat", titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
             { id: "avisos", titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
