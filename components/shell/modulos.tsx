@@ -101,6 +101,12 @@ export const FIXOS: ItemModulo[] = [
     { id: "chat", titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
 ];
 
+/**
+ * Ids dos fixos padrão, na ordem. Usado pelo menuOrganizado.ts (Organizar menu e Personalizar barra)
+ * para saber quais fixos são do sistema. 16/10/2026: export restaurado (faltava e derrubava o menu).
+ */
+export const FIXOS_PADRAO_IDS: string[] = FIXOS.map((f) => f.id);
+
 export const MODULOS: Modulo[] = [
     {
         id: "atendimento",
