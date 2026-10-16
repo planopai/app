@@ -90,7 +90,7 @@ export type Aba = "tudo" | "equipe" | "grupos" | "clientes";
 
 /* ---------- pacote 4A (15/10/2026): setores e etiquetas ---------- */
 export type EtiquetaCurta = { id: number; nome: string; cor: string };
-export type Etiqueta = EtiquetaCurta & { pessoal: boolean; uso: number };
+export type Etiqueta = EtiquetaCurta & { pessoal: boolean; uso: number; quando_usar?: string | null };
 export type HorarioSetor = { dia: number; inicio: string; fim: string };
 export type ExcecaoSetor = { data: string; descricao: string | null; fechado: boolean; inicio: string | null; fim: string | null };
 export type Setor = {

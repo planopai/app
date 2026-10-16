@@ -6,6 +6,7 @@ import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
 import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
+import PainelCliente from "./PainelCliente";
 
 const EMOJIS: Record<string, string[]> = {
     Rostos: ["😀", "😂", "😊", "😍", "🥲", "😢", "😔", "😮", "🙂", "😉", "🤗", "😴"],
@@ -469,6 +470,7 @@ export default function JanelaConversa(props: {
 }) {
     const { conversa: c, mensagens, perfil } = props;
     const [texto, setTexto] = useState("");
+    const [painelCliente, setPainelCliente] = useState(false); // pacote 5B: contrato e parcelas na Unymos
     const [modoNota, setModoNota] = useState(false);
     const [menuAnexar, setMenuAnexar] = useState(false);
     const [buscando, setBuscando] = useState(false);
@@ -594,6 +596,10 @@ export default function JanelaConversa(props: {
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
                 <button type="button" onClick={() => { setBuscando((v) => !v); setTermo(""); setAtual(0); }} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
+                {externo && (
+                    <button type="button" onClick={() => setPainelCliente(true)} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Cliente na Unymos (contrato e parcelas)" title="Cliente · contrato e parcelas"><Icone nome="user" /></button>
+                )}
+                {painelCliente && <PainelCliente conversa={c} onFechar={() => setPainelCliente(false)} onInserirTexto={(t) => { setTexto(t); setPainelCliente(false); }} />}
                 {externo && props.onEtiquetas && (
                     <button type="button" onClick={props.onEtiquetas} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Etiquetas da conversa" title="Etiquetas"><Icone nome="tag" /></button>
                 )}

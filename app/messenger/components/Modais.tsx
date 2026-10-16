@@ -334,8 +334,7 @@ export function EtiquetasConversa({ conversa, onFechar, onSalvo }: { conversa: C
                 {(lista || []).map((e) => (
                     <label key={e.id} className={`flex min-h-[54px] items-center gap-3 rounded-xl px-2 ${!marcadas.includes(e.id) && marcadas.length >= max ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-[#EEF2F7] dark:hover:bg-white/10"}`}>
                         <input type="checkbox" className="h-5 w-5 flex-none accent-[#313C55]" checked={marcadas.includes(e.id)} disabled={!marcadas.includes(e.id) && marcadas.length >= max} onChange={() => setMarcadas((m) => (m.includes(e.id) ? m.filter((x) => x !== e.id) : m.length >= max ? m : [...m, e.id]))} />
-                        <SeloCor nome={e.nome} cor={e.cor} ponto />
-                        <span className="flex-1" />
+                        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5"><SeloCor nome={e.nome} cor={e.cor} ponto />{e.quando_usar && <span className="text-[12.5px] leading-snug text-[#5B6478] dark:text-[#AEB9CF]">{e.quando_usar}</span>}</span>
                         {e.pessoal && <span className="rounded-full bg-[#F0F2F5] px-2 py-0.5 text-[12px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Minha</span>}
                     </label>
                 ))}

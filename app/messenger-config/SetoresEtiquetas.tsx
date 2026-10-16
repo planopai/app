@@ -232,7 +232,7 @@ export function AbaSetores({ podeEditar, avisar }: { podeEditar: boolean; avisar
 
 export function AbaEtiquetas({ podeEditar, avisar }: { podeEditar: boolean; avisar: Aviso }) {
     const [lista, setLista] = useState<Etiqueta[]>([]);
-    const [edit, setEdit] = useState<{ id: number; nome: string; cor: string; pessoal: boolean }>({ id: 0, nome: "", cor: "#3D6A99", pessoal: !podeEditar });
+    const [edit, setEdit] = useState<{ id: number; nome: string; cor: string; pessoal: boolean; quando_usar?: string }>({ id: 0, nome: "", cor: "#3D6A99", pessoal: !podeEditar, quando_usar: "" });
     const carregar = useCallback(() => {
         msgGet<Etiqueta[]>("etiquetas").then(setLista).catch((e) => avisar(e.message, true));
     }, [avisar]);
@@ -272,11 +272,11 @@ export function AbaEtiquetas({ podeEditar, avisar }: { podeEditar: boolean; avis
                 {lista.map((e) => (
                     <div key={e.id} className="flex items-center gap-3 border-t border-[#EEF0F3] py-2.5 dark:border-white/10">
                         <SeloCor nome={e.nome} cor={e.cor} ponto />
-                        <span className="flex-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Usada em {e.uso} {e.uso === 1 ? "conversa" : "conversas"}</span>
+                        <span className="min-w-0 flex-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Usada em {e.uso} {e.uso === 1 ? "conversa" : "conversas"}{e.quando_usar && <span className="block truncate text-[13px] italic" title={e.quando_usar}>{e.quando_usar}</span>}</span>
                         <span className="flex-none rounded-lg bg-[#F0F2F5] px-2 py-0.5 text-[12px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">{e.pessoal ? "Minha" : "Empresa"}</span>
                         {podeMexer(e) && (
                             <>
-                                <button type="button" aria-label={`Editar ${e.nome}`} onClick={() => setEdit({ id: e.id, nome: e.nome, cor: e.cor, pessoal: e.pessoal })} className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-[#F0F2F5] dark:hover:bg-white/10"><Icone nome="editar" className="h-5 w-5" /></button>
+                                <button type="button" aria-label={`Editar ${e.nome}`} onClick={() => setEdit({ id: e.id, nome: e.nome, cor: e.cor, pessoal: e.pessoal, quando_usar: e.quando_usar || "" })} className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-[#F0F2F5] dark:hover:bg-white/10"><Icone nome="editar" className="h-5 w-5" /></button>
                                 <button type="button" aria-label={`Apagar ${e.nome}`} onClick={() => apagar(e)} className="flex h-10 w-10 items-center justify-center rounded-xl text-[#B42318] hover:bg-[#FDECEA] dark:text-[#FF9C92] dark:hover:bg-white/10"><Icone nome="trash" className="h-5 w-5" /></button>
                             </>
                         )}
@@ -287,6 +287,7 @@ export function AbaEtiquetas({ podeEditar, avisar }: { podeEditar: boolean; avis
                 <h2 className="m-0 text-lg font-extrabold">{edit.id ? "Editar etiqueta" : "Nova etiqueta"}</h2>
                 <label className="block"><span className={rotulo}>Nome</span><input className={`${campo} h-12`} value={edit.nome} onChange={(e) => setEdit({ ...edit, nome: e.target.value })} maxLength={60} placeholder="Ex.: Retornar ligação" /></label>
                 <div><span className={rotulo}>Cor</span><Cores valor={edit.cor} onMudar={(c) => setEdit({ ...edit, cor: c })} /></div>
+                <label className="block"><span className={rotulo}>Quando usar</span><textarea className={`${campo} py-3`} rows={3} maxLength={400} value={edit.quando_usar || ""} onChange={(e) => setEdit({ ...edit, quando_usar: e.target.value })} placeholder="Ex.: cliente mandou comprovante de Pix ou transferência. Não usar para pedido de boleto." /><span className="mt-1 block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Orienta a equipe e, quando a Aurora entrar, ela usa este texto para etiquetar as conversas.</span></label>
                 {!edit.id && (
                     <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
                         <legend className={`${rotulo} mb-2`}>Quem usa</legend>
