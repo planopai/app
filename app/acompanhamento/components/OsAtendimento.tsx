@@ -767,6 +767,7 @@ export function montarRascunhoOS(wizardData: Record<string, any>, os: OsCampos, 
         coroas,
         assistencia: sim(s.assistencia), kit_lanche: sim(s.kitLanche),
         ornamentacao: sim(s.ornamentacao), ornamentacao_tipo: String(wd.ornamentacao_tipo ?? ""),
+        contrato_numero: String(os.contrato_numero ?? "").trim(),
         tanato: sim(s.tanato), tanato_produto_id: id(os.tanato_produto_id),
         tanato_autorizado_prefeitura: os.tanato_autorizado_prefeitura,
         reconstituicao_facial: os.reconstituicao_facial || "Não",
@@ -993,7 +994,9 @@ export function SecaoOSAtendimento({
     // Um pacote não cadastrado impede considerar a prévia uma cobrança contratual definitiva.
     // Mantemos o valor salvo acessível em "Ver OS", sem apresentá-lo como cotação confirmada.
     const semPacoteAssociado = assoc && !!dp && Array.isArray(dp?.avisos) && dp.avisos.some((a: unknown) => /n[aã]o (tem|possui) pacote ativo|sem pacote/i.test(String(a)));
-    const previaAditivoNaoConciliado = assoc && aditivoTanatopraxiaIdentificado && tanatoSim && !!dp && !linhasPrevia.some((l) => l.chave === "TANATOPRAXIA" && l.destino === "CONVENIO");
+    const previaAditivoNaoConciliado = assoc && aditivoTanatopraxiaIdentificado && tanatoSim && !!dp &&
+        (dp?.aditivo_tanatopraxia_validado !== true || !linhasPrevia.some((l) =>
+            ["TANATOPRAXIA", "TANATOPRAXIA_AVANCADA", "EMBALSAMAMENTO"].includes(l.chave) && l.destino === "CONVENIO"));
     const previaInconclusiva = semPacoteAssociado || previaAditivoNaoConciliado;
     const familiaMostrar: number | null = temFamiliaAgora ? (familiaAgora ?? salvoFamilia) : null;
     const familiaDiverge = familiaAgora != null && salvoFamilia != null && Math.abs(familiaAgora - salvoFamilia) > 0.005;
