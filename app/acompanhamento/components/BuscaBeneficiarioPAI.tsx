@@ -49,22 +49,22 @@ export default function BuscaBeneficiarioPAI({ grupo, disabled, contratoSelecion
       const pessoas = (Array.isArray(r?.beneficiarios) ? r.beneficiarios : [])
         .filter((p:PessoaPAI) => p && p.nome && ["T","D","A","TITULAR","DEPENDENTE","AGREGADO"].includes(String(p.tipo).toUpperCase()));
       if (!pessoas.length) throw new Error("Contrato localizado, mas a API não retornou titulares, dependentes ou agregados.");
-      onContrato(c,pessoas);
+      onContrato((r?.contrato as ContratoPAI) || c,pessoas);
       setContratos([]);
     } catch(e:any) {setErro(String(e?.message || "Não foi possível consultar os beneficiários."));}
     finally {setCarregando(false);}
   };
   return <div className="mt-3 rounded-xl border border-slate-300 p-3 dark:border-slate-600 sm:col-span-2">
     <label htmlFor="pai-contrato-busca" className="mb-1 block text-sm font-semibold">Localizar contrato do titular</label>
-    <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">Digite o número do contrato, CPF ou nome completo do titular.</p>
+    <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">Busca exata por número do contrato, CPF ou nome completo do titular. Não mostra aproximações.</p>
     {contratoSelecionado && <div className="mb-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
       <b>Contrato selecionado: {contratoSelecionado.contrato}</b> · {contratoSelecionado.titular} · {contratoSelecionado.plano}<br/>
       Tanatopraxia: {contratoSelecionado.tanato ? "Disponível pelo aditivo" : "Tag não identificada"}
       <button type="button" disabled={disabled||carregando} className="ml-2 font-semibold underline" onClick={() => {onContrato(null,[]);setContratos([]);}}>Trocar contrato</button>
     </div>}
-    {!contratoSelecionado && <><div className="flex gap-2">
-      <input id="pai-contrato-busca" className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Contrato, CPF ou nome completo" value={termo} onChange={e=>setTermo(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();void buscar();}}} disabled={disabled||carregando}/>
-      <button type="button" className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-50" onClick={()=>void buscar()} disabled={disabled||carregando||termo.trim().length<3}>Buscar</button>
+    {!contratoSelecionado && <><div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+      <input id="pai-contrato-busca" className="w-full min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-base text-slate-900" placeholder="Contrato, CPF ou nome completo" value={termo} onChange={e=>setTermo(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();void buscar();}}} disabled={disabled||carregando}/>
+      <button type="button" className="w-full shrink-0 rounded-lg bg-slate-800 px-4 py-2 text-base font-bold text-white disabled:opacity-50 sm:w-auto" onClick={()=>void buscar()} disabled={disabled||carregando||termo.trim().length<3}>Buscar</button>
     </div>
     {emCache && <p className="mt-1 text-xs text-amber-700">A pesquisa pode usar catálogo com até 10 minutos de cache.</p>}
     {!!contratos.length && <div className="mt-2 max-h-52 overflow-y-auto" aria-label="Contratos encontrados">{contratos.map(c=><button key={c.id||c.contrato} type="button" onClick={()=>void escolher(c)} disabled={disabled||carregando} className="mb-1 block w-full rounded-lg border border-slate-300 p-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"><b>{c.contrato}</b> · {c.titular} · {c.plano} · {c.situacao}</button>)}</div>}

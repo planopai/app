@@ -57,7 +57,7 @@ import Visita, {
 } from "./components/visita";
 
 import Wizard, { type CampoFaltando, type TravaItens } from "./components/Wizard";
-import BuscaBeneficiarioPAI from "./components/BuscaBeneficiarioPAI";
+import BuscaBeneficiarioPAI, { dataISO } from "./components/BuscaBeneficiarioPAI";
 // Orçamento → Novo registro (13/10/2026): as ferramentas ficam na pasta do Orçamento.
 import { camposDoOrcamento, marcarOrcamentoConvertido } from "@/app/orcamento/components/paraAtendimento";
 import MateriaisModal from "./components/MateriaisModal";
@@ -4458,14 +4458,14 @@ export default function AcompanhamentoPage() {
         falecidoSlot={!wizardEditing && tipoConvenio(convenioTextoWizard, osCampos.convenio_tipo) === "associado" ? (
           <div>
             <label htmlFor="wizard-falecido" className="mb-1.5 block text-[13px] font-bold">Nome do Falecido *</label>
-            <select id="wizard-falecido" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800" disabled={wizardSubmitting || !contratoSelecionadoPAI || !pessoasContratoPAI.length}
+            <select id="wizard-falecido" className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-base text-slate-800" disabled={wizardSubmitting || !contratoSelecionadoPAI || !pessoasContratoPAI.length}
               value={pessoaEscolhidaPAI}
               onChange={(e) => {
                 const idx = Number(e.target.value);
                 const pessoa = pessoasContratoPAI[idx];
                 setPessoaEscolhidaPAI(e.target.value);
                 if (pessoa) {
-                  const iso = String(pessoa.data_nascimento || "").match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || "";
+                  const iso = dataISO(String(pessoa.data_nascimento || ""));
                   setWizardData((prev:any) => ({ ...prev, falecido: pessoa.nome, data_nascimento: iso }));
                 }
               }}>
