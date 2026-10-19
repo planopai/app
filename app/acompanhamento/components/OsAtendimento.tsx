@@ -982,7 +982,8 @@ export function SecaoOSAtendimento({
     const apoioPossivel: { tanatopraxia?: boolean; translado?: boolean } | null = dp?.apoio_prefeitura ?? null;
     // O botão aparece só quando o plano não cobre tudo; marcado em Prefeitura, continua visível (para poder voltar a Particular).
     const mostraApoioTan = assoc && tanatoSim && !aditivoTanatopraxiaIdentificado && (!!apoioPossivel?.tanatopraxia || valores.tanato_autorizado_prefeitura === "Sim");
-    const mostraApoioTra = assoc && valores.translado === "Sim" && (!!apoioPossivel?.translado || valores.translado_autorizado_prefeitura === "Sim");
+    const kmIlimitadoConfirmado = assoc && dp?.km_ilimitado_validado === true;
+    const mostraApoioTra = assoc && valores.translado === "Sim" && !kmIlimitadoConfirmado && (!!apoioPossivel?.translado || valores.translado_autorizado_prefeitura === "Sim");
     const linhasPrevia: LinhaPrevia[] = dp?.linhas ?? [];
     const temConvenioAgora = dp ? linhasPrevia.some((l) => l.destino === "CONVENIO") : !!resumo?.os_convenio;
     const temPrefeituraAgora = dp ? linhasPrevia.some((l) => l.destino === "PREFEITURA") : !!resumo?.os_prefeitura;
@@ -1097,6 +1098,11 @@ export function SecaoOSAtendimento({
                                         />
                                     </label>
                                 </div>
+                                {kmIlimitadoConfirmado ? (
+                                    <div role="status" className="mt-3 rounded-xl border border-lime-300 bg-lime-50 p-3 text-sm font-semibold text-lime-900">
+                                        KM ILIMITADO confirmado no contrato: registre partida, destino e distância normalmente. O translado está coberto integralmente, sem cobrança de km à família.
+                                    </div>
+                                ) : null}
                                 {ehPref && !negado ? (
                                     <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
                                 ) : null}
