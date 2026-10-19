@@ -4354,6 +4354,7 @@ export default function AcompanhamentoPage() {
         parte={parte}
         convenio={String((wizardData as any)?.convenio ?? "")}
         tanato={tanatoVal || String((wizardData as any)?.tanato ?? "")}
+        aditivoTanatopraxiaIdentificado={!wizardEditing && contratoSelecionadoPAI?.tanato === true}
         coroaFlores={String((wizardData as any)?.coroa_flores ?? "")}
         valores={osCampos}
         onChange={(p) => setOsCampos((c) => ({ ...c, ...p }))}

@@ -678,7 +678,7 @@ export function ConvenioVinculo({
             {conv && (conv.tipo === "ASSOCIADO" || conv.tipo === "PREFEITURA") ? (
                 conv.pacotes.length === 0 ? (
                     <p className="rounded-xl border border-[#F2CB3F] bg-[#FCF3CC] px-3 py-2 text-xs font-semibold text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white">
-                        Este convênio ainda não tem pacote ativo em Convênios. Sem pacote, todos os itens vão para a diferença da família.
+                        Este convênio ainda não tem pacote ativo em Convênios. A diferença da família não pode ser confirmada até configurar e validar a cobertura.
                     </p>
                 ) : (
                     <div className={`p-4 ${CARTAO_LINHA}`}>
@@ -859,6 +859,7 @@ export type ParteOS = "tudo" | "procedimento" | "translado" | "resumo" | "coroa"
 export function SecaoOSAtendimento({
     convenio,
     tanato,
+    aditivoTanatopraxiaIdentificado = false,
     valores,
     onChange,
     colunasFaltando = [],
@@ -872,6 +873,8 @@ export function SecaoOSAtendimento({
 }: {
     convenio: string;
     tanato: string;
+    /** Etiqueta verificada no contrato selecionado; visual, não altera cálculo do servidor. */
+    aditivoTanatopraxiaIdentificado?: boolean;
     coroaFlores?: string;
     valores: OsCampos;
     onChange: (parcial: Partial<OsCampos>) => void;
@@ -977,7 +980,7 @@ export function SecaoOSAtendimento({
     const dp = previa.d;
     const apoioPossivel: { tanatopraxia?: boolean; translado?: boolean } | null = dp?.apoio_prefeitura ?? null;
     // O botão aparece só quando o plano não cobre tudo; marcado em Prefeitura, continua visível (para poder voltar a Particular).
-    const mostraApoioTan = assoc && tanatoSim && (!!apoioPossivel?.tanatopraxia || valores.tanato_autorizado_prefeitura === "Sim");
+    const mostraApoioTan = assoc && tanatoSim && !aditivoTanatopraxiaIdentificado && (!!apoioPossivel?.tanatopraxia || valores.tanato_autorizado_prefeitura === "Sim");
     const mostraApoioTra = assoc && valores.translado === "Sim" && (!!apoioPossivel?.translado || valores.translado_autorizado_prefeitura === "Sim");
     const linhasPrevia: LinhaPrevia[] = dp?.linhas ?? [];
     const temConvenioAgora = dp ? linhasPrevia.some((l) => l.destino === "CONVENIO") : !!resumo?.os_convenio;
@@ -987,6 +990,11 @@ export function SecaoOSAtendimento({
     const pendFamilia = Number(dp?.totais?.familia_valores_pendentes ?? 0);
     const salvoFamilia: number | null = resumo?.os_particular ? Number(resumo.os_particular.valor_total) || 0 : null;
     const temFamiliaAgora = dp ? linhasPrevia.some((l) => l.destino === "FAMILIA") : salvoFamilia != null;
+    // Um pacote não cadastrado impede considerar a prévia uma cobrança contratual definitiva.
+    // Mantemos o valor salvo acessível em "Ver OS", sem apresentá-lo como cotação confirmada.
+    const semPacoteAssociado = assoc && !!dp && Array.isArray(dp?.avisos) && dp.avisos.some((a: unknown) => /n[aã]o (tem|possui) pacote ativo|sem pacote/i.test(String(a)));
+    const previaAditivoNaoConciliado = assoc && aditivoTanatopraxiaIdentificado && tanatoSim && !!dp && !linhasPrevia.some((l) => l.chave === "TANATOPRAXIA" && l.destino === "CONVENIO");
+    const previaInconclusiva = semPacoteAssociado || previaAditivoNaoConciliado;
     const familiaMostrar: number | null = temFamiliaAgora ? (familiaAgora ?? salvoFamilia) : null;
     const familiaDiverge = familiaAgora != null && salvoFamilia != null && Math.abs(familiaAgora - salvoFamilia) > 0.005;
     const pendenteDeSalvar =
@@ -1034,6 +1042,12 @@ export function SecaoOSAtendimento({
                         {modelosErro ? <p className="mt-2 text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{modelosErro}</p> : null}
                         {ehPref && !negado ? (
                             <Autorizacao servico="tanatopraxia" valor={valores.tanato_autorizado_prefeitura} onChange={(v) => onChange({ tanato_autorizado_prefeitura: v })} disabled={disabled} />
+                        ) : null}
+                        {assoc && aditivoTanatopraxiaIdentificado ? (
+                            <div className="mt-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900" role="status">
+                                <strong>Tanatopraxia disponível pelo aditivo do contrato.</strong>
+                                <p className="mt-1 text-xs">A escolha Sim/Não continua manual. Procedimentos avançados e embalsamamento podem gerar diferença. A cobertura financeira será confirmada no cálculo da OS.</p>
+                            </div>
                         ) : null}
                         {mostraApoioTan ? <PagadorApoio campo="tanato_autorizado_prefeitura" valores={valores} onChange={onChange} disabled={disabled} /> : null}
                     </div>
@@ -1165,7 +1179,12 @@ export function SecaoOSAtendimento({
                                         texto={prefAgora ? "O valor do contrato fica no financeiro." : "Total a pagar pela família."}
                                     />
                                 ) : null}
-                                {familiaMostrar != null ? (
+                                {previaInconclusiva ? (
+                                    <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                        <strong>Total da família: A calcular</strong>
+                                        <p className="mt-1 text-xs">{semPacoteAssociado ? "O pacote do convênio precisa ser configurado antes de determinar a diferença da família." : "A cobertura da tanatopraxia pelo aditivo foi identificada, mas a prévia da OS ainda não a conciliou. Não use o valor exibido anteriormente para cobrar."}</p>
+                                    </div>
+                                ) : familiaMostrar != null ? (
                                     <CartaoResumo
                                         rotulo={temConvenioAgora ? "Diferença da família" : "Total da família"}
                                         os={resumo?.os_particular ?? { numero_os: "Nova OS ao salvar" }}
