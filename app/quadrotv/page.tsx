@@ -1294,44 +1294,53 @@ function badgeClass(s?: string) {
     return "bg-slate-500";
 }
 
-/* Convenio chip */
+/* Identificação operacional do convênio: apresenta o plano real (LIGHT/FLEX/PLUS/MAX)
+ * em lugar do rótulo genérico "Associado". Não altera o valor salvo no banco. */
 type ConvenioKind = "Particular" | "Prefeitura" | "Associado" | "a definir";
+function planoDoConvenio(s?: string): string | null {
+    const v = String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+    if (!v || /PARTICULAR|PREFEITURA/.test(v)) return null;
+    if (/\b(FLEX|PLUS|MAX)\b/.test(v)) return `Plano ${v.match(/\b(FLEX|PLUS|MAX)\b/)![1]}`;
+    if (/\bLIGHT\b/.test(v)) return "Plano LIGHT";
+    return null;
+}
 function normalizeConvenio(s?: string): ConvenioKind {
     const v = (s || "").toLowerCase();
     if (!v) return "a definir";
     if (v.includes("prefeitura")) return "Prefeitura";
-    if (v.includes("associad")) return "Associado";
     if (v.includes("particular")) return "Particular";
+    if (planoDoConvenio(s) || v.includes("associad")) return "Associado";
     return "a definir";
 }
-function convenioClass(kind: ConvenioKind) {
-    switch (kind) {
-        case "Particular":
-            return "bg-amber-500";
-        case "Prefeitura":
-            return "bg-cyan-600";
-        case "Associado":
-            return "bg-emerald-600";
-        default:
-            return "bg-slate-500";
+/** Rótulo fiel aos dados do atendimento: nunca inventa um plano ausente no retorno. */
+function nomePlanoRegistro(registro: Registro): string | null {
+    const campos = [registro.convenio, registro.plano, registro.plano_nome,
+    registro.cobertura, registro.convenio_os, registro.convenio_nome];
+    for (const campo of campos) {
+        if (typeof campo !== "string") continue;
+        const plano = planoDoConvenio(campo);
+        if (plano) return plano;
     }
+    // Planos assistenciais antigos que não trazem LIGHT no nome.
+    for (const campo of campos) {
+        if (typeof campo !== "string") continue;
+        const v = campo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+        if (/\b(BASICO|BRONZE|MASTER|OURO|PRATA|PADRAO OURO|PAX LIGHT|PLANO LEM)\b/.test(v)) return "Plano LIGHT";
+    }
+    return null;
 }
 
-function ConvenioBadge({
-    convenio,
-    size = "sm",
-}: {
-    convenio?: string;
-    size?: "xs" | "sm";
-}) {
+function rotuloConvenioRegistro(registro: Registro): string {
+    const kind = normalizeConvenio(registro.convenio);
+    if (kind === "Particular" || kind === "Prefeitura") return kind;
+    return nomePlanoRegistro(registro) || kind;
+}
+
+function ConvenioBadge({ convenio, registro, size = "sm" }: { convenio?: string; registro?: Registro; size?: "xs" | "sm" }) {
     const kind = normalizeConvenio(convenio);
     const cor = kind === "Prefeitura" ? "qa-tag-conv-pref" : kind === "Particular" ? "qa-tag-conv-part" : kind === "Associado" ? "qa-tag-conv-assoc" : "qa-tag-conv-adef";
-
-    return (
-        <span className={`qa-convenio-badge qa-tag ${size === "xs" ? "qa-tag-xs" : ""} ${cor}`} title="Convênio">
-            {kind}
-        </span>
-    );
+    const texto = registro ? rotuloConvenioRegistro(registro) : (kind === "Associado" ? planoDoConvenio(convenio) || "Associado" : kind);
+    return <span className={`qa-convenio-badge qa-tag ${size === "xs" ? "qa-tag-xs" : ""} ${cor}`} title={String(convenio || "Convênio")}>{texto}</span>;
 }
 
 /* ---------------- Etapas (bolinhas) ---------------- */
@@ -4520,7 +4529,7 @@ function DetalheAtendimentoDrawer({
                         <div className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--d-muted)]">Informações do atendimento</div>
                         <h2 className="mt-1 break-words text-2xl font-extrabold leading-tight">{shown(detail.falecido)}</h2>
                         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                            <ConvenioBadge convenio={detail.convenio} size="xs" />
+                            <ConvenioBadge convenio={detail.convenio} registro={detail} size="xs" />
                             <span className={`inline-flex min-h-7 items-center gap-2 rounded-[14px] px-3 py-1 text-[13px] font-bold ${chipFundo}`}>
                                 <span className={`size-2 rounded-full ${chipPonto}`} />
                                 {capStatus(detail.status)}
@@ -4806,7 +4815,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                         {dateOr(r.data)}
                                     </div>
                                     <div className="qa-data-convenio flex justify-center">
-                                        <ConvenioBadge convenio={r.convenio} size="xs" />
+                                        <ConvenioBadge convenio={r.convenio} registro={r} size="xs" />
                                     </div>
                                 </div>
 
@@ -4874,7 +4883,7 @@ const MobileCards = React.memo(function MobileCards({
                                 <div className="shrink-0 text-right">
                                     <EtapasInlineDots filled={preenchidas} />
                                     <div className="mt-1 text-xs font-bold tabular-nums text-slate-200">{dateOr(r.data)}</div>
-                                    <div className="mt-1"><ConvenioBadge convenio={r.convenio} size="xs" /></div>
+                                    <div className="mt-1"><ConvenioBadge convenio={r.convenio} registro={r} size="xs" /></div>
                                 </div>
                             </div>
 
@@ -5615,7 +5624,7 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
             <div className="tv-who">
                 <div className="tv-name">{shown(r.falecido)}</div>
                 <div className="tv-meta">
-                    <span className={tvConvenioClasse(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                    <span className={tvConvenioClasse(r.convenio)}>{rotuloConvenioRegistro(r)}</span>
                     <span>Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
                 </div>
                 <div className="tv-place">
@@ -6268,7 +6277,7 @@ function MobCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect
             </div>
 
             <div className="qm-meta">
-                <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                <span className={mobChipConvenio(r.convenio)}>{rotuloConvenioRegistro(r)}</span>
                 <span className="qm-meta-t">Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
             </div>
 
@@ -6942,7 +6951,7 @@ function DeskCartaoAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelec
             <div className="qd-id">
                 <h3 className="qd-name">{shown(r.falecido)}</h3>
                 <div className="qd-meta">
-                    <span className={mobChipConvenio(r.convenio)}>{normalizeConvenio(r.convenio)}</span>
+                    <span className={mobChipConvenio(r.convenio)}>{rotuloConvenioRegistro(r)}</span>
                     <span>Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
                 </div>
                 <div className="qd-now">
