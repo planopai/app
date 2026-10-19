@@ -7,47 +7,12 @@ import {
     BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, PAGAMENTOS_OS, ResumoOS, SITUACOES_OS, TIPOS_OS,
     baixarPdfDaOS, dataBROS, metaFinanceiraOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, type FiltroOS, type TabelaExport,
 } from "../components/ListaOS";
-
-const API_BASE = "https://api.planoassistencialintegrado.com.br";
-const OS_API = `${API_BASE}/os_principal.php`;
-const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
-
-async function apiJson(url: string, init?: RequestInit) {
-    const res = await fetch(url, { credentials: "include", cache: "no-store", ...init });
-    const json = await res.json().catch(() => null);
-    if (res.status === 401 || json?.need_login) {
-        window.location.href = LOGIN_URL;
-        throw new Error("Sessão expirada.");
-    }
-    if (!res.ok || json?.erro) throw new Error(json?.msg || `Falha na requisição (${res.status}).`);
-    return json;
-}
-function osGet(acao: string, params: Record<string, any> = {}) {
-    const u = new URL(OS_API);
-    u.searchParams.set(acao, "1");
-    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== "" && u.searchParams.set(k, String(v)));
-    u.searchParams.set("_", String(Date.now()));
-    return apiJson(u.toString());
-}
-function osPost(acao: string, params: Record<string, any> = {}) {
-    const body = new URLSearchParams({ [acao]: "1" });
-    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== "" && body.set(k, String(v)));
-    return apiJson(OS_API, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-}
+import { OS_API, apiJson, osGet, osPost } from "../components/apiOS";
+import { AbasRelatorio, PendenciasOS, docPendencias, imprimirRelatorio } from "../components/RelatoriosOS";
 
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const inputCls = "w-full rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-base sm:text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#3D6A99] dark:focus:border-[#3D6A99]";
-
-function Tag({ children, bg = "#EEF1F5" }: { children: React.ReactNode; bg?: string }) {
-    return <span className="inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-extrabold text-[#313C55]" style={{ background: bg }}>{children}</span>;
-}
-function situacao(l: any) {
-    if (l.status === "CONVERTIDA") return <Tag>CONVERTIDA</Tag>;
-    if (l.status === "FECHADA") return <Tag bg="#E6F0C9">ASSINADA</Tag>;
-    if (l.status === "AGUARDANDO_ASSINATURA") return <Tag bg="#FBEFC4">AGUARDANDO ASSINATURA</Tag>;
-    return <Tag bg="#FFF8E1">RASCUNHO</Tag>;
-}
 
 /* ====================================================================== */
 
@@ -61,6 +26,11 @@ export default function MinhasOSPage() {
     const [loading, setLoading] = useState(true);
     const [aberta, setAberta] = useState<number | null>(null);
     const [resumo, setResumo] = useState<any>(null);
+    /* Pendências do agente (19/10/2026): mesma lista do Relatório Pendências, só as OS dele, situação de hoje. */
+    const [vista, setVista] = useState<"os" | "pendencias">("os");
+    const [pend, setPend] = useState<any>(null);
+    const [carregandoPend, setCarregandoPend] = useState(false);
+    const [numeroAberta, setNumeroAberta] = useState("");
     /* Janela "Ver OS" do Editar registro: /os/minhas?atendimento=<id> mostra só as OS daquele atendimento. */
     const [atendimentoDaUrl, setAtendimentoDaUrl] = useState<string | null>(null);
     useEffect(() => {
@@ -82,6 +52,19 @@ export default function MinhasOSPage() {
     }, [filtro]);
     useEffect(() => { void carregar(); }, [carregar]);
 
+    const carregarPendencias = useCallback(async () => {
+        setCarregandoPend(true);
+        setErro("");
+        try {
+            setPend((await osGet("minhas_pendencias")).dados);
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível carregar suas pendências.");
+        } finally {
+            setCarregandoPend(false);
+        }
+    }, []);
+    useEffect(() => { if (vista === "pendencias") void carregarPendencias(); }, [vista, carregarPendencias]);
+
     const lista: any[] = dados?.os || [];
     if (atendimentoDaUrl) {
         const avisarJanelaDeOrigem = () => {
@@ -97,11 +80,14 @@ export default function MinhasOSPage() {
         return <OSDoAtendimento sobreposto atendimentoId={atendimentoDaUrl} onFechar={fechar} onMudou={avisarJanelaDeOrigem} />;
     }
     const emAberto = lista.filter((l) => l.status === "ABERTA").length;
-    const assinadas = lista.filter((l) => l.status === "FECHADA");
+    // Concluída = venda fechada sem assinatura; Assinada = com assinatura (09/10/2026). Antes o cartão "Assinadas" contava as duas.
+    const concluidas = lista.filter((l) => l.status === "FECHADA" && !l.assinada_em);
+    const assinadas = lista.filter((l) => l.status === "FECHADA" && l.assinada_em);
+    const somaDe = (ls: any[]) => brl(ls.reduce((a, l) => a + (Number(l.valor_total) || 0), 0));
     const mostrar = { tipo: TIPOS_OS, situacao: SITUACOES_OS, pagamento: PAGAMENTOS_OS };
     const totalLista = lista.reduce((a, l) => a + (l.status === "CONVERTIDA" ? 0 : Number(l.valor_total) || 0), 0);
     const acompanhamento = (l: any) =>
-        l.status === "ABERTA" ? "Confirmar valores e colher assinatura" : l.saldo ? `Saldo ${brl(l.saldo)} (financeiro)` : l.nota_promissoria ? `NP ${brl(l.nota_promissoria.valor)}` : "—";
+        l.status === "ABERTA" ? "Concluir venda" : l.status === "FECHADA" && !l.assinada_em ? "Colher assinatura" : l.saldo ? `Saldo ${brl(l.saldo)} (financeiro)` : l.nota_promissoria ? `NP ${brl(l.nota_promissoria.valor)}` : "—";
     const tabela = (): TabelaExport => ({
         titulo: "Minhas OS",
         subtitulo: `${dataBROS(filtro.data_inicio)} a ${dataBROS(filtro.data_fim)} · ${lista.length} OS`,
@@ -115,12 +101,29 @@ export default function MinhasOSPage() {
         <main data-os-tela className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
             <EstiloTemaOS />
             <div className="mx-auto flex max-w-6xl flex-col gap-3">
+                <AbasRelatorio opcoes={[["os", "Minhas OS"], ["pendencias", "Pendências"]]} valor={vista} onTrocar={setVista} />
+                {vista === "pendencias" ? (
+                    <>
+                        <div className="flex items-center gap-2">
+                            <span className="flex-1 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Situação de hoje · só as suas OS</span>
+                            <button type="button" disabled={!pend} onClick={() => imprimirRelatorio(docPendencias(pend, false, "Minhas Pendências"))}
+                                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border-[1.5px] border-[#C9D1DE] bg-white px-3.5 text-[15px] font-bold disabled:opacity-50 dark:border-white/25 dark:bg-[#232B3F]">
+                                <Icone d={Ic.imprimir} />
+                                Imprimir
+                            </button>
+                        </div>
+                        {erro && <div className="rounded-xl border border-[#B42318]/40 bg-[#FDECEA] p-3 text-sm font-semibold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
+                        <PendenciasOS dados={pend} carregando={carregandoPend} vista="tipo" mostrarAgente={false} onAbrir={(id, numero) => (setNumeroAberta(numero), setAberta(id))} />
+                    </>
+                ) : (
+                <>
                 <BarraFiltrosOS filtro={filtro} mostrar={mostrar} onAbrirFiltros={() => setJanelaFiltros(true)} onMudar={setFiltro} exportar={itensExportar(tabela)} />
 
                 <CartoesOS
                     itens={[
                         { rotulo: "Em aberto", valor: String(emAberto), sub: "a finalizar", cor: "#F2CB3F" },
-                        { rotulo: "Assinadas", valor: String(assinadas.length), sub: brl(assinadas.reduce((a, l) => a + (Number(l.valor_total) || 0), 0)), cor: "#B3CE52" },
+                        { rotulo: "Concluídas", valor: String(concluidas.length), sub: somaDe(concluidas), cor: "#3D6A99" },
+                        { rotulo: "Assinadas", valor: String(assinadas.length), sub: somaDe(assinadas), cor: "#B3CE52" },
                         { rotulo: "Convertidas", valor: String(lista.filter((l) => l.status === "CONVERTIDA").length), sub: "Prt → Prf", cor: "#C9CFD9" },
                     ]}
                 />
@@ -148,6 +151,8 @@ export default function MinhasOSPage() {
                         setResumo(lista.find((l) => l.os_id === id));
                     }}
                 />
+                </>
+                )}
             </div>
 
             {janelaFiltros && (
@@ -179,9 +184,9 @@ export default function MinhasOSPage() {
             {aberta && (
                 <JanelaOSPorId
                     osId={aberta}
-                    numero={lista.find((l) => l.os_id === aberta)?.numero_os || ""}
-                    onFechar={() => { setAberta(null); void carregar(); }}
-                    onMudou={() => void carregar()}
+                    numero={lista.find((l) => l.os_id === aberta)?.numero_os || numeroAberta}
+                    onFechar={() => { setAberta(null); void carregar(); if (vista === "pendencias") void carregarPendencias(); }}
+                    onMudou={() => { void carregar(); if (vista === "pendencias") void carregarPendencias(); }}
                 />
             )}
         </main>

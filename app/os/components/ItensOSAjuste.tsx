@@ -13,9 +13,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-const API_BASE = "https://api.planoassistencialintegrado.com.br";
-const OS_API = `${API_BASE}/os_principal.php`;
-const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
+import { osGet, osPost, valorDigitado } from "./apiOS";
 
 export type ItemOSTela = {
     id: number;
@@ -51,19 +49,9 @@ export type ResumoDescontoOS = {
 
 type Dados = { itens: ItemOSTela[]; resumo: ResumoDescontoOS; pode_passar_limite: boolean; colunas_desconto: boolean };
 
-async function osApi(acao: string, params: Record<string, string | number> = {}, post = false) {
-    const qs = new URLSearchParams({ [acao]: "1" });
-    Object.entries(params).forEach(([k, v]) => qs.set(k, String(v)));
-    const res = post
-        ? await fetch(OS_API, { method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: qs })
-        : await fetch(`${OS_API}?${qs.toString()}&_=${Date.now()}`, { credentials: "include", cache: "no-store" });
-    const json = await res.json().catch(() => null);
-    if (res.status === 401 || json?.need_login) {
-        if (typeof window !== "undefined") window.location.href = LOGIN_URL;
-        throw new Error("Sessão expirada.");
-    }
-    if (!res.ok || json?.erro || json?.sucesso === false) throw new Error(json?.msg || `Falha na requisição (${res.status}).`);
-    return json;
+/** Mesmo jeito de chamar o servidor das outras telas da OS (apiOS.ts). */
+function osApi(acao: string, params: Record<string, string | number> = {}, post = false) {
+    return post ? osPost(acao, params, true) : osGet(acao, params);
 }
 
 export async function carregarItensOS(osId: number | string): Promise<Dados> {
@@ -71,13 +59,7 @@ export async function carregarItensOS(osId: number | string): Promise<Dados> {
 }
 
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const num = (s: string) => {
-    const t = String(s ?? "").trim().replace(/[^\d,.-]/g, "");
-    if (!t) return 0;
-    const n = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
-    const v = parseFloat(n);
-    return Number.isFinite(v) ? v : 0;
-};
+const num = valorDigitado;   // "1.500" virava 1,50 (16/10/2026)
 const dec = (v: number) => (Math.round(v * 100) / 100).toFixed(2).replace(".", ",");
 const pctTxt = (v: number) => String(Math.round(v * 100) / 100).replace(".", ",");
 const qtdTxt = (it: ItemOSTela) => (it.unidade === "km" ? `${String(it.quantidade).replace(".", ",")} km` : String(it.quantidade));

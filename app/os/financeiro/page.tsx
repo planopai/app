@@ -7,47 +7,11 @@ import {
     baixarPdfDaOS, dataBROS, metaFinanceiraOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
     type FiltroOS, type TabelaExport,
 } from "../components/ListaOS";
+import { JanelaRelatorios } from "../components/RelatoriosOS";
+import { OS_API, apiJson, osGet, osPost as osPostBase, valorDigitado } from "../components/apiOS";
 
-const API_BASE = "https://api.planoassistencialintegrado.com.br";
-const OS_API = `${API_BASE}/os_principal.php`;
-const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
-
-async function apiJson(url: string, init?: RequestInit) {
-    const res = await fetch(url, { credentials: "include", cache: "no-store", ...init });
-    const json = await res.json().catch(() => null);
-    if (res.status === 401 || json?.need_login) {
-        window.location.href = LOGIN_URL;
-        throw new Error("Sessão expirada.");
-    }
-    if (!res.ok || json?.erro) {
-        const err: any = new Error(json?.msg || `Falha na requisição (${res.status}).`);
-        err.status = res.status;
-        throw err;
-    }
-    return json;
-}
-
-function osGet(acao: string, params: Record<string, any> = {}) {
-    const u = new URL(OS_API);
-    u.searchParams.set(acao, "1");
-    Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v));
-    });
-    u.searchParams.set("_", String(Date.now()));
-    return apiJson(u.toString());
-}
-
-function osPost(acao: string, params: Record<string, any> = {}) {
-    const body = new URLSearchParams({ [acao]: "1" });
-    Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== null) body.set(k, String(v));
-    });
-    return apiJson(OS_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-    });
-}
+/** O Financeiro envia também os campos vazios (ex.: limpar a observação), como antes. */
+const osPost = (acao: string, params: Record<string, any> = {}) => osPostBase(acao, params, true);
 
 const brl = (v: any) =>
     (Number(v) || 0).toLocaleString("pt-BR", {
@@ -219,6 +183,7 @@ export default function FinanceiroOSPage() {
     /* Padrão de 08/10/2026: tudo de filtro no botão Filtros (seleção múltipla), cartões compactos e lista que cabe na tela. */
     const [filtro, setFiltro] = useState<FiltroOS>(() => filtroInicial());
     const [janelaFiltros, setJanelaFiltros] = useState(false);
+    const [janelaRelatorios, setJanelaRelatorios] = useState(false);   // botão Relatórios (16/10/2026)
     const [painel, setPainel] = useState<any>(null);
     const [convenios, setConvenios] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -293,9 +258,9 @@ export default function FinanceiroOSPage() {
                     exportar={itensExportar(tabela)}
                     extra={
                         <>
-                            <a href="/os/relatorio" className="hidden h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25 sm:inline-flex">Relatório de atendimentos</a>
+                            <button type="button" onClick={() => setJanelaRelatorios(true)} className="hidden h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25 sm:inline-flex">Relatórios</button>
                             <a href="/convenio" className="hidden h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25 sm:inline-flex">Convênios</a>
-                            <MaisAtalhos />
+                            <MaisAtalhos onRelatorios={() => setJanelaRelatorios(true)} />
                         </>
                     }
                 />
@@ -352,6 +317,7 @@ export default function FinanceiroOSPage() {
                 />
             </div>
 
+            {janelaRelatorios && <JanelaRelatorios filtro={filtro} onFechar={() => setJanelaRelatorios(false)} />}
             {janelaFiltros && (
                 <JanelaFiltrosOS valor={filtro} mostrar={mostrar} onFechar={() => setJanelaFiltros(false)} onAplicar={(f) => (setFiltro(f), setJanelaFiltros(false))} />
             )}
@@ -400,12 +366,12 @@ export default function FinanceiroOSPage() {
     );
 }
 
-/** No celular, Relatório e Convênios ficam no ⋮ ao lado de Exportar (no computador aparecem como botões). */
-function MaisAtalhos() {
+/** No celular, Relatórios e Convênios ficam no ⋮ ao lado de Exportar (no computador aparecem como botões). */
+function MaisAtalhos({ onRelatorios }: { onRelatorios: () => void }) {
     const [aberto, setAberto] = useState(false);
     return (
         <div className="relative sm:hidden">
-            <button type="button" aria-label="Relatório de atendimentos e Convênios" aria-expanded={aberto} onClick={() => setAberto((a) => !a)}
+            <button type="button" aria-label="Relatórios e Convênios" aria-expanded={aberto} onClick={() => setAberto((a) => !a)}
                 className="flex size-11 items-center justify-center rounded-xl border-[1.5px] border-[#C9D1DE] bg-white dark:border-white/25 dark:bg-[#232B3F]">
                 <Icone d={Ic.mais} />
             </button>
@@ -413,7 +379,7 @@ function MaisAtalhos() {
                 <>
                     <div className="fixed inset-0 z-40" data-pai-sem-folga onClick={() => setAberto(false)} aria-hidden="true" />
                     <div role="menu" className="absolute right-0 top-12 z-50 w-60 rounded-[14px] border border-[#E3E8F0] bg-white p-1.5 shadow-2xl dark:border-white/[0.12] dark:bg-[#232B3F]">
-                        <a role="menuitem" href="/os/relatorio" className="flex min-h-11 items-center rounded-xl px-3 text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">Relatório de atendimentos</a>
+                        <button type="button" role="menuitem" onClick={() => (setAberto(false), onRelatorios())} className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">Relatórios</button>
                         <a role="menuitem" href="/convenio" className="flex min-h-11 items-center rounded-xl px-3 text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">Convênios</a>
                     </div>
                 </>
@@ -494,7 +460,7 @@ function DetalheOS({
     const saldoApos = Math.max(
         0,
         (saldo?.saldo_restante ?? linha.saldo ?? 0) -
-        (Number(String(rec.valor).replace(",", ".")) || 0),
+        valorDigitado(rec.valor),
     );
 
     const podeReceber =
@@ -518,7 +484,7 @@ function DetalheOS({
             const r = await osPost("financeiro_registrar_pagamento", {
                 financeiro_id: finId,
                 ...rec,
-                valor: String(rec.valor).replace(",", "."),
+                valor: String(valorDigitado(rec.valor)),
             });
 
             setRec({

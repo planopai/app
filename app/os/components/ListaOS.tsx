@@ -70,12 +70,13 @@ export function paramsDoFiltro(f: FiltroOS): Record<string, string> {
     return p;
 }
 
-type Mostrar = { tipo?: Opcao[]; situacao?: Opcao[]; pagamento?: Opcao[]; agente?: Opcao[]; convenio?: Opcao[] };
+/** semPeriodo: relatório da situação de hoje (Pendências, 19/10/2026) — sem a etiqueta e sem o campo de período. */
+type Mostrar = { tipo?: Opcao[]; situacao?: Opcao[]; pagamento?: Opcao[]; agente?: Opcao[]; convenio?: Opcao[]; semPeriodo?: boolean };
 
 /** Etiquetas dos filtros ativos (cada uma com o seu ✕). O período sempre aparece. */
 function etiquetasAtivas(f: FiltroOS, m: Mostrar) {
     const nomes = (lista: string[], ops?: Opcao[]) => lista.map((v) => ops?.find((o) => o.v === v)?.r.replace(/\s*\(.*\)$/, "") || v).join(", ");
-    const e: { chave: keyof FiltroOS | "periodo"; texto: string }[] = [
+    const e: { chave: keyof FiltroOS | "periodo"; texto: string }[] = m.semPeriodo ? [] : [
         { chave: "periodo", texto: `${dataCurta(f.data_inicio)} a ${dataCurta(f.data_fim)}` },
     ];
     if (f.tipos.length) e.push({ chave: "tipos", texto: `Tipo: ${nomes(f.tipos, m.tipo)}` });
@@ -277,7 +278,7 @@ export function JanelaFiltrosOS({ valor, mostrar, onAplicar, onFechar }: { valor
                     </button>
                 </div>
                 <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-5 py-4">
-                    <section>
+                    {mostrar.semPeriodo ? null : <section>
                         <div className={sec}>Período</div>
                         <div className="flex flex-wrap gap-2">
                             {atalhos.map(([k, r]) => {
@@ -295,7 +296,7 @@ export function JanelaFiltrosOS({ valor, mostrar, onAplicar, onFechar }: { valor
                             <input type="date" aria-label="De" className={campoData} value={f.data_inicio} onChange={(e) => setF({ ...f, data_inicio: e.target.value })} />
                             <input type="date" aria-label="Até" className={campoData} value={f.data_fim} onChange={(e) => setF({ ...f, data_fim: e.target.value })} />
                         </div>
-                    </section>
+                    </section>}
                     {mostrar.tipo ? (
                         <section>
                             <div className={sec}>Tipo</div>
@@ -395,8 +396,8 @@ export function imprimirLista(t: TabelaExport, comoPdf = false) {
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(t.arquivo)}</title>
 <style>@page{size:A4 landscape;margin:10mm}body{font-family:Nunito,Helvetica,Arial,sans-serif;color:#313C55;font-size:11.5px;margin:0}
 h1{font-size:18px;margin:0}.sub{color:#4A5468;margin:2px 0 10px}table{border-collapse:collapse;width:100%}
-th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid #313C55;padding:4px 6px}
-td{border-bottom:1px solid #C9CFD9;padding:3px 6px;vertical-align:top}tr{break-inside:avoid}.d{text-align:right;white-space:nowrap}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid #313C55;padding:4px 6px;vertical-align:middle}
+td{border-bottom:1px solid #C9CFD9;padding:3px 6px;vertical-align:middle}tr{break-inside:avoid}.d{text-align:right;white-space:nowrap}
 .rod{text-align:right;font-weight:bold;font-size:14px;margin-top:8px}.faixa{display:flex;height:5px;margin-bottom:8px}
 .faixa i{flex:40}.faixa i:nth-child(2){flex:25;background:#B3CE52}.faixa i:nth-child(3){flex:20;background:#F2CB3F}.faixa i:nth-child(4){flex:15;background:#3D6A99}.faixa i:first-child{background:#313C55}</style></head>
 <body><div class="faixa"><i></i><i></i><i></i><i></i></div><h1>${esc(t.titulo)}</h1><div class="sub">${esc(t.subtitulo)}</div>

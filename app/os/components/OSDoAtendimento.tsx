@@ -14,45 +14,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ItensOSAjuste from "./ItensOSAjuste";
 import { baixarPdfDaOS, prepararPdfDaOS } from "./ListaOS";
+import { API_BASE_OS, OS_API, apiJson, osGet, osPost, valorDigitado } from "./apiOS";
 
-const API_BASE = "https://api.planoassistencialintegrado.com.br";
-const OS_API = `${API_BASE}/os_principal.php`;
-const ORIGEM_API = new URL(API_BASE).origin;
-const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
-
-async function apiJson(url: string, init?: RequestInit) {
-    const res = await fetch(url, { credentials: "include", cache: "no-store", ...init });
-    const texto = await res.text();
-    let json: any = null;
-    try {
-        json = texto ? JSON.parse(texto) : null;
-    } catch {
-        json = null;
-    }
-    if (res.status === 401 || json?.need_login) {
-        window.location.href = LOGIN_URL;
-        throw new Error("Sessão expirada.");
-    }
-    if (!res.ok || json?.erro) throw new Error(json?.msg || `Falha na requisição (${res.status}).`);
-    // Resposta que não é JSON (aviso do PHP antes do JSON, por exemplo): mostra o começo do texto em vez de sumir com a OS.
-    if (json === null) throw new Error(`Resposta inválida do servidor: ${texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180) || "vazia"}`);
-    return json;
-}
-function osGet(acao: string, params: Record<string, any> = {}) {
-    const u = new URL(OS_API);
-    u.searchParams.set(acao, "1");
-    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== "" && u.searchParams.set(k, String(v)));
-    u.searchParams.set("_", String(Date.now()));
-    return apiJson(u.toString());
-}
-function osPost(acao: string, params: Record<string, any> = {}) {
-    const body = new URLSearchParams({ [acao]: "1" });
-    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== "" && body.set(k, String(v)));
-    return apiJson(OS_API, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-}
-
+const ORIGEM_API = new URL(API_BASE_OS).origin;
 const brl = (v: any) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+const num = valorDigitado;   // "1500.50" virava 150.050 (16/10/2026)
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const inputCls =
     "w-full min-w-0 rounded-lg border border-[#E1E5EC] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-2 text-base sm:text-sm font-semibold text-[#313C55] dark:text-white outline-none focus:border-[#3D6A99] dark:focus:border-[#3D6A99]";
