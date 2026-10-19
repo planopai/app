@@ -27,6 +27,8 @@ export type Mensagem = {
     anexos: Anexo[];
     /** nota interna: só a equipe vê, nunca vai ao WhatsApp (14/10/2026) */
     interna?: boolean;
+    /** transcrição do áudio do cliente (Aurora) */
+    transcricao?: string | null;
     /** reações com emoji (uma por pessoa) */
     reacoes?: { emoji: string; usuario_id: number; nome: string | null }[];
     /** só no app: mensagem ainda sendo enviada */
@@ -61,6 +63,10 @@ export type Conversa = {
     gestao_acompanha?: boolean;
     /** pacote 4A: setor da conversa de cliente e etiquetas (as da empresa + as minhas) */
     setor_id?: number | null;
+    /** 1 = falecimento comunicado (Aurora): fica no topo da fila */
+    prioridade?: number;
+    /** orçamento preparado pela Aurora aguardando o atendente conferir */
+    orcamento_ia?: boolean;
     setor?: { id: number; nome: string; cor: string } | null;
     etiquetas?: EtiquetaCurta[];
     /** fixada no topo da lista por mim (até 3) */
@@ -105,6 +111,12 @@ export type Setor = {
     ordem: number;
     msg_boas_vindas: string | null;
     msg_fora_horario: string | null;
+    /** texto que o cliente vê no menu (se vazio, o nome do setor) */
+    texto_menu?: string | null;
+    /** orientação para a Aurora: o que este setor atende */
+    descricao_ia?: string | null;
+    /** aparece no menu de opções (false = só para transferência e para a Aurora) */
+    no_menu?: boolean;
     membros: { id: number; nome: string }[];
     horarios: HorarioSetor[];
     excecoes: ExcecaoSetor[];

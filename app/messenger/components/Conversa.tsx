@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { msgGet } from "@/components/messenger/api";
+import { msgGet, msgPost } from "@/components/messenger/api";
 import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
 import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
@@ -113,6 +113,76 @@ export function TextoFormatado({ texto }: { texto: string }) {
     }
     if (ultimo < texto.length) partes.push(texto.slice(ultimo));
     return <>{partes}</>;
+}
+
+/** Orçamento que a Aurora montou na conversa com a família (mesmo motor do Orçamento/OS): o atendente confere e envia. */
+type OrcIa = { id: number; status: string; falecido: string | null; convenio: string; linhas: { rotulo: string; nome: string; coberto: boolean; valor: number | null; obs: string; oculto: boolean }[]; familia: number; coberto: number; pendentes: number; avisos: string[]; texto: string; escolhas: Record<string, any> };
+function OrcamentoAurora({ conversaId, onFechar, onUsar }: { conversaId: number; onFechar: () => void; onUsar: (t: string) => void }) {
+    const [o, setO] = useState<OrcIa | null | undefined>(undefined);
+    const [erro, setErro] = useState("");
+    const [ocupado, setOcupado] = useState(false);
+    useEffect(() => {
+        msgGet<OrcIa | null>("orc_ia", { conversa_id: conversaId }).then(setO).catch((e) => setErro(e.message));
+    }, [conversaId]);
+    const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const decidir = async (decisao: "aprovar" | "descartar") => {
+        if (!o) return;
+        setOcupado(true);
+        try {
+            await msgPost("orc_ia_decidir", { conversa_id: conversaId, id: o.id, decisao });
+            if (decisao === "aprovar") onUsar(o.texto);
+            else onFechar();
+        } catch (e: any) {
+            setErro(e.message);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    const grupo = (titulo: string, itens: OrcIa["linhas"], cob: boolean) => itens.length > 0 && (
+        <div className="mt-2">
+            <div className="text-[12px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{titulo}</div>
+            {itens.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 border-b border-[#F0F2F5] py-2 text-[14.5px] last:border-0 dark:border-white/10">
+                    <span className="min-w-0 flex-1"><b>{l.rotulo}</b>{l.nome ? <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{l.nome}</span> : null}</span>
+                    {cob ? <span className="rounded-full bg-[#EEF5D6] px-2 py-0.5 text-[11.5px] font-extrabold text-[#2F4207]">coberto</span> : <b>{l.valor === null ? "a confirmar" : brl(l.valor)}</b>}
+                </div>
+            ))}
+        </div>
+    );
+    return (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-6" onClick={onFechar}>
+            <div role="dialog" aria-modal="true" aria-label="Orçamento preparado pela Aurora" onClick={(e) => e.stopPropagation()} className="flex max-h-[90dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] text-[#1F2638] shadow-2xl sm:rounded-3xl dark:bg-[#232B3F] dark:text-white">
+                <div className="border-b border-[#EEF0F3] bg-[#F4F8FC] px-5 py-4 dark:border-white/10 dark:bg-[#3D6A99]/15">
+                    <div className="text-[12px] font-extrabold uppercase tracking-wider text-[#3D6A99] dark:text-[#A9BED6]">🤖 Orçamento preparado pela Aurora</div>
+                    <div className="mt-1 flex items-center gap-2"><b className="flex-1 text-[18px]">{o?.falecido || "Atendimento funerário"}</b>{o && <span className="rounded-lg bg-[#FBF0C9] px-2 py-0.5 text-[12px] font-extrabold text-[#5C4600]">{o.status === "aguardando" ? "aguardando conferência" : "conferido"}</span>}</div>
+                    {o && <div className="text-[13.5px] text-[#4A5468] dark:text-[#C9D1DE]">{o.convenio}</div>}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
+                    {erro && <p className="my-2 rounded-xl bg-[#FDECEA] px-3 py-2 text-[14px] font-bold text-[#B42318]">{erro}</p>}
+                    {o === undefined && !erro && <p className="py-4">Carregando…</p>}
+                    {o === null && <p className="py-4">Não há orçamento da Aurora nesta conversa.</p>}
+                    {o && (
+                        <>
+                            {grupo("Coberto pelo plano", o.linhas.filter((l) => l.coberto), true)}
+                            {grupo(o.linhas.some((l) => l.coberto) ? "Por conta da família" : "Itens", o.linhas.filter((l) => !l.coberto), false)}
+                            {o.avisos.length > 0 && <div className="mt-3 rounded-xl bg-[#FBF0C9] px-3 py-2 text-[13px] text-[#5C4600]">{o.avisos.join(" · ")}</div>}
+                            <p className="mt-3 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Calculado pelo mesmo motor do Orçamento e da OS (preços do dia). Itens não perguntados pela Aurora (véu, cordão, ornamentação, kit lanche…) ficam com você. Ao conferir, o texto vai para o campo de mensagem para revisar antes de enviar.</p>
+                        </>
+                    )}
+                </div>
+                {o && (
+                    <div className="border-t border-[#E1E5EC] bg-[#F6F8FB] px-5 py-3 dark:border-white/12 dark:bg-[#1C2334]">
+                        <div className="flex items-baseline gap-2"><span className="flex-1 text-[12.5px] font-extrabold uppercase text-[#5B6478] dark:text-[#AEB9CF]">{o.coberto > 0 ? `Coberto ${brl(o.coberto)} · ` : ""}Família paga</span><b className="text-[22px]">{brl(o.familia)}</b></div>
+                        {o.pendentes > 0 && <div className="text-right text-[12.5px] text-[#8A6A00]">+ {o.pendentes} item(ns) a confirmar</div>}
+                        <div className="mt-2 flex gap-2">
+                            <button type="button" disabled={ocupado || o.status !== "aguardando"} onClick={() => decidir("aprovar")} className="h-11 flex-1 rounded-xl bg-[#4C9A2A] px-4 text-[14.5px] font-extrabold text-white disabled:opacity-50">Conferido · colocar na mensagem</button>
+                            <button type="button" disabled={ocupado || o.status !== "aguardando"} onClick={() => decidir("descartar")} className="h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-[14.5px] font-extrabold text-[#B42318] disabled:opacity-50 dark:bg-[#232B3F]">Descartar</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 }
 
 /** "Dados da mensagem" (como no WhatsApp): quem leu, quem ainda não leu e quem reagiu com cada emoji. */
@@ -247,7 +317,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                 </span>
             )}
             <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] md:text-[15.5px] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${m.interna ? "border border-dashed border-[#C9A21E] bg-[#FFF4C2] dark:border-[#F2CB3F]/60 dark:bg-[#4A3F12] dark:text-white" : minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
-                {automatica && <div className="mb-0.5 text-[12.5px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">🤖 Mensagem automática</div>}
+                {automatica && !m.interna && <div className="mb-0.5 text-[12.5px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">🤖 Mensagem automática</div>}
                 {m.interna && <div className="mb-0.5 flex items-center gap-1 text-[12.5px] font-extrabold uppercase tracking-wide text-[#8A6A00] dark:text-[#F7E39A]"><Icone nome="nota" className="h-3.5 w-3.5" />Nota interna · só a equipe vê{!minha && m.autor_nome ? ` · ${m.autor_nome.split(" ")[0]}` : ""}</div>}
                 {temMenu && (
                     <button type="button" onClick={() => setMenu((v) => !v)} className={`absolute right-1 top-1 z-10 hidden h-7 w-7 items-center justify-center rounded-full bg-black/10 text-[#313C55] md:group-hover:flex dark:bg-white/15 dark:text-white ${menu ? "md:flex" : ""}`} aria-label="Opções da mensagem" aria-expanded={menu}>
@@ -262,6 +332,12 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                         {m.responde_a_id ? <Citacao m={citada} eu={eu} /> : null}
                         {m.anexos.map((a) => <Anexo key={a.id} a={a} minha={minha} />)}
                         {m.texto && m.tipo !== "audio" && <span className="whitespace-pre-wrap break-words"><TextoFormatado texto={m.texto} /></span>}
+                        {m.transcricao && (
+                            <details className="mt-1 max-w-[300px] text-[14px]">
+                                <summary className="cursor-pointer text-[12.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">📝 Transcrição (Aurora)</summary>
+                                <span className="mt-0.5 block whitespace-pre-wrap break-words italic text-[#4A5468] dark:text-[#C9D1DE]">{m.transcricao}</span>
+                            </details>
+                        )}
                     </>
                 )}
                 <span className="float-right ml-2.5 mt-1.5 flex translate-y-0.5 items-center gap-1 text-[12.5px] font-semibold text-[#5B6478] dark:text-[#C9D1DE]">
@@ -493,6 +569,7 @@ export default function JanelaConversa(props: {
     const [texto, setTexto] = useState("");
     // pacote 5B: o painel do cliente fica na página (terceira coluna ou por cima); o texto de cobrança volta por aqui
     const abrirCliente = () => props.onAbrirCliente?.();
+    const [orcIa, setOrcIa] = useState(false); // orçamento preparado pela Aurora (19/10/2026)
     useEffect(() => {
         if (props.textoParaInserir?.texto) setTexto(props.textoParaInserir.texto);
     }, [props.textoParaInserir?.n]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -664,6 +741,12 @@ export default function JanelaConversa(props: {
                     </>
                 )}
             </div>
+            {externo && c.orcamento_ia && (
+                <button type="button" onClick={() => setOrcIa(true)} className="flex w-full items-center gap-2 border-b border-[#3D6A99] bg-[#E9EFF6] px-4 py-2 text-left text-[14.5px] font-extrabold text-[#1E3A5C] hover:bg-[#DDE7F3] dark:bg-[#3D6A99]/25 dark:text-[#DDE7F3]">
+                    <span className="flex-1">📝 A Aurora preparou um orçamento para esta família — conferir e enviar</span><span aria-hidden="true">›</span>
+                </button>
+            )}
+            {orcIa && <OrcamentoAurora conversaId={c.id} onFechar={() => setOrcIa(false)} onUsar={(t) => { setTexto(t); setOrcIa(false); }} />}
             {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0) || (c.contato?.contratos || []).length > 0) && (
                 <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
                     {(c.contato?.contratos || []).slice(0, 2).map((k) => (

@@ -50,7 +50,7 @@ function Cores({ valor, onMudar }: { valor: string; onMudar: (c: string) => void
 /* ============================== SETORES ============================== */
 
 type Rascunho = Omit<Setor, "aberto" | "situacao" | "membros"> & { membros: number[] };
-const SETOR_NOVO: Rascunho = { id: 0, nome: "", cor: "#3D6A99", ativo: true, plantao: false, ordem: 0, msg_boas_vindas: "", msg_fora_horario: "", membros: [], horarios: [], excecoes: [] };
+const SETOR_NOVO: Rascunho = { id: 0, nome: "", cor: "#3D6A99", ativo: true, plantao: false, ordem: 0, msg_boas_vindas: "", msg_fora_horario: "", texto_menu: "", descricao_ia: "", no_menu: true, membros: [], horarios: [], excecoes: [] };
 
 export function AbaSetores({ podeEditar, avisar }: { podeEditar: boolean; avisar: Aviso }) {
     const [setores, setSetores] = useState<Setor[]>([]);
@@ -77,7 +77,7 @@ export function AbaSetores({ podeEditar, avisar }: { podeEditar: boolean; avisar
         carregar();
     }, [carregar]);
 
-    const abrir = (s: Setor) => setEdit({ ...s, msg_boas_vindas: s.msg_boas_vindas || "", msg_fora_horario: s.msg_fora_horario || "", membros: s.membros.map((m) => m.id) });
+    const abrir = (s: Setor) => setEdit({ ...s, msg_boas_vindas: s.msg_boas_vindas || "", msg_fora_horario: s.msg_fora_horario || "", texto_menu: s.texto_menu || "", descricao_ia: s.descricao_ia || "", no_menu: s.no_menu !== false, membros: s.membros.map((m) => m.id) });
     const mudar = (p: Partial<Rascunho>) => setEdit((e) => (e ? { ...e, ...p } : e));
     const faixasDoDia = (dia: number) => (edit?.horarios || []).map((h, i) => ({ ...h, i })).filter((h) => h.dia === dia);
     const mudarFaixa = (i: number, p: Partial<HorarioSetor>) => mudar({ horarios: edit!.horarios.map((h, j) => (j === i ? { ...h, ...p } : h)) });
@@ -205,6 +205,9 @@ export function AbaSetores({ podeEditar, avisar }: { podeEditar: boolean; avisar
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
+                            <label className="block"><span className={rotulo}>Como aparece no menu para o cliente</span><input className={`${campo} h-12`} maxLength={90} value={edit.texto_menu || ""} onChange={(e) => mudar({ texto_menu: e.target.value })} placeholder={edit.nome ? `Ex.: ${edit.nome}` : "Ex.: Falecimento, velório ou sepultamento (24 h)"} /><span className="mt-1 block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Use as palavras do cliente. Vazio = nome do setor.</span></label>
+                            <label className="flex items-start gap-2 pt-7 text-[15px] font-bold"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" checked={edit.no_menu !== false} onChange={(e) => mudar({ no_menu: e.target.checked })} /><span>Mostrar no menu de opções<span className="block text-[12.5px] font-normal text-[#5B6478] dark:text-[#AEB9CF]">Desmarcado: o setor recebe por transferência e pela Aurora, mas não aparece como opção.</span></span></label>
+                            <label className="block md:col-span-2"><span className={rotulo}>O que este setor atende (orientação para a Aurora)</span><textarea className={`${campo} py-3`} rows={2} maxLength={600} value={edit.descricao_ia || ""} onChange={(e) => mudar({ descricao_ia: e.target.value })} placeholder="Ex.: comunicação de falecimento, informações de velório e sepultamento, remoção, translado." /></label>
                             <label className="block"><span className={rotulo}>Mensagem de boas-vindas do setor</span><textarea className={`${campo} py-3`} rows={4} value={edit.msg_boas_vindas || ""} onChange={(e) => mudar({ msg_boas_vindas: e.target.value })} placeholder="Olá! Você está falando com o Administrativo do Plano PAI…" /></label>
                             <label className="block"><span className={rotulo}>Mensagem fora do horário</span><textarea className={`${campo} py-3`} rows={4} value={edit.msg_fora_horario || ""} onChange={(e) => mudar({ msg_fora_horario: e.target.value })} placeholder="Nosso atendimento abre {proximo_horario}. Sua mensagem ficou registrada." /></label>
                         </div>

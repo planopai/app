@@ -211,7 +211,8 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
 
     let etiqueta: React.ReactNode = null;
     if (c.tipo === "externo") {
-        if (c.status_atendimento === "aguardando" && !acao) etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
+        if (c.status_atendimento === "aguardando" && (c.prioridade || 0) > 0) etiqueta = <span className="flex-none rounded-full bg-[#B42318] px-2 py-px text-[12.5px] font-extrabold text-white" title="Falecimento comunicado: prioridade">⚠️ Falecimento</span>;
+        else if (c.status_atendimento === "aguardando" && !acao) etiqueta = <span className="flex-none rounded-full bg-[#FCEFB4] px-2 py-px text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]">Na fila</span>;
         else if (c.gestao_acompanha) etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[12.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Gestão · {c.responsavel?.nome?.split(" ")[0] || "—"}</span>;
         else if (c.meu_papel === "observador") etiqueta = <span className="flex-none rounded-full bg-[#EEF2F7] px-2 py-px text-[12.5px] font-extrabold text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]">Com {c.responsavel?.nome?.split(" ")[0] || "outro"}</span>;
     }

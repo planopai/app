@@ -16,7 +16,8 @@ import { aceitaPasta, confirmarPermissao, desligarAutomatico, ligarAutomatico, m
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
-type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number> };
+type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number>; ia?: ConfigIa; kb_departamentos?: { id: number; nome: string }[] };
+type ConfigIa = { ativa: boolean; disponivel: boolean; responder: boolean; limite: number; instrucoes: string; departamentos: number[]; velorios?: boolean; funeral?: boolean; coroa?: boolean; coroa_link?: string };
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5 dark:border-white/12 dark:bg-[#232B3F]";
 const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -177,6 +178,7 @@ export default function MessengerConfigPage() {
                             <LigaDesliga ligado={auto.auto_ativo === "1"} texto={auto.auto_ativo === "1" ? "Ligadas" : "Desligadas"} onMudar={(v) => setAuto({ ...auto, auto_ativo: v ? "1" : "0" })} desativado={!podeEmpresa} />
                         </div>
                         <p className="-mt-3 text-[14.5px] text-[#5B6478] dark:text-[#AEB9CF]">Quando ligadas, o cliente que inicia uma conversa recebe as boas-vindas e o menu de setores. Enquanto ele não escolhe, a fila não é avisada. Depois que um atendente assume, as automáticas param.</p>
+                        {config.ia && <AuroraAtendimento inicial={config.ia} departamentos={config.kb_departamentos || []} pode={podeEmpresa} avisar={avisar} />}
                         <fieldset disabled={!podeEmpresa} className="m-0 flex flex-col gap-5 border-0 p-0">
                             <label className="block"><span className={rotulo}>Boas-vindas (primeira mensagem do cliente)</span><textarea className={`${campo} py-3`} rows={3} value={auto.auto_boas_vindas || ""} onChange={(e) => setAuto({ ...auto, auto_boas_vindas: e.target.value })} /></label>
                             <div className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] p-4 dark:border-white/12">
@@ -373,6 +375,68 @@ function SalvarNoAparelho() {
             </div>
             {modo === "auto" && pasta && <button type="button" className="mt-2 text-[13.5px] font-extrabold text-[#3D6A99] underline dark:text-[#A9BED6]" onClick={async () => setMsg((await confirmarPermissao()) ? "Permissão da pasta confirmada." : "O navegador não liberou a pasta. Escolha de novo.")}>Confirmar a permissão da pasta (depois de reiniciar o navegador)</button>}
             {msg && <p className="mt-1 text-[13.5px] font-bold">{msg}</p>}
+        </div>
+    );
+}
+
+/** Aurora no atendimento: entende texto e áudio, encaminha, responde dúvidas da base e acompanha até o atendente assumir. */
+function AuroraAtendimento({ inicial, departamentos, pode, avisar }: { inicial: ConfigIa; departamentos: { id: number; nome: string }[]; pode: boolean; avisar: (m: string, erro?: boolean) => void }) {
+    const [ia, setIa] = useState<ConfigIa>(inicial);
+    const [salvando, setSalvando] = useState(false);
+    const salvar = async (novo: ConfigIa) => {
+        setIa(novo);
+        setSalvando(true);
+        try {
+            const r = await msgPost("config_salvar", { ia: novo });
+            avisar(r.msg);
+        } catch (e: any) {
+            avisar(e.message, true);
+        } finally {
+            setSalvando(false);
+        }
+    };
+    const cx = "rounded-2xl border border-[#3D6A99] bg-[#F4F8FC] p-4 dark:border-[#A9BED6]/50 dark:bg-[#3D6A99]/15";
+    return (
+        <div className={cx}>
+            <div className="flex flex-wrap items-center gap-3">
+                <span className="flex-1 text-[16px] font-extrabold">🤖 Aurora no atendimento</span>
+                <LigaDesliga ligado={ia.ativa} texto={ia.ativa ? "Ligada" : "Desligada"} onMudar={(v) => salvar({ ...ia, ativa: v })} desativado={!pode || !ia.disponivel || salvando} />
+            </div>
+            <p className="mt-1 text-[13.5px] text-[#4A5468] dark:text-[#C9D1DE]">
+                Entende o que o cliente escreve ou fala em áudio (com transcrição na conversa) e já encaminha ao setor, sem depender do número do menu. Falecimento: acolhe com condolências, pede os dados principais e passa <b>na hora</b> ao atendimento funerário, com prioridade. Pedido de atendente, reclamação e cancelamento vão sempre para uma pessoa. Deixa uma nota interna com o resumo e marca as etiquetas pelo "Quando usar". Para quando um atendente assume.
+            </p>
+            {!ia.disponivel && <p className="mt-2 text-[13.5px] font-bold text-[#B42318] dark:text-[#FF9C92]">Falta a chave da Aurora (openai_api_key) no pai-chaves.php.</p>}
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                    <label className="flex items-center gap-2 text-[15px] font-bold"><input type="checkbox" className="h-5 w-5 accent-[#313C55]" checked={ia.responder} disabled={!pode} onChange={(e) => salvar({ ...ia, responder: e.target.checked })} />Responder dúvidas com a Base de Conhecimento</label>
+                    <p className="mt-1 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Só usa os departamentos marcados abaixo (documentos liberados para clientes). Sem resposta na base, ela passa para um atendente — nunca inventa valores ou coberturas.</p>
+                    <div className="mt-2 flex flex-col gap-1">
+                        {departamentos.map((d) => (
+                            <label key={d.id} className="flex items-center gap-2 text-[14.5px]"><input type="checkbox" className="h-4 w-4 accent-[#313C55]" disabled={!pode || !ia.responder} checked={ia.departamentos.includes(d.id)} onChange={(e) => salvar({ ...ia, departamentos: e.target.checked ? [...ia.departamentos, d.id] : ia.departamentos.filter((x) => x !== d.id) })} />{d.nome}</label>
+                        ))}
+                        {!departamentos.length && <p className="text-[13px] text-[#6B7488]">Nenhum departamento na Base de Conhecimento.</p>}
+                    </div>
+                </div>
+                <div className="flex flex-col gap-3">
+                    <div className="rounded-xl border border-[#E1E5EC] bg-white p-3 dark:border-white/15 dark:bg-[#1C2334]">
+                        <div className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Habilidades</div>
+                        <label className="mt-1 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.funeral !== false} onChange={(e) => salvar({ ...ia, funeral: e.target.checked })} /><span><b>🕊️ Atendimento funerário</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Depois de avisar o plantão, acolhe, orienta (hospital, IML, registro do óbito pelo familiar) e colhe as escolhas; monta o orçamento para o atendente conferir.</span></span></label>
+                        <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.velorios !== false} onChange={(e) => salvar({ ...ia, velorios: e.target.checked })} /><span><b>ℹ️ Informações de velório</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Responde local, sala e horários dos velórios em andamento (só o que é público).</span></span></label>
+                        <label className="ml-7 mt-1 flex items-start gap-2 text-[14px]"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#313C55]" disabled={!pode || ia.velorios === false} checked={ia.coroa !== false} onChange={(e) => salvar({ ...ia, coroa: e.target.checked })} /><span>Sugerir uma coroa de flores como homenagem<span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Uma vez, sem insistir; se a pessoa quiser, passa ao setor de coroas com o velório anotado.</span></span></label>
+                        <label className="ml-7 mt-2 block text-[13.5px]"><span className="font-bold">Link do site para comprar a coroa online</span>
+                            <input type="url" inputMode="url" className="mt-1 h-10 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 text-[14px] dark:border-white/15 dark:bg-[#232B3F]" disabled={!pode || ia.coroa === false} placeholder="https://…" value={ia.coroa_link || ""} onChange={(e) => setIa({ ...ia, coroa_link: e.target.value })} onBlur={() => salvar(ia)} />
+                            <span className="mt-0.5 block text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">A Aurora oferece o link como o jeito mais rápido e prático; quem preferir é passado ao setor de coroas.</span>
+                        </label>
+                    </div>
+                    <label className="block"><span className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Respostas da Aurora antes de passar a um atendente</span>
+                        <select className="mt-1 h-11 w-full rounded-xl border border-[#E1E5EC] bg-white px-3 text-[15px] dark:border-white/15 dark:bg-[#1C2334]" value={ia.limite} disabled={!pode} onChange={(e) => salvar({ ...ia, limite: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+                    </label>
+                    <label className="block"><span className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Orientações da empresa para a Aurora</span>
+                        <textarea className="mt-1 w-full rounded-xl border border-[#E1E5EC] bg-white p-3 text-[14.5px] dark:border-white/15 dark:bg-[#1C2334]" rows={4} maxLength={2000} disabled={!pode} value={ia.instrucoes} onChange={(e) => setIa({ ...ia, instrucoes: e.target.value })} onBlur={() => salvar(ia)} placeholder="Ex.: nunca informe preço por WhatsApp; para dúvida de telemedicina, passe ao Atendimento ao associado." />
+                    </label>
+                </div>
+            </div>
+            <p className="mt-2 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">A Aurora também usa, de cada setor, o campo "O que este setor atende" (aba Setores) e, de cada etiqueta, o "Quando usar" (aba Etiquetas). Quanto melhor esses textos, melhor o encaminhamento.</p>
         </div>
     );
 }
