@@ -1083,6 +1083,7 @@ export default function Wizard({
     osCoroaSlot,
     osLateralSlot,
     convenioSlot,
+    falecidoSlot,
     osCampos,
     wizardData,
     setWizardData,
@@ -1130,6 +1131,8 @@ export default function Wizard({
     osLateralSlot?: React.ReactNode;
     /** Campo Convênio ligado ao cadastro (convênio, pacote e autorização da Prefeitura). Substitui o seletor simples. */
     convenioSlot?: React.ReactNode;
+    /** Seleção do titular, dependente ou agregado após localizar o contrato. */
+    falecidoSlot?: React.ReactNode;
     /** Campos da OS em edição (convênio, pacote, procedimento, translado...): alimentam a prévia da OS em tempo real. */
     osCampos?: OsCampos;
     wizardData: Registro;
@@ -2321,6 +2324,10 @@ export default function Wizard({
                                             {convenioSlot}
                                         </div>
                                     );
+                                }
+
+                                if (step.id === "falecido" && falecidoSlot) {
+                                    return <div key={step.id} className="sm:col-span-2">{falecidoSlot}</div>;
                                 }
 
                                 /* ===========================

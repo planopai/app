@@ -1294,44 +1294,29 @@ function badgeClass(s?: string) {
     return "bg-slate-500";
 }
 
-/* Convenio chip */
+/* Identificação operacional do convênio: apresenta o plano real (LIGHT/FLEX/PLUS/MAX)
+ * em lugar do rótulo genérico "Associado". Não altera o valor salvo no banco. */
 type ConvenioKind = "Particular" | "Prefeitura" | "Associado" | "a definir";
+function planoDoConvenio(s?: string): string | null {
+    const v = String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+    if (!v || /PARTICULAR|PREFEITURA/.test(v)) return null;
+    if (/\b(FLEX|PLUS|MAX)\b/.test(v)) return `Plano ${v.match(/\b(FLEX|PLUS|MAX)\b/)![1]}`;
+    if (/\bLIGHT\b/.test(v)) return "Plano LIGHT";
+    return null;
+}
 function normalizeConvenio(s?: string): ConvenioKind {
     const v = (s || "").toLowerCase();
     if (!v) return "a definir";
     if (v.includes("prefeitura")) return "Prefeitura";
-    if (v.includes("associad")) return "Associado";
     if (v.includes("particular")) return "Particular";
+    if (planoDoConvenio(s) || v.includes("associad")) return "Associado";
     return "a definir";
 }
-function convenioClass(kind: ConvenioKind) {
-    switch (kind) {
-        case "Particular":
-            return "bg-amber-500";
-        case "Prefeitura":
-            return "bg-cyan-600";
-        case "Associado":
-            return "bg-emerald-600";
-        default:
-            return "bg-slate-500";
-    }
-}
-
-function ConvenioBadge({
-    convenio,
-    size = "sm",
-}: {
-    convenio?: string;
-    size?: "xs" | "sm";
-}) {
+function ConvenioBadge({convenio, size = "sm"}: {convenio?: string; size?: "xs" | "sm"}) {
     const kind = normalizeConvenio(convenio);
     const cor = kind === "Prefeitura" ? "qa-tag-conv-pref" : kind === "Particular" ? "qa-tag-conv-part" : kind === "Associado" ? "qa-tag-conv-assoc" : "qa-tag-conv-adef";
-
-    return (
-        <span className={`qa-convenio-badge qa-tag ${size === "xs" ? "qa-tag-xs" : ""} ${cor}`} title="Convênio">
-            {kind}
-        </span>
-    );
+    const texto = kind === "Associado" ? planoDoConvenio(convenio) || "Associado" : kind;
+    return <span className={`qa-convenio-badge qa-tag ${size === "xs" ? "qa-tag-xs" : ""} ${cor}`} title={String(convenio || "Convênio")}>{texto}</span>;
 }
 
 /* ---------------- Etapas (bolinhas) ---------------- */

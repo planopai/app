@@ -4249,12 +4249,28 @@ export default function AcompanhamentoPage() {
 
   // Mantém o vínculo com o cadastro em dia: id, tipo (Particular/Associado/Prefeitura), plano e pacote do convênio escolhido.
   // Em registro antigo (só o nome do convênio gravado) acha o convênio pelo nome.
+  const [contratoSelecionadoPAI, setContratoSelecionadoPAI] = useState<import("./components/BuscaBeneficiarioPAI").ContratoPAI | null>(null);
+  const [pessoasContratoPAI, setPessoasContratoPAI] = useState<import("./components/BuscaBeneficiarioPAI").PessoaPAI[]>([]);
+  const [pessoaEscolhidaPAI, setPessoaEscolhidaPAI] = useState<string>("");
+  const selecionarContratoPAI = (contrato: import("./components/BuscaBeneficiarioPAI").ContratoPAI | null, pessoas: import("./components/BuscaBeneficiarioPAI").PessoaPAI[]) => {
+    setContratoSelecionadoPAI(contrato); setPessoasContratoPAI(pessoas); setPessoaEscolhidaPAI("");
+    setWizardData((prev:any) => ({...prev, falecido: "", data_nascimento: ""}));
+    setOsCampos((prev) => ({ ...prev, contrato_numero: contrato?.contrato || "" }));
+  };
   const convenioTextoWizard = String((wizardData as any)?.convenio ?? "");
   useEffect(() => {
     if (!wizardOpen || !opcoesConv.convenios.length) return;
     const novo = resolverVinculo(opcoesConv.convenios, convenioTextoWizard, osCampos);
     if (novo) setOsCampos((c) => ({ ...c, ...novo }));
   }, [wizardOpen, opcoesConv.convenios, convenioTextoWizard, osCampos]);
+
+  useEffect(() => {
+    if (!wizardOpen) return;
+    if (contratoSelecionadoPAI && tipoConvenio(convenioTextoWizard, osCampos.convenio_tipo) === "associado") {
+      const grupoAtual = String(osCampos.convenio_os || "").replace(/^ASSOCIADO_/i, "").toUpperCase();
+      if (grupoAtual && grupoAtual !== contratoSelecionadoPAI.grupo) selecionarContratoPAI(null, []);
+    }
+  }, [convenioTextoWizard, osCampos.convenio_os, osCampos.convenio_tipo, wizardOpen]);
 
   const wizardRegistroId = (wizardData as any)?.id ?? null;
   useEffect(() => {
@@ -4433,14 +4449,32 @@ export default function AcompanhamentoPage() {
             <BuscaBeneficiarioPAI
               grupo={String(osCampos.convenio_os).replace(/^ASSOCIADO_/i, "").toUpperCase() || "LIGHT"}
               disabled={wizardSubmitting}
-              onEscolher={(p) => {
-                setWizardData((prev: any) => ({ ...prev, falecido: p.nome, data_nascimento: p.data_nascimento || "" }));
-                setOsCampos((prev) => ({ ...prev, contrato_numero: p.contrato, convenio_os: `ASSOCIADO_${p.grupo}` }));
-              }}
+              contratoSelecionado={contratoSelecionadoPAI}
+              onContrato={(c, pessoas) => selecionarContratoPAI(c, pessoas)}
             />
           )}
           </div>
         }
+        falecidoSlot={!wizardEditing && tipoConvenio(convenioTextoWizard, osCampos.convenio_tipo) === "associado" ? (
+          <div>
+            <label htmlFor="wizard-falecido" className="mb-1.5 block text-[13px] font-bold">Nome do Falecido *</label>
+            <select id="wizard-falecido" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800" disabled={wizardSubmitting || !contratoSelecionadoPAI || !pessoasContratoPAI.length}
+              value={pessoaEscolhidaPAI}
+              onChange={(e) => {
+                const idx = Number(e.target.value);
+                const pessoa = pessoasContratoPAI[idx];
+                setPessoaEscolhidaPAI(e.target.value);
+                if (pessoa) {
+                  const iso = String(pessoa.data_nascimento || "").match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || "";
+                  setWizardData((prev:any) => ({ ...prev, falecido: pessoa.nome, data_nascimento: iso }));
+                }
+              }}>
+              <option value="">{contratoSelecionadoPAI ? "Selecione o titular, dependente ou agregado" : "Primeiro localize e selecione um contrato"}</option>
+              {pessoasContratoPAI.map((pessoa,i) => <option key={`${i}-${pessoa.nome}`} value={String(i)}>{pessoa.nome} · {pessoa.tipo === "T" ? "Titular" : pessoa.tipo === "D" ? "Dependente" : pessoa.tipo === "A" ? "Agregado" : pessoa.tipo}</option>)}
+            </select>
+            {contratoSelecionadoPAI && <p className="mt-1 text-xs text-slate-600">Contrato: {contratoSelecionadoPAI.contrato}. Ao selecionar, o nascimento será preenchido somente quando disponível.</p>}
+          </div>
+        ) : undefined}
         osCampos={osCampos}
         osSlot={renderOs("resumo")}
         osProcedimentoSlot={renderOs("procedimento")}
