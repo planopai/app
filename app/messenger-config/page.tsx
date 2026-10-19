@@ -17,7 +17,7 @@ import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
 type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number>; ia?: ConfigIa; kb_departamentos?: { id: number; nome: string }[] };
-type ConfigIa = { ativa: boolean; disponivel: boolean; responder: boolean; limite: number; instrucoes: string; departamentos: number[]; velorios?: boolean; funeral?: boolean; coroa?: boolean; coroa_link?: string; vendas?: boolean };
+type ConfigIa = { ativa: boolean; disponivel: boolean; responder: boolean; limite: number; instrucoes: string; departamentos: number[]; velorios?: boolean; funeral?: boolean; coroa?: boolean; coroa_link?: string; vendas?: boolean; cobranca?: boolean; coroa_vender?: boolean; limites?: { geral: number; vendas: number; pedidos: number; funeral: number; espera: number } };
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5 dark:border-white/12 dark:bg-[#232B3F]";
 const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -421,6 +421,8 @@ function AuroraAtendimento({ inicial, departamentos, pode, avisar }: { inicial: 
                     <div className="rounded-xl border border-[#E1E5EC] bg-white p-3 dark:border-white/15 dark:bg-[#1C2334]">
                         <div className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Habilidades</div>
                         <label className="mt-1 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.funeral !== false} onChange={(e) => salvar({ ...ia, funeral: e.target.checked })} /><span><b>🕊️ Atendimento funerário</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Depois de avisar o plantão, acolhe, orienta (hospital, IML, registro do óbito pelo familiar) e colhe as escolhas; monta o orçamento para o atendente conferir.</span></span></label>
+                        <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.cobranca !== false} onChange={(e) => salvar({ ...ia, cobranca: e.target.checked })} /><span><b>💳 Cobrança do associado</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Para contato vinculado ao contrato e autorizado a receber cobrança: informa as mensalidades em aberto e envia o link (Pix ou cartão) ou o Pix copia e cola, pela regra do sistema. Antecipação, desconto e boleto em PDF ficam com o financeiro.</span></span></label>
+                        <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.coroa_vender !== false} onChange={(e) => salvar({ ...ia, coroa_vender: e.target.checked })} /><span><b>🌺 Venda de coroa</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Faz o pedido na conversa (modelo, frase da faixa, velório e quem envia), lança na fila de coroas com a OS Cor aberta e passa ao setor de coroas para enviar a forma de pagamento.</span></span></label>
                         <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.vendas !== false} onChange={(e) => salvar({ ...ia, vendas: e.target.checked })} /><span><b>📝 Consultora de vendas</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Atende quem quer um plano (inclusive quem vem dos anúncios), entende a família, recomenda e passa os valores da tabela; quando a pessoa decide, envia a ficha de adesão (fora do WhatsApp). As fichas aparecem em "Propostas de adesão".</span></span></label>
                         <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.velorios !== false} onChange={(e) => salvar({ ...ia, velorios: e.target.checked })} /><span><b>ℹ️ Informações de velório</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Responde local, sala e horários dos velórios em andamento (só o que é público).</span></span></label>
                         <label className="ml-7 mt-1 flex items-start gap-2 text-[14px]"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#313C55]" disabled={!pode || ia.velorios === false} checked={ia.coroa !== false} onChange={(e) => salvar({ ...ia, coroa: e.target.checked })} /><span>Sugerir uma coroa de flores como homenagem<span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Uma vez, sem insistir; se a pessoa quiser, passa ao setor de coroas com o velório anotado.</span></span></label>
@@ -429,9 +431,31 @@ function AuroraAtendimento({ inicial, departamentos, pode, avisar }: { inicial: 
                             <span className="mt-0.5 block text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">A Aurora oferece o link como o jeito mais rápido e prático; quem preferir é passado ao setor de coroas.</span>
                         </label>
                     </div>
-                    <label className="block"><span className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Respostas da Aurora antes de passar a um atendente</span>
-                        <select className="mt-1 h-11 w-full rounded-xl border border-[#E1E5EC] bg-white px-3 text-[15px] dark:border-white/15 dark:bg-[#1C2334]" value={ia.limite} disabled={!pode} onChange={(e) => salvar({ ...ia, limite: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
-                    </label>
+                    <div className="rounded-xl border border-[#E1E5EC] bg-white p-3 dark:border-white/15 dark:bg-[#1C2334]">
+                        <div className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Respostas da Aurora antes de passar a um atendente</div>
+                        <p className="mt-0.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Cada tipo de conversa tem o seu limite; "Sem limite" deixa a Aurora conduzir livre até resolver. Falecimento, reclamação, cancelamento e pedido de atendente vão sempre na hora para uma pessoa, e o cliente pode pedir um atendente a qualquer momento.</p>
+                        {(() => {
+                            const l = ia.limites || { geral: ia.limite || 3, vendas: 16, pedidos: 10, funeral: 14, espera: 2 };
+                            const linha = (rotulo: string, ajuda: string, valor: number, opcoes: number[], mudar: (n: number) => void, semLimite = true) => (
+                                <label className="mt-2 flex flex-wrap items-center gap-2 text-[14.5px]">
+                                    <span className="min-w-[200px] flex-1"><b>{rotulo}</b><span className="block text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">{ajuda}</span></span>
+                                    <select className="h-10 rounded-lg border border-[#E1E5EC] bg-white px-2 text-[14.5px] dark:border-white/15 dark:bg-[#232B3F]" value={valor} disabled={!pode} onChange={(e) => mudar(Number(e.target.value))}>
+                                        {opcoes.map((n) => <option key={n} value={n}>{n} respostas</option>)}{semLimite && <option value={0}>Sem limite</option>}
+                                    </select>
+                                </label>
+                            );
+                            const muda = (k: keyof typeof l) => (n: number) => salvar({ ...ia, limite: k === "geral" ? n : ia.limite, limites: { ...l, [k]: n } });
+                            return (
+                                <>
+                                    {linha("Dúvidas e outros assuntos", "Respostas pela Base antes de passar ao atendente", l.geral, [1, 2, 3, 4, 5, 6, 8, 10, 15, 20], muda("geral"))}
+                                    {linha("Venda de plano", "A consultora conduz até a pessoa decidir", l.vendas, [6, 8, 10, 12, 16, 20, 25, 30, 40], muda("vendas"))}
+                                    {linha("Pedido de coroa e cobrança", "Escolha do modelo e da faixa, ou link/Pix da mensalidade", l.pedidos, [4, 6, 8, 10, 12, 15, 20, 30], muda("pedidos"))}
+                                    {linha("Falecimento (até o plantão assumir)", "Acolhimento, orientação e escolhas para o orçamento", l.funeral, [4, 6, 8, 10, 14, 20, 30, 40], muda("funeral"))}
+                                    {linha("Esperando o atendente", "Depois de encaminhar: só agradece ou pede um dado", l.espera, [1, 2, 3, 5, 10], muda("espera"))}
+                                </>
+                            );
+                        })()}
+                    </div>
                     <label className="block"><span className="text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Orientações da empresa para a Aurora</span>
                         <textarea className="mt-1 w-full rounded-xl border border-[#E1E5EC] bg-white p-3 text-[14.5px] dark:border-white/15 dark:bg-[#1C2334]" rows={4} maxLength={2000} disabled={!pode} value={ia.instrucoes} onChange={(e) => setIa({ ...ia, instrucoes: e.target.value })} onBlur={() => salvar(ia)} placeholder="Ex.: nunca informe preço por WhatsApp; para dúvida de telemedicina, passe ao Atendimento ao associado." />
                     </label>

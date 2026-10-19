@@ -289,6 +289,7 @@ export default function MonitoramentoPage() {
                                 <h2 className={`${titulo} mb-3`}>Por etiqueta</h2>
                                 <Barras cor="#3D6A99" itens={dados.por_etiqueta.map((e) => ({ rotulo: e.nome, valor: e.total, cor: e.cor }))} />
                             </section>
+                            <AuroraPerguntas de={periodo === "hoje" ? hojeISO() : periodo === "mes" ? `${hojeISO().slice(0, 8)}01` : diasAtras(Number(periodo) - 1)} nomePeriodo={nomePeriodo} />
                             <section aria-label="Avaliações" className={cartao}>
                                 <h2 className={`${titulo} mb-3`}>Avaliações dos clientes</h2>
                                 <Barras cor="#C9A21E" itens={[...dados.notas].reverse().map((n) => ({ rotulo: `${"★".repeat(n.nota)}`, valor: n.total }))} />
@@ -299,5 +300,47 @@ export default function MonitoramentoPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+/** O que os clientes perguntam à Aurora (19/10/2026): assuntos mais frequentes e o que falta na Base de Conhecimento. */
+type Perguntas = { total: number; respondidas_base: number; transferidas: number; por_intencao: { intencao: string; total: number }[]; assuntos: { assunto: string; total: number; base: number; transferidas: number; exemplo: string; ultima: string }[]; sem_base: { assunto: string; total: number; exemplo: string }[] };
+const NOMES_INTENCAO: Record<string, string> = { obito: "Falecimento", informacao_velorio: "Velório", pagamento: "Pagamento", comprovante: "Comprovante", plano_novo: "Quer um plano", associado: "Associado", fornecedor: "Fornecedor", parceria: "Parceria", coroa: "Coroa", trabalho: "Trabalho", reclamacao: "Reclamação", cancelamento: "Cancelamento", falar_atendente: "Pediu atendente", duvida: "Dúvida", outro: "Outro" };
+function AuroraPerguntas({ de, nomePeriodo }: { de: string; nomePeriodo: string }) {
+    const [p, setP] = useState<Perguntas | null>(null);
+    useEffect(() => {
+        msgGet<Perguntas>("ia_perguntas", { de, ate: hojeISO() }, false).then(setP).catch(() => setP(null));
+    }, [de]);
+    if (!p) return null;
+    const pct = (n: number) => (p.total ? Math.round((n / p.total) * 100) : 0);
+    return (
+        <section aria-label="O que os clientes perguntam" className={`${cartao} md:col-span-2`}>
+            <div className="mb-2 flex flex-wrap items-baseline gap-2"><h2 className={`${titulo} flex-1`}>🤖 O que os clientes perguntam à Aurora · {nomePeriodo}</h2><span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{p.total} pergunta(s) · {pct(p.respondidas_base)}% respondidas pela Base · {pct(p.transferidas)}% passadas a um atendente</span></div>
+            {!p.total && <p className="text-[14.5px] text-[#6B7488]">Ainda não há perguntas no período.</p>}
+            {p.total > 0 && (
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)_minmax(0,1fr)]">
+                    <div><div className="mb-1 text-[12.5px] font-extrabold uppercase tracking-wider text-[#5B6478]">Por assunto geral</div>
+                        <Barras cor="#3D6A99" itens={p.por_intencao.map((i) => ({ rotulo: NOMES_INTENCAO[i.intencao] || i.intencao, valor: i.total }))} /></div>
+                    <div><div className="mb-1 text-[12.5px] font-extrabold uppercase tracking-wider text-[#5B6478]">Perguntas mais frequentes</div>
+                        <div className="max-h-[320px] overflow-y-auto">
+                            {p.assuntos.map((a) => (
+                                <div key={a.assunto} className="border-b border-[#F0F2F5] py-1.5 text-[14px] last:border-0 dark:border-white/10">
+                                    <div className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate">{a.assunto}</b><span className="font-extrabold">{a.total}</span></div>
+                                    <div className="truncate text-[12.5px] text-[#6B7488] dark:text-[#AEB9CF]" title={a.exemplo}>“{a.exemplo}” · {a.base ? `${a.base} pela Base` : "sem Base"}{a.transferidas ? ` · ${a.transferidas} p/ atendente` : ""}</div>
+                                </div>
+                            ))}
+                        </div></div>
+                    <div><div className="mb-1 text-[12.5px] font-extrabold uppercase tracking-wider text-[#B42318]">Falta na Base (a Aurora não achou resposta)</div>
+                        {!p.sem_base.length && <p className="text-[14px] text-[#4C9A2A]">A Base respondeu tudo no período.</p>}
+                        {p.sem_base.map((a) => (
+                            <div key={a.assunto} className="border-b border-[#F0F2F5] py-1.5 text-[14px] last:border-0 dark:border-white/10">
+                                <div className="flex items-center gap-2"><b className="min-w-0 flex-1 truncate">{a.assunto}</b><span className="font-extrabold text-[#B42318]">{a.total}</span></div>
+                                <div className="truncate text-[12.5px] text-[#6B7488] dark:text-[#AEB9CF]" title={a.exemplo}>“{a.exemplo}”</div>
+                            </div>
+                        ))}
+                        <p className="mt-2 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Use esta lista para escrever novos documentos no departamento ATENDIMENTO AO CLIENTE.</p></div>
+                </div>
+            )}
+        </section>
     );
 }
