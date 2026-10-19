@@ -1344,7 +1344,7 @@ export default function SolicitarProdutoPage() {
             : null;
 
     return (
-        <main className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:pb-12">
+        <main className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(5.75rem+env(safe-area-inset-bottom))] text-[#313C55] dark:bg-[#161C2A] dark:text-white lg:pb-12">
             <div className="mx-auto w-full max-w-[1120px] px-4 pt-4 lg:px-10 lg:pt-8">
 
                 {/* HEADER */}
@@ -1705,11 +1705,13 @@ export default function SolicitarProdutoPage() {
 
                         {/*
                          * AÇÕES
-                         * Celular (em pé e deitado): barra fixa logo ACIMA da barra de baixo do app
-                         * (BarraCelular: fixed, 4.25rem + área segura, z-40), botões lado a lado.
-                         * Computador: linha normal no fim da página.
+                         * Os botões participam do fluxo normal da página, SEM sticky/fixed.
+                         * Por isso aparecem depois dos itens e nunca cobrem o formulário.
+                         * No celular, o padding-bottom do <main> reserva espaço para a
+                         * navegação global fixa (4.25rem) e para a área segura.
+                         * Em paisagem, a barra ocupa as duas colunas do grid.
                          */}
-                        <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 -mx-4 border-t border-[#E3E8F0] bg-white px-4 py-2.5 dark:border-white/[0.12] dark:bg-[#232B3F] max-lg:landscape:col-span-2 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:dark:bg-transparent">
+                        <div className="w-full min-w-0 max-lg:landscape:col-span-2">
                             <div className="flex gap-2 lg:grid lg:grid-cols-[1fr_auto] lg:gap-3">
                                 <Button
                                     type="button"
