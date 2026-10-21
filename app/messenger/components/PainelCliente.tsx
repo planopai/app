@@ -36,7 +36,7 @@ function arquivoDe(base64: string, nome: string, tipo: string): File {
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return new File([bytes], nome, { type: tipo });
 }
-const NOME_COBRANCA: Record<string, string> = { link: "Link Pix/cartão", pix: "Pix", boleto: "Boleto", recibo: "Recibo" };
+const NOME_COBRANCA: Record<string, string> = { link: "Link de Pagamento", pix: "Pix", boleto: "Boleto", recibo: "Recibo" };
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const mesAno = (d: string) => (/^\d{4}-\d{2}/.test(d) ? `${MESES[Number(d.slice(5, 7)) - 1]}/${d.slice(0, 4)}` : "");
 const numParcela = (p: Parcela) => (/^\d+$/.test(p.parcela) ? String(Number(p.parcela)) : p.parcela || "");
@@ -272,7 +272,7 @@ export default function PainelCliente({ conversa, coluna = false, onFechar, onIn
                         <div className="text-[11.5px] font-extrabold uppercase text-[#5B6478] dark:text-[#AEB9CF]">{marcadas.length} parcela{marcadas.length > 1 ? "s" : ""}{antecipadas ? ` · ${antecipadas} antecipada${antecipadas > 1 ? "s" : ""}` : ""}</div>
                         <div className="text-[19px] font-extrabold">{reais(total)}</div>
                     </div>
-                    <button type="button" className={btnPri} disabled={!!ocupado} onClick={() => cobrar("link")}>{ocupado === "link" ? "Gerando…" : "Link Pix/cartão"}</button>
+                    <button type="button" className={btnPri} disabled={!!ocupado} onClick={() => cobrar("link")}>{ocupado === "link" ? "Gerando…" : "Link de Pagamento"}</button>
                     <button type="button" className={btn} disabled={!!ocupado} onClick={() => cobrar("pix")}>{ocupado === "pix" ? "…" : "Pix"}</button>
                 </div>
             )}
