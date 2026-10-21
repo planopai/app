@@ -574,6 +574,19 @@ export function CartoesOS({ itens }: { itens: Cartao[] }) {
 
 export type Situacao = { texto: string; tom: "amarelo" | "creme" | "verde" | "verdeCheio" | "neutro" | "azul" | "vermelho" };
 
+/**
+ * Status do pagamento da OS cobrada da família (Particular, Dif e Coroa) — 21/10/2026, só no Painel Financeiro.
+ * Vem de os_ordens.status_pagamento (atualizado a cada recebimento e estorno). Sem etiqueta: convênio, convertida, cancelada,
+ * OS sem valor ou quando a situação já diz "Paga".
+ */
+export function pagamentoDaOS(l: any): Situacao | null {
+    if (!["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(l.tipo) || l.status === "CONVERTIDA" || l.status === "CANCELADA") return null;
+    if (!(Number(l.valor_total) > 0) || situacaoDaOS(l).texto === "Paga") return null;
+    if (l.status_pagamento === "PAGO") return { texto: "Pago", tom: "verde" };
+    if (l.status_pagamento === "PARCIAL") return { texto: "Pago parcial", tom: "amarelo" };
+    return { texto: "A receber", tom: "neutro" };
+}
+
 export function situacaoDaOS(l: any): Situacao {
     if (l.status === "CONVERTIDA") return { texto: "Convertida", tom: "neutro" };
     if (l.status === "FECHADA") {
@@ -595,7 +608,7 @@ const TOM: Record<Situacao["tom"], string> = {
     vermelho: "bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]",   // OS cancelada (13/10/2026)
 };
 
-export type LinhaLista = { chave: string | number; numero: string; situacao: Situacao; valor: string; nome: string; meta: string; destaque?: boolean };
+export type LinhaLista = { chave: string | number; numero: string; situacao: Situacao; valor: string; nome: string; meta: string; destaque?: boolean; pagamento?: Situacao | null };
 
 /** Lista compacta: cabe na largura da tela. Toque na linha abre a OS; ⋮ abre o resumo. */
 export function ListaCompactaOS({
@@ -630,6 +643,7 @@ export function ListaCompactaOS({
                                 <span className="flex min-w-0 items-center gap-2">
                                     <b className="whitespace-nowrap text-[15px]">{l.numero}</b>
                                     <span className={`inline-flex h-5 shrink-0 items-center rounded-full px-2 text-[11px] font-extrabold ${TOM[l.situacao.tom]}`}>{l.situacao.texto}</span>
+                                    {l.pagamento ? <span className={`inline-flex h-5 shrink-0 items-center rounded-full px-2 text-[11px] font-extrabold ${TOM[l.pagamento.tom]}`}>{l.pagamento.texto}</span> : null}
                                 </span>
                                 <b className="whitespace-nowrap text-[15px] tabular-nums lg:hidden">{l.valor}</b>
                             </span>

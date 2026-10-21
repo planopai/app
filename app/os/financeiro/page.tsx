@@ -4,7 +4,7 @@ import ItensOSAjuste from "../components/ItensOSAjuste";
 import ReembolsosPendentes from "@/components/correcoes/ReembolsosPendentes";
 import {
     BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, PAGAMENTOS_OS, ResumoOS, SITUACOES_OS, TIPOS_OS,
-    baixarPdfDaOS, dataBROS, metaFinanceiraOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
+    baixarPdfDaOS, dataBROS, metaFinanceiraOS, pagamentoDaOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
     type FiltroOS, type TabelaExport,
 } from "../components/ListaOS";
 import { JanelaRelatorios } from "../components/RelatoriosOS";
@@ -305,6 +305,7 @@ export default function FinanceiroOSPage() {
                         chave: l.os_id,
                         numero: l.numero_os,
                         situacao: situacaoDaOS(l),
+                        pagamento: pagamentoDaOS(l),
                         valor: brl(l.valor_total),
                         nome: l.falecido || "—",
                         meta: metaFinanceiraOS(l),
@@ -337,6 +338,7 @@ export default function FinanceiroOSPage() {
                         ["Total", brl(resumo.valor_total), true],
                         ["Recebido", resumo.recebido ? brl(resumo.recebido) : "—"],
                         ["Saldo", resumo.saldo === null ? (resumo.tipo === "SOC" ? "Coberto pelo plano" : "—") : brl(resumo.saldo), true],
+                        ...(pagamentoDaOS(resumo) ? ([["Pagamento", pagamentoDaOS(resumo)!.texto]] as [string, React.ReactNode][]) : []),
                         ...(resumo.nota_promissoria ? ([["Nota promissória", tagNP(resumo.nota_promissoria)]] as [string, React.ReactNode][]) : []),
                         ...(resumo.credito_a_devolver > 0 ? ([["Crédito a devolver", brl(resumo.credito_a_devolver)]] as [string, React.ReactNode][]) : []),
                         ...(resumo.status === "CANCELADA" && Number(resumo.reembolso_valor) > 0
@@ -416,6 +418,11 @@ function DetalheOS({
     const [statusAtual, setStatusAtual] = useState<string>(linha.status);
     const [reabrir, setReabrir] = useState(false);
     const [motivoReabrir, setMotivoReabrir] = useState("");
+    // Fechar a OS pelo Financeiro (21/10/2026) e comprovante do recebimento (obrigatório, menos no dinheiro)
+    const [fecharOS, setFecharOS] = useState(false);
+    const [motivoFechar, setMotivoFechar] = useState("");
+    const [arquivo, setArquivo] = useState<File | null>(null);
+    const [inputArquivo, setInputArquivo] = useState(0);
     const [versaoItens, setVersaoItens] = useState(0);
     /** OS cobrada da família (Particular, diferenças e coroa): valores ajustáveis. */
     const ehDaFamilia = ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(linha.tipo);
@@ -463,6 +470,39 @@ function DetalheOS({
         valorDigitado(rec.valor),
     );
 
+    const semComprovante = rec.forma_pagamento === "DINHEIRO";
+    const escolherArquivo = (f: File | null) => {
+        if (!f) return setArquivo(null);
+        if (!/^image\//.test(f.type) && f.type !== "application/pdf") {
+            setErro("O comprovante deve ser uma foto ou PDF.");
+            return;
+        }
+        if (f.size > 15 * 1024 * 1024) {
+            setErro("O comprovante deve ter no máximo 15 MB.");
+            return;
+        }
+        setErro("");
+        setArquivo(f);
+    };
+
+    // Status do pagamento ao vivo (recebimentos e estornos desta tela), só na OS cobrada da família
+    const totalPago = Number(saldo?.total_pago ?? linha.recebido ?? 0);
+    const restante = Number(saldo?.saldo_restante ?? linha.saldo ?? 0);
+    const pagamentoAtual: { texto: string; tom: "verde" | "amarelo" | "neutro" } | null =
+        ehDaFamilia && linha.status !== "CONVERTIDA" && linha.status !== "CANCELADA" && Number(linha.valor_total) > 0
+            ? totalPago > 0 && restante <= 0.005
+                ? { texto: "PAGO", tom: "verde" }
+                : totalPago > 0
+                  ? { texto: "PAGO PARCIAL", tom: "amarelo" }
+                  : { texto: "A RECEBER", tom: "neutro" }
+            : null;
+    const situacaoAtual =
+        statusAtual === "FECHADA"
+            ? linha.assinada_em
+                ? `assinada ${dataHoraBR(linha.assinada_em)}`
+                : "concluída · assinatura pendente"
+            : String(statusAtual || "").toLowerCase().replace("_", " ");
+
     const podeReceber =
         ["PRT", "DIF_SOC", "DIF_PRF", "COR", "PRF"].includes(linha.tipo) &&
         linha.status !== "CONVERTIDA" &&
@@ -481,17 +521,24 @@ function DetalheOS({
                 finId = p.dados?.id;
             }
 
-            const r = await osPost("financeiro_registrar_pagamento", {
-                financeiro_id: finId,
-                ...rec,
-                valor: String(valorDigitado(rec.valor)),
-            });
+            // Multipart: o comprovante vai junto (obrigatório, menos no dinheiro — mesma regra do Concluir venda)
+            const fd = new FormData();
+            fd.append("financeiro_registrar_pagamento", "1");
+            fd.append("financeiro_id", String(finId));
+            fd.append("forma_pagamento", rec.forma_pagamento);
+            fd.append("data_pagamento", rec.data_pagamento);
+            fd.append("observacao", rec.observacao);
+            fd.append("valor", String(valorDigitado(rec.valor)));
+            if (arquivo) fd.append("comprovante", arquivo, arquivo.name || "comprovante.jpg");
+            const r = await apiJson(OS_API, { method: "POST", body: fd });
 
             setRec({
                 ...rec,
                 valor: "",
                 observacao: "",
             });
+            setArquivo(null);
+            setInputArquivo((n) => n + 1);
 
             return r;
         }, "Recebimento lançado.");
@@ -539,11 +586,13 @@ function DetalheOS({
                             <b className="text-[#313C55]">
                                 {linha.responsavel || "—"}
                             </b>{" "}
-                            · agente {linha.agente} ·{" "}
-                            {linha.status === "FECHADA"
-                                ? `assinada ${dataHoraBR(linha.assinada_em)}`
-                                : linha.status}
+                            · agente {linha.agente} · {situacaoAtual}
                         </div>
+                        {pagamentoAtual && (
+                            <div className="mt-1">
+                                <Tag tom={pagamentoAtual.tom}>PAGAMENTO: {pagamentoAtual.texto}</Tag>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex gap-2">
@@ -567,9 +616,51 @@ function DetalheOS({
                                 </Botao>
                             )}
 
+                        {statusAtual === "ABERTA" && linha.status !== "CANCELADA" && linha.status !== "CONVERTIDA" && (
+                            <Botao primario onClick={() => { setMotivoFechar(""); setFecharOS(true); }}>
+                                Fechar OS
+                            </Botao>
+                        )}
+
                         <Botao onClick={onFechar}>Fechar</Botao>
                     </div>
                 </div>
+
+                {fecharOS && (
+                    <Modal titulo={`Fechar ${linha.numero_os}`} onFechar={() => setFecharOS(false)}>
+                        <div className="text-sm text-[#313C55]">
+                            Para atendimento já finalizado com a OS ainda aberta. A OS fica concluída com os valores atuais e a{" "}
+                            <b>assinatura fica pendente</b> (colher com o responsável). Se houver saldo, ele continua a receber aqui, e a nota
+                            promissória sai quando o responsável assinar.
+                        </div>
+                        <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Motivo *</label>
+                        <textarea
+                            className="mt-1 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm"
+                            rows={3}
+                            value={motivoFechar}
+                            onChange={(e) => setMotivoFechar(e.target.value)}
+                            placeholder="Ex.: atendimento finalizado, OS ficou aberta no quadro"
+                        />
+                        <div className="mt-4 flex justify-end gap-2">
+                            <Botao onClick={() => setFecharOS(false)}>Cancelar</Botao>
+                            <Botao
+                                primario
+                                disabled={salvando || motivoFechar.trim().length < 5}
+                                onClick={() =>
+                                    void executar(async () => {
+                                        const r = await osPost("financeiro_fechar_os", { os_id: osId, motivo: motivoFechar.trim() });
+                                        setFecharOS(false);
+                                        setStatusAtual("FECHADA");
+                                        setVersaoItens((n) => n + 1);
+                                        return r;
+                                    }, "OS fechada.")
+                                }
+                            >
+                                Fechar OS
+                            </Botao>
+                        </div>
+                    </Modal>
+                )}
 
                 {erro && (
                     <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -1042,6 +1133,21 @@ function DetalheOS({
                                 </Campo>
                             </div>
 
+                            <div className="mb-3">
+                                <Campo rotulo={semComprovante ? "Comprovante (opcional no dinheiro)" : "Comprovante *"}>
+                                    <input
+                                        key={inputArquivo}
+                                        type="file"
+                                        accept="image/*,application/pdf"
+                                        className="block w-full text-sm text-[#313C55] file:mr-3 file:rounded-lg file:border-0 file:bg-[#313C55] file:px-3 file:py-2 file:text-sm file:font-bold file:text-white"
+                                        onChange={(e) => escolherArquivo(e.target.files?.[0] || null)}
+                                    />
+                                </Campo>
+                                <div className="mt-1 text-xs text-[#6B7488]">
+                                    {semComprovante ? "Dinheiro: sem comprovante (o Financeiro confere pelo caixa)." : "Foto ou PDF, até 15 MB."}
+                                </div>
+                            </div>
+
                             <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm">
                                 Saldo após o lançamento:{" "}
                                 <b>{brl(saldoApos)}</b>
@@ -1054,7 +1160,7 @@ function DetalheOS({
 
                             <Botao
                                 primario
-                                disabled={salvando || !rec.valor}
+                                disabled={salvando || !rec.valor || (!semComprovante && !arquivo)}
                                 onClick={() => void lancar()}
                             >
                                 {salvando
