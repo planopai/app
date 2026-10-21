@@ -24,7 +24,7 @@ import {
 } from "@tabler/icons-react";
 
 /* =========================
-   CONFIG
+   CONFIG TESTE
 ========================= */
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br/associados_geral.php";
 
