@@ -17,15 +17,15 @@ export default function LoginPage() {
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
-    // preenche lembrados
+    // Preenche somente o usuário lembrado.
+    // Senhas salvas por versões antigas são removidas do navegador.
     React.useEffect(() => {
         const u = localStorage.getItem("usuario") || "";
-        const s = localStorage.getItem("senha") || "";
+
         setUsuario(u);
-        if (s) {
-            setSenha(s);
-            setRemember(true);
-        }
+        setRemember(Boolean(u));
+
+        localStorage.removeItem("senha");
     }, []);
 
     async function onSubmit(e: React.FormEvent) {
@@ -50,14 +50,16 @@ export default function LoginPage() {
                 throw new Error(data?.msg || data?.error || "Dados incorretos. Tente novamente.");
             }
 
-            // 2) Lembrar credenciais (OBS: guardar senha em localStorage não é recomendado em produção)
+            // 2) Lembrar somente o usuário.
+            // A senha nunca é persistida no localStorage.
             if (remember) {
                 localStorage.setItem("usuario", usuario);
-                localStorage.setItem("senha", senha);
             } else {
                 localStorage.removeItem("usuario");
-                localStorage.removeItem("senha");
             }
+
+            // Limpeza defensiva para instalações que usaram versões antigas.
+            localStorage.removeItem("senha");
 
             // 3) (opcional, ajuda a garantir que cookie já esteja válido no backend)
             await fetch("/api/php/pai_api.php?action=whoami", { cache: "no-store" }).catch(() => { });
@@ -120,10 +122,10 @@ export default function LoginPage() {
                         </div>
 
                         <div className="remember-me">
-                            <label htmlFor="rememberPassword">Memorizar a senha</label>
+                            <label htmlFor="rememberUser">Lembrar usuário</label>
                             <label className="switch">
                                 <input
-                                    id="rememberPassword"
+                                    id="rememberUser"
                                     type="checkbox"
                                     checked={remember}
                                     onChange={(e) => setRemember(e.target.checked)}
