@@ -20,7 +20,10 @@ const rotulo = "text-[12.5px] font-extrabold uppercase tracking-wider text-[#5B6
 
 function Conversa({ linhas, altura = "h-[520px]" }: { linhas: Linha[]; altura?: string }) {
     const fim = useRef<HTMLDivElement>(null);
-    useEffect(() => fim.current?.scrollIntoView({ block: "end" }), [linhas.length]);
+    // chaves no efeito: no Chrome novo o scrollIntoView devolve uma Promise, e o React tentava usá-la como limpeza
+    useEffect(() => {
+        fim.current?.scrollIntoView({ block: "end" });
+    }, [linhas.length]);
     return (
         <div className={`${altura} overflow-y-auto rounded-xl bg-[#EFEAE2] p-3 dark:bg-[#1C2334]`}>
             <div className="flex flex-col gap-1.5">
