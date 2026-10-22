@@ -7,11 +7,11 @@
  *  - Colunas: Item · Qtd · Valor · Desconto · Final · ícone de ajuste. O acréscimo NÃO aparece: o Valor já vem com ele.
  *  - Ajuste do item: valor unitário (só aumenta; no translado, valor do km — a quantidade de km não muda) e desconto em R$.
  *  - Desconto geral: % ou R$, calculado depois dos descontos dos itens. Por %, mostra a base.
- *  - Limite: todos os descontos juntos até 8% do valor com acréscimos. Gestão e Financeiro podem passar (o servidor decide).
+ *  - Limite: todos os descontos juntos até o limite do servidor (padrão 20%, ajustável no os_config.php) do valor com acréscimos. Gestão e Financeiro podem passar (o servidor decide).
  * Os dados vêm de os_principal.php?itens_os=1 (o servidor também confere o limite).
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { osGet, osPost, valorDigitado } from "./apiOS";
 
@@ -164,7 +164,7 @@ export default function ItensOSAjuste({
     const res = d?.resumo;
     const cobraveis = useMemo(() => (d?.itens ?? []).filter((i) => !i.referencia_apenas), [d]);
     const limTxt = d?.pode_passar_limite
-        ? "Gestão / Financeiro: pode passar de 8%."
+        ? `Gestão / Financeiro: pode passar de ${res ? pctTxt(res.limite_percentual) : "20"}%.`
         : res
             ? `Limite da OS: todos os descontos juntos até ${pctTxt(res.limite_percentual)}% (${brl(res.limite_valor)} hoje; ${brl(res.reducao)} já usados).`
             : "";
@@ -183,9 +183,14 @@ export default function ItensOSAjuste({
         setGeral(true);
     };
 
-    // Clique no ícone da folha (janela "Ver OS") abre a janela certa
+    // Clique no ícone da folha (janela "Ver OS") abre a janela certa.
+    // Só uma vez por clique (21/10/2026): antes a janela reabria a cada recarga dos itens — depois de aplicar, ou
+    // quando o servidor recusava —, o que apagava a mensagem de erro e voltava o valor digitado.
+    const pedidoTratado = useRef<number | null>(null);
     useEffect(() => {
         if (!pedido || !d) return;
+        if (pedidoTratado.current === pedido.n) return;
+        pedidoTratado.current = pedido.n;
         if (pedido.alvo === "geral") {
             abrirGeral();
             return;

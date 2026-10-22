@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Nunito } from "next/font/google";
 
@@ -30,13 +30,22 @@ const nunito = Nunito({
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+/* Tela do celular (22/10/2026): sem zoom — nem por pinça (Android), nem automático ao tocar num campo (iPhone).
+   O Next.js pede a viewport e a cor do tema aqui, fora do metadata. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#313C55",
+};
+
 export const metadata: Metadata = {
   title: "App Plano PAI 2.0",
   description: "Aplicação WEB Plano PAI 2.0",
   applicationName: "App Plano PAI 2.0",
-  themeColor: "#313C55",
   manifest: "/manifest.webmanifest",
-  viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -87,7 +96,7 @@ export default async function RootLayout({
 
       <body
         className={cn(
-          "bg-background overscroll-none antialiased font-[var(--font-nunito)]", // ✅ NUNITO GLOBAL
+          "bg-background overscroll-none antialiased touch-manipulation font-[var(--font-nunito)]", // ✅ NUNITO GLOBAL · touch-manipulation: sem zoom por dois toques
           activeThemeValue ? `theme-${activeThemeValue}` : "",
           isScaled ? "theme-scaled" : ""
         )}
