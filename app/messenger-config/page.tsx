@@ -16,8 +16,9 @@ import { aceitaPasta, confirmarPermissao, desligarAutomatico, ligarAutomatico, m
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
-type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number>; ia?: ConfigIa; kb_departamentos?: { id: number; nome: string }[] };
-type ConfigIa = { ativa: boolean; disponivel: boolean; responder: boolean; limite: number; instrucoes: string; departamentos: number[]; velorios?: boolean; funeral?: boolean; coroa?: boolean; coroa_link?: string; vendas?: boolean; cobranca?: boolean; coroa_vender?: boolean; limites?: { geral: number; vendas: number; pedidos: number; funeral: number; espera: number } };
+type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number>; ia?: ConfigIa; kb_departamentos?: { id: number; nome: string }[]; ocioso?: ConfigOcioso };
+type ConfigOcioso = { aurora_min: number; atendimento_min: number; msg: string; teste_contrato: string };
+type ConfigIa = { ativa: boolean; disponivel: boolean; responder: boolean; limite: number; instrucoes: string; departamentos: number[]; velorios?: boolean; funeral?: boolean; coroa?: boolean; coroa_link?: string; vendas?: boolean; cobranca?: boolean; coroa_vender?: boolean; saudacao?: boolean; limites?: { geral: number; vendas: number; pedidos: number; funeral: number; espera: number } };
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5 dark:border-white/12 dark:bg-[#232B3F]";
 const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -179,6 +180,7 @@ export default function MessengerConfigPage() {
                         </div>
                         <p className="-mt-3 text-[14.5px] text-[#5B6478] dark:text-[#AEB9CF]">Quando ligadas, o cliente que inicia uma conversa recebe as boas-vindas e o menu de setores. Enquanto ele não escolhe, a fila não é avisada. Depois que um atendente assume, as automáticas param.</p>
                         {config.ia && <AuroraAtendimento inicial={config.ia} departamentos={config.kb_departamentos || []} pode={podeEmpresa} avisar={avisar} />}
+                        {config.ocioso && <EncerrarParadas inicial={config.ocioso} pode={podeEmpresa} avisar={avisar} />}
                         <fieldset disabled={!podeEmpresa} className="m-0 flex flex-col gap-5 border-0 p-0">
                             <label className="block"><span className={rotulo}>Boas-vindas (primeira mensagem do cliente)</span><textarea className={`${campo} py-3`} rows={3} value={auto.auto_boas_vindas || ""} onChange={(e) => setAuto({ ...auto, auto_boas_vindas: e.target.value })} /></label>
                             <div className="flex flex-col gap-3 rounded-2xl border border-[#E1E5EC] p-4 dark:border-white/12">
@@ -423,6 +425,7 @@ function AuroraAtendimento({ inicial, departamentos, pode, avisar }: { inicial: 
                         <label className="mt-1 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.funeral !== false} onChange={(e) => salvar({ ...ia, funeral: e.target.checked })} /><span><b>🕊️ Atendimento funerário</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Depois de avisar o plantão, acolhe, orienta (hospital, IML, registro do óbito pelo familiar) e colhe as escolhas; monta o orçamento para o atendente conferir.</span></span></label>
                         <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.cobranca !== false} onChange={(e) => salvar({ ...ia, cobranca: e.target.checked })} /><span><b>💳 Cobrança do associado</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Para contato vinculado ao contrato e autorizado a receber cobrança: informa as mensalidades em aberto e envia o link (Pix ou cartão) ou o Pix copia e cola, pela regra do sistema. Antecipação, desconto e boleto em PDF ficam com o financeiro.</span></span></label>
                         <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.coroa_vender !== false} onChange={(e) => salvar({ ...ia, coroa_vender: e.target.checked })} /><span><b>🌺 Venda de coroa</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Faz o pedido na conversa (modelo, frase da faixa, velório e quem envia), lança na fila de coroas com a OS Cor aberta e passa ao setor de coroas para enviar a forma de pagamento.</span></span></label>
+                        <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.saudacao !== false} onChange={(e) => salvar({ ...ia, saudacao: e.target.checked })} /><span><b>👋 Aurora se apresenta no lugar do menu</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Quem só cumprimenta recebe uma apresentação calorosa da Aurora, que pergunta como pode ajudar, sem menu numerado. Desmarcado: as boas-vindas e o menu de setores, como antes.</span></span></label>
                         <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.vendas !== false} onChange={(e) => salvar({ ...ia, vendas: e.target.checked })} /><span><b>📝 Consultora de vendas</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Atende quem quer um plano (inclusive quem vem dos anúncios), entende a família, recomenda e passa os valores da tabela; quando a pessoa decide, envia a ficha de adesão (fora do WhatsApp). As fichas aparecem em "Propostas de adesão".</span></span></label>
                         <label className="mt-2 flex items-start gap-2 text-[14.5px]"><input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" disabled={!pode} checked={ia.velorios !== false} onChange={(e) => salvar({ ...ia, velorios: e.target.checked })} /><span><b>ℹ️ Informações de velório</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Responde local, sala e horários dos velórios em andamento (só o que é público).</span></span></label>
                         <label className="ml-7 mt-1 flex items-start gap-2 text-[14px]"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#313C55]" disabled={!pode || ia.velorios === false} checked={ia.coroa !== false} onChange={(e) => salvar({ ...ia, coroa: e.target.checked })} /><span>Sugerir uma coroa de flores como homenagem<span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Uma vez, sem insistir; se a pessoa quiser, passa ao setor de coroas com o velório anotado.</span></span></label>
@@ -462,6 +465,41 @@ function AuroraAtendimento({ inicial, departamentos, pode, avisar }: { inicial: 
                 </div>
             </div>
             <p className="mt-2 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">A Aurora também usa, de cada setor, o campo "O que este setor atende" (aba Setores) e, de cada etiqueta, o "Quando usar" (aba Etiquetas). Quanto melhor esses textos, melhor o encaminhamento.</p>
+        </div>
+    );
+}
+
+/** Encerrar conversa parada (21/10/2026): quando a última mensagem foi do PAI e o cliente não respondeu no tempo escolhido. */
+function EncerrarParadas({ inicial, pode, avisar }: { inicial: ConfigOcioso; pode: boolean; avisar: (m: string, erro?: boolean) => void }) {
+    const [o, setO] = useState<ConfigOcioso>(inicial);
+    const salvar = async (novo: ConfigOcioso) => {
+        setO(novo);
+        try {
+            const r = await msgPost("config_salvar", { ocioso: novo });
+            avisar(r.msg);
+        } catch (e: any) {
+            avisar(e.message, true);
+        }
+    };
+    const tempo = (n: number) => (n === 0 ? "Desligado" : n < 60 ? `${n} minutos` : n % 1440 === 0 ? `${n / 1440} dia(s)` : `${n / 60} hora(s)`);
+    const sel = "mt-1 h-11 w-full rounded-xl border border-[#E1E5EC] bg-white px-3 text-[15px] dark:border-white/15 dark:bg-[#1C2334]";
+    const rot = "text-[13px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
+    return (
+        <div className="rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]">
+            <div className="text-[16px] font-extrabold">⏱️ Encerrar conversa parada</div>
+            <p className="mt-1 text-[13.5px] text-[#4A5468] dark:text-[#C9D1DE]">Quando a última mensagem foi do PAI (Aurora ou atendente) e o cliente não respondeu no tempo escolhido, o atendimento é encerrado com a mensagem abaixo. Nunca encerra falecimento nem cliente que está esperando um atendente na fila. Se o cliente escrever depois, começa um atendimento novo.</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <label className="block"><span className={rot}>Conversa com a Aurora (sem atendente)</span>
+                    <select className={sel} value={o.aurora_min} disabled={!pode} onChange={(e) => salvar({ ...o, aurora_min: Number(e.target.value) })}>{[0, 15, 30, 60, 120, 240, 480, 1440].map((n) => <option key={n} value={n}>{tempo(n)}</option>)}</select></label>
+                <label className="block"><span className={rot}>Atendimento com uma pessoa</span>
+                    <select className={sel} value={o.atendimento_min} disabled={!pode} onChange={(e) => salvar({ ...o, atendimento_min: Number(e.target.value) })}>{[0, 30, 60, 120, 240, 480, 1440, 2880].map((n) => <option key={n} value={n}>{tempo(n)}</option>)}</select></label>
+                <label className="block md:col-span-2"><span className={rot}>Mensagem de encerramento</span>
+                    <textarea className="mt-1 w-full rounded-xl border border-[#E1E5EC] bg-white p-3 text-[14.5px] dark:border-white/15 dark:bg-[#1C2334]" rows={3} maxLength={600} disabled={!pode} value={o.msg} onChange={(e) => setO({ ...o, msg: e.target.value })} onBlur={() => salvar(o)} />
+                    <span className="mt-0.5 block text-[12px] text-[#6B7488]">Só é enviada se a janela de 24 h do WhatsApp ainda estiver aberta. Em branco: encerra sem mensagem.</span></label>
+                <label className="block"><span className={rot}>Contrato usado nos testes de cobrança</span>
+                    <input className={sel} value={o.teste_contrato} disabled={!pode} onChange={(e) => setO({ ...o, teste_contrato: e.target.value.replace(/\D/g, "") })} onBlur={() => salvar(o)} placeholder="Ex.: 000010" />
+                    <span className="mt-0.5 block text-[12px] text-[#6B7488]">Para o cenário "Associado quer pagar" em Testes da Aurora (a Unymos é só lida; nada é gerado).</span></label>
+            </div>
         </div>
     );
 }

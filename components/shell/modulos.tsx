@@ -49,6 +49,7 @@ import {
     IconNews,
     IconPackage,
     IconReportAnalytics,
+    IconRobot,
     IconSearch,
     IconSettings,
     IconShieldLock,
@@ -134,6 +135,7 @@ export const MODULOS: Modulo[] = [
             { id: "messenger", titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
             // 14/10/2026: Configurações do Messenger (respostas rápidas, assinatura…). Nasce aqui; a Gestão move pelo Organizar menu.
             { id: "messenger-config", titulo: "Configurações do Messenger", desc: "Respostas rápidas e ajustes do atendimento", href: "/messenger-config", slugs: ["messenger-config"], icone: IconSettings },
+            { id: "messenger-testes", titulo: "Testes da Aurora", desc: "Simulador e cenários avaliados pelo Claude", href: "/messenger-testes", slugs: ["messenger-config"], icone: IconRobot },
             // 15/10/2026: painel de monitoramento do atendimento (Gestão: mesma página do Histórico de clientes). Nasce aqui; mova pelo Organizar menu.
             { id: "messenger-monitor", titulo: "Monitoramento do atendimento", desc: "Fila, atendentes e avaliações", href: "/messenger-monitor", slugs: ["messenger-historico"], icone: IconChartBar },
             { id: "chat", titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
