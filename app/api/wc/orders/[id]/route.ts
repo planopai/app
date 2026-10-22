@@ -150,8 +150,25 @@ function itensParaConfeccao(order: WcOrderForProduction) {
     }));
 }
 
+/**
+ * 22/10/2026: a loja vende também a adesão dos planos (SKU adesao-*). Só pedidos de coroa vão para a
+ * Confecção, para a lista de Pedidos Online e para a notificação. O plugin "PAI · Formulários do Checkout"
+ * grava pai_tipo_pedido (coroas, planos...) em cada pedido; pedidos antigos, sem esse campo, são coroa,
+ * a não ser que tenham produto com SKU adesao-*.
+ */
+function ehPedidoDeCoroa(order: { meta_data?: Array<{ key?: string; value?: unknown }>; line_items?: Array<{ sku?: string }> } | null | undefined): boolean {
+    const tipo = (order?.meta_data || []).find((m) => String(m?.key || "") === "pai_tipo_pedido");
+    const valor = String(tipo?.value ?? "").trim().toLowerCase();
+    if (valor) return valor === "coroas";
+    return !(order?.line_items || []).some((i) => /^adesao-/i.test(String(i?.sku || "")));
+}
+
 async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOrigin: string) {
     if (!order?.id) throw new Error("Pedido WooCommerce sem ID.");
+
+    if (!ehPedidoDeCoroa(order)) {
+        return { sincronizado: false, ignorado: true, motivo: "nao_e_pedido_de_coroa" };
+    }
 
     if (!pedidoLiberadoParaConfeccao(order)) {
         return {

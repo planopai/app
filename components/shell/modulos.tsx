@@ -192,6 +192,7 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/plano", slug: "plano" },
         itens: [
             { id: "associados", titulo: "Associados", desc: "Cadastro de associados", href: "/associados", slugs: ["associados"], icone: IconUsersGroup },
+            { id: "novos-planos", titulo: "Novos planos", desc: "Adesões feitas pelo site", href: "/novos-planos", slugs: ["novos-planos"], icone: IconUserPlus },
             { id: "parceiros", titulo: "Parceiros", desc: "Descontos e rede de parceiros", href: "/parceiros", slugs: ["parceiros"], icone: IconHeartHandshake },
             { id: "medicos", titulo: "Médicos", desc: "Rede de atendimento", href: "/medicos", slugs: ["medicos"], icone: IconStethoscope },
             { id: "sorteios", titulo: "Sorteios", desc: "Sorteios para associados", href: "/sorteios", slugs: ["sorteios"], icone: IconGift },

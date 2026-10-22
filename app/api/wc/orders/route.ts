@@ -107,6 +107,19 @@ function findMetaValue(metas: Meta[] | undefined, keys: string[]): string {
     return "";
 }
 
+/**
+ * 22/10/2026: a loja vende também a adesão dos planos (SKU adesao-*). Só pedidos de coroa vão para a
+ * Confecção, para a lista de Pedidos Online e para a notificação. O plugin "PAI · Formulários do Checkout"
+ * grava pai_tipo_pedido (coroas, planos...) em cada pedido; pedidos antigos, sem esse campo, são coroa,
+ * a não ser que tenham produto com SKU adesao-*.
+ */
+function ehPedidoDeCoroa(order: { meta_data?: Array<{ key?: string; value?: unknown }>; line_items?: Array<{ sku?: string }> } | null | undefined): boolean {
+    const tipo = (order?.meta_data || []).find((m) => String(m?.key || "") === "pai_tipo_pedido");
+    const valor = String(tipo?.value ?? "").trim().toLowerCase();
+    if (valor) return valor === "coroas";
+    return !(order?.line_items || []).some((i) => /^adesao-/i.test(String(i?.sku || "")));
+}
+
 function pedidoLiberadoParaConfeccao(order: WcOrderForProduction): boolean {
     return STATUS_CONFECCAO.has(String(order?.status || "").trim().toLowerCase());
 }
@@ -198,6 +211,10 @@ function payloadImportacao(order: WcOrderForProduction): Record<string, unknown>
 
 async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOrigin: string) {
     if (!order?.id) throw new Error("Pedido WooCommerce sem ID.");
+
+    if (!ehPedidoDeCoroa(order)) {
+        return { sincronizado: false, ignorado: true, motivo: "nao_e_pedido_de_coroa" };
+    }
 
     if (!pedidoLiberadoParaConfeccao(order)) {
         return {
@@ -366,9 +383,11 @@ export async function GET(req: Request) {
         const { data, headers } = await wc.get("orders", params);
         const total = Number(headers["x-wp-total"] || 0);
         const totalPages = Number(headers["x-wp-totalpages"] || 0);
+        // Só pedidos de coroa na aba Pedidos Online (adesões de plano ficam na tela Novos planos).
+        const pedidos = Array.isArray(data) ? data.filter((o: any) => ehPedidoDeCoroa(o)) : data;
 
         return NextResponse.json({
-            data,
+            data: pedidos,
             meta: { page, per_page, total, totalPages },
         });
     } catch (err: any) {
@@ -446,12 +465,13 @@ export async function POST(req: Request) {
         );
     }
 
-    if (!pedidoLiberadoParaConfeccao(order)) {
+    if (!pedidoLiberadoParaConfeccao(order) || !ehPedidoDeCoroa(order)) {
         return NextResponse.json({
             ok: true,
             ignorado: true,
             order_id: order.id,
             status: order.status || null,
+            motivo: ehPedidoDeCoroa(order) ? undefined : "nao_e_pedido_de_coroa",
         });
     }
 
