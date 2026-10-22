@@ -21,6 +21,7 @@
  * - foto final e comprovantes usam multipart/form-data, sem Base64;
  * - câmera direta captura em até 960x720 e JPEG leve, com fallback para câmera nativa;
  * - fotos originais grandes não são renderizadas como preview antes do envio.
+ * - histórico: mostra modelo e tipo por coroa e totalizadores pelo período filtrado, informados pela API.
  */
 
 import * as React from "react";
@@ -178,10 +179,17 @@ type ManualOrder = {
     _coroa_total?: number;
 };
 
+type ResumoTiposCoroas = {
+    naturais: number;
+    artificiais: number;
+    nao_classificadas: number;
+    total_coroas: number;
+};
+
 type ManualListResponse = {
     sucesso: boolean;
     dados: ManualOrder[];
-    meta?: { page: number; per_page: number; total: number; total_pages: number };
+    meta?: { page: number; per_page: number; total: number; total_pages: number; resumo_tipos?: ResumoTiposCoroas };
     msg?: string;
 };
 
@@ -618,6 +626,35 @@ function rotuloTipoCoroa(tipo: CoroaTipo) {
     if (tipo === "natural") return "Natural";
     if (tipo === "artificial") return "Artificial";
     return "";
+}
+
+/** Usa somente a classificação registrada em coroas_itens; não adivinha pelo nome. */
+function tipoCoroaHistorico(order: ManualOrder): "natural" | "artificial" | null {
+    const tipo = String(itensManual(order)[0]?.tipo_coroa || "").trim().toLowerCase();
+    return tipo === "natural" || tipo === "artificial" ? tipo : null;
+}
+
+function modelosCoroaHistorico(order: ManualOrder): string {
+    return itensManual(order)
+        .map((item) => String(item.modelo_coroa || "").trim())
+        .filter(Boolean)
+        .join(", ") || String(order.modelo_coroa || "").trim() || "Não informado";
+}
+
+/** O WooCommerce fornece o nome da linha, mas nem sempre o tipo cadastrado no PAI. */
+function modelosItensOnline(
+    itens?: Array<{ name?: string; quantity?: number }> | null,
+): string | null {
+    if (!Array.isArray(itens) || !itens.length) return null;
+    const nomes = itens
+        .map((item) => {
+            const nome = String(item?.name || "").trim();
+            if (!nome) return "";
+            const quantidade = Number(item.quantity || 1);
+            return quantidade > 1 ? `${nome} (x${quantidade})` : nome;
+        })
+        .filter(Boolean);
+    return nomes.length ? nomes.join(", ") : null;
 }
 
 function quantidadeManual(order?: ManualOrder | null) {
@@ -1908,6 +1945,7 @@ export default function Page() {
     const [manualPerPage, setManualPerPage] = React.useState(20);
     const [manualTotal, setManualTotal] = React.useState(0);
     const [manualTotalPages, setManualTotalPages] = React.useState(1);
+    const [resumoTiposHistorico, setResumoTiposHistorico] = React.useState<ResumoTiposCoroas | null>(null);
     const confeccaoAbortRef = React.useRef<AbortController | null>(null);
     const historicoAbortRef = React.useRef<AbortController | null>(null);
     const onlineSyncLoadedAtRef = React.useRef(0);
@@ -2034,11 +2072,15 @@ export default function Page() {
 
         setManualLoading(true);
         setManualError(null);
+        setResumoTiposHistorico(null);
 
         try {
             const u = new URL(COROAS_API, window.location.origin);
             u.searchParams.set("listar", "1");
             u.searchParams.set("grupo", "historico");
+            // Contagem de TODAS as coroas do filtro, não apenas da página atual.
+            u.searchParams.set("resumo_tipos", "1");
+            u.searchParams.set("resumo_origem", manualAppliedOrigem);
             u.searchParams.set("page", String(manualPage));
             u.searchParams.set("per_page", String(manualPerPage));
 
@@ -2068,6 +2110,13 @@ export default function Page() {
             setManualHistoricoOrders(separarPedidosPorCoroa(json.dados));
             setManualTotal(Math.max(0, Number(json.meta?.total || 0)));
             setManualTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
+            const stats = json.meta?.resumo_tipos;
+            setResumoTiposHistorico(stats ? {
+                naturais: Math.max(0, Number(stats.naturais) || 0),
+                artificiais: Math.max(0, Number(stats.artificiais) || 0),
+                nao_classificadas: Math.max(0, Number(stats.nao_classificadas) || 0),
+                total_coroas: Math.max(0, Number(stats.total_coroas) || 0),
+            } : null);
         } catch (e: any) {
             if (e?.name === "AbortError") return;
             setManualError(e?.message || "Erro ao carregar pedidos manuais.");
@@ -2084,6 +2133,7 @@ export default function Page() {
         manualAppliedStatus,
         manualAppliedAfter,
         manualAppliedBefore,
+        manualAppliedOrigem,
         manualRefreshToken,
     ]);
 
@@ -2659,6 +2709,8 @@ export default function Page() {
     const [page, setPage] = React.useState(1);
     const [perPage, setPerPage] = React.useState(20);
     const [orders, setOrders] = React.useState<WcOrder[]>([]);
+    // Detalhe obtido apenas quando a listagem WooCommerce não traz line_items.
+    const [modelosOnline, setModelosOnline] = React.useState<Record<number, string>>({});
     const [meta, setMeta] = React.useState<OrdersResponse["meta"]>({
         page: 1,
         per_page: 20,
@@ -2755,6 +2807,43 @@ export default function Page() {
     React.useEffect(() => {
         return () => onlineAbortRef.current?.abort();
     }, []);
+
+    // Carrega apenas os modelos dos pedidos online visíveis. Concorrência limitada
+    // para não sobrecarregar o WooCommerce quando a página exibir muitos pedidos.
+    React.useEffect(() => {
+        if (tab !== "finalizadas" || manualAppliedOrigem === "venda_direta") return;
+        const pendentes = orders.filter((order) => {
+            const itens = (order as WcOrder & { line_items?: Array<{ name?: string; quantity?: number }> }).line_items;
+            return !modelosItensOnline(itens) && !Object.prototype.hasOwnProperty.call(modelosOnline, order.id);
+        });
+        if (!pendentes.length) return;
+
+        const controller = new AbortController();
+        let ativo = true;
+        void (async () => {
+            for (let i = 0; i < pendentes.length && ativo; i += 4) {
+                await Promise.all(pendentes.slice(i, i + 4).map(async (order) => {
+                    let modelo = "Modelo não informado";
+                    try {
+                        const res = await fetch(`/api/wc/orders/${order.id}`, {
+                            cache: "default",
+                            signal: controller.signal,
+                        });
+                        if (res.ok) {
+                            const dados: WcOrderFull = await res.json();
+                            modelo = modelosItensOnline(dados.line_items) || modelo;
+                        }
+                    } catch (e: any) {
+                        if (e?.name === "AbortError") return;
+                    }
+                    if (ativo) setModelosOnline((atuais) => ({ ...atuais, [order.id]: modelo }));
+                }));
+            }
+        })();
+        return () => { ativo = false; controller.abort(); };
+        // O cache de nomes é incremental; não deve reiniciar a busca a cada nome recebido.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [orders, tab, manualAppliedOrigem]);
 
     async function openDetail(id: number) {
         setDetail(null);
@@ -2877,6 +2966,8 @@ export default function Page() {
                 dataRaw: order.criado_em || "",
                 dataLabel: formatDate(order.criado_em),
                 cliente: order.solicitante || "—",
+                modelo: modelosCoroaHistorico(order),
+                tipo: tipoCoroaHistorico(order),
                 totalLabel: totalManual(order) > 0 ? dinheiroBRL(totalManual(order)) : "—",
                 statusLabel: manualStatusLabel(order.status),
                 statusClass: manualStatusClass(order.status),
@@ -2906,6 +2997,10 @@ export default function Page() {
                     dataRaw: order.date_created || "",
                     dataLabel: formatDate(order.date_created),
                     cliente: cliente || "—",
+                    modelo: modelosItensOnline(
+                        (order as WcOrder & { line_items?: Array<{ name?: string; quantity?: number }> }).line_items,
+                    ) || modelosOnline[order.id] || "Carregando modelo…",
+                    tipo: null as "natural" | "artificial" | null,
                     totalLabel: formatCurrency(order.total, order.currency || "BRL"),
                     statusLabel:
                         WC_STATUS_OPTIONS.find((item) => item.value === order.status)?.label ||
@@ -2921,7 +3016,7 @@ export default function Page() {
             if (a.sortTime !== b.sortTime) return b.sortTime - a.sortTime;
             return b.key.localeCompare(a.key);
         });
-    }, [manualHistoricoOrders, orders, manualAppliedOrigem]);
+    }, [manualHistoricoOrders, orders, manualAppliedOrigem, modelosOnline]);
 
     const finalizadasLoading = manualLoading || loading;
     const finalizadasError = manualError || error;
@@ -3380,6 +3475,40 @@ export default function Page() {
                             </div>
                         </form>
 
+                        {/* Resumo global: soma coroas (itens), não pedidos, no filtro aplicado.
+                            A API informa inclusive as coroas fora da página atual. */}
+                        <section className="mx-4 mb-3 rounded-lg border bg-card p-3 lg:mx-6" aria-label="Resumo de coroas por tipo">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-medium text-sm">Coroas entregues no período filtrado</div>
+                                <div className="text-xs text-muted-foreground">Quantidades de coroas, não de pedidos</div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                {([
+                                    { titulo: "Naturais", valor: resumoTiposHistorico?.naturais, cor: "text-emerald-700 dark:text-emerald-400" },
+                                    { titulo: "Artificiais", valor: resumoTiposHistorico?.artificiais, cor: "text-violet-700 dark:text-violet-400" },
+                                    { titulo: "Sem classificação", valor: resumoTiposHistorico?.nao_classificadas, cor: "text-amber-700 dark:text-amber-400" },
+                                    { titulo: "Total de coroas", valor: resumoTiposHistorico?.total_coroas, cor: "text-foreground" },
+                                ] as const).map((card) => (
+                                    <div key={card.titulo} className="rounded-md border bg-background px-3 py-2">
+                                        <div className="text-xs text-muted-foreground">{card.titulo}</div>
+                                        <div className={`mt-1 text-2xl font-semibold tabular-nums ${card.cor}`}>
+                                            {manualLoading ? "…" : card.valor == null ? "—" : card.valor.toLocaleString("pt-BR")}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Resumo calculado nos registros do PAI com os filtros aplicados, inclusive em outras páginas.
+                                Pedidos exclusivos do WooCommerce que não estão registrados no PAI não são classificados nem somados.
+                                Registros antigos sem tipo identificado aparecem em “Sem classificação”.
+                            </p>
+                            {!manualLoading && !resumoTiposHistorico && (
+                                <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                                    Resumo indisponível: atualize também o arquivo coroas.php da API.
+                                </p>
+                            )}
+                        </section>
+
                         {/* Finalizadas mobile */}
                         <div className="px-4 pb-6 md:hidden lg:px-6">
                             <div className="space-y-3">
@@ -3397,6 +3526,10 @@ export default function Page() {
                                         <div className="mt-2 text-sm">
                                             <div className="font-medium">{row.cliente}</div>
                                             <div className="mt-1 text-muted-foreground">{row.totalLabel}</div>
+                                            <div className="mt-2 text-sm"><b>Coroa:</b> {row.modelo}</div>
+                                            <div className="mt-1 text-xs text-muted-foreground">
+                                                Tipo: <span className="font-medium">{row.tipo === "natural" ? "Natural" : row.tipo === "artificial" ? "Artificial" : "Não classificado"}</span>
+                                            </div>
                                         </div>
 
                                         <div className="mt-3">
@@ -3472,6 +3605,8 @@ export default function Page() {
                                                 <th className="px-3 py-2 font-medium">Origem</th>
                                                 <th className="px-3 py-2 font-medium">Data</th>
                                                 <th className="px-3 py-2 font-medium">Cliente</th>
+                                                <th className="px-3 py-2 font-medium">Coroa / Modelo</th>
+                                                <th className="px-3 py-2 font-medium">Tipo</th>
                                                 <th className="px-3 py-2 font-medium">Total</th>
                                                 <th className="px-3 py-2 font-medium">Status</th>
                                                 <th className="px-3 py-2 font-medium text-right">Ações</th>
@@ -3484,6 +3619,16 @@ export default function Page() {
                                                     <td className="px-3 py-2 font-medium">{row.origem}</td>
                                                     <td className="px-3 py-2">{row.dataLabel}</td>
                                                     <td className="px-3 py-2">{row.cliente}</td>
+                                                    <td className="max-w-xs px-3 py-2">{row.modelo}</td>
+                                                    <td className="px-3 py-2">
+                                                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${row.tipo === "natural"
+                                                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                                            : row.tipo === "artificial"
+                                                                ? "border-violet-200 bg-violet-50 text-violet-800"
+                                                                : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                                                            {row.tipo === "natural" ? "Natural" : row.tipo === "artificial" ? "Artificial" : "Não informado"}
+                                                        </span>
+                                                    </td>
                                                     <td className="px-3 py-2">{row.totalLabel}</td>
                                                     <td className="px-3 py-2">
                                                         <span className={`rounded-full border px-2 py-0.5 text-xs ${row.statusClass}`}>
@@ -3512,7 +3657,7 @@ export default function Page() {
 
                                             {!finalizadasLoading && finalizadasRows.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                                                    <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
                                                         Nenhum pedido encontrado.
                                                     </td>
                                                 </tr>
