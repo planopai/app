@@ -7,13 +7,18 @@
        ?historico=1&tipo=...&limit=...   (movimentações)
        ?conferencias=1                   (lista de conferências)
        ?conferencia_id=...               (detalhe de uma conferência)
+       ?action=custos_medios_produtos&produto_ids=...  (custo médio móvel,
+                                         em lotes de 180, como a tela de Estoque)
+   - 22/10/2026: valores a custo pelo custo médio móvel (o mesmo da tela de
+     Estoque; sem registro, usa o custo cadastrado) e quadro "Reposição por
+     depósito" na aba Estoque, com as regras de mínimo/máximo por depósito.
    - Produtos, saldos, depósitos, categorias e classificações vêm do
      "init" que a página de estoque já carrega (passados por props).
    - Todos os cálculos (médias, tendência, cobertura, sugestão de compra,
      curva ABC, custos) são feitos no navegador.
    ===================================================================== */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type ID = number;
 
@@ -66,6 +71,13 @@ type ConfDetResp = {
     ok: boolean;
     items?: { qtd_sistema: number; qtd_fisica: number; dif: number }[];
     msg?: string;
+};
+
+type CustoMedioResp = {
+    ok: boolean;
+    rows?: { produto_id: ID; custo_medio: string | number }[];
+    msg?: string;
+    need_login?: 1;
 };
 
 export type PainelGestaoEstoqueProps = {
@@ -404,6 +416,25 @@ type ProdCalc = {
     mensal: number[];
     ultimaSaida: number;
 };
+type SitRepo = "RUPTURA" | "MINIMO" | "ACIMA";
+type RepoRow = {
+    pid: ID;
+    nome: string;
+    cat: string;
+    dep: ID;
+    depNome: string;
+    saldo: number;
+    min: number;
+    max: number;
+    sit: SitRepo;
+    /** Quanto pedir: máximo − saldo; sem máximo, mínimo − saldo. null = não se aplica. */
+    sug: number | null;
+    definirMax: boolean;
+    outros: { nome: string; q: number }[];
+    outrosTotal: number;
+    saidasPeriodo: number;
+    custo: number;
+};
 type SubTab = "GERAL" | "ESTOQUE" | "CONSUMO" | "COMPRAS" | "CUSTOS" | "CONTROLE" | "GUIA";
 
 /* =====================================================================
@@ -490,6 +521,65 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
         carregar();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    /* ---------- custo médio móvel (mesma chamada da tela de Estoque) ---------- */
+    const custoRef = useRef<Map<number, number>>(new Map());
+    const pedidosRef = useRef<Set<number>>(new Set());
+    const [custoMedio, setCustoMedio] = useState<Map<number, number>>(() => new Map());
+    const [custoLoading, setCustoLoading] = useState(false);
+    const [custoErr, setCustoErr] = useState("");
+
+    const idsComMovimento = useMemo(() => {
+        const set = new Set<number>();
+        saldos.forEach((s) => {
+            if (num(s.quantidade) !== 0) set.add(Number(s.produto_id));
+        });
+        hist.SAIDA.forEach((r) => set.add(Number(r.produto_id)));
+        hist.CONFECCAO.forEach((r) => set.add(Number(r.produto_id)));
+        hist.ENTRADA.forEach((r) => set.add(Number(r.produto_id)));
+        return [...set].filter((id) => id > 0).sort((a, b) => a - b);
+    }, [saldos, hist]);
+
+    const pendentesRef = useRef(0);
+    useEffect(() => {
+        const faltantes = idsComMovimento.filter((id) => !pedidosRef.current.has(id));
+        if (!faltantes.length) return;
+        faltantes.forEach((id) => pedidosRef.current.add(id));
+        pendentesRef.current++;
+        setCustoLoading(true);
+        setCustoErr("");
+        (async () => {
+            try {
+                const lotes: number[][] = [];
+                for (let i = 0; i < faltantes.length; i += 180) lotes.push(faltantes.slice(i, i + 180));
+                const resps = await Promise.all(
+                    lotes.map((ids) => apiGet<CustoMedioResp>({ action: "custos_medios_produtos", produto_ids: ids.join(",") }))
+                );
+                for (const r of resps) {
+                    if (r.need_login) throw new Error("Sessão expirada. Entre novamente no sistema.");
+                    if (!r.ok) throw new Error(r.msg || "Falha ao carregar o custo médio móvel.");
+                    for (const row of r.rows || []) {
+                        const id = Number(row.produto_id);
+                        const v = Number(row.custo_medio);
+                        if (id && Number.isFinite(v)) custoRef.current.set(id, Math.max(0, v));
+                    }
+                }
+                setCustoMedio(new Map(custoRef.current));
+            } catch (e: any) {
+                faltantes.forEach((id) => pedidosRef.current.delete(id));
+                setCustoErr(e?.message || "Falha ao carregar o custo médio móvel.");
+            } finally {
+                pendentesRef.current--;
+                if (pendentesRef.current <= 0) setCustoLoading(false);
+            }
+        })();
+    }, [idsComMovimento]);
+
+    /** Custo usado no painel: custo médio móvel; sem registro, o custo cadastrado. */
+    const custoDe = (p: PProduto) => {
+        const v = custoMedio.get(Number(p.id));
+        return v !== undefined ? v : num(p.preco_custo);
+    };
 
     /* ---------- dicionários ---------- */
     const catNome = useMemo(() => new Map(categorias.map((c) => [Number(c.id), c.nome])), [categorias]);
@@ -633,7 +723,7 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
             const mP = (qP / periodo.dias) * 30;
             const mR = (qR / periodo.recDias) * 30;
             const mPrev = temPrev ? (qPrev / periodo.recDias) * 30 : NaN;
-            const custo = num(p.preco_custo);
+            const custo = custoDe(p);
             out.push({
                 id,
                 nome: (p.nome || "").trim(),
@@ -660,7 +750,7 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
         }
         return out;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [produtos, saldos, consumos, periodo, depId, clsId, catId, cobertura.consumoDesde]);
+    }, [produtos, saldos, consumos, periodo, depId, clsId, catId, cobertura.consumoDesde, custoMedio]);
 
     const cobDias = (r: ProdCalc) => (r.pond > 0 ? Math.max(0, r.saldo) / (r.pond / 30) : Infinity);
     const comConsumo = (r: ProdCalc) => Math.max(r.mP, r.mR) >= 1;
@@ -709,6 +799,69 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
         }
         return m;
     }, [consumos, periodo]);
+
+    /* ---------- reposição por depósito (mínimo e máximo valem por depósito) ----------
+       Ruptura: mínimo definido e saldo ≤ 0. No mínimo: saldo ≤ mínimo (igual ao mínimo já conta).
+       Acima do máximo: máximo definido e saldo > máximo. */
+    const reposicao = useMemo<RepoRow[]>(() => {
+        const saidasPorProd = new Map<number, number>();
+        for (const c of consumos) {
+            if (c.t < periodo.a || c.t > periodo.b) continue;
+            saidasPorProd.set(c.pid, (saidasPorProd.get(c.pid) || 0) + c.q);
+        }
+        const porProd = new Map<number, PSaldo[]>();
+        for (const s of saldos) {
+            const arr = porProd.get(Number(s.produto_id)) || [];
+            arr.push(s);
+            porProd.set(Number(s.produto_id), arr);
+        }
+        const out: RepoRow[] = [];
+        for (const s of saldos) {
+            if (depId && Number(s.deposito_id) !== depId) continue;
+            const p = prodById.get(Number(s.produto_id));
+            if (!noFiltro(p)) continue;
+            const saldo = num(s.quantidade);
+            const min = num(s.minimo);
+            const max = num(s.maximo);
+            let sit: SitRepo | null = null;
+            if (min > 0 && saldo <= 0) sit = "RUPTURA";
+            else if (min > 0 && saldo <= min) sit = "MINIMO";
+            else if (max > 0 && saldo > max) sit = "ACIMA";
+            if (!sit) continue;
+            let sug: number | null = null;
+            let definirMax = false;
+            if (sit !== "ACIMA") {
+                const alvo = max > 0 ? max : min;
+                const q = Math.ceil(alvo - saldo);
+                if (q > 0) sug = q;
+                else if (!(max > 0)) definirMax = true;
+            }
+            const outros = (porProd.get(Number(s.produto_id)) || [])
+                .filter((o) => Number(o.deposito_id) !== Number(s.deposito_id) && num(o.quantidade) > 0)
+                .map((o) => ({ nome: depNome.get(Number(o.deposito_id)) || `Depósito ${o.deposito_id}`, q: num(o.quantidade) }))
+                .sort((a, b) => b.q - a.q);
+            out.push({
+                pid: Number(s.produto_id),
+                nome: (p!.nome || "").trim(),
+                cat: nomeCat(p!),
+                dep: Number(s.deposito_id),
+                depNome: depNome.get(Number(s.deposito_id)) || `Depósito ${s.deposito_id}`,
+                saldo,
+                min,
+                max,
+                sit,
+                sug,
+                definirMax,
+                outros,
+                outrosTotal: outros.reduce((a, o) => a + o.q, 0),
+                saidasPeriodo: saidasPorProd.get(Number(s.produto_id)) || 0,
+                custo: custoDe(p!),
+            });
+        }
+        const ordemSit: Record<SitRepo, number> = { RUPTURA: 0, MINIMO: 1, ACIMA: 2 };
+        return out.sort((a, b) => ordemSit[a.sit] - ordemSit[b.sit] || b.saidasPeriodo - a.saidasPeriodo || a.nome.localeCompare(b.nome));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [saldos, consumos, periodo, depId, clsId, catId, prodById, depNome, custoMedio]);
 
     const periodoLabel = `${fmtDay(periodo.a)} a ${fmtDay(periodo.b)} · ${periodo.dias} dias`;
 
@@ -785,6 +938,7 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
                         onChange={(v) => preset(Number(v))}
                     />
                     <Pill>Período: {periodoLabel}</Pill>
+                    {custoLoading ? <Pill tom="info">Carregando custo médio…</Pill> : null}
                     {Number.isFinite(carregadoEm) ? <Pill>Atualizado às {new Date(carregadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</Pill> : null}
                     <button type="button" onClick={carregar} disabled={loading} className={`ml-auto ${BTN_SEC}`} aria-label="Atualizar dados" title="Atualizar dados">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={loading ? "animate-spin" : ""}>
@@ -799,6 +953,11 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
                         O histórico devolvido pela API começa em <b>{fmtDay(cobertura.consumoDesde)}</b>. As médias e a tendência usam só esse trecho
                         ({periodo.dias} dias). Para analisar períodos maiores, o <b>materiais_gerais.php</b> precisa devolver mais registros no
                         histórico (hoje ele limita a quantidade por consulta).
+                    </div>
+                ) : null}
+                {custoErr ? (
+                    <div className="mt-3 rounded-2xl border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-xs leading-5 text-[#313C55] dark:bg-[#F2CB3F]/16 dark:text-white">
+                        Não foi possível carregar o custo médio móvel ({custoErr}). Os valores a custo estão usando o custo cadastrado do produto.
                     </div>
                 ) : null}
                 {err ? <div className="mt-3 rounded-2xl border border-[#B42318] bg-[#FDECEA] p-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{err}</div> : null}
@@ -829,7 +988,7 @@ export default function PainelGestaoEstoque({ produtos, saldos, depositos, categ
             ) : null}
 
             {sub === "GERAL" ? <AbaGeral tot={tot} calc={calc} cobDias={cobDias} saidasMes={saidasMes} meses={periodo.meses} confs={confs} /> : null}
-            {sub === "ESTOQUE" ? <AbaEstoque calc={calc} tot={tot} saldos={saldos} depNome={depNome} depId={depId} cobDias={cobDias} hist={hist} consumos={consumos} periodo={periodo} prodIds={new Set(calc.map((r) => r.id))} /> : null}
+            {sub === "ESTOQUE" ? <AbaEstoque calc={calc} tot={tot} saldos={saldos} depNome={depNome} depId={depId} cobDias={cobDias} hist={hist} consumos={consumos} periodo={periodo} prodIds={new Set(calc.map((r) => r.id))} reposicao={reposicao} periodoDias={periodo.dias} /> : null}
             {sub === "CONSUMO" ? (
                 <AbaConsumo calc={calc} comConsumo={comConsumo} saidasMes={saidasMes} meses={periodo.meses} atendMes={atendMes} consumos={consumos} periodo={periodo} depId={depId} />
             ) : null}
@@ -990,6 +1149,8 @@ function AbaEstoque({
     consumos,
     periodo,
     prodIds,
+    reposicao,
+    periodoDias,
 }: {
     calc: ProdCalc[];
     tot: any;
@@ -1001,6 +1162,8 @@ function AbaEstoque({
     consumos: Consumo[];
     periodo: { a: number; b: number; meses: string[] };
     prodIds: Set<number>;
+    reposicao: RepoRow[];
+    periodoDias: number;
 }) {
     const porCat = new Map<string, { np: number; un: number; v: number; vv: number; parado: number; cm: number }>();
     calc.forEach((r) => {
@@ -1042,7 +1205,6 @@ function AbaEstoque({
 
     const parados = [...tot.parado].sort((a: ProdCalc, b: ProdCalc) => b.valor - a.valor);
     const excesso = calc.filter((r) => r.pond > 0 && cobDias(r) > 180 && r.valor > 150).sort((a, b) => b.valor - a.valor);
-    const abaixo = calc.filter((r) => r.depsAbaixo > 0).sort((a, b) => cobDias(a) - cobDias(b));
 
     return (
         <div className="space-y-4">
@@ -1152,26 +1314,149 @@ function AbaEstoque({
                 </Card>
             </div>
 
-            <Card className="space-y-3 p-4">
-                <Titulo t="Abaixo do mínimo cadastrado" s="Depósitos com saldo, mas abaixo do mínimo definido no cadastro" />
-                <Tabela head={["Produto", "Categoria", "Saldo total", "Mínimo (depósitos com saldo)", "Consumo/mês", "Cobertura"]} alinhar={["l", "l", "r", "r", "r", "r"]}>
-                    {abaixo.length ? (
-                        abaixo.map((r) => (
-                            <tr key={r.id}>
-                                <td className={tdL}>{r.nome}</td>
-                                <td className={`${tdL} text-[#7A8396] dark:text-[#8893AA]`}>{r.cat}</td>
-                                <td className={tdR}>{nf(r.saldo)}</td>
-                                <td className={tdR}>{nf(r.minimoComSaldo)}</td>
-                                <td className={tdR}>{nf(r.pond, 1)}</td>
-                                <td className={tdR}>{Number.isFinite(cobDias(r)) ? `${nf(cobDias(r))} d` : "sem consumo"}</td>
-                            </tr>
-                        ))
-                    ) : (
-                        <Vazio cols={6} />
-                    )}
-                </Tabela>
-            </Card>
+            <QuadroReposicao rows={reposicao} periodoDias={periodoDias} />
         </div>
+    );
+}
+
+/* ---------- Reposição por depósito ---------- */
+function QuadroReposicao({ rows, periodoDias }: { rows: RepoRow[]; periodoDias: number }) {
+    const [sit, setSit] = useState<"REPOR" | SitRepo>("REPOR");
+    const [soGiro, setSoGiro] = useState(true);
+    const [busca, setBusca] = useState("");
+
+    const base = soGiro ? rows.filter((r) => r.saidasPeriodo > 0) : rows;
+    const cont = {
+        REPOR: base.filter((r) => r.sit !== "ACIMA").length,
+        RUPTURA: base.filter((r) => r.sit === "RUPTURA").length,
+        MINIMO: base.filter((r) => r.sit === "MINIMO").length,
+        ACIMA: base.filter((r) => r.sit === "ACIMA").length,
+    };
+    const q = busca.trim().toLocaleLowerCase("pt-BR");
+    const lista = base
+        .filter((r) => (sit === "REPOR" ? r.sit !== "ACIMA" : r.sit === sit))
+        .filter((r) => !q || r.nome.toLocaleLowerCase("pt-BR").includes(q) || r.depNome.toLocaleLowerCase("pt-BR").includes(q));
+    const valorSug = lista.reduce((s, r) => s + (r.sug || 0) * r.custo, 0);
+
+    function baixarCsv() {
+        const esc = (v: any) => {
+            const s = String(v ?? "");
+            return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const rot: Record<SitRepo, string> = { RUPTURA: "Ruptura", MINIMO: "No mínimo", ACIMA: "Acima do máximo" };
+        const linhas = [
+            ["Produto", "Categoria", "Depósito", "Situação", "Saldo", "Mínimo", "Máximo", "Sugestão", "Em outros depósitos", "Saídas no período", "Custo médio"].join(";"),
+            ...lista.map((r) =>
+                [
+                    r.nome,
+                    r.cat,
+                    r.depNome,
+                    rot[r.sit],
+                    nf(r.saldo),
+                    r.min ? nf(r.min) : "",
+                    r.max ? nf(r.max) : "",
+                    r.sug ? r.sug : r.definirMax ? "definir máx." : "",
+                    r.outros.map((o) => `${o.nome}: ${nf(o.q)}`).join(" | "),
+                    nf(r.saidasPeriodo),
+                    nf(r.custo, 2),
+                ]
+                    .map(esc)
+                    .join(";")
+            ),
+        ];
+        const blob = new Blob(["﻿" + linhas.join("\n")], { type: "text/csv;charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `reposicao-por-deposito-${isoDay(new Date())}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    return (
+        <Card className="space-y-3 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+                <Titulo
+                    t="Reposição por depósito"
+                    s="Mínimo e máximo do próprio depósito · sugestão = máximo − saldo (sem máximo: mínimo − saldo)"
+                />
+                <button type="button" onClick={baixarCsv} disabled={!lista.length} className={BTN_SEC}>
+                    Baixar CSV
+                </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <Seg
+                    value={sit}
+                    onChange={(v) => setSit(v as "REPOR" | SitRepo)}
+                    options={[
+                        { v: "REPOR", l: `Repor (${cont.REPOR})` },
+                        { v: "RUPTURA", l: `Ruptura (${cont.RUPTURA})` },
+                        { v: "MINIMO", l: `No mínimo (${cont.MINIMO})` },
+                        { v: "ACIMA", l: `Acima do máx. (${cont.ACIMA})` },
+                    ]}
+                />
+                <Seg
+                    value={soGiro ? 1 : 0}
+                    onChange={(v) => setSoGiro(Number(v) === 1)}
+                    options={[
+                        { v: 1, l: `Com saída em ${periodoDias} dias` },
+                        { v: 0, l: "Todos" },
+                    ]}
+                />
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto ou depósito" className={`${CAMPO} sm:w-64`} />
+            </div>
+            {sit !== "ACIMA" && valorSug > 0 ? (
+                <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">
+                    Sugestões somam {brl(valorSug)} pelo custo médio. Antes de comprar, veja a coluna “Em outros depósitos”: pode bastar uma transferência.
+                </p>
+            ) : null}
+            <Tabela
+                head={["Produto", "Depósito", "Saldo", "Mín.", "Máx.", "Situação", "Sugestão", "Em outros depósitos"]}
+                alinhar={["l", "l", "r", "r", "r", "l", "r", "l"]}
+            >
+                {lista.length ? (
+                    lista.slice(0, 150).map((r) => (
+                        <tr key={`${r.pid}-${r.dep}`}>
+                            <td className={tdL}>
+                                {r.nome}
+                                <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">
+                                    {r.cat}
+                                    {r.saidasPeriodo ? ` · ${nf(r.saidasPeriodo)} saída${r.saidasPeriodo > 1 ? "s" : ""} no período` : " · sem saída no período"}
+                                </div>
+                            </td>
+                            <td className={tdL}>{r.depNome}</td>
+                            <td className={tdR}>{nf(r.saldo)}</td>
+                            <td className={tdR}>{r.min ? nf(r.min) : "—"}</td>
+                            <td className={tdR}>{r.max ? nf(r.max) : "—"}</td>
+                            <td className={tdL}>
+                                {r.sit === "RUPTURA" ? (
+                                    <Pill tom="critico">Ruptura</Pill>
+                                ) : r.sit === "MINIMO" ? (
+                                    <Pill tom="atencao">No mínimo</Pill>
+                                ) : (
+                                    <Pill tom="info">Acima do máx.</Pill>
+                                )}
+                            </td>
+                            <td className={`${tdR} font-bold`}>
+                                {r.sug ? nf(r.sug) : r.definirMax ? <span className="text-xs font-semibold text-[#7A8396] dark:text-[#8893AA]">definir máx.</span> : "—"}
+                            </td>
+                            <td className={`${tdL} text-xs`}>
+                                {r.outros.length ? (
+                                    <span title={r.outros.map((o) => `${o.nome}: ${nf(o.q)}`).join("\n")}>
+                                        <b>{nf(r.outrosTotal)}</b> · {r.outros.slice(0, 2).map((o) => `${o.nome} (${nf(o.q)})`).join(", ")}
+                                        {r.outros.length > 2 ? ` +${r.outros.length - 2}` : ""}
+                                    </span>
+                                ) : (
+                                    <span className="text-[#7A8396] dark:text-[#8893AA]">—</span>
+                                )}
+                            </td>
+                        </tr>
+                    ))
+                ) : (
+                    <Vazio cols={8} txt="Nenhuma posição nessa situação com os filtros atuais." />
+                )}
+            </Tabela>
+            {lista.length > 150 ? <p className="text-xs text-[#7A8396] dark:text-[#8893AA]">Mostrando 150 de {lista.length}. Use a busca, os filtros ou baixe o CSV para ver todas.</p> : null}
+        </Card>
     );
 }
 
@@ -1556,7 +1841,7 @@ function AbaCompras({ calc }: { calc: ProdCalc[] }) {
             ) : null}
 
             {/* 14/10/2026: no celular fica acima da barra de baixo (--pai-barra-celular, globals.css); no computador continua a 0,5rem do fundo. */}
-            <div className="sticky bottom-[calc(var(--pai-barra-celular,0px)+0.5rem)] z-10flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] p-3 shadow-lg">
+            <div className="sticky bottom-[calc(var(--pai-barra-celular,0px)+0.5rem)] z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E3E8F0] dark:border-white/12 bg-[#FFFFFF] dark:bg-[#232B3F] p-3 shadow-lg">
                 <div>
                     <div className="text-xs text-[#7A8396] dark:text-[#8893AA]">Selecionado para compra</div>
                     <div className="text-lg font-black tabular-nums text-[#313C55] dark:text-white">
@@ -1642,7 +1927,7 @@ function AbaCustos({
     return (
         <div className="space-y-4">
             <div className="rounded-2xl border border-[#A9BED6] dark:border-[#3D6A99]/60 bg-[#E9EFF6] dark:bg-[#3D6A99]/20 p-3 text-xs leading-5 text-[#313C55] dark:text-white">
-                O consumo usa o custo gravado na saída quando existe; senão, o custo cadastrado do produto. Compras usam o custo total lançado na
+                O consumo usa o custo gravado na saída quando existe; senão, o custo médio móvel do produto. Compras usam o custo total lançado na
                 entrada. Meses sem custo lançado aparecem zerados em compras.
             </div>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -1753,7 +2038,7 @@ function AbaControle({
                         <td className={tdR}>
                             {nf(semCusto)} de {nf(hist.SAIDA.length)}
                         </td>
-                        <td className={`${tdL} text-[#5B6478] dark:text-[#AEB9CF]`}>Custo por atendimento usa o custo cadastrado como aproximação</td>
+                        <td className={`${tdL} text-[#5B6478] dark:text-[#AEB9CF]`}>Custo por atendimento usa o custo médio móvel como aproximação</td>
                     </tr>
                     <tr>
                         <td className={tdL}>Ajustes manuais</td>
@@ -1783,6 +2068,8 @@ function AbaGuia({ recDias }: { recDias: number }) {
         ["Regularidade", "Variação entre os meses do período (desvio ÷ média): estável até 35%, variável até 75%, irregular acima."],
         ["Sugestão de compra", "Consumo diário × dias de cobertura + margem − saldo. A margem usa a variação mensal: moderada ~85% dos meses, alta ~95%."],
         ["Cobertura e giro", "Cobertura = quanto o estoque dura no ritmo atual. Giro anual = consumo mensal a custo × 12 ÷ valor em estoque."],
+        ["Custo", "Custo médio móvel do produto, o mesmo da tela de Estoque. Sem registro de custo médio, usa o custo cadastrado."],
+        ["Reposição por depósito", "Mínimo e máximo de cada depósito. Ruptura: mínimo definido e saldo ≤ 0. No mínimo: saldo ≤ mínimo. Sugestão: máximo − saldo; sem máximo, mínimo − saldo (saldo igual ao mínimo e sem máximo: definir máx.)."],
         ["Curva ABC", "A = itens que somam 80% do valor; B = os 15% seguintes; C = os últimos 5%."],
         ["O que conta como consumo", "Saídas (exceto lançamentos de teste) e insumos usados em confecção. Transferências e ajustes não contam."],
     ];
