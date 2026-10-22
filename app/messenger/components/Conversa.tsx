@@ -235,6 +235,32 @@ function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
     );
 }
 
+/** 👍/👎 do atendente na mensagem da Aurora (entra na análise do Aprendizado da Aurora). */
+function AvaliarAurora({ mensagemId }: { mensagemId: number }) {
+    const [feito, setFeito] = useState<"" | "bom" | "ruim">("");
+    const enviar = async (util: boolean) => {
+        let motivo = "";
+        if (!util) {
+            const r = window.prompt("O que a Aurora deveria ter feito? (opcional, ajuda no aprendizado)");
+            if (r === null) return;
+            motivo = r;
+        }
+        try {
+            await msgPost("ia_feedback", { mensagem_id: mensagemId, util, motivo });
+            setFeito(util ? "bom" : "ruim");
+        } catch (e: any) {
+            window.alert(e.message);
+        }
+    };
+    if (feito) return <span className="text-[11.5px] font-bold text-[#4C9A2A]">{feito === "bom" ? "👍 obrigado" : "👎 anotado"}</span>;
+    return (
+        <span className="flex gap-1">
+            <button type="button" onClick={(e) => { e.stopPropagation(); enviar(true); }} title="A Aurora acertou" aria-label="A Aurora acertou" className="rounded px-1 opacity-60 hover:bg-black/10 hover:opacity-100">👍</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); enviar(false); }} title="A Aurora errou" aria-label="A Aurora errou" className="rounded px-1 opacity-60 hover:bg-black/10 hover:opacity-100">👎</button>
+        </span>
+    );
+}
+
 function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque, onFixar, fixada }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null; onFixar?: (m: Mensagem) => void; fixada?: boolean }) {
     const [puxar, setPuxar] = useState(0);
     const [menu, setMenu] = useState(false);
@@ -317,7 +343,12 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                 </span>
             )}
             <div className={`px-3 pb-1.5 pt-1.5 text-[17px] leading-snug text-[#1F2638] md:text-[15.5px] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${cantos} ${m.interna ? "border border-dashed border-[#C9A21E] bg-[#FFF4C2] dark:border-[#F2CB3F]/60 dark:bg-[#4A3F12] dark:text-white" : minha ? "bg-[#E3EFC0] dark:bg-[#3D6A99] dark:text-white" : "bg-white dark:bg-[#232B3F] dark:text-white"}`}>
-                {automatica && !m.interna && <div className="mb-0.5 text-[12.5px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">🤖 Mensagem automática</div>}
+                {automatica && !m.interna && (
+                    <div className="mb-0.5 flex items-center gap-2 text-[12.5px] font-extrabold text-[#4A5468] dark:text-[#C9D1DE]">
+                        <span className="flex-1">🤖 Mensagem automática</span>
+                        <AvaliarAurora mensagemId={m.id} />
+                    </div>
+                )}
                 {m.interna && <div className="mb-0.5 flex items-center gap-1 text-[12.5px] font-extrabold uppercase tracking-wide text-[#8A6A00] dark:text-[#F7E39A]"><Icone nome="nota" className="h-3.5 w-3.5" />Nota interna · só a equipe vê{!minha && m.autor_nome ? ` · ${m.autor_nome.split(" ")[0]}` : ""}</div>}
                 {temMenu && (
                     <button type="button" onClick={() => setMenu((v) => !v)} className={`absolute right-1 top-1 z-10 hidden h-7 w-7 items-center justify-center rounded-full bg-black/10 text-[#313C55] md:group-hover:flex dark:bg-white/15 dark:text-white ${menu ? "md:flex" : ""}`} aria-label="Opções da mensagem" aria-expanded={menu}>
