@@ -37,7 +37,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  viewportFit: "cover",
+  /* 22/10/2026: SEM viewportFit "cover". Com ele o Android desenha o app por baixo da barra de status
+     (o título encostava na hora/bateria) e sobrava faixa vazia embaixo da barra de baixo. */
   themeColor: "#313C55",
 };
 
