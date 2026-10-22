@@ -21,7 +21,6 @@ const TABLES: TableCfg[] = [
   { table: "permissoes", mode: "snapshot", conflict: "id" },
   { table: "usuarios", mode: "snapshot", conflict: "id" },
   { table: "est_deposito", mode: "snapshot", conflict: "id" },
-
   { table: "est_categoria", mode: "timestamp", conflict: "id" },
   { table: "est_produto", mode: "timestamp", conflict: "id" },
   { table: "est_saldo", mode: "timestamp", conflict: "id" },
@@ -30,7 +29,6 @@ const TABLES: TableCfg[] = [
   { table: "coroas_itens", mode: "timestamp", conflict: "id" },
   { table: "homenagens", mode: "timestamp", conflict: "id" },
   { table: "os_ordens", mode: "timestamp", conflict: "id" },
-
   { table: "historico_sepultamentos", mode: "append_window", conflict: "id" },
   { table: "est_movimento", mode: "append_window", conflict: "id" },
 ];
@@ -43,16 +41,12 @@ function mysqlDateFromIso(value: string | null | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return null;
-
-  // HostGator opera em UTC-03. Converte cursor timestamptz do Supabase
-  // para o DATETIME local do MySQL.
   const local = new Date(d.getTime() - 3 * 60 * 60 * 1000);
   return local.toISOString().slice(0, 19).replace("T", " ");
 }
 
 function pgDateFromMysql(value: string | null | undefined): string | null {
   if (!value) return null;
-  // DATETIME HostGator interpretado como UTC-03.
   const s = value.replace(" ", "T");
   const d = new Date(`${s}-03:00`);
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
@@ -115,7 +109,7 @@ async function pullBatch(cfg: TableCfg, state: any) {
       cache: "no-store",
       headers: {
         "X-PAI-SYNC-KEY": SYNC_KEY,
-        "Accept": "application/json",
+        Accept: "application/json",
       },
       signal: controller.signal,
     });
@@ -123,9 +117,7 @@ async function pullBatch(cfg: TableCfg, state: any) {
     const body = await r.json().catch(() => null);
 
     if (!r.ok || !body?.ok) {
-      throw new Error(
-        `HostGator ${cfg.table}: ${body?.error ?? `HTTP ${r.status}`}`,
-      );
+      throw new Error(`HostGator ${cfg.table}: ${body?.error ?? `HTTP ${r.status}`}`);
     }
 
     return body;
@@ -135,14 +127,18 @@ async function pullBatch(cfg: TableCfg, state: any) {
 }
 
 function sanitizeRows(table: string, rows: any[]) {
-  if (table !== "usuarios") return rows;
-
-  // Defesa em profundidade. O PHP já não envia senha, mas removemos caso
-  // uma versão futura do endpoint seja alterada incorretamente.
   return rows.map((row) => {
     const copy = { ...row };
-    delete copy.senha;
-    delete copy.password;
+
+    if (table === "usuarios") {
+      delete copy.senha;
+      delete copy.password;
+    }
+
+    if (table === "cargo_paginas") {
+      delete copy.id;
+    }
+
     return copy;
   });
 }
@@ -152,9 +148,9 @@ async function upsertRows(cfg: TableCfg, rows: any[]) {
 
   const clean = sanitizeRows(cfg.table, rows);
 
-  // Lotes pequenos para evitar payloads grandes do PostgREST.
   for (let i = 0; i < clean.length; i += 100) {
     const part = clean.slice(i, i + 100);
+
     const { error } = await supabase
       .schema("pai")
       .from(cfg.table)
@@ -163,9 +159,7 @@ async function upsertRows(cfg: TableCfg, rows: any[]) {
         ignoreDuplicates: false,
       });
 
-    if (error) {
-      throw new Error(`upsert ${cfg.table}: ${error.message}`);
-    }
+    if (error) throw new Error(`upsert ${cfg.table}: ${error.message}`);
   }
 }
 
@@ -196,14 +190,11 @@ async function syncTable(cfg: TableCfg) {
   let total = 0;
   let batches = 0;
 
-  // Limite defensivo por execução. Próximo cron continua do cursor.
   for (let pass = 0; pass < 8; pass++) {
     const batch = await pullBatch(cfg, state);
     const rows = Array.isArray(batch.rows) ? batch.rows : [];
 
     await upsertRows(cfg, rows);
-
-    // Cursor só avança depois de todos os upserts deste lote.
     await updateState(cfg.table, Number(state.id), batch.next);
 
     total += rows.length;
@@ -212,10 +203,9 @@ async function syncTable(cfg: TableCfg) {
     state = {
       ...state,
       ultimo_id: batch?.next?.id ?? state.ultimo_id,
-      ultimo_updated_at:
-        batch?.next?.updated_at
-          ? pgDateFromMysql(String(batch.next.updated_at))
-          : state.ultimo_updated_at,
+      ultimo_updated_at: batch?.next?.updated_at
+        ? pgDateFromMysql(String(batch.next.updated_at))
+        : state.ultimo_updated_at,
     };
 
     if (!batch.has_more || rows.length === 0 || cfg.mode === "snapshot") break;
@@ -226,10 +216,9 @@ async function syncTable(cfg: TableCfg) {
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization") ?? "";
-  const supplied =
-    auth.startsWith("Bearer ")
-      ? auth.slice(7)
-      : request.headers.get("x-pai-sync-trigger") ?? "";
+  const supplied = auth.startsWith("Bearer ")
+    ? auth.slice(7)
+    : request.headers.get("x-pai-sync-trigger") ?? "";
 
   if (!TRIGGER_KEY || supplied !== TRIGGER_KEY) return unauthorized();
 
@@ -268,8 +257,6 @@ export async function GET(request: NextRequest) {
   try {
     for (const cfg of TABLES) {
       results.push(await syncTable(cfg));
-
-      // Não deixa uma execução ocupar a função por tempo demais.
       if (Date.now() - started > 50_000) break;
     }
 
