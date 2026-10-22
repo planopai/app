@@ -3310,7 +3310,7 @@ export default function AuroraPage() {
 
     return (
         <div className="flex min-h-[calc(100dvh-var(--header-height,0px))] flex-col bg-background text-foreground">
-            <header className="sticky top-[var(--header-height,0px)] z-30 border-b border-border/80 bg-background/90 backdrop-blur-xl">
+            <header className="sticky top-0 lg:top-[var(--header-height,0px)] z-30 border-b border-border/80 bg-background/90 backdrop-blur-xl">
                 <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
                     <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white">
