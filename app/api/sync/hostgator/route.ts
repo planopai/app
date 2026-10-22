@@ -17,7 +17,7 @@ type TableCfg = {
 
 const TABLES: TableCfg[] = [
   { table: "cargos", mode: "snapshot", conflict: "id" },
-  { table: "cargo_paginas", mode: "snapshot", conflict: "id" },
+  { table: "cargo_paginas", mode: "snapshot", conflict: "cargo_id,pagina" },
   { table: "permissoes", mode: "snapshot", conflict: "id" },
   { table: "usuarios", mode: "snapshot", conflict: "id" },
   { table: "est_deposito", mode: "snapshot", conflict: "id" },
