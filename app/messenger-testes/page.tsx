@@ -141,6 +141,33 @@ function Cenarios() {
         }
         setRodando(null);
     };
+    const [copiado, setCopiado] = useState(false);
+    const copiarRelatorio = async () => {
+        const linhas: string[] = [];
+        for (const r of daRodada) {
+            linhas.push(`### ${r.titulo} — nota ${r.nota ?? "—"} — ${r.aprovado ? "APROVADO" : "REPROVADO"}`);
+            if (r.avaliacao?.resumo) linhas.push(`Resumo: ${r.avaliacao.resumo}`);
+            for (const f of r.avaliacao?.falhas || []) linhas.push(`- Falha: ${f.regra} | “${f.trecho}”${f.sugestao ? ` | Sugestão: ${f.sugestao}` : ""}`);
+            if (!r.aprovado) {
+                linhas.push("Conversa:");
+                for (const l of r.conversa || []) if (l.quem === "cliente" || l.quem === "aurora") linhas.push(`${l.quem === "cliente" ? "CLIENTE" : "AURORA"}: ${l.texto.replace(/\n+/g, " / ")}`);
+            }
+            linhas.push("");
+        }
+        const texto = `Testes da Aurora — rodada ${ultimaRodada}\n\n${linhas.join("\n")}`;
+        try {
+            await navigator.clipboard.writeText(texto);
+        } catch {
+            const t = document.createElement("textarea");
+            t.value = texto;
+            document.body.appendChild(t);
+            t.select();
+            document.execCommand("copy");
+            t.remove();
+        }
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 3000);
+    };
     const ultimaRodada = resultados[0]?.rodada;
     const daRodada = resultados.filter((r) => r.rodada === ultimaRodada);
     const aprovados = daRodada.filter((r) => r.aprovado).length;
@@ -168,7 +195,8 @@ function Cenarios() {
             )}
             {daRodada.length > 0 && (
                 <section className={cartao}>
-                    <div className="mb-2 flex flex-wrap items-baseline gap-2"><span className={`${rotulo} flex-1`}>Última rodada</span><span className="text-[14px] font-extrabold">{aprovados} de {daRodada.length} aprovados · média {(daRodada.reduce((t, r) => t + (r.nota || 0), 0) / daRodada.length).toFixed(1)}</span></div>
+                    <div className="mb-2 flex flex-wrap items-baseline gap-2"><span className={`${rotulo} flex-1`}>Última rodada</span><span className="text-[14px] font-extrabold">{aprovados} de {daRodada.length} aprovados · média {(daRodada.reduce((t, r) => t + (r.nota || 0), 0) / daRodada.length).toFixed(1)}</span>
+                        <button type="button" onClick={copiarRelatorio} className="h-9 rounded-xl border border-[#C9D1DE] px-3 text-[13.5px] font-extrabold dark:border-white/25">{copiado ? "✓ Copiado" : "Copiar relatório"}</button></div>
                     {(anteriores ? resultados : daRodada).map((r) => (
                         <div key={r.id} className="border-t border-[#EEF0F3] py-3 first:border-0 dark:border-white/10">
                             <button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => setAberto(aberto === r.id ? null : r.id)}>
@@ -201,7 +229,9 @@ function Cenarios() {
 export default function TestesAuroraPage() {
     const [aba, setAba] = useState<"conversar" | "cenarios">("conversar");
     return (
-        <div className="w-full min-w-0 max-w-full overflow-x-hidden p-4 text-[#313C55] md:p-6 dark:text-white">
+        // contain:inline-size — a largura da página vem da área do app, não do conteúdo (textos longos e linhas
+        // "truncate" faziam a página ficar mais larga que a tela e cortar a direita)
+        <div className="w-full min-w-0 max-w-full overflow-x-hidden p-4 text-[#313C55] [contain:inline-size] md:p-6 dark:text-white">
             <div className="mx-auto flex w-full min-w-0 max-w-[1280px] flex-col gap-4">
                 <div>
                     <h1 className="m-0 text-2xl font-extrabold md:text-[30px]">🤖 Testes da Aurora</h1>
