@@ -58,6 +58,7 @@ function Simulador() {
         setTexto("");
         try {
             const r = await msgPost("ia_sim_enviar", { texto: t, sessao: "manual", contrato, anuncio });
+            if (!r?.dados) throw new Error("O servidor não devolveu a resposta da Aurora. Tente de novo; se repetir, me mande o print.");
             setLinhas(r.dados.conversa);
         } catch (e: any) {
             setErro(e.message);
@@ -123,6 +124,7 @@ function Cenarios() {
             try {
                 for (let i = 0; i <= cen.max; i++) {
                     const r = await msgPost("ia_cenario_passo", { cenario: id, rodada });
+                    if (!r?.dados) throw new Error("o servidor não devolveu a resposta");
                     setRodando({ cenario: cen.titulo, linhas: r.dados.conversa });
                     if (r.dados.fim) break;
                 }
