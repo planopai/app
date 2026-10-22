@@ -19,19 +19,20 @@ const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-whi
 const rotulo = "text-[12.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
 
 function Conversa({ linhas, altura = "h-[520px]" }: { linhas: Linha[]; altura?: string }) {
-    const fim = useRef<HTMLDivElement>(null);
-    // chaves no efeito: no Chrome novo o scrollIntoView devolve uma Promise, e o React tentava usá-la como limpeza
+    // rola só a caixa da conversa até o fim (scrollIntoView rolava a página inteira e deslocava a tela para os lados)
+    const caixa = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        fim.current?.scrollIntoView({ block: "end" });
+        const el = caixa.current;
+        if (el) el.scrollTop = el.scrollHeight;
     }, [linhas.length]);
     return (
-        <div className={`${altura} overflow-y-auto rounded-xl bg-[#EFEAE2] p-3 dark:bg-[#1C2334]`}>
+        <div ref={caixa} className={`${altura} min-w-0 overflow-y-auto overflow-x-hidden rounded-xl bg-[#EFEAE2] p-3 dark:bg-[#1C2334]`}>
             <div className="flex flex-col gap-1.5">
                 {linhas.map((l, i) =>
                     l.quem === "sistema" ? (
                         <div key={i} className="self-center rounded-lg bg-white/90 px-3 py-1 text-center text-[12.5px] font-bold text-[#4A5468] dark:bg-white/10 dark:text-[#C9D1DE]">{l.texto}</div>
                     ) : l.quem === "nota" ? (
-                        <div key={i} className="max-w-[90%] self-end whitespace-pre-wrap rounded-xl border border-dashed border-[#C9A21E] bg-[#FFF4C2] px-3 py-2 text-[13px] text-[#4A3B00]"><b className="block text-[11px] tracking-wider">NOTA INTERNA</b>{l.texto}</div>
+                        <div key={i} className="max-w-[90%] self-end whitespace-pre-wrap break-words rounded-xl border border-dashed border-[#C9A21E] bg-[#FFF4C2] px-3 py-2 text-[13px] text-[#4A3B00]"><b className="block text-[11px] tracking-wider">NOTA INTERNA</b>{l.texto}</div>
                     ) : (
                         <div key={i} className={`max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-3 py-2 text-[15px] leading-snug ${l.quem === "cliente" ? "self-start bg-white text-[#1F2638] dark:bg-[#2A3349] dark:text-white" : "self-end bg-[#E3EFC0] text-[#1F2638] dark:bg-[#3B4A26] dark:text-white"}`}>
                             <b className="block text-[11.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{l.quem === "cliente" ? "Cliente" : "🤖 Aurora"}</b>
@@ -39,7 +40,6 @@ function Conversa({ linhas, altura = "h-[520px]" }: { linhas: Linha[]; altura?: 
                         </div>
                     ),
                 )}
-                <div ref={fim} />
             </div>
         </div>
     );
@@ -74,7 +74,7 @@ function Simulador() {
         setLinhas([]);
     };
     return (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <section className={cartao}>
                 <Conversa linhas={linhas} />
                 {erro && <p className="mt-2 rounded-xl bg-[#FDECEA] px-3 py-2 text-[14px] font-bold text-[#B42318]">{erro}</p>}
@@ -102,6 +102,7 @@ function Cenarios() {
     const [status, setStatus] = useState({ claude: true, aurora: true });
     const [erro, setErro] = useState("");
     const [aberto, setAberto] = useState<number | null>(null);
+    const [anteriores, setAnteriores] = useState(false);
     const carregar = useCallback(async () => {
         try {
             const r = await msgGet<any>("ia_cenarios", {}, false);
@@ -119,7 +120,7 @@ function Cenarios() {
     const rodar = async () => {
         setErro("");
         const agora = new Date();
-        const rodada = `${agora.getFullYear()}${String(agora.getMonth() + 1).padStart(2, "0")}${String(agora.getDate()).padStart(2, "0")}${String(agora.getHours()).padStart(2, "0")}${String(agora.getMinutes()).padStart(2, "0")}`;
+        const rodada = `${String(agora.getMonth() + 1).padStart(2, "0")}${String(agora.getDate()).padStart(2, "0")}${String(agora.getHours()).padStart(2, "0")}${String(agora.getMinutes()).padStart(2, "0")}${String(agora.getSeconds()).padStart(2, "0")}`;
         for (const id of marcados) {
             const cen = cenarios.find((c) => c.id === id);
             if (!cen) continue;
@@ -150,7 +151,7 @@ function Cenarios() {
             <section className={cartao}>
                 <div className="flex flex-wrap items-center gap-2"><span className={`${rotulo} flex-1`}>Cenários · o Claude faz o papel do cliente e avalia</span>
                     <button type="button" disabled={!!rodando || !marcados.length || !status.claude} onClick={rodar} className="h-11 rounded-xl bg-[#313C55] px-4 text-[14.5px] font-extrabold text-white disabled:opacity-50">{rodando ? "Rodando…" : `Rodar ${marcados.length} cenário(s)`}</button></div>
-                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     {cenarios.map((c) => (
                         <label key={c.id} className="flex items-start gap-2 rounded-xl border border-[#EEF0F3] p-3 text-[14.5px] dark:border-white/10">
                             <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" checked={marcados.includes(c.id)} disabled={!!rodando} onChange={(e) => setMarcados((m) => (e.target.checked ? [...m, c.id] : m.filter((x) => x !== c.id)))} />
@@ -168,7 +169,7 @@ function Cenarios() {
             {daRodada.length > 0 && (
                 <section className={cartao}>
                     <div className="mb-2 flex flex-wrap items-baseline gap-2"><span className={`${rotulo} flex-1`}>Última rodada</span><span className="text-[14px] font-extrabold">{aprovados} de {daRodada.length} aprovados · média {(daRodada.reduce((t, r) => t + (r.nota || 0), 0) / daRodada.length).toFixed(1)}</span></div>
-                    {resultados.map((r) => (
+                    {(anteriores ? resultados : daRodada).map((r) => (
                         <div key={r.id} className="border-t border-[#EEF0F3] py-3 first:border-0 dark:border-white/10">
                             <button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => setAberto(aberto === r.id ? null : r.id)}>
                                 <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-full text-[15px] font-extrabold ${r.aprovado ? "bg-[#EEF5D6] text-[#2F4207]" : "bg-[#FDECEA] text-[#B42318]"}`}>{r.nota ?? "—"}</span>
@@ -176,7 +177,7 @@ function Cenarios() {
                                 <span className="flex-none text-[12px] text-[#6B7488]">{new Date(r.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                             </button>
                             {aberto === r.id && (
-                                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                                     <div>
                                         {(r.avaliacao?.falhas || []).length > 0 && <div className={rotulo}>O que falhou</div>}
                                         {(r.avaliacao?.falhas || []).map((f, i) => (
@@ -190,6 +191,7 @@ function Cenarios() {
                             )}
                         </div>
                     ))}
+                    {resultados.length > daRodada.length && <button type="button" onClick={() => setAnteriores((v) => !v)} className="mt-2 text-[14px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{anteriores ? "Mostrar só a última rodada" : `Mostrar rodadas anteriores (${resultados.length - daRodada.length})`}</button>}
                 </section>
             )}
         </div>
@@ -199,8 +201,8 @@ function Cenarios() {
 export default function TestesAuroraPage() {
     const [aba, setAba] = useState<"conversar" | "cenarios">("conversar");
     return (
-        <div className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] md:p-8 dark:bg-[#1C2334] dark:text-white">
-            <div className="mx-auto flex max-w-[1280px] flex-col gap-4">
+        <div className="w-full min-w-0 max-w-full overflow-x-hidden p-4 text-[#313C55] md:p-6 dark:text-white">
+            <div className="mx-auto flex w-full min-w-0 max-w-[1280px] flex-col gap-4">
                 <div>
                     <h1 className="m-0 text-2xl font-extrabold md:text-[30px]">🤖 Testes da Aurora</h1>
                     <p className="mt-1 text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">Converse com a Aurora como se fosse um cliente, ou deixe o Claude fazer os papéis e avaliar cada conversa pelas regras do PAI. Rode os cenários sempre que mudarmos as instruções dela.</p>
