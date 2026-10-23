@@ -27,7 +27,7 @@ const TABLES: TableCfg[] = [
   { table: "sepultamentos", mode: "timestamp", conflict: "id" },
   { table: "coroas", mode: "timestamp", conflict: "id" },
   { table: "coroas_itens", mode: "timestamp", conflict: "id" },
-  { table: "homenagens", mode: "timestamp", conflict: "id" },
+  { table: "homenagens", mode: "snapshot", conflict: "id" },
   { table: "os_ordens", mode: "timestamp", conflict: "id" },
   { table: "historico_sepultamentos", mode: "append_window", conflict: "id" },
   { table: "est_movimento", mode: "append_window", conflict: "id" },
