@@ -12,7 +12,7 @@ import { msgGet, msgPost } from "@/components/messenger/api";
 
 type Linha = { quem: "cliente" | "aurora" | "nota" | "sistema"; texto: string };
 type Cenario = { id: string; titulo: string; regras: string; max: number; origem?: "fixo" | "aprendizado"; db_id?: number };
-type Avaliacao = { nota: number | null; aprovado: boolean | null; resumo?: string; pontos_fortes?: string[]; falhas?: { regra: string; trecho: string; sugestao?: string }[] };
+type Avaliacao = { nota: number | null; aprovado: boolean | null; resumo?: string; pontos_fortes?: string[]; falhas?: { regra: string; trecho: string; sugestao?: string; gravidade?: "grave" | "ajuste" }[] };
 type Resultado = { id: number; rodada: string; cenario: string; titulo: string; nota: number | null; aprovado: boolean | null; avaliacao: Avaliacao; conversa: Linha[]; criado_em: string; por: string | null };
 
 // cenários marcados ficam guardados neste navegador (23/10/2026): cenário novo não entra marcado sozinho
@@ -194,10 +194,12 @@ function Cenarios() {
         for (const r of daRodada) {
             linhas.push(`### ${r.titulo} — nota ${r.nota ?? "—"} — ${r.aprovado ? "APROVADO" : "REPROVADO"}`);
             if (r.avaliacao?.resumo) linhas.push(`Resumo: ${r.avaliacao.resumo}`);
-            for (const f of r.avaliacao?.falhas || []) linhas.push(`- Falha: ${f.regra} | “${f.trecho}”${f.sugestao ? ` | Sugestão: ${f.sugestao}` : ""}`);
+            for (const f of r.avaliacao?.falhas || []) linhas.push(`- ${f.gravidade === "grave" ? "Falha GRAVE" : f.gravidade === "ajuste" ? "Ajuste" : "Falha"}: ${f.regra} | “${f.trecho}”${f.sugestao ? ` | Sugestão: ${f.sugestao}` : ""}`);
             if (!r.aprovado) {
+                // a conversa vai com as notas internas e os avisos do sistema (ex.: nota 🔎 com o motivo de uma falha do sistema)
+                const quem: Record<string, string> = { cliente: "CLIENTE", aurora: "AURORA", nota: "NOTA INTERNA", sistema: "SISTEMA" };
                 linhas.push("Conversa:");
-                for (const l of r.conversa || []) if (l.quem === "cliente" || l.quem === "aurora") linhas.push(`${l.quem === "cliente" ? "CLIENTE" : "AURORA"}: ${l.texto.replace(/\n+/g, " / ")}`);
+                for (const l of r.conversa || []) linhas.push(`${quem[l.quem] || l.quem.toUpperCase()}: ${l.texto.replace(/\n+/g, " / ")}`);
             }
             linhas.push("");
         }
@@ -302,7 +304,7 @@ function Cenarios() {
                                     <div>
                                         {(r.avaliacao?.falhas || []).length > 0 && <div className={rotulo}>O que falhou</div>}
                                         {(r.avaliacao?.falhas || []).map((f, i) => (
-                                            <div key={i} className="mt-2 rounded-xl bg-[#FDECEA] p-3 text-[14px] text-[#5A1A12] dark:bg-[#FF9C92]/15 dark:text-[#FFD6D1]"><b>{f.regra}</b><span className="mt-1 block italic">“{f.trecho}”</span>{f.sugestao && <span className="mt-1 block">→ {f.sugestao}</span>}</div>
+                                            <div key={i} className={`mt-2 rounded-xl p-3 text-[14px] ${f.gravidade === "ajuste" ? "bg-[#FBF0C9] text-[#5C4600] dark:bg-[#F0C94A]/15 dark:text-[#F5E3A3]" : "bg-[#FDECEA] text-[#5A1A12] dark:bg-[#FF9C92]/15 dark:text-[#FFD6D1]"}`}>{f.gravidade && <span className="mr-1.5 rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-extrabold uppercase dark:bg-black/20">{f.gravidade === "grave" ? "Grave" : "Ajuste"}</span>}<b>{f.regra}</b><span className="mt-1 block italic">“{f.trecho}”</span>{f.sugestao && <span className="mt-1 block">→ {f.sugestao}</span>}</div>
                                         ))}
                                         {(r.avaliacao?.pontos_fortes || []).length > 0 && <div className={`${rotulo} mt-3`}>Pontos fortes</div>}
                                         <ul className="mt-1 list-disc pl-5 text-[14px]">{(r.avaliacao?.pontos_fortes || []).map((p, i) => <li key={i}>{p}</li>)}</ul>
