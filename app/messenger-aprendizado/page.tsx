@@ -150,7 +150,7 @@ export default function AprendizadoAuroraPage() {
 
                 {d && aba === "comandos" && (
                     <div className="flex flex-col gap-3">
-                        <p className="text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Instruções escritas pela Gestão. Antes de salvar, o Claude confere se o comando contraria as regras fixas da Aurora, a Base de Conhecimento, as lições aprovadas ou outros comandos. Salvo, vale na hora e pesa mais que as lições automáticas.</p>
+                        <p className="text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Instruções escritas pela Gestão. Antes de salvar, o Claude confere se o comando contraria as regras fixas da Aurora, a Base de Conhecimento, as lições aprovadas ou outros comandos. Salvo, vale na hora e pesa mais que as lições automáticas. Os comandos e as lições aprovadas valem para a Aurora do WhatsApp e para a Aurora do /chat.</p>
                         <div className={cartao}>
                             <div className={rotulo}>Novo comando</div>
                             <textarea className="mt-2 w-full rounded-xl border border-[#E1E5EC] bg-[#F6F8FB] p-3 text-[15px] dark:border-white/15 dark:bg-[#1C2334]" rows={3} maxLength={600} placeholder="Ex.: Ao falar de coroa, ofereça primeiro o site e só depois os modelos por aqui." value={cmdTexto} onChange={(e) => { setCmdTexto(e.target.value); setConf(null); }} />
