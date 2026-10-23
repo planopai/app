@@ -12,7 +12,7 @@ import { msgGet, msgPost } from "@/components/messenger/api";
 
 type Linha = { quem: "cliente" | "aurora" | "nota" | "sistema"; texto: string };
 type Cenario = { id: string; titulo: string; regras: string; max: number; origem?: "fixo" | "aprendizado"; db_id?: number };
-type Avaliacao = { nota: number | null; aprovado: boolean | null; resumo?: string; pontos_fortes?: string[]; falhas?: { regra: string; trecho: string; sugestao?: string; gravidade?: "grave" | "ajuste" }[] };
+type Avaliacao = { nota: number | null; aprovado: boolean | null; resumo?: string; pontos_fortes?: string[]; falhas?: { regra: string; trecho: string; sugestao?: string; gravidade?: "grave" | "ajuste" }[]; referencia?: { id: number; nota: number | null; aprovado: boolean | null } };
 type Resultado = { id: number; rodada: string; cenario: string; titulo: string; nota: number | null; aprovado: boolean | null; avaliacao: Avaliacao; conversa: Linha[]; criado_em: string; por: string | null };
 
 // cenários marcados ficam guardados neste navegador (23/10/2026): cenário novo não entra marcado sozinho
@@ -164,22 +164,26 @@ function Cenarios() {
     useEffect(() => {
         carregar();
     }, [carregar]);
-    const rodar = async () => {
+    // repetir = usar as MESMAS mensagens do cliente do último teste de cada cenário (23/10/2026): só a Aurora muda,
+    // então dá para ver se uma mudança melhorou ou piorou a nota ("antes → agora")
+    const rodar = async (repetir = false, ids: string[] = marcados) => {
         setErro("");
         const agora = new Date();
         const rodada = `${String(agora.getMonth() + 1).padStart(2, "0")}${String(agora.getDate()).padStart(2, "0")}${String(agora.getHours()).padStart(2, "0")}${String(agora.getMinutes()).padStart(2, "0")}${String(agora.getSeconds()).padStart(2, "0")}`;
-        for (const id of marcados) {
+        for (const id of ids) {
             const cen = cenarios.find((c) => c.id === id);
             if (!cen) continue;
+            const ref = repetir ? resultados.find((x) => x.cenario === id) : undefined;
+            if (repetir && !ref) continue; // nunca rodado: não há com o que comparar
             setRodando({ cenario: cen.titulo, linhas: [] });
             try {
                 for (let i = 0; i <= cen.max; i++) {
-                    const r = await msgPost("ia_cenario_passo", { cenario: id, rodada });
+                    const r = await msgPost("ia_cenario_passo", { cenario: id, rodada, ...(ref ? { repetir_de: ref.id } : {}) });
                     if (!r?.dados) throw new Error("o servidor não devolveu a resposta");
                     setRodando({ cenario: cen.titulo, linhas: r.dados.conversa });
                     if (r.dados.fim) break;
                 }
-                await msgPost("ia_cenario_avaliar", { cenario: id, rodada });
+                await msgPost("ia_cenario_avaliar", { cenario: id, rodada, ...(ref ? { repetir_de: ref.id } : {}) });
             } catch (e: any) {
                 setErro(`${cen.titulo}: ${e.message}`);
                 break;
@@ -192,7 +196,8 @@ function Cenarios() {
     const copiarRelatorio = async () => {
         const linhas: string[] = [];
         for (const r of daRodada) {
-            linhas.push(`### ${r.titulo} — nota ${r.nota ?? "—"} — ${r.aprovado ? "APROVADO" : "REPROVADO"}`);
+            const ref = r.avaliacao?.referencia;
+            linhas.push(`### ${r.titulo} — nota ${r.nota ?? "—"}${ref && ref.nota != null ? ` (antes ${ref.nota})` : ""} — ${r.aprovado ? "APROVADO" : "REPROVADO"}`);
             if (r.avaliacao?.resumo) linhas.push(`Resumo: ${r.avaliacao.resumo}`);
             for (const f of r.avaliacao?.falhas || []) linhas.push(`- ${f.gravidade === "grave" ? "Falha GRAVE" : f.gravidade === "ajuste" ? "Ajuste" : "Falha"}: ${f.regra} | “${f.trecho}”${f.sugestao ? ` | Sugestão: ${f.sugestao}` : ""}`);
             if (!r.aprovado) {
@@ -220,6 +225,7 @@ function Cenarios() {
     const ultimaRodada = resultados[0]?.rodada;
     const daRodada = resultados.filter((r) => r.rodada === ultimaRodada);
     const aprovados = daRodada.filter((r) => r.aprovado).length;
+    const quedas = daRodada.filter((r) => r.avaliacao?.referencia?.nota != null && r.nota != null && r.nota < (r.avaliacao.referencia.nota as number)).length;
     // último resultado de cada cenário (a lista do servidor vem do mais novo para o mais antigo)
     const ultimoDe = new Map<string, Resultado>();
     for (const r of resultados) if (!ultimoDe.has(r.cenario)) ultimoDe.set(r.cenario, r);
@@ -263,7 +269,9 @@ function Cenarios() {
             {erro && <p className="rounded-xl bg-[#FDECEA] px-4 py-2 text-[14px] font-bold text-[#B42318]">{erro}</p>}
             <section className={cartao}>
                 <div className="flex flex-wrap items-center gap-2"><span className={`${rotulo} flex-1`}>Cenários · o Claude faz o papel do cliente e avalia</span>
-                    <button type="button" disabled={!!rodando || !marcados.length || !status.claude} onClick={rodar} className="h-11 rounded-xl bg-[#313C55] px-4 text-[14.5px] font-extrabold text-white disabled:opacity-50">{rodando ? "Rodando…" : `Rodar ${marcados.length} cenário(s)`}</button></div>
+                    <button type="button" disabled={!!rodando || !marcados.length || !status.claude} onClick={() => rodar(true)} title="Repete cada cenário com as mesmas mensagens do cliente do último teste e mostra se a nota subiu ou caiu" className="h-11 rounded-xl border border-[#C9D1DE] px-4 text-[14.5px] font-extrabold disabled:opacity-50 dark:border-white/25">Comparar com o último</button>
+                    <button type="button" disabled={!!rodando || !marcados.length || !status.claude} onClick={() => rodar(false)} className="h-11 rounded-xl bg-[#313C55] px-4 text-[14.5px] font-extrabold text-white disabled:opacity-50">{rodando ? "Rodando…" : `Rodar ${marcados.length} cenário(s)`}</button></div>
+                <p className="mt-1 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]"><b>Rodar</b>: o Claude conversa de um jeito novo. <b>Comparar com o último</b>: o cliente repete as mesmas mensagens do último teste, para ver se a Aurora melhorou ou piorou.</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                     <span className="self-center text-[12.5px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">Marcar:</span>
                     {atalhos.map(([nome, ids]) => (
@@ -290,13 +298,19 @@ function Cenarios() {
             )}
             {daRodada.length > 0 && (
                 <section className={cartao}>
-                    <div className="mb-2 flex flex-wrap items-baseline gap-2"><span className={`${rotulo} flex-1`}>Última rodada</span><span className="text-[14px] font-extrabold">{aprovados} de {daRodada.length} aprovados · média {(daRodada.reduce((t, r) => t + (r.nota || 0), 0) / daRodada.length).toFixed(1)}</span>
+                    <div className="mb-2 flex flex-wrap items-baseline gap-2"><span className={`${rotulo} flex-1`}>Última rodada</span><span className="text-[14px] font-extrabold">{aprovados} de {daRodada.length} aprovados · média {(daRodada.reduce((t, r) => t + (r.nota || 0), 0) / daRodada.length).toFixed(1)}{quedas > 0 && <span className="ml-2 text-[#B42318]">· ▼ {quedas} caiu(caíram)</span>}</span>
                         <button type="button" onClick={copiarRelatorio} className="h-9 rounded-xl border border-[#C9D1DE] px-3 text-[13.5px] font-extrabold dark:border-white/25">{copiado ? "✓ Copiado" : "Copiar relatório"}</button></div>
                     {(anteriores ? resultados : daRodada).map((r) => (
                         <div key={r.id} className="border-t border-[#EEF0F3] py-3 first:border-0 dark:border-white/10">
                             <button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => setAberto(aberto === r.id ? null : r.id)}>
                                 <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-full text-[15px] font-extrabold ${r.aprovado ? "bg-[#EEF5D6] text-[#2F4207]" : "bg-[#FDECEA] text-[#B42318]"}`}>{r.nota ?? "—"}</span>
-                                <span className="min-w-0 flex-1"><b className="text-[15px]">{r.titulo}</b><span className="block truncate text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{r.avaliacao?.resumo}</span></span>
+                                <span className="min-w-0 flex-1"><b className="text-[15px]">{r.titulo}</b>
+                                    {r.avaliacao?.referencia && r.avaliacao.referencia.nota !== null && r.nota !== null && (
+                                        <span className={`ml-2 rounded-full px-2 py-0.5 text-[11.5px] font-extrabold ${r.nota < r.avaliacao.referencia.nota ? "bg-[#FDECEA] text-[#B42318]" : r.nota > r.avaliacao.referencia.nota ? "bg-[#EEF5D6] text-[#2F4207]" : "bg-[#E8EEF7] text-[#3D6A99]"}`}>
+                                            {r.nota < r.avaliacao.referencia.nota ? "▼" : r.nota > r.avaliacao.referencia.nota ? "▲" : "="} antes {r.avaliacao.referencia.nota} → agora {r.nota}
+                                        </span>
+                                    )}
+                                    <span className="block truncate text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{r.avaliacao?.resumo}</span></span>
                                 <span className="flex-none text-[12px] text-[#6B7488]">{new Date(r.criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                             </button>
                             {aberto === r.id && (
