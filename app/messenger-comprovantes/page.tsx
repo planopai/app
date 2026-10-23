@@ -3,7 +3,9 @@
 /**
  * Comprovantes (23/10/2026) — rota /messenger-comprovantes
  * Fotos e PDFs que os clientes mandam no WhatsApp. A Aurora lê cada um (valor, data, quem pagou e recebeu);
- * o responsável confere com o contrato vinculado ao número e marca "Baixa registrada" (a baixa é feita no UnyPax).
+ * Duas etapas, feitas por pessoas diferentes (24/10/2026):
+ *  1. quem atende confere com o contrato vinculado ao número, dá a baixa no UnyPax e marca "Baixa registrada";
+ *  2. o Financeiro confere na conta do banco e marca "Conferido na conta" (um ou vários) ou "Não caiu na conta".
  * Número sem contrato é vinculado aqui mesmo (mesmo vínculo da conversa).
  * Servidor: aurora_01.php (arquivo novo; não usa o messenger.php). Acesso: página "messenger".
  */
@@ -14,26 +16,28 @@ const API = `${API_BASE}/aurora_01.php`;
 
 type Vinculo = { contrato: string; titular: string | null; plano: string | null; relacao: string; pode_pagar: boolean };
 type Item = {
-    id: number; situacao: "A" | "P" | "B" | "D" | "N"; recebido_em: string | null; conversa_id: number; contato_id: number;
+    id: number; situacao: "A" | "P" | "B" | "C" | "D" | "N"; recebido_em: string | null; conversa_id: number; contato_id: number;
     nome: string | null; telefone: string | null; contrato: string | null; vinculos: Vinculo[];
     valor: number | null; pago_em: string | null; obs: string | null; mime: string | null; anexo_id: number | null;
-    baixa_por: string | null; baixa_em: string | null;
+    baixa_por: string | null; baixa_em: string | null; conferido_por: string | null; conferido_em: string | null;
 };
-type Lista = { itens: Item[]; contagem: Record<string, number>; a_ler: number };
+type Lista = { itens: Item[]; contagem: Record<string, number>; a_ler: number; pode_conferir: boolean };
 type Parcela = { parcela: string; valor: number; vencimento: string };
 type Parcelas = { titular: string; vencidas: Parcela[]; abertas: Parcela[]; total_vencido: number };
 type Achado = { contrato: string; titular: string; plano: string; cidade: string; cpf: string };
 
 const SIT: Record<string, [string, string]> = {
     A: ["Aurora lendo", "bg-[#E9EFF6] text-[#1E3A5C] dark:bg-[#3D6A99]/25 dark:text-white"],
-    P: ["Pendente", "bg-[#FBF0C9] text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]"],
-    B: ["Baixa registrada", "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#D5E79A]"],
+    P: ["Aguardando baixa", "bg-[#FBF0C9] text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]"],
+    B: ["Baixa feita · conferir na conta", "bg-[#E9EFF6] text-[#1E3A5C] dark:bg-[#3D6A99]/25 dark:text-white"],
+    C: ["Conferido na conta", "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#D5E79A]"],
     D: ["Divergente", "bg-[#FDECEA] text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]"],
     N: ["Não é comprovante", "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]"],
 };
 const FILTROS: [string, string, string[]][] = [
-    ["pendentes", "Pendentes", ["A", "P", "D"]],
-    ["B", "Baixa registrada", ["B"]],
+    ["baixa", "1 · Aguardando baixa", ["A", "P"]],
+    ["conferir", "2 · Conferir na conta", ["B"]],
+    ["C", "Concluídos", ["C"]],
     ["D", "Divergentes", ["D"]],
     ["N", "Não é comprovante", ["N"]],
     ["todos", "Todos", []],
@@ -66,7 +70,9 @@ const BTN = "h-11 min-w-[44px] rounded-xl px-4 text-[14.5px] font-extrabold disa
 const CAMPO = "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3 text-[16px] outline-none focus:ring-2 focus:ring-[#3D6A99]/30 dark:bg-[#1C2334]";
 
 export default function ComprovantesPage() {
-    const [filtro, setFiltro] = useState("pendentes");
+    const [filtro, setFiltro] = useState("baixa");
+    const [marcados, setMarcados] = useState<number[]>([]);
+    const [conferindo, setConferindo] = useState(false);
     const [busca, setBusca] = useState("");
     const [buscaAplicada, setBuscaAplicada] = useState("");
     const [lista, setLista] = useState<Lista | null>(null);
@@ -123,6 +129,23 @@ export default function ComprovantesPage() {
     const itens = lista?.itens || [];
     const sel = itens.find((i) => i.id === selId) || null;
     const contar = (sits: string[]) => (sits.length ? sits.reduce((s, k) => s + (lista?.contagem?.[k] || 0), 0) : null);
+    const podeConferir = !!lista?.pode_conferir;
+    const emLote = filtro === "conferir" && podeConferir;
+    const marcar = (id: number) => setMarcados((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]));
+    const conferirLote = async () => {
+        if (!marcados.length) return;
+        setConferindo(true);
+        try {
+            const r = await aPost("conferir", { ids: marcados, resultado: "ok" });
+            setAviso(r.msg);
+            setMarcados([]);
+            await carregar();
+        } catch (e: any) {
+            setErro(e.message);
+        } finally {
+            setConferindo(false);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] [contain:inline-size] md:p-8 dark:bg-[#1C2334] dark:text-white">
@@ -140,7 +163,7 @@ export default function ComprovantesPage() {
                         {FILTROS.map(([k, nome, sits]) => {
                             const n = contar(sits);
                             return (
-                                <button key={k} type="button" onClick={() => { setFiltro(k); setSelId(null); }} aria-pressed={filtro === k}
+                                <button key={k} type="button" onClick={() => { setFiltro(k); setSelId(null); setMarcados([]); }} aria-pressed={filtro === k}
                                     className={`h-11 shrink-0 rounded-full px-4 text-[14.5px] ${filtro === k ? "bg-[#313C55] font-extrabold text-white dark:bg-[#3D6A99]" : "bg-white font-bold dark:bg-[#232B3F]"}`}>
                                     {nome}{n !== null ? ` · ${n}` : ""}
                                 </button>
@@ -157,9 +180,22 @@ export default function ComprovantesPage() {
                     <section className={`rounded-2xl border border-[#E1E5EC] bg-white p-2 dark:border-white/12 dark:bg-[#232B3F] ${sel ? "hidden lg:block" : ""}`}>
                         {!lista && <p className="p-4">Carregando…</p>}
                         {lista && !itens.length && <p className="p-4 text-[#6B7488]">Nenhum comprovante aqui.</p>}
+                        {filtro === "conferir" && lista && !podeConferir && itens.length > 0 && <p className="m-0 px-3 py-2 text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">A conferência na conta é feita pelo Financeiro.</p>}
+                        {emLote && itens.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 border-b border-[#EEF0F3] px-2 pb-2 dark:border-white/10">
+                                <button type="button" onClick={() => setMarcados(marcados.length === itens.length ? [] : itens.map((i) => i.id))} className={`${BTN} border border-[#C9D1DE]`}>{marcados.length === itens.length ? "Desmarcar todos" : "Marcar todos"}</button>
+                                <button type="button" disabled={!marcados.length || conferindo} onClick={conferirLote} className={`${BTN} bg-[#4C9A2A] text-white`}>{conferindo ? "Salvando…" : `Conferido na conta${marcados.length ? ` (${marcados.length})` : ""}`}</button>
+                            </div>
+                        )}
                         {itens.map((c) => (
-                            <button key={c.id} type="button" onClick={() => { setSelId(c.id); setAviso(""); }}
-                                className={`flex w-full flex-col gap-1 rounded-xl px-3 py-2.5 text-left hover:bg-[#F0F2F5] dark:hover:bg-white/5 ${selId === c.id ? "bg-[#F0F2F5] dark:bg-white/10" : ""}`}>
+                            <div key={c.id} className="flex items-stretch gap-1">
+                            {emLote && (
+                                <label className="flex w-11 shrink-0 cursor-pointer items-center justify-center" title="Marcar para conferir">
+                                    <input type="checkbox" className="size-5" checked={marcados.includes(c.id)} onChange={() => marcar(c.id)} aria-label={`Marcar ${c.nome || c.telefone || "comprovante"}`} />
+                                </label>
+                            )}
+                            <button type="button" onClick={() => { setSelId(c.id); setAviso(""); }}
+                                className={`flex min-w-0 flex-1 flex-col gap-1 rounded-xl px-3 py-2.5 text-left hover:bg-[#F0F2F5] dark:hover:bg-white/5 ${selId === c.id ? "bg-[#F0F2F5] dark:bg-white/10" : ""}`}>
                                 <span className="flex items-center gap-2">
                                     <b className="min-w-0 flex-1 truncate text-[15.5px]">{c.nome || fone(c.telefone) || "Sem nome"}</b>
                                     {c.valor !== null && <b className="text-[15px]">{brl(c.valor)}</b>}
@@ -167,14 +203,15 @@ export default function ComprovantesPage() {
                                 <span className="flex flex-wrap items-center gap-2 text-[13px]">
                                     <span className={`rounded-lg px-2 py-0.5 font-extrabold ${SIT[c.situacao]?.[1] || ""}`}>{SIT[c.situacao]?.[0] || c.situacao}</span>
                                     {c.contrato ? <span className="rounded-lg bg-[#313C55] px-2 py-0.5 font-extrabold text-white">Contrato {c.contrato}</span> : <span className="rounded-lg border border-[#C9D1DE] px-2 py-0.5 font-bold">Sem contrato</span>}
-                                    <span className="text-[#6B7488] dark:text-[#AEB9CF]">{dt(c.recebido_em)}</span>
+                                    <span className="text-[#6B7488] dark:text-[#AEB9CF]">{filtro === "conferir" && c.pago_em ? `pago ${dataBr(c.pago_em)}` : dt(c.recebido_em)}</span>
                                 </span>
                             </button>
+                            </div>
                         ))}
                     </section>
                     <section className={`rounded-2xl border border-[#E1E5EC] bg-white p-4 md:p-5 dark:border-white/12 dark:bg-[#232B3F] ${sel ? "" : "hidden lg:block"}`}>
                         {!sel && <p className="text-[#6B7488]">Escolha um comprovante.</p>}
-                        {sel && <Detalhe key={sel.id} item={sel} voltar={() => setSelId(null)} aoMudar={async (msg) => { setAviso(msg); await carregar(); }} aoErro={setErro} />}
+                        {sel && <Detalhe key={sel.id} item={sel} podeConferir={podeConferir} voltar={() => setSelId(null)} aoMudar={async (msg) => { setAviso(msg); await carregar(); }} aoErro={setErro} />}
                     </section>
                 </div>
             </div>
@@ -182,7 +219,7 @@ export default function ComprovantesPage() {
     );
 }
 
-function Detalhe({ item, voltar, aoMudar, aoErro }: { item: Item; voltar: () => void; aoMudar: (msg: string) => Promise<void>; aoErro: (m: string) => void }) {
+function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; podeConferir: boolean; voltar: () => void; aoMudar: (msg: string) => Promise<void>; aoErro: (m: string) => void }) {
     const [arquivo, setArquivo] = useState<{ url: string; mime: string } | null>(null);
     const [parcelas, setParcelas] = useState<Parcelas | null>(null);
     const [carregandoParcelas, setCarregandoParcelas] = useState(false);
@@ -220,6 +257,17 @@ function Detalhe({ item, voltar, aoMudar, aoErro }: { item: Item; voltar: () => 
         setSalvando(true);
         try {
             const r = await aPost("marcar", { id: item.id, situacao, nota, contrato });
+            await aoMudar(r.msg);
+        } catch (e: any) {
+            aoErro(e.message);
+        } finally {
+            setSalvando(false);
+        }
+    };
+    const conferir = async (resultado: "ok" | "nao_caiu" | "desfazer") => {
+        setSalvando(true);
+        try {
+            const r = await aPost("conferir", { ids: [item.id], resultado, nota });
             await aoMudar(r.msg);
         } catch (e: any) {
             aoErro(e.message);
@@ -279,7 +327,10 @@ function Detalhe({ item, voltar, aoMudar, aoErro }: { item: Item; voltar: () => 
                             <span>Pago em <b>{dataBr(item.pago_em)}</b></span>
                         </div>
                         {item.obs && <p className="mb-0 mt-2 break-words">{item.obs}</p>}
-                        {item.situacao === "B" && <p className="mb-0 mt-2 font-bold text-[#2F4207] dark:text-[#D5E79A]">Baixa registrada por {item.baixa_por || "—"} em {dt(item.baixa_em)}.</p>}
+                        {item.baixa_em && <p className="mb-0 mt-2 font-bold">1 · Baixa registrada por {item.baixa_por || "—"} em {dt(item.baixa_em)}.</p>}
+                        {item.situacao === "B" && <p className="mb-0 mt-1 font-bold text-[#1E3A5C] dark:text-white">2 · Aguardando o Financeiro conferir na conta.</p>}
+                        {item.conferido_em && item.situacao === "C" && <p className="mb-0 mt-1 font-bold text-[#2F4207] dark:text-[#D5E79A]">2 · Conferido na conta por {item.conferido_por || "—"} em {dt(item.conferido_em)}.</p>}
+                        {item.conferido_em && item.situacao === "D" && <p className="mb-0 mt-1 font-bold text-[#B42318] dark:text-[#FF9C92]">2 · {item.conferido_por || "O Financeiro"} não encontrou na conta em {dt(item.conferido_em)}.</p>}
                     </div>
 
                     <div>
@@ -335,12 +386,15 @@ function Detalhe({ item, voltar, aoMudar, aoErro }: { item: Item; voltar: () => 
                         <input className={`${CAMPO} mt-1`} value={nota} onChange={(ev) => setNota(ev.target.value)} placeholder="Ex.: baixa nas parcelas de setembro e outubro" maxLength={120} />
                     </label>
                     <div className="flex flex-wrap gap-2">
-                        {item.situacao !== "B" && <button type="button" disabled={salvando || !contrato} onClick={() => marcar("B")} className={`${BTN} bg-[#4C9A2A] text-white`}>Baixa registrada</button>}
-                        {item.situacao !== "D" && <button type="button" disabled={salvando} onClick={() => marcar("D")} className={`${BTN} border border-[#C9D1DE] text-[#B42318] dark:text-[#FF9C92]`}>Divergente</button>}
-                        {item.situacao !== "N" && <button type="button" disabled={salvando} onClick={() => marcar("N")} className={`${BTN} border border-[#C9D1DE]`}>Não é comprovante</button>}
-                        {item.situacao !== "P" && item.situacao !== "A" && <button type="button" disabled={salvando} onClick={() => marcar("P")} className={`${BTN} border border-[#C9D1DE]`}>Voltar para pendente</button>}
+                        {["A", "P", "D", "N"].includes(item.situacao) && <button type="button" disabled={salvando || !contrato} onClick={() => marcar("B")} className={`${BTN} bg-[#4C9A2A] text-white`}>Baixa registrada</button>}
+                        {item.situacao === "B" && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("ok")} className={`${BTN} bg-[#4C9A2A] text-white`}>Conferido na conta</button>}
+                        {(item.situacao === "B" || item.situacao === "C") && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("nao_caiu")} className={`${BTN} border border-[#C9D1DE] text-[#B42318] dark:text-[#FF9C92]`}>Não caiu na conta</button>}
+                        {item.situacao === "C" && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("desfazer")} className={`${BTN} border border-[#C9D1DE]`}>Desfazer conferência</button>}
+                        {["A", "P", "N"].includes(item.situacao) && <button type="button" disabled={salvando} onClick={() => marcar("D")} className={`${BTN} border border-[#C9D1DE] text-[#B42318] dark:text-[#FF9C92]`}>Divergente</button>}
+                        {["A", "P", "D"].includes(item.situacao) && <button type="button" disabled={salvando} onClick={() => marcar("N")} className={`${BTN} border border-[#C9D1DE]`}>Não é comprovante</button>}
+                        {(["B", "D", "N"].includes(item.situacao) || (item.situacao === "C" && podeConferir)) && <button type="button" disabled={salvando} onClick={() => marcar("P")} className={`${BTN} border border-[#C9D1DE]`}>Voltar para aguardar baixa</button>}
                     </div>
-                    {!contrato && item.situacao !== "B" && <p className="m-0 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Para registrar a baixa, vincule o número a um contrato.</p>}
+                    {!contrato && ["A", "P", "D", "N"].includes(item.situacao) && <p className="m-0 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Para registrar a baixa, vincule o número a um contrato.</p>}
                 </div>
             </div>
         </div>
