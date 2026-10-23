@@ -21,7 +21,6 @@ const TABLES: TableCfg[] = [
   { table: "permissoes", mode: "snapshot", conflict: "user_id,pagina" },
   { table: "usuarios", mode: "snapshot", conflict: "id" },
   { table: "est_deposito", mode: "snapshot", conflict: "id" },
-
   { table: "est_categoria", mode: "timestamp", conflict: "id" },
   { table: "est_produto", mode: "timestamp", conflict: "id" },
   { table: "est_saldo", mode: "timestamp", conflict: "id" },
@@ -30,44 +29,27 @@ const TABLES: TableCfg[] = [
   { table: "coroas_itens", mode: "timestamp", conflict: "id" },
   { table: "homenagens", mode: "timestamp", conflict: "id" },
   { table: "os_ordens", mode: "timestamp", conflict: "id" },
-
   { table: "historico_sepultamentos", mode: "append_window", conflict: "id" },
   { table: "est_movimento", mode: "append_window", conflict: "id" },
 ];
 
 function unauthorized() {
-  return NextResponse.json(
-    { ok: false, error: "Acesso negado." },
-    { status: 403 },
-  );
+  return NextResponse.json({ ok: false, error: "Acesso negado." }, { status: 403 });
 }
 
 function mysqlDateFromIso(value: string | null | undefined): string | null {
   if (!value) return null;
-
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return null;
-
-  // HostGator opera em UTC-03.
-  // Converte cursor timestamptz do Supabase para DATETIME local do MySQL.
   const local = new Date(d.getTime() - 3 * 60 * 60 * 1000);
-
-  return local
-    .toISOString()
-    .slice(0, 19)
-    .replace("T", " ");
+  return local.toISOString().slice(0, 19).replace("T", " ");
 }
 
 function pgDateFromMysql(value: string | null | undefined): string | null {
   if (!value) return null;
-
-  // DATETIME HostGator interpretado como UTC-03.
   const s = value.replace(" ", "T");
   const d = new Date(`${s}-03:00`);
-
-  return Number.isFinite(d.getTime())
-    ? d.toISOString()
-    : null;
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
 async function getState(table: string) {
@@ -79,19 +61,13 @@ async function getState(table: string) {
     .eq("tabela", table)
     .maybeSingle();
 
-  if (error) {
-    throw new Error(`sync_state ${table}: ${error.message}`);
-  }
-
+  if (error) throw new Error(`sync_state ${table}: ${error.message}`);
   return data;
 }
 
 async function ensureState(table: string) {
   let state = await getState(table);
-
-  if (state) {
-    return state;
-  }
+  if (state) return state;
 
   const { error } = await supabase
     .schema("pai")
@@ -104,22 +80,15 @@ async function ensureState(table: string) {
       sincronizado_em: new Date().toISOString(),
     });
 
-  if (error) {
-    throw new Error(`criar sync_state ${table}: ${error.message}`);
-  }
+  if (error) throw new Error(`criar sync_state ${table}: ${error.message}`);
 
   state = await getState(table);
-
-  if (!state) {
-    throw new Error(`Não foi possível criar estado para ${table}`);
-  }
-
+  if (!state) throw new Error(`Não foi possível criar estado para ${table}`);
   return state;
 }
 
 async function pullBatch(cfg: TableCfg, state: any) {
   const url = new URL(HOST_URL);
-
   url.searchParams.set("table", cfg.table);
 
   if (state?.ultimo_id != null) {
@@ -128,10 +97,7 @@ async function pullBatch(cfg: TableCfg, state: any) {
 
   if (cfg.mode === "timestamp" && state?.ultimo_updated_at) {
     const mysql = mysqlDateFromIso(String(state.ultimo_updated_at));
-
-    if (mysql) {
-      url.searchParams.set("updated_at", mysql);
-    }
+    if (mysql) url.searchParams.set("updated_at", mysql);
   }
 
   const controller = new AbortController();
@@ -166,19 +132,24 @@ function sanitizeRows(table: string, rows: any[]) {
   return rows.map((row) => {
     const copy = { ...row };
 
-    // Nunca replica senha.
+    for (const [key, value] of Object.entries(copy)) {
+      if (
+        typeof value === "string" &&
+        /^0000-00-00(?:[ T]00:00:00)?$/.test(value.trim())
+      ) {
+        copy[key] = null;
+      }
+    }
+
     if (table === "usuarios") {
       delete copy.senha;
       delete copy.password;
     }
 
-    // MySQL possui id; Supabase usa PK composta cargo_id + pagina.
     if (table === "cargo_paginas") {
       delete copy.id;
     }
 
-    // MySQL possui id próprio, mas no Supabase a identidade lógica
-    // usada para sincronização é user_id + pagina.
     if (table === "permissoes") {
       delete copy.id;
     }
@@ -188,13 +159,10 @@ function sanitizeRows(table: string, rows: any[]) {
 }
 
 async function upsertRows(cfg: TableCfg, rows: any[]) {
-  if (!rows.length) {
-    return;
-  }
+  if (!rows.length) return;
 
   const clean = sanitizeRows(cfg.table, rows);
 
-  // Lotes pequenos para evitar payloads grandes do PostgREST.
   for (let i = 0; i < clean.length; i += 100) {
     const part = clean.slice(i, i + 100);
 
@@ -206,9 +174,7 @@ async function upsertRows(cfg: TableCfg, rows: any[]) {
         ignoreDuplicates: false,
       });
 
-    if (error) {
-      throw new Error(`upsert ${cfg.table}: ${error.message}`);
-    }
+    if (error) throw new Error(`upsert ${cfg.table}: ${error.message}`);
   }
 }
 
@@ -217,9 +183,7 @@ async function updateState(table: string, stateId: number, next: any) {
     sincronizado_em: new Date().toISOString(),
   };
 
-  if (next?.id != null) {
-    patch.ultimo_id = Number(next.id);
-  }
+  if (next?.id != null) patch.ultimo_id = Number(next.id);
 
   if (next?.updated_at) {
     patch.ultimo_updated_at = pgDateFromMysql(String(next.updated_at));
@@ -233,9 +197,7 @@ async function updateState(table: string, stateId: number, next: any) {
     .eq("origem", "hostgator")
     .eq("tabela", table);
 
-  if (error) {
-    throw new Error(`avançar cursor ${table}: ${error.message}`);
-  }
+  if (error) throw new Error(`avançar cursor ${table}: ${error.message}`);
 }
 
 async function syncTable(cfg: TableCfg) {
@@ -243,48 +205,31 @@ async function syncTable(cfg: TableCfg) {
   let total = 0;
   let batches = 0;
 
-  // Limite defensivo por execução. O próximo cron continua do cursor.
   for (let pass = 0; pass < 8; pass++) {
     const batch = await pullBatch(cfg, state);
     const rows = Array.isArray(batch.rows) ? batch.rows : [];
 
     await upsertRows(cfg, rows);
-
-    // Cursor só avança depois de todos os upserts deste lote.
-    await updateState(
-      cfg.table,
-      Number(state.id),
-      batch.next,
-    );
+    await updateState(cfg.table, Number(state.id), batch.next);
 
     total += rows.length;
     batches++;
 
     state = {
       ...state,
-      ultimo_id:
-        batch?.next?.id ??
-        state.ultimo_id,
+      ultimo_id: batch?.next?.id ?? state.ultimo_id,
       ultimo_updated_at:
         batch?.next?.updated_at
           ? pgDateFromMysql(String(batch.next.updated_at))
           : state.ultimo_updated_at,
     };
 
-    if (
-      !batch.has_more ||
-      rows.length === 0 ||
-      cfg.mode === "snapshot"
-    ) {
+    if (!batch.has_more || rows.length === 0 || cfg.mode === "snapshot") {
       break;
     }
   }
 
-  return {
-    table: cfg.table,
-    rows: total,
-    batches,
-  };
+  return { table: cfg.table, rows: total, batches };
 }
 
 export async function GET(request: NextRequest) {
@@ -295,16 +240,11 @@ export async function GET(request: NextRequest) {
       ? auth.slice(7)
       : request.headers.get("x-pai-sync-trigger") ?? "";
 
-  if (!TRIGGER_KEY || supplied !== TRIGGER_KEY) {
-    return unauthorized();
-  }
+  if (!TRIGGER_KEY || supplied !== TRIGGER_KEY) return unauthorized();
 
   if (!HOST_URL || !SYNC_KEY) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Variáveis de sincronização ausentes.",
-      },
+      { ok: false, error: "Variáveis de sincronização ausentes." },
       { status: 500 },
     );
   }
@@ -318,10 +258,7 @@ export async function GET(request: NextRequest) {
 
   if (controlError) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: controlError.message,
-      },
+      { ok: false, error: controlError.message },
       { status: 500 },
     );
   }
@@ -341,10 +278,7 @@ export async function GET(request: NextRequest) {
     for (const cfg of TABLES) {
       results.push(await syncTable(cfg));
 
-      // Não deixa uma execução ocupar a função por tempo demais.
-      if (Date.now() - started > 50_000) {
-        break;
-      }
+      if (Date.now() - started > 50_000) break;
     }
 
     return NextResponse.json({
@@ -358,10 +292,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: String(
-          error?.message ??
-          "Falha na sincronização.",
-        ),
+        error: String(error?.message ?? "Falha na sincronização."),
         partial_results: results,
       },
       { status: 500 },
