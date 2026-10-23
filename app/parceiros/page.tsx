@@ -50,11 +50,10 @@ const asS = (v: unknown) => (typeof v === "string" ? v : "");
 const isHttpUrl = (s?: string | null) => !!s && /^https?:\/\//i.test(s);
 
 // PHP exige estes headers em TODAS as chamadas
-const API_KEY = process.env.NEXT_PUBLIC_PAI_PARTNERS_API_KEY ?? "PlanoPAI2024#";
+// Fase 0 (22/10/2026): a chave X-PAI-KEY saiu do navegador; quem a envia é a rota do servidor (app/api/...).
 
 function authHeaders(extra?: HeadersInit): HeadersInit {
     return {
-        "X-PAI-KEY": API_KEY,
         "X-Requested-With": "XMLHttpRequest",
         ...(extra ?? {}),
     };

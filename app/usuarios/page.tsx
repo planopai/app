@@ -8,7 +8,7 @@ const API_URL = 'https://api.planoassistencialintegrado.com.br/pai_api.php';
 
 /* ---------------- parser robusto (tolera BOM/HTML) ---------------- */
 async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
-    const r = await fetch(input, { cache: 'no-store', ...init });
+    const r = await fetch(input, { cache: 'no-store', credentials: 'include', ...init }); // envia o login (pai_session) ao PHP
     const txt = await r.text();
     const cleaned = txt.replace(/^\uFEFF/, '').trim();
     let json: any = null;

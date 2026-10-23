@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# back-end PHP (cópia do servidor, com dados sensíveis): nunca vai para o GitHub nem para o deploy
+/backend/

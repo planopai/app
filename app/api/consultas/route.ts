@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 const TARGET =
     process.env.PAI_CONSULTAS_PHP_URL ||
     "https://planoassistencialintegrado.com.br/consultas.php"; // ajuste se necessário
-const API_KEY = process.env.PAI_CONSULTAS_API_KEY || "PlanoPAI2024#";
+const API_KEY = process.env.PAI_CONSULTAS_API_KEY || ""; // Fase 0: sem chave de reserva no código; configurar na Vercel
 
 const HOP = new Set([
     "connection",

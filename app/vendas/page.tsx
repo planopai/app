@@ -421,7 +421,7 @@ export default function Page() {
             if (status !== "all") u.searchParams.set("status", status);
             if (plano !== "all") u.searchParams.set("plano", plano);
 
-            const res = await fetch(u.toString(), { cache: "no-store" });
+            const res = await fetch(u.toString(), { cache: "no-store", credentials: "include" }); // envia o login (pai_session) ao PHP
             const text = await res.text();
 
             let json: ListarResponse;
@@ -488,7 +488,7 @@ export default function Page() {
             const u = new URL(CADASTROS_PLANOS_API_URL);
             u.searchParams.set("id", String(id));
 
-            const res = await fetch(u.toString(), { cache: "no-store" });
+            const res = await fetch(u.toString(), { cache: "no-store", credentials: "include" }); // envia o login (pai_session) ao PHP
             const text = await res.text();
 
             let json: DetailResponse;
@@ -517,6 +517,7 @@ export default function Page() {
         try {
             const res = await fetch(CADASTROS_PLANOS_API_URL, {
                 method: "POST",
+                credentials: "include", // envia o login (pai_session) ao PHP
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     acao: "atualizar_status",

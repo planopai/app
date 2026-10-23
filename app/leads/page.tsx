@@ -174,7 +174,7 @@ export default function LeadsPage() {
             setLoading(true);
             setError(null);
             setSelected(new Set());
-            const res = await fetch(`${ENDPOINT}?_=${Date.now()}`, { cache: "no-store" });
+            const res = await fetch(`${ENDPOINT}?_=${Date.now()}`, { cache: "no-store", credentials: "include" }); // envia o login (pai_session) ao PHP
             if (!res.ok) throw new Error("Erro na resposta do servidor.");
             const data: ApiLead[] = await res.json();
             const mapped: Lead[] = data.map((item) => ({
