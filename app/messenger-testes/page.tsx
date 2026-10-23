@@ -11,9 +11,27 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { msgGet, msgPost } from "@/components/messenger/api";
 
 type Linha = { quem: "cliente" | "aurora" | "nota" | "sistema"; texto: string };
-type Cenario = { id: string; titulo: string; regras: string; max: number };
+type Cenario = { id: string; titulo: string; regras: string; max: number; origem?: "fixo" | "aprendizado"; db_id?: number };
 type Avaliacao = { nota: number | null; aprovado: boolean | null; resumo?: string; pontos_fortes?: string[]; falhas?: { regra: string; trecho: string; sugestao?: string }[] };
 type Resultado = { id: number; rodada: string; cenario: string; titulo: string; nota: number | null; aprovado: boolean | null; avaliacao: Avaliacao; conversa: Linha[]; criado_em: string; por: string | null };
+
+// cenários marcados ficam guardados neste navegador (23/10/2026): cenário novo não entra marcado sozinho
+const CHAVE_MARCADOS = "pai_testes_aurora_marcados";
+function lerMarcados(): string[] | null {
+    try {
+        const v = JSON.parse(localStorage.getItem(CHAVE_MARCADOS) || "null");
+        return Array.isArray(v) ? v.map(String) : null;
+    } catch {
+        return null;
+    }
+}
+function gravarMarcados(ids: string[]) {
+    try {
+        localStorage.setItem(CHAVE_MARCADOS, JSON.stringify(ids));
+    } catch {
+        // navegador sem armazenamento: só não lembra a escolha
+    }
+}
 
 const cartao = "rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]";
 const rotulo = "text-[12.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]";
@@ -103,17 +121,46 @@ function Cenarios() {
     const [erro, setErro] = useState("");
     const [aberto, setAberto] = useState<number | null>(null);
     const [anteriores, setAnteriores] = useState(false);
+    const [desativar, setDesativar] = useState<string | null>(null);
+    const iniciou = useRef(false);
     const carregar = useCallback(async () => {
         try {
             const r = await msgGet<any>("ia_cenarios", {}, false);
-            setCenarios(r.cenarios);
+            const lista: Cenario[] = r.cenarios;
+            setCenarios(lista);
             setResultados(r.resultados);
             setStatus({ claude: r.claude, aurora: r.aurora });
-            setMarcados((m) => (m.length ? m : r.cenarios.map((c: Cenario) => c.id)));
+            if (!iniciou.current) {
+                // 1ª vez: a escolha guardada neste navegador; sem escolha, só os fixos. Cenário novo nunca entra marcado sozinho.
+                iniciou.current = true;
+                const ids = new Set(lista.map((c) => c.id));
+                const salvos = lerMarcados();
+                setMarcados(salvos ? salvos.filter((id) => ids.has(id)) : lista.filter((c) => c.origem !== "aprendizado").map((c) => c.id));
+            } else {
+                setMarcados((m) => m.filter((id) => lista.some((c) => c.id === id)));
+            }
         } catch (e: any) {
             setErro(e.message);
         }
     }, []);
+    const marcar = (ids: string[]) => {
+        setMarcados(ids);
+        gravarMarcados(ids);
+    };
+    const desativarCenario = async (c: Cenario) => {
+        if (desativar !== c.id) {
+            setDesativar(c.id); // 1º toque pede confirmação
+            return;
+        }
+        setDesativar(null);
+        try {
+            await msgPost("apr_decidir", { tipo: "cenario", id: c.db_id, decisao: "inativo" });
+            marcar(marcados.filter((x) => x !== c.id));
+            await carregar();
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    };
     useEffect(() => {
         carregar();
     }, [carregar]);
@@ -171,6 +218,43 @@ function Cenarios() {
     const ultimaRodada = resultados[0]?.rodada;
     const daRodada = resultados.filter((r) => r.rodada === ultimaRodada);
     const aprovados = daRodada.filter((r) => r.aprovado).length;
+    // último resultado de cada cenário (a lista do servidor vem do mais novo para o mais antigo)
+    const ultimoDe = new Map<string, Resultado>();
+    for (const r of resultados) if (!ultimoDe.has(r.cenario)) ultimoDe.set(r.cenario, r);
+    const fixos = cenarios.filter((c) => c.origem !== "aprendizado");
+    const aprendidos = cenarios.filter((c) => c.origem === "aprendizado");
+    const atalhos: [string, string[]][] = [
+        ["Todos", cenarios.map((c) => c.id)],
+        ["Só os fixos", fixos.map((c) => c.id)],
+        ["Reprovados na última vez", cenarios.filter((c) => ultimoDe.get(c.id)?.aprovado === false).map((c) => c.id)],
+        ["Nunca rodados", cenarios.filter((c) => !ultimoDe.has(c.id)).map((c) => c.id)],
+        ["Nenhum", []],
+    ];
+    const cartaoCenario = (c: Cenario) => {
+        const u = ultimoDe.get(c.id);
+        return (
+            <div key={c.id} className="flex items-start gap-2 rounded-xl border border-[#EEF0F3] p-3 text-[14.5px] dark:border-white/10">
+                <input type="checkbox" aria-label={c.titulo} className="mt-0.5 h-5 w-5 flex-none accent-[#313C55]" checked={marcados.includes(c.id)} disabled={!!rodando}
+                    onChange={(e) => marcar(e.target.checked ? [...marcados, c.id] : marcados.filter((x) => x !== c.id))} />
+                <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                        <b className="min-w-0">{c.titulo}</b>
+                        {u ? (
+                            <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-extrabold ${u.aprovado ? "bg-[#EEF5D6] text-[#2F4207]" : "bg-[#FDECEA] text-[#B42318]"}`}>última nota {u.nota ?? "—"}</span>
+                        ) : (
+                            <span className="rounded-full bg-[#E8EEF7] px-2 py-0.5 text-[11.5px] font-extrabold text-[#3D6A99]">novo</span>
+                        )}
+                    </span>
+                    <span className="block text-[12.5px] text-[#5B6478] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden dark:text-[#AEB9CF]" title={c.regras}>{c.regras}</span>
+                    {c.origem === "aprendizado" && !!c.db_id && (
+                        <button type="button" disabled={!!rodando} onClick={() => desativarCenario(c)} className="mt-1 text-[12.5px] font-extrabold text-[#B42318] disabled:opacity-50">
+                            {desativar === c.id ? "Toque de novo para desativar" : "Desativar cenário"}
+                        </button>
+                    )}
+                </span>
+            </div>
+        );
+    };
     return (
         <div className="flex flex-col gap-4">
             {(!status.claude || !status.aurora) && <p className="rounded-xl border border-[#C9A21E] bg-[#FBF0C9] px-4 py-2 text-[14px] font-bold text-[#5C4600]">{!status.claude ? "Falta a chave do Claude (anthropic_api_key) no pai-chaves.php. " : ""}{!status.aurora ? "Falta a chave da Aurora (openai_api_key)." : ""}</p>}
@@ -178,14 +262,23 @@ function Cenarios() {
             <section className={cartao}>
                 <div className="flex flex-wrap items-center gap-2"><span className={`${rotulo} flex-1`}>Cenários · o Claude faz o papel do cliente e avalia</span>
                     <button type="button" disabled={!!rodando || !marcados.length || !status.claude} onClick={rodar} className="h-11 rounded-xl bg-[#313C55] px-4 text-[14.5px] font-extrabold text-white disabled:opacity-50">{rodando ? "Rodando…" : `Rodar ${marcados.length} cenário(s)`}</button></div>
-                <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    {cenarios.map((c) => (
-                        <label key={c.id} className="flex items-start gap-2 rounded-xl border border-[#EEF0F3] p-3 text-[14.5px] dark:border-white/10">
-                            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[#313C55]" checked={marcados.includes(c.id)} disabled={!!rodando} onChange={(e) => setMarcados((m) => (e.target.checked ? [...m, c.id] : m.filter((x) => x !== c.id)))} />
-                            <span><b>{c.titulo}</b><span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{c.regras}</span></span>
-                        </label>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="self-center text-[12.5px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">Marcar:</span>
+                    {atalhos.map(([nome, ids]) => (
+                        <button key={nome} type="button" disabled={!!rodando} onClick={() => marcar(ids)} className="h-8 rounded-full border border-[#C9D1DE] px-3 text-[12.5px] font-extrabold disabled:opacity-50 dark:border-white/25">
+                            {nome}{nome !== "Nenhum" ? ` (${ids.length})` : ""}
+                        </button>
                     ))}
                 </div>
+                <div className={`${rotulo} mt-3`}>Fixos ({fixos.length})</div>
+                <div className="mt-1 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">{fixos.map(cartaoCenario)}</div>
+                {aprendidos.length > 0 && (
+                    <>
+                        <div className={`${rotulo} mt-3`}>🔁 Vindos do aprendizado ({aprendidos.length})</div>
+                        <p className="mt-0.5 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">Entram desmarcados. Se um repetir outro, desative aqui.</p>
+                        <div className="mt-1 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">{aprendidos.map(cartaoCenario)}</div>
+                    </>
+                )}
             </section>
             {rodando && (
                 <section className={cartao}>
