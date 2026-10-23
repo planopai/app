@@ -1976,6 +1976,7 @@ export default function AssociadosGeralPage() {
                     requestUrl,
                     {
                         method: "GET",
+                        credentials: "include",
                         headers,
                         cache: "no-store",
                         signal: ac.signal,
@@ -2072,7 +2073,7 @@ export default function AssociadosGeralPage() {
             const url = new URL(ENDPOINT);
             url.searchParams.set("op", "filter_options");
 
-            const res = await fetch(url.toString(), { method: "GET", headers, cache: "no-store" });
+            const res = await fetch(url.toString(), { method: "GET", headers, cache: "no-store", credentials: "include" });
             const data = await safeJson<any>(res);
             if (!res.ok || !data?.ok) throw new Error(data?.error || "Falha ao carregar filtros");
 
@@ -2273,6 +2274,7 @@ export default function AssociadosGeralPage() {
 
                 const res = await fetch(url.toString(), {
                     method: "GET",
+                    credentials: "include",
                     headers,
                     cache: "no-store",
                     signal: ac.signal,
@@ -2391,6 +2393,7 @@ export default function AssociadosGeralPage() {
 
                 const res = await fetch(url.toString(), {
                     method: "POST",
+                    credentials: "include",
                     headers,
                     body: JSON.stringify({
                         cpf,

@@ -305,7 +305,7 @@ export default function PainelTV() {
 
   async function safeJson<T>(url: string, signal: AbortSignal): Promise<T | null> {
     try {
-      const r = await fetch(url, { cache: "no-store", signal });
+      const r = await fetch(url, { cache: "no-store", signal, credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return (await r.json()) as T;
     } catch {
