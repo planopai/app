@@ -50,7 +50,7 @@ async function mapTarget(table: string, sourceId: any, dryRun = false): Promise<
   const { data, error } = await supabase
     .schema("pai")
     .from("failback_id_map")
-    .select("hostgator_id,status")
+    .select("id,dr_uuid,hostgator_id,status")
     .eq("tabela", table)
     .eq("supabase_id", n)
     .order("id", { ascending: false })
@@ -125,6 +125,28 @@ async function getFailbackMap(table: string, sourceId: number) {
   return data as Row | null;
 }
 
+
+async function getFailbackMapByUuid(
+  table: string,
+  drUuid: string,
+) {
+  const { data, error } = await supabase
+    .schema("pai")
+    .from("failback_id_map")
+    .select("id,tabela,dr_uuid,supabase_id,hostgator_id,status")
+    .eq("tabela", table)
+    .eq("dr_uuid", drUuid)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`mapa ${table}/${drUuid}: ${error.message}`);
+  }
+
+  return data as Row | null;
+}
+
 async function markChange(
   id: number,
   patch: Record<string, unknown>,
@@ -151,16 +173,84 @@ async function run(dryRun: boolean) {
     for (const m of maps ?? []) {
       const sourceId = Number(m.supabase_id);
       const source = await getRow(table, sourceId);
+
       if (!source) {
-        output.push({ table, source_id: sourceId, skipped: true, reason: "registro local removido antes do failback" });
-        if (!dryRun) await supabase.schema("pai").from("failback_id_map").update({ status: "cancelado", atualizado_em: new Date().toISOString() }).eq("id", m.id);
+        output.push({
+          table,
+          source_id: sourceId,
+          dr_uuid: String(m.dr_uuid),
+          skipped: true,
+          reason: "registro local removido antes do failback",
+          dry_run: dryRun,
+        });
+
+        if (!dryRun) {
+          const { error: cancelError } = await supabase
+            .schema("pai")
+            .from("failback_id_map")
+            .update({
+              status: "cancelado",
+              atualizado_em: new Date().toISOString(),
+              erro: null,
+            })
+            .eq("id", m.id);
+
+          if (cancelError) {
+            throw new Error(`cancelar mapa ${table}/${sourceId}: ${cancelError.message}`);
+          }
+        }
+
         continue;
       }
+
+      // O mesmo ID local pode ser reutilizado depois de DELETE + novo INSERT.
+      // O dr_uuid identifica a encarnação lógica correta do registro.
+      const currentDrUuid =
+        source.dr_uuid == null ? null : String(source.dr_uuid);
+
+      if (
+        currentDrUuid != null &&
+        currentDrUuid !== String(m.dr_uuid)
+      ) {
+        output.push({
+          table,
+          source_id: sourceId,
+          dr_uuid: String(m.dr_uuid),
+          skipped: true,
+          reason: "mapa antigo: o supabase_id foi reutilizado por outro dr_uuid",
+          dry_run: dryRun,
+        });
+
+        if (!dryRun) {
+          const { error: cancelError } = await supabase
+            .schema("pai")
+            .from("failback_id_map")
+            .update({
+              status: "cancelado",
+              atualizado_em: new Date().toISOString(),
+              erro: null,
+            })
+            .eq("id", m.id);
+
+          if (cancelError) {
+            throw new Error(`cancelar mapa antigo ${table}/${sourceId}: ${cancelError.message}`);
+          }
+        }
+
+        continue;
+      }
+
       const row = await rewriteFK(table, source, dryRun);
       const missing = unresolvedFK(table, row);
       if (missing.length) throw new Error(`${table}/${sourceId}: dependência ainda sem ID HostGator: ${missing.join(",")}`);
       const res = await hostApply({ dry_run: dryRun, operation_uuid: String(m.dr_uuid), table, action: "insert", source_id: sourceId, row });
-      output.push({ table, source_id: sourceId, target_id: res.target_id ?? null, dry_run: dryRun });
+      output.push({
+        table,
+        source_id: sourceId,
+        dr_uuid: String(m.dr_uuid),
+        target_id: res.target_id ?? null,
+        dry_run: dryRun,
+      });
       if (!dryRun) {
         await supabase.schema("pai").from("failback_id_map").update({ hostgator_id: res.target_id, status: "enviado", enviado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), erro: null }).eq("id", m.id);
       }
@@ -178,30 +268,54 @@ async function run(dryRun: boolean) {
     const action = String(c.acao);
     const sourceId = c.supabase_id == null ? null : Number(c.supabase_id);
 
-    // UPDATE/DELETE de um registro que nasceu na contingência precisa usar o
-    // ID que foi criado na HostGator. Se o registro foi apagado localmente
-    // antes de ter sido enviado, não existe nada para atualizar/apagar lá.
+    // UPDATE/DELETE precisa respeitar a identidade lógica (dr_uuid) quando
+    // disponível. Isso evita confundir duas encarnações que reutilizaram o
+    // mesmo supabase_id após DELETE + novo INSERT.
+    const payloadRow = (c.payload ?? {}) as Row;
+    const payloadDrUuid =
+      payloadRow.dr_uuid == null ? null : String(payloadRow.dr_uuid);
+
+    let changeMap: Row | null = null;
+
     if (sourceId != null && table !== "est_saldo") {
-      const map = await getFailbackMap(table, sourceId);
+      changeMap =
+        payloadDrUuid
+          ? await getFailbackMapByUuid(table, payloadDrUuid)
+          : await getFailbackMap(table, sourceId);
 
-      if (map && map.hostgator_id == null) {
+      if (changeMap && changeMap.hostgator_id == null) {
         const currentLocal = await getRow(table, sourceId);
+        const currentDrUuid =
+          currentLocal?.dr_uuid == null
+            ? null
+            : String(currentLocal.dr_uuid);
 
-        // Registro nasceu na contingência e foi apagado antes do failback.
-        // Não existe nada correspondente para apagar na HostGator.
-        if (action === "delete" && !currentLocal) {
+        const sameIncarnation =
+          payloadDrUuid == null ||
+          currentDrUuid == null ||
+          payloadDrUuid === currentDrUuid;
+
+        // DELETE referente a uma encarnação antiga do mesmo ID.
+        // O item atual é outro registro, portanto o DELETE antigo não deve
+        // atingir a nova encarnação.
+        if (
+          action === "delete" &&
+          (!currentLocal || !sameIncarnation)
+        ) {
           output.push({
             table,
             action,
             source_id: sourceId,
+            dr_uuid: payloadDrUuid,
             target_id: null,
             skipped: true,
-            reason: "registro criado e removido durante a contingência antes de chegar à HostGator",
+            reason:
+              "registro desta encarnação foi removido antes de chegar à HostGator",
             dry_run: dryRun,
           });
 
           if (!dryRun) {
-            if (String(map.status) !== "cancelado") {
+            if (String(changeMap.status) !== "cancelado") {
               const { error: mapCancelError } = await supabase
                 .schema("pai")
                 .from("failback_id_map")
@@ -210,7 +324,7 @@ async function run(dryRun: boolean) {
                   atualizado_em: new Date().toISOString(),
                   erro: null,
                 })
-                .eq("id", map.id);
+                .eq("id", changeMap.id);
 
               if (mapCancelError) {
                 throw new Error(
@@ -229,31 +343,37 @@ async function run(dryRun: boolean) {
           continue;
         }
 
-        // UPDATE de um registro novo ainda pendente:
-        // o INSERT da fase anterior usa a versão atual da linha, então no dry-run
-        // esta alteração já está incorporada no INSERT e não precisa ser simulada
-        // separadamente.
-        if (dryRun && action === "update") {
+        // UPDATE da mesma encarnação ainda pendente:
+        // o INSERT usa a versão atual da linha e já contém essa alteração.
+        if (
+          dryRun &&
+          action === "update" &&
+          sameIncarnation
+        ) {
           output.push({
             table,
             action,
             source_id: sourceId,
+            dr_uuid: payloadDrUuid,
             target_id: null,
             skipped: true,
-            reason: "alteração já incorporada ao INSERT final do registro de contingência",
+            reason:
+              "alteração já incorporada ao INSERT final do registro de contingência",
             dry_run: true,
           });
           continue;
         }
 
-        if (String(map.status) === "cancelado") {
+        if (String(changeMap.status) === "cancelado") {
           output.push({
             table,
             action,
             source_id: sourceId,
+            dr_uuid: payloadDrUuid,
             target_id: null,
             skipped: true,
-            reason: "registro de contingência cancelado antes de chegar à HostGator",
+            reason:
+              "registro de contingência cancelado antes de chegar à HostGator",
             dry_run: dryRun,
           });
 
@@ -268,8 +388,6 @@ async function run(dryRun: boolean) {
           continue;
         }
 
-        // No POST real, depois da fase de INSERT acima, todo registro novo que
-        // continua existindo precisa obrigatoriamente ter recebido hostgator_id.
         if (!dryRun) {
           throw new Error(
             `${table}/${sourceId}: alteração pendente sem hostgator_id após fase de INSERT`,
@@ -278,7 +396,7 @@ async function run(dryRun: boolean) {
       }
     }
 
-    let row = (c.payload ?? {}) as Row;
+    let row = payloadRow;
     row = await rewriteFK(table, row, dryRun);
 
     let targetId =
@@ -286,7 +404,11 @@ async function run(dryRun: boolean) {
         ? null
         : table === "est_saldo"
           ? sourceId
-          : await mapTarget(table, sourceId, dryRun);
+          : changeMap?.hostgator_id != null
+            ? Number(changeMap.hostgator_id)
+            : changeMap && dryRun
+              ? sourceId
+              : await mapTarget(table, sourceId, dryRun);
 
     // DELETE/UPDATE de registro originado na contingência e já enviado usa
     // o ID remapeado. Registros antigos preservam o ID original.
@@ -336,7 +458,7 @@ async function run(dryRun: boolean) {
 export async function GET(req: NextRequest) {
   if (!authOk(req)) return NextResponse.json({ ok: false, error: "Acesso negado." }, { status: 403 });
   if (!HOST_URL || !HOST_KEY) return NextResponse.json({ ok: false, error: "Variáveis PAI_FAILBACK_HOST_URL/PAI_FAILBACK_KEY ausentes." }, { status: 500 });
-  try { return NextResponse.json({ ok: true, dry_run: true, dependency_placeholders: true, results: await run(true) }); }
+  try { return NextResponse.json({ ok: true, version: "uuid-safe-v2", dry_run: true, dependency_placeholders: true, results: await run(true) }); }
   catch (e: any) { return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 }); }
 }
 
@@ -346,6 +468,6 @@ export async function POST(req: NextRequest) {
   const { data: control, error } = await supabase.schema("pai").from("sync_control").select("pull_enabled").eq("id", 1).maybeSingle();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   if (control?.pull_enabled) return NextResponse.json({ ok: false, error: "Failback bloqueado: desative sync_control.pull_enabled antes de executar." }, { status: 409 });
-  try { return NextResponse.json({ ok: true, dry_run: false, results: await run(false) }); }
+  try { return NextResponse.json({ ok: true, version: "uuid-safe-v2", dry_run: false, results: await run(false) }); }
   catch (e: any) { return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 }); }
 }
