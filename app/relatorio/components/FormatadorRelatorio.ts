@@ -257,6 +257,9 @@ function prepararOrigemResumo(
     const materiais = extrairMateriais(origem.materiais_json, materiaisMap);
     if (materiais.length) {
         origem.materiais = textoMateriais(materiais);
+    } else if (safeJsonParse(origem.materiais_json) && typeof safeJsonParse(origem.materiais_json) === "object") {
+        // A lista atual está vazia: não mostra a lista antiga que veio do histórico.
+        delete origem.materiais;
     }
 
     // Conservação / Insumos Tanatopraxia
@@ -265,7 +268,10 @@ function prepararOrigemResumo(
         origem.conservacao_itens = arr.arrumacao.join(", ");
     }
     if (arr.insumos.length) {
-        origem.insumos_tanatopraxia = textoMateriais(arr.insumos);
+        // O rótulo do campo já diz "Insumos Tanatopraxia": não repete a categoria em cada item.
+        origem.insumos_tanatopraxia = textoMateriais(
+            arr.insumos.map((item) => ({ ...item, categoria: "" })),
+        );
     }
 
     // Coroas

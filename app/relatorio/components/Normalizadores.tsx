@@ -306,14 +306,84 @@ export function extrairParesDoDetalhe(raw: any, materiaisMap?: MateriaisMap): Re
     return out;
 }
 
-/** Varre o log cronológico e retorna o último valor visto de cada campo */
-export function montarResumoFinalDoLog(log: LogItem[], materiaisMap?: MateriaisMap) {
-    const resumo: Record<string, string> = {};
-    const ord = [...log].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
-    for (const ent of ord) {
-        const pares = extrairParesDoDetalhe(ent.detalhes, materiaisMap);
-        for (const [k, v] of Object.entries(pares)) resumo[k] = v;
+/* ======================== Resumo a partir do histórico ======================== */
+
+/** A edição grava "(vazio)" quando o campo foi apagado: no resumo, o campo some. */
+function valorFoiApagado(v: any) {
+    return String(v ?? "").trim().toLowerCase() === "(vazio)";
+}
+
+function jsonVazioOuApagado(v: any) {
+    if (v == null) return true;
+    if (typeof v === "string") {
+        const s = v.trim();
+        return s === "" || valorFoiApagado(s);
     }
+    return false;
+}
+
+function temChave(obj: any, k: string) {
+    return Object.prototype.hasOwnProperty.call(obj, k);
+}
+
+const CHAVES_COROA_ESCALARES = ["coroa_flores", "coroa_tipo", "coroa_modelo", "coroa_produto_id"];
+
+/**
+ * Varre o log cronológico e retorna o último valor visto de cada campo.
+ *
+ * 26/10/2026: o atendimento finalizado (material recolhido) não vem mais no
+ * informativo.php?listar=1, então o resumo dele sai só daqui. Além dos campos simples,
+ * o resumo agora leva o último materiais_json, arrumacao_json (insumos da tanatopraxia
+ * e checklist da conservação) e coroas_itens, que o FormatadorRelatorio transforma em texto.
+ */
+export function montarResumoFinalDoLog(log: LogItem[], materiaisMap?: MateriaisMap) {
+    const resumo: Record<string, any> = {};
+    const ord = [...log].sort((a, b) => (a.datahora || "").localeCompare(b.datahora || ""));
+
+    for (const ent of ord) {
+        const det = safeJsonParse(ent.detalhes);
+        const obj = isPlainObject(det) ? det : null;
+
+        if (obj) {
+            // Materiais: a lista nova substitui a anterior inteira (também quando vem vazia).
+            if (temChave(obj, "materiais_json")) {
+                delete resumo.materiais;
+                if (jsonVazioOuApagado(obj.materiais_json)) delete resumo.materiais_json;
+                else resumo.materiais_json = obj.materiais_json;
+            }
+
+            // Conservação/insumos: "arrumacao_json" (formato atual) ou "arrumacao" (criação antiga).
+            const chaveArr = temChave(obj, "arrumacao_json")
+                ? "arrumacao_json"
+                : temChave(obj, "arrumacao")
+                    ? "arrumacao"
+                    : "";
+            if (chaveArr) {
+                const arr = obj[chaveArr];
+                if (jsonVazioOuApagado(arr)) delete resumo.arrumacao_json;
+                else resumo.arrumacao_json = arr;
+            }
+
+            // Coroas: a lista só vale enquanto ninguém mudou a coroa pelos campos simples depois.
+            if (temChave(obj, "coroas_itens")) {
+                const lista = safeJsonParse(obj.coroas_itens) ?? obj.coroas_itens;
+                if (Array.isArray(lista) && lista.length) resumo.coroas_itens = lista;
+                else delete resumo.coroas_itens;
+            } else if (CHAVES_COROA_ESCALARES.some((k) => temChave(obj, k))) {
+                delete resumo.coroas_itens;
+            }
+        }
+
+        const pares = extrairParesDoDetalhe(ent.detalhes, materiaisMap);
+        for (const [k, v] of Object.entries(pares)) {
+            if (valorFoiApagado(v)) {
+                delete resumo[k];
+                continue;
+            }
+            resumo[k] = v;
+        }
+    }
+
     return resumo;
 }
 
