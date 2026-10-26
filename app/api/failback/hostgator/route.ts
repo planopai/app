@@ -103,6 +103,32 @@ async function getRow(table: string, id: number) {
   return data as Row | null;
 }
 
+async function getFailbackMap(table: string, sourceId: number) {
+  const { data, error } = await supabase
+    .schema("pai")
+    .from("failback_id_map")
+    .select("id,tabela,dr_uuid,supabase_id,hostgator_id,status")
+    .eq("tabela", table)
+    .eq("supabase_id", sourceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`mapa ${table}/${sourceId}: ${error.message}`);
+  return data as Row | null;
+}
+
+async function markChange(
+  id: number,
+  patch: Record<string, unknown>,
+) {
+  const { error } = await supabase
+    .schema("pai")
+    .from("failback_changes")
+    .update(patch)
+    .eq("id", id);
+
+  if (error) throw new Error(`atualizar failback_changes/${id}: ${error.message}`);
+}
+
 async function run(dryRun: boolean) {
   const output: Row[] = [];
 
@@ -139,19 +165,95 @@ async function run(dryRun: boolean) {
   if (ce) throw new Error(`fila changes: ${ce.message}`);
 
   for (const c of changes ?? []) {
-    const table = String(c.tabela), sourceId = c.supabase_id == null ? null : Number(c.supabase_id);
+    const table = String(c.tabela);
+    const action = String(c.acao);
+    const sourceId = c.supabase_id == null ? null : Number(c.supabase_id);
+
+    // UPDATE/DELETE de um registro que nasceu na contingência precisa usar o
+    // ID que foi criado na HostGator. Se o registro foi apagado localmente
+    // antes de ter sido enviado, não existe nada para atualizar/apagar lá.
+    if (sourceId != null && table !== "est_saldo") {
+      const map = await getFailbackMap(table, sourceId);
+
+      if (map && map.hostgator_id == null && String(map.status) === "cancelado") {
+        output.push({
+          table,
+          action,
+          source_id: sourceId,
+          skipped: true,
+          reason: "registro criado na contingência foi removido antes de chegar à HostGator",
+          dry_run: dryRun,
+        });
+
+        if (!dryRun) {
+          await markChange(Number(c.id), {
+            status: "cancelado",
+            enviado_em: new Date().toISOString(),
+            erro: null,
+          });
+        }
+        continue;
+      }
+
+      // No dry-run, um mapa ainda pendente usa placeholder. No POST real,
+      // depois da fase de INSERT acima, ele obrigatoriamente já deve ter ID.
+      if (map && map.hostgator_id == null && !dryRun) {
+        throw new Error(
+          `${table}/${sourceId}: alteração pendente sem hostgator_id após fase de INSERT`,
+        );
+      }
+    }
+
     let row = (c.payload ?? {}) as Row;
     row = await rewriteFK(table, row, dryRun);
-    let targetId = sourceId == null ? null : await mapTarget(table, sourceId, dryRun);
-    if (table === "est_saldo") targetId = sourceId;
-    if ((c.acao === "update" || c.acao === "delete") && targetId == null) {
-      // Se o registro novo ainda não existe na origem, o INSERT correspondente deve ter sido processado acima.
-      targetId = sourceId == null ? null : await mapTarget(table, sourceId, dryRun);
+
+    let targetId =
+      sourceId == null
+        ? null
+        : table === "est_saldo"
+          ? sourceId
+          : await mapTarget(table, sourceId, dryRun);
+
+    // DELETE/UPDATE de registro originado na contingência e já enviado usa
+    // o ID remapeado. Registros antigos preservam o ID original.
+    if ((action === "update" || action === "delete") && targetId == null) {
+      if (dryRun && sourceId != null) {
+        targetId = sourceId;
+      } else {
+        throw new Error(`${table}/${sourceId}: target_id não resolvido para ${action}`);
+      }
     }
-    const action = table === "est_saldo" && c.acao === "insert" ? "upsert" : c.acao;
-    const res = await hostApply({ dry_run: dryRun, operation_uuid: String(c.change_uuid), table, action, source_id: sourceId, target_id: targetId, row });
-    output.push({ table, action, source_id: sourceId, target_id: res.target_id ?? targetId, dry_run: dryRun });
-    if (!dryRun) await supabase.schema("pai").from("failback_changes").update({ status: "enviado", enviado_em: new Date().toISOString(), erro: null }).eq("id", c.id);
+
+    const hostAction =
+      table === "est_saldo" && action === "insert"
+        ? "upsert"
+        : action;
+
+    const res = await hostApply({
+      dry_run: dryRun,
+      operation_uuid: String(c.change_uuid),
+      table,
+      action: hostAction,
+      source_id: sourceId,
+      target_id: targetId,
+      row,
+    });
+
+    output.push({
+      table,
+      action: hostAction,
+      source_id: sourceId,
+      target_id: res.target_id ?? targetId,
+      dry_run: dryRun,
+    });
+
+    if (!dryRun) {
+      await markChange(Number(c.id), {
+        status: "enviado",
+        enviado_em: new Date().toISOString(),
+        erro: null,
+      });
+    }
   }
 
   return output;
