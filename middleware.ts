@@ -60,9 +60,12 @@ function pickFirstAllowedPath(perms: string[]): string {
 export async function middleware(req: NextRequest) {
     const { pathname, search } = req.nextUrl;
 
-    // Rota técnica da sincronização. A própria route.ts valida
-    // Authorization: Bearer PAI_SYNC_TRIGGER_KEY.
-    if (pathname === "/api/sync/hostgator") {
+    // Rotas técnicas de sincronização/failback.
+    // As próprias route.ts validam Authorization: Bearer.
+    if (
+        pathname === "/api/sync/hostgator" ||
+        pathname === "/api/failback/hostgator"
+    ) {
         return NextResponse.next();
     }
 
