@@ -47,8 +47,15 @@ async function mapTarget(table: string, sourceId: any, dryRun = false): Promise<
   if (sourceId == null || sourceId === "") return sourceId;
   const n = Number(sourceId);
   if (!Number.isFinite(n)) return sourceId;
-  const { data, error } = await supabase.schema("pai").from("failback_id_map")
-    .select("hostgator_id,status").eq("tabela", table).eq("supabase_id", n).maybeSingle();
+  const { data, error } = await supabase
+    .schema("pai")
+    .from("failback_id_map")
+    .select("hostgator_id,status")
+    .eq("tabela", table)
+    .eq("supabase_id", n)
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   if (error) throw new Error(`mapa ${table}/${n}: ${error.message}`);
   if (!data) return n; // Registro já existia na HostGator: preserva o ID original.
   if (data.hostgator_id != null) return Number(data.hostgator_id);
@@ -110,6 +117,8 @@ async function getFailbackMap(table: string, sourceId: number) {
     .select("id,tabela,dr_uuid,supabase_id,hostgator_id,status")
     .eq("tabela", table)
     .eq("supabase_id", sourceId)
+    .order("id", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) throw new Error(`mapa ${table}/${sourceId}: ${error.message}`);
@@ -175,32 +184,97 @@ async function run(dryRun: boolean) {
     if (sourceId != null && table !== "est_saldo") {
       const map = await getFailbackMap(table, sourceId);
 
-      if (map && map.hostgator_id == null && String(map.status) === "cancelado") {
-        output.push({
-          table,
-          action,
-          source_id: sourceId,
-          skipped: true,
-          reason: "registro criado na contingência foi removido antes de chegar à HostGator",
-          dry_run: dryRun,
-        });
+      if (map && map.hostgator_id == null) {
+        const currentLocal = await getRow(table, sourceId);
 
-        if (!dryRun) {
-          await markChange(Number(c.id), {
-            status: "cancelado",
-            enviado_em: new Date().toISOString(),
-            erro: null,
+        // Registro nasceu na contingência e foi apagado antes do failback.
+        // Não existe nada correspondente para apagar na HostGator.
+        if (action === "delete" && !currentLocal) {
+          output.push({
+            table,
+            action,
+            source_id: sourceId,
+            target_id: null,
+            skipped: true,
+            reason: "registro criado e removido durante a contingência antes de chegar à HostGator",
+            dry_run: dryRun,
           });
-        }
-        continue;
-      }
 
-      // No dry-run, um mapa ainda pendente usa placeholder. No POST real,
-      // depois da fase de INSERT acima, ele obrigatoriamente já deve ter ID.
-      if (map && map.hostgator_id == null && !dryRun) {
-        throw new Error(
-          `${table}/${sourceId}: alteração pendente sem hostgator_id após fase de INSERT`,
-        );
+          if (!dryRun) {
+            if (String(map.status) !== "cancelado") {
+              const { error: mapCancelError } = await supabase
+                .schema("pai")
+                .from("failback_id_map")
+                .update({
+                  status: "cancelado",
+                  atualizado_em: new Date().toISOString(),
+                  erro: null,
+                })
+                .eq("id", map.id);
+
+              if (mapCancelError) {
+                throw new Error(
+                  `cancelar mapa ${table}/${sourceId}: ${mapCancelError.message}`,
+                );
+              }
+            }
+
+            await markChange(Number(c.id), {
+              status: "cancelado",
+              enviado_em: new Date().toISOString(),
+              erro: null,
+            });
+          }
+
+          continue;
+        }
+
+        // UPDATE de um registro novo ainda pendente:
+        // o INSERT da fase anterior usa a versão atual da linha, então no dry-run
+        // esta alteração já está incorporada no INSERT e não precisa ser simulada
+        // separadamente.
+        if (dryRun && action === "update") {
+          output.push({
+            table,
+            action,
+            source_id: sourceId,
+            target_id: null,
+            skipped: true,
+            reason: "alteração já incorporada ao INSERT final do registro de contingência",
+            dry_run: true,
+          });
+          continue;
+        }
+
+        if (String(map.status) === "cancelado") {
+          output.push({
+            table,
+            action,
+            source_id: sourceId,
+            target_id: null,
+            skipped: true,
+            reason: "registro de contingência cancelado antes de chegar à HostGator",
+            dry_run: dryRun,
+          });
+
+          if (!dryRun) {
+            await markChange(Number(c.id), {
+              status: "cancelado",
+              enviado_em: new Date().toISOString(),
+              erro: null,
+            });
+          }
+
+          continue;
+        }
+
+        // No POST real, depois da fase de INSERT acima, todo registro novo que
+        // continua existindo precisa obrigatoriamente ter recebido hostgator_id.
+        if (!dryRun) {
+          throw new Error(
+            `${table}/${sourceId}: alteração pendente sem hostgator_id após fase de INSERT`,
+          );
+        }
       }
     }
 
