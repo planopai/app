@@ -11,36 +11,6 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
 let IS_REDIRECTING = false;
 
-export type ModoOperacao = "primario" | "contingencia";
-
-let MODO_OPERACAO_CACHE: ModoOperacao | null = null;
-
-export async function obterModoOperacao(force = false): Promise<ModoOperacao> {
-    if (!force && MODO_OPERACAO_CACHE) return MODO_OPERACAO_CACHE;
-
-    const resp = await fetch("/api/auth/mode", {
-        cache: "no-store",
-        credentials: "include",
-    });
-
-    if (resp.status === 401) {
-        redirectToLogin(undefined, "Sessão expirada. Faça login novamente.");
-        throw new Error("Sessão expirada.");
-    }
-
-    const data = await resp.json().catch(() => null);
-    if (!resp.ok || !data?.sucesso) {
-        throw new Error(data?.error || "Não foi possível identificar o modo de operação.");
-    }
-
-    MODO_OPERACAO_CACHE = data?.modo === "contingencia" ? "contingencia" : "primario";
-    return MODO_OPERACAO_CACHE;
-}
-
-export function limparCacheModoOperacao() {
-    MODO_OPERACAO_CACHE = null;
-}
-
 /* -------------------- Defaults -------------------- */
 export function defaultMateriais(): MateriaisState {
     // Dinâmico (item/subitem), começa vazio.
@@ -559,20 +529,7 @@ export async function enviarRegistroPHP(data: any) {
 
     };
 
-    const modo = await obterModoOperacao();
-
-    if (modo === "contingencia") {
-        return jsonWith401("/api/contingencia", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-            body: JSON.stringify({
-                ...body,
-                gravar_contingencia: true,
-            }),
-        });
-    }
-
+    // ✅ agora aponta DIRETO pro PHP no domínio da API
     return jsonWith401(`${ENDPOINT}/informativo.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
