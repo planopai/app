@@ -9,6 +9,8 @@
  * Recibo (26/10/2026): a Aurora pergunta ao cliente se ele quer o recibo; quem pediu recebe o PDF junto com a baixa
  * (as parcelas pagas são escolhidas aqui). Fora da janela de 24 h do WhatsApp o recibo fica guardado e vai quando o cliente escrever.
  * Número sem contrato é vinculado aqui mesmo (mesmo vínculo da conversa).
+ * Retirar da lista (26/10/2026): comprovante de teste ou lançado por engano sai da lista (situação X) e fica no filtro
+ * "Retirados", de onde pode voltar. Só o Financeiro ou a Gestão retiram e devolvem.
  * Servidor: aurora_01.php (arquivo novo; não usa o messenger.php). Acesso: página "messenger".
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -18,11 +20,12 @@ const API = `${API_BASE}/aurora_01.php`;
 
 type Vinculo = { contrato: string; titular: string | null; plano: string | null; relacao: string; pode_pagar: boolean };
 type Item = {
-    id: number; situacao: "A" | "P" | "B" | "C" | "D" | "N"; recebido_em: string | null; conversa_id: number; contato_id: number;
+    id: number; situacao: "A" | "P" | "B" | "C" | "D" | "N" | "X"; recebido_em: string | null; conversa_id: number; contato_id: number;
     nome: string | null; telefone: string | null; contrato: string | null; vinculos: Vinculo[];
     valor: number | null; pago_em: string | null; obs: string | null; mime: string | null; anexo_id: number | null;
     baixa_por: string | null; baixa_em: string | null; conferido_por: string | null; conferido_em: string | null;
     quer_recibo: boolean; recibo_enviado_em: string | null; recibo_pendente: boolean;
+    retirado: { por: string; em: string; motivo: string } | null;
 };
 type Paga = { id: number; parcela: string; valor: number; vencimento: string; pago_em: string };
 type Lista = { itens: Item[]; contagem: Record<string, number>; a_ler: number; pode_conferir: boolean };
@@ -37,6 +40,7 @@ const SIT: Record<string, [string, string]> = {
     C: ["Conferido na conta", "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#D5E79A]"],
     D: ["Divergente", "bg-[#FDECEA] text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]"],
     N: ["Não é comprovante", "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]"],
+    X: ["Retirado da lista", "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]"],
 };
 const FILTROS: [string, string, string[]][] = [
     ["baixa", "1 · Aguardando baixa", ["A", "P"]],
@@ -45,6 +49,7 @@ const FILTROS: [string, string, string[]][] = [
     ["D", "Divergentes", ["D"]],
     ["N", "Não é comprovante", ["N"]],
     ["todos", "Todos", []],
+    ["X", "Retirados", ["X"]],
 ];
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const dt = (s: string | null) => (s ? new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
@@ -164,7 +169,7 @@ export default function ComprovantesPage() {
 
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                     <div className="flex gap-2 overflow-x-auto pb-1">
-                        {FILTROS.map(([k, nome, sits]) => {
+                        {FILTROS.filter(([k]) => k !== "X" || !!lista?.pode_conferir).map(([k, nome, sits]) => {
                             const n = contar(sits);
                             return (
                                 <button key={k} type="button" onClick={() => { setFiltro(k); setSelId(null); setMarcados([]); }} aria-pressed={filtro === k}
@@ -198,7 +203,7 @@ export default function ComprovantesPage() {
                                     <input type="checkbox" className="size-5" checked={marcados.includes(c.id)} onChange={() => marcar(c.id)} aria-label={`Marcar ${c.nome || c.telefone || "comprovante"}`} />
                                 </label>
                             )}
-                            <button type="button" onClick={() => { setSelId(c.id); setAviso(""); }}
+                            <button type="button" onClick={() => { setSelId(c.id); setAviso(""); setErro(""); }}
                                 className={`flex min-w-0 flex-1 flex-col gap-1 rounded-xl px-3 py-2.5 text-left hover:bg-[#F0F2F5] dark:hover:bg-white/5 ${selId === c.id ? "bg-[#F0F2F5] dark:bg-white/10" : ""}`}>
                                 <span className="flex items-center gap-2">
                                     <b className="min-w-0 flex-1 truncate text-[15.5px]">{c.nome || fone(c.telefone) || "Sem nome"}</b>
@@ -237,6 +242,8 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
     const [pagas, setPagas] = useState<Paga[] | null>(null);
     const [escolhidas, setEscolhidas] = useState<number[]>([]);
     const [carregandoPagas, setCarregandoPagas] = useState(false);
+    const [retirando, setRetirando] = useState(false);
+    const [motivo, setMotivo] = useState("Teste");
 
     useEffect(() => {
         let ativo = true;
@@ -309,6 +316,18 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
             setSalvando(false);
         }
     };
+    const retirar = async (acao: "retirar" | "devolver") => {
+        setSalvando(true);
+        try {
+            const r = await aPost(acao, { ids: [item.id], motivo });
+            setRetirando(false);
+            await aoMudar(r.msg);
+        } catch (e: any) {
+            aoErro(e.message);
+        } finally {
+            setSalvando(false);
+        }
+    };
     const buscar = async () => {
         try {
             setAchados(await aGet<Achado[]>("contratos_buscar", { q }));
@@ -365,6 +384,7 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
                         {item.situacao === "B" && <p className="mb-0 mt-1 font-bold text-[#1E3A5C] dark:text-white">2 · Aguardando o Financeiro conferir na conta.</p>}
                         {item.conferido_em && item.situacao === "C" && <p className="mb-0 mt-1 font-bold text-[#2F4207] dark:text-[#D5E79A]">2 · Conferido na conta por {item.conferido_por || "—"} em {dt(item.conferido_em)}.</p>}
                         {item.conferido_em && item.situacao === "D" && <p className="mb-0 mt-1 font-bold text-[#B42318] dark:text-[#FF9C92]">2 · {item.conferido_por || "O Financeiro"} não encontrou na conta em {dt(item.conferido_em)}.</p>}
+                        {item.situacao === "X" && <p className="mb-0 mt-2 font-bold">Retirado da lista{item.retirado ? ` por ${item.retirado.por || "—"} em ${dt(item.retirado.em ? item.retirado.em.replace(" ", "T") : null)} · Motivo: ${item.retirado.motivo || "—"}` : ""}.</p>}
                     </div>
 
                     <div>
@@ -441,6 +461,12 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
                         <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Observação (opcional)</span>
                         <input className={`${CAMPO} mt-1`} value={nota} onChange={(ev) => setNota(ev.target.value)} placeholder="Ex.: baixa nas parcelas de setembro e outubro" maxLength={120} />
                     </label>
+                    {item.situacao === "X" ? (
+                        <div className="flex flex-wrap gap-2">
+                            {podeConferir ? <button type="button" disabled={salvando} onClick={() => retirar("devolver")} className={`${BTN} bg-[#313C55] text-white dark:bg-[#3D6A99]`}>Devolver para a lista</button>
+                                : <p className="m-0 text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Só o Financeiro ou a Gestão devolvem para a lista.</p>}
+                        </div>
+                    ) : (<>
                     <div className="flex flex-wrap gap-2">
                         {["A", "P", "D", "N"].includes(item.situacao) && <button type="button" disabled={salvando || !contrato} onClick={() => marcar("B")} className={`${BTN} bg-[#4C9A2A] text-white`}>{item.quer_recibo && escolhidas.length ? "Baixa registrada e enviar recibo" : "Baixa registrada"}</button>}
                         {item.situacao === "B" && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("ok")} className={`${BTN} bg-[#4C9A2A] text-white`}>Conferido na conta</button>}
@@ -451,6 +477,21 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
                         {(["B", "D", "N"].includes(item.situacao) || (item.situacao === "C" && podeConferir)) && <button type="button" disabled={salvando} onClick={() => marcar("P")} className={`${BTN} border border-[#C9D1DE]`}>Voltar para aguardar baixa</button>}
                     </div>
                     {!contrato && ["A", "P", "D", "N"].includes(item.situacao) && <p className="m-0 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Para registrar a baixa, vincule o número a um contrato.</p>}
+                    {podeConferir && !retirando && <button type="button" disabled={salvando} onClick={() => setRetirando(true)} className={`${BTN} self-start border border-[#C9D1DE] text-[#5B6478] dark:text-[#AEB9CF]`}>Retirar da lista</button>}
+                    {podeConferir && retirando && (
+                        <div className="flex flex-col gap-2 rounded-xl border border-[#E1E5EC] p-3 dark:border-white/12">
+                            <p className="m-0 text-[14.5px] font-bold">Retirar este comprovante da lista? Ele sai de todos os filtros e fica em Retirados, de onde pode voltar.</p>
+                            <label className="block">
+                                <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Motivo</span>
+                                <input className={`${CAMPO} mt-1`} value={motivo} onChange={(ev) => setMotivo(ev.target.value)} maxLength={150} placeholder="Ex.: teste, enviado em duplicidade" />
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                <button type="button" onClick={() => setRetirando(false)} className={`${BTN} border border-[#C9D1DE]`}>Voltar</button>
+                                <button type="button" disabled={salvando || !motivo.trim()} onClick={() => retirar("retirar")} className={`${BTN} bg-[#313C55] text-white dark:bg-[#F2CB3F] dark:text-[#313C55]`}>{salvando ? "Salvando…" : "Retirar da lista"}</button>
+                            </div>
+                        </div>
+                    )}
+                    </>)}
                 </div>
             </div>
         </div>

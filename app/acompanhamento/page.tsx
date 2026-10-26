@@ -31,6 +31,7 @@ import {
   capitalizeStatus,
   normalizarStatus,
   normalizeMateriaisState,
+  obterModoOperacao,
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
@@ -870,14 +871,23 @@ export default function AcompanhamentoPage() {
   const [podeAlterarItensTravados, setPodeAlterarItensTravados] = useState(false);
   useEffect(() => {
     let cancel = false;
-    fetch(`${ME_API}&_nocache=${Date.now()}`, { credentials: "include", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
+
+    void (async () => {
+      try {
+        const modo = await obterModoOperacao();
+        const url =
+          modo === "contingencia"
+            ? `/api/contingencia?me=1&_nocache=${Date.now()}`
+            : `${ME_API}&_nocache=${Date.now()}`;
+
+        const r = await fetch(url, { credentials: "include", cache: "no-store" });
+        const j = r.ok ? await r.json().catch(() => null) : null;
         if (!cancel) setPodeAlterarItensTravados(!!j?.pode_alterar_itens_travados);
-      })
-      .catch(() => {
-        // Sem resposta (offline): fica travado. O servidor confere de novo ao salvar.
-      });
+      } catch {
+        // Sem resposta: fica travado. O servidor confere de novo ao salvar.
+      }
+    })();
+
     return () => {
       cancel = true;
     };
@@ -947,24 +957,29 @@ export default function AcompanhamentoPage() {
     }
 
     try {
-      const r = await fetch(
-        `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
-        {
-          cache: "no-store",
-          credentials: "include",
-        },
-      );
+      const modo = await obterModoOperacao();
+      const url =
+        modo === "contingencia"
+          ? `/api/contingencia?recurso=sepultamentos&_nocache=${Date.now()}`
+          : `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`;
+
+      const r = await fetch(url, {
+        cache: "no-store",
+        credentials: "include",
+      });
 
       if (r.status === 401) {
         await showCached();
         return;
       }
 
-      const data = await r.json().catch(() => null);
-      if (data?.need_login) {
+      const raw = await r.json().catch(() => null);
+      if (raw?.need_login) {
         await showCached();
         return;
       }
+
+      const data = modo === "contingencia" ? raw?.dados : raw;
 
       const sane: Registro[] = Array.isArray(data)
         ? data.map((it: any) => ({
@@ -2966,7 +2981,8 @@ export default function AcompanhamentoPage() {
       // Assim, se o pedido já entrou em produção ou o estoque artificial não
       // comportar a alteração, o próprio atendimento não fica divergente.
       let coroaSincronizadaAntes = false;
-      if (wizardEditing && coroaMudou) {
+      const modoOperacao = await obterModoOperacao();
+      if (modoOperacao === "primario" && wizardEditing && coroaMudou) {
         const atendimentoIdEdicao = payload?.id ?? (dataAtualizada as any)?.id ?? null;
         if (atendimentoIdEdicao == null) {
           setWizardMsg({ text: "Não foi possível identificar o atendimento para sincronizar as coroas.", ok: false });
@@ -2991,7 +3007,7 @@ export default function AcompanhamentoPage() {
         const atendimentoId =
           json?.id ?? json?.novo_id ?? json?.last_id ?? payload?.id ?? (dataAtualizada as any)?.id ?? null;
 
-        if (coroaMudou && atendimentoId != null && !coroaSincronizadaAntes) {
+        if (modoOperacao === "primario" && coroaMudou && atendimentoId != null && !coroaSincronizadaAntes) {
           try {
             // Novo atendimento: primeiro precisamos do ID gerado em sepultamentos,
             // por isso a Ordem de Serviço é criada logo após o INSERT.

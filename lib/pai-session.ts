@@ -1,7 +1,8 @@
 import crypto from "crypto";
 
-type SessaoPai = {
+export type SessaoPai = {
     usuario: string;
+    modo?: "primario" | "contingencia";
     iat: number;
     exp: number;
 };

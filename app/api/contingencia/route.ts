@@ -34,6 +34,9 @@ async function resolverUsuario(request: NextRequest) {
   const token = request.cookies.get("pai_session")?.value;
   const sessao = validarPaiSession(token);
   if (!sessao) return { error: "Sessão inválida ou expirada", status: 401 } as const;
+  if (sessao.modo !== "contingencia") {
+    return { error: "Operação de contingência não habilitada nesta sessão.", status: 409 } as const;
+  }
 
   const { data: usuario, error: usuarioError } = await supabase
     .schema("pai")

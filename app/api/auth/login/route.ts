@@ -49,7 +49,10 @@ function capitalizeFirst(s: string) {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function criarSessaoAssinada(usuario: string): string | null {
+function criarSessaoAssinada(
+    usuario: string,
+    modo: "primario" | "contingencia"
+): string | null {
     const secret = process.env.PAI_SESSION_SECRET;
 
     if (!secret) {
@@ -65,6 +68,7 @@ function criarSessaoAssinada(usuario: string): string | null {
     const agora = Math.floor(Date.now() / 1000);
     const payload = {
         usuario,
+        modo,
         iat: agora,
         exp: agora + SESSION_SECONDS,
     };
@@ -362,7 +366,7 @@ function respostaLoginSucesso(params: {
 
     const nomeExibicao = capitalizeFirst(nomeOriginal.trim());
     const isProd = process.env.NODE_ENV === "production";
-    const paiSession = criarSessaoAssinada(usuarioLogin);
+    const paiSession = criarSessaoAssinada(usuarioLogin, modo);
 
     const res = NextResponse.json({
         sucesso: true,

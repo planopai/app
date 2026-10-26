@@ -9,6 +9,7 @@ import { getOperationalTimestamp } from "@/lib/offline/clock";
 import { getOfflineDeviceId } from "@/lib/offline/device";
 import { newOfflineId } from "@/lib/offline/db";
 import { saveOfflinePhoto } from "@/lib/offline/photos";
+import { obterModoOperacao } from "./helpers";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -235,6 +236,15 @@ async function comprimirArquivoSelecionado(file: File): Promise<{
     }
 }
 
+function blobToDataUri(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(new Error("Não foi possível preparar a foto para contingência."));
+        reader.readAsDataURL(blob);
+    });
+}
+
 async function salvarFotoAcao({
     id,
     tipo,
@@ -254,25 +264,54 @@ async function salvarFotoAcao({
     deviceId: string;
     userId: string;
 }) {
-    const form = new FormData();
-    form.append("acao", "salvar_foto_acao");
-    form.append("id", String(id));
-    form.append("tipo", tipo);
-    form.append("foto", foto, `${tipo}.jpg`);
-    form.append("operation_id", operationId);
-    form.append("ocorreu_em", ocorreuEm);
-    form.append("device_id", deviceId);
-    form.append("usuario_id", userId);
-    form.append("origem", "online");
+    const modo = await obterModoOperacao();
 
-    const res = await fetch(`${ENDPOINT}/informativo.php`, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        body: form,
-        signal,
-    });
+    let res: Response;
+
+    if (modo === "contingencia") {
+        const base64 = await blobToDataUri(foto);
+        res = await fetch("/api/contingencia", {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                acao: "salvar_foto_acao",
+                id: String(id),
+                tipo,
+                base64,
+                operation_id: operationId,
+                ocorreu_em: ocorreuEm,
+                device_id: deviceId,
+                usuario_id: userId,
+                origem: "online",
+            }),
+            signal,
+        });
+    } else {
+        const form = new FormData();
+        form.append("acao", "salvar_foto_acao");
+        form.append("id", String(id));
+        form.append("tipo", tipo);
+        form.append("foto", foto, `${tipo}.jpg`);
+        form.append("operation_id", operationId);
+        form.append("ocorreu_em", ocorreuEm);
+        form.append("device_id", deviceId);
+        form.append("usuario_id", userId);
+        form.append("origem", "online");
+
+        res = await fetch(`${ENDPOINT}/informativo.php`, {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+            body: form,
+            signal,
+        });
+    }
 
     const data = await res.json().catch(() => null);
 
