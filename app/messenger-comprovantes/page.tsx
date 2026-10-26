@@ -6,6 +6,8 @@
  * Duas etapas, feitas por pessoas diferentes (24/10/2026):
  *  1. quem atende confere com o contrato vinculado ao número, dá a baixa no UnyPax e marca "Baixa registrada";
  *  2. o Financeiro confere na conta do banco e marca "Conferido na conta" (um ou vários) ou "Não caiu na conta".
+ * Recibo (26/10/2026): a Aurora pergunta ao cliente se ele quer o recibo; quem pediu recebe o PDF junto com a baixa
+ * (as parcelas pagas são escolhidas aqui). Fora da janela de 24 h do WhatsApp o recibo fica guardado e vai quando o cliente escrever.
  * Número sem contrato é vinculado aqui mesmo (mesmo vínculo da conversa).
  * Servidor: aurora_01.php (arquivo novo; não usa o messenger.php). Acesso: página "messenger".
  */
@@ -20,7 +22,9 @@ type Item = {
     nome: string | null; telefone: string | null; contrato: string | null; vinculos: Vinculo[];
     valor: number | null; pago_em: string | null; obs: string | null; mime: string | null; anexo_id: number | null;
     baixa_por: string | null; baixa_em: string | null; conferido_por: string | null; conferido_em: string | null;
+    quer_recibo: boolean; recibo_enviado_em: string | null; recibo_pendente: boolean;
 };
+type Paga = { id: number; parcela: string; valor: number; vencimento: string; pago_em: string };
 type Lista = { itens: Item[]; contagem: Record<string, number>; a_ler: number; pode_conferir: boolean };
 type Parcela = { parcela: string; valor: number; vencimento: string };
 type Parcelas = { titular: string; vencidas: Parcela[]; abertas: Parcela[]; total_vencido: number };
@@ -203,6 +207,7 @@ export default function ComprovantesPage() {
                                 <span className="flex flex-wrap items-center gap-2 text-[13px]">
                                     <span className={`rounded-lg px-2 py-0.5 font-extrabold ${SIT[c.situacao]?.[1] || ""}`}>{SIT[c.situacao]?.[0] || c.situacao}</span>
                                     {c.contrato ? <span className="rounded-lg bg-[#313C55] px-2 py-0.5 font-extrabold text-white">Contrato {c.contrato}</span> : <span className="rounded-lg border border-[#C9D1DE] px-2 py-0.5 font-bold">Sem contrato</span>}
+                                    {c.recibo_enviado_em ? <span className="rounded-lg bg-[#EEF5D6] px-2 py-0.5 font-bold text-[#2F4207]">Recibo enviado</span> : c.quer_recibo ? <span className="rounded-lg bg-[#E9EFF6] px-2 py-0.5 font-bold text-[#1E3A5C]">{c.recibo_pendente ? "Recibo guardado" : "Quer recibo"}</span> : null}
                                     <span className="text-[#6B7488] dark:text-[#AEB9CF]">{filtro === "conferir" && c.pago_em ? `pago ${dataBr(c.pago_em)}` : dt(c.recebido_em)}</span>
                                 </span>
                             </button>
@@ -229,6 +234,9 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
     const [q, setQ] = useState("");
     const [achados, setAchados] = useState<Achado[] | null>(null);
     const [relacao, setRelacao] = useState("titular");
+    const [pagas, setPagas] = useState<Paga[] | null>(null);
+    const [escolhidas, setEscolhidas] = useState<number[]>([]);
+    const [carregandoPagas, setCarregandoPagas] = useState(false);
 
     useEffect(() => {
         let ativo = true;
@@ -253,10 +261,36 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
             setCarregandoParcelas(false);
         }
     };
+    const verPagas = async () => {
+        if (!contrato) return;
+        setCarregandoPagas(true);
+        try {
+            const l = await aGet<Paga[]>("pagas", { contrato });
+            setPagas(l);
+            // sugestão: a parcela paga mais recente com o mesmo valor do comprovante; sem valor igual, a mais recente
+            const igual = l.find((p) => item.valor !== null && Math.abs(p.valor - item.valor) < 0.01);
+            setEscolhidas(igual ? [igual.id] : l.length ? [l[0].id] : []);
+        } catch (e: any) {
+            aoErro(e.message);
+        } finally {
+            setCarregandoPagas(false);
+        }
+    };
+    const enviarRecibo = async () => {
+        setSalvando(true);
+        try {
+            const r = await aPost("recibo", { id: item.id, contas: escolhidas });
+            await aoMudar(r.msg);
+        } catch (e: any) {
+            aoErro(e.message);
+        } finally {
+            setSalvando(false);
+        }
+    };
     const marcar = async (situacao: string) => {
         setSalvando(true);
         try {
-            const r = await aPost("marcar", { id: item.id, situacao, nota, contrato });
+            const r = await aPost("marcar", { id: item.id, situacao, nota, contrato, recibo_contas: situacao === "B" && item.quer_recibo ? escolhidas : [] });
             await aoMudar(r.msg);
         } catch (e: any) {
             aoErro(e.message);
@@ -381,12 +415,34 @@ function Detalhe({ item, podeConferir, voltar, aoMudar, aoErro }: { item: Item; 
                         )}
                     </div>
 
+                    {(item.quer_recibo || ["B", "C"].includes(item.situacao)) && contrato && (
+                        <div className="rounded-xl border border-[#E1E5EC] p-3 text-[14.5px] dark:border-white/12">
+                            <div className="mb-1 text-[12px] font-extrabold uppercase tracking-wider text-[#3D6A99]">Recibo</div>
+                            {item.recibo_enviado_em ? <p className="m-0 font-bold text-[#2F4207] dark:text-[#D5E79A]">Recibo enviado ao cliente em {dt(item.recibo_enviado_em)}.</p>
+                                : item.recibo_pendente ? <p className="m-0">Recibo guardado: vai sozinho quando o cliente escrever de novo (fora da janela de 24 h do WhatsApp).</p>
+                                : <p className="m-0">{item.quer_recibo ? "O cliente pediu o recibo." : "O cliente não pediu o recibo, mas você pode enviar."} {["A", "P", "D", "N"].includes(item.situacao) ? "Dê a baixa no UnyPax, escolha a parcela paga e ele vai junto com a baixa." : "Escolha a parcela paga e envie."}</p>}
+                            {!item.recibo_enviado_em && !item.recibo_pendente && (
+                                <div className="mt-2 flex flex-col gap-2">
+                                    {!pagas && <button type="button" onClick={verPagas} disabled={carregandoPagas} className={`${BTN} self-start border border-[#C9D1DE]`}>{carregandoPagas ? "Consultando…" : "Ver parcelas pagas"}</button>}
+                                    {pagas && !pagas.length && <p className="m-0 text-[#6B7488]">Nenhuma parcela paga encontrada. Confira se a baixa já entrou no UnyPax.</p>}
+                                    {pagas && pagas.map((p) => (
+                                        <label key={p.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-[#E1E5EC] px-3 py-2 dark:border-white/12">
+                                            <input type="checkbox" className="size-5" checked={escolhidas.includes(p.id)} onChange={() => setEscolhidas((e) => (e.includes(p.id) ? e.filter((x) => x !== p.id) : [...e, p.id]))} />
+                                            <span className="flex-1">{p.parcela || "Parcela"} · venc. {dataBr(p.vencimento)}{p.pago_em ? ` · paga ${dataBr(p.pago_em)}` : ""}</span><b>{brl(p.valor)}</b>
+                                        </label>
+                                    ))}
+                                    {pagas && pagas.length > 0 && ["B", "C"].includes(item.situacao) && <button type="button" disabled={salvando || !escolhidas.length} onClick={enviarRecibo} className={`${BTN} self-start bg-[#313C55] text-white dark:bg-[#3D6A99]`}>Enviar recibo</button>}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     <label className="block">
                         <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Observação (opcional)</span>
                         <input className={`${CAMPO} mt-1`} value={nota} onChange={(ev) => setNota(ev.target.value)} placeholder="Ex.: baixa nas parcelas de setembro e outubro" maxLength={120} />
                     </label>
                     <div className="flex flex-wrap gap-2">
-                        {["A", "P", "D", "N"].includes(item.situacao) && <button type="button" disabled={salvando || !contrato} onClick={() => marcar("B")} className={`${BTN} bg-[#4C9A2A] text-white`}>Baixa registrada</button>}
+                        {["A", "P", "D", "N"].includes(item.situacao) && <button type="button" disabled={salvando || !contrato} onClick={() => marcar("B")} className={`${BTN} bg-[#4C9A2A] text-white`}>{item.quer_recibo && escolhidas.length ? "Baixa registrada e enviar recibo" : "Baixa registrada"}</button>}
                         {item.situacao === "B" && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("ok")} className={`${BTN} bg-[#4C9A2A] text-white`}>Conferido na conta</button>}
                         {(item.situacao === "B" || item.situacao === "C") && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("nao_caiu")} className={`${BTN} border border-[#C9D1DE] text-[#B42318] dark:text-[#FF9C92]`}>Não caiu na conta</button>}
                         {item.situacao === "C" && podeConferir && <button type="button" disabled={salvando} onClick={() => conferir("desfazer")} className={`${BTN} border border-[#C9D1DE]`}>Desfazer conferência</button>}

@@ -17,6 +17,7 @@ type TableCfg = {
 };
 
 const TABLES: TableCfg[] = [
+  // Base já validada anteriormente.
   { table: "cargos", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "cargo_paginas", mode: "snapshot", conflict: "cargo_id,pagina" },
   { table: "permissoes", mode: "snapshot", conflict: "user_id,pagina" },
@@ -29,16 +30,64 @@ const TABLES: TableCfg[] = [
   { table: "sepultamentos", mode: "timestamp", conflict: "id", reconcileDeletes: true },
   { table: "coroas", mode: "timestamp", conflict: "id", reconcileDeletes: true },
   { table: "coroas_itens", mode: "timestamp", conflict: "id", reconcileDeletes: true },
-
-  // atualizado_em pode ser NULL na origem; snapshot evita perder registros antigos.
   { table: "homenagens", mode: "snapshot", conflict: "id", reconcileDeletes: true },
-
   { table: "os_ordens", mode: "timestamp", conflict: "id", reconcileDeletes: true },
-
-  // Não propagamos DELETE físico nestas tabelas históricas.
-  // Elas usam janela de reconciliação para capturar desfeitas/estornos.
   { table: "historico_sepultamentos", mode: "append_window", conflict: "id" },
   { table: "est_movimento", mode: "append_window", conflict: "id" },
+
+  // Prioridade A - novas tabelas.
+  // Ordem respeita dependências principais de FK.
+  { table: "coroas_integracao_config", mode: "snapshot", conflict: "chave" },
+
+  { table: "est_classificacao", mode: "timestamp", conflict: "id" },
+  { table: "est_fabricante", mode: "timestamp", conflict: "id" },
+
+  { table: "est_confeccao", mode: "snapshot", conflict: "id" },
+  { table: "est_confeccao_item", mode: "snapshot", conflict: "id" },
+  { table: "est_confeccao_movimento", mode: "snapshot", conflict: "id" },
+
+  { table: "est_conferencia", mode: "snapshot", conflict: "id" },
+  { table: "est_conferencia_atendimento", mode: "snapshot", conflict: "atendimento_id" },
+  { table: "est_conferencia_item", mode: "snapshot", conflict: "id" },
+  { table: "est_conferencia_periodo", mode: "snapshot", conflict: "id" },
+
+  { table: "est_contagem_rapida", mode: "snapshot", conflict: "id" },
+  { table: "est_contagem_rapida_item", mode: "snapshot", conflict: "id" },
+
+  { table: "est_custo_ajuste", mode: "snapshot", conflict: "id" },
+  { table: "est_custo_ajuste_item", mode: "snapshot", conflict: "id" },
+
+  { table: "est_estoque_alerta", mode: "timestamp", conflict: "id" },
+  { table: "est_lancamento_seq", mode: "snapshot", conflict: "prefixo" },
+
+  { table: "est_produto_foto", mode: "snapshot", conflict: "id" },
+  { table: "est_produto_lote", mode: "snapshot", conflict: "id" },
+  { table: "est_recebimento_contagem", mode: "snapshot", conflict: "id" },
+
+  { table: "est_reposicao_base", mode: "snapshot", conflict: "deposito_id,produto_id" },
+  { table: "est_reposicao_config", mode: "snapshot", conflict: "chave" },
+  { table: "est_reposicao_execucao", mode: "snapshot", conflict: "id" },
+  { table: "est_reposicao_local", mode: "snapshot", conflict: "deposito_id" },
+  { table: "est_reposicao_pausa", mode: "snapshot", conflict: "id" },
+
+  { table: "est_requisicao", mode: "timestamp", conflict: "id" },
+  { table: "est_requisicao_evento", mode: "snapshot", conflict: "id" },
+  { table: "est_requisicao_item", mode: "timestamp", conflict: "id" },
+
+  { table: "guias_atendimento", mode: "timestamp", conflict: "id" },
+
+  { table: "materiais_categoria", mode: "timestamp", conflict: "id" },
+  { table: "materiais_item", mode: "timestamp", conflict: "id" },
+  { table: "materiais_subitem", mode: "timestamp", conflict: "id" },
+  { table: "materiais_conferencia", mode: "snapshot", conflict: "id" },
+  { table: "materiais_conferencia_item", mode: "snapshot", conflict: "id" },
+  { table: "materiais_conferencia_observacao", mode: "snapshot", conflict: "id" },
+
+  { table: "os_convenio_pacote_itens", mode: "snapshot", conflict: "id" },
+  { table: "os_parametros", mode: "snapshot", conflict: "chave" },
+
+  { table: "sepultamento_urna_meta", mode: "snapshot", conflict: "sepultamento_id" },
+  { table: "sepultamento_urna_saida", mode: "snapshot", conflict: "id" },
 ];
 
 function unauthorized() {
