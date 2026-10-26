@@ -490,9 +490,47 @@ export async function POST(request: NextRequest) {
         });
 
       if (error) {
-        for (const p of uploadedPaths) await removerArquivoContingencia(p);
+        for (const p of uploadedPaths) {
+          await removerArquivoContingencia(p);
+        }
+
         const mapped = rpcHttpError(error.message);
-        return jsonError(mapped.msg, mapped.status, mapped.codigo);
+
+        if (mapped.codigo === "CONFLITO_STATUS") {
+          const atendimentoId = Number(payload.id ?? 0);
+
+          if (Number.isInteger(atendimentoId) && atendimentoId > 0) {
+            const { data: atual, error: atualError } = await supabase
+              .schema("pai")
+              .from("sepultamentos")
+              .select("status")
+              .eq("id", atendimentoId)
+              .maybeSingle();
+
+            if (!atualError) {
+              const statusAtual = String(atual?.status ?? "")
+                .trim()
+                .toLowerCase();
+
+              return NextResponse.json(
+                {
+                  sucesso: false,
+                  erro: true,
+                  codigo: "CONFLITO_STATUS",
+                  status_atual: statusAtual,
+                  msg: mapped.msg,
+                },
+                { status: 409 },
+              );
+            }
+          }
+        }
+
+        return jsonError(
+          mapped.msg,
+          mapped.status,
+          mapped.codigo,
+        );
       }
 
       return NextResponse.json({ ...(data as object), modo: "contingencia" });
