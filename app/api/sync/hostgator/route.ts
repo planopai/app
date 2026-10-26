@@ -14,13 +14,14 @@ type TableCfg = {
   mode: "timestamp" | "append_window" | "snapshot";
   conflict: string;
   reconcileDeletes?: boolean;
+  deleteKeys?: string[];
 };
 
 const TABLES: TableCfg[] = [
   // Base já validada anteriormente.
   { table: "cargos", mode: "snapshot", conflict: "id", reconcileDeletes: true },
-  { table: "cargo_paginas", mode: "snapshot", conflict: "cargo_id,pagina" },
-  { table: "permissoes", mode: "snapshot", conflict: "user_id,pagina" },
+  { table: "cargo_paginas", mode: "snapshot", conflict: "cargo_id,pagina", reconcileDeletes: true, deleteKeys: ["cargo_id", "pagina"] },
+  { table: "permissoes", mode: "snapshot", conflict: "user_id,pagina", reconcileDeletes: true, deleteKeys: ["user_id", "pagina"] },
   { table: "usuarios", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "est_deposito", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
@@ -37,7 +38,7 @@ const TABLES: TableCfg[] = [
 
   // Prioridade A - novas tabelas.
   // Ordem respeita dependências principais de FK.
-  { table: "coroas_integracao_config", mode: "snapshot", conflict: "chave" },
+  { table: "coroas_integracao_config", mode: "snapshot", conflict: "chave", reconcileDeletes: true, deleteKeys: ["chave"] },
 
   { table: "est_classificacao", mode: "timestamp", conflict: "id", reconcileDeletes: true },
   { table: "est_fabricante", mode: "timestamp", conflict: "id", reconcileDeletes: true },
@@ -47,7 +48,7 @@ const TABLES: TableCfg[] = [
   { table: "est_confeccao_movimento", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
   { table: "est_conferencia", mode: "snapshot", conflict: "id", reconcileDeletes: true },
-  { table: "est_conferencia_atendimento", mode: "snapshot", conflict: "atendimento_id" },
+  { table: "est_conferencia_atendimento", mode: "snapshot", conflict: "atendimento_id", reconcileDeletes: true, deleteKeys: ["atendimento_id"] },
   { table: "est_conferencia_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "est_conferencia_periodo", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
@@ -58,16 +59,16 @@ const TABLES: TableCfg[] = [
   { table: "est_custo_ajuste_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
   { table: "est_estoque_alerta", mode: "timestamp", conflict: "id", reconcileDeletes: true },
-  { table: "est_lancamento_seq", mode: "snapshot", conflict: "prefixo" },
+  { table: "est_lancamento_seq", mode: "snapshot", conflict: "prefixo", reconcileDeletes: true, deleteKeys: ["prefixo"] },
 
   { table: "est_produto_foto", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "est_produto_lote", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "est_recebimento_contagem", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_reposicao_base", mode: "snapshot", conflict: "deposito_id,produto_id" },
-  { table: "est_reposicao_config", mode: "snapshot", conflict: "chave" },
+  { table: "est_reposicao_base", mode: "snapshot", conflict: "deposito_id,produto_id", reconcileDeletes: true, deleteKeys: ["deposito_id", "produto_id"] },
+  { table: "est_reposicao_config", mode: "snapshot", conflict: "chave", reconcileDeletes: true, deleteKeys: ["chave"] },
   { table: "est_reposicao_execucao", mode: "snapshot", conflict: "id", reconcileDeletes: true },
-  { table: "est_reposicao_local", mode: "snapshot", conflict: "deposito_id" },
+  { table: "est_reposicao_local", mode: "snapshot", conflict: "deposito_id", reconcileDeletes: true, deleteKeys: ["deposito_id"] },
   { table: "est_reposicao_pausa", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
   { table: "est_requisicao", mode: "timestamp", conflict: "id", reconcileDeletes: true },
@@ -86,9 +87,9 @@ const TABLES: TableCfg[] = [
   { table: "os_convenio_pacotes", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "os_convenio_regras", mode: "timestamp", conflict: "id", reconcileDeletes: true },
   { table: "os_convenio_pacote_itens", mode: "snapshot", conflict: "id", reconcileDeletes: true },
-  { table: "os_parametros", mode: "snapshot", conflict: "chave" },
+  { table: "os_parametros", mode: "snapshot", conflict: "chave", reconcileDeletes: true, deleteKeys: ["chave"] },
 
-  { table: "sepultamento_urna_meta", mode: "snapshot", conflict: "sepultamento_id" },
+  { table: "sepultamento_urna_meta", mode: "snapshot", conflict: "sepultamento_id", reconcileDeletes: true, deleteKeys: ["sepultamento_id"] },
   { table: "sepultamento_urna_saida", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 ];
 
@@ -239,6 +240,37 @@ async function pullSourceIds(table: string): Promise<number[]> {
     .filter((value: number) => Number.isInteger(value) && value > 0);
 }
 
+async function pullSourceKeys(
+  table: string,
+  keys: string[],
+): Promise<Record<string, unknown>[]> {
+  const url = new URL(HOST_URL);
+
+  url.searchParams.set("table", table);
+  url.searchParams.set("manifest", "keys");
+
+  const body = await hostFetch(url, `${table}/manifest-keys`);
+
+  if (!Array.isArray(body.keys)) {
+    throw new Error(`Manifesto de chaves inválido para ${table}`);
+  }
+
+  return body.keys.map((row: unknown) => {
+    if (!row || typeof row !== "object") {
+      throw new Error(`Linha de manifesto inválida para ${table}`);
+    }
+
+    const result: Record<string, unknown> = {};
+
+    for (const key of keys) {
+      result[key] = (row as Record<string, unknown>)[key];
+    }
+
+    return result;
+  });
+}
+
+
 function sanitizeRows(table: string, rows: any[]) {
   return rows.map((row) => {
     const copy = { ...row };
@@ -366,6 +398,107 @@ async function getSupabaseIds(table: string): Promise<number[]> {
   return result;
 }
 
+
+function keyToken(
+  row: Record<string, unknown>,
+  keys: string[],
+): string {
+  return JSON.stringify(
+    keys.map((key) => {
+      const value = row[key];
+      return value == null ? null : String(value);
+    }),
+  );
+}
+
+async function getSupabaseKeys(
+  table: string,
+  keys: string[],
+): Promise<Record<string, unknown>[]> {
+  const result: Record<string, unknown>[] = [];
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await supabase
+      .schema("pai")
+      .from(table)
+      .select(keys.join(","))
+      .range(from, to);
+
+    if (error) {
+      throw new Error(`listar chaves ${table}: ${error.message}`);
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+
+    for (const row of rows) {
+      result.push(row as unknown as Record<string, unknown>);
+    }
+
+    if (rows.length < pageSize) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+async function reconcileDeletedKeys(
+  table: string,
+  keys: string[],
+) {
+  const sourceRows = await pullSourceKeys(table, keys);
+  const targetRows = await getSupabaseKeys(table, keys);
+
+  const sourceSet = new Set(
+    sourceRows.map((row) => keyToken(row, keys)),
+  );
+
+  const missingInSource = targetRows.filter(
+    (row) => !sourceSet.has(keyToken(row, keys)),
+  );
+
+  let deleted = 0;
+
+  // As tabelas de chave lógica são pequenas; exclusão linha a linha evita
+  // construir filtros OR gigantes e funciona igualmente para chave composta.
+  for (const row of missingInSource) {
+    let query = supabase
+      .schema("pai")
+      .from(table)
+      .delete();
+
+    for (const key of keys) {
+      const value = row[key];
+
+      query =
+        value == null
+          ? query.is(key, null)
+          : query.eq(key, value as any);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      throw new Error(
+        `reconciliar deletes ${table} (${keys.join(",")}): ${error.message}`,
+      );
+    }
+
+    deleted++;
+  }
+
+  return {
+    checked: true,
+    key_columns: keys,
+    source_keys: sourceRows.length,
+    target_keys: targetRows.length,
+    deleted,
+  };
+}
+
 async function reconcileDeletedIds(table: string) {
   const sourceIds = await pullSourceIds(table);
   const targetIds = await getSupabaseIds(table);
@@ -463,6 +596,16 @@ async function syncTable(cfg: TableCfg) {
 }
 
 const DELETE_RECONCILIATION_ORDER = [
+  "cargo_paginas",
+  "permissoes",
+  "est_conferencia_atendimento",
+  "est_reposicao_base",
+  "est_reposicao_local",
+  "sepultamento_urna_meta",
+  "coroas_integracao_config",
+  "est_lancamento_seq",
+  "est_reposicao_config",
+  "os_parametros",
   "coroas_itens",
   "est_conferencia_item",
   "est_custo_ajuste_item",
@@ -587,7 +730,11 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        const reconciliation = await reconcileDeletedIds(table);
+        const reconciliation =
+          cfg.deleteKeys?.length
+            ? await reconcileDeletedKeys(table, cfg.deleteKeys)
+            : await reconcileDeletedIds(table);
+
         const result = resultByTable.get(table);
 
         if (result) {
