@@ -4,255 +4,230 @@ import { NextResponse } from "next/server";
 // Arquivos estáticos (css, js, imagens etc.)
 const PUBLIC_FILE = /\.(.*)$/;
 
-// Slugs protegidos (devem bater com 'permissoes.pagina' no MySQL)
-// ⚠️ Não inclua 'inicio' aqui; sua Home está em "/"
+// Slugs protegidos (devem bater com permissoes.pagina / cargo_paginas.pagina)
 const PROTECTED_SLUGS = new Set<string>([
-    "quadro-atendimento",
-    "acompanhamento",
-    "memorial",
-    "obituario",
-    "clube",
-    "leads",
-    "coroa-de-flores",
-    "relatorio",
-    "administrativo",
-    "dashboard",
-    "api",
-    "atendimento",
-    // "login", // NÃO proteger login
-    "medicos",
-    "mensagens",
-    "noticias",
-    "offline",
-    "parceiros",
-    "permissoes",
-    "salas",
-    "seguranca",
-    "sorteios",
-    "tela",
-    "telemetria",
-    "usuarios",
+  "quadro-atendimento",
+  "acompanhamento",
+  "memorial",
+  "obituario",
+  "clube",
+  "leads",
+  "coroa-de-flores",
+  "relatorio",
+  "administrativo",
+  "dashboard",
+  "api",
+  "atendimento",
+  "medicos",
+  "mensagens",
+  "noticias",
+  "offline",
+  "parceiros",
+  "permissoes",
+  "salas",
+  "seguranca",
+  "sorteios",
+  "tela",
+  "telemetria",
+  "usuarios",
 ]);
 
-// Rotas livres (além de estáticos e APIs específicas)
-// ⚠️ "/" NÃO aparece aqui; a Home exige login
 const PUBLIC_PATHS = new Set<string>([
-    "/login",
-    "/ajuda",
+  "/login",
+  "/ajuda",
 ]);
+
+type AccessResponse = {
+  ok: boolean;
+  modo?: "primario" | "contingencia";
+  uid?: number;
+  userName?: string;
+  perms?: string[];
+  error?: string;
+};
 
 function firstSlug(pathname: string): string {
-    return pathname.split("/").filter(Boolean)[0] || "";
+  return pathname.split("/").filter(Boolean)[0] || "";
 }
 
 function pickFirstAllowedPath(perms: string[]): string {
-    if (perms.includes("*")) return "/";
+  if (perms.includes("*")) return "/";
 
-    for (const slug of perms) {
-        if (PROTECTED_SLUGS.has(slug)) {
-            return `/${slug}`;
-        }
+  for (const slug of perms) {
+    if (PROTECTED_SLUGS.has(slug)) {
+      return `/${slug}`;
     }
+  }
 
-    return "/";
+  return "/";
 }
 
 export async function middleware(req: NextRequest) {
-    const { pathname, search } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
 
-    // Rotas técnicas de sincronização/failback.
-    // As próprias route.ts validam Authorization: Bearer.
-    if (
-        pathname === "/api/sync/hostgator" ||
-        pathname === "/api/failback/hostgator"
-    ) {
-        return NextResponse.next();
+  // Rotas técnicas protegidas pelas próprias chaves Bearer.
+  // Não devem depender de sessão de usuário/PHP.
+  if (
+    pathname === "/api/sync/hostgator" ||
+    pathname === "/api/failback/hostgator"
+  ) {
+    return NextResponse.next();
+  }
+
+  // Assets e APIs que possuem autenticação própria ou precisam ficar acessíveis
+  // durante login/failover.
+  const isAssetOrApiPublic =
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/static") ||
+    pathname.startsWith("/public") ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/php") ||
+    pathname.startsWith("/api/wp") ||
+    pathname.startsWith("/api/wc") ||
+    PUBLIC_FILE.test(pathname);
+
+  if (isAssetOrApiPublic) {
+    return NextResponse.next();
+  }
+
+  if (pathname !== "/login" && PUBLIC_PATHS.has(pathname)) {
+    return NextResponse.next();
+  }
+
+  const origin = req.nextUrl.origin;
+  const cookieHeader = req.headers.get("cookie") || "";
+
+  const redirectToLogin = () => {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("next", pathname + (search || ""));
+
+    const res = NextResponse.redirect(loginUrl);
+
+    // Limpa apenas o cookie legado de indicação visual.
+    // A sessão assinada é validada pela /api/auth/access.
+    if (req.cookies.get("pai_auth")?.value) {
+      res.cookies.set("pai_auth", "0", {
+        path: "/",
+        maxAge: 0,
+      });
     }
 
-    // 1) Arquivos estáticos e APIs públicas
-    const isAssetOrApiPublic =
-        pathname.startsWith("/_next") ||
-        pathname.startsWith("/static") ||
-        pathname.startsWith("/public") ||
-        pathname.startsWith("/api/auth") ||
-        pathname.startsWith("/api/php") ||
-        pathname.startsWith("/api/wp") ||
-        pathname.startsWith("/api/wc") ||
-        PUBLIC_FILE.test(pathname);
+    return res;
+  };
 
-    if (isAssetOrApiPublic) {
-        return NextResponse.next();
-    }
-
-    // 2) Páginas públicas
-    if (pathname !== "/login" && PUBLIC_PATHS.has(pathname)) {
-        return NextResponse.next();
-    }
-
-    const origin = req.nextUrl.origin;
-    const cookieHeader = req.headers.get("cookie") || "";
-    const hasAuthCookie = req.cookies.get("pai_auth")?.value === "1";
-
-    // Helper para redirecionar ao login limpando cookie "fantasma"
-    const redirectToLogin = () => {
-        const loginUrl = new URL("/login", req.url);
-        const nextParam = pathname + (search || "");
-        loginUrl.searchParams.set("next", nextParam);
-
-        const res = NextResponse.redirect(loginUrl);
-
-        if (hasAuthCookie) {
-            res.cookies.set("pai_auth", "0", {
-                path: "/",
-                maxAge: 0,
-            });
-        }
-
-        return res;
-    };
-
-    // Função para consultar whoami no PHP
-    async function fetchWhoami() {
-        if (!hasAuthCookie) {
-            return {
-                uid: 0,
-                userName: "",
-            };
-        }
-
-        try {
-            const r1 = await fetch(
-                `${origin}/api/php/pai_api.php?action=whoami`,
-                {
-                    headers: {
-                        "x-requested-with": "XMLHttpRequest",
-                        cookie: cookieHeader,
-                    },
-                    cache: "no-store",
-                }
-            );
-
-            const t1 = await r1.text();
-
-            let who: any = null;
-
-            try {
-                who = JSON.parse(
-                    t1.replace(/^\uFEFF/, "").trim()
-                );
-            } catch {
-                who = null;
-            }
-
-            const uid = who?.id ? Number(who.id) : 0;
-
-            const userName = (
-                who?.nome ??
-                who?.name ??
-                who?.usuario ??
-                ""
-            )
-                .toString()
-                .trim();
-
-            return {
-                uid,
-                userName,
-            };
-        } catch {
-            return {
-                uid: 0,
-                userName: "",
-            };
-        }
-    }
-
-    // 3) Tratamento da rota /login
-    if (pathname === "/login") {
-        const { uid, userName } = await fetchWhoami();
-
-        if (uid > 0 && userName) {
-            return NextResponse.redirect(new URL("/", req.url));
-        }
-
-        const res = NextResponse.next();
-
-        if (hasAuthCookie) {
-            res.cookies.set("pai_auth", "0", {
-                path: "/",
-                maxAge: 0,
-            });
-        }
-
-        return res;
-    }
-
-    // 4) Qualquer outra rota privada exige usuário válido no PHP
-    const { uid, userName } = await fetchWhoami();
-
-    if (!uid || !userName) {
-        return redirectToLogin();
-    }
-
-    // 5) Usuário autenticado. Rotas não protegidas são liberadas.
-    const slug = firstSlug(pathname);
-
-    if (!slug || !PROTECTED_SLUGS.has(slug)) {
-        return NextResponse.next();
-    }
-
-    // 6) Checa permissões específicas
-    let perms: string[] = [];
-
+  async function fetchAccess(): Promise<AccessResponse> {
     try {
-        const r2 = await fetch(
-            `${origin}/api/php/pai_api.php?action=list_permissions&user_id=${uid}`,
-            {
-                headers: {
-                    "x-requested-with": "XMLHttpRequest",
-                    cookie: cookieHeader,
-                },
-                cache: "no-store",
-            }
-        );
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
 
-        const t2 = await r2.text();
+      try {
+        const response = await fetch(`${origin}/api/auth/access`, {
+          method: "GET",
+          headers: {
+            cookie: cookieHeader,
+            "x-pai-middleware": "1",
+          },
+          cache: "no-store",
+          signal: controller.signal,
+        });
 
-        try {
-            const j = JSON.parse(
-                t2.replace(/^\uFEFF/, "").trim()
-            );
+        const body = (await response.json().catch(() => null)) as
+          | AccessResponse
+          | null;
 
-            if (Array.isArray(j)) {
-                perms = j;
-            }
-        } catch {
-            // mantém perms = []
+        if (!response.ok || !body?.ok) {
+          return {
+            ok: false,
+            error: body?.error || `HTTP ${response.status}`,
+          };
         }
+
+        return {
+          ok: true,
+          modo:
+            body.modo === "contingencia"
+              ? "contingencia"
+              : "primario",
+          uid: Number(body.uid || 0),
+          userName: String(body.userName || "").trim(),
+          perms: Array.isArray(body.perms)
+            ? body.perms.map((p) => String(p))
+            : [],
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     } catch {
-        // mantém perms = []
+      return {
+        ok: false,
+        error: "Falha ao validar sessão.",
+      };
+    }
+  }
+
+  // /login: se a sessão já for válida em qualquer modo, volta para a Home.
+  if (pathname === "/login") {
+    const access = await fetchAccess();
+
+    if (
+      access.ok &&
+      Number(access.uid || 0) > 0 &&
+      String(access.userName || "").trim()
+    ) {
+      return NextResponse.redirect(new URL("/", req.url));
     }
 
-    const allowed =
-        perms.includes("*") ||
-        perms.includes(slug);
+    const res = NextResponse.next();
 
-    if (allowed) {
-        return NextResponse.next();
+    if (req.cookies.get("pai_auth")?.value) {
+      res.cookies.set("pai_auth", "0", {
+        path: "/",
+        maxAge: 0,
+      });
     }
 
-    // 7) Sem permissão
-    const to = new URL(
-        pickFirstAllowedPath(perms),
-        req.url
-    );
+    return res;
+  }
 
-    return NextResponse.redirect(to);
+  // Todas as páginas privadas dependem da sessão assinada.
+  // A rota /api/auth/access escolhe automaticamente:
+  // - primário -> PHP/HostGator
+  // - contingência -> Supabase
+  const access = await fetchAccess();
+
+  if (
+    !access.ok ||
+    !Number(access.uid || 0) ||
+    !String(access.userName || "").trim()
+  ) {
+    return redirectToLogin();
+  }
+
+  const slug = firstSlug(pathname);
+
+  // Home e rotas não cadastradas como protegidas continuam liberadas
+  // para qualquer usuário autenticado.
+  if (!slug || !PROTECTED_SLUGS.has(slug)) {
+    return NextResponse.next();
+  }
+
+  const perms = Array.isArray(access.perms) ? access.perms : [];
+
+  const allowed =
+    perms.includes("*") ||
+    perms.includes(slug);
+
+  if (allowed) {
+    return NextResponse.next();
+  }
+
+  return NextResponse.redirect(
+    new URL(pickFirstAllowedPath(perms), req.url),
+  );
 }
 
-// Onde o middleware roda
 export const config = {
-    matcher: [
-        "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
-    ],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
+  ],
 };

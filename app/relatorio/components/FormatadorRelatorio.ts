@@ -366,7 +366,7 @@ export function organizarResumoRelatorio(
     return { secoes, tecnicos };
 }
 
-function extrairMateriais(
+export function extrairMateriais(
     raw: any,
     materiaisMap?: MateriaisMap,
 ): MaterialRelatorio[] {
@@ -393,7 +393,7 @@ function extrairMateriais(
     );
 }
 
-function extrairArrumacao(raw: any) {
+export function extrairArrumacao(raw: any) {
     const obj = safeJsonParse(raw);
     const arrumacao: string[] = [];
     const insumos: MaterialRelatorio[] = [];
@@ -440,7 +440,7 @@ function extrairArrumacao(raw: any) {
     return { arrumacao, insumos };
 }
 
-function extrairCoroas(raw: any): string[] {
+export function extrairCoroas(raw: any): string[] {
     const value = safeJsonParse(raw) ?? raw;
     if (!Array.isArray(value)) return [];
 

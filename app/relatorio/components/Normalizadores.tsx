@@ -372,6 +372,14 @@ export function montarResumoFinalDoLog(log: LogItem[], materiaisMap?: MateriaisM
             } else if (CHAVES_COROA_ESCALARES.some((k) => temChave(obj, k))) {
                 delete resumo.coroas_itens;
             }
+
+            // Local de saída dos itens (urna, roupa, véu...): o PDF mostra na tabela de itens.
+            for (const k of Object.keys(obj)) {
+                if (!/_deposito_nome$/i.test(k)) continue;
+                const v = obj[k];
+                if (jsonVazioOuApagado(v)) delete resumo[k];
+                else if (typeof v === "string") resumo[k] = v;
+            }
         }
 
         const pares = extrairParesDoDetalhe(ent.detalhes, materiaisMap);

@@ -141,6 +141,7 @@ export const MODULOS: Modulo[] = [
             { id: "messenger-monitor", titulo: "Monitoramento do atendimento", desc: "Fila, atendentes e avaliações", href: "/messenger-monitor", slugs: ["messenger-historico"], icone: IconChartBar },
             // 23/10/2026: Comprovantes do WhatsApp (a Aurora lê; o responsável marca a baixa). Servidor: aurora_01.php. Nasce aqui; mova pelo Organizar menu.
             { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger"], icone: IconFileInvoice },
+            { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger"], icone: IconBell },
             { id: "chat", titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
             { id: "avisos", titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
