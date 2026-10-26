@@ -83,6 +83,8 @@ const TABLES: TableCfg[] = [
   { table: "materiais_conferencia_item", mode: "snapshot", conflict: "id" },
   { table: "materiais_conferencia_observacao", mode: "snapshot", conflict: "id" },
 
+  { table: "os_convenio_pacotes", mode: "snapshot", conflict: "id" },
+  { table: "os_convenio_regras", mode: "timestamp", conflict: "id" },
   { table: "os_convenio_pacote_itens", mode: "snapshot", conflict: "id" },
   { table: "os_parametros", mode: "snapshot", conflict: "chave" },
 
