@@ -39,57 +39,57 @@ const TABLES: TableCfg[] = [
   // Ordem respeita dependências principais de FK.
   { table: "coroas_integracao_config", mode: "snapshot", conflict: "chave" },
 
-  { table: "est_classificacao", mode: "timestamp", conflict: "id" },
-  { table: "est_fabricante", mode: "timestamp", conflict: "id" },
+  { table: "est_classificacao", mode: "timestamp", conflict: "id", reconcileDeletes: true },
+  { table: "est_fabricante", mode: "timestamp", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_confeccao", mode: "snapshot", conflict: "id" },
-  { table: "est_confeccao_item", mode: "snapshot", conflict: "id" },
-  { table: "est_confeccao_movimento", mode: "snapshot", conflict: "id" },
+  { table: "est_confeccao", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_confeccao_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_confeccao_movimento", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_conferencia", mode: "snapshot", conflict: "id" },
+  { table: "est_conferencia", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "est_conferencia_atendimento", mode: "snapshot", conflict: "atendimento_id" },
-  { table: "est_conferencia_item", mode: "snapshot", conflict: "id" },
-  { table: "est_conferencia_periodo", mode: "snapshot", conflict: "id" },
+  { table: "est_conferencia_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_conferencia_periodo", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_contagem_rapida", mode: "snapshot", conflict: "id" },
-  { table: "est_contagem_rapida_item", mode: "snapshot", conflict: "id" },
+  { table: "est_contagem_rapida", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_contagem_rapida_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_custo_ajuste", mode: "snapshot", conflict: "id" },
-  { table: "est_custo_ajuste_item", mode: "snapshot", conflict: "id" },
+  { table: "est_custo_ajuste", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_custo_ajuste_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_estoque_alerta", mode: "timestamp", conflict: "id" },
+  { table: "est_estoque_alerta", mode: "timestamp", conflict: "id", reconcileDeletes: true },
   { table: "est_lancamento_seq", mode: "snapshot", conflict: "prefixo" },
 
-  { table: "est_produto_foto", mode: "snapshot", conflict: "id" },
-  { table: "est_produto_lote", mode: "snapshot", conflict: "id" },
-  { table: "est_recebimento_contagem", mode: "snapshot", conflict: "id" },
+  { table: "est_produto_foto", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_produto_lote", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_recebimento_contagem", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
   { table: "est_reposicao_base", mode: "snapshot", conflict: "deposito_id,produto_id" },
   { table: "est_reposicao_config", mode: "snapshot", conflict: "chave" },
-  { table: "est_reposicao_execucao", mode: "snapshot", conflict: "id" },
+  { table: "est_reposicao_execucao", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "est_reposicao_local", mode: "snapshot", conflict: "deposito_id" },
-  { table: "est_reposicao_pausa", mode: "snapshot", conflict: "id" },
+  { table: "est_reposicao_pausa", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "est_requisicao", mode: "timestamp", conflict: "id" },
-  { table: "est_requisicao_evento", mode: "snapshot", conflict: "id" },
-  { table: "est_requisicao_item", mode: "timestamp", conflict: "id" },
+  { table: "est_requisicao", mode: "timestamp", conflict: "id", reconcileDeletes: true },
+  { table: "est_requisicao_evento", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "est_requisicao_item", mode: "timestamp", conflict: "id", reconcileDeletes: true },
 
-  { table: "guias_atendimento", mode: "timestamp", conflict: "id" },
+  { table: "guias_atendimento", mode: "timestamp", conflict: "id", reconcileDeletes: true },
 
-  { table: "materiais_categoria", mode: "timestamp", conflict: "id" },
-  { table: "materiais_item", mode: "timestamp", conflict: "id" },
-  { table: "materiais_subitem", mode: "timestamp", conflict: "id" },
-  { table: "materiais_conferencia", mode: "snapshot", conflict: "id" },
-  { table: "materiais_conferencia_item", mode: "snapshot", conflict: "id" },
-  { table: "materiais_conferencia_observacao", mode: "snapshot", conflict: "id" },
+  { table: "materiais_categoria", mode: "timestamp", conflict: "id", reconcileDeletes: true },
+  { table: "materiais_item", mode: "timestamp", conflict: "id", reconcileDeletes: true },
+  { table: "materiais_subitem", mode: "timestamp", conflict: "id", reconcileDeletes: true },
+  { table: "materiais_conferencia", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "materiais_conferencia_item", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "materiais_conferencia_observacao", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 
-  { table: "os_convenio_pacotes", mode: "snapshot", conflict: "id" },
-  { table: "os_convenio_regras", mode: "timestamp", conflict: "id" },
-  { table: "os_convenio_pacote_itens", mode: "snapshot", conflict: "id" },
+  { table: "os_convenio_pacotes", mode: "snapshot", conflict: "id", reconcileDeletes: true },
+  { table: "os_convenio_regras", mode: "timestamp", conflict: "id", reconcileDeletes: true },
+  { table: "os_convenio_pacote_itens", mode: "snapshot", conflict: "id", reconcileDeletes: true },
   { table: "os_parametros", mode: "snapshot", conflict: "chave" },
 
   { table: "sepultamento_urna_meta", mode: "snapshot", conflict: "sepultamento_id" },
-  { table: "sepultamento_urna_saida", mode: "snapshot", conflict: "id" },
+  { table: "sepultamento_urna_saida", mode: "snapshot", conflict: "id", reconcileDeletes: true },
 ];
 
 function unauthorized() {
@@ -454,27 +454,59 @@ async function syncTable(cfg: TableCfg) {
     }
   }
 
-  let deleteReconciliation: any = null;
-
-  /*
-   * Só reconcilia DELETE depois que o lote normal da tabela terminou.
-   * sync_control.pull_enabled já foi validado antes da execução.
-   *
-   * Em contingência o pull deve ser DESATIVADO antes de qualquer escrita
-   * no Supabase, portanto registros criados durante contingência não serão
-   * apagados por esta rotina.
-   */
-  if (cfg.reconcileDeletes) {
-    deleteReconciliation = await reconcileDeletedIds(cfg.table);
-  }
-
   return {
     table: cfg.table,
     rows: total,
     batches,
-    delete_reconciliation: deleteReconciliation,
+    delete_reconciliation: null,
   };
 }
+
+const DELETE_RECONCILIATION_ORDER = [
+  "coroas_itens",
+  "est_conferencia_item",
+  "est_custo_ajuste_item",
+  "est_produto_foto",
+  "materiais_conferencia_item",
+  "materiais_conferencia_observacao",
+  "materiais_subitem",
+  "materiais_item",
+  "os_convenio_pacote_itens",
+  "est_confeccao_movimento",
+  "est_confeccao_item",
+  "est_confeccao",
+  "est_conferencia_periodo",
+  "est_conferencia",
+  "est_contagem_rapida_item",
+  "est_contagem_rapida",
+  "est_custo_ajuste",
+  "est_estoque_alerta",
+  "est_produto_lote",
+  "est_recebimento_contagem",
+  "est_reposicao_pausa",
+  "est_reposicao_execucao",
+  "est_requisicao_evento",
+  "est_requisicao_item",
+  "est_requisicao",
+  "guias_atendimento",
+  "materiais_conferencia",
+  "materiais_categoria",
+  "os_convenio_regras",
+  "os_convenio_pacotes",
+  "sepultamento_urna_saida",
+  "est_classificacao",
+  "est_fabricante",
+  "homenagens",
+  "os_ordens",
+  "coroas",
+  "sepultamentos",
+  "est_saldo",
+  "est_produto",
+  "est_categoria",
+  "est_deposito",
+  "usuarios",
+  "cargos",
+] as const;
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization") ?? "";
@@ -536,9 +568,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    /*
+     * Reconciliação de DELETE em segunda fase.
+     * Primeiro todas as tabelas recebem os upserts; só depois removemos
+     * registros que não existem mais na HostGator.
+     *
+     * A ordem é filho -> pai para respeitar as foreign keys do schema pai.
+     * Só executa quando TODAS as tabelas da rodada foram processadas.
+     */
+    if (results.length === TABLES.length) {
+      const cfgByTable = new Map(TABLES.map((cfg) => [cfg.table, cfg]));
+      const resultByTable = new Map(results.map((r) => [r.table, r]));
+
+      for (const table of DELETE_RECONCILIATION_ORDER) {
+        const cfg = cfgByTable.get(table);
+
+        if (!cfg?.reconcileDeletes) {
+          continue;
+        }
+
+        const reconciliation = await reconcileDeletedIds(table);
+        const result = resultByTable.get(table);
+
+        if (result) {
+          result.delete_reconciliation = reconciliation;
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       elapsed_ms: Date.now() - started,
+      complete: results.length === TABLES.length,
       results,
     });
   } catch (error: any) {
