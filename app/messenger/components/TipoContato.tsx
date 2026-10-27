@@ -4,8 +4,10 @@
  * Tipo do contato no painel do cliente (27/10/2026): cliente, fornecedor, prestador (contas a pagar), parceiro ou público,
  * com empresa e observação. A Aurora classifica sozinha quem se apresenta como fornecedor ou parceiro; aqui a equipe corrige.
  * Servidor: aurora_07.php (contato_tipo).
+ * Estrela de contato frequente (27/10/2026): aparece na lista da Nova conversa para a equipe toda (aurora_09.php).
  */
 import React, { useEffect, useState } from "react";
+import { IconStar, IconStarFilled } from "@tabler/icons-react";
 import { apiJson, API_BASE } from "@/components/messenger/api";
 import type { Conversa } from "@/components/messenger/tipos";
 import { TIPOS_CONTATO } from "./NovaConversaWhats";
@@ -24,6 +26,37 @@ export default function TipoContato({ conversa, onSalvo }: { conversa: Conversa;
     const [obs, setObs] = useState(ct?.observacao || "");
     const [msg, setMsg] = useState("");
     const [ocupado, setOcupado] = useState(false);
+    const [favorito, setFavorito] = useState<boolean | null>(null); // null = sem a coluna favorito no banco
+
+    useEffect(() => {
+        let vivo = true;
+        setFavorito(null);
+        apiJson(`${API_BASE}/aurora_09.php?action=contato&conversa_id=${conversa.id}&_=${Date.now()}`)
+            .then((r) => {
+                if (vivo && r.dados?.tem_favorito) setFavorito(!!r.dados.favorito);
+            })
+            .catch(() => {
+                /* sem o aurora_09.php ou sem permissão: a estrela não aparece */
+            });
+        return () => {
+            vivo = false;
+        };
+    }, [conversa.id]);
+
+    async function trocarFavorito() {
+        if (favorito === null) return;
+        try {
+            const r = await apiJson(`${API_BASE}/aurora_09.php?action=favorito`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ conversa_id: conversa.id, favorito: !favorito }),
+            });
+            setFavorito(!!r.dados?.favorito);
+            setMsg(r.msg || "");
+        } catch (e: any) {
+            setMsg(e.message || "Não foi possível marcar.");
+        }
+    }
 
     useEffect(() => {
         setTipo(ct?.tipo || "cliente");
@@ -62,6 +95,11 @@ export default function TipoContato({ conversa, onSalvo }: { conversa: Conversa;
                     <div className="text-xs font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Tipo de contato</div>
                     <div className="truncate text-[15px] font-extrabold">{nomeTipoContato(ct.tipo)}{ct.empresa ? ` · ${ct.empresa}` : ""}</div>
                 </div>
+                {favorito !== null && (
+                    <button type="button" onClick={trocarFavorito} className="inline-flex h-11 w-11 shrink-0 items-center justify-center" aria-label={favorito ? "Tirar dos contatos frequentes" : "Marcar como contato frequente"} title={favorito ? "Tirar dos contatos frequentes" : "Marcar como contato frequente"}>
+                        {favorito ? <IconStarFilled size={20} className="text-[#E4BC30]" /> : <IconStar size={20} className="text-[#8A93A6]" />}
+                    </button>
+                )}
                 <button type="button" onClick={() => setAberto((v) => !v)} className="text-[13px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{aberto ? "fechar" : "alterar"}</button>
             </div>
             {!aberto && ct.observacao && <p className="mb-0 mt-1 text-[13.5px] text-[#4A5468] dark:text-[#C9D1DE]">{ct.observacao}</p>}

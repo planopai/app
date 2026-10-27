@@ -4,11 +4,13 @@
  * Nova conversa pelo WhatsApp (27/10/2026): falar com quem nunca escreveu (cliente, fornecedor, prestador, parceiro…)
  * ou retomar quem está com a janela de 24 h fechada. A primeira mensagem é um modelo aprovado na Meta; quando a pessoa
  * responde, a conversa segue livre. O atendimento já fica com quem abriu.
+ * Contatos frequentes (27/10/2026): favoritos e mais conversados no topo; tocar preenche os campos (aurora_09.php).
  * Servidor: aurora_07.php (nova_conversa) e messenger.php (modelos, enviar).
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { apiJson, API_BASE, msgGet, msgPost } from "@/components/messenger/api";
 import ModeloCampos from "@/components/messenger/ModeloCampos";
+import ContatosFrequentes, { telefoneBonito } from "./ContatosFrequentes";
 
 type Modelo = { nome: string; idioma: string; categoria: string; corpo: string; parametros: number };
 
@@ -82,6 +84,7 @@ export default function NovaConversaWhats({ onFechar, onAberta }: { onFechar: ()
                 </div>
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-6 py-5">
                     {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
+                    <ContatosFrequentes onEscolher={(c) => { setTelefone(telefoneBonito(c.telefone)); setNome(c.nome); setTipo(TIPOS_CONTATO.some(([v]) => v === c.tipo) ? c.tipo : "cliente"); setEmpresa(c.empresa || ""); }} />
                     <div className="grid gap-3 sm:grid-cols-2">
                         <label className="block"><span className={rotulo}>Celular com DDD</span>
                             <input className={campo} inputMode="tel" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(77) 99999-9999" autoFocus />
