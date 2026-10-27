@@ -17,6 +17,9 @@ export async function POST() {
     res.cookies.set("pai_name", "", { ...baseOpts, httpOnly: false });
     res.cookies.set("pai_user", "", { ...baseOpts, httpOnly: false });
     res.cookies.set("PHPSESSID", "", baseOpts);
+    // 27/10/2026 (segurança): apaga também o login assinado e o id, que o login grava e continuavam valendo após sair.
+    res.cookies.set("pai_session", "", baseOpts);
+    res.cookies.set("pai_uid", "", { ...baseOpts, httpOnly: false });
 
     return res;
 }
