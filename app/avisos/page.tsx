@@ -252,6 +252,8 @@ export default function AvisosPage() {
     const [obsOpen, setObsOpen] = useState(false);
     const [obsLoading, setObsLoading] = useState(false);
     const [obsFalecido, setObsFalecido] = useState<string>("");
+    // 27/10/2026: número do atendimento da observação (o aviso some junto com o atendimento do Quadro).
+    const [obsRegistroId, setObsRegistroId] = useState<string>("");
     const [obsTexto, setObsTexto] = useState<string>("");
 
     // ✅ buscar avisos
@@ -354,9 +356,15 @@ export default function AvisosPage() {
         return set;
     }, [registrosParaLista]);
 
-    // ✅ avisos filtrados (Serviço só aparece se falecido ainda estiver no quadro)
+    // ✅ avisos filtrados (Serviço só aparece se o atendimento ainda estiver no quadro)
+    // 27/10/2026: o avisos.php novo já filtra pelo número do atendimento, com a regra do Quadro, e marca
+    // isso devolvendo o campo "sepultamento_id" em cada aviso. Com ele, a tela confia no servidor (o aviso some
+    // no mesmo momento, sem esperar a lista de atendimentos e sem depender do nome). Sem ele (servidor antigo),
+    // vale o filtro antigo pelo nome.
     const avisosParaExibir = useMemo(() => {
         const arr = Array.isArray(avisos) ? avisos : [];
+        const servidorFiltra = arr.length > 0 && arr.every((a) => a && "sepultamento_id" in (a as any));
+        if (servidorFiltra) return arr;
         return arr.filter((a) => {
             const msg = String((a as any)?.mensagem ?? "");
             if (!isServicoMsg(msg)) return true;
@@ -472,6 +480,7 @@ export default function AvisosPage() {
             }
 
             setObsFalecido(nome);
+            setObsRegistroId(String(r?.id ?? ""));
             setObsTexto("");
             setObsOpen(true);
         },
@@ -483,6 +492,7 @@ export default function AvisosPage() {
         setObsOpen(false);
         setObsTexto("");
         setObsFalecido("");
+        setObsRegistroId("");
     }, [obsLoading]);
 
     const submitObs = useCallback(async () => {
@@ -515,7 +525,8 @@ export default function AvisosPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ mensagem }),
+                // 27/10/2026: manda o número do atendimento; o avisos.php esconde o aviso quando o atendimento sai do Quadro.
+                body: JSON.stringify({ mensagem, sepultamento_id: Number(obsRegistroId) || undefined }),
             });
 
             if (res?.sucesso) {
@@ -530,7 +541,7 @@ export default function AvisosPage() {
         } finally {
             setObsLoading(false);
         }
-    }, [obsFalecido, obsTexto, nomesAtivos, closeObs, fetchAvisos]);
+    }, [obsFalecido, obsRegistroId, obsTexto, nomesAtivos, closeObs, fetchAvisos]);
 
     return (
         <div className="mx-auto w-full max-w-6xl p-3 sm:p-6 space-y-4">
