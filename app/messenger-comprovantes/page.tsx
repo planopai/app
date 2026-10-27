@@ -75,7 +75,7 @@ async function aPost(acao: string, corpo: Record<string, any> = {}) {
     });
 }
 
-const BTN = "h-11 min-w-[44px] rounded-xl px-4 text-[14.5px] font-extrabold disabled:opacity-50";
+const BTN = "inline-flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl px-4 text-[14.5px] font-extrabold leading-none disabled:opacity-50";
 const CAMPO = "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3 text-[16px] outline-none focus:ring-2 focus:ring-[#3D6A99]/30 dark:bg-[#1C2334]";
 
 export default function ComprovantesPage() {

@@ -64,7 +64,7 @@ async function aPost(acao: string, corpo: Record<string, any> = {}) {
     });
 }
 
-const BTN = "h-11 min-w-[44px] rounded-xl px-4 text-[14.5px] font-extrabold disabled:opacity-50";
+const BTN = "inline-flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl px-4 text-[14.5px] font-extrabold leading-none disabled:opacity-50";
 const BTN_SEC = `${BTN} border border-[#C9D1DE] bg-white dark:border-white/15 dark:bg-transparent`;
 const BTN_PRI = `${BTN} bg-[#313C55] text-white dark:bg-[#F2CB3F] dark:text-[#313C55]`;
 const CAMPO = "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3 text-[16px] outline-none focus:ring-2 focus:ring-[#3D6A99]/30 dark:bg-[#1C2334]";
@@ -105,6 +105,21 @@ export default function FunilPage() {
     useEffect(() => {
         carregar();
     }, [carregar]);
+
+    // janela do card: Esc fecha e a página de trás não rola
+    useEffect(() => {
+        if (!form) return;
+        const tecla = (ev: KeyboardEvent) => {
+            if (ev.key === "Escape") fechar();
+        };
+        const antes = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        window.addEventListener("keydown", tecla);
+        return () => {
+            window.removeEventListener("keydown", tecla);
+            document.body.style.overflow = antes;
+        };
+    }, [form ? form.id : -1]); // eslint-disable-line react-hooks/exhaustive-deps
 
     async function abrir(c: Card) {
         setAberto(c);
@@ -253,17 +268,17 @@ export default function FunilPage() {
                     ))}
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-                    <div className={`${aberto || form ? "hidden lg:block" : ""} min-w-0`}>
+                <div>
+                    <div className="min-w-0">
                         {!painel && !erro && <p className={CARTAO}>Carregando…</p>}
                         {painel && (
-                            <div className="flex flex-col gap-3 lg:grid lg:grid-cols-6 lg:items-start">
+                            <div className="flex flex-col gap-3 lg:grid lg:grid-cols-6 lg:items-stretch">
                                 {ORDEM.map((e) => (
                                     <section key={e}
                                         onDragOver={(ev) => { ev.preventDefault(); setSobre(e); }}
                                         onDragLeave={() => setSobre((s) => (s === e ? null : s))}
                                         onDrop={(ev) => { ev.preventDefault(); const c = cards.find((x) => x.id === arrastando); setSobre(null); setArrastando(null); if (c) moverPara(c, e); }}
-                                        className={`${aba === e ? "flex" : "hidden"} min-w-0 flex-col gap-2 rounded-2xl border-t-4 bg-[#E9EDF3] p-2 lg:flex dark:bg-[#232B3F] ${COR[e]} ${sobre === e ? "ring-2 ring-[#3D6A99]" : ""}`}>
+                                        className={`${aba === e ? "flex" : "hidden"} min-w-0 flex-col gap-2 lg:min-h-[420px] rounded-2xl border-t-4 bg-[#E9EDF3] p-2 lg:flex dark:bg-[#232B3F] ${COR[e]} ${sobre === e ? "ring-2 ring-[#3D6A99]" : ""}`}>
                                         <h2 className="m-0 flex items-center gap-2 px-1 pt-1 text-[14.5px] font-extrabold">
                                             <span className="flex-1">{etapas[e] || e}</span>
                                             <span className="rounded-full bg-white px-2 text-[13px] dark:bg-[#1C2334]">{porEtapa(e).length}</span>
@@ -277,11 +292,13 @@ export default function FunilPage() {
                     </div>
 
                     {form && (
-                        <aside className={`${CARTAO} flex flex-col gap-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto`}>
+                        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={(ev) => { if (ev.target === ev.currentTarget) fechar(); }}>
+                        <aside className={`${CARTAO} flex max-h-[92vh] w-full max-w-[720px] flex-col gap-3 overflow-y-auto rounded-b-none sm:rounded-b-2xl`}>
                             <div className="flex items-center gap-2">
                                 <h2 className="m-0 min-w-0 flex-1 truncate text-[19px] font-extrabold">{form.id ? form.nome || fone(aberto?.telefone || "") || "Lead" : "Novo lead"}</h2>
                                 <button type="button" className={BTN_SEC} onClick={fechar}>Fechar</button>
                             </div>
+                            {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318]">{erro}</div>}
                             {aberto && (
                                 <div className="flex flex-col gap-2">
                                     <span className="text-[14px]">Etapa: <b>{etapas[aberto.etapa]}</b> desde {dt(aberto.etapa_em)}{aberto.proposta_id ? ` · proposta #${aberto.proposta_id}` : ""}</span>
@@ -375,6 +392,7 @@ export default function FunilPage() {
                                 </div>
                             )}
                         </aside>
+                        </div>
                     )}
                 </div>
             </div>

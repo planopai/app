@@ -26,7 +26,7 @@ const rotulo = "text-xs font-extrabold uppercase tracking-wider text-[#5B6478] d
 type Colega = { id: number; nome: string; atendente_whatsapp: boolean };
 
 /** Nova conversa individual ou novo grupo. */
-export function NovaConversa({ grupoInicial, onFechar, onAberta, online = () => false }: { grupoInicial: boolean; onFechar: () => void; onAberta: (c: Conversa) => void; online?: (usuarioId: number) => boolean }) {
+export function NovaConversa({ grupoInicial, onFechar, onAberta, online = () => false, onWhatsApp }: { grupoInicial: boolean; onFechar: () => void; onAberta: (c: Conversa) => void; online?: (usuarioId: number) => boolean; onWhatsApp?: () => void }) {
     const [modo, setModo] = useState<"colega" | "grupo">(grupoInicial ? "grupo" : "colega");
     const [colegas, setColegas] = useState<Colega[]>([]);
     const [busca, setBusca] = useState("");
@@ -69,6 +69,7 @@ export function NovaConversa({ grupoInicial, onFechar, onAberta, online = () => 
                 {(["colega", "grupo"] as const).map((m) => (
                     <button key={m} type="button" aria-pressed={modo === m} onClick={() => setModo(m)} className={`h-10 flex-1 rounded-[10px] text-sm font-extrabold ${modo === m ? "bg-white shadow-sm dark:bg-[#232B3F]" : "text-[#6B7488] dark:text-[#AEB9CF]"}`}>{m === "colega" ? "Conversa" : "Grupo"}</button>
                 ))}
+                {onWhatsApp && <button type="button" onClick={onWhatsApp} className="h-10 flex-1 rounded-[10px] text-sm font-extrabold text-[#6B7488] dark:text-[#AEB9CF]">WhatsApp</button>}
             </div>
             {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
             {modo === "grupo" && (

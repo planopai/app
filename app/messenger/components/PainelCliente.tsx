@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { msgGet, msgPost } from "@/components/messenger/api";
 import type { Conversa } from "@/components/messenger/tipos";
 import { Icone } from "./Lista";
+import TipoContato from "./TipoContato";
 
 type Vinculo = { id_contrato: number; contrato: string; titular: string | null; plano: string | null; relacao: string; pode_pagar: boolean; criado_por: string | null; criado_em: string };
 type Parcela = { id: number; parcela: string; valor: number; vencimento: string; situacao: string; tipo: string; no_lote?: boolean; pago_em?: string; forma?: string };
@@ -159,6 +160,7 @@ export default function PainelCliente({ conversa, coluna = false, onFechar, onIn
                         <div className="flex flex-1 flex-col gap-2"><span className="text-[13.5px]">QR Code do Pix</span>{onEnviarArquivo && <button type="button" className={btn} onClick={() => { onEnviarArquivo(arquivoDe(qr, "pix-qrcode.png", "image/png")); setQr(""); setAviso("QR Code enviado ao cliente."); }}>Enviar QR Code</button>}</div>
                     </div>
                 )}
+                <TipoContato conversa={conversa} />
                 {!dados && !erro && <p className="py-6 text-[15px]">Consultando a Unymos…</p>}
 
                 {dados && !atual && (

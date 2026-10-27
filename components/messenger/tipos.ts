@@ -53,7 +53,7 @@ export type Conversa = {
     ultima_mensagem: Mensagem | null;
     ultima_mensagem_em: string | null;
     /** nome = o salvo pela equipe, se houver; nome_whatsapp = o do perfil do cliente */
-    contato: { id: number; nome: string | null; nome_whatsapp?: string | null; salvo?: boolean; telefone: string; contratos?: ContratoVinculado[] } | null;
+    contato: { id: number; nome: string | null; nome_whatsapp?: string | null; salvo?: boolean; telefone: string; contratos?: ContratoVinculado[]; tipo?: string; empresa?: string | null; observacao?: string | null } | null; // tipo/empresa/observacao: 27/10/2026 (tipos de contato)
     status_atendimento: "aguardando" | "em_atendimento" | "encerrado" | null;
     responsavel: { id: number; nome: string | null } | null;
     janela_ate: string | null;

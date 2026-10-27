@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { msgGet } from "@/components/messenger/api";
 import { Icone, SeloCor } from "../messenger/components/Lista";
+import CustoMetaOficial from "@/components/messenger/CustoMetaOficial";
 
 type Painel = {
     agora: string;
@@ -193,6 +194,7 @@ export default function MonitoramentoPage() {
                                         </div>
                                     </section>
                                 </div>
+                                <CustoMetaOficial de={periodo === "hoje" ? hojeISO() : periodo === "mes" ? `${hojeISO().slice(0, 8)}01` : diasAtras(Number(periodo) - 1)} ate={hojeISO()} nomePeriodo={nomePeriodo} estimativa={dados.custos.total} />
                             </>
                         )}
 

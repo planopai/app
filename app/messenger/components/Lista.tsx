@@ -181,6 +181,14 @@ export function SelosEtiquetas({ etiquetas, max = 2 }: { etiquetas?: EtiquetaCur
     );
 }
 
+/** Tipos de contato que não são cliente (27/10/2026): selo na lista. */
+export const TIPO_CONTATO_SELO: Record<string, [string, string]> = {
+    fornecedor: ["Fornecedor", "#D9731A"],
+    prestador: ["Prestador", "#7A5AF8"],
+    parceiro: ["Parceiro", "#4C9A2A"],
+    publico: ["Público", "#6B7488"],
+};
+
 /** Ações de deslizar (celular) e do menu (computador): fixar no topo e marcar como não lida/lida. */
 export type AcoesLinha = { onFixar: () => void; onMarcar: () => void };
 
@@ -273,6 +281,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                         </div>
                         <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">
                             {etiqueta}
+                            {c.tipo === "externo" && c.contato?.tipo && TIPO_CONTATO_SELO[c.contato.tipo] && <SeloCor nome={TIPO_CONTATO_SELO[c.contato.tipo][0]} cor={TIPO_CONTATO_SELO[c.contato.tipo][1]} pequeno />}
                             {c.setor && c.status_atendimento === "aguardando" && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                             <SelosEtiquetas etiquetas={c.etiquetas} />
                             <TiquesLista estado={estadoUltima(c, eu)} />

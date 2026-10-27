@@ -137,6 +137,7 @@ export const MODULOS: Modulo[] = [
             { id: "messenger-config", titulo: "Configurações do Messenger", desc: "Respostas rápidas e ajustes do atendimento", href: "/messenger-config", slugs: ["messenger-config"], icone: IconSettings },
             { id: "messenger-testes", titulo: "Testes da Aurora", desc: "Simulador e cenários avaliados pelo Claude", href: "/messenger-testes", slugs: ["messenger-config"], icone: IconRobot },
             { id: "messenger-aprendizado", titulo: "Aprendizado da Aurora", desc: "Lições, exemplos e rascunhos para a Base", href: "/messenger-aprendizado", slugs: ["messenger-config"], icone: IconBrain },
+            { id: "messenger-habilidades", titulo: "Habilidades da Aurora", desc: "Como a Aurora atende em cada setor", href: "/messenger-habilidades", slugs: ["messenger-config"], icone: IconRobot },
             // 15/10/2026: painel de monitoramento do atendimento (Gestão: mesma página do Histórico de clientes). Nasce aqui; mova pelo Organizar menu.
             { id: "messenger-monitor", titulo: "Monitoramento do atendimento", desc: "Fila, atendentes e avaliações", href: "/messenger-monitor", slugs: ["messenger-historico"], icone: IconChartBar },
             // 23/10/2026: Comprovantes do WhatsApp (a Aurora lê; o responsável marca a baixa). Servidor: aurora_01.php. Nasce aqui; mova pelo Organizar menu.

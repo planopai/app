@@ -12,7 +12,8 @@ import { ativarNotificacoes, ouvir, ouvirNotificacoes, ouvirSeguranca, type Esta
 import { ocultarBarraCelular } from "@/components/barra/BarraCelular";
 import { useSemZoom } from "@/components/messenger/semZoom";
 import type { Aba, Conversa, EtiquetaCurta, Mensagem, Perfil, Setor } from "@/components/messenger/tipos";
-import { Abas, Icone, LinhaConversa, SeloCor } from "./components/Lista";
+import { Abas, Icone, LinhaConversa, SeloCor, TIPO_CONTATO_SELO } from "./components/Lista";
+import NovaConversaWhats from "./components/NovaConversaWhats";
 import JanelaConversa from "./components/Conversa";
 import { DetalhesGrupo, Encaminhar, EnviarContato, EtiquetasConversa, NovaConversa, Transferir } from "./components/Modais";
 import HistoricoClientes from "./components/Historico";
@@ -140,11 +141,12 @@ export default function MessengerPage() {
     const [carregando, setCarregando] = useState(true);
     const [seguranca, setSeguranca] = useState(false);
     const [digitando, setDigitando] = useState<Record<number, { nome: string; ate: number }>>({});
-    const [modal, setModal] = useState<null | "nova" | "grupo" | "transferir" | "detalhes" | "contato" | "encaminhar" | "etiquetas">(null);
+    const [modal, setModal] = useState<null | "nova" | "grupo" | "whats" | "transferir" | "detalhes" | "contato" | "encaminhar" | "etiquetas">(null);
     // pacote 4A: filtros da aba Clientes por setor (0 = todos, -1 = sem setor) e por etiqueta
     const [setores, setSetores] = useState<Setor[]>([]);
     const [filtroSetor, setFiltroSetor] = useState(0);
     const [filtroEtiqueta, setFiltroEtiqueta] = useState(0);
+    const [filtroTipo, setFiltroTipo] = useState(""); // 27/10/2026: tipo de contato (fornecedor, prestador, parceiro, público)
     const [paraEncaminhar, setParaEncaminhar] = useState<Mensagem | null>(null);
     const [verHistorico, setVerHistorico] = useState(false);
     const [pastaEquipeAberta, setPastaEquipeAberta] = useState(false);
@@ -357,7 +359,7 @@ export default function MessengerPage() {
 
     /* ---------- listas por aba ---------- */
     const porSetor = (c: Conversa) => filtroSetor === 0 || (filtroSetor === -1 ? !c.setor_id : c.setor_id === filtroSetor);
-    const porEtiqueta = (c: Conversa) => filtroEtiqueta === 0 || (c.etiquetas || []).some((e) => e.id === filtroEtiqueta);
+    const porEtiqueta = (c: Conversa) => (filtroEtiqueta === 0 || (c.etiquetas || []).some((e) => e.id === filtroEtiqueta)) && (!filtroTipo || (c.contato?.tipo || "cliente") === filtroTipo);
     const porAba = useMemo(() => {
         const q = busca.trim().toLowerCase();
         const f = (c: Conversa) => !q || c.titulo.toLowerCase().includes(q) || (c.contato?.telefone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "") || "#");
@@ -370,7 +372,9 @@ export default function MessengerPage() {
             daEquipe: conversas.filter((c) => !!c.gestao_acompanha && f(c) && porEtiqueta(c)),
             fila: fila.filter((c) => f(c) && porSetor(c) && porEtiqueta(c)),
         };
-    }, [conversas, fila, busca, filtroSetor, filtroEtiqueta]);
+    }, [conversas, fila, busca, filtroSetor, filtroEtiqueta, filtroTipo]);
+    // tipos de contato em uso nas conversas de clientes (para os botões de filtro)
+    const tiposEmUso = useMemo(() => [...new Set([...conversas, ...fila].map((c) => c.contato?.tipo || "").filter((t) => !!TIPO_CONTATO_SELO[t]))], [conversas, fila]);
     // etiquetas em uso nas conversas de clientes (para os botões de filtro)
     const etiquetasEmUso = useMemo(() => {
         const mapa = new Map<number, EtiquetaCurta>();
@@ -641,7 +645,7 @@ export default function MessengerPage() {
                             <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[18px] text-[#1F2638] outline-none dark:text-white" />
                         </label>
                         <Abas aba={aba} setAba={setAba} contagem={contagem} />
-                        {aba === "clientes" && (setores.length > 0 || etiquetasEmUso.length > 0) && (
+                        {aba === "clientes" && (setores.length > 0 || etiquetasEmUso.length > 0 || tiposEmUso.length > 0) && (
                             <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Filtrar clientes">
                                 {setores.length > 0 && (
                                     <>
@@ -657,6 +661,11 @@ export default function MessengerPage() {
                                         {fila.some((c) => !c.setor_id) && <button type="button" onClick={() => setFiltroSetor(filtroSetor === -1 ? 0 : -1)} aria-pressed={filtroSetor === -1} className={`h-8 flex-none rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === -1 ? "border-[#313C55] bg-[#E9EFF6] dark:bg-[#3D6A99]/30" : "border-[#E1E5EC] dark:border-white/15"}`}>Sem setor {fila.filter((c) => !c.setor_id).length}</button>}
                                     </>
                                 )}
+                                {tiposEmUso.map((t) => (
+                                    <button key={`t${t}`} type="button" onClick={() => setFiltroTipo(filtroTipo === t ? "" : t)} aria-pressed={filtroTipo === t} className={`flex-none rounded-full ${filtroTipo === t ? "ring-2 ring-[#313C55] dark:ring-white" : ""}`} aria-label={`Filtrar: ${TIPO_CONTATO_SELO[t][0]}`}>
+                                        <SeloCor nome={TIPO_CONTATO_SELO[t][0]} cor={TIPO_CONTATO_SELO[t][1]} />
+                                    </button>
+                                ))}
                                 {etiquetasEmUso.map((e) => (
                                     <button key={`e${e.id}`} type="button" onClick={() => setFiltroEtiqueta(filtroEtiqueta === e.id ? 0 : e.id)} aria-pressed={filtroEtiqueta === e.id} className={`flex-none rounded-full ${filtroEtiqueta === e.id ? "ring-2 ring-[#313C55] dark:ring-white" : ""}`} aria-label={`Filtrar pela etiqueta ${e.nome}`}>
                                         <SeloCor nome={e.nome} cor={e.cor} ponto />
@@ -765,7 +774,10 @@ export default function MessengerPage() {
             </div>
 
             {(modal === "nova" || modal === "grupo") && (
-                <NovaConversa online={presenca.online} grupoInicial={modal === "grupo"} onFechar={() => setModal(null)} onAberta={(c) => { setModal(null); carregarListas(); setAba(c.tipo === "grupo" ? "grupos" : "equipe"); abrirConversa(c.id); }} />
+                <NovaConversa online={presenca.online} grupoInicial={modal === "grupo"} onFechar={() => setModal(null)} onAberta={(c) => { setModal(null); carregarListas(); setAba(c.tipo === "grupo" ? "grupos" : "equipe"); abrirConversa(c.id); }} onWhatsApp={perfil?.atendente ? () => setModal("whats") : undefined} />
+            )}
+            {modal === "whats" && (
+                <NovaConversaWhats onFechar={() => setModal(null)} onAberta={(id) => { setModal(null); carregarListas(); setAba("clientes"); abrirConversa(id); }} />
             )}
             {modal === "transferir" && conversaSel && (
                 <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida."); if (perfil?.gestao) abrirConversa(conversaSel.id, true); else fecharConversa(); carregarListas(); }} />
