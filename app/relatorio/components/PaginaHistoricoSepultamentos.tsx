@@ -1,14 +1,22 @@
 "use client";
 
+/**
+ * Histórico de sepultamentos (/relatorio).
+ * 27/10/2026: cabeçalho com título e "Análise Geral", atalhos de período, registros de teste
+ * escondidos por padrão ("Mostrar registros de teste"), total de registros e registros por página.
+ * Mesmos dados e mesmas chamadas ao servidor de antes.
+ */
+
 import React, {
     useCallback,
     useEffect,
     useMemo,
     useState,
 } from "react";
+import { IconChartBar } from "@tabler/icons-react";
 
 import BarraFiltros from "./BarraFiltros";
-import ListaRegistros from "./ListaRegistros";
+import ListaRegistros, { ehRegistroTeste } from "./ListaRegistros";
 import ModalAnaliseGeral from "./ModalAnaliseGeral";
 import ModalDetalheRegistro from "./ModalDetalheRegistro";
 import ModalAvaliacaoAtendimento from "./ModalAvaliacaoAtendimento";
@@ -210,7 +218,13 @@ export default function PaginaHistoricoSepultamentos() {
         })();
     }, []);
 
-    const porPagina = 10;
+    const [porPagina, setPorPagina] = useState(10);
+    const [mostrarTestes, setMostrarTestes] = useState(false);
+
+    const qtdTestes = useMemo(
+        () => (lista || []).filter(ehRegistroTeste).length,
+        [lista],
+    );
 
     const filtrados = useMemo(() => {
         const nome = filtroNome.trim().toLowerCase();
@@ -220,6 +234,8 @@ export default function PaginaHistoricoSepultamentos() {
         );
 
         const base = (lista || []).filter((reg) => {
+            if (!mostrarTestes && ehRegistroTeste(reg)) return false;
+
             if (nome) {
                 const n = String(
                     reg?.falecido || "",
@@ -259,6 +275,7 @@ export default function PaginaHistoricoSepultamentos() {
         filtroDe,
         filtroAte,
         criacaoMap,
+        mostrarTestes,
     ]);
 
     const totalPaginas = Math.max(
@@ -272,8 +289,13 @@ export default function PaginaHistoricoSepultamentos() {
                 (pagina - 1) * porPagina,
                 pagina * porPagina,
             ),
-        [filtrados, pagina],
+        [filtrados, pagina, porPagina],
     );
+
+    // Filtro diminuiu a lista: não deixa a página atual passar da última.
+    useEffect(() => {
+        if (pagina > totalPaginas) setPagina(totalPaginas);
+    }, [pagina, totalPaginas]);
 
     const idsPagina = useMemo(
         () =>
@@ -387,8 +409,35 @@ export default function PaginaHistoricoSepultamentos() {
         : "";
 
     return (
-        <div className="flex flex-col gap-3 p-4">
+        <div className="flex flex-col gap-4 py-1 text-[#313C55] dark:text-white">
+            <header className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                    <h1 className="text-[24px] font-extrabold leading-tight lg:text-[28px]">
+                        Histórico de sepultamentos
+                    </h1>
+                    <p className="mt-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">
+                        Todos os atendimentos registrados. Toque em um nome para ver os detalhes.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setAnaliseOpen(true)}
+                    className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3.5 text-[14px] font-extrabold text-[#313C55] transition hover:border-[#313C55] dark:border-white/[0.2] dark:bg-[#232B3F] dark:text-white"
+                    title="Análise Geral"
+                >
+                    <IconChartBar size={18} />
+                    <span className="hidden sm:inline">Análise Geral</span>
+                    <span className="sm:hidden">Análise</span>
+                </button>
+            </header>
+
             <BarraFiltros
+                mostrarTestes={mostrarTestes}
+                onMostrarTestes={(v) => {
+                    setMostrarTestes(v);
+                    setPagina(1);
+                }}
+                qtdTestes={qtdTestes}
                 filtroNome={filtroNome}
                 filtroDe={filtroDe}
                 filtroAte={filtroAte}
@@ -414,6 +463,15 @@ export default function PaginaHistoricoSepultamentos() {
                 loading={loadingLista}
                 pagina={pagina}
                 totalPaginas={totalPaginas}
+                totalRegistros={filtrados.length}
+                porPagina={porPagina}
+                onIrPagina={(p) =>
+                    setPagina(Math.min(totalPaginas, Math.max(1, p)))
+                }
+                onMudarPorPagina={(n) => {
+                    setPorPagina(n);
+                    setPagina(1);
+                }}
                 onPaginaAnterior={() =>
                     setPagina((p) =>
                         Math.max(1, p - 1),

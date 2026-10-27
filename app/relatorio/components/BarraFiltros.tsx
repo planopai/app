@@ -1,13 +1,19 @@
 "use client";
 
+/**
+ * Filtros do Histórico de sepultamentos (/relatorio).
+ *
+ * 27/10/2026 (visual novo):
+ * - campos de 48 px (fundo #F1F4F8), sem o ícone de calendário duplicado;
+ * - atalhos de período (Hoje, 7 dias, Este mês, Mês passado, Este ano) e Limpar;
+ * - "Mostrar registros de teste" (nomes com TESTE ficam fora da lista por padrão);
+ * - celular: busca + botão Filtros, que abre uma folha de baixo (portal no <body>, Esc fecha).
+ * "Análise Geral" passou para o cabeçalho da página (onAbrirAnalise continua aceito).
+ */
+
 import React, { useEffect, useState } from "react";
-import {
-    IconFilter,
-    IconCalendar,
-    IconUser,
-    IconChartBar,
-    IconX,
-} from "@tabler/icons-react";
+import { createPortal } from "react-dom";
+import { IconAdjustmentsHorizontal, IconSearch, IconX } from "@tabler/icons-react";
 
 interface Props {
     filtroNome: string;
@@ -16,23 +22,136 @@ interface Props {
     onChangeNome: (v: string) => void;
     onChangeDe: (v: string) => void;
     onChangeAte: (v: string) => void;
-    onAbrirAnalise: () => void;
+    /** Mantido por compatibilidade: o botão agora fica no cabeçalho da página. */
+    onAbrirAnalise?: () => void;
+
+    mostrarTestes?: boolean;
+    onMostrarTestes?: (v: boolean) => void;
+    qtdTestes?: number;
 }
 
-/**
- * Barra de Filtros
- *
- * Desktop:
- * - mantém nome + datas visíveis;
- * - mantém o botão "Análise Geral" no cabeçalho.
- *
- * Mobile:
- * - mostra somente a busca por nome;
- * - mostra um botão de filtro no canto direito;
- * - datas ficam dentro de um modal central;
- * - "Análise Geral" fica dentro do mesmo painel para não poluir a tela;
- * - o ícone de filtro mostra indicador quando há datas aplicadas.
- */
+/* ---------- datas (yyyy-mm-dd no horário do aparelho) ---------- */
+
+const p2 = (n: number) => String(n).padStart(2, "0");
+const iso = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+
+type Atalho = { id: string; rotulo: string; de: () => string; ate: () => string };
+
+const ATALHOS: Atalho[] = [
+    { id: "hoje", rotulo: "Hoje", de: () => iso(new Date()), ate: () => iso(new Date()) },
+    {
+        id: "7d",
+        rotulo: "7 dias",
+        de: () => {
+            const d = new Date();
+            d.setDate(d.getDate() - 6);
+            return iso(d);
+        },
+        ate: () => iso(new Date()),
+    },
+    {
+        id: "mes",
+        rotulo: "Este mês",
+        de: () => {
+            const d = new Date();
+            return iso(new Date(d.getFullYear(), d.getMonth(), 1));
+        },
+        ate: () => iso(new Date()),
+    },
+    {
+        id: "mes-ant",
+        rotulo: "Mês passado",
+        de: () => {
+            const d = new Date();
+            return iso(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+        },
+        ate: () => {
+            const d = new Date();
+            return iso(new Date(d.getFullYear(), d.getMonth(), 0));
+        },
+    },
+    {
+        id: "ano",
+        rotulo: "Este ano",
+        de: () => iso(new Date(new Date().getFullYear(), 0, 1)),
+        ate: () => iso(new Date()),
+    },
+];
+
+function atalhoAtivo(de: string, ate: string): string | null {
+    for (const a of ATALHOS) if (a.de() === de && a.ate() === ate) return a.id;
+    return null;
+}
+
+/* ---------- peças ---------- */
+
+const ROTULO = "mb-1.5 block text-[12px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:text-[#AEB9CF]";
+const CAMPO =
+    "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:ring-2 focus:ring-[#3D6A99]/30 dark:bg-[#1C2334] dark:text-white dark:[color-scheme:dark]";
+
+function Chip({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: React.ReactNode }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            aria-pressed={ativo}
+            className={[
+                "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-xl border px-3.5 text-[14px] font-bold transition",
+                ativo
+                    ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
+                    : "border-[#E3E8F0] bg-white text-[#313C55] hover:border-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-[#C8CFDC]",
+            ].join(" ")}
+        >
+            {children}
+        </button>
+    );
+}
+
+function CampoNome({ valor, onChange }: { valor: string; onChange: (v: string) => void }) {
+    return (
+        <div className="relative">
+            <IconSearch size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7A8396]" />
+            <input
+                type="text"
+                value={valor}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Buscar por nome"
+                className={`${CAMPO} pl-10 ${valor ? "pr-11" : ""}`}
+                autoComplete="off"
+                enterKeyHint="search"
+                aria-label="Nome do falecido"
+            />
+            {valor ? (
+                <button
+                    type="button"
+                    onClick={() => onChange("")}
+                    aria-label="Limpar nome"
+                    className="absolute right-0.5 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-lg text-[#5B6478] hover:bg-[#E3E8F0] dark:text-[#AEB9CF] dark:hover:bg-white/[0.08]"
+                >
+                    <IconX size={18} />
+                </button>
+            ) : null}
+        </div>
+    );
+}
+
+function ChaveTestes({ ligado, onChange, qtd }: { ligado: boolean; onChange: (v: boolean) => void; qtd?: number }) {
+    return (
+        <label className="inline-flex min-h-11 cursor-pointer select-none items-center gap-2.5 text-[14px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
+            <input type="checkbox" checked={ligado} onChange={(e) => onChange(e.target.checked)} className="size-5 accent-[#313C55] dark:accent-[#3D6A99]" />
+            Mostrar registros de teste{typeof qtd === "number" && qtd > 0 ? ` (${qtd})` : ""}
+        </label>
+    );
+}
+
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [ok, setOk] = useState(false);
+    useEffect(() => setOk(true), []);
+    return ok ? createPortal(children, document.body) : null;
+}
+
+/* ---------- barra ---------- */
+
 export default function BarraFiltros({
     filtroNome,
     filtroDe,
@@ -40,340 +159,227 @@ export default function BarraFiltros({
     onChangeNome,
     onChangeDe,
     onChangeAte,
-    onAbrirAnalise,
+    mostrarTestes = false,
+    onMostrarTestes,
+    qtdTestes,
 }: Props) {
-    const [filtrosMobileOpen, setFiltrosMobileOpen] = useState(false);
+    const [folhaAberta, setFolhaAberta] = useState(false);
     const [draftDe, setDraftDe] = useState(filtroDe);
     const [draftAte, setDraftAte] = useState(filtroAte);
 
-    const temFiltroData = Boolean(filtroDe || filtroAte);
+    const temPeriodo = Boolean(filtroDe || filtroAte);
+    const ativo = atalhoAtivo(filtroDe, filtroAte);
+    const temAlgo = temPeriodo || Boolean(filtroNome);
 
-    useEffect(() => {
-        if (!filtrosMobileOpen) return;
+    const aplicarAtalho = (a: Atalho) => {
+        onChangeDe(a.de());
+        onChangeAte(a.ate());
+    };
 
-        setDraftDe(filtroDe);
-        setDraftAte(filtroAte);
-    }, [filtrosMobileOpen, filtroDe, filtroAte]);
-
-    useEffect(() => {
-        if (!filtrosMobileOpen) return;
-
-        const body = document.body;
-        const html = document.documentElement;
-
-        const oldBodyOverflow = body.style.overflow;
-        const oldHtmlOverflow = html.style.overflow;
-
-        body.style.overflow = "hidden";
-        html.style.overflow = "hidden";
-
-        return () => {
-            body.style.overflow = oldBodyOverflow;
-            html.style.overflow = oldHtmlOverflow;
-        };
-    }, [filtrosMobileOpen]);
-
-    function aplicarFiltrosMobile() {
-        onChangeDe(draftDe);
-        onChangeAte(draftAte);
-        setFiltrosMobileOpen(false);
-    }
-
-    function limparFiltrosMobile() {
-        setDraftDe("");
-        setDraftAte("");
+    const limpar = () => {
+        onChangeNome("");
         onChangeDe("");
         onChangeAte("");
-        setFiltrosMobileOpen(false);
-    }
+    };
+
+    // Folha do celular: copia o filtro ao abrir, trava a rolagem do fundo e fecha com Esc.
+    useEffect(() => {
+        if (!folhaAberta) return;
+        setDraftDe(filtroDe);
+        setDraftAte(filtroAte);
+        const html = document.documentElement;
+        const antigo = html.style.overflow;
+        html.style.overflow = "hidden";
+        const esc = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setFolhaAberta(false);
+        };
+        window.addEventListener("keydown", esc);
+        return () => {
+            html.style.overflow = antigo;
+            window.removeEventListener("keydown", esc);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [folhaAberta]);
+
+    const rotuloPeriodo = ativo
+        ? ATALHOS.find((a) => a.id === ativo)?.rotulo
+        : temPeriodo
+          ? `${filtroDe ? filtroDe.split("-").reverse().join("/") : "…"} a ${filtroAte ? filtroAte.split("-").reverse().join("/") : "…"}`
+          : "";
 
     return (
         <>
-            <div className="rounded-2xl border bg-card/60 p-3 shadow-sm backdrop-blur sm:p-5">
-                {/* =========================
-                    MOBILE
-                   ========================= */}
-                <div className="sm:hidden">
-                    <form
-                        className="flex items-center gap-2"
-                        onSubmit={(e) => e.preventDefault()}
-                    >
-                        <label className="min-w-0 flex-1">
-                            <span className="sr-only">
-                                Nome do falecido
-                            </span>
-
-                            <div className="relative">
-                                <IconUser className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
-                                <input
-                                    type="text"
-                                    value={filtroNome}
-                                    onChange={(e) =>
-                                        onChangeNome(e.target.value)
-                                    }
-                                    placeholder="Buscar por nome..."
-                                    className="input h-11 w-full rounded-xl pl-10 pr-3 text-base"
-                                    autoComplete="off"
-                                />
-                            </div>
-                        </label>
-
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setFiltrosMobileOpen(true)
-                            }
-                            className={[
-                                "relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition",
-                                temFiltroData
-                                    ? "border-slate-900 bg-slate-900 text-white"
-                                    : "bg-background text-foreground hover:bg-muted/50",
-                            ].join(" ")}
-                            title="Filtros"
-                            aria-label="Abrir filtros"
-                        >
-                            <IconFilter className="size-5" />
-
-                            {temFiltroData ? (
-                                <span
-                                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-400 ring-2 ring-slate-900"
-                                    aria-hidden="true"
-                                />
-                            ) : null}
-                        </button>
-                    </form>
-                </div>
-
-                {/* =========================
-                    DESKTOP / TABLET
-                   ========================= */}
-                <div className="hidden sm:block">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-sm font-semibold">
-                            <IconFilter className="size-4 text-muted-foreground" />
-                            Filtros
+            <div className="rounded-2xl border border-[#E3E8F0] bg-white p-3 shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F] sm:p-4 lg:p-5">
+                {/* ===== Celular / tablet ===== */}
+                <div className="lg:hidden">
+                    <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                            <CampoNome valor={filtroNome} onChange={onChangeNome} />
                         </div>
-
                         <button
                             type="button"
-                            onClick={onAbrirAnalise}
-                            className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-muted/50"
-                            title="Análise Geral"
+                            onClick={() => setFolhaAberta(true)}
+                            aria-label="Abrir filtros"
+                            className={[
+                                "relative inline-flex h-12 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-[14px] font-bold transition",
+                                temPeriodo
+                                    ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
+                                    : "border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/[0.2] dark:bg-[#232B3F] dark:text-white",
+                            ].join(" ")}
                         >
-                            <IconChartBar className="size-4" />
-                            Análise Geral
+                            <IconAdjustmentsHorizontal size={20} />
+                            <span className="hidden sm:inline">Filtros</span>
+                            {temPeriodo ? <span className="absolute -right-1 -top-1 size-3 rounded-full bg-[#F2CB3F] ring-2 ring-white dark:ring-[#232B3F]" aria-hidden="true" /> : null}
                         </button>
                     </div>
-
-                    <form
-                        className="grid gap-3 sm:grid-cols-3"
-                        onSubmit={(e) => e.preventDefault()}
-                    >
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs text-muted-foreground">
-                                Nome do falecido
-                            </span>
-
-                            <div className="relative">
-                                <IconUser className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-
-                                <input
-                                    type="text"
-                                    value={filtroNome}
-                                    onChange={(e) =>
-                                        onChangeNome(e.target.value)
-                                    }
-                                    placeholder="Buscar por nome..."
-                                    className="input w-full pl-10"
-                                    autoComplete="off"
-                                />
-                            </div>
-                        </label>
-
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs text-muted-foreground">
-                                Data inicial
-                            </span>
-
-                            <div className="relative">
-                                <IconCalendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-
-                                <input
-                                    type="date"
-                                    value={filtroDe}
-                                    onChange={(e) =>
-                                        onChangeDe(e.target.value)
-                                    }
-                                    className="input w-full pl-10"
-                                />
-                            </div>
-                        </label>
-
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs text-muted-foreground">
-                                Data final
-                            </span>
-
-                            <div className="relative">
-                                <IconCalendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 opacity-60" />
-
-                                <input
-                                    type="date"
-                                    value={filtroAte}
-                                    onChange={(e) =>
-                                        onChangeAte(e.target.value)
-                                    }
-                                    className="input w-full pl-10"
-                                />
-                            </div>
-                        </label>
-                    </form>
-                </div>
-            </div>
-
-            {/* =========================
-                MODAL CENTRAL MOBILE
-               ========================= */}
-            {filtrosMobileOpen ? (
-                <div
-                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:hidden"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Filtros do relatório"
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            setFiltrosMobileOpen(false);
-                        }
-                    }}
-                >
-                    <div
-                        className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
-                        style={{
-                            maxHeight:
-                                "calc(100dvh - max(1.5rem, env(safe-area-inset-top)) - max(1.5rem, env(safe-area-inset-bottom)))",
-                        }}
-                    >
-                        <div className="flex items-center justify-between border-b px-4 py-3">
-                            <div className="flex items-center gap-2">
-                                <IconFilter className="size-5 text-muted-foreground" />
-
-                                <div>
-                                    <h3 className="text-sm font-semibold">
-                                        Filtros
-                                    </h3>
-                                    <p className="text-xs text-muted-foreground">
-                                        Filtre os registros por período.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    setFiltrosMobileOpen(false)
-                                }
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border hover:bg-muted/50"
-                                aria-label="Fechar filtros"
-                                title="Fechar"
-                            >
-                                <IconX className="size-5" />
-                            </button>
-                        </div>
-
-                        <div
-                            className="min-h-0 flex-1 overflow-y-auto p-4"
-                            style={{
-                                WebkitOverflowScrolling: "touch",
-                                overscrollBehaviorY: "contain",
-                                touchAction: "pan-y",
-                            }}
-                        >
-                            <div className="space-y-4">
-                                <label className="flex flex-col gap-1.5">
-                                    <span className="text-xs font-medium text-muted-foreground">
-                                        Data inicial
-                                    </span>
-
-                                    <div className="relative">
-                                        <IconCalendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
-                                        <input
-                                            type="date"
-                                            value={draftDe}
-                                            onChange={(e) =>
-                                                setDraftDe(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            className="input h-11 w-full rounded-xl pl-10 text-base"
-                                        />
-                                    </div>
-                                </label>
-
-                                <label className="flex flex-col gap-1.5">
-                                    <span className="text-xs font-medium text-muted-foreground">
-                                        Data final
-                                    </span>
-
-                                    <div className="relative">
-                                        <IconCalendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
-                                        <input
-                                            type="date"
-                                            value={draftAte}
-                                            onChange={(e) =>
-                                                setDraftAte(
-                                                    e.target.value,
-                                                )
-                                            }
-                                            className="input h-11 w-full rounded-xl pl-10 text-base"
-                                        />
-                                    </div>
-                                </label>
-
+                    {rotuloPeriodo ? (
+                        <div className="mt-2 flex items-center gap-2">
+                            <span className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#E9EFF6] pl-3 text-[13px] font-bold text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">
+                                Período: {rotuloPeriodo}
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        setFiltrosMobileOpen(false);
-                                        onAbrirAnalise();
+                                        onChangeDe("");
+                                        onChangeAte("");
                                     }}
-                                    className="flex w-full items-center justify-between rounded-xl border bg-muted/20 px-4 py-3 text-left"
+                                    aria-label="Tirar o período"
+                                    className="grid size-9 place-items-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10"
                                 >
-                                    <span>
-                                        <span className="block text-sm font-semibold">
-                                            Análise Geral
-                                        </span>
-                                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                                            Abrir indicadores e análise dos
-                                            atendimentos.
-                                        </span>
-                                    </span>
+                                    <IconX size={15} />
+                                </button>
+                            </span>
+                        </div>
+                    ) : null}
+                </div>
 
-                                    <IconChartBar className="size-5 shrink-0 text-muted-foreground" />
+                {/* ===== Computador ===== */}
+                <div className="hidden lg:block">
+                    <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                        <div>
+                            <span className={ROTULO}>Nome do falecido</span>
+                            <CampoNome valor={filtroNome} onChange={onChangeNome} />
+                        </div>
+                        <label>
+                            <span className={ROTULO}>Data inicial</span>
+                            <input type="date" value={filtroDe} onChange={(e) => onChangeDe(e.target.value)} className={CAMPO} />
+                        </label>
+                        <label>
+                            <span className={ROTULO}>Data final</span>
+                            <input type="date" value={filtroAte} onChange={(e) => onChangeAte(e.target.value)} className={CAMPO} />
+                        </label>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {ATALHOS.map((a) => (
+                            <Chip key={a.id} ativo={ativo === a.id} onClick={() => aplicarAtalho(a)}>
+                                {a.rotulo}
+                            </Chip>
+                        ))}
+                        {temAlgo ? (
+                            <button
+                                type="button"
+                                onClick={limpar}
+                                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-[14px] font-bold text-[#5B6478] hover:bg-[#F1F4F8] hover:text-[#313C55] dark:text-[#AEB9CF] dark:hover:bg-white/[0.06] dark:hover:text-white"
+                            >
+                                <IconX size={16} />
+                                Limpar filtros
+                            </button>
+                        ) : null}
+                        {onMostrarTestes ? (
+                            <span className="ml-auto">
+                                <ChaveTestes ligado={mostrarTestes} onChange={onMostrarTestes} qtd={qtdTestes} />
+                            </span>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+
+            {/* ===== Folha de filtros (celular) ===== */}
+            {folhaAberta ? (
+                <NoCorpo>
+                    <div
+                        data-pai-overlay
+                        className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:hidden"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Filtros do histórico"
+                        onClick={(e) => {
+                            if (e.target === e.currentTarget) setFolhaAberta(false);
+                        }}
+                    >
+                        <div className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white">
+                            <div className="flex items-center gap-3 border-b border-[#E3E8F0] px-4 py-3 dark:border-white/[0.08]">
+                                <h2 className="min-w-0 flex-1 text-[18px] font-extrabold">Filtros</h2>
+                                <button
+                                    type="button"
+                                    onClick={() => setFolhaAberta(false)}
+                                    aria-label="Fechar"
+                                    className="grid size-11 place-items-center rounded-xl hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08]"
+                                >
+                                    <IconX size={20} />
+                                </button>
+                            </div>
+
+                            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+                                <div>
+                                    <span className={ROTULO}>Período</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {ATALHOS.map((a) => (
+                                            <Chip
+                                                key={a.id}
+                                                ativo={atalhoAtivo(draftDe, draftAte) === a.id}
+                                                onClick={() => {
+                                                    setDraftDe(a.de());
+                                                    setDraftAte(a.ate());
+                                                }}
+                                            >
+                                                {a.rotulo}
+                                            </Chip>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <label className="min-w-0">
+                                        <span className={ROTULO}>Data inicial</span>
+                                        <input type="date" value={draftDe} onChange={(e) => setDraftDe(e.target.value)} className={CAMPO} />
+                                    </label>
+                                    <label className="min-w-0">
+                                        <span className={ROTULO}>Data final</span>
+                                        <input type="date" value={draftAte} onChange={(e) => setDraftAte(e.target.value)} className={CAMPO} />
+                                    </label>
+                                </div>
+                                {onMostrarTestes ? <ChaveTestes ligado={mostrarTestes} onChange={onMostrarTestes} qtd={qtdTestes} /> : null}
+                            </div>
+
+                            <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-[#E3E8F0] bg-[#F6F8FB] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-white/[0.08] dark:bg-[#1C2334]">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDraftDe("");
+                                        setDraftAte("");
+                                        onChangeDe("");
+                                        onChangeAte("");
+                                        setFolhaAberta(false);
+                                    }}
+                                    className="min-h-12 rounded-xl border border-[#C9D1DE] bg-white text-[15px] font-bold dark:border-white/[0.2] dark:bg-[#232B3F]"
+                                >
+                                    Limpar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        onChangeDe(draftDe);
+                                        onChangeAte(draftAte);
+                                        setFolhaAberta(false);
+                                    }}
+                                    className="min-h-12 rounded-xl bg-[#313C55] text-[15px] font-extrabold text-white dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                                >
+                                    Aplicar
                                 </button>
                             </div>
                         </div>
-
-                        <div className="grid shrink-0 grid-cols-2 gap-2 border-t bg-background p-4">
-                            <button
-                                type="button"
-                                onClick={limparFiltrosMobile}
-                                className="rounded-xl border px-4 py-3 text-sm font-semibold hover:bg-muted/50"
-                            >
-                                Limpar
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={aplicarFiltrosMobile}
-                                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-[#3D6A99] dark:hover:bg-[#355D86]"
-                            >
-                                Aplicar
-                            </button>
-                        </div>
                     </div>
-                </div>
+                </NoCorpo>
             ) : null}
         </>
     );
