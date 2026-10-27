@@ -31,8 +31,34 @@ type FerramentaIA = {
 
 type Aba = "paginas" | "conhecimento" | "ferramentas";
 
+/* 27/10/2026: grupos de usuários (grupos.php). Cada usuário tem UM grupo; as páginas
+   marcadas no usuário são extras e só acrescentam. Só quem tem Gestão altera. */
+type Grupo = {
+    id: number;
+    nome: string;
+    slug: string;
+    descricao: string;
+    ativo: boolean;
+    paginas: string[];
+    membros: number[];
+};
+
+type UsuarioGrupo = {
+    id: number;
+    nome: string;
+    usuario: string;
+    cargo: string;
+    grupo_id: number | null;
+    extras: string[];
+};
+
+type Modo = "usuarios" | "grupos";
+
 const API_URL =
     "https://api.planoassistencialintegrado.com.br/pai_api.php";
+
+const GRUPOS_URL =
+    "https://api.planoassistencialintegrado.com.br/grupos.php";
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
@@ -73,7 +99,14 @@ async function safeJsonFetch(input: RequestInfo, init?: RequestInit) {
     }
 
     if (!r.ok || json?.erro) {
-        throw new Error(json?.erro || json?.msg || `HTTP ${r.status}`);
+        if (r.status === 401 || json?.need_login) {
+            window.location.href = "/login";
+        }
+        throw new Error(
+            (typeof json?.erro === "string" ? json.erro : "") ||
+            json?.msg ||
+            `HTTP ${r.status}`,
+        );
     }
 
     return json;
@@ -144,6 +177,7 @@ function PermissionCard({
     title,
     description,
     badge,
+    bloqueado,
 }: {
     id: string;
     checked: boolean;
@@ -151,12 +185,14 @@ function PermissionCard({
     title: string;
     description?: string | null;
     badge?: string | null;
+    bloqueado?: boolean;
 }) {
     return (
         <label
             htmlFor={id}
             className={[
-                "group flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition",
+                "group flex items-start gap-3 rounded-2xl border p-4 transition",
+                bloqueado ? "cursor-default opacity-80" : "cursor-pointer",
                 checked
                     ? "border-slate-900 bg-slate-50 shadow-sm dark:bg-[#1C2334]"
                     : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60 dark:border-white/12 dark:bg-[#232B3F] dark:hover:border-white/25 dark:hover:bg-[#1C2334]/60",
@@ -167,6 +203,7 @@ function PermissionCard({
                 type="checkbox"
                 checked={checked}
                 onChange={onChange}
+                disabled={bloqueado}
                 className="mt-1 h-4 w-4 shrink-0 accent-black"
             />
 
@@ -216,6 +253,19 @@ export default function PermissoesPage() {
     const [msg, setMsg] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
+    /* Grupos (27/10/2026) */
+    const [modo, setModo] = useState<Modo>("usuarios");
+    const [grupos, setGrupos] = useState<Grupo[]>([]);
+    const [usuariosGrupo, setUsuariosGrupo] = useState<
+        Record<number, UsuarioGrupo>
+    >({});
+    const [podeEditar, setPodeEditar] = useState(false);
+    const [grupoUsuario, setGrupoUsuario] = useState<number | null>(null);
+    const [grupoSel, setGrupoSel] = useState<number | "novo" | null>(null);
+    const [grupoNome, setGrupoNome] = useState("");
+    const [grupoDesc, setGrupoDesc] = useState("");
+    const [grupoPags, setGrupoPags] = useState<Record<string, boolean>>({});
+
     /* ---------------------------------------------------------------------- */
     /* Carregamento inicial                                                   */
     /* ---------------------------------------------------------------------- */
@@ -232,6 +282,22 @@ export default function PermissoesPage() {
             `${API_URL}?action=list_pages&_=${Date.now()}`,
         );
         setPages(Array.isArray(j) ? (j as Pagina[]) : []);
+    };
+
+    const fetchPainel = async () => {
+        const j = await safeJsonFetch(
+            `${GRUPOS_URL}?action=painel&_=${Date.now()}`,
+        );
+        const d = j?.dados || {};
+        setGrupos(Array.isArray(d.grupos) ? (d.grupos as Grupo[]) : []);
+        const mapa: Record<number, UsuarioGrupo> = {};
+        if (Array.isArray(d.usuarios)) {
+            (d.usuarios as UsuarioGrupo[]).forEach((u) => {
+                mapa[u.id] = u;
+            });
+        }
+        setUsuariosGrupo(mapa);
+        setPodeEditar(!!d.eu?.pode_editar);
     };
 
     const fetchDepartamentos = async () => {
@@ -315,6 +381,7 @@ export default function PermissoesPage() {
             fetchPages(),
             fetchDepartamentos(),
             fetchFerramentas(),
+            fetchPainel(),
         ])
             .catch((e: any) => {
                 setError(
@@ -335,6 +402,13 @@ export default function PermissoesPage() {
             setError(null);
         }
     }, [userId]);
+
+    // Grupo atual do usuário escolhido (vem do grupos.php).
+    useEffect(() => {
+        setGrupoUsuario(
+            userId != null ? usuariosGrupo[userId]?.grupo_id ?? null : null,
+        );
+    }, [userId, usuariosGrupo]);
 
     /* ---------------------------------------------------------------------- */
     /* Ações                                                                   */
@@ -360,10 +434,11 @@ export default function PermissoesPage() {
 
     const marcarTodasPaginas = () => {
         setAllowed(
-            Object.fromEntries(pages.map((p) => [p.key, true])) as Record<
-                string,
-                boolean
-            >,
+            Object.fromEntries(
+                pages
+                    .filter((p) => !paginasDoGrupo.has(p.key))
+                    .map((p) => [p.key, true]),
+            ) as Record<string, boolean>,
         );
     };
 
@@ -418,14 +493,23 @@ export default function PermissoesPage() {
                 .filter(([, value]) => value)
                 .map(([key]) => key);
 
-            await safeJsonFetch(`${API_URL}?action=save_permissions`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    user_id: userId,
-                    permissions: paginasSelecionadas,
-                }),
-            });
+            // 27/10/2026: grupo + extras pelo grupos.php (só Gestão). Extra que o grupo já dá não é gravado.
+            if (podeEditar) {
+                if (grupoUsuario == null) {
+                    throw new Error("Escolha o grupo do usuário.");
+                }
+                await safeJsonFetch(`${GRUPOS_URL}?action=usuario_salvar`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        grupo_id: grupoUsuario,
+                        extras: paginasSelecionadas.filter(
+                            (k) => !paginasDoGrupo.has(k),
+                        ),
+                    }),
+                });
+            }
 
             await safeJsonFetch(
                 `${API_URL}?action=save_user_ia_departamentos`,
@@ -452,8 +536,82 @@ export default function PermissoesPage() {
             );
 
             setMsg("Permissões salvas com sucesso.");
+            await fetchPainel().catch(() => undefined);
         } catch (e: any) {
             setError(e?.message || "Erro ao salvar permissões.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    /* ---------------------------------------------------------------------- */
+    /* Grupos                                                                  */
+    /* ---------------------------------------------------------------------- */
+
+    const abrirGrupo = (g: Grupo | "novo") => {
+        setMsg(null);
+        setError(null);
+        if (g === "novo") {
+            setGrupoSel("novo");
+            setGrupoNome("");
+            setGrupoDesc("");
+            setGrupoPags({});
+            return;
+        }
+        setGrupoSel(g.id);
+        setGrupoNome(g.nome);
+        setGrupoDesc(g.descricao || "");
+        setGrupoPags(
+            Object.fromEntries(g.paginas.map((k) => [k, true])) as Record<
+                string,
+                boolean
+            >,
+        );
+    };
+
+    const salvarGrupo = async () => {
+        if (grupoSel == null) return;
+        setLoading(true);
+        setMsg(null);
+        setError(null);
+        try {
+            const j = await safeJsonFetch(`${GRUPOS_URL}?action=grupo_salvar`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: grupoSel === "novo" ? 0 : grupoSel,
+                    nome: grupoNome,
+                    descricao: grupoDesc,
+                    paginas: Object.entries(grupoPags)
+                        .filter(([, v]) => v)
+                        .map(([k]) => k),
+                }),
+            });
+            const novoId = Number(j?.dados?.id) || null;
+            if (novoId) setGrupoSel(novoId);
+            setMsg("Grupo salvo com sucesso.");
+            await fetchPainel();
+        } catch (e: any) {
+            setError(e?.message || "Erro ao salvar o grupo.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const alternarAtivoGrupo = async (g: Grupo) => {
+        setLoading(true);
+        setMsg(null);
+        setError(null);
+        try {
+            await safeJsonFetch(`${GRUPOS_URL}?action=grupo_ativo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: g.id, ativo: !g.ativo }),
+            });
+            setMsg(g.ativo ? "Grupo desativado." : "Grupo ativado.");
+            await fetchPainel();
+        } catch (e: any) {
+            setError(e?.message || "Erro ao alterar o grupo.");
         } finally {
             setLoading(false);
         }
@@ -468,6 +626,24 @@ export default function PermissoesPage() {
         [userId, usuarios],
     );
 
+    const paginasDoGrupo = useMemo(() => {
+        const g = grupos.find((x) => x.id === grupoUsuario);
+        return new Set<string>(g && g.ativo ? g.paginas : []);
+    }, [grupos, grupoUsuario]);
+
+    const grupoAtual = useMemo(
+        () =>
+            typeof grupoSel === "number"
+                ? grupos.find((g) => g.id === grupoSel) ?? null
+                : null,
+        [grupos, grupoSel],
+    );
+
+    const nomeUsuario = (id: number) => {
+        const u = usuariosGrupo[id] || usuarios.find((x) => x.id === id);
+        return u ? u.nome || u.usuario : `#${id}`;
+    };
+
     const ferramentasPorGrupo = useMemo(() => {
         const groups: Record<string, FerramentaIA[]> = {};
 
@@ -481,8 +657,10 @@ export default function PermissoesPage() {
     }, [ferramentas]);
 
     const paginasMarcadas = useMemo(
-        () => Object.values(allowed).filter(Boolean).length,
-        [allowed],
+        () =>
+            pages.filter((p) => paginasDoGrupo.has(p.key) || allowed[p.key])
+                .length,
+        [allowed, pages, paginasDoGrupo],
     );
 
     const departamentosMarcados = useMemo(
@@ -531,16 +709,49 @@ export default function PermissoesPage() {
                 {/* Cabeçalho */}
                 <div className="mb-6">
                     <h1 className="text-2xl font-bold tracking-tight text-slate-950 md:text-3xl dark:text-white">
-                        Permissões por usuário
+                        {modo === "grupos"
+                            ? "Permissões por grupo"
+                            : "Permissões por usuário"}
                     </h1>
 
                     <p className="mt-1 text-sm text-slate-500 dark:text-[#AEB9CF]">
-                        Controle o acesso ao sistema, ao conhecimento da Aurora e
-                        às funções disponíveis no chat.
+                        Cada usuário pertence a um grupo, que libera as páginas do
+                        grupo. Páginas extras marcadas no usuário só acrescentam.
+                        {podeEditar
+                            ? ""
+                            : " Só quem tem Gestão altera grupos e páginas."}
                     </p>
+
+                    <div className="mt-4 inline-flex gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-white/12 dark:bg-[#232B3F]">
+                        {(
+                            [
+                                ["usuarios", "Usuários"],
+                                ["grupos", "Grupos"],
+                            ] as Array<[Modo, string]>
+                        ).map(([k, label]) => (
+                            <button
+                                key={k}
+                                type="button"
+                                onClick={() => {
+                                    setModo(k);
+                                    setMsg(null);
+                                    setError(null);
+                                }}
+                                className={[
+                                    "min-h-[44px] rounded-xl px-4 text-sm font-semibold transition",
+                                    modo === k
+                                        ? "bg-slate-950 text-white shadow-sm dark:bg-[#3D6A99]"
+                                        : "text-slate-600 hover:bg-slate-100 dark:text-[#AEB9CF] dark:hover:bg-white/10",
+                                ].join(" ")}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Usuário */}
+                {modo === "usuarios" ? (
                 <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5 dark:border-white/12 dark:bg-[#232B3F]">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                         <div className="w-full max-w-xl">
@@ -570,6 +781,39 @@ export default function PermissoesPage() {
                         </div>
 
                         {currentUser ? (
+                            <div className="w-full max-w-sm">
+                                <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-[#D6DCE8]">
+                                    Grupo
+                                </label>
+                                <select
+                                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:focus:ring-white/12"
+                                    value={grupoUsuario ?? ""}
+                                    disabled={!podeEditar || loading}
+                                    onChange={(e) =>
+                                        setGrupoUsuario(
+                                            e.target.value
+                                                ? parseInt(e.target.value, 10)
+                                                : null,
+                                        )
+                                    }
+                                >
+                                    <option value="">Sem grupo</option>
+                                    {grupos
+                                        .filter(
+                                            (g) =>
+                                                g.ativo || g.id === grupoUsuario,
+                                        )
+                                        .map((g) => (
+                                            <option key={g.id} value={g.id}>
+                                                {g.nome}
+                                                {g.ativo ? "" : " (inativo)"}
+                                            </option>
+                                        ))}
+                                </select>
+                            </div>
+                        ) : null}
+
+                        {currentUser ? (
                             <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm dark:bg-[#1C2334]">
                                 <div className="font-semibold text-slate-900 dark:text-white">
                                     {currentUser.nome}
@@ -581,6 +825,7 @@ export default function PermissoesPage() {
                         ) : null}
                     </div>
                 </div>
+                ) : null}
 
                 {/* Alertas */}
                 {msg ? (
@@ -595,7 +840,193 @@ export default function PermissoesPage() {
                     </div>
                 ) : null}
 
-                {!userId ? (
+                {modo === "grupos" ? (
+                    <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/12 dark:bg-[#232B3F]">
+                            {podeEditar ? (
+                                <button
+                                    type="button"
+                                    onClick={() => abrirGrupo("novo")}
+                                    className="mb-3 min-h-[44px] w-full rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]"
+                                >
+                                    Novo grupo
+                                </button>
+                            ) : null}
+                            <div className="space-y-2">
+                                {grupos.map((g) => (
+                                    <button
+                                        key={g.id}
+                                        type="button"
+                                        onClick={() => abrirGrupo(g)}
+                                        className={[
+                                            "flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm transition",
+                                            grupoSel === g.id
+                                                ? "border-slate-900 bg-slate-50 dark:border-[#3D6A99] dark:bg-[#3D6A99]/20"
+                                                : "border-slate-200 hover:bg-slate-50 dark:border-white/12 dark:hover:bg-[#1C2334]",
+                                        ].join(" ")}
+                                    >
+                                        <span className="min-w-0">
+                                            <span className="block truncate font-semibold text-slate-900 dark:text-white">
+                                                {g.nome}
+                                            </span>
+                                            <span className="block text-xs text-slate-500 dark:text-[#AEB9CF]">
+                                                {g.membros.length} membro(s) ·{" "}
+                                                {g.paginas.length} página(s)
+                                            </span>
+                                        </span>
+                                        {!g.ativo ? (
+                                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-white/10 dark:text-[#AEB9CF]">
+                                                Inativo
+                                            </span>
+                                        ) : null}
+                                    </button>
+                                ))}
+                                {grupos.length === 0 ? (
+                                    <p className="px-1 py-4 text-sm text-slate-500 dark:text-[#AEB9CF]">
+                                        Nenhum grupo cadastrado.
+                                    </p>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        {grupoSel == null ? (
+                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-white/25 dark:bg-[#232B3F]">
+                                <div className="text-base font-semibold text-slate-800 dark:text-white">
+                                    Selecione um grupo
+                                </div>
+                                <p className="mt-1 text-sm text-slate-500 dark:text-[#AEB9CF]">
+                                    As páginas e os membros do grupo serão exibidos aqui.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-6 dark:border-white/12 dark:bg-[#232B3F]">
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-[#D6DCE8]">
+                                            Nome do grupo
+                                        </label>
+                                        <input
+                                            value={grupoNome}
+                                            onChange={(e) =>
+                                                setGrupoNome(e.target.value)
+                                            }
+                                            disabled={!podeEditar}
+                                            maxLength={80}
+                                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[16px] text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-[#D6DCE8]">
+                                            Descrição
+                                        </label>
+                                        <input
+                                            value={grupoDesc}
+                                            onChange={(e) =>
+                                                setGrupoDesc(e.target.value)
+                                            }
+                                            disabled={!podeEditar}
+                                            maxLength={255}
+                                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[16px] text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white"
+                                        />
+                                    </div>
+                                </div>
+
+                                {grupoAtual ? (
+                                    <div className="mt-5">
+                                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-[#AEB9CF]">
+                                            Membros ({grupoAtual.membros.length})
+                                        </h3>
+                                        <p className="mt-1 text-xs text-slate-500 dark:text-[#AEB9CF]">
+                                            Para mudar alguém de grupo, use a aba Usuários.
+                                        </p>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {grupoAtual.membros.map((id) => (
+                                                <span
+                                                    key={id}
+                                                    className="rounded-full bg-[#E9EFF6] px-3 py-1 text-xs font-medium text-[#313C55] dark:bg-[#3D6A99]/30 dark:text-white"
+                                                >
+                                                    {nomeUsuario(id)}
+                                                </span>
+                                            ))}
+                                            {grupoAtual.membros.length === 0 ? (
+                                                <span className="text-xs text-slate-500 dark:text-[#AEB9CF]">
+                                                    Nenhum membro.
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                ) : null}
+
+                                <div className="mt-6">
+                                    <SectionHeader
+                                        title="Páginas do grupo"
+                                        description="Todos os membros do grupo acessam estas páginas. A página Gestão dá o poder de alterar grupos e permissões."
+                                        selected={
+                                            Object.values(grupoPags).filter(Boolean)
+                                                .length
+                                        }
+                                        total={pages.length}
+                                        onMarkAll={() =>
+                                            setGrupoPags(
+                                                Object.fromEntries(
+                                                    pages.map((p) => [p.key, true]),
+                                                ) as Record<string, boolean>,
+                                            )
+                                        }
+                                        onClearAll={() => setGrupoPags({})}
+                                        disabled={loading || !podeEditar}
+                                    />
+                                    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                        {pages.map((p) => (
+                                            <PermissionCard
+                                                key={p.key}
+                                                id={`gpg-${p.key}`}
+                                                checked={!!grupoPags[p.key]}
+                                                onChange={() =>
+                                                    setGrupoPags((prev) => ({
+                                                        ...prev,
+                                                        [p.key]: !prev[p.key],
+                                                    }))
+                                                }
+                                                title={p.label}
+                                                bloqueado={!podeEditar}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {podeEditar ? (
+                                    <div className="sticky bottom-3 z-20 mt-5">
+                                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur md:flex-row md:items-center md:justify-end dark:border-white/12 dark:bg-[#232B3F]/95">
+                                            {grupoAtual ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        alternarAtivoGrupo(grupoAtual)
+                                                    }
+                                                    disabled={loading}
+                                                    className="min-h-[44px] rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/12 dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-[#1C2334]"
+                                                >
+                                                    {grupoAtual.ativo
+                                                        ? "Desativar grupo"
+                                                        : "Ativar grupo"}
+                                                </button>
+                                            ) : null}
+                                            <button
+                                                type="button"
+                                                onClick={salvarGrupo}
+                                                disabled={loading}
+                                                className="min-h-[44px] rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#3D6A99] dark:hover:bg-[#355D86]"
+                                            >
+                                                {loading ? "Salvando..." : "Salvar grupo"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        )}
+                    </div>
+                ) : !userId ? (
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-white/25 dark:bg-[#232B3F]">
                         <div className="text-base font-semibold text-slate-800 dark:text-white">
                             Selecione um usuário
@@ -648,26 +1079,43 @@ export default function PermissoesPage() {
                                 <>
                                     <SectionHeader
                                         title="Páginas do sistema"
-                                        description="Defina quais páginas este usuário poderá acessar no painel."
+                                        description="As páginas marcadas como Do grupo vêm do grupo do usuário. As demais marcadas são extras deste usuário e só acrescentam."
                                         selected={paginasMarcadas}
                                         total={pages.length}
                                         onMarkAll={marcarTodasPaginas}
                                         onClearAll={desmarcarTodasPaginas}
-                                        disabled={loading}
+                                        disabled={loading || !podeEditar}
                                     />
 
                                     <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                        {pages.map((p) => (
-                                            <PermissionCard
-                                                key={p.key}
-                                                id={`pg-${p.key}`}
-                                                checked={!!allowed[p.key]}
-                                                onChange={() =>
-                                                    togglePagina(p.key)
-                                                }
-                                                title={p.label}
-                                            />
-                                        ))}
+                                        {pages.map((p) => {
+                                            const doGrupo = paginasDoGrupo.has(
+                                                p.key,
+                                            );
+                                            return (
+                                                <PermissionCard
+                                                    key={p.key}
+                                                    id={`pg-${p.key}`}
+                                                    checked={
+                                                        doGrupo || !!allowed[p.key]
+                                                    }
+                                                    onChange={() =>
+                                                        togglePagina(p.key)
+                                                    }
+                                                    title={p.label}
+                                                    badge={
+                                                        doGrupo
+                                                            ? "Do grupo"
+                                                            : allowed[p.key]
+                                                              ? "Extra"
+                                                              : null
+                                                    }
+                                                    bloqueado={
+                                                        doGrupo || !podeEditar
+                                                    }
+                                                />
+                                            );
+                                        })}
                                     </div>
                                 </>
                             ) : null}
