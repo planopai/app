@@ -7,6 +7,7 @@ import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@
 import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
 import { SeloUnymos } from "./PainelCliente";
+import ModeloCampos from "@/components/messenger/ModeloCampos";
 import { baixarAnexo } from "@/components/messenger/salvarArquivos";
 
 const EMOJIS: Record<string, string[]> = {
@@ -521,7 +522,7 @@ function Gravador({ onPronto, onCancelar, mp3 = false }: { onPronto: (b: Blob, m
 }
 
 /* ---------------- modelos (janela de 24 h fechada) ---------------- */
-function EscolherModelo({ onEnviar }: { onEnviar: (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => void }) {
+function EscolherModelo({ onEnviar, conversaId }: { onEnviar: (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => void; conversaId?: number }) {
     const [lista, setLista] = useState<any[] | null>(null);
     const [erro, setErro] = useState("");
     const [sel, setSel] = useState<any>(null);
@@ -541,9 +542,7 @@ function EscolherModelo({ onEnviar }: { onEnviar: (m: { nome: string; idioma: st
             </select>
             {sel && (
                 <>
-                    {params.map((p, i) => (
-                        <input key={i} className="h-10 rounded-xl border border-[#E1E5EC] px-3 text-sm dark:border-white/12" placeholder={`Valor de {{${i + 1}}}`} value={p} onChange={(e) => setParams(params.map((x, j) => (j === i ? e.target.value : x)))} />
-                    ))}
+                    <ModeloCampos modelo={sel} conversaId={conversaId} params={params} onParams={setParams} compacto />
                     <div className="whitespace-pre-wrap rounded-xl bg-[#F6F8FB] p-3 text-sm dark:bg-[#1C2334]">{texto}</div>
                     <button type="button" disabled={params.some((p) => !p.trim())} onClick={() => onEnviar({ nome: sel.nome, idioma: sel.idioma, parametros: params, texto })} className="h-11 rounded-xl bg-[#313C55] text-sm font-extrabold text-white disabled:opacity-40 dark:bg-[#3D6A99]">Enviar modelo</button>
                 </>
@@ -860,7 +859,7 @@ export default function JanelaConversa(props: {
                 </div>
             ) : janelaFechada && !modoNota ? (
                 <div className="border-t border-[#E3E8F0] bg-white p-3 dark:border-white/12 dark:bg-[#232B3F]">
-                    <EscolherModelo onEnviar={props.onEnviarModelo} />
+                    <EscolherModelo onEnviar={props.onEnviarModelo} conversaId={c.id} />
                     {props.onEnviarNota && <button type="button" onClick={() => setModoNota(true)} className="mt-2 flex h-9 items-center gap-1.5 rounded-xl bg-[#FFF4C2] px-3 text-[13px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]"><Icone nome="nota" className="h-4 w-4" />Escrever nota interna</button>}
                 </div>
             ) : (

@@ -8,6 +8,7 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { apiJson, API_BASE, msgGet, msgPost } from "@/components/messenger/api";
+import ModeloCampos from "@/components/messenger/ModeloCampos";
 
 type Modelo = { nome: string; idioma: string; categoria: string; corpo: string; parametros: number };
 
@@ -104,12 +105,9 @@ export default function NovaConversaWhats({ onFechar, onAberta }: { onFechar: ()
                         </select>
                     </label>
                     {m && m.parametros > 0 && (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            {Array.from({ length: m.parametros }).map((_, i) => (
-                                <label key={i} className="block"><span className={rotulo}>{`{{${i + 1}}}`}</span>
-                                    <input className={campo} value={params[i] || ""} onChange={(e) => { const p = [...params]; p[i] = e.target.value; setParams(p); }} placeholder={i === 0 && nome ? nome.split(" ")[0] : ""} />
-                                </label>
-                            ))}
+                        <div>
+                            <span className={rotulo}>Variáveis do modelo</span>
+                            <div className="mt-1"><ModeloCampos modelo={m} telefone={telefone} params={params} onParams={setParams} /></div>
                         </div>
                     )}
                     {m && (
