@@ -265,6 +265,7 @@ export default function PermissoesPage() {
     const [grupoNome, setGrupoNome] = useState("");
     const [grupoDesc, setGrupoDesc] = useState("");
     const [grupoPags, setGrupoPags] = useState<Record<string, boolean>>({});
+    const [buscaUsuario, setBuscaUsuario] = useState("");
 
     /* ---------------------------------------------------------------------- */
     /* Carregamento inicial                                                   */
@@ -599,6 +600,27 @@ export default function PermissoesPage() {
         }
     };
 
+    // 27/10/2026: troca o grupo direto na lista de usuários (as extras continuam).
+    const mudarGrupo = async (uid: number, gid: number | null) => {
+        if (gid == null) return;
+        setLoading(true);
+        setMsg(null);
+        setError(null);
+        try {
+            await safeJsonFetch(`${GRUPOS_URL}?action=usuario_grupo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: uid, grupo_id: gid }),
+            });
+            setMsg("Grupo alterado.");
+            await fetchPainel();
+        } catch (e: any) {
+            setError(e?.message || "Erro ao alterar o grupo.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const alternarAtivoGrupo = async (g: Grupo) => {
         setLoading(true);
         setMsg(null);
@@ -639,6 +661,25 @@ export default function PermissoesPage() {
                 : null,
         [grupos, grupoSel],
     );
+
+    const usuariosFiltrados = useMemo(() => {
+        const q = buscaUsuario
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+            .trim();
+        if (!q) return usuarios;
+        return usuarios.filter((u) =>
+            `${u.nome} ${u.usuario}`
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .toLowerCase()
+                .includes(q),
+        );
+    }, [usuarios, buscaUsuario]);
+
+    const nomeGrupo = (gid: number | null | undefined) =>
+        grupos.find((g) => g.id === gid)?.nome ?? "Sem grupo";
 
     const nomeUsuario = (id: number) => {
         const u = usuariosGrupo[id] || usuarios.find((x) => x.id === id);
@@ -751,82 +792,6 @@ export default function PermissoesPage() {
                     </div>
                 </div>
 
-                {/* Usuário */}
-                {modo === "usuarios" ? (
-                <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5 dark:border-white/12 dark:bg-[#232B3F]">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                        <div className="w-full max-w-xl">
-                            <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-[#D6DCE8]">
-                                Usuário
-                            </label>
-
-                            <select
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:focus:ring-white/12"
-                                value={userId ?? ""}
-                                onChange={(e) =>
-                                    setUserId(
-                                        e.target.value
-                                            ? parseInt(e.target.value, 10)
-                                            : null,
-                                    )
-                                }
-                            >
-                                <option value="">Selecione um usuário...</option>
-
-                                {usuarios.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                        #{u.id} — {u.nome} ({u.usuario})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {currentUser ? (
-                            <div className="w-full max-w-sm">
-                                <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-[#D6DCE8]">
-                                    Grupo
-                                </label>
-                                <select
-                                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:opacity-60 dark:border-white/25 dark:bg-[#232B3F] dark:text-white dark:focus:ring-white/12"
-                                    value={grupoUsuario ?? ""}
-                                    disabled={!podeEditar || loading}
-                                    onChange={(e) =>
-                                        setGrupoUsuario(
-                                            e.target.value
-                                                ? parseInt(e.target.value, 10)
-                                                : null,
-                                        )
-                                    }
-                                >
-                                    <option value="">Sem grupo</option>
-                                    {grupos
-                                        .filter(
-                                            (g) =>
-                                                g.ativo || g.id === grupoUsuario,
-                                        )
-                                        .map((g) => (
-                                            <option key={g.id} value={g.id}>
-                                                {g.nome}
-                                                {g.ativo ? "" : " (inativo)"}
-                                            </option>
-                                        ))}
-                                </select>
-                            </div>
-                        ) : null}
-
-                        {currentUser ? (
-                            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm dark:bg-[#1C2334]">
-                                <div className="font-semibold text-slate-900 dark:text-white">
-                                    {currentUser.nome}
-                                </div>
-                                <div className="text-slate-500 dark:text-[#AEB9CF]">
-                                    @{currentUser.usuario} · ID #{currentUser.id}
-                                </div>
-                            </div>
-                        ) : null}
-                    </div>
-                </div>
-                ) : null}
 
                 {/* Alertas */}
                 {msg ? (
@@ -1027,7 +992,77 @@ export default function PermissoesPage() {
                             </div>
                         )}
                     </div>
-                ) : !userId ? (
+                ) : (
+                    <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+                        {/* Lista de usuários com o grupo de cada um (27/10/2026) */}
+                        <div className="self-start rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/12 dark:bg-[#232B3F]">
+                            <input
+                                value={buscaUsuario}
+                                onChange={(e) => setBuscaUsuario(e.target.value)}
+                                placeholder="Buscar usuário"
+                                className="min-h-[44px] w-full rounded-xl border border-slate-300 bg-white px-3 text-[16px] text-slate-900 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200 dark:border-white/25 dark:bg-[#1C2334] dark:text-white"
+                            />
+                            <div className="mt-3 max-h-[70vh] space-y-2 overflow-y-auto pr-1">
+                                {usuariosFiltrados.map((u) => {
+                                    const gid = usuariosGrupo[u.id]?.grupo_id ?? null;
+                                    return (
+                                        <div
+                                            key={u.id}
+                                            className={[
+                                                "flex items-center gap-2 rounded-xl border px-3 py-2 transition",
+                                                userId === u.id
+                                                    ? "border-slate-900 bg-slate-50 dark:border-[#3D6A99] dark:bg-[#3D6A99]/20"
+                                                    : "border-slate-200 dark:border-white/12",
+                                            ].join(" ")}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => setUserId(u.id)}
+                                                className="min-h-[44px] min-w-0 flex-1 text-left"
+                                            >
+                                                <span className="block truncate text-sm font-semibold text-slate-900 dark:text-white">
+                                                    {u.nome}
+                                                </span>
+                                                <span className="block truncate text-xs text-slate-500 dark:text-[#AEB9CF]">
+                                                    @{u.usuario}
+                                                </span>
+                                            </button>
+                                            <select
+                                                aria-label={`Grupo de ${u.nome}`}
+                                                value={gid ?? ""}
+                                                disabled={!podeEditar || loading}
+                                                onChange={(e) =>
+                                                    mudarGrupo(
+                                                        u.id,
+                                                        e.target.value
+                                                            ? parseInt(e.target.value, 10)
+                                                            : null,
+                                                    )
+                                                }
+                                                className="min-h-[40px] w-40 shrink-0 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900 disabled:opacity-60 dark:border-white/25 dark:bg-[#1C2334] dark:text-white"
+                                            >
+                                                <option value="">Sem grupo</option>
+                                                {grupos
+                                                    .filter((g) => g.ativo || g.id === gid)
+                                                    .map((g) => (
+                                                        <option key={g.id} value={g.id}>
+                                                            {g.nome}
+                                                        </option>
+                                                    ))}
+                                            </select>
+                                        </div>
+                                    );
+                                })}
+                                {usuariosFiltrados.length === 0 ? (
+                                    <p className="px-1 py-4 text-sm text-slate-500 dark:text-[#AEB9CF]">
+                                        Nenhum usuário encontrado.
+                                    </p>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="min-w-0">
+                {!userId ? (
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-white/25 dark:bg-[#232B3F]">
                         <div className="text-base font-semibold text-slate-800 dark:text-white">
                             Selecione um usuário
@@ -1038,6 +1073,16 @@ export default function PermissoesPage() {
                     </div>
                 ) : (
                     <>
+                        <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-white/12 dark:bg-[#232B3F]">
+                            <span className="font-semibold text-slate-900 dark:text-white">
+                                {currentUser?.nome}
+                            </span>
+                            <span className="text-slate-500 dark:text-[#AEB9CF]">
+                                {" "}
+                                · @{currentUser?.usuario} · Grupo: {nomeGrupo(grupoUsuario)}
+                            </span>
+                        </div>
+
                         {/* Navegação */}
                         <div className="mb-4 overflow-x-auto">
                             <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm md:min-w-0 dark:border-white/12 dark:bg-[#232B3F]">
@@ -1243,6 +1288,9 @@ export default function PermissoesPage() {
                             </div>
                         </div>
                     </>
+                )}
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
