@@ -2,7 +2,14 @@
 
 import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { IconArrowRight, IconEye, IconEyeOff, IconLock, IconShieldCheck, IconUser } from "@tabler/icons-react";
 import { usePerms } from "../_perms/PermsProvider"; // <<< importe o Provider
+
+// Recuperação de senha: endpoint ainda a definir (deixado em aberto de propósito).
+// Quando existir, troque o corpo de onEsqueciSenha() pela chamada.
+const ENDPOINT_RECUPERAR_SENHA: string | null = null;
+
+const VERSAO_APP = "2.0";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -16,6 +23,7 @@ export default function LoginPage() {
     const [remember, setRemember] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const [mostrarSenha, setMostrarSenha] = React.useState(false);
 
     // Preenche somente o usuário lembrado.
     // Senhas salvas por versões antigas são removidas do navegador.
@@ -83,23 +91,60 @@ export default function LoginPage() {
         }
     }
 
-    return (
-        <main style={{ minHeight: "100dvh" }}>
-            <div className="background-animation" />
-            <div className="lock-screen">
-                <div className="login-container">
-                    <div className="logo">
-                        <img
-                            src="https://i0.wp.com/planoassistencialintegrado.com.br/wp-content/uploads/2024/09/MARCA_PAI_02-1.png?resize=1024%2C257&ssl=1"
-                            alt="Logo Plano PAI"
-                        />
-                    </div>
-                    <h1>App Plano PAI 1.0</h1>
-                    <p>Para continuar, faça login abaixo.</p>
+    function onEsqueciSenha() {
+        if (!ENDPOINT_RECUPERAR_SENHA) {
+            setError("Recuperação de senha ainda não disponível. Fale com a Gestão.");
+            return;
+        }
+        // TODO: chamar ENDPOINT_RECUPERAR_SENHA
+    }
 
-                    <form onSubmit={onSubmit} autoComplete="off">
-                        <div className="futuristic-border">
+    const campo =
+        "h-[52px] w-full rounded-xl border-[1.5px] border-[#D5DAE3] bg-[#F6F8FB] text-[16px] text-[#313C55] placeholder:text-[#8A93A6] outline-none transition focus:border-[#313C55] focus:bg-[#FFFFFF] focus:ring-4 focus:ring-[#313C55]/10";
+
+    return (
+        <main className="flex min-h-[100dvh] flex-col bg-[#313C55] font-[var(--font-nunito)] text-[#313C55] lg:flex-row lg:bg-[#FFFFFF]">
+            {/* Marca */}
+            <section className="relative flex flex-1 flex-col overflow-hidden bg-[#313C55] px-5 pb-8 pt-6 text-white lg:min-h-[100dvh] lg:basis-[560px] lg:px-16 lg:py-14">
+                <img
+                    src="/pai-icone-linha.svg"
+                    alt=""
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-[-90px] top-[120px] w-[340px] opacity-[0.09] lg:bottom-[-200px] lg:right-[-220px] lg:top-auto lg:w-[820px] lg:opacity-[0.06]"
+                />
+                <div aria-hidden="true" className="absolute right-[-40px] top-14 h-14 w-[130px] rounded-l-[28px] bg-[#B3CE52] lg:right-[-140px] lg:top-24 lg:h-[150px] lg:w-[360px] lg:rounded-l-[75px]" />
+                <div aria-hidden="true" className="absolute right-[-32px] top-16 h-14 w-[130px] rounded-l-[28px] border-[1.5px] border-white/55 lg:right-[-124px] lg:top-[112px] lg:h-[150px] lg:w-[360px] lg:rounded-l-[75px]" />
+                <div aria-hidden="true" className="absolute right-[104px] top-[42px] h-7 w-7 rounded-full bg-[#F2CB3F] lg:right-[270px] lg:top-5 lg:h-16 lg:w-16" />
+                <div aria-hidden="true" className="absolute bottom-[-260px] left-[-180px] hidden h-[520px] w-[520px] rounded-full bg-[#00AEEC] opacity-[0.18] lg:block" />
+
+                <img src="/logo-pai-login.svg" alt="PAI" className="relative w-[140px] lg:w-[170px]" />
+
+                <div className="relative flex max-w-[520px] flex-1 flex-col justify-center gap-3 py-6 lg:gap-5 lg:py-12">
+                    <span className="text-[11px] font-extrabold tracking-[0.32em] text-[#B3CE52] lg:text-[13px]">SISTEMA OPERACIONAL</span>
+                    <h1 className="m-0 text-[56px] font-black leading-[0.95] tracking-[-0.02em] text-white lg:text-[72px]">
+                        PAI
+                        <br />
+                        <span className="text-[#F2CB3F]">Conecta</span>
+                    </h1>
+                    <span className="text-[11px] font-bold tracking-[0.36em] text-white lg:text-[13px] lg:tracking-[0.4em]">COM VOCÊ TODOS OS DIAS</span>
+                </div>
+            </section>
+
+            {/* Acesso */}
+            <section className="relative flex flex-col items-center rounded-t-[28px] bg-[#FFFFFF] px-6 pb-5 pt-7 lg:flex-1 lg:basis-[480px] lg:justify-center lg:rounded-none lg:px-8 lg:py-14">
+                <form onSubmit={onSubmit} autoComplete="off" className="flex w-full max-w-[400px] flex-col gap-[18px] lg:gap-6">
+                    <div className="flex flex-col gap-2">
+                        <h2 className="m-0 text-[26px] font-extrabold text-[#313C55] lg:hidden">Entrar</h2>
+                        <h2 className="m-0 hidden text-[34px] font-extrabold text-[#313C55] lg:block">Bem-vindo de volta</h2>
+                        <p className="m-0 hidden text-[16px] text-[#5A6478] lg:block">Entre com seu usuário da equipe.</p>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 lg:gap-2">
+                        <label htmlFor="login-usuario" className="text-[14px] font-bold text-[#313C55]">Usuário</label>
+                        <div className="relative">
+                            <IconUser aria-hidden="true" size={20} stroke={2} className="pointer-events-none absolute left-4 top-4 hidden text-[#5A6478] lg:block" />
                             <input
+                                id="login-usuario"
                                 type="text"
                                 name="usuario"
                                 placeholder="Usuário"
@@ -107,148 +152,88 @@ export default function LoginPage() {
                                 onChange={(e) => setUsuario(e.target.value)}
                                 required
                                 autoComplete="username"
+                                className={`${campo} px-4 lg:pl-12`}
                             />
                         </div>
-                        <div className="futuristic-border">
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 lg:gap-2">
+                        <label htmlFor="login-senha" className="text-[14px] font-bold text-[#313C55]">Senha</label>
+                        <div className="relative">
+                            <IconLock aria-hidden="true" size={20} stroke={2} className="pointer-events-none absolute left-4 top-4 hidden text-[#5A6478] lg:block" />
                             <input
-                                type="password"
+                                id="login-senha"
+                                type={mostrarSenha ? "text" : "password"}
                                 name="senha"
-                                placeholder="Senha"
+                                placeholder="Digite sua senha"
                                 value={senha}
                                 onChange={(e) => setSenha(e.target.value)}
                                 required
                                 autoComplete="current-password"
+                                className={`${campo} pl-4 pr-14 lg:pl-12`}
                             />
-                        </div>
-
-                        <div className="remember-me">
-                            <label htmlFor="rememberUser">Lembrar usuário</label>
-                            <label className="switch">
-                                <input
-                                    id="rememberUser"
-                                    type="checkbox"
-                                    checked={remember}
-                                    onChange={(e) => setRemember(e.target.checked)}
-                                />
-                                <span className="slider"></span>
-                            </label>
-                        </div>
-
-                        <div className="futuristic-border">
-                            <button id="btnEntrar" type="submit" disabled={loading}>
-                                {loading ? "Entrando..." : "Entrar"}
+                            <button
+                                type="button"
+                                onClick={() => setMostrarSenha((v) => !v)}
+                                aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                                className="absolute right-1 top-1 inline-flex h-11 w-11 items-center justify-center rounded-[10px] text-[#5A6478] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-[#3D6A99]"
+                            >
+                                {mostrarSenha ? <IconEyeOff size={20} stroke={2} /> : <IconEye size={20} stroke={2} />}
                             </button>
                         </div>
+                    </div>
 
-                        <div className="error-message" style={{ display: error ? "block" : "none" }}>
+                    <div className="flex flex-wrap items-center justify-between gap-2 lg:gap-3">
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={remember}
+                            onClick={() => setRemember((v) => !v)}
+                            className="inline-flex min-h-[44px] items-center gap-2.5 text-[15px] font-semibold text-[#313C55] lg:gap-3"
+                        >
+                            <span className={`relative inline-block h-[26px] w-11 rounded-full transition-colors ${remember ? "bg-[#7FA02A]" : "bg-[#C3C9D4]"}`}>
+                                <span className={`absolute top-[3px] h-5 w-5 rounded-full bg-[#FFFFFF] shadow transition-all ${remember ? "left-[21px]" : "left-[3px]"}`} />
+                            </span>
+                            <span className="lg:hidden">Lembrar</span>
+                            <span className="hidden lg:inline">Lembrar usuário</span>
+                        </button>
+                        <button type="button" onClick={onEsqueciSenha} className="min-h-[44px] text-[15px] font-bold text-[#313C55] hover:text-[#232B40]">
+                            <span className="lg:hidden">Esqueci a senha</span>
+                            <span className="hidden lg:inline">Esqueci minha senha</span>
+                        </button>
+                    </div>
+
+                    {error && (
+                        <div role="alert" className="rounded-xl border border-[#F3C3BE] bg-[#FDECEA] px-4 py-3 text-[14px] font-semibold text-[#B42318]">
                             {error}
                         </div>
-                    </form>
+                    )}
 
-                    <div className="footer">
-                        <p>Aplicação em Desenvolvimento.</p>
+                    <button
+                        id="btnEntrar"
+                        type="submit"
+                        disabled={loading}
+                        className="inline-flex h-14 w-full items-center justify-center gap-2.5 rounded-[14px] bg-[#313C55] text-[17px] font-extrabold text-white transition-colors hover:bg-[#232B40] disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                        {loading ? "Entrando..." : "Entrar"}
+                        <IconArrowRight aria-hidden="true" size={20} stroke={2.5} className="text-[#F2CB3F]" />
+                    </button>
+
+                    <div className="hidden items-center gap-3 rounded-xl bg-[#F6F8FB] px-4 py-3.5 lg:flex">
+                        <IconShieldCheck aria-hidden="true" size={20} stroke={2} className="shrink-0 text-[#313C55]" />
+                        <span className="text-[14px] text-[#5A6478]">
+                            Acesso restrito à equipe PAI. Problemas para entrar? <strong className="font-bold text-[#313C55]">Fale com a Gestão</strong>
+                        </span>
                     </div>
-                </div>
-            </div>
 
-            {/* estilos do seu HTML original */}
-            <style jsx>{`
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        .background-animation {
-          position: fixed; inset: 0;
-          background: linear-gradient(45deg, #243551, #0e9ee0, #243551, #0e9ee0);
-          background-size: 400% 400%;
-          animation: gradientAnimation 10s ease infinite;
-          z-index: 0;
-        }
-        @keyframes gradientAnimation {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .lock-screen {
-          position: relative;
-          min-height: 100dvh;
-          display: grid;
-          place-items: center;
-          z-index: 1;
-        }
-        .login-container {
-          position: relative;
-          background-color: #0e9ee0;
-          padding: 40px 30px;
-          border-radius: 15px;
-          width: min(92vw, 420px);
-          text-align: center;
-          color: white;
-          box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        .logo img { width: 100%; max-width: 250px; margin-bottom: 30px; }
-        h1 {
-          font-size: 26px;
-          margin-bottom: 15px;
-          color: white;
-          text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
-        }
-        p { margin-bottom: 25px; font-size: 16px; }
-        input[type="text"], input[type="password"] {
-          width: 100%;
-          padding: 12px;
-          margin-bottom: 10px;
-          border: 2px solid transparent;
-          border-radius: 8px;
-          background: #243551;
-          color: white;
-          font-size: 16px;
-          box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-          transition: all 0.3s ease;
-        }
-        input[type="text"]:focus, input[type="password"]:focus {
-          border: 2px solid #0e9ee0;
-          box-shadow: 0 0 10px rgba(14,158,224,0.7);
-          outline: none;
-        }
-        button {
-          width: 100%;
-          padding: 14px;
-          margin-top: 20px;
-          background-color: #0e9ee0;
-          color: white;
-          border: 2px solid transparent;
-          border-radius: 8px;
-          font-size: 18px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-        }
-        button:hover { background-color: #007bb5; border: 2px solid #0e9ee0; box-shadow: 0 0 15px rgba(0,123,181,0.7); }
-        button:active { background-color: #006a99; }
-        button[disabled] { opacity: .7; cursor: not-allowed; }
-        .footer { font-size: 12px; color: #ddd; margin-top: 30px; }
-        .remember-me {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          margin-top: 10px;
-          color: white;
-          font-size: 14px;
-          gap: 10px;
-        }
-        .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider {
-          position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-          background-color: #ccc; transition: 0.4s; border-radius: 34px;
-        }
-        .slider:before {
-          position: absolute; content: "";
-          height: 12px; width: 12px; border-radius: 50%;
-          left: 4px; bottom: 4px; background-color: white; transition: 0.4s;
-        }
-        input:checked + .slider { background-color: #0e9ee0; }
-        input:checked + .slider:before { transform: translateX(14px); }
-        .error-message { color: #ffcccc; font-size: 14px; margin-top: 10px; min-height: 20px; }
-      `}</style>
+                    <span className="text-center text-[13px] text-[#5A6478] lg:hidden">PAI Conecta · versão {VERSAO_APP}</span>
+                </form>
+
+                <footer className="mt-12 hidden flex-wrap justify-center gap-4 text-[13px] text-[#5A6478] lg:flex">
+                    <span className="font-bold">PAI Conecta · versão {VERSAO_APP}</span>
+                    <span>© {new Date().getFullYear()} Plano Assistencial Integrado · Barreiras/BA</span>
+                </footer>
+            </section>
         </main>
     );
 }
