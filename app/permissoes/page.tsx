@@ -493,7 +493,9 @@ export default function PermissoesPage() {
                 .filter(([, value]) => value)
                 .map(([key]) => key);
 
-            // 27/10/2026: grupo + extras pelo grupos.php (só Gestão). Extra que o grupo já dá não é gravado.
+            // 27/10/2026: grupo + extras pelo grupos.php (só Gestão).
+            // PROVISÓRIO: o menu e o middleware ainda leem só a tabela permissoes (pai_api list_permissions).
+            // Até o pai_api somar o grupo, as páginas do grupo também são gravadas no usuário, para ninguém perder acesso.
             if (podeEditar) {
                 if (grupoUsuario == null) {
                     throw new Error("Escolha o grupo do usuário.");
@@ -504,8 +506,11 @@ export default function PermissoesPage() {
                     body: JSON.stringify({
                         user_id: userId,
                         grupo_id: grupoUsuario,
-                        extras: paginasSelecionadas.filter(
-                            (k) => !paginasDoGrupo.has(k),
+                        extras: Array.from(
+                            new Set([
+                                ...paginasSelecionadas,
+                                ...Array.from(paginasDoGrupo),
+                            ]),
                         ),
                     }),
                 });
