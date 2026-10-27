@@ -61,6 +61,7 @@ import {
     IconUserPlus,
     IconUsersGroup,
 } from "@tabler/icons-react";
+import { IconChartFunnel } from "@tabler/icons-react"; // 27/10/2026: Gestão do funil
 
 export type Icone = React.ElementType<any>;
 
@@ -144,6 +145,7 @@ export const MODULOS: Modulo[] = [
             { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger"], icone: IconFileInvoice },
             { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger"], icone: IconBell },
             { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger"], icone: IconUserPlus },
+            { id: "messenger-funil-gestao", titulo: "Gestão do funil", desc: "Origem dos leads, conversão e desempenho", href: "/messenger-funil-gestao", slugs: ["messenger-historico"], icone: IconChartFunnel },
             { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["associados", "messenger-historico"], icone: IconClipboardPlus },
             { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-historico"], icone: IconAlertTriangle },
             { id: "chat", titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },

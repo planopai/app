@@ -8,11 +8,14 @@
  *  - Proposta, Ficha e Fechado/Perdido vêm sozinhos das Propostas de adesão.
  *  - A equipe arrasta os cards (no computador) ou usa "Mover para", define responsável, próximo contato e anotações.
  * Servidor: aurora_04.php (arquivo novo). Acesso: página "messenger".
+ * 27/10/2026: canal de origem no card (aurora_10.php: canais, canal_salvar), "Aurora" no card sem responsável que veio de
+ * conversa, nome em até 2 linhas, colunas com largura mínima (rolam no computador estreito) e link para a Gestão do funil.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { apiJson, API_BASE } from "@/components/messenger/api";
 
 const API = `${API_BASE}/aurora_04.php`;
+const API_GESTAO = `${API_BASE}/aurora_10.php`;
 
 type Etapa = "novo" | "em_conversa" | "proposta" | "ficha" | "fechado" | "perdido";
 type Card = {
@@ -47,6 +50,11 @@ const fone = (t: string | null) => {
 };
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const dias = (s: string | null) => (s ? Math.max(0, Math.floor((Date.now() - new Date(s).getTime()) / 86400000)) : 0);
+const haQuanto = (s: string | null) => {
+    const d = dias(s);
+    return d === 0 ? "hoje" : d === 1 ? "há 1 dia" : `há ${d} dias`;
+};
+const quemCuida = (c: Card) => c.responsavel || (c.conversa_id ? "Aurora" : "sem responsável");
 
 async function aGet<T = any>(acao: string, params: Record<string, any> = {}): Promise<T> {
     const u = new URL(API);
@@ -93,12 +101,21 @@ export default function FunilPage() {
     const [erro, setErro] = useState("");
     const [aviso, setAviso] = useState("");
     const [aba, setAba] = useState<Etapa>("novo");
+    const [canais, setCanais] = useState<Record<string, string | null>>({});
+    const [nomesCanais, setNomesCanais] = useState<Record<string, string>>({});
 
     const carregar = useCallback(async () => {
         try {
             setPainel(await aGet<Painel>("funil", { q: buscaAplicada, responsavel: resp }));
         } catch (e: any) {
             setErro(e?.message || "Não foi possível carregar o funil.");
+        }
+        try {
+            const j = await apiJson(`${API_GESTAO}?action=canais&_=${Date.now()}`);
+            setCanais(j.dados?.canais || {});
+            setNomesCanais(j.dados?.nomes || {});
+        } catch {
+            /* sem o aurora_10.php: o card fica sem o canal */
         }
     }, [buscaAplicada, resp]);
 
@@ -186,6 +203,16 @@ export default function FunilPage() {
         }
     }
 
+    async function salvarCanal(id: number, canal: string) {
+        try {
+            const j = await apiJson(`${API_GESTAO}?action=canal_salvar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, canal }) });
+            setCanais((m) => ({ ...m, [String(id)]: canal }));
+            setAviso(j?.msg || "Canal salvo.");
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível salvar o canal.");
+        }
+    }
+
     const cards = painel?.cards || [];
     const porEtapa = (e: Etapa) => cards.filter((c) => c.etapa === e);
     const etapas = painel?.etapas || ({} as Record<Etapa, string>);
@@ -196,16 +223,19 @@ export default function FunilPage() {
             <button key={c.id} type="button" draggable onDragStart={() => setArrastando(c.id)} onDragEnd={() => { setArrastando(null); setSobre(null); }}
                 onClick={() => abrir(c)}
                 className={`flex w-full flex-col gap-1 rounded-xl border border-[#E1E5EC] bg-white p-3 text-left shadow-sm hover:border-[#3D6A99] dark:border-white/12 dark:bg-[#1C2334] ${arrastando === c.id ? "opacity-50" : ""} ${aberto?.id === c.id ? "ring-2 ring-[#3D6A99]" : ""}`}>
-                <span className="flex items-start gap-2">
-                    <b className="min-w-0 flex-1 truncate text-[15px]">{c.nome || fone(c.telefone) || "Sem nome"}</b>
-                    {c.plano && <span className="shrink-0 rounded-lg bg-[#313C55] px-2 py-0.5 text-[12px] font-extrabold text-white">{c.plano}</span>}
-                </span>
+                <b className="line-clamp-2 break-words text-[15px] leading-snug">{c.nome || fone(c.telefone) || "Sem nome"}</b>
+                {(c.plano || canais[String(c.id)]) && (
+                    <span className="flex flex-wrap gap-1">
+                        {c.plano && <span className="rounded-lg bg-[#313C55] px-2 py-0.5 text-[12px] font-extrabold text-white dark:bg-[#3D6A99]">{c.plano}</span>}
+                        {canais[String(c.id)] && <span className="rounded-lg bg-[#E9EFF6] px-2 py-0.5 text-[12px] font-bold text-[#1E3A5C] dark:bg-[#3D6A99]/25 dark:text-[#C9D8EA]">{nomesCanais[canais[String(c.id)] as string] || canais[String(c.id)]}</span>}
+                    </span>
+                )}
                 {c.interesse && <span className="line-clamp-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{c.interesse}</span>}
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-[#6B7488] dark:text-[#AEB9CF]">
                     {c.valor_mensal ? <b className="text-[#2F6B12] dark:text-[#D5E79A]">{brl(c.valor_mensal)}/mês</b> : null}
                     {c.cidade && <span>{c.cidade}</span>}
-                    <span>{c.responsavel || "sem responsável"}</span>
-                    <span>· há {dias(c.etapa_em)} d</span>
+                    <span>{quemCuida(c)}</span>
+                    <span>· {haQuanto(c.etapa_em)}</span>
                 </span>
                 {c.proximo_contato && c.etapa !== "fechado" && c.etapa !== "perdido" && (
                     <span className={`w-fit rounded-lg px-2 py-0.5 text-[12px] font-bold ${atrasado ? "bg-[#FDECEA] text-[#B42318]" : "bg-[#E9EFF6] text-[#1E3A5C]"}`}>
@@ -229,6 +259,7 @@ export default function FunilPage() {
                             {painel && !painel.aurora.ativo && " (Aurora acompanhante desligada: os cards novos só entram pelas propostas ou à mão.)"}
                         </p>
                     </div>
+                    {painel?.gestao && <a className={BTN_SEC} href="/messenger-funil-gestao">Gestão do funil</a>}
                     <button type="button" className={BTN_PRI} onClick={() => { setAberto(null); setHist([]); setMover(null); setForm(vazio()); }}>Novo lead</button>
                 </div>
                 {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318]">{erro}</div>}
@@ -272,15 +303,15 @@ export default function FunilPage() {
                     <div className="min-w-0">
                         {!painel && !erro && <p className={CARTAO}>Carregando…</p>}
                         {painel && (
-                            <div className="flex flex-col gap-3 lg:grid lg:grid-cols-6 lg:items-stretch">
+                            <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[repeat(6,minmax(200px,1fr))] lg:items-stretch lg:overflow-x-auto lg:pb-2">
                                 {ORDEM.map((e) => (
                                     <section key={e}
                                         onDragOver={(ev) => { ev.preventDefault(); setSobre(e); }}
                                         onDragLeave={() => setSobre((s) => (s === e ? null : s))}
                                         onDrop={(ev) => { ev.preventDefault(); const c = cards.find((x) => x.id === arrastando); setSobre(null); setArrastando(null); if (c) moverPara(c, e); }}
                                         className={`${aba === e ? "flex" : "hidden"} min-w-0 flex-col gap-2 lg:min-h-[420px] rounded-2xl border-t-4 bg-[#E9EDF3] p-2 lg:flex dark:bg-[#232B3F] ${COR[e]} ${sobre === e ? "ring-2 ring-[#3D6A99]" : ""}`}>
-                                        <h2 className="m-0 flex items-center gap-2 px-1 pt-1 text-[14.5px] font-extrabold">
-                                            <span className="flex-1">{etapas[e] || e}</span>
+                                        <h2 className="m-0 flex min-h-[28px] items-center gap-2 px-1 pt-1 text-[14.5px] font-extrabold leading-tight">
+                                            <span className="min-w-0 flex-1">{etapas[e] || e}</span>
                                             <span className="rounded-full bg-white px-2 text-[13px] dark:bg-[#1C2334]">{porEtapa(e).length}</span>
                                         </h2>
                                         {!porEtapa(e).length && <p className="m-0 px-1 pb-2 text-[13px] text-[#6B7488]">Nenhum.</p>}
@@ -301,7 +332,20 @@ export default function FunilPage() {
                             {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318]">{erro}</div>}
                             {aberto && (
                                 <div className="flex flex-col gap-2">
-                                    <span className="text-[14px]">Etapa: <b>{etapas[aberto.etapa]}</b> desde {dt(aberto.etapa_em)}{aberto.proposta_id ? ` · proposta #${aberto.proposta_id}` : ""}</span>
+                                    <span className="text-[14px]">Etapa: <b>{etapas[aberto.etapa]}</b> desde {dt(aberto.etapa_em)}{aberto.proposta_id ? ` · proposta #${aberto.proposta_id}` : ""} · {quemCuida(aberto)}</span>
+                                    {Object.keys(nomesCanais).length > 0 && (
+                                        <label className="flex flex-wrap items-center gap-2 text-[14px]">
+                                            <span>Canal:</span>
+                                            {painel?.gestao ? (
+                                                <select className={`${CAMPO} h-11 w-auto min-w-[200px]`} value={canais[String(aberto.id)] || ""} onChange={(ev) => ev.target.value && salvarCanal(aberto.id, ev.target.value)} aria-label="Canal de origem">
+                                                    <option value="">—</option>
+                                                    {Object.entries(nomesCanais).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+                                                </select>
+                                            ) : (
+                                                <b>{nomesCanais[canais[String(aberto.id)] || ""] || "—"}</b>
+                                            )}
+                                        </label>
+                                    )}
                                     <div className="flex flex-wrap gap-2">
                                         <select className={`${CAMPO} h-11 flex-1`} value="" onChange={(ev) => {
                                             const e = ev.target.value as Etapa;
