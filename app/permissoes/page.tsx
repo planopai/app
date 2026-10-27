@@ -997,8 +997,8 @@ export default function PermissoesPage() {
                                 </div>
 
                                 {podeEditar ? (
-                                    <div className="sticky bottom-3 z-20 mt-5">
-                                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur md:flex-row md:items-center md:justify-end dark:border-white/12 dark:bg-[#232B3F]/95">
+                                    <div className="sticky bottom-0 z-20 mt-5 bg-slate-50 py-3 dark:bg-[#1C2334]">
+                                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-end dark:border-white/12 dark:bg-[#232B3F]">
                                             {grupoAtual ? (
                                                 <button
                                                     type="button"
@@ -1216,8 +1216,8 @@ export default function PermissoesPage() {
                         </div>
 
                         {/* Rodapé fixo */}
-                        <div className="sticky bottom-3 z-20 mt-5">
-                            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur md:flex-row md:items-center md:justify-between dark:border-white/12 dark:bg-[#232B3F]/95">
+                        <div className="sticky bottom-0 z-20 mt-5 bg-slate-50 py-3 dark:bg-[#1C2334]">
+                            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between dark:border-white/12 dark:bg-[#232B3F]">
                                 <div className="min-w-0">
                                     <div className="font-semibold text-slate-900 dark:text-white">
                                         {currentUser?.nome}
