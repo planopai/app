@@ -1,17 +1,20 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
     IconMessageCircle2,
     IconCheck,
     IconTrash,
     IconX,
     IconRefresh,
-    IconDoor,
     IconDownload,
-    IconListSearch,
-    IconUserCheck,
     IconSearch,
+    IconBook2,
+    IconExternalLink,
+    IconMicrophone,
+    IconPlayerPlay,
+    IconSparkles,
 } from "@tabler/icons-react";
 
 type AttendanceFilter = "todos" | "sala01" | "sala02" | "sala03" | "externo";
@@ -82,10 +85,6 @@ const ADMIN_ACTIONS = {
     aprovar: "admin_aprovar_mensagem",
     excluir: "admin_excluir_mensagem",
 };
-
-const btn =
-    "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold " +
-    "border-primary text-primary hover:bg-primary/5 active:bg-primary/10 disabled:opacity-50 disabled:pointer-events-none";
 
 function onlyDigits(v: unknown): string {
     return String(v ?? "").replace(/\D+/g, "");
@@ -262,10 +261,10 @@ function periodLabel(status: PeriodStatus): string {
 }
 
 function periodClass(status: PeriodStatus): string {
-    if (status === "em_andamento") return "border-green-200 bg-green-50 text-green-700";
-    if (status === "agendado") return "border-blue-200 bg-blue-50 text-blue-700";
-    if (status === "encerrado") return "border-slate-200 bg-slate-50 text-slate-600";
-    return "border-amber-200 bg-amber-50 text-amber-700";
+    if (status === "em_andamento") return "border-[#7BA11A] bg-[#EEF5D6] text-[#313C55] dark:border-[#B3CE52]/60 dark:bg-[#B3CE52]/20 dark:text-white";
+    if (status === "agendado") return "border-[#A9BED6] bg-[#E9EFF6] text-[#313C55] dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-white";
+    if (status === "encerrado") return "border-[#C9D1DE] bg-[#EEF2F7] text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]";
+    return "border-[#F2CB3F] bg-[#FCF3CC] text-[#313C55] dark:bg-[#F2CB3F]/15 dark:text-white";
 }
 
 function normalizeSala(v?: string | null): string {
@@ -451,29 +450,207 @@ async function apiGet(params: Record<string, any>): Promise<any> {
     return data;
 }
 
-function FilterButton({
+/* =========================================================
+   VISUAL (padrão repaginado do app PAI)
+   ========================================================= */
+
+const CARD = "rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]";
+const TXT_SEC = "text-[#5B6478] dark:text-[#AEB9CF]";
+const BTN_BASE =
+    "inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 text-sm font-bold transition outline-none focus-visible:ring-2 focus-visible:ring-[#3D6A99]/30 disabled:cursor-not-allowed disabled:opacity-45";
+const BTN_SEC =
+    `${BTN_BASE} border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08] lg:border`;
+const BTN_PRI =
+    `${BTN_BASE} border-[1.5px] border-[#313C55] bg-[#313C55] font-extrabold text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30] lg:border`;
+const BTN_APROVAR =
+    `${BTN_BASE} bg-[#B3CE52] font-extrabold text-[#313C55] hover:bg-[#A3BE45]`;
+const BTN_PERIGO =
+    `${BTN_BASE} border-[1.5px] border-[#B42318] bg-[#B42318] font-extrabold text-white hover:bg-[#9A1D14] dark:border-[#FF9C92] dark:bg-[#FF9C92] dark:text-[#313C55] lg:border`;
+const BTN_ICONE =
+    "inline-grid size-11 shrink-0 place-items-center rounded-xl border-[1.5px] border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-45 dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08] lg:border";
+const CAMPO =
+    "h-12 w-full rounded-xl border border-transparent bg-[#F1F4F8] px-3.5 text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white dark:placeholder:text-[#8893AA]";
+const ROTULO = "mb-2 block text-xs font-extrabold uppercase tracking-[.08em] text-[#5B6478] dark:text-[#AEB9CF]";
+
+/** "2026-10-27 14:30:00" -> "27/10 às 14:30" (ano só quando não é o atual). */
+function fmtEnviadoEm(v?: string | null): string {
+    if (!v) return "";
+    const d = parseDateTimeStrict(String(v));
+    if (!d) return String(v).replace("T", " ");
+    const dia = `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+    const ano = d.getFullYear() !== new Date().getFullYear() ? `/${d.getFullYear()}` : "";
+    return `${dia}${ano} às ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** Iniciais do nome para a bolinha (quando não há foto ou a foto falha). */
+function iniciais(nome: string): string {
+    const partes = String(nome || "").trim().split(/\s+/).filter(Boolean);
+    if (!partes.length) return "?";
+    const a = partes[0].charAt(0);
+    const b = partes.length > 1 ? partes[partes.length - 1].charAt(0) : "";
+    return (a + b).toUpperCase();
+}
+
+const CORES_AVATAR = [
+    "bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/25 dark:text-white",
+    "bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/20 dark:text-white",
+    "bg-[#FCF3CC] text-[#313C55] dark:bg-[#F2CB3F]/20 dark:text-white",
+];
+
+function corAvatar(nome: string): string {
+    let h = 0;
+    for (let i = 0; i < nome.length; i++) h = (h * 31 + nome.charCodeAt(i)) >>> 0;
+    return CORES_AVATAR[h % CORES_AVATAR.length];
+}
+
+/**
+ * Janelas abertas direto no <body> (a página rola dentro de um contêiner e, no iPhone,
+ * a barra de baixo ficava por cima). Só chama createPortal depois de montar no cliente.
+ */
+function NoCorpo({ children }: { children: React.ReactNode }) {
+    const [montado, setMontado] = useState(false);
+    useEffect(() => setMontado(true), []);
+    return montado ? createPortal(children, document.body) : null;
+}
+
+/**
+ * Janela padrão: diálogo centralizado no computador, folha que sobe de baixo no celular.
+ * Esc fecha (quando permitido). Rodapé com os botões na ordem Voltar → ação.
+ */
+function Janela({
+    open,
+    titulo,
+    subtitulo,
+    icone,
+    onClose,
+    podeFechar = true,
+    rodape,
+    larga = false,
+    children,
+}: {
+    open: boolean;
+    titulo: string;
+    subtitulo?: string;
+    icone?: React.ReactNode;
+    onClose: () => void;
+    podeFechar?: boolean;
+    rodape: React.ReactNode;
+    larga?: boolean;
+    children: React.ReactNode;
+}) {
+    useEffect(() => {
+        if (!open) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape" && podeFechar) onClose();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => {
+            document.body.style.overflow = prev;
+            window.removeEventListener("keydown", onKey);
+        };
+    }, [open, onClose, podeFechar]);
+
+    if (!open) return null;
+
+    return (
+        <NoCorpo>
+            <div
+                role="dialog"
+                data-pai-overlay
+                aria-modal="true"
+                aria-label={titulo}
+                className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6"
+                onMouseDown={(e) => {
+                    if (e.target === e.currentTarget && podeFechar) onClose();
+                }}
+            >
+                <div
+                    className={[
+                        "flex max-h-[90dvh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]",
+                        larga ? "lg:max-w-[640px]" : "lg:max-w-[480px]",
+                    ].join(" ")}
+                >
+                    <div className="flex items-start gap-3 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:px-6 lg:py-5">
+                        {icone ? <div className="mt-0.5 shrink-0">{icone}</div> : null}
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-[19px] font-extrabold leading-tight lg:text-xl">{titulo}</h2>
+                            {subtitulo ? <p className={`mt-0.5 text-[13px] lg:mt-1 lg:text-sm ${TXT_SEC}`}>{subtitulo}</p> : null}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={!podeFechar}
+                            className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-[#EEF2F7] disabled:opacity-40 dark:hover:bg-white/[0.08]"
+                            aria-label="Fechar"
+                        >
+                            <IconX size={20} stroke={1.8} />
+                        </button>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 lg:px-6 lg:py-5">{children}</div>
+
+                    <div className="flex gap-2 border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:justify-end lg:gap-3 lg:px-6 lg:py-4 [&>*]:flex-1 lg:[&>*]:flex-none">
+                        {rodape}
+                    </div>
+                </div>
+            </div>
+        </NoCorpo>
+    );
+}
+
+/** Chip de filtro (Ativos, Sala 01...). Mostra o nº de pendentes quando conhecido. */
+function FilterChip({
     label,
     active,
+    pendentes,
     onClick,
 }: {
     label: string;
     active: boolean;
+    pendentes?: number;
     onClick: () => void;
 }) {
     return (
         <button
             type="button"
+            aria-pressed={active}
             onClick={onClick}
             className={[
-                "flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-3 font-semibold transition",
+                "inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border-[1.5px] px-4 text-sm font-bold transition",
                 active
-                    ? "border-primary/70 bg-primary/5 text-primary ring-1 ring-primary/30"
-                    : "border-muted text-foreground hover:bg-muted/40",
+                    ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                    : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]",
             ].join(" ")}
         >
-            <IconDoor className="size-4" />
             {label}
+            {pendentes ? (
+                <span
+                    className="grid h-6 min-w-6 place-items-center rounded-full bg-[#F2CB3F] px-1.5 text-[12px] font-extrabold text-[#313C55]"
+                    title={`${pendentes} pendente(s)`}
+                >
+                    {pendentes}
+                </span>
+            ) : null}
         </button>
+    );
+}
+
+/** Número pequeno do cartão do atendimento (pendentes em amarelo quando > 0). */
+function Contador({ valor, rotulo, alerta = false }: { valor: number; rotulo: string; alerta?: boolean }) {
+    const ativo = alerta && valor > 0;
+    return (
+        <span
+            className={[
+                "inline-flex h-7 items-center gap-1 rounded-full border-[1.5px] px-2.5 text-[12.5px] font-bold",
+                ativo
+                    ? "border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]"
+                    : "border-[#E3E8F0] bg-[#F6F8FB] text-[#5B6478] dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-[#AEB9CF]",
+            ].join(" ")}
+        >
+            <b className={ativo ? "" : "text-[#313C55] dark:text-white"}>{valor}</b> {rotulo}
+        </span>
     );
 }
 
@@ -502,160 +679,163 @@ function AtendimentoCard({
         <button
             type="button"
             onClick={onClick}
+            aria-pressed={active}
             className={[
-                "w-full rounded-2xl border p-4 text-left shadow-sm transition",
+                "w-full rounded-2xl border-[1.5px] px-4 py-3 text-left transition",
                 active
-                    ? "border-primary bg-primary/5 ring-1 ring-primary/25"
-                    : "border-muted bg-white hover:bg-muted/20",
+                    ? "border-[#313C55] bg-[#E9EFF6] dark:border-[#3D6A99] dark:bg-[#3D6A99]/20"
+                    : "border-[#E3E8F0] bg-white hover:bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:bg-white/[0.06]",
             ].join(" ")}
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <div className="truncate text-base font-bold text-foreground">
-                        {item.falecido}
-                    </div>
-                    <div className="mt-1 text-xs font-semibold text-muted-foreground">
-                        Atendimento #{item.atendimento_id} · {normalizeSala(item.sala)}
+                    <div className="truncate text-[15px] font-extrabold text-[#313C55] dark:text-white">{item.falecido}</div>
+                    <div className={`mt-0.5 text-[12.5px] ${TXT_SEC}`}>
+                        {normalizeSala(item.sala)} · nº {item.atendimento_id}
                     </div>
                 </div>
 
-                <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-bold ${periodClass(status)}`}>
+                <span className={`shrink-0 rounded-full border-[1.5px] px-2.5 py-0.5 text-[11.5px] font-extrabold ${periodClass(status)}`}>
                     {periodLabel(status)}
                 </span>
             </div>
 
-            {periodo ? (
-                <div className="mt-2 text-xs font-medium text-muted-foreground">
-                    {periodo}
-                </div>
-            ) : null}
+            {periodo ? <div className={`mt-1 text-[12.5px] ${TXT_SEC}`}>{periodo}</div> : null}
 
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="rounded-lg border bg-card/60 px-2 py-2">
-                    <div className="font-black text-foreground">{item.pendentes || 0}</div>
-                    <div className="text-muted-foreground">Pendentes</div>
-                </div>
-                <div className="rounded-lg border bg-card/60 px-2 py-2">
-                    <div className="font-black text-foreground">{item.aprovadas || 0}</div>
-                    <div className="text-muted-foreground">Aprovadas</div>
-                </div>
-                <div className="rounded-lg border bg-card/60 px-2 py-2">
-                    <div className="font-black text-foreground">{item.total || 0}</div>
-                    <div className="text-muted-foreground">Total</div>
-                </div>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+                <Contador valor={item.pendentes || 0} rotulo="pendentes" alerta />
+                <Contador valor={item.aprovadas || 0} rotulo="aprovadas" />
             </div>
         </button>
     );
 }
 
-function MessageCard({
-    item,
-    actions,
-    cornerAction,
-}: {
-    item: MessageItem;
-    actions?: React.ReactNode;
-    cornerAction?: React.ReactNode;
-}) {
-    const src = resolveImageSrc(item.image);
-    const isAudio = String(item.arquivo_mime || "").startsWith("audio/");
-    const isVideo = String(item.arquivo_mime || "").startsWith("video/");
+/** Foto da homenagem; sem foto (ou se falhar) mostra as iniciais de quem enviou. */
+function MidiaHomenagem({ item }: { item: MessageItem }) {
+    const [falhou, setFalhou] = useState(false);
+    const mime = String(item.arquivo_mime || "");
+    const caixa = "grid size-14 shrink-0 place-items-center rounded-xl sm:size-16";
+
+    if (mime.startsWith("audio/")) {
+        return (
+            <div className={`${caixa} bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/25 dark:text-white`} title="Áudio">
+                <IconMicrophone size={24} stroke={1.8} />
+            </div>
+        );
+    }
+
+    if (mime.startsWith("video/")) {
+        return (
+            <div className={`${caixa} bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/25 dark:text-white`} title="Vídeo">
+                <IconPlayerPlay size={24} stroke={1.8} />
+            </div>
+        );
+    }
+
+    if (!item.image || falhou) {
+        return (
+            <div className={`${caixa} text-lg font-extrabold ${corAvatar(item.name)}`} aria-hidden="true">
+                {iniciais(item.name)}
+            </div>
+        );
+    }
 
     return (
-        <div className="relative min-w-0 rounded-xl border bg-white p-3 pr-12 shadow-sm sm:p-4 sm:pr-12">
-            {cornerAction ? (
-                <div className="absolute right-3 top-3 z-10">
-                    {cornerAction}
-                </div>
-            ) : null}
-
-            <div className="flex items-start gap-3">
-                {isAudio ? (
-                    <div className="grid size-16 shrink-0 place-items-center rounded-md border bg-muted/30 text-xs font-bold text-muted-foreground sm:size-20">
-                        Áudio
-                    </div>
-                ) : isVideo ? (
-                    <div className="grid size-16 shrink-0 place-items-center rounded-md border bg-muted/30 text-xs font-bold text-muted-foreground sm:size-20">
-                        Vídeo
-                    </div>
-                ) : (
-                    <img
-                        src={src}
-                        alt={item.name}
-                        className="size-16 shrink-0 rounded-md border object-cover sm:size-20"
-                        loading="lazy"
-                        onError={(e) => {
-                            const img = e.currentTarget as HTMLImageElement;
-                            if (img.src !== FALLBACK_IMG) img.src = FALLBACK_IMG;
-                        }}
-                    />
-                )}
-
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate text-base font-semibold">{item.name}</div>
-                        {item.tipo ? (
-                            <span className="rounded-full border bg-muted/20 px-2 py-0.5 text-[11px] font-bold uppercase text-muted-foreground">
-                                {item.tipo}
-                            </span>
-                        ) : null}
-
-                        {String(item.aprovado_por || "").trim().toLowerCase() === "aurora" ? (
-                            <span
-                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
-                                title={[
-                                    "Aprovado automaticamente pela Aurora",
-                                    item.moderacao_categoria ? `Categoria: ${item.moderacao_categoria}` : "",
-                                    item.moderacao_confianca != null
-                                        ? `Confiança: ${Math.round(item.moderacao_confianca * 100)}%`
-                                        : "",
-                                    item.moderacao_motivo ? `Motivo: ${item.moderacao_motivo}` : "",
-                                ].filter(Boolean).join(" • ")}
-                            >
-                                <IconCheck className="size-3" />
-                                Aprovado pela Aurora
-                                {item.moderacao_confianca != null
-                                    ? ` · ${Math.round(item.moderacao_confianca * 100)}%`
-                                    : ""}
-                            </span>
-                        ) : null}
-                    </div>
-
-                    {item.criado_em ? (
-                        <div className="mt-0.5 text-xs font-medium text-muted-foreground">
-                            {String(item.criado_em).replace("T", " ")}
-                        </div>
-                    ) : null}
-
-                    {item.text ? (
-                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                            {item.text}
-                        </p>
-                    ) : (
-                        <p className="mt-2 text-sm italic text-muted-foreground">
-                            Homenagem enviada sem texto.
-                        </p>
-                    )}
-
-                    {isAudio && item.image ? (
-                        <audio className="mt-3 w-full" controls src={resolveImageSrc(item.image)} />
-                    ) : null}
-
-                    {isVideo && item.image ? (
-                        <video className="mt-3 max-h-72 w-full rounded-lg border bg-black" controls src={resolveImageSrc(item.image)} />
-                    ) : null}
-
-                    {actions && (
-                        <div className="mt-4 flex w-full flex-wrap items-center justify-between gap-6">
-                            {actions}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
+        <img
+            src={resolveImageSrc(item.image)}
+            alt={item.name}
+            className="size-14 shrink-0 rounded-xl border border-[#E3E8F0] object-cover dark:border-white/[0.12] sm:size-16"
+            loading="lazy"
+            onError={() => setFalhou(true)}
+        />
     );
 }
 
+function MessageCard({
+    item,
+    pendente,
+    ocupado,
+    onAprovar,
+    onExcluir,
+}: {
+    item: MessageItem;
+    pendente: boolean;
+    ocupado: boolean;
+    onAprovar?: () => void;
+    onExcluir: () => void;
+}) {
+    const isAudio = String(item.arquivo_mime || "").startsWith("audio/");
+    const isVideo = String(item.arquivo_mime || "").startsWith("video/");
+    const aurora = String(item.aprovado_por || "").trim().toLowerCase() === "aurora";
+    const confianca = item.moderacao_confianca != null ? Math.round(item.moderacao_confianca * 100) : null;
+
+    return (
+        <article className={`flex min-w-0 flex-col ${CARD} p-3.5 sm:p-4`}>
+            <div className="flex items-start gap-3">
+                <MidiaHomenagem item={item} />
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="min-w-0 truncate text-[15px] font-extrabold">{item.name}</span>
+                        {item.tipo ? (
+                            <span className="rounded-full border border-[#C9D1DE] bg-[#EEF2F7] px-2 py-0.5 text-[11px] font-bold uppercase text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]">
+                                {item.tipo}
+                            </span>
+                        ) : null}
+                        {aurora ? (
+                            <span
+                                className="inline-flex items-center gap-1 rounded-full border border-[#7BA11A]/50 bg-[#EEF5D6] px-2 py-0.5 text-[11px] font-extrabold text-[#4A6310] dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]"
+                                title={[
+                                    "Aprovado automaticamente pela Aurora",
+                                    item.moderacao_categoria ? `Categoria: ${item.moderacao_categoria}` : "",
+                                    confianca != null ? `Confiança: ${confianca}%` : "",
+                                    item.moderacao_motivo ? `Motivo: ${item.moderacao_motivo}` : "",
+                                ].filter(Boolean).join(" • ")}
+                            >
+                                <IconSparkles size={12} stroke={2} />
+                                Aurora{confianca != null ? ` · ${confianca}%` : ""}
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {item.criado_em ? <div className={`mt-0.5 text-[12.5px] ${TXT_SEC}`}>{fmtEnviadoEm(item.criado_em)}</div> : null}
+                </div>
+            </div>
+
+            {item.text ? (
+                <p className="mt-3 whitespace-pre-wrap break-words text-[14.5px] leading-6 text-[#313C55] dark:text-[#D6DCE8]">{item.text}</p>
+            ) : (
+                <p className={`mt-3 text-sm italic ${TXT_SEC}`}>Homenagem enviada sem texto.</p>
+            )}
+
+            {isAudio && item.image ? <audio className="mt-3 w-full" controls src={resolveImageSrc(item.image)} /> : null}
+
+            {isVideo && item.image ? (
+                <video className="mt-3 max-h-72 w-full rounded-xl border bg-black" controls src={resolveImageSrc(item.image)} />
+            ) : null}
+
+            <div className="mt-auto flex items-center gap-2 pt-3">
+                {pendente && onAprovar ? (
+                    <button type="button" onClick={onAprovar} disabled={ocupado} className={`${BTN_APROVAR} flex-1 sm:flex-none sm:min-w-[140px]`}>
+                        <IconCheck size={18} stroke={2.2} />
+                        {ocupado ? "Aguarde..." : "Aprovar"}
+                    </button>
+                ) : null}
+
+                <button
+                    type="button"
+                    onClick={onExcluir}
+                    disabled={ocupado}
+                    className="ml-auto inline-grid size-11 shrink-0 place-items-center rounded-xl text-[#B42318] hover:bg-[#FDECEA] disabled:opacity-45 dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
+                    title="Excluir homenagem"
+                    aria-label="Excluir homenagem"
+                >
+                    <IconTrash size={20} stroke={1.8} />
+                </button>
+            </div>
+        </article>
+    );
+}
 export default function MensagensPage() {
     const [filter, setFilter] = useState<AttendanceFilter>("todos");
     const [query, setQuery] = useState("");
@@ -667,6 +847,25 @@ export default function MensagensPage() {
     const [received, setReceived] = useState<MessageItem[]>([]);
     const [approved, setApproved] = useState<MessageItem[]>([]);
     const [error, setError] = useState<string | null>(null);
+
+    // Visual: aviso na tela (no lugar do alert), aba Pendentes/Aprovadas, pendentes por filtro e erro do livro.
+    const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+    const [aba, setAba] = useState<"pendentes" | "aprovadas">("pendentes");
+    const [pendPorFiltro, setPendPorFiltro] = useState<Partial<Record<AttendanceFilter, number>>>({});
+    const [livroErro, setLivroErro] = useState("");
+    const avisoTimer = useRef<number | null>(null);
+
+    const mostrarAviso = useCallback((tipo: "ok" | "erro", texto: string) => {
+        if (avisoTimer.current) window.clearTimeout(avisoTimer.current);
+        setAviso({ tipo, texto });
+        if (tipo === "ok") {
+            avisoTimer.current = window.setTimeout(() => setAviso(null), 4000);
+        }
+    }, []);
+
+    useEffect(() => () => {
+        if (avisoTimer.current) window.clearTimeout(avisoTimer.current);
+    }, []);
 
     const [showModal, setShowModal] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<MessageItem | null>(null);
@@ -825,6 +1024,19 @@ export default function MensagensPage() {
 
             setAtendimentos(atuais);
 
+            // Nº de pendentes nos chips de filtro (só com os dados já carregados, sem consulta extra).
+            const somaPend = (lista: AtendimentoItem[]) => lista.reduce((t, a) => t + (a.pendentes || 0), 0);
+            setPendPorFiltro((prev) => {
+                const novo = { ...prev, [filter]: somaPend(atuais) };
+                if (filter === "todos") {
+                    novo.sala01 = somaPend(atuais.filter((a) => normalizeSala(a.sala) === "Sala 01"));
+                    novo.sala02 = somaPend(atuais.filter((a) => normalizeSala(a.sala) === "Sala 02"));
+                    novo.sala03 = somaPend(atuais.filter((a) => normalizeSala(a.sala) === "Sala 03"));
+                    novo.externo = somaPend(atuais.filter((a) => normalizeSala(a.sala) === "Atendimento Externo"));
+                }
+                return novo;
+            });
+
             if (isSalaFilter(filter)) {
                 const atualDaSala = atuais[0] ?? null;
 
@@ -944,6 +1156,7 @@ export default function MensagensPage() {
     };
 
     const onPickAtendimento = async (item: AtendimentoItem) => {
+        setAba("pendentes");
         setSelected(item);
         setFalecido(item.falecido || "");
         setNascimento(normalizeDate(item.data_nascimento));
@@ -954,7 +1167,7 @@ export default function MensagensPage() {
 
     const approveMessage = async (id: number) => {
         if (!selectedAtendimentoId) {
-            alert("Selecione um atendimento.");
+            mostrarAviso("erro", "Selecione um atendimento.");
             return;
         }
 
@@ -971,8 +1184,9 @@ export default function MensagensPage() {
 
             await loadMessages(selected);
             await loadAtendimentos();
+            mostrarAviso("ok", "Homenagem aprovada.");
         } catch (e: any) {
-            alert(e?.message || "Erro ao aprovar a mensagem.");
+            mostrarAviso("erro", e?.message || "Erro ao aprovar a mensagem.");
         } finally {
             setActionLoadingId(null);
         }
@@ -980,7 +1194,7 @@ export default function MensagensPage() {
 
     const deleteMessage = async (id: number): Promise<boolean> => {
         if (!selectedAtendimentoId) {
-            alert("Selecione um atendimento.");
+            mostrarAviso("erro", "Selecione um atendimento.");
             return false;
         }
 
@@ -997,9 +1211,10 @@ export default function MensagensPage() {
 
             await loadMessages(selected);
             await loadAtendimentos();
+            mostrarAviso("ok", "Homenagem excluída.");
             return true;
         } catch (e: any) {
-            alert(e?.message || "Erro ao excluir a mensagem.");
+            mostrarAviso("erro", e?.message || "Erro ao excluir a mensagem.");
             return false;
         } finally {
             setActionLoadingId(null);
@@ -1224,7 +1439,7 @@ export default function MensagensPage() {
 
     const onOpenModal = async () => {
         if (!selected) {
-            alert("Selecione um atendimento.");
+            mostrarAviso("erro", "Selecione um atendimento.");
             return;
         }
 
@@ -1241,6 +1456,7 @@ export default function MensagensPage() {
         setFalecimento(normalizeDate(selected.data_falecimento));
         setProgress(0);
         setProgressMsg("");
+        setLivroErro("");
         setShowModal(true);
     };
 
@@ -1248,9 +1464,11 @@ export default function MensagensPage() {
         e.preventDefault();
 
         if (!falecido.trim()) {
-            alert("Informe o nome do falecido.");
+            setLivroErro("Informe o nome do falecido.");
             return;
         }
+
+        setLivroErro("");
 
         try {
             setGenerating(true);
@@ -1269,7 +1487,7 @@ export default function MensagensPage() {
             setGenerating(false);
             setProgress(0);
             setProgressMsg("");
-            alert(err?.message || "Falha ao gerar o PDF.");
+            setLivroErro(err?.message || "Falha ao gerar o PDF.");
         }
     };
 
@@ -1287,401 +1505,376 @@ export default function MensagensPage() {
         );
     }, [atendimentos]);
 
+    const FILTROS: { id: AttendanceFilter; label: string }[] = [
+        { id: "todos", label: "Ativos" },
+        { id: "sala01", label: "Sala 01" },
+        { id: "sala02", label: "Sala 02" },
+        { id: "sala03", label: "Sala 03" },
+        { id: "externo", label: "Externo" },
+    ];
+
+    const escolherFiltro = (f: AttendanceFilter) => {
+        if (isSalaFilter(f)) setQuery("");
+        setFilter(f);
+    };
+
+    const listaAtual = aba === "pendentes" ? received : approved;
+
     return (
-        <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                    <h1 className="text-2xl font-bold leading-tight">
-                        Homenagens Ativas
-                    </h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Nas salas, o atendimento ativo abre direto. No atendimento externo, use a lista para selecionar.
-                    </p>
-                </div>
+        <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
+            <div className="mx-auto w-full max-w-7xl px-4 pb-8 pt-4 lg:px-10 lg:pb-12 lg:pt-8">
+                {/* TOPO */}
+                <header className="mb-4 flex items-start justify-between gap-3 lg:mb-6">
+                    <div className="min-w-0">
+                        <h1 className="text-2xl font-extrabold leading-tight lg:text-[28px]">Homenagens Ativas</h1>
+                        <p className={`mt-1 text-sm ${TXT_SEC}`}>
+                            <b className={totals.pendentes > 0 ? "text-[#313C55] dark:text-[#F2CB3F]" : ""}>{totals.pendentes}</b> pendentes ·{" "}
+                            <b>{totals.aprovadas}</b> aprovadas
+                            <span className="hidden sm:inline"> · {totals.total} no total</span>
+                        </p>
+                    </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={refreshAll} className={btn} title="Atualizar">
-                        <IconRefresh className="size-4" />
-                        Atualizar
+                    <button
+                        type="button"
+                        onClick={refreshAll}
+                        disabled={loadingAtendimentos || loadingMessages}
+                        className={BTN_ICONE}
+                        title="Atualizar"
+                        aria-label="Atualizar"
+                    >
+                        <IconRefresh size={20} stroke={1.8} className={loadingAtendimentos || loadingMessages ? "animate-spin" : ""} />
                     </button>
-                </div>
-            </div>
+                </header>
 
-            <div className="mb-5 rounded-2xl border bg-card/60 p-3 shadow-sm sm:p-4">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
-                    <FilterButton label="Ativos" active={filter === "todos"} onClick={() => setFilter("todos")} />
-                    <FilterButton label="Sala 01" active={filter === "sala01"} onClick={() => { setQuery(""); setFilter("sala01"); }} />
-                    <FilterButton label="Sala 02" active={filter === "sala02"} onClick={() => { setQuery(""); setFilter("sala02"); }} />
-                    <FilterButton label="Sala 03" active={filter === "sala03"} onClick={() => { setQuery(""); setFilter("sala03"); }} />
-                    <FilterButton label="Atendimento Externo" active={filter === "externo"} onClick={() => setFilter("externo")} />
-                </div>
-
-                {showAtendimentoList ? (
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                        <div className="relative flex-1">
-                            <IconSearch className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" />
-                            <input
-                                type="text"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") onSearch();
-                                }}
-                                placeholder="Buscar por nome do falecido, ID do atendimento ou código da homenagem…"
-                                className="w-full rounded-xl border bg-white px-9 py-2.5 text-sm outline-none focus:border-primary"
+                {/* FILTROS */}
+                <div className={`mb-4 ${CARD} p-3 lg:mb-5 lg:p-4`}>
+                    <div className="-mx-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0" role="group" aria-label="Local">
+                        {FILTROS.map((f) => (
+                            <FilterChip
+                                key={f.id}
+                                label={f.label}
+                                active={filter === f.id}
+                                pendentes={pendPorFiltro[f.id]}
+                                onClick={() => escolherFiltro(f.id)}
                             />
-                        </div>
+                        ))}
+                    </div>
 
-                        <button type="button" onClick={onSearch} className={btn}>
-                            <IconListSearch className="size-4" />
-                            Buscar
+                    {showAtendimentoList ? (
+                        <div className="mt-3 flex gap-2">
+                            <span className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                                <IconSearch size={20} stroke={1.8} className="shrink-0" />
+                                <input
+                                    type="search"
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") onSearch();
+                                    }}
+                                    placeholder="Nome, nº do atendimento ou código"
+                                    aria-label="Buscar atendimento"
+                                    className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white dark:placeholder:text-[#8893AA]"
+                                />
+                            </span>
+
+                            <button type="button" onClick={onSearch} className={`${BTN_SEC} shrink-0`}>
+                                Buscar
+                            </button>
+                        </div>
+                    ) : null}
+                </div>
+
+                {/* AVISOS */}
+                {aviso ? (
+                    <div
+                        role={aviso.tipo === "erro" ? "alert" : "status"}
+                        className={[
+                            "mb-4 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-sm font-bold",
+                            aviso.tipo === "erro"
+                                ? "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
+                                : "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white",
+                        ].join(" ")}
+                    >
+                        <span className="min-w-0 flex-1">{aviso.texto}</span>
+                        <button type="button" onClick={() => setAviso(null)} className="-my-1 grid size-8 shrink-0 place-items-center rounded-lg hover:bg-black/5" aria-label="Fechar aviso">
+                            <IconX size={16} stroke={2} />
                         </button>
                     </div>
                 ) : null}
 
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs sm:max-w-md">
-                    <div className="rounded-lg border bg-white px-2 py-2">
-                        <div className="font-black">{totals.pendentes}</div>
-                        <div className="text-muted-foreground">Pendentes</div>
+                {error ? (
+                    <div role="alert" className="mb-4 rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                        {error}
                     </div>
-                    <div className="rounded-lg border bg-white px-2 py-2">
-                        <div className="font-black">{totals.aprovadas}</div>
-                        <div className="text-muted-foreground">Aprovadas</div>
-                    </div>
-                    <div className="rounded-lg border bg-white px-2 py-2">
-                        <div className="font-black">{totals.total}</div>
-                        <div className="text-muted-foreground">Total</div>
-                    </div>
-                </div>
-            </div>
-
-            {error && (
-                <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    {error}
-                </div>
-            )}
-
-            <div className={showAtendimentoList ? "grid gap-5 lg:grid-cols-[390px_minmax(0,1fr)]" : "grid gap-5"}>
-                {showAtendimentoList ? (
-                    <aside className="min-w-0">
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                                <IconUserCheck className="size-5 text-muted-foreground" />
-                                <h2 className="text-lg font-semibold">Atendimentos ativos</h2>
-                            </div>
-                            {loadingAtendimentos ? (
-                                <span className="text-xs font-semibold text-muted-foreground">Carregando…</span>
-                            ) : null}
-                        </div>
-
-                        {atendimentos.length === 0 ? (
-                            <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                                Nenhum atendimento em andamento encontrado.
-                            </div>
-                        ) : (
-                            <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1">
-                                {atendimentos.map((item) => (
-                                    <AtendimentoCard
-                                        key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
-                                        item={item}
-                                        active={selected?.atendimento_id === item.atendimento_id}
-                                        onClick={() => onPickAtendimento(item)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </aside>
                 ) : null}
 
-                <main className="min-w-0">
-                    {!selected ? (
-                        <div className="rounded-2xl border bg-card/60 p-8 text-center">
-                            <IconMessageCircle2 className="mx-auto mb-3 size-9 text-muted-foreground" />
-                            <h2 className="text-xl font-bold">
-                                {isSalaFilter(filter) ? "Nenhum atendimento ativo nesta sala" : "Selecione um atendimento"}
-                            </h2>
-                            <p className="mt-2 text-sm text-muted-foreground">
-                                {isSalaFilter(filter)
-                                    ? "Quando houver atendimento em andamento dentro do horário do velório, ele será aberto automaticamente aqui."
-                                    : "As mensagens pendentes e aprovadas serão exibidas de acordo com o atendimento selecionado."}
-                            </p>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0">
-                                        <div className="text-xs font-bold uppercase text-muted-foreground">
-                                            Atendimento #{selected.atendimento_id} · {normalizeSala(selected.sala)}
-                                        </div>
-                                        <h2 className="mt-1 truncate text-2xl font-black">
-                                            {selected.falecido}
-                                        </h2>
-                                        <div className="mt-1 text-sm text-muted-foreground">
-                                            {[formatDateBR(selected.data_nascimento), formatDateBR(selected.data_falecimento)]
-                                                .filter(Boolean)
-                                                .join(" - ")}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        <button type="button" onClick={() => loadMessages(selected)} className={btn}>
-                                            <IconRefresh className="size-4" />
-                                            Atualizar mensagens
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={onOpenModal}
-                                            className={btn}
-                                            disabled={!approved.length}
-                                            title="Gerar Livro de Homenagens"
-                                        >
-                                            <IconDownload className="size-4" />
-                                            Baixar Mensagens
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                                    <span className={`rounded-full border px-2 py-1 font-bold ${periodClass(derivePeriodStatusStrict(selected))}`}>
-                                        {periodLabel(derivePeriodStatusStrict(selected))}
-                                    </span>
-                                    {selected.link_publico ? (
-                                        <a
-                                            href={selected.link_publico}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="rounded-full border px-2 py-1 font-bold text-primary hover:bg-primary/5"
-                                        >
-                                            Abrir Legado de Luz
-                                        </a>
-                                    ) : null}
-                                </div>
+                <div className={showAtendimentoList ? "grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-6" : "grid gap-4"}>
+                    {showAtendimentoList ? (
+                        <aside className="min-w-0">
+                            <div className="mb-2.5 flex items-center justify-between gap-2">
+                                <h2 className={`text-xs font-extrabold uppercase tracking-[.12em] ${TXT_SEC}`}>Atendimentos ativos</h2>
+                                {loadingAtendimentos ? <span className={`text-xs font-bold ${TXT_SEC}`}>Carregando…</span> : null}
                             </div>
 
-                            {loadingMessages && (
-                                <div className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                                    Carregando mensagens do atendimento…
+                            {atendimentos.length === 0 ? (
+                                <div className={`${CARD} p-4 text-sm ${TXT_SEC}`}>Nenhum atendimento em andamento encontrado.</div>
+                            ) : (
+                                <div className="grid max-h-[40dvh] gap-2 overflow-auto pr-1 lg:max-h-[70vh]">
+                                    {atendimentos.map((item) => (
+                                        <AtendimentoCard
+                                            key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
+                                            item={item}
+                                            active={selected?.atendimento_id === item.atendimento_id}
+                                            onClick={() => onPickAtendimento(item)}
+                                        />
+                                    ))}
                                 </div>
                             )}
+                        </aside>
+                    ) : null}
 
-                            <section className="mb-6">
-                                <div className="mb-3 flex items-center gap-2">
-                                    <IconMessageCircle2 className="size-5 text-muted-foreground" />
-                                    <h2 className="text-lg font-semibold">
-                                        Mensagens Pendentes
-                                    </h2>
-                                </div>
-
-                                {received.length === 0 ? (
-                                    <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                                        Nenhuma mensagem pendente neste atendimento.
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
-                                        {received.map((m) => (
-                                            <MessageCard
-                                                key={`r-${m.id}`}
-                                                item={m}
-                                                cornerAction={
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => requestDeleteMessage(m)}
-                                                        disabled={actionLoadingId === m.id}
-                                                        className="inline-flex size-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50 disabled:pointer-events-none"
-                                                        title="Excluir"
-                                                        aria-label="Excluir homenagem"
-                                                    >
-                                                        <IconX className="size-5" />
-                                                    </button>
-                                                }
-                                                actions={
-                                                    <button
-                                                        onClick={() => approveMessage(m.id)}
-                                                        disabled={actionLoadingId === m.id}
-                                                        className={`${btn} min-w-[118px] justify-center hover:bg-green-50`}
-                                                        title="Aprovar"
-                                                    >
-                                                        <IconCheck className="size-4 text-green-600" />
-                                                        Aprovar
-                                                    </button>
-                                                }
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </section>
-
-                            <section>
-                                <div className="mb-3 flex items-center gap-2">
-                                    <IconMessageCircle2 className="size-5 text-muted-foreground" />
-                                    <h2 className="text-lg font-semibold">
-                                        Mensagens Aprovadas
-                                    </h2>
-                                </div>
-
-                                {approved.length === 0 ? (
-                                    <div className="rounded-xl border bg-card/60 p-4 text-sm text-muted-foreground">
-                                        Não há mensagem aprovada neste atendimento.
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
-                                        {approved.map((m) => (
-                                            <MessageCard
-                                                key={`a-${m.id}`}
-                                                item={m}
-                                                cornerAction={
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => requestDeleteMessage(m)}
-                                                        disabled={actionLoadingId === m.id}
-                                                        className="inline-flex size-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm transition hover:bg-red-50 active:bg-red-100 disabled:opacity-50 disabled:pointer-events-none"
-                                                        title="Excluir"
-                                                        aria-label="Excluir homenagem"
-                                                    >
-                                                        <IconX className="size-5" />
-                                                    </button>
-                                                }
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </section>
-                        </>
-                    )}
-                </main>
-            </div>
-
-            {deleteTarget && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3">
-                    <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-                        <div className="mb-3 flex items-center gap-2 text-red-600">
-                            <IconTrash className="size-5" />
-                            <h3 className="text-lg font-bold text-foreground">Confirmar exclusão</h3>
-                        </div>
-
-                        <p className="text-sm leading-6 text-muted-foreground">
-                            Deseja excluir esta homenagem? Esta ação não poderá ser desfeita.
-                        </p>
-
-                        <div className="mt-3 rounded-xl border bg-muted/20 p-3">
-                            <div className="text-sm font-semibold text-foreground">
-                                {deleteTarget.name || "Visitante"}
-                            </div>
-                            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
-                                {deleteTarget.text || "Homenagem enviada sem texto."}
-                            </p>
-                        </div>
-
-                        <div className="mt-5 flex items-center justify-between gap-4">
-                            <button
-                                type="button"
-                                onClick={() => setDeleteTarget(null)}
-                                disabled={actionLoadingId === deleteTarget.id}
-                                className="min-w-[120px] rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted/30 disabled:opacity-60"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                type="button"
-                                onClick={confirmDeleteMessage}
-                                disabled={actionLoadingId === deleteTarget.id}
-                                className="ml-auto min-w-[120px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
-                            >
-                                {actionLoadingId === deleteTarget.id ? "Excluindo..." : "Excluir"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3">
-                    <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
-                        <div className="mb-4 flex items-center justify-between">
-                            <div>
-                                <h3 className="text-xl font-semibold">Gerar Livro de Homenagens</h3>
-                                <p className="text-sm text-muted-foreground">
-                                    O livro será gerado apenas com as mensagens aprovadas deste atendimento.
+                    <section className="min-w-0">
+                        {!selected ? (
+                            <div className={`${CARD} px-6 py-10 text-center`}>
+                                <span className="mx-auto mb-3 grid size-14 place-items-center rounded-2xl bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">
+                                    <IconMessageCircle2 size={28} stroke={1.8} />
+                                </span>
+                                <h2 className="text-lg font-extrabold">
+                                    {isSalaFilter(filter) ? "Nenhum atendimento ativo nesta sala" : "Selecione um atendimento"}
+                                </h2>
+                                <p className={`mx-auto mt-1.5 max-w-md text-sm ${TXT_SEC}`}>
+                                    {isSalaFilter(filter)
+                                        ? "Quando houver atendimento em andamento dentro do horário do velório, ele será aberto automaticamente aqui."
+                                        : "As homenagens pendentes e aprovadas aparecem aqui ao escolher um atendimento."}
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowModal(false)}
-                                className="rounded-md border px-3 py-1.5 text-sm"
-                            >
-                                Fechar
-                            </button>
-                        </div>
+                        ) : (
+                            <>
+                                {/* CABEÇALHO DO ATENDIMENTO */}
+                                <div className={`mb-4 ${CARD} p-4 lg:px-5`}>
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className={`text-xs font-extrabold uppercase tracking-[.08em] ${TXT_SEC}`}>
+                                                    {normalizeSala(selected.sala)} · nº {selected.atendimento_id}
+                                                </span>
+                                                <span className={`rounded-full border-[1.5px] px-2.5 py-0.5 text-[11.5px] font-extrabold ${periodClass(derivePeriodStatusStrict(selected))}`}>
+                                                    {periodLabel(derivePeriodStatusStrict(selected))}
+                                                </span>
+                                            </div>
+                                            <h2 className="mt-1 truncate text-[22px] font-extrabold leading-tight lg:text-2xl">{selected.falecido}</h2>
+                                            <div className={`mt-0.5 text-sm ${TXT_SEC}`}>
+                                                {[formatDateBR(selected.data_nascimento), formatDateBR(selected.data_falecimento)].filter(Boolean).join(" – ")}
+                                            </div>
+                                        </div>
 
-                        <form onSubmit={onSubmitGenerate} className="space-y-3">
-                            <div>
-                                <label className="block text-sm font-medium">Nome do falecido</label>
-                                <input
-                                    type="text"
-                                    className="mt-1 w-full rounded-md border px-3 py-2 outline-none"
-                                    value={falecido}
-                                    onChange={(e) => setFalecido(e.target.value)}
-                                    placeholder="Ex.: João Batista de Jesus"
-                                    required
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <div>
-                                    <label className="block text-sm font-medium">Nascimento</label>
-                                    <input
-                                        type="date"
-                                        className="mt-1 w-full rounded-md border px-3 py-2 outline-none"
-                                        value={nascimento}
-                                        onChange={(e) => setNascimento(e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium">Falecimento</label>
-                                    <input
-                                        type="date"
-                                        className="mt-1 w-full rounded-md border px-3 py-2 outline-none"
-                                        value={falecimento}
-                                        onChange={(e) => setFalecimento(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-
-                            {generating ? (
-                                <div className="rounded-md border bg-muted/20 p-3">
-                                    <div className="mb-2 text-sm">{progressMsg}</div>
-                                    <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
-                                        <div
-                                            className="h-full bg-blue-600 transition-all"
-                                            style={{ width: `${progress}%` }}
-                                        />
+                                        <div className="flex flex-wrap gap-2">
+                                            {selected.link_publico ? (
+                                                <a href={selected.link_publico} target="_blank" rel="noreferrer" className={`${BTN_SEC} flex-1 sm:flex-none`}>
+                                                    <IconExternalLink size={18} stroke={1.8} />
+                                                    Legado de Luz
+                                                </a>
+                                            ) : null}
+                                            <button
+                                                type="button"
+                                                onClick={onOpenModal}
+                                                className={`${BTN_PRI} flex-1 sm:flex-none`}
+                                                disabled={!approved.length}
+                                                title={approved.length ? "Gerar Livro de Homenagens em PDF" : "Sem mensagens aprovadas"}
+                                            >
+                                                <IconBook2 size={18} stroke={1.8} />
+                                                <span className="sm:hidden">Livro (PDF)</span>
+                                                <span className="hidden sm:inline">Gerar livro (PDF)</span>
+                                            </button>
+                                        </div>
                                     </div>
+                                    {!approved.length ? <p className={`mt-2 text-xs ${TXT_SEC} sm:text-right`}>O livro fica disponível quando houver homenagem aprovada.</p> : null}
                                 </div>
-                            ) : null}
 
-                            <div className="mt-4 flex items-center justify-end gap-2">
-                                <button
-                                    type="button"
-                                    disabled={generating}
-                                    onClick={() => setShowModal(false)}
-                                    className="rounded-md border px-3 py-2 text-sm"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={generating}
-                                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                                >
-                                    Gerar Livro de Homenagens
-                                </button>
-                            </div>
-                        </form>
-                    </div>
+                                {/* ABAS PENDENTES / APROVADAS */}
+                                <div className="mb-3 flex items-center gap-2">
+                                    <div className="flex rounded-xl border border-[#E3E8F0] bg-white p-1 dark:border-white/[0.12] dark:bg-[#232B3F]" role="tablist">
+                                        {(["pendentes", "aprovadas"] as const).map((a) => {
+                                            const on = aba === a;
+                                            const n = a === "pendentes" ? received.length : approved.length;
+                                            return (
+                                                <button
+                                                    key={a}
+                                                    type="button"
+                                                    role="tab"
+                                                    aria-selected={on}
+                                                    onClick={() => setAba(a)}
+                                                    className={[
+                                                        "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold transition",
+                                                        on ? "bg-[#313C55] text-white dark:bg-[#3D6A99]" : `${TXT_SEC} hover:text-[#313C55] dark:hover:text-white`,
+                                                    ].join(" ")}
+                                                >
+                                                    {a === "pendentes" ? "Pendentes" : "Aprovadas"}
+                                                    <span
+                                                        className={[
+                                                            "grid h-6 min-w-6 place-items-center rounded-full px-1.5 text-[12px] font-extrabold",
+                                                            a === "pendentes" && n > 0
+                                                                ? "bg-[#F2CB3F] text-[#313C55]"
+                                                                : on
+                                                                    ? "bg-white/20 text-white"
+                                                                    : "bg-[#EEF2F7] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]",
+                                                        ].join(" ")}
+                                                    >
+                                                        {n}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => loadMessages(selected)}
+                                        disabled={loadingMessages}
+                                        className={`${BTN_ICONE} ml-auto`}
+                                        title="Atualizar mensagens"
+                                        aria-label="Atualizar mensagens"
+                                    >
+                                        <IconRefresh size={20} stroke={1.8} className={loadingMessages ? "animate-spin" : ""} />
+                                    </button>
+                                </div>
+
+                                {loadingMessages && listaAtual.length === 0 ? (
+                                    <div className={`${CARD} p-4 text-sm font-bold ${TXT_SEC}`}>Carregando homenagens…</div>
+                                ) : listaAtual.length === 0 ? (
+                                    <div className={`${CARD} px-4 py-8 text-center text-sm ${TXT_SEC}`}>
+                                        {aba === "pendentes" ? "Nenhuma homenagem esperando aprovação." : "Ainda não há homenagem aprovada neste atendimento."}
+                                    </div>
+                                ) : (
+                                    <div className="grid items-start gap-3 sm:grid-cols-2 [&>*]:min-w-0">
+                                        {listaAtual.map((m) => (
+                                            <MessageCard
+                                                key={`${aba}-${m.id}`}
+                                                item={m}
+                                                pendente={aba === "pendentes"}
+                                                ocupado={actionLoadingId === m.id}
+                                                onAprovar={() => approveMessage(m.id)}
+                                                onExcluir={() => requestDeleteMessage(m)}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </section>
                 </div>
-            )}
+            </div>
+
+            {/* JANELA: EXCLUIR */}
+            <Janela
+                open={!!deleteTarget}
+                titulo="Excluir homenagem?"
+                subtitulo="Esta ação não poderá ser desfeita."
+                icone={
+                    <span className="grid size-10 place-items-center rounded-xl bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                        <IconTrash size={20} stroke={1.8} />
+                    </span>
+                }
+                onClose={() => setDeleteTarget(null)}
+                podeFechar={!deleteTarget || actionLoadingId !== deleteTarget.id}
+                rodape={
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setDeleteTarget(null)}
+                            disabled={!!deleteTarget && actionLoadingId === deleteTarget.id}
+                            className={BTN_SEC}
+                        >
+                            Voltar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirmDeleteMessage}
+                            disabled={!!deleteTarget && actionLoadingId === deleteTarget.id}
+                            className={BTN_PERIGO}
+                        >
+                            {deleteTarget && actionLoadingId === deleteTarget.id ? "Excluindo..." : "Excluir"}
+                        </button>
+                    </>
+                }
+            >
+                {deleteTarget ? (
+                    <div className="rounded-[14px] border border-[#E3E8F0] bg-[#F6F8FB] px-4 py-3 dark:border-white/[0.12] dark:bg-[#1C2334]">
+                        <div className="text-sm font-extrabold">{deleteTarget.name || "Visitante"}</div>
+                        <p className={`mt-1 line-clamp-3 whitespace-pre-wrap text-sm ${TXT_SEC}`}>
+                            {deleteTarget.text || "Homenagem enviada sem texto."}
+                        </p>
+                    </div>
+                ) : null}
+            </Janela>
+
+            {/* JANELA: LIVRO DE HOMENAGENS */}
+            <Janela
+                open={showModal}
+                larga
+                titulo="Gerar Livro de Homenagens"
+                subtitulo="O livro usa apenas as homenagens aprovadas deste atendimento."
+                onClose={() => setShowModal(false)}
+                podeFechar={!generating}
+                rodape={
+                    <>
+                        <button type="button" disabled={generating} onClick={() => setShowModal(false)} className={BTN_SEC}>
+                            Voltar
+                        </button>
+                        <button type="submit" form="form-livro" disabled={generating} className={BTN_PRI}>
+                            <IconDownload size={18} stroke={1.8} />
+                            {generating ? "Gerando..." : "Gerar PDF"}
+                        </button>
+                    </>
+                }
+            >
+                <form id="form-livro" onSubmit={onSubmitGenerate} className="space-y-4">
+                    <label className="block">
+                        <span className={ROTULO}>Nome do falecido</span>
+                        <input
+                            type="text"
+                            className={CAMPO}
+                            value={falecido}
+                            onChange={(e) => setFalecido(e.target.value)}
+                            placeholder="Ex.: João Batista de Jesus"
+                            required
+                        />
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className={ROTULO}>Nascimento</span>
+                            <input type="date" className={CAMPO} value={nascimento} onChange={(e) => setNascimento(e.target.value)} />
+                        </label>
+                        <label className="block">
+                            <span className={ROTULO}>Falecimento</span>
+                            <input type="date" className={CAMPO} value={falecimento} onChange={(e) => setFalecimento(e.target.value)} />
+                        </label>
+                    </div>
+
+                    <p className={`text-[13px] ${TXT_SEC}`}>
+                        {approved.length === 1 ? "1 homenagem aprovada entrará no livro." : `${approved.length} homenagens aprovadas entrarão no livro.`}
+                    </p>
+
+                    {livroErro ? (
+                        <div role="alert" className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-3 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                            {livroErro}
+                        </div>
+                    ) : null}
+
+                    {generating ? (
+                        <div className="rounded-xl bg-[#F6F8FB] p-3 dark:bg-[#1C2334]">
+                            <div className="mb-2 flex justify-between text-sm font-bold">
+                                <span>{progressMsg}</span>
+                                <span>{Math.round(progress)}%</span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-[#E3E8F0] dark:bg-white/10">
+                                <div className="h-full rounded-full bg-[#3D6A99] transition-all" style={{ width: `${progress}%` }} />
+                            </div>
+                        </div>
+                    ) : null}
+                </form>
+            </Janela>
         </div>
     );
 }
-
