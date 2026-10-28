@@ -1210,88 +1210,134 @@ function EditModal({
     );
 }
 
-/* ================== Cartão do parceiro ================== */
+/* ================== Linha da lista ================== */
 
 function BotaoContato({ href, titulo, children }: { href: string; titulo: string; children: React.ReactNode }) {
     if (!href) return null;
     return (
-        <a href={href} target="_blank" rel="noreferrer" className={BTN_ICONE} title={titulo} aria-label={titulo}>
+        <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-grid size-10 shrink-0 place-items-center rounded-lg text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08] lg:size-9"
+            title={titulo}
+            aria-label={titulo}
+        >
             {children}
         </a>
     );
 }
 
-function CartaoParceiro({ r, onEdit }: { r: ApiConsulta; onEdit: () => void }) {
+/** Uma linha da lista: nome · categorias · endereço e telefones · contatos e editar. */
+function LinhaParceiro({ r, onEdit }: { r: ApiConsulta; onEdit: () => void }) {
     const ativo = isActive(r.ativo);
     const tel = cleanDigits(String(r.telefone ?? ""));
+    const cats = r.categorias ?? [];
     const exames = (r.especialidades ?? []).map((x) => x.nome);
+    const MAX_CATS = 2;
+    const fones = [r.whatsapp ? formatTelefone(r.whatsapp) : "", tel ? formatTelefone(tel) : ""].filter(Boolean);
 
     return (
-        <article className={`flex min-w-0 flex-col ${CARD} p-4 ${ativo ? "" : "opacity-70"}`}>
-            <div className="flex items-start gap-3">
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/25 dark:text-white">
-                    <IconStethoscope size={22} stroke={1.8} />
+        <li
+            className={[
+                "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 transition hover:bg-[#F6F8FB] dark:hover:bg-white/[0.04]",
+                "lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.3fr)_232px] lg:gap-x-4",
+                ativo ? "" : "opacity-60",
+            ].join(" ")}
+        >
+            {/* Nome */}
+            <button type="button" onClick={onEdit} className="min-w-0 text-left" title="Editar">
+                <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[15px] font-extrabold">{r.nome}</span>
+                    {!ativo ? <SeloStatus ativo={false} /> : null}
                 </span>
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <h3 className="min-w-0 break-words text-[16px] font-extrabold leading-tight">{r.nome}</h3>
-                        {!ativo ? <SeloStatus ativo={false} /> : null}
-                    </div>
-                    {r.unidade ? <p className={`mt-0.5 text-[13px] ${TXT_SEC}`}>{r.unidade}</p> : null}
-                </div>
-                <button type="button" onClick={onEdit} className={BTN_ICONE_SUAVE} title="Editar" aria-label={`Editar ${r.nome}`}>
-                    <IconPencil size={20} stroke={1.8} />
+                {r.unidade ? <span className={`block truncate text-[12.5px] ${TXT_SEC}`}>{r.unidade}</span> : null}
+            </button>
+
+            {/* Ações (no celular ficam ao lado do nome) */}
+            <div className="row-span-3 flex items-center justify-end gap-0.5 self-start lg:order-last lg:row-span-1 lg:self-center">
+                <BotaoContato href={linkWhatsapp(r.whatsapp)} titulo="Abrir WhatsApp">
+                    <IconBrandWhatsapp size={19} stroke={1.8} />
+                </BotaoContato>
+                <span className="hidden lg:contents">
+                    <BotaoContato href={tel ? `tel:${tel}` : ""} titulo="Ligar">
+                        <IconPhone size={19} stroke={1.8} />
+                    </BotaoContato>
+                    <BotaoContato href={linkMapa(r)} titulo="Abrir no mapa">
+                        <IconMapPin size={19} stroke={1.8} />
+                    </BotaoContato>
+                    <BotaoContato href={linkInstagram(r.instagram)} titulo="Instagram">
+                        <IconBrandInstagram size={19} stroke={1.8} />
+                    </BotaoContato>
+                    <BotaoContato href={linkSite(r.site)} titulo="Site">
+                        <IconWorld size={19} stroke={1.8} />
+                    </BotaoContato>
+                </span>
+                <button
+                    type="button"
+                    onClick={onEdit}
+                    className="inline-grid size-10 shrink-0 place-items-center rounded-lg text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08] lg:size-9"
+                    title="Editar"
+                    aria-label={`Editar ${r.nome}`}
+                >
+                    <IconPencil size={19} stroke={1.8} />
                 </button>
             </div>
 
-            {r.categorias?.length ? (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                    {r.categorias.map((c) => (
-                        <span
-                            key={c.id}
-                            className="rounded-full border border-[#A9BED6] bg-[#E9EFF6] px-2.5 py-0.5 text-[12px] font-bold text-[#313C55] dark:border-[#3D6A99]/60 dark:bg-[#3D6A99]/20 dark:text-white"
-                        >
-                            {c.nome}
-                        </span>
-                    ))}
-                </div>
-            ) : null}
-
-            {exames.length ? (
-                <p className={`mt-2 line-clamp-2 text-[13px] leading-5 ${TXT_SEC}`} title={exames.join(", ")}>
-                    <b className="text-[#313C55] dark:text-white">Exames:</b> {exames.join(", ")}
-                </p>
-            ) : null}
-
-            <p className="mt-2 flex items-start gap-1.5 text-[13.5px] leading-5">
-                <IconMapPin size={16} stroke={1.8} className={`mt-0.5 shrink-0 ${TXT_SEC}`} />
-                <span className="min-w-0 break-words">{r.endereco || "—"}</span>
-            </p>
-
-            {r.whatsapp || tel ? (
-                <p className={`mt-1 text-[13px] ${TXT_SEC}`}>
-                    {[r.whatsapp ? `WhatsApp ${formatTelefone(r.whatsapp)}` : "", tel ? `Tel. ${formatTelefone(tel)}` : ""].filter(Boolean).join(" · ")}
-                </p>
-            ) : null}
-
-            <div className="mt-auto flex flex-wrap gap-2 pt-3">
-                <BotaoContato href={linkWhatsapp(r.whatsapp)} titulo="Abrir WhatsApp">
-                    <IconBrandWhatsapp size={20} stroke={1.8} />
-                </BotaoContato>
-                <BotaoContato href={tel ? `tel:${tel}` : ""} titulo="Ligar">
-                    <IconPhone size={20} stroke={1.8} />
-                </BotaoContato>
-                <BotaoContato href={linkMapa(r)} titulo="Abrir no mapa">
-                    <IconMapPin size={20} stroke={1.8} />
-                </BotaoContato>
-                <BotaoContato href={linkInstagram(r.instagram)} titulo="Instagram">
-                    <IconBrandInstagram size={20} stroke={1.8} />
-                </BotaoContato>
-                <BotaoContato href={linkSite(r.site)} titulo="Site">
-                    <IconWorld size={20} stroke={1.8} />
-                </BotaoContato>
+            {/* Categorias (e exames no título) */}
+            <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden" title={exames.length ? `Exames: ${exames.join(", ")}` : undefined}>
+                {cats.length ? (
+                    <>
+                        {cats.slice(0, MAX_CATS).map((c) => (
+                            <span
+                                key={c.id}
+                                className="min-w-0 max-w-full truncate rounded-full bg-[#E9EFF6] px-2 py-0.5 text-[11.5px] font-bold text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white"
+                            >
+                                {c.nome}
+                            </span>
+                        ))}
+                        {cats.length > MAX_CATS ? (
+                            <span
+                                className="shrink-0 rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11.5px] font-bold text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]"
+                                title={cats.map((c) => c.nome).join(", ")}
+                            >
+                                +{cats.length - MAX_CATS}
+                            </span>
+                        ) : null}
+                    </>
+                ) : (
+                    <span className={`text-[12.5px] ${TXT_SEC}`}>—</span>
+                )}
             </div>
-        </article>
+
+            {/* Endereço e telefones */}
+            <div className={`min-w-0 text-[12.5px] leading-5 ${TXT_SEC}`}>
+                <a
+                    href={linkMapa(r) || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block truncate text-[#313C55] hover:underline dark:text-[#D6DCE8]"
+                    title={r.endereco}
+                >
+                    {r.endereco || "—"}
+                </a>
+                {fones.length ? (
+                    <span className="block truncate">
+                        {r.whatsapp ? (
+                            <a href={linkWhatsapp(r.whatsapp)} target="_blank" rel="noreferrer" className="hover:underline">
+                                {formatTelefone(r.whatsapp)}
+                            </a>
+                        ) : null}
+                        {r.whatsapp && tel ? " · " : null}
+                        {tel ? (
+                            <a href={`tel:${tel}`} className="hover:underline">
+                                {formatTelefone(tel)}
+                            </a>
+                        ) : null}
+                    </span>
+                ) : null}
+            </div>
+        </li>
     );
 }
 
@@ -1453,9 +1499,9 @@ export default function AdminConsultasPage() {
                 </header>
 
                 {/* FILTROS */}
-                <section className={`mb-4 ${CARD} p-3 lg:mb-5 lg:p-4`}>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                        <span className="flex h-12 w-full min-w-0 shrink-0 sm:w-auto sm:flex-1 items-center gap-2.5 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                <section className={`mb-4 ${CARD} p-3 lg:mb-5`}>
+                    <div className="flex flex-col gap-2 lg:flex-row">
+                        <span className="flex h-12 w-full min-w-0 shrink-0 items-center lg:w-auto lg:flex-1 gap-2.5 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                             <IconSearch size={20} stroke={1.8} className="shrink-0" />
                             <input
                                 type="search"
@@ -1466,6 +1512,24 @@ export default function AdminConsultasPage() {
                                 className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white dark:placeholder:text-[#8893AA]"
                             />
                         </span>
+
+                        <div className="flex gap-2">
+                        <label className="relative block min-w-0 flex-1 lg:w-[260px] lg:flex-none">
+                            <span className="sr-only">Categoria</span>
+                            <select
+                                value={catId === "TODAS" ? "TODAS" : String(catId)}
+                                onChange={(e) => setCatId(e.target.value === "TODAS" ? "TODAS" : Number(e.target.value))}
+                                className={`${CAMPO} appearance-none truncate pr-10 text-[15px] font-bold`}
+                            >
+                                <option value="TODAS">Todas as categorias</option>
+                                {categoriasAtivas.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                            </select>
+                            <IconChevronDown size={18} stroke={1.8} className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${TXT_SEC}`} />
+                        </label>
 
                         <div className="inline-flex shrink-0 rounded-xl border border-[#E3E8F0] bg-white p-1 dark:border-white/[0.12] dark:bg-[#1C2334]" role="group" aria-label="Situação">
                             {(
@@ -1480,7 +1544,7 @@ export default function AdminConsultasPage() {
                                     aria-pressed={ativos === o.v}
                                     onClick={() => setAtivos(o.v)}
                                     className={[
-                                        "h-10 flex-1 rounded-lg px-4 text-sm font-bold transition sm:flex-none",
+                                        "h-10 rounded-lg px-3.5 text-sm font-bold transition",
                                         ativos === o.v ? "bg-[#313C55] text-white dark:bg-[#3D6A99]" : `${TXT_SEC} hover:text-[#313C55] dark:hover:text-white`,
                                     ].join(" ")}
                                 >
@@ -1488,31 +1552,8 @@ export default function AdminConsultasPage() {
                                 </button>
                             ))}
                         </div>
-                    </div>
-
-                    {categoriasAtivas.length ? (
-                        <div className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0" role="group" aria-label="Categoria">
-                            {[{ id: "TODAS" as const, nome: "Todas" }, ...categoriasAtivas].map((c) => {
-                                const on = catId === c.id;
-                                return (
-                                    <button
-                                        key={String(c.id)}
-                                        type="button"
-                                        aria-pressed={on}
-                                        onClick={() => setCatId(c.id)}
-                                        className={[
-                                            "h-10 shrink-0 whitespace-nowrap rounded-full border-[1.5px] px-3.5 text-sm font-bold transition",
-                                            on
-                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
-                                                : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]",
-                                        ].join(" ")}
-                                    >
-                                        {c.nome}
-                                    </button>
-                                );
-                            })}
                         </div>
-                    ) : null}
+                    </div>
                 </section>
 
                 {/* AVISOS */}
@@ -1555,10 +1596,18 @@ export default function AdminConsultasPage() {
                                 <p className={`mt-1 text-sm ${TXT_SEC}`}>Ajuste a busca ou os filtros, ou cadastre um novo parceiro.</p>
                             </div>
                         ) : (
-                            <div className="grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                {filtered.map((r) => (
-                                    <CartaoParceiro key={r.id} r={r} onEdit={() => openEdit(r)} />
-                                ))}
+                            <div className={`overflow-hidden ${CARD}`}>
+                                <div className={`hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.3fr)_232px] gap-x-4 border-b border-[#E3E8F0] bg-[#F6F8FB] px-4 py-2.5 text-[11.5px] font-extrabold uppercase tracking-[.08em] dark:border-white/[0.12] dark:bg-[#1C2334] lg:grid ${TXT_SEC}`}>
+                                    <span>Parceiro</span>
+                                    <span>Categorias</span>
+                                    <span>Endereço e telefones</span>
+                                    <span className="text-right">Contato</span>
+                                </div>
+                                <ul className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">
+                                    {filtered.map((r) => (
+                                        <LinhaParceiro key={r.id} r={r} onEdit={() => openEdit(r)} />
+                                    ))}
+                                </ul>
                             </div>
                         )}
                     </>

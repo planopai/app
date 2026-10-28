@@ -52,6 +52,8 @@ import { getOfflineDeviceId } from "@/lib/offline/device";
 import { newOfflineId } from "@/lib/offline/db";
 import Visita, { consultarAcessoVisita, consultarStatusVisitas, type VisitaStatus } from "../acompanhamento/components/visita";
 import { BotaoRegistrarAcao, BotaoEditar, BotaoOS, BotaoVisita, BotaoFechar } from "@/components/atendimentos/BotoesAtendimento";
+import { usePerms } from "@/app/_perms/PermsProvider";
+import { IconCheck } from "@tabler/icons-react";
 
 /* =========================
    Cache rápido (memória + localStorage)
@@ -2452,6 +2454,14 @@ export default function QuadroAtendimentoPage() {
     // Tema da gaveta de detalhes (segue a mesma escolha do quadro).
     const [coroaSel, setCoroaSel] = useState<CoroaTvPedido | null>(null);
     const fecharCoroa = useCallback(() => setCoroaSel(null), []);
+    /* Ações da coroa no Quadro (28/10/2026): mesma permissão da tela Coroa de Flores. */
+    const { has: temPermissao } = usePerms();
+    const podeAgirCoroa = temPermissao("coroa-de-flores");
+    const [coroasRecarregar, setCoroasRecarregar] = useState(0);
+    const coroaAtualizada = useCallback((nova: CoroaTvPedido | null) => {
+        if (nova) setCoroaSel(nova);
+        setCoroasRecarregar((n) => n + 1);
+    }, []);
     const [rotaTv, setRotaTv] = useState<boolean | null>(null);
     useEffect(() => setRotaTv(ehRotaTv()), []);
     const gavetaSentinelaRef = useRef<HTMLDivElement | null>(null);
@@ -2674,7 +2684,7 @@ export default function QuadroAtendimentoPage() {
             document.removeEventListener("visibilitychange", onVisibility);
             window.removeEventListener("focus", onFocus);
         };
-    }, []);
+    }, [coroasRecarregar]);
 
     useEffect(() => {
         let alive = true;
@@ -4291,7 +4301,7 @@ export default function QuadroAtendimentoPage() {
                     </div>
                 )}
 
-                {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} />}
+                {coroaSel && <CoroaDrawer pedido={coroaSel} tema={temaGaveta} nowMs={nowMs} onClose={fecharCoroa} podeAgir={podeAgirCoroa} onAtualizado={coroaAtualizada} />}
 
                 {acaoOpen && (
                     <AcaoModal
@@ -6826,7 +6836,315 @@ function MobStyles() {
 }
 
 /* ===== Gaveta da coroa (desktop e celular): foto, frase da faixa e andamento do pedido ===== */
-function CoroaDrawer({ pedido, tema, nowMs, onClose }: { pedido: CoroaTvPedido; tema: TemaPai; nowMs: number; onClose: () => void }) {
+/* =========================
+   Ações da coroa no Quadro (28/10/2026)
+   Mesmas regras e mesmo endpoint da tela Coroa de Flores (acoesManualDoPedido,
+   acaoManualConcluida, acaoManualLiberada): coroas.php acao=atualizar_status com item_id.
+   Coroa Finalizada exige a foto da coroa pronta.
+   ========================= */
+type AcaoCoroaTv = "coroa" | "faixa" | "finalizada" | "entregue";
+
+const ACAO_COROA_TV_LABEL: Record<AcaoCoroaTv, string> = {
+    coroa: "Confeccionando Coroa",
+    faixa: "Confeccionando Faixa",
+    finalizada: "Coroa Finalizada",
+    entregue: "Entregue",
+};
+
+const FOTO_COROA_TV_MAX_BYTES = 12 * 1024 * 1024;
+
+function acoesCoroaTv(p: CoroaTvPedido): AcaoCoroaTv[] {
+    const acoes: AcaoCoroaTv[] = [];
+    if (!coroaSomenteArtificial(p)) acoes.push("coroa");
+    acoes.push("faixa", "finalizada", "entregue");
+    return acoes;
+}
+
+function acaoCoroaTvConcluida(p: CoroaTvPedido, alvo: AcaoCoroaTv): boolean {
+    const status = normalizarTextoCoroa(p.status);
+    const finalizada = Boolean(p.finalizada_em) || status === "finalizada" || status === "entregue";
+    const entregue = Boolean(p.entregue_em) || status === "entregue";
+    if (alvo === "coroa") return coroaSomenteArtificial(p) || Boolean(p.coroa_inicio_em) || finalizada;
+    if (alvo === "faixa") return Boolean(p.faixa_inicio_em) || finalizada;
+    if (alvo === "finalizada") return finalizada;
+    return entregue;
+}
+
+function acaoCoroaTvLiberada(p: CoroaTvPedido, alvo: AcaoCoroaTv): boolean {
+    const finalizada = acaoCoroaTvConcluida(p, "finalizada");
+    const entregue = acaoCoroaTvConcluida(p, "entregue");
+    const exigeCoroa = !coroaSomenteArtificial(p);
+    if (alvo === "coroa") return exigeCoroa && !finalizada && !entregue && !acaoCoroaTvConcluida(p, "coroa");
+    if (alvo === "faixa") return !finalizada && !entregue && !acaoCoroaTvConcluida(p, "faixa");
+    if (alvo === "finalizada") {
+        const coroaOk = !exigeCoroa || acaoCoroaTvConcluida(p, "coroa");
+        return !finalizada && !entregue && coroaOk && acaoCoroaTvConcluida(p, "faixa");
+    }
+    return finalizada && !entregue;
+}
+
+/** id da coroa (coroas_itens.id) do cartão; sem ele a ação vale para o pedido (registro antigo). */
+function itemIdCoroaTv(p: CoroaTvPedido): number | null {
+    const itens = Array.isArray(p.itens) ? p.itens : [];
+    const id = itens.length === 1 ? Number(itens[0]?.id || 0) : 0;
+    return id > 0 ? id : null;
+}
+
+let NOME_USUARIO_COROA_TV: Promise<string> | null = null;
+function nomeUsuarioCoroaTv(): Promise<string> {
+    if (!NOME_USUARIO_COROA_TV) {
+        NOME_USUARIO_COROA_TV = fetch(`${API_DIRETA}/informativo.php?me=1`, {
+            credentials: "include",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+        })
+            .then((r) => r.json().catch(() => ({})))
+            .then((j: any) => String(j?.usuario || j?.nome || "").replace(/\s+/g, " ").trim())
+            .catch(() => {
+                NOME_USUARIO_COROA_TV = null;
+                return "";
+            });
+    }
+    return NOME_USUARIO_COROA_TV;
+}
+
+async function enviarAcaoCoroaTv(p: CoroaTvPedido, alvo: AcaoCoroaTv, foto?: File | null): Promise<any> {
+    const usuario = await nomeUsuarioCoroaTv();
+    const itemId = itemIdCoroaTv(p);
+    const dados: Record<string, string | number> = {
+        acao: "atualizar_status",
+        id: p.id,
+        status: alvo,
+        ...(itemId ? { item_id: itemId } : {}),
+        ...(usuario ? { usuario_nome: usuario } : {}),
+    };
+
+    let res: Response;
+    if (foto) {
+        const form = new FormData();
+        Object.entries(dados).forEach(([k, v]) => form.append(k, String(v)));
+        form.append("foto_coroa", foto, foto.name || "foto_coroa.jpg");
+        res = await fetch(`${API_DIRETA}/coroas.php`, { method: "POST", credentials: "include", body: form });
+    } else {
+        res = await fetch(`${API_DIRETA}/coroas.php`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dados),
+        });
+    }
+
+    const json = await res.json().catch(() => ({}));
+    if (res.status === 401 || json?.need_login) {
+        window.location.href = "/login";
+        throw new Error("Sessão expirada. Entre de novo.");
+    }
+    if (!res.ok || !json?.sucesso) {
+        throw new Error(json?.msg || "Não foi possível registrar a ação.");
+    }
+    return json;
+}
+
+/** Relê o pedido e devolve o cartão da mesma coroa, já com a etapa nova. */
+async function buscarCoroaTvAtual(p: CoroaTvPedido): Promise<CoroaTvPedido | null> {
+    try {
+        const res = await fetch(`${API_DIRETA}/coroas.php?id=${p.id}&fresh=${Date.now()}`, {
+            credentials: "include",
+            cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.sucesso || !json?.dado) return null;
+        const cartoes = separarCoroaTvPorCoroa(json.dado as CoroaTvPedido);
+        return cartoes.find((c) => c._chave === p._chave) ?? (cartoes.length === 1 ? cartoes[0] : null);
+    } catch {
+        return null;
+    }
+}
+
+function CoroaAcoesTv({
+    pedido,
+    tema,
+    onClose,
+    onConcluida,
+}: {
+    pedido: CoroaTvPedido;
+    tema: TemaPai;
+    onClose: () => void;
+    onConcluida: (nova: CoroaTvPedido | null, aviso: string | null) => void;
+}) {
+    const [confirmar, setConfirmar] = useState<AcaoCoroaTv | null>(null);
+    const [foto, setFoto] = useState<File | null>(null);
+    const [enviando, setEnviando] = useState(false);
+    const [erro, setErro] = useState<string | null>(null);
+    const azul = tema === "escuro" ? "#3D6A99" : "#313C55";
+    const btn = "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 text-[14.5px] font-extrabold leading-tight disabled:opacity-50";
+
+    function escolherFoto(file?: File | null) {
+        if (!file) return;
+        if (!String(file.type || "").toLowerCase().startsWith("image/")) {
+            setFoto(null);
+            setErro("Selecione uma imagem válida.");
+            return;
+        }
+        if (file.size > FOTO_COROA_TV_MAX_BYTES) {
+            setFoto(null);
+            setErro("A imagem deve ter no máximo 12 MB.");
+            return;
+        }
+        setErro(null);
+        setFoto(file);
+    }
+
+    async function confirmarAcao() {
+        if (!confirmar) return;
+        if (confirmar === "finalizada" && !foto) {
+            setErro("Anexe a foto da coroa pronta para confirmar a finalização.");
+            return;
+        }
+        setEnviando(true);
+        setErro(null);
+        try {
+            const json = await enviarAcaoCoroaTv(pedido, confirmar, confirmar === "finalizada" ? foto : null);
+            const nova = await buscarCoroaTvAtual(pedido);
+            const aviso =
+                json?.notificacao_enviada === false
+                    ? json?.notificacao?.erro
+                        ? `A ação foi registrada, mas a notificação não foi enviada: ${json.notificacao.erro}`
+                        : "A ação foi registrada, mas o OneSignal não confirmou o envio da notificação."
+                    : null;
+            onConcluida(nova, aviso);
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível registrar a ação.");
+        } finally {
+            setEnviando(false);
+        }
+    }
+
+    const titulo = confirmar === "finalizada" ? "Coroa Finalizada" : confirmar ? "Confirmar ação" : "Registrar uma ação";
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 lg:items-center lg:p-4" role="dialog" aria-modal aria-label={titulo}>
+            <div className="absolute inset-0" onClick={() => !enviando && onClose()} aria-hidden />
+            <div
+                className="relative flex max-h-[90dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-3xl border shadow-2xl lg:rounded-2xl"
+                style={{ background: "var(--d-card)", borderColor: "var(--d-line)", color: "var(--d-text)" }}
+            >
+                <div className="shrink-0 border-b px-5 py-4" style={{ borderColor: "var(--d-line)" }}>
+                    <div className="text-[18px] font-extrabold leading-tight">{titulo}</div>
+                    <div className="mt-1 text-[13px] font-semibold" style={{ color: "var(--d-muted)" }}>
+                        {coroaModelos(pedido)}{String(pedido.falecido ?? "").trim() ? ` · ${shown(pedido.falecido, "")}` : ""}
+                    </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                    {!confirmar && (
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {acoesCoroaTv(pedido).map((alvo) => {
+                                const concluida = acaoCoroaTvConcluida(pedido, alvo);
+                                const liberada = acaoCoroaTvLiberada(pedido, alvo);
+                                return (
+                                    <button
+                                        key={alvo}
+                                        type="button"
+                                        disabled={enviando || concluida || !liberada}
+                                        onClick={() => {
+                                            setErro(null);
+                                            setFoto(null);
+                                            setConfirmar(alvo);
+                                        }}
+                                        className={`${btn} border`}
+                                        style={
+                                            concluida
+                                                ? { background: "var(--d-okbg)", color: "var(--d-ok)", borderColor: "transparent", opacity: 1 }
+                                                : liberada
+                                                    ? { background: azul, color: "#FFFFFF", borderColor: "transparent" }
+                                                    : { background: "var(--d-sunk)", color: "var(--d-muted)", borderColor: "var(--d-line)" }
+                                        }
+                                    >
+                                        {concluida ? <IconCheck className="size-5 shrink-0" stroke={2.2} /> : null}
+                                        {ACAO_COROA_TV_LABEL[alvo]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {confirmar && confirmar !== "finalizada" && (
+                        <p className="text-[15px] font-semibold">Confirmar a ação “{ACAO_COROA_TV_LABEL[confirmar]}”?</p>
+                    )}
+
+                    {confirmar === "finalizada" && (
+                        <div className="grid gap-3">
+                            <p className="text-[14.5px] font-semibold" style={{ color: "var(--d-muted)" }}>Anexe a foto da coroa pronta para confirmar.</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className={`${btn} cursor-pointer border`} style={{ background: "var(--d-sunk)", borderColor: "var(--d-line)", color: "var(--d-text)" }}>
+                                    Tirar foto
+                                    <input type="file" accept="image/*" capture="environment" className="hidden" disabled={enviando} onChange={(e) => { escolherFoto(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                                </label>
+                                <label className={`${btn} cursor-pointer border`} style={{ background: "var(--d-sunk)", borderColor: "var(--d-line)", color: "var(--d-text)" }}>
+                                    Escolher arquivo
+                                    <input type="file" accept="image/*" className="hidden" disabled={enviando} onChange={(e) => { escolherFoto(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                                </label>
+                            </div>
+                            {foto && (
+                                <div className="rounded-xl px-3 py-2 text-[13.5px] font-bold break-words" style={{ background: "var(--d-okbg)", color: "var(--d-ok)" }}>
+                                    Foto anexada: {foto.name || "foto"} ({(foto.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB)
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {erro && (
+                        <div className="mt-3 rounded-xl px-3 py-2 text-[13.5px] font-bold" style={{ background: "var(--d-critbg)", color: "var(--d-crit)" }}>
+                            {erro}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex shrink-0 justify-end gap-2 border-t px-5 pt-3" style={{ borderColor: "var(--d-line)", background: "var(--d-panel)", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
+                    <button
+                        type="button"
+                        disabled={enviando}
+                        onClick={() => (confirmar ? (setConfirmar(null), setErro(null)) : onClose())}
+                        className={`${btn} flex-1 border lg:flex-none`}
+                        style={{ background: "var(--d-card)", borderColor: "var(--d-line)", color: "var(--d-text)" }}
+                    >
+                        Voltar
+                    </button>
+                    {confirmar && (
+                        <button
+                            type="button"
+                            disabled={enviando || (confirmar === "finalizada" && !foto)}
+                            onClick={() => void confirmarAcao()}
+                            className={`${btn} flex-1 lg:flex-none`}
+                            style={tema === "escuro" ? { background: "#F2CB3F", color: "#313C55" } : { background: "#313C55", color: "#FFFFFF" }}
+                        >
+                            {enviando ? "Enviando…" : confirmar === "finalizada" ? "Confirmar finalização" : "Confirmar"}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function CoroaDrawer({
+    pedido,
+    tema,
+    nowMs,
+    onClose,
+    podeAgir = false,
+    onAtualizado,
+}: {
+    pedido: CoroaTvPedido;
+    tema: TemaPai;
+    nowMs: number;
+    onClose: () => void;
+    podeAgir?: boolean;
+    onAtualizado?: (nova: CoroaTvPedido | null) => void;
+}) {
+    const [acoesAbertas, setAcoesAbertas] = useState(false);
+    const [avisoAcao, setAvisoAcao] = useState<string | null>(null);
     const itensPedido = [...(pedido.itens ?? [])].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
     // modelos distintos do pedido (cada um com a foto do seu cadastro de produto)
     const modelos = useMemo(() => {
@@ -6858,10 +7176,15 @@ function CoroaDrawer({ pedido, tema, nowMs, onClose }: { pedido: CoroaTvPedido; 
         return () => { vivo = false; };
     }, [modelos]);
     useEffect(() => {
-        const aoTeclar = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        // Esc fecha primeiro a janela de ações; depois, a gaveta.
+        const aoTeclar = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            if (acoesAbertas) setAcoesAbertas(false);
+            else onClose();
+        };
         window.addEventListener("keydown", aoTeclar);
         return () => window.removeEventListener("keydown", aoTeclar);
-    }, [onClose]);
+    }, [onClose, acoesAbertas]);
 
     const itens = itensPedido;
     const qtd = coroaQuantidade(pedido);
@@ -6984,7 +7307,35 @@ function CoroaDrawer({ pedido, tema, nowMs, onClose }: { pedido: CoroaTvPedido; 
                         </Topic>
                     </div>
                 </div>
+
+                {/* Rodapé: Registrar ação · Fechar (só para quem tem a tela Coroa de Flores) — 28/10/2026 */}
+                {podeAgir && (
+                    <div className="shrink-0 border-t border-[var(--d-line)] px-4 pt-3.5 sm:px-5" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
+                        {avisoAcao && (
+                            <div className="mb-3 rounded-xl px-3 py-2 text-[13px] font-bold" style={{ background: "var(--d-warnbg)", color: "var(--d-warn)" }}>
+                                {avisoAcao}
+                            </div>
+                        )}
+                        <div className="flex items-center gap-2.5">
+                            <BotaoRegistrarAcao grande onClick={() => { setAvisoAcao(null); setAcoesAbertas(true); }} />
+                            <BotaoFechar grande onClick={onClose} className="ml-auto" />
+                        </div>
+                    </div>
+                )}
             </div>
+
+            {acoesAbertas && (
+                <CoroaAcoesTv
+                    pedido={pedido}
+                    tema={tema}
+                    onClose={() => setAcoesAbertas(false)}
+                    onConcluida={(nova, aviso) => {
+                        setAcoesAbertas(false);
+                        setAvisoAcao(aviso);
+                        onAtualizado?.(nova);
+                    }}
+                />
+            )}
         </div>
     );
 }
