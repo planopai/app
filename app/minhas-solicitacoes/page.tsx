@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { IconX } from "@tabler/icons-react";
 import ItensTabela from "@/components/requisicoes/ItensTabela";
 
 /**
@@ -176,6 +177,18 @@ type DetailResp = {
 };
 
 /**
+ * Resposta da API para ações que mudam a requisição (confirmar recebimento).
+ */
+type MutResp = {
+    ok: boolean;
+    msg?: string;
+    need_login?: 1;
+};
+
+/** O que a pessoa digitou para cada item no recebimento: texto puro, só números. */
+type Contagem = { estoque: string; chegou: string; diferente: boolean };
+
+/**
  * URL base do servidor da API.
  *
  * Mantida separada para facilitar manutenção caso o domínio mude no futuro.
@@ -340,6 +353,22 @@ async function apiGet<T>(qs: Record<string, string | number | boolean | undefine
         method: "GET",
         cache: "no-store",
         credentials: "include",
+    });
+
+    return await safeJson<T>(r);
+}
+
+/**
+ * Helper para chamadas POST (JSON) ao endpoint de requisições.
+ * Mesmo formato usado na página /requisicao.
+ */
+async function apiPost<T>(body: Record<string, unknown>) {
+    const r = await fetch(API_BASE, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
     });
 
     return await safeJson<T>(r);
@@ -578,20 +607,25 @@ function itensLabel(row: ReqListRow) {
  * Computador: cartão com botão "Ver", Destino/Origem e justificativa.
  * Celular (em pé e deitado): o cartão inteiro é tocável e mostra um resumo compacto.
  *
- * Esta tela é somente consulta. Alterações de estado, cancelamento e confirmação
- * de recebimento ficam na página /requisicao.
+ * Requisição em trânsito mostra "Confirmar recebimento" (mesmo fluxo da página /requisicao).
+ * O cancelamento continua só na página /requisicao.
  */
 function RequestCard({
     row,
     statusOptions,
+    saving,
     onOpen,
+    onReceive,
 }: {
     row: ReqListRow;
     statusOptions: StatusOption[];
+    saving: boolean;
     onOpen: (id: ID) => void;
+    onReceive: (row: ReqListRow) => void;
 }) {
     const status = String(row.status);
     const atrasada = Number(row.atrasada_24h || 0) === 1;
+    const canReceive = status === "EM_TRANSITO";
 
     const motivos = (
         <>
@@ -607,12 +641,13 @@ function RequestCard({
 
     return (
         <>
-            {/* CELULAR: cartão inteiro tocável */}
+            {/* CELULAR: cartão inteiro tocável (+ botão de recebimento quando em trânsito) */}
+            <div className="overflow-hidden rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F] lg:hidden">
             <button
                 type="button"
                 onClick={() => onOpen(row.id)}
                 aria-label={`Ver detalhes de ${reqCode(row)}`}
-                className="block w-full rounded-2xl border border-[#E3E8F0] bg-white px-3.5 py-3 text-left text-[#313C55] active:bg-[#EEF2F7] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white dark:active:bg-white/[0.08] lg:hidden"
+                className="block w-full px-3.5 py-3 text-left text-[#313C55] active:bg-[#EEF2F7] dark:text-white dark:active:bg-white/[0.08]"
             >
                 <span className="flex flex-wrap items-center gap-2">
                     <span className="text-[15px] font-extrabold">{reqCode(row)}</span>
@@ -628,6 +663,15 @@ function RequestCard({
                 </span>
                 {motivos}
             </button>
+
+            {canReceive ? (
+                <div className="px-3.5 pb-3.5">
+                    <Button type="button" variant="solid" onClick={() => onReceive(row)} disabled={saving} className="w-full">
+                        Confirmar recebimento
+                    </Button>
+                </div>
+            ) : null}
+            </div>
 
             {/* COMPUTADOR */}
             <article className="hidden flex-col gap-3 rounded-2xl border border-[#E3E8F0] bg-white px-5 py-[18px] text-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white lg:flex">
@@ -670,6 +714,14 @@ function RequestCard({
                 {row.justificativa ? <p className="line-clamp-2 text-[13.5px] leading-5 text-[#5B6478] dark:text-[#AEB9CF]">{row.justificativa}</p> : null}
 
                 {motivos}
+
+                {canReceive ? (
+                    <div className="flex">
+                        <Button type="button" variant="solid" onClick={() => onReceive(row)} disabled={saving}>
+                            Confirmar recebimento
+                        </Button>
+                    </div>
+                ) : null}
             </article>
         </>
     );
@@ -685,12 +737,16 @@ function DetailModal({
     open,
     row,
     statusOptions,
+    saving,
     onClose,
+    onReceive,
 }: {
     open: boolean;
     row: ReqDetalhe | null;
     statusOptions: StatusOption[];
+    saving: boolean;
     onClose: () => void;
+    onReceive: (row: ReqDetalhe) => void;
 }) {
     const info = (label: string, value: React.ReactNode) => (
         <div className="min-w-0">
@@ -706,9 +762,16 @@ function DetailModal({
             subtitle={row ? destinoLabel(row) : undefined}
             onClose={onClose}
             footer={
-                <Button type="button" onClick={onClose}>
-                    Fechar
-                </Button>
+                <>
+                    <Button type="button" onClick={onClose}>
+                        Fechar
+                    </Button>
+                    {row && String(row.status) === "EM_TRANSITO" ? (
+                        <Button type="button" variant="solid" onClick={() => onReceive(row)} disabled={saving}>
+                            Confirmar recebimento
+                        </Button>
+                    ) : null}
+                </>
             }
         >
             {!row ? (
@@ -806,11 +869,193 @@ function DetailModal({
     );
 }
 
+/** Quantidade digitada: só números (aceita vírgula ou ponto). */
+const SO_NUMERO = /^\d+([.,]\d+)?$/;
+
+/**
+ * Janela de recebimento — cópia da página /requisicao (13/10/2026). Mudou lá, mude aqui também.
+ * Transferência para um local: para cada item, "Estoque atualizado:" às cegas (obrigatório)
+ * e "Chegou quantidade diferente?" para informar quantos chegaram. A tela nunca mostra o saldo do sistema.
+ * Consumo: só a confirmação (antes era o window.confirm).
+ */
+function ReceberModal({
+    open,
+    row,
+    itens,
+    carregando,
+    contagens,
+    saving,
+    erro,
+    onChange,
+    onClose,
+    onConfirm,
+}: {
+    open: boolean;
+    row: ReqListRow | null;
+    itens: ReqItem[];
+    carregando: boolean;
+    contagens: Record<number, Contagem>;
+    saving: boolean;
+    erro: string;
+    onChange: (itemId: number, patch: Partial<Contagem>) => void;
+    onClose: () => void;
+    onConfirm: () => void;
+}) {
+    useEffect(() => {
+        if (!open) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => {
+            document.body.style.overflow = prev;
+            window.removeEventListener("keydown", onKey);
+        };
+    }, [open, onClose]);
+
+    if (!open || !row) return null;
+
+    const transferencia = String(row.destino_tipo || "").toUpperCase() === "DEPOSITO";
+    let faltam = 0;
+    if (transferencia) {
+        for (const it of itens) {
+            const c = contagens[it.id];
+            if (!c || !SO_NUMERO.test(c.estoque.trim())) faltam++;
+            if (c?.diferente && !SO_NUMERO.test(c.chegou.trim())) faltam++;
+        }
+    }
+    const bloqueado = saving || carregando || (transferencia && (itens.length === 0 || faltam > 0));
+
+    const CAMPO =
+        "h-12 w-[88px] shrink-0 rounded-xl border border-transparent bg-[#F1F4F8] text-center text-[18px] font-extrabold text-[#313C55] outline-none focus:border-[#3D6A99] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white";
+
+    return (
+        <NoCorpo>
+            <div
+                role="dialog" data-pai-overlay
+                aria-modal="true"
+                aria-label="Confirmar recebimento"
+                className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6"
+            >
+                <div className="flex max-h-[90dvh] w-full max-w-[600px] flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] dark:bg-[#232B3F] dark:text-white lg:max-h-full lg:max-w-[560px] lg:rounded-3xl lg:border lg:border-[#E3E8F0] lg:shadow-2xl lg:dark:border-white/[0.12]">
+                    <div className="flex items-start gap-2 border-b border-[#E3E8F0] pb-3 pl-5 pr-2 pt-4 dark:border-white/[0.12] lg:gap-3 lg:px-6 lg:py-5">
+                        <div className="min-w-0 flex-1">
+                            <h2 className="text-[19px] font-extrabold leading-tight lg:text-xl">Receber {reqCode(row)}</h2>
+                            <p className="mt-0.5 text-[13px] text-[#5B6478] dark:text-[#AEB9CF] lg:mt-1 lg:text-sm">
+                                {transferencia
+                                    ? `Para ${destinoLabel(row)}. Digite o estoque atualizado de cada item, já contando o que chegou.`
+                                    : "Confirme que o material chegou. Esta ação finaliza a requisição."}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={saving}
+                            className="grid size-11 shrink-0 place-items-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] disabled:opacity-50 dark:text-white dark:hover:bg-white/[0.08]"
+                            aria-label="Fechar"
+                        >
+                            <IconX size={20} stroke={1.8} />
+                        </button>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2 lg:px-6 lg:py-3">
+                        {carregando ? (
+                            <p className="py-4 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Carregando itens...</p>
+                        ) : transferencia ? (
+                            <ul className="divide-y divide-[#E3E8F0] dark:divide-white/[0.12]">
+                                {itens.map((it) => {
+                                    const c = contagens[it.id] || { estoque: "", chegou: "", diferente: false };
+                                    const nome = it.produto_nome_snapshot || `Item ${it.id}`;
+                                    return (
+                                        <li key={it.id} className="py-3">
+                                            <p className="break-words text-[15px] font-extrabold">{nome}</p>
+                                            <p className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                                Enviado: <b className="text-[#313C55] dark:text-white">{fmtQtd(it.quantidade_enviada ?? it.quantidade_solicitada)}</b>
+                                            </p>
+
+                                            {c.diferente ? (
+                                                <label className="mt-2 flex items-center justify-between gap-3">
+                                                    <span className="text-sm font-bold">Quantos chegaram?</span>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]*"
+                                                        autoComplete="off"
+                                                        value={c.chegou}
+                                                        onChange={(e) => onChange(it.id, { chegou: e.target.value.replace(/[^0-9.,]/g, "") })}
+                                                        placeholder="—"
+                                                        aria-label={`Quantos chegaram de ${nome}`}
+                                                        className={CAMPO}
+                                                    />
+                                                </label>
+                                            ) : null}
+
+                                            <label className="mt-2 flex items-center justify-between gap-3">
+                                                <span className="text-sm font-bold">Estoque atualizado:</span>
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    pattern="[0-9]*"
+                                                    autoComplete="off"
+                                                    value={c.estoque}
+                                                    onChange={(e) => onChange(it.id, { estoque: e.target.value.replace(/[^0-9.,]/g, "") })}
+                                                    placeholder="—"
+                                                    aria-label={`Estoque atualizado de ${nome}`}
+                                                    className={CAMPO}
+                                                />
+                                            </label>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => onChange(it.id, { diferente: !c.diferente, chegou: "" })}
+                                                className="mt-1 min-h-9 text-[13px] font-extrabold text-[#3D6A99] underline underline-offset-2 dark:text-[#9DBBE0]"
+                                            >
+                                                {c.diferente ? "Chegou certo" : "Chegou quantidade diferente?"}
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : (
+                            <ItensTabela resumo={row.itens_resumo} className="my-2" />
+                        )}
+
+                        {erro ? (
+                            <div role="alert" className="my-2 rounded-xl border border-[#B42318] bg-[#FDECEA] px-3 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                                {erro}
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <div className="border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 dark:border-white/[0.12] dark:bg-[#1C2334] lg:px-6 lg:py-4">
+                        {transferencia && !carregando ? (
+                            <p className="mb-2 text-center text-[13px] font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:text-right">
+                                {faltam > 0 ? `Falta preencher ${faltam} ${faltam === 1 ? "campo" : "campos"}` : "Tudo preenchido"}
+                            </p>
+                        ) : null}
+                        <div className="flex gap-2 lg:justify-end lg:gap-3">
+                            <Button type="button" onClick={onClose} disabled={saving} className="flex-1 lg:flex-none">
+                                Voltar
+                            </Button>
+                            <Button type="button" variant="solid" onClick={onConfirm} disabled={bloqueado} className="flex-1 lg:flex-none">
+                                {saving ? "Confirmando..." : "Confirmar recebimento"}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </NoCorpo>
+    );
+}
+
+
 /**
  * Página de histórico das solicitações do usuário logado.
  *
- * Esta página não altera o fluxo da requisição. Ela apenas lista, filtra e abre
- * os detalhes. Cancelamento e confirmação de recebimento ficam em /requisicao.
+ * Lista, filtra e abre os detalhes. Requisição em trânsito pode ter o recebimento
+ * confirmado aqui (mesmo fluxo de /requisicao). O cancelamento fica em /requisicao.
  */
 export default function MinhasSolicitacoesPage() {
     const [me, setMe] = useState<Me | null>(null);
@@ -827,6 +1072,15 @@ export default function MinhasSolicitacoesPage() {
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detail, setDetail] = useState<ReqDetalhe | null>(null);
+
+    // Confirmar recebimento (mesmo fluxo da página /requisicao)
+    const [saving, setSaving] = useState(false);
+    const [okMsg, setOkMsg] = useState("");
+    const [receberRow, setReceberRow] = useState<ReqListRow | null>(null);
+    const [receberItens, setReceberItens] = useState<ReqItem[]>([]);
+    const [receberCarregando, setReceberCarregando] = useState(false);
+    const [receberErro, setReceberErro] = useState("");
+    const [contagens, setContagens] = useState<Record<number, Contagem>>({});
 
     /**
      * Pedido de recarga depois de mudar o filtro de status ou limpar os filtros.
@@ -914,6 +1168,103 @@ export default function MinhasSolicitacoesPage() {
 
     const closeDetail = useCallback(() => setDetailOpen(false), []);
 
+    /* =======================
+       Confirmar recebimento (mesmo fluxo da página /requisicao)
+       ======================= */
+    const closeReceber = useCallback(() => {
+        if (saving) return;
+        setReceberRow(null);
+        setReceberItens([]);
+        setReceberErro("");
+        setContagens({});
+    }, [saving]);
+
+    async function receiveReq(row: ReqListRow | ReqDetalhe) {
+        if (saving) return;
+
+        setErr("");
+        setOkMsg("");
+        setReceberErro("");
+        setContagens({});
+        setReceberItens([]);
+        setReceberRow(row);
+        setDetailOpen(false); // a janela de recebimento ocupa o lugar dos detalhes
+
+        // Saída para consumo: só confirma. Transferência para um local: precisa dos itens.
+        if (String(row.destino_tipo || "").toUpperCase() !== "DEPOSITO") return;
+
+        // Se veio da janela de detalhes, os itens já estão carregados.
+        const jaCarregados = (row as ReqDetalhe).items;
+        if (jaCarregados && jaCarregados.length) {
+            setReceberItens(jaCarregados);
+            return;
+        }
+
+        setReceberCarregando(true);
+        try {
+            const data = await apiGet<DetailResp>({ action: "detalhar_minha", id: row.id });
+            if (!data.ok || !data.row) {
+                throw new Error(data.msg || "Não foi possível carregar os itens.");
+            }
+            setReceberItens(data.row.items || []);
+        } catch (e: any) {
+            setReceberErro(e?.message || "Não foi possível carregar os itens.");
+        } finally {
+            setReceberCarregando(false);
+        }
+    }
+
+    function changeContagem(itemId: number, patch: Partial<Contagem>) {
+        setContagens((prev) => ({
+            ...prev,
+            [itemId]: { ...(prev[itemId] || { estoque: "", chegou: "", diferente: false }), ...patch },
+        }));
+    }
+
+    async function confirmReceber() {
+        const row = receberRow;
+        if (!row || saving) return;
+
+        const transferencia = String(row.destino_tipo || "").toUpperCase() === "DEPOSITO";
+
+        setSaving(true);
+        setReceberErro("");
+
+        try {
+            const data = await apiPost<MutResp>({
+                action: "confirmar_recebimento",
+                id: row.id,
+                ...(transferencia
+                    ? {
+                          itens: receberItens.map((it) => {
+                              const c = contagens[it.id] || { estoque: "", chegou: "", diferente: false };
+                              return {
+                                  id: it.id,
+                                  estoque_atualizado: c.estoque.trim(),
+                                  ...(c.diferente ? { quantidade_recebida: c.chegou.trim() } : {}),
+                              };
+                          }),
+                      }
+                    : {}),
+            });
+
+            if (!data.ok) {
+                throw new Error(data.msg || "Não foi possível confirmar o recebimento.");
+            }
+
+            setReceberRow(null);
+            setReceberItens([]);
+            setContagens({});
+            setDetailOpen(false);
+            setOkMsg(data.msg || "Recebimento confirmado.");
+            await loadMinhas();
+        } catch (e: any) {
+            setReceberErro(e?.message || "Não foi possível confirmar o recebimento.");
+        } finally {
+            setSaving(false);
+        }
+    }
+
     /** Status do select (computador) e dos chips (celular): o MESMO filtro. */
     function changeStatus(value: string) {
         setFiltroStatus(value);
@@ -950,7 +1301,7 @@ export default function MinhasSolicitacoesPage() {
                 <header className="px-4 pb-3 pt-4 lg:mb-6 lg:p-0">
                     <h1 className="text-[22px] font-extrabold leading-tight text-[#313C55] dark:text-white lg:text-[28px]">Minhas Solicitações</h1>
                     <p className="mt-1 hidden text-sm text-[#5B6478] dark:text-[#AEB9CF] lg:block">
-                        Histórico das suas requisições. Para cancelar ou confirmar recebimento, use Requisição de Material.
+                        Histórico das suas requisições. Confirme aqui o recebimento das que estão em trânsito. Para cancelar, use Requisição de Material.
                     </p>
                 </header>
 
@@ -1014,6 +1365,12 @@ export default function MinhasSolicitacoesPage() {
                 <div className="px-4 pb-5 pt-3 lg:p-0">
                     {loadingInit ? <Card className="mb-3 p-6 text-center text-sm text-[#5B6478] dark:text-[#AEB9CF]">Carregando dados...</Card> : null}
 
+                    {okMsg ? (
+                        <div role="status" className="mb-3 rounded-[14px] border border-[#B3CE52] bg-[#EEF5D6] px-4 py-3 text-sm font-bold text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white lg:mb-4">
+                            {okMsg}
+                        </div>
+                    ) : null}
+
                     {err ? (
                         <div role="alert" className="mb-3 rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92] lg:mb-4">
                             {err}
@@ -1031,7 +1388,9 @@ export default function MinhasSolicitacoesPage() {
                                     key={row.id}
                                     row={row}
                                     statusOptions={statusOptions}
+                                    saving={saving}
                                     onOpen={openDetail}
+                                    onReceive={receiveReq}
                                 />
                             ))}
                         </div>
@@ -1043,7 +1402,22 @@ export default function MinhasSolicitacoesPage() {
                 open={detailOpen}
                 row={detailLoading ? null : detail}
                 statusOptions={statusOptions}
+                saving={saving}
                 onClose={closeDetail}
+                onReceive={receiveReq}
+            />
+
+            <ReceberModal
+                open={!!receberRow}
+                row={receberRow}
+                itens={receberItens}
+                carregando={receberCarregando}
+                contagens={contagens}
+                saving={saving}
+                erro={receberErro}
+                onChange={changeContagem}
+                onClose={closeReceber}
+                onConfirm={confirmReceber}
             />
         </main>
     );
