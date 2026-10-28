@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { IconChevronDown, IconCopy, IconLoader2, IconPencil, IconPlus, IconRefresh, IconTrash } from "@tabler/icons-react";
 
 type SubItem = {
     id: number | string;
@@ -129,6 +130,47 @@ type ConferenciaListResp = {
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const PHP_FILE = "materiais_admin.php";
 const PROXY_BASE = ENDPOINT; // em vez de "/api/php"
+
+
+/* =======================
+   Visual (padrão repaginado)
+   ======================= */
+const ABA_ATIVA = "bg-[#313C55] text-white shadow-sm dark:bg-[#3D6A99]";
+const BTN_PRINCIPAL =
+    "inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#313C55] text-sm font-semibold text-white shadow-sm hover:bg-[#232B40] disabled:opacity-60 dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]";
+const BTN_ICONE =
+    "inline-flex size-11 items-center justify-center rounded-xl border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60";
+const BTN_ICONE_LINHA =
+    "inline-flex size-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 lg:size-9";
+const BTN_EXCLUIR =
+    "inline-flex size-11 items-center justify-center rounded-xl text-[#B42318] hover:bg-red-50 disabled:opacity-50 dark:text-[#FF9C92] dark:hover:bg-red-500/10 lg:size-9";
+
+/** Faixa colorida à esquerda do card, pela linha do kit (primeira palavra do nome). */
+function corFamilia(nome: string): string {
+    const n = String(nome ?? "")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase();
+    if (n.indexOf("basico") === 0) return "border-l-[#3D6A99]";
+    if (n.indexOf("simples") === 0) return "border-l-[#B3CE52]";
+    if (n.indexOf("infantil") === 0) return "border-l-[#F2CB3F]";
+    if (n.indexOf("super luxo") === 0 || n.indexOf("luxo") === 0) return "border-l-[#313C55] dark:border-l-[#8FA3C4]";
+    return "border-l-slate-300 dark:border-l-slate-600";
+}
+
+function rotuloItens(n: number): string {
+    return n === 1 ? "1 item" : `${n} itens`;
+}
+
+function SeloStatus({ ativo }: { ativo: boolean }) {
+    return ativo ? (
+        <span className="shrink-0 rounded-full border border-[#7BA11A]/40 bg-[#EEF5D6] px-2 py-0.5 text-[11px] font-semibold text-[#4A6310] dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]">
+            Ativo
+        </span>
+    ) : (
+        <span className="shrink-0 rounded-full border bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">Inativo</span>
+    );
+}
 
 type ViewMode = "materiais" | "conferencias";
 
@@ -610,73 +652,89 @@ export default function MateriaisAdminPage() {
        Render
        ======================= */
     return (
-        <div className="p-6">
-            <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-semibold">Administração de Materiais</h1>
-
-                    {view === "materiais" ? (
-                        <>
-
-
-                        </>
-                    ) : (
-                        <>
-
-
-                        </>
-                    )}
-                </div>
+        <div className="p-4 sm:p-6">
+            <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <h1 className="text-2xl font-semibold tracking-tight lg:text-[28px]">Administração de Materiais</h1>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center overflow-hidden rounded-md border">
-                        <button
-                            type="button"
-                            className={`px-3 py-2 text-sm ${view === "materiais" ? "bg-muted font-medium" : "hover:bg-muted"}`}
-                            onClick={() => setView("materiais")}
-                        >
-                            Materiais
-                        </button>
-                        <button
-                            type="button"
-                            className={`px-3 py-2 text-sm ${view === "conferencias" ? "bg-muted font-medium" : "hover:bg-muted"}`}
-                            onClick={() => setView("conferencias")}
-                        >
-                            Conferências
-                        </button>
+                    {/* Abas Materiais / Conferências */}
+                    <div className="flex items-center rounded-xl border bg-muted/40 p-1" role="tablist">
+                        {(["materiais", "conferencias"] as ViewMode[]).map((v) => (
+                            <button
+                                key={v}
+                                type="button"
+                                role="tab"
+                                aria-selected={view === v}
+                                className={`h-9 rounded-lg px-4 text-sm font-medium transition-colors ${view === v ? ABA_ATIVA : "text-muted-foreground hover:text-foreground"}`}
+                                onClick={() => setView(v)}
+                            >
+                                {v === "materiais" ? "Materiais" : "Conferências"}
+                            </button>
+                        ))}
                     </div>
 
                     {view === "materiais" ? (
                         <>
-                            <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                                <input type="checkbox" checked={showInativos} onChange={(e) => setShowInativos(e.target.checked)} />
+                            {/* Toggle Mostrar inativos */}
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={showInativos}
+                                onClick={() => setShowInativos((s) => !s)}
+                                className="flex h-11 items-center gap-2 rounded-xl border px-3 text-sm hover:bg-muted"
+                            >
+                                <span
+                                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${showInativos ? "bg-[#313C55] dark:bg-[#3D6A99]" : "bg-slate-300 dark:bg-slate-600"}`}
+                                >
+                                    <span
+                                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-[#FFFFFF] shadow transition-transform ${showInativos ? "translate-x-[18px]" : "translate-x-0.5"}`}
+                                    />
+                                </span>
                                 Mostrar inativos
-                            </label>
-
-                            <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={loadTree} disabled={loading}>
-                                {loading ? "Carregando…" : "Recarregar"}
                             </button>
 
-                            <button className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90" onClick={openCreateCategoria}>
-                                + Categoria
+                            <button
+                                type="button"
+                                className={BTN_ICONE}
+                                onClick={loadTree}
+                                disabled={loading}
+                                title="Recarregar"
+                                aria-label="Recarregar"
+                            >
+                                <IconRefresh size={20} stroke={1.8} className={loading ? "animate-spin" : ""} />
+                            </button>
+
+                            <button type="button" className={`${BTN_PRINCIPAL} h-11 px-4`} onClick={openCreateCategoria}>
+                                <IconPlus size={18} stroke={2.2} />
+                                Categoria
                             </button>
                         </>
                     ) : (
                         <>
-                            <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                            <div className="flex h-11 items-center gap-2 rounded-xl border px-3">
                                 <input
-                                    className="w-[240px] bg-transparent text-sm outline-none"
-                                    placeholder="Buscar: registro_id, falecido, observação..."
+                                    className="w-[220px] bg-transparent text-sm outline-none"
+                                    placeholder="Buscar: registro, falecido, observação..."
                                     value={confQuery}
                                     onChange={(e) => setConfQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") loadConferencias();
+                                    }}
                                 />
                                 <button className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60" onClick={loadConferencias} disabled={confLoading}>
                                     {confLoading ? "..." : "Buscar"}
                                 </button>
                             </div>
 
-                            <button className="rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60" onClick={loadConferencias} disabled={confLoading}>
-                                {confLoading ? "Carregando…" : "Recarregar"}
+                            <button
+                                type="button"
+                                className={BTN_ICONE}
+                                onClick={loadConferencias}
+                                disabled={confLoading}
+                                title="Recarregar"
+                                aria-label="Recarregar"
+                            >
+                                <IconRefresh size={20} stroke={1.8} className={confLoading ? "animate-spin" : ""} />
                             </button>
                         </>
                     )}
@@ -707,7 +765,7 @@ export default function MateriaisAdminPage() {
           VIEW: MATERIAIS
          ======================= */}
             {view === "materiais" ? (
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                     {tree.length === 0 && !loading ? (
                         <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">Nenhum registro encontrado.</div>
                     ) : null}
@@ -716,104 +774,146 @@ export default function MateriaisAdminPage() {
                         const cid = String(c.id);
                         const isOpen = openCatId === cid;
                         const duplicando = dupLoadingId === cid;
+                        const ativo = asBool(c.ativo);
+                        const qtdItens = (c.itens ?? []).length;
 
                         return (
-                            <div key={cid} className="rounded-xl border bg-background p-4 shadow-sm">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <button type="button" className="min-w-[240px] text-left focus:outline-none" onClick={() => toggleOpenCategory(cid)} aria-expanded={isOpen}>
-                                        <div className="flex items-center gap-2">
-                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(c.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                            <h2 className="text-base font-semibold">
-                                                {c.nome} <span className="ml-2 text-xs text-muted-foreground">{isOpen ? "▼" : "▶"}</span>
-                                            </h2>
-                                        </div>
-                                        <div className="mt-1 text-xs text-muted-foreground">
-                                            ID: <span className="font-mono">{cid}</span> • Ordem: <span className="font-mono">{String(c.ordem ?? 0)}</span>
-                                        </div>
-                                        <div className="mt-1 text-[11px] text-muted-foreground">{(c.itens ?? []).length} item(ns)</div>
+                            <div
+                                key={cid}
+                                className={`overflow-hidden rounded-xl border border-l-4 bg-background shadow-sm ${corFamilia(c.nome)} ${ativo ? "" : "opacity-60"}`}
+                            >
+                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5 sm:px-4">
+                                    <button
+                                        type="button"
+                                        className="flex min-w-0 basis-full items-center gap-2 rounded-lg py-1 text-left sm:basis-0 sm:flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3D6A99]/40"
+                                        onClick={() => toggleOpenCategory(cid)}
+                                        aria-expanded={isOpen}
+                                        title={isOpen ? "Recolher" : "Ver itens"}
+                                    >
+                                        <IconChevronDown
+                                            size={18}
+                                            stroke={2}
+                                            className={`shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`}
+                                        />
+                                        <span className="truncate text-base font-semibold">{c.nome}</span>
+                                        <span className="shrink-0 text-sm text-muted-foreground">· {rotuloItens(qtdItens)}</span>
+                                        <SeloStatus ativo={ativo} />
+                                        <span className="ml-auto hidden shrink-0 pl-2 text-xs text-muted-foreground/80 md:inline" title={`ID ${cid} · Ordem ${String(c.ordem ?? 0)}`}>
+                                            #{cid} · ordem {String(c.ordem ?? 0)}
+                                        </span>
                                     </button>
 
-                                    <div className="flex flex-wrap gap-2">
-                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateItem(c.id)} disabled={duplicando}>
-                                            + Item
+                                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            className="inline-flex h-11 items-center gap-1 rounded-xl px-3 text-sm font-semibold text-[#313C55] hover:bg-[#E9EFF6] disabled:opacity-50 dark:text-[#8FB0D6] dark:hover:bg-[#3D6A99]/20 lg:h-10"
+                                            onClick={() => openCreateItem(c.id)}
+                                            disabled={duplicando}
+                                        >
+                                            <IconPlus size={16} stroke={2.2} />
+                                            Item
                                         </button>
 
                                         <button
-                                            className="rounded-md border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                                            type="button"
+                                            className={BTN_ICONE_LINHA}
                                             onClick={() => duplicateCategoria(c)}
                                             disabled={duplicando}
-                                            title="Cria uma nova categoria com cópia de itens e subitens"
+                                            title="Duplicar (copia itens e subitens)"
+                                            aria-label="Duplicar categoria"
                                         >
-                                            {duplicando ? "Duplicando…" : "Duplicar"}
+                                            {duplicando ? <IconLoader2 size={19} stroke={1.8} className="animate-spin" /> : <IconCopy size={19} stroke={1.8} />}
                                         </button>
 
-                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditCategoria(c)} disabled={duplicando}>
-                                            Editar
+                                        <button
+                                            type="button"
+                                            className={BTN_ICONE_LINHA}
+                                            onClick={() => openEditCategoria(c)}
+                                            disabled={duplicando}
+                                            title="Editar"
+                                            aria-label="Editar categoria"
+                                        >
+                                            <IconPencil size={19} stroke={1.8} />
                                         </button>
-                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeCategoria(c.id)} disabled={duplicando}>
-                                            Excluir
+
+                                        <span className="mx-1 h-6 w-px bg-border" aria-hidden />
+
+                                        <button
+                                            type="button"
+                                            className={BTN_EXCLUIR}
+                                            onClick={() => removeCategoria(c.id)}
+                                            disabled={duplicando}
+                                            title="Excluir"
+                                            aria-label="Excluir categoria"
+                                        >
+                                            <IconTrash size={19} stroke={1.8} />
                                         </button>
                                     </div>
                                 </div>
 
                                 {isOpen ? (
-                                    <div className="mt-4 grid gap-2">
-                                        {(c.itens ?? []).length === 0 ? (
-                                            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Sem itens nesta categoria.</div>
+                                    <div className="grid gap-2 border-t bg-muted/20 px-3 py-3 sm:px-4">
+                                        {qtdItens === 0 ? (
+                                            <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">Sem itens nesta categoria.</div>
                                         ) : null}
 
                                         {(c.itens ?? []).map((i) => (
-                                            <div key={String(i.id)} className="rounded-lg border p-3">
-                                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(i.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                                            <div className="font-medium">{i.nome}</div>
-                                                        </div>
-                                                        <div className="mt-1 text-[11px] text-muted-foreground">
-                                                            Item ID: <span className="font-mono">{String(i.id)}</span> • Ordem: <span className="font-mono">{String(i.ordem ?? 0)}</span>
-                                                        </div>
+                                            <div key={String(i.id)} className={`rounded-lg border bg-background px-3 py-2 ${asBool(i.ativo) ? "" : "opacity-60"}`}>
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
+                                                        <span className="truncate font-medium">{i.nome}</span>
+                                                        <SeloStatus ativo={asBool(i.ativo)} />
+                                                        <span className="hidden text-xs text-muted-foreground/80 md:inline">
+                                                            #{String(i.id)} · ordem {String(i.ordem ?? 0)}
+                                                        </span>
                                                     </div>
 
-                                                    <div className="flex flex-wrap gap-2">
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openCreateSub(i.id)} disabled={duplicando}>
-                                                            + Subitem
+                                                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            className="inline-flex h-11 items-center gap-1 rounded-xl px-2.5 text-xs font-semibold text-[#313C55] hover:bg-[#E9EFF6] disabled:opacity-50 dark:text-[#8FB0D6] dark:hover:bg-[#3D6A99]/20 lg:h-9"
+                                                            onClick={() => openCreateSub(i.id)}
+                                                            disabled={duplicando}
+                                                        >
+                                                            <IconPlus size={14} stroke={2.2} />
+                                                            Subitem
                                                         </button>
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditItem(i)} disabled={duplicando}>
-                                                            Editar
+                                                        <button type="button" className={BTN_ICONE_LINHA} onClick={() => openEditItem(i)} disabled={duplicando} title="Editar" aria-label="Editar item">
+                                                            <IconPencil size={18} stroke={1.8} />
                                                         </button>
-                                                        <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeItem(i.id)} disabled={duplicando}>
-                                                            Excluir
+                                                        <button type="button" className={BTN_EXCLUIR} onClick={() => removeItem(i.id)} disabled={duplicando} title="Excluir" aria-label="Excluir item">
+                                                            <IconTrash size={18} stroke={1.8} />
                                                         </button>
                                                     </div>
                                                 </div>
 
-                                                <div className="mt-3 grid gap-2 pl-2">
-                                                    {(i.subitens ?? []).length === 0 ? (
-                                                        <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">Sem subitens.</div>
-                                                    ) : null}
+                                                {(i.subitens ?? []).length > 0 ? (
+                                                    <div className="mt-1 grid border-l-2 pl-3">
+                                                        {(i.subitens ?? []).map((s) => (
+                                                            <div
+                                                                key={String(s.id)}
+                                                                className={`flex flex-wrap items-center justify-between gap-2 border-b py-1 last:border-b-0 ${asBool(s.ativo) ? "" : "opacity-60"}`}
+                                                            >
+                                                                <div className="flex min-w-0 items-center gap-2">
+                                                                    <span className="truncate text-sm">{s.nome}</span>
+                                                                    {!asBool(s.ativo) ? <SeloStatus ativo={false} /> : null}
+                                                                    <span className="hidden text-[11px] text-muted-foreground/80 md:inline">ordem {String(s.ordem ?? 0)}</span>
+                                                                </div>
 
-                                                    {(i.subitens ?? []).map((s) => (
-                                                        <div key={String(s.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
-                                                            <div className="flex min-w-[220px] items-center gap-2">
-                                                                <span className={`inline-flex h-2.5 w-2.5 rounded-full ${asBool(s.ativo) ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                                                <div className="text-sm">{s.nome}</div>
-                                                                <div className="text-[11px] text-muted-foreground">
-                                                                    (ordem: <span className="font-mono">{String(s.ordem ?? 0)}</span>)
+                                                                <div className="flex shrink-0 items-center gap-1">
+                                                                    <button type="button" className={BTN_ICONE_LINHA} onClick={() => openEditSub(s)} disabled={duplicando} title="Editar" aria-label="Editar subitem">
+                                                                        <IconPencil size={17} stroke={1.8} />
+                                                                    </button>
+                                                                    <button type="button" className={BTN_EXCLUIR} onClick={() => removeSub(s.id)} disabled={duplicando} title="Excluir" aria-label="Excluir subitem">
+                                                                        <IconTrash size={17} stroke={1.8} />
+                                                                    </button>
                                                                 </div>
                                                             </div>
-
-                                                            <div className="flex flex-wrap gap-2">
-                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => openEditSub(s)} disabled={duplicando}>
-                                                                    Editar
-                                                                </button>
-                                                                <button className="rounded-md border px-3 py-2 text-xs hover:bg-muted" onClick={() => removeSub(s.id)} disabled={duplicando}>
-                                                                    Excluir
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-1 pl-3 text-xs text-muted-foreground">Sem subitens.</div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
