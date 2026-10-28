@@ -11,7 +11,8 @@
  *  - requisicoes: requisicoes.php (fila, para quem opera; senão, as minhas abertas)
  *  - minhasRequisicoes: requisicoes.php?action=minhas (as requisições abertas do próprio usuário; atalho do Início, 15/10/2026)
  *  - estoque: materiais_gerais.php?init=1 (produtos no mínimo ou abaixo)
- *  - avisos: avisos.php?listar=1 (os que ainda não foram finalizados)
+ *  - avisos: avisos.php?listar=1 (os que ainda não foram finalizados), com o MESMO filtro da tela Avisos (28/10/2026):
+ *    aviso de atendimento ("Atendimento: NOME: ...") só conta enquanto o atendimento estiver no Quadro
  *
  * Chat: hoje o Chat é a Aurora e não tem contador de não lidas; o selo do Chat só existirá quando houver chat interno.
  */
@@ -78,6 +79,19 @@ function contarCoroasNaoEntregues(pedidos: PedidoCoroaContador[]): number {
     return total;
 }
 
+/* Mesmo filtro da tela Avisos (app/avisos/page.tsx): avisos de atendimento começam com "Atendimento:". */
+const TAG_AVISO_ATENDIMENTO = "Atendimento:";
+function nomeDoAvisoDeAtendimento(msg: unknown): string | null {
+    const s = String(msg ?? "");
+    if (!s.startsWith(TAG_AVISO_ATENDIMENTO)) return null;
+    const resto = s.slice(TAG_AVISO_ATENDIMENTO.length).trim();
+    const i = resto.indexOf(":");
+    return (i >= 0 ? resto.slice(0, i) : resto).trim();
+}
+function normNomeAviso(s: string): string {
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
 async function atualizar() {
     if (emAndamento) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -96,8 +110,12 @@ async function atualizar() {
 
         // Quadro e Minhas OS são de todos: os números de atendimento também.
         const lista = await getJson<RegistroRegra[]>(`${ENDPOINT}/informativo.php?listar=1&_=${t}`, sig);
+        let nomesNoQuadro: Set<string> | null = null;
         if (Array.isArray(lista)) {
             const noQuadro = lista.filter(atendimentoDeveFicarNoQuadro);
+            nomesNoQuadro = new Set(
+                noQuadro.map((r) => normNomeAviso(String((r as { falecido?: unknown })?.falecido ?? ""))).filter(Boolean),
+            );
             publicar({
                 servicos: noQuadro.length,
                 recolher: noQuadro.filter(aguardandoRecolhimento).length,
@@ -105,9 +123,22 @@ async function atualizar() {
             });
         }
 
-        const av = await getJson<{ finalizado?: number | string | boolean }[]>(`${ENDPOINT}/avisos.php?listar=1&_nocache=${t}`, sig);
+        const av = await getJson<{ finalizado?: number | string | boolean; mensagem?: string; sepultamento_id?: unknown }[]>(
+            `${ENDPOINT}/avisos.php?listar=1&_nocache=${t}`,
+            sig,
+        );
         if (Array.isArray(av)) {
-            publicar({ avisos: av.filter((a) => !(Number(a?.finalizado) === 1 || a?.finalizado === true)).length });
+            // Igual à tela Avisos: o avisos.php novo já tira os avisos de atendimentos fora do Quadro (e devolve
+            // "sepultamento_id" em todos); com o servidor antigo, o filtro é pelo nome do falecido.
+            const servidorFiltra = av.length > 0 && av.every((a) => a && "sepultamento_id" in a);
+            const ativos = av.filter((a) => {
+                if (Number(a?.finalizado) === 1 || a?.finalizado === true) return false;
+                if (servidorFiltra || !nomesNoQuadro) return true;
+                const nome = nomeDoAvisoDeAtendimento(a?.mensagem);
+                if (!nome) return true;
+                return nomesNoQuadro.has(normNomeAviso(nome));
+            });
+            publicar({ avisos: ativos.length });
         }
 
         if (has("coroa-de-flores")) {

@@ -205,6 +205,16 @@ type CoroaTvItem = {
     tipo_coroa?: "natural" | "artificial" | null;
     modelo_coroa?: string | null;
     frase?: string | null;
+    /** Etapa da PRÓPRIA coroa (coroas_itens), quando o servidor tem as colunas. */
+    status?: string | null;
+    coroa_inicio_em?: string | null;
+    coroa_inicio_por?: string | null;
+    faixa_inicio_em?: string | null;
+    faixa_inicio_por?: string | null;
+    finalizada_em?: string | null;
+    finalizada_por?: string | null;
+    entregue_em?: string | null;
+    entregue_por?: string | null;
 };
 
 type CoroaTvPedido = {
@@ -233,6 +243,10 @@ type CoroaTvPedido = {
     entregue_em?: string | null;
     entregue_por?: string | null;
     itens?: CoroaTvItem[] | null;
+    /** Cartão de UMA coroa (28/10/2026): chave única e "coroa N de M". */
+    _chave?: string;
+    _coroa_n?: number;
+    _coroa_total?: number;
 };
 
 type CoroasTvResponse = {
@@ -1560,7 +1574,8 @@ function coroaModelos(order?: CoroaTvPedido | null): string {
         .map((it) => decodeHtmlEntitiesDeep(String(it?.modelo_coroa ?? "")).trim())
         .filter(Boolean);
 
-    if (modelos.length === 1) return modelos[0];
+    const deQual = Number(order._coroa_total || 0) > 1 ? ` · coroa ${order._coroa_n} de ${order._coroa_total}` : "";
+    if (modelos.length === 1) return `${modelos[0]}${deQual}`;
     if (modelos.length > 1) return `${modelos[0]} +${modelos.length - 1}`;
 
     const principal = decodeHtmlEntitiesDeep(String(order.modelo_coroa ?? "")).trim();
@@ -1908,6 +1923,50 @@ function coroaEmConfeccao(order: CoroaTvPedido): boolean {
         status === "faixa" ||
         status === "finalizada"
     );
+}
+
+/* =========================
+   Uma coroa por cartão (28/10/2026)
+   Pedido com várias coroas entra na fila como uma coroa de cada vez, cada uma com a
+   própria etapa (coroas_itens). Sem a etapa na coroa, usa a do pedido.
+   ========================= */
+const ETAPAS_COROA_TV = [
+    "coroa_inicio_em", "coroa_inicio_por", "faixa_inicio_em", "faixa_inicio_por",
+    "finalizada_em", "finalizada_por", "entregue_em", "entregue_por",
+] as const;
+
+function separarCoroaTvPorCoroa(order: CoroaTvPedido): CoroaTvPedido[] {
+    if (order._chave) return [order];
+
+    const itens = Array.isArray(order.itens)
+        ? [...order.itens].sort((a, b) => Number(a?.ordem || 0) - Number(b?.ordem || 0))
+        : [];
+
+    if (itens.length <= 1) {
+        return [{ ...order, _chave: `${order.id}-${itens[0]?.id ?? 0}`, _coroa_n: 1, _coroa_total: 1 }];
+    }
+
+    return itens.map((item, index) => {
+        const etapa: Partial<CoroaTvPedido> = {};
+        if (item?.status) {
+            etapa.status = item.status;
+            for (const campo of ETAPAS_COROA_TV) {
+                (etapa as any)[campo] = (item as any)[campo] ?? null;
+            }
+        }
+
+        return {
+            ...order,
+            ...etapa,
+            itens: [item],
+            quantidade_coroas: 1,
+            modelo_coroa: item?.modelo_coroa || order.modelo_coroa,
+            frase: item?.frase || order.frase,
+            _chave: `${order.id}-${item?.id ?? index + 1}`,
+            _coroa_n: index + 1,
+            _coroa_total: itens.length,
+        };
+    });
 }
 
 /* =========================
@@ -2372,7 +2431,11 @@ function compararCoroasPorOrdemDeChegada(a: CoroaTvPedido, b: CoroaTvPedido): nu
     }
 
     // Fallback para registros legados: IDs menores chegaram primeiro.
-    return Number(a.id || 0) - Number(b.id || 0);
+    const porId = Number(a.id || 0) - Number(b.id || 0);
+    if (porId !== 0) return porId;
+
+    // Coroas do mesmo pedido: na ordem do pedido (1 de N, 2 de N...).
+    return Number(a._coroa_n || 0) - Number(b._coroa_n || 0);
 }
 
 /* =========================
@@ -2447,7 +2510,7 @@ export default function QuadroAtendimentoPage() {
 
     /* Coroas de Flores — painel inferior */
     const [coroasTv, setCoroasTv] = useState<CoroaTvPedido[]>(
-        () => [...(readLS<CoroaTvPedido[]>("qa_coroas_tv") ?? [])].sort(compararCoroasPorOrdemDeChegada)
+        () => (readLS<CoroaTvPedido[]>("qa_coroas_tv") ?? []).flatMap(separarCoroaTvPorCoroa).filter(coroaEmConfeccao).sort(compararCoroasPorOrdemDeChegada)
     );
     const [coroasTvError, setCoroasTvError] = useState<string | null>(null);
 
@@ -2557,7 +2620,9 @@ export default function QuadroAtendimentoPage() {
                         throw new Error(j?.msg || "Resposta inválida ao consultar coroas.");
                     }
 
+                    // Uma coroa por cartão: a coroa já entregue sai do quadro mesmo que as outras do pedido não.
                     const arr = j.dados
+                        .flatMap(separarCoroaTvPorCoroa)
                         .filter(coroaEmConfeccao)
                         .sort(compararCoroasPorOrdemDeChegada);
 
@@ -2855,7 +2920,7 @@ export default function QuadroAtendimentoPage() {
     }, [coroasOrdenadas, paginaAtualCoroas, coroasPorPagina]);
 
     const coroasPaginationSignature = useMemo(
-        () => coroasOrdenadas.map((pedido) => String(pedido.id)).join("|"),
+        () => coroasOrdenadas.map((pedido) => String(pedido._chave ?? pedido.id)).join("|"),
         [coroasOrdenadas]
     );
 
@@ -5297,7 +5362,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 
                             return (
                                 <div
-                                    key={pedido.id}
+                                    key={pedido._chave ?? pedido.id}
                                     className="qa-coroa-row grid h-[42px] min-h-[42px] grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.1fr)_135px_190px] items-center gap-3 overflow-hidden border-b border-slate-700/45 px-4 py-1 text-[10px] leading-none text-slate-100 last:border-b-0"
                                 >
                                     {/* Coroa: nome do modelo + solicitante abaixo */}
@@ -5378,7 +5443,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
 
                         return (
                             <article
-                                key={pedido.id}
+                                key={pedido._chave ?? pedido.id}
                                 className="qa-coroa-mobile-card overflow-hidden rounded-xl border border-slate-700/50 bg-slate-950/35 p-2.5"
                             >
                                 <div className="min-w-0">
@@ -5843,7 +5908,7 @@ function QuadroTv({
             </div>
             <div className="tv-clist" ref={coroasListaRef}>
                 {coroas.map((p) => (
-                    <TvCartaoCoroa key={p.id} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} />
+                    <TvCartaoCoroa key={p._chave ?? p.id} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} />
                 ))}
             </div>
             <TvPaginador atual={paginaCoroas} total={totalPaginasCoroas} segundos={INTERVALO_PAGINACAO_COROAS_MS / 1000} />
@@ -6538,7 +6603,7 @@ function QuadroMobile({
                                 <div className="qm-grid">
                                     {coroas.map((p, i) => (
                                         <MobCartaoCoroa
-                                            key={String(p.id ?? i)}
+                                            key={String(p._chave ?? p.id ?? i)}
                                             pedido={p}
                                             nowMs={nowMs}
                                             atraso={coroaAtrasoTv(p, nowMs)}
@@ -7124,7 +7189,7 @@ function QuadroDesktop({
                             </p>
                             <div className="qd-cgrid">
                                 {coroas.map((p, i) => (
-                                    <MobCartaoCoroa key={String(p.id ?? i)} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} onSelect={onSelectCoroa} />
+                                    <MobCartaoCoroa key={String(p._chave ?? p.id ?? i)} pedido={p} nowMs={nowMs} atraso={coroaAtrasoTv(p, nowMs)} onSelect={onSelectCoroa} />
                                 ))}
                             </div>
                         </>
