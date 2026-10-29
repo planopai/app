@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 import {
@@ -19,6 +19,25 @@ import { requestOperationalBackgroundSync } from "@/lib/offline/background-sync"
 
 const WARMUP_STATE_KEY =
     "pai_offline_routes_warmup_v2";
+
+/*
+ * Telas abertas sem login (as mesmas PUBLIC_PATHS do middleware.ts).
+ * Nelas não há fila para sincronizar nem telas para guardar offline:
+ * o servidor responderia 401 e as rotas redirecionariam para /login.
+ */
+const ROTAS_PUBLICAS = new Set<string>([
+    "/login",
+    "/ajuda",
+]);
+
+function ehRotaPublica(pathname: string | null | undefined): boolean {
+    const p = String(pathname || "/").replace(/\/+$/, "") || "/";
+    return ROTAS_PUBLICAS.has(p);
+}
+
+function emTelaPublica(): boolean {
+    return typeof window !== "undefined" && ehRotaPublica(window.location.pathname);
+}
 
 /**
  * Evita disparar dezenas de requisições repetidamente em um intervalo curto.
@@ -197,6 +216,7 @@ async function prepareOneRoute(
 async function prepareOfflineRoutes(
     forceRefresh = false
 ): Promise<void> {
+    if (emTelaPublica()) return;
     if (!isOnlineNow()) return;
     if (!("caches" in window)) return;
 
@@ -376,6 +396,9 @@ function installOfflineNavigationFallback():
 }
 
 async function runOperationalSyncNow(reason: string): Promise<void> {
+    // Sem login não há o que sincronizar (evita o 401 do informativo.php?me=1).
+    if (emTelaPublica()) return;
+
     if (!isOnlineNow()) {
         await requestOperationalBackgroundSync();
         return;
@@ -407,15 +430,29 @@ async function runOperationalSyncNow(reason: string): Promise<void> {
 
 export default function RegisterSW() {
     const pathname = usePathname();
+    const vinhaDeTelaPublicaRef = useRef(false);
 
     /*
      * Também tenta sincronizar a cada navegação.
      * Assim, sair do login para a Home ou abrir qualquer tela do sistema
      * já dispara a fila, sem depender de Serviço Funerário.
+     * Na tela de login não faz nada; ao sair dela (login feito), também
+     * prepara as rotas offline, que foram puladas enquanto não havia login.
      */
     useEffect(() => {
+        if (ehRotaPublica(pathname)) {
+            vinhaDeTelaPublicaRef.current = true;
+            return;
+        }
+
+        const acabouDeEntrar = vinhaDeTelaPublicaRef.current;
+        vinhaDeTelaPublicaRef.current = false;
+
         if (isOnlineNow()) {
             void runOperationalSyncNow(`rota:${pathname ?? "/"}`);
+            if (acabouDeEntrar) {
+                void prepareOfflineRoutes(false);
+            }
         } else {
             void requestOperationalBackgroundSync();
         }

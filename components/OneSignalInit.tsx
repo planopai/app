@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 declare global {
     interface Window {
@@ -51,8 +52,26 @@ async function registerDevice(playerId: string, externalUserId?: string) {
     }
 }
 
+/*
+ * Telas abertas sem login (as mesmas PUBLIC_PATHS do middleware.ts).
+ * Nelas o OneSignal não é iniciado: register_device.php exige login (401)
+ * e o aparelho seria registrado como "Desconhecido".
+ */
+const ROTAS_PUBLICAS = new Set<string>(["/login", "/ajuda"]);
+
+function ehRotaPublica(pathname: string | null | undefined): boolean {
+    const p = String(pathname || "/").replace(/\/+$/, "") || "/";
+    return ROTAS_PUBLICAS.has(p);
+}
+
 export default function OneSignalInit() {
+    const pathname = usePathname();
+    const telaPublica = ehRotaPublica(pathname);
+
     useEffect(() => {
+        // Só inicia depois do login; ao sair do /login este efeito roda de novo.
+        if (telaPublica) return;
+
         // Evita múltiplas injeções do script
         if (document.querySelector('script[data-onesignal-v16="true"]')) return;
 
@@ -153,7 +172,7 @@ export default function OneSignalInit() {
                 console.error("[OneSignal] SDK não carregado.");
             }
         }, 5000);
-    }, []);
+    }, [telaPublica]);
 
     return null;
 }
