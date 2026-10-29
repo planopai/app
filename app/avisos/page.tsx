@@ -683,6 +683,24 @@ export default function AvisosPage() {
         return { gerais: g, obsPorAtendimento: mapa, obsSoltas: soltas };
     }, [lidos, idsAtivos, porNome]);
 
+    /** Nome do falecido de cada atendimento do quadro (para a etiqueta das observações). */
+    const nomePorId = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const r of atendimentos as any[]) m.set(String(r.id), String(r?.falecido ?? "").trim());
+        return m;
+    }, [atendimentos]);
+
+    /** Todos os avisos numa lista só, mais novos primeiro, com o atendimento de cada observação. */
+    const feed = useMemo(() => {
+        const itens: Array<{ a: AvisoLido; atendimento: string }> = gerais.map((a) => ({ a, atendimento: "" }));
+        obsPorAtendimento.forEach((lista, id) => {
+            const nome = nomePorId.get(id) || lista[0]?.nome || `#${id}`;
+            lista.forEach((a) => itens.push({ a, atendimento: nome }));
+        });
+        obsSoltas.forEach((a) => itens.push({ a, atendimento: a.nome }));
+        return itens.sort((x, y) => y.a.criadoEm - x.a.criadoEm);
+    }, [gerais, obsPorAtendimento, obsSoltas, nomePorId]);
+
     const totalObs = useMemo(() => {
         let n = obsSoltas.length;
         obsPorAtendimento.forEach((l) => (n += l.length));
@@ -854,9 +872,6 @@ export default function AvisosPage() {
 
     /* ---------------- Render ---------------- */
 
-    const mostrarGerais = filtro !== "atendimentos";
-    const mostrarAtendimentos = filtro !== "gerais";
-
     const chips: Array<{ k: Filtro; label: string; n: number }> = [
         { k: "todos", label: "Todos", n: gerais.length + totalObs },
         { k: "gerais", label: "Gerais", n: gerais.length },
@@ -873,24 +888,6 @@ export default function AvisosPage() {
             ) : null}
             {a.criadoEm && agora - a.criadoEm < NOVO_MS ? <SeloNovo /> : null}
         </div>
-    );
-
-    const blocoObservacao = (a: AvisoLido) => (
-        <li key={String(a.id)} className="flex items-start gap-2 py-2.5">
-            <span
-                aria-hidden
-                className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-[#FFF7DB] text-[11px] font-extrabold text-[#6B5208] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]"
-            >
-                {iniciais(a.usuario || "?")}
-            </span>
-            <div className="min-w-0 flex-1">
-                {linhaAutor(a)}
-                <p className="mt-0.5 whitespace-pre-line break-words text-[15px] leading-relaxed [overflow-wrap:anywhere]">
-                    {a.texto}
-                </p>
-            </div>
-            <MenuAcoes rotulo="observação" onEditar={() => abrirEdicao(a)} onExcluir={() => setExcluindo(a)} />
-        </li>
     );
 
     return (
@@ -931,187 +928,214 @@ export default function AvisosPage() {
                     </div>
                 ) : null}
 
-                {/* Novo aviso geral */}
-                <section className={`${CARD} p-4 sm:p-5`} aria-labelledby="novo-aviso-titulo">
-                    <div className="flex items-center gap-2">
-                        <span className="grid size-9 place-items-center rounded-xl bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
-                            <IconSpeakerphone size={19} stroke={1.8} />
-                        </span>
-                        <h2 id="novo-aviso-titulo" className="text-base font-extrabold">
-                            Novo aviso geral
+                {/* 1) Atendimentos do quadro: só a lista, com o botão de adicionar observação */}
+                <section aria-labelledby="atend-titulo" className={CARD}>
+                    <div className="flex items-center justify-between gap-3 border-b border-[#E3E8F0] px-4 py-3 sm:px-5 dark:border-white/[0.12]">
+                        <h2 id="atend-titulo" className="text-base font-extrabold">
+                            Atendimentos no quadro
                         </h2>
+                        <span className={`text-sm font-semibold ${TXT_SEC}`}>{atendimentos.length}</span>
                     </div>
-                    <p className={`mt-1 text-sm ${TXT_SEC}`}>Aparece para toda a equipe, no sino e nesta tela.</p>
-                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start">
-                        <div className="min-w-0 flex-1">
-                            <label htmlFor="aviso-geral" className="sr-only">
-                                Texto do aviso geral
-                            </label>
-                            <CampoMensagem
-                                id="aviso-geral"
-                                value={textoGeral}
-                                onChange={setTextoGeral}
-                                onEnviar={enviarGeral}
-                                placeholder="Ex.: Reunião às 17h na sala de controle."
-                                linhas={2}
-                                disabled={enviandoGeral}
-                            />
-                        </div>
-                        <button
-                            type="button"
-                            onClick={enviarGeral}
-                            disabled={enviandoGeral || !textoGeral.trim()}
-                            className={`${BTN_PRIMARIO} w-full sm:w-auto`}
-                        >
-                            <IconSend size={18} stroke={2} />
-                            {enviandoGeral ? "Publicando…" : "Publicar"}
-                        </button>
-                    </div>
+
+                    {atendimentos.length === 0 ? (
+                        <p className={`px-5 py-6 text-center text-sm ${TXT_SEC}`}>
+                            {carregado ? "Nenhum atendimento no quadro agora." : "Carregando…"}
+                        </p>
+                    ) : (
+                        <ul className="divide-y divide-[#EEF2F7] dark:divide-white/[0.08]">
+                            {(atendimentos as any[]).map((r) => {
+                                const nObs = (obsPorAtendimento.get(String(r.id)) ?? []).length;
+                                const local = String(r?.local_velorio ?? "").trim();
+                                const hora = String(r?.hora_inicio_velorio ?? "").trim().slice(0, 5);
+                                return (
+                                    <li key={String(r.id)} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
+                                        <div className="min-w-[200px] flex-1">
+                                            <div className="break-words text-[15px] font-extrabold leading-snug [overflow-wrap:anywhere]">
+                                                {String(r?.falecido ?? "") || `Atendimento #${r.id}`}
+                                            </div>
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${corStatus(r?.status)}`}>
+                                                    {capStatus(r?.status) || "Sem status"}
+                                                </span>
+                                                {local || hora ? (
+                                                    <span className={`break-all text-xs ${TXT_SEC}`}>
+                                                        Velório{local ? `: ${local}` : ""}
+                                                        {hora ? ` · ${hora}` : ""}
+                                                    </span>
+                                                ) : null}
+                                                {nObs > 0 ? (
+                                                    <span className="text-xs font-bold text-[#6B5208] dark:text-[#F2CB3F]">
+                                                        · {nObs} {nObs === 1 ? "observação" : "observações"}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => abrirObservacao(r)}
+                                            className={`${BTN_PRIMARIO} w-full px-4 sm:w-auto`}
+                                        >
+                                            <IconMessagePlus size={18} stroke={1.8} />
+                                            Adicionar observação
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
                 </section>
 
-                {/* Filtro */}
-                <div role="tablist" aria-label="Filtrar avisos" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                    {chips.map((c) => {
-                        const ativo = filtro === c.k;
-                        return (
-                            <button
-                                key={c.k}
-                                type="button"
-                                role="tab"
-                                aria-selected={ativo}
-                                onClick={() => setFiltro(c.k)}
-                                className={[
-                                    "inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-bold transition",
-                                    ativo
-                                        ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
-                                        : "border-[#E3E8F0] bg-white text-[#5B6782] hover:bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-[#AEB9CF]",
-                                ].join(" ")}
-                            >
-                                {c.label}
-                                <span
-                                    className={[
-                                        "rounded-full px-2 py-0.5 text-[11px]",
-                                        ativo ? "bg-white/15" : "bg-[#E9EFF6] dark:bg-white/10",
-                                    ].join(" ")}
-                                >
-                                    {c.n}
+                {/* 2) Avisos: novo aviso geral, filtro e a lista de todos os avisos */}
+                <section aria-labelledby="avisos-titulo" className={CARD}>
+                    <div className="flex items-center justify-between gap-3 border-b border-[#E3E8F0] px-4 py-3 sm:px-5 dark:border-white/[0.12]">
+                        <h2 id="avisos-titulo" className="text-base font-extrabold">
+                            Avisos ativos
+                        </h2>
+                        <span className={`text-sm font-semibold ${TXT_SEC}`}>{feed.length}</span>
+                    </div>
+
+                    <div className="space-y-4 p-4 sm:p-5">
+                        {/* Novo aviso geral */}
+                        <div className="rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] p-3 sm:p-4 dark:border-white/[0.12] dark:bg-[#1C2334]">
+                            <div className="flex items-center gap-2">
+                                <span className="grid size-8 place-items-center rounded-lg bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                                    <IconSpeakerphone size={17} stroke={1.8} />
                                 </span>
-                            </button>
-                        );
-                    })}
-                </div>
-
-                <div className="space-y-6">
-                    {/* Mural de avisos gerais */}
-                    {mostrarGerais ? (
-                        <section aria-labelledby="gerais-titulo" className="min-w-0 space-y-3">
-                            <h2 id="gerais-titulo" className={`text-xs font-extrabold uppercase tracking-wider ${TXT_SEC}`}>
-                                Avisos gerais ({gerais.length})
-                            </h2>
-
-                            {gerais.length === 0 ? (
-                                <div className={`${CARD} border-dashed p-6 text-center text-sm ${TXT_SEC}`}>
-                                    {carregado ? "Nenhum aviso geral no momento." : "Carregando…"}
+                                <label htmlFor="aviso-geral" className="text-sm font-extrabold">
+                                    Novo aviso geral
+                                </label>
+                                <span className={`hidden text-xs sm:inline ${TXT_SEC}`}>· aparece para toda a equipe, no sino e nesta tela</span>
+                            </div>
+                            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start">
+                                <div className="min-w-0 flex-1">
+                                    <CampoMensagem
+                                        id="aviso-geral"
+                                        value={textoGeral}
+                                        onChange={setTextoGeral}
+                                        onEnviar={enviarGeral}
+                                        placeholder="Ex.: Reunião às 17h na sala de controle."
+                                        linhas={2}
+                                        disabled={enviandoGeral}
+                                    />
                                 </div>
-                            ) : (
-                                gerais.map((a) => (
-                                    <article
-                                        key={String(a.id)}
-                                        className={`${CARD} relative overflow-hidden border-l-4 border-l-[#B42318] p-4 dark:border-l-[#FF9C92]`}
+                                <button
+                                    type="button"
+                                    onClick={enviarGeral}
+                                    disabled={enviandoGeral || !textoGeral.trim()}
+                                    className={`${BTN_PRIMARIO} w-full sm:w-auto`}
+                                >
+                                    <IconSend size={18} stroke={2} />
+                                    {enviandoGeral ? "Publicando…" : "Publicar"}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Filtro */}
+                        <div role="tablist" aria-label="Filtrar avisos" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                            {chips.map((c) => {
+                                const ativo = filtro === c.k;
+                                return (
+                                    <button
+                                        key={c.k}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={ativo}
+                                        onClick={() => setFiltro(c.k)}
+                                        className={[
+                                            "inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-bold transition",
+                                            ativo
+                                                ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
+                                                : "border-[#E3E8F0] bg-white text-[#5B6782] hover:bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-[#AEB9CF]",
+                                        ].join(" ")}
                                     >
-                                        <div className="flex items-start gap-3">
-                                            <span
-                                                aria-hidden
-                                                className="grid size-9 shrink-0 place-items-center rounded-full bg-[#FDECEA] text-[12px] font-extrabold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
-                                            >
-                                                {iniciais(a.usuario || "?")}
-                                            </span>
-                                            <div className="min-w-0 flex-1">
-                                                {linhaAutor(a)}
-                                                <p className="mt-1 whitespace-pre-line break-words text-[16px] leading-relaxed [overflow-wrap:anywhere]">
-                                                    {a.texto}
-                                                </p>
-                                            </div>
-                                            <MenuAcoes rotulo="aviso" onEditar={() => abrirEdicao(a)} onExcluir={() => setExcluindo(a)} />
-                                        </div>
-                                    </article>
-                                ))
-                            )}
-                        </section>
-                    ) : null}
+                                        {c.label}
+                                        <span
+                                            className={[
+                                                "rounded-full px-2 py-0.5 text-[11px]",
+                                                ativo ? "bg-white/15" : "bg-[#E9EFF6] dark:bg-white/10",
+                                            ].join(" ")}
+                                        >
+                                            {c.n}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
 
-                    {/* Atendimentos do quadro com as observações */}
-                    {mostrarAtendimentos ? (
-                        <section aria-labelledby="atend-titulo" className="min-w-0 space-y-3">
-                            <h2 id="atend-titulo" className={`text-xs font-extrabold uppercase tracking-wider ${TXT_SEC}`}>
-                                Atendimentos no quadro ({atendimentos.length})
-                            </h2>
-
-                            {atendimentos.length === 0 ? (
-                                <div className={`${CARD} border-dashed p-6 text-center text-sm ${TXT_SEC}`}>
-                                    {carregado ? "Nenhum atendimento no quadro agora." : "Carregando…"}
-                                </div>
-                            ) : (
-                                (atendimentos as any[]).map((r) => {
-                                    const obs = obsPorAtendimento.get(String(r.id)) ?? [];
-                                    const local = String(r?.local_velorio ?? "").trim();
-                                    const hora = String(r?.hora_inicio_velorio ?? "").trim().slice(0, 5);
-                                    return (
-                                        <article key={String(r.id)} className={`${CARD} p-4`}>
-                                            <div className="flex flex-wrap items-start gap-3">
-                                                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#E9EFF6] text-[#3D6A99] dark:bg-[#3D6A99]/30 dark:text-[#9CC0E6]">
-                                                    <IconClipboardList size={19} stroke={1.8} />
-                                                </span>
-                                                <div className="min-w-[160px] flex-1">
-                                                    <h3 className="break-words text-[16px] font-extrabold leading-snug [overflow-wrap:anywhere]">
-                                                        {String(r?.falecido ?? "") || `Atendimento #${r.id}`}
-                                                    </h3>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                                                        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${corStatus(r?.status)}`}>
-                                                            {capStatus(r?.status) || "Sem status"}
-                                                        </span>
-                                                        {local || hora ? (
-                                                            <span className={`text-xs ${TXT_SEC}`}>
-                                                                Velório{local ? `: ${local}` : ""}
-                                                                {hora ? ` · ${hora}` : ""}
-                                                            </span>
-                                                        ) : null}
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => abrirObservacao(r)}
-                                                    className="inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-xl border border-[#D5DCE6] px-3 text-sm font-bold text-[#313C55] transition hover:bg-[#F6F8FB] sm:w-auto dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-                                                >
-                                                    <IconMessagePlus size={18} stroke={1.8} />
-                                                    Observação
-                                                </button>
-                                            </div>
-
-                                            {obs.length > 0 ? (
-                                                <ul className="mt-3 divide-y divide-[#EEF2F7] rounded-xl bg-[#F6F8FB] px-3 dark:divide-white/[0.08] dark:bg-[#1C2334]">
-                                                    {obs.map(blocoObservacao)}
-                                                </ul>
-                                            ) : null}
-                                        </article>
-                                    );
-                                })
-                            )}
-
-                            {obsSoltas.length > 0 ? (
-                                <article className={`${CARD} p-4`}>
-                                    <h3 className="text-sm font-extrabold">Outras observações</h3>
-                                    <p className={`mt-0.5 text-xs ${TXT_SEC}`}>
-                                        Observações que não foi possível ligar a um atendimento do quadro.
+                        {/* Lista */}
+                        {(() => {
+                            const visiveis = feed.filter(({ a }) =>
+                                filtro === "todos" ? true : filtro === "gerais" ? a.tipo === "geral" : a.tipo === "atendimento",
+                            );
+                            if (visiveis.length === 0) {
+                                return (
+                                    <p className={`rounded-xl border border-dashed border-[#D5DCE6] px-4 py-6 text-center text-sm dark:border-white/20 ${TXT_SEC}`}>
+                                        {!carregado
+                                            ? "Carregando…"
+                                            : filtro === "gerais"
+                                                ? "Nenhum aviso geral no momento."
+                                                : filtro === "atendimentos"
+                                                    ? "Nenhuma observação de atendimento no momento."
+                                                    : "Nenhum aviso no momento."}
                                     </p>
-                                    <ul className="mt-2 divide-y divide-[#EEF2F7] rounded-xl bg-[#F6F8FB] px-3 dark:divide-white/[0.08] dark:bg-[#1C2334]">
-                                        {obsSoltas.map(blocoObservacao)}
-                                    </ul>
-                                </article>
-                            ) : null}
-                        </section>
-                    ) : null}
-                </div>
+                                );
+                            }
+                            return (
+                                <ul className="space-y-2">
+                                    {visiveis.map(({ a, atendimento }) => {
+                                        const geral = a.tipo === "geral";
+                                        return (
+                                            <li
+                                                key={String(a.id)}
+                                                className={[
+                                                    "flex items-start gap-3 rounded-xl border border-l-4 p-3 sm:p-4",
+                                                    geral
+                                                        ? "border-[#E3E8F0] border-l-[#B42318] bg-white dark:border-white/[0.12] dark:border-l-[#FF9C92] dark:bg-[#232B3F]"
+                                                        : "border-[#E3E8F0] border-l-[#F2CB3F] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]",
+                                                ].join(" ")}
+                                            >
+                                                <span
+                                                    aria-hidden
+                                                    className={[
+                                                        "grid size-9 shrink-0 place-items-center rounded-full text-[12px] font-extrabold",
+                                                        geral
+                                                            ? "bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
+                                                            : "bg-[#FFF7DB] text-[#6B5208] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]",
+                                                    ].join(" ")}
+                                                >
+                                                    {iniciais(a.usuario || "?")}
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                                                        {geral ? (
+                                                            <span className="rounded-full bg-[#FDECEA] px-2.5 py-0.5 text-[11px] font-extrabold text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                                                                Geral
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#FFF7DB] px-2.5 py-0.5 text-[11px] font-extrabold text-[#6B5208] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]">
+                                                                <IconClipboardList size={13} stroke={2} className="shrink-0" />
+                                                                <span className="min-w-0 break-words">{atendimento ? `Atendimento · ${atendimento}` : "Atendimento"}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {linhaAutor(a)}
+                                                    <p className="mt-1 whitespace-pre-line break-words text-[15px] leading-relaxed [overflow-wrap:anywhere]">
+                                                        {a.texto}
+                                                    </p>
+                                                </div>
+                                                <MenuAcoes
+                                                    rotulo={geral ? "aviso" : "observação"}
+                                                    onEditar={() => abrirEdicao(a)}
+                                                    onExcluir={() => setExcluindo(a)}
+                                                />
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            );
+                        })()}
+                    </div>
+                </section>
             </div>
 
             {/* ============================== Janelas ============================== */}
