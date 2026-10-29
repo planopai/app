@@ -178,8 +178,10 @@ function normNome(s: string) {
         .trim();
 }
 
-/** "Falecido(a):", "Falecido:", "Falecida:"... (mensagens antigas da aba INFO). */
+/** "Falecido(a):", "Falecido:", "Falecida:"... (gravadas pelo informativo.php ao editar o atendimento). */
 const RE_FALECIDO = /^falecid[oa]s?(\(a\))?:/i;
+/** "Falecido(a): NOME Obs: texto" → [NOME, texto]. */
+const RE_FALECIDO_OBS = /^\s*falecid[oa]s?(?:\(a\))?:\s*(.+?)\s+obs:\s*([\s\S]*)$/i;
 
 type AvisoLido = {
     id: number | string;
@@ -188,7 +190,7 @@ type AvisoLido = {
     texto: string;
     /** Nome do falecido citado (observações no formato "Atendimento: NOME: texto"). */
     nome: string;
-    /** Mensagem antiga "Falecido(a): ..." — editada como está. */
+    /** Formato "Falecido(a): NOME Obs: texto" (do informativo.php). */
     legado: boolean;
     sepultamentoId: string;
     usuario: string;
@@ -214,6 +216,12 @@ function lerAviso(a: Aviso): AvisoLido {
         return { ...base, tipo: "atendimento", nome, texto: texto || resto, legado: false };
     }
     if (RE_FALECIDO.test(s)) {
+        const m = s.match(RE_FALECIDO_OBS);
+        if (m) {
+            // o texto costuma vir como "Fulano adicionou uma observação: ..."; mostra só a observação
+            const texto = m[2].replace(/^.*?adicionou uma observa(ç|c)ão:\s*/i, "").trim();
+            return { ...base, tipo: "atendimento", nome: m[1].trim(), texto: texto || m[2].trim(), legado: true };
+        }
         return { ...base, tipo: "atendimento", nome: "", texto: s, legado: true };
     }
     if (s.startsWith(TAG_GERAL)) {
@@ -649,13 +657,8 @@ export default function AvisosPage() {
             .sort((a, b) => b.criadoEm - a.criadoEm);
     }, [avisos]);
 
-    // 27/10/2026: o avisos.php novo já filtra as observações pelo atendimento (campo "sepultamento_id").
-    // Sem ele (servidor antigo), a observação só aparece se o atendimento citado ainda estiver no quadro.
-    const servidorFiltra = useMemo(
-        () => (avisos ?? []).length > 0 && (avisos ?? []).every((a) => a && "sepultamento_id" in (a as any)),
-        [avisos],
-    );
-
+    // O avisos.php já esconde as observações de atendimentos que saíram do Quadro (pelo número ou pelo nome).
+    // A tela confere de novo com a lista do Quadro, para o aviso sumir junto com o card, sem esperar o servidor.
     const { gerais, obsPorAtendimento, obsSoltas } = useMemo(() => {
         const g: AvisoLido[] = [];
         const mapa = new Map<string, AvisoLido[]>();
@@ -671,13 +674,14 @@ export default function AvisosPage() {
             if (alvo) {
                 if (!mapa.has(alvo)) mapa.set(alvo, []);
                 mapa.get(alvo)!.push(a);
-            } else if (servidorFiltra || a.legado || !a.nome) {
-                // servidor já confirmou que vale, ou mensagem antiga sem nome reconhecível
+            } else if (!a.nome) {
+                // sem nome reconhecível: não dá para saber de qual atendimento é
                 soltas.push(a);
             }
+            // com nome/número de atendimento que não está mais no quadro: não mostra
         }
         return { gerais: g, obsPorAtendimento: mapa, obsSoltas: soltas };
-    }, [lidos, idsAtivos, porNome, servidorFiltra]);
+    }, [lidos, idsAtivos, porNome]);
 
     const totalObs = useMemo(() => {
         let n = obsSoltas.length;
@@ -797,7 +801,9 @@ export default function AvisosPage() {
             editando.tipo === "geral"
                 ? `${TAG_GERAL} ${t}`
                 : editando.legado
-                    ? t
+                    ? editando.nome
+                        ? `Falecido(a): ${editando.nome} Obs: ${t}`
+                        : t
                     : editando.nome
                         ? `${TAG_SERVICO} ${editando.nome}: ${t}`
                         : `${TAG_SERVICO} ${t}`;
@@ -889,7 +895,7 @@ export default function AvisosPage() {
 
     return (
         <div className="min-h-screen bg-[#F6F8FB] text-[#313C55] dark:bg-[#1C2334] dark:text-white">
-            <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-6 sm:px-6 lg:py-8">
+            <div className="w-full space-y-4 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
                 {/* Cabeçalho */}
                 <header className="flex flex-wrap items-end justify-between gap-3">
                     <div className="min-w-0">
@@ -995,12 +1001,7 @@ export default function AvisosPage() {
                     })}
                 </div>
 
-                <div
-                    className={[
-                        "grid items-start gap-4",
-                        mostrarGerais && mostrarAtendimentos ? "lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]" : "",
-                    ].join(" ")}
-                >
+                <div className="space-y-6">
                     {/* Mural de avisos gerais */}
                     {mostrarGerais ? (
                         <section aria-labelledby="gerais-titulo" className="min-w-0 space-y-3">
