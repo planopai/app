@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 const TARGET_BASE = "https://planoassistencialintegrado.com.br";
 const PHP_LOGIN = "/autentica.php";
 
-const SESSION_SECONDS = 60 * 60 * 8; // 8h
+const SESSION_SECONDS = 60 * 60 * 24; // 24h
 const AUTH_CACHE_DAYS = 30;
 const PRIMARY_TIMEOUT_MS = 8_000;
 
