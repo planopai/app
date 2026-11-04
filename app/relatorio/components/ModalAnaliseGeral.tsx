@@ -14,7 +14,7 @@ import {
 
 } from "./MateriaisArrumacao";
 
-import { listarAnalitico, listarLogPorId } from "./Api";
+import { listarAnalitico, listarLogPorIdOuErro } from "./Api";
 
 import type { RegistroAnalise } from "./TiposHistorico";
 
@@ -999,7 +999,7 @@ export default function ModalAnaliseGeral({
 
 }) {
 
-    type CacheEntry = { logs: any[]; fetched: boolean };
+    type CacheEntry = { logs: any[]; fetched: boolean; erro?: boolean };
 
 
 
@@ -1350,7 +1350,7 @@ export default function ModalAnaliseGeral({
 
 
 
-        async function run(maxConc = 4) {
+        async function run(maxConc = 2) {
 
             let i = 0;
 
@@ -1385,29 +1385,35 @@ export default function ModalAnaliseGeral({
                     try {
 
                         let logs: any[] = [];
-
-
-
+                        /*
+                         * 04/11/2026: erro de rede/HTTP (ex.: 409 do anti-robô da HostGator
+                         * quando chegam muitas consultas juntas) não pode virar "sem histórico".
+                         * Antes o erro era engolido e o atendimento sumia da contagem de
+                         * Tanatopraxia sem aviso. Agora tenta 3 vezes e, se ainda falhar,
+                         * marca erro para o card avisar.
+                         */
+                        let falhou = false;
                         for (const id of item.idsToTry) {
-
                             if (cancelado || ciclo !== cicloLogsRef.current) break;
-
-
-
-                            try {
-
-                                const res = await listarLogPorId(id);
-
-                                if (Array.isArray(res) && res.length) {
-
-                                    logs = res;
-
-                                    break;
-
+                            let res: any[] | null = null;
+                            for (let tentativa = 0; tentativa < 3 && res === null; tentativa++) {
+                                if (tentativa > 0) await new Promise((r) => setTimeout(r, 800 * tentativa));
+                                if (cancelado || ciclo !== cicloLogsRef.current) break;
+                                try {
+                                    res = await listarLogPorIdOuErro(id);
+                                } catch {
+                                    res = null;
                                 }
-
-                            } catch { }
-
+                            }
+                            if (res === null) {
+                                falhou = true;
+                                continue;
+                            }
+                            if (res.length) {
+                                logs = res;
+                                falhou = false;
+                                break;
+                            }
                         }
 
 
@@ -1424,7 +1430,7 @@ export default function ModalAnaliseGeral({
 
                         if (!cancelado && ciclo === cicloLogsRef.current) {
 
-                            cacheRef.current[item.key] = { logs, fetched: true };
+                            cacheRef.current[item.key] = { logs, fetched: true, erro: falhou && !logs.length };
 
                         }
 
@@ -1755,9 +1761,14 @@ export default function ModalAnaliseGeral({
 
 
 
+    // Atendimentos com tanato cujo histórico não carregou (não entram na contagem).
+    const tanatoFalhas = React.useMemo(() => {
+        return tanatoEntities.list.filter((e) => cacheRef.current[e.key]?.erro).length;
+    }, [tanatoEntities, cacheVersion]);
+
     const subTanato = React.useMemo(() => {
 
-        if (!agentesOrdenados.length) return undefined;
+        if (!agentesOrdenados.length && !tanatoFalhas) return undefined;
 
 
 
@@ -1796,12 +1807,17 @@ export default function ModalAnaliseGeral({
                     </React.Fragment>
 
                 ))}
+                {tanatoFalhas ? (
+                    <span className="text-red-600" title="O histórico destes atendimentos não carregou (servidor recusou ou demorou). Eles não entram na contagem. Feche e abra a análise de novo.">
+                        · {fmt0(tanatoFalhas)} sem histórico carregado
+                    </span>
+                ) : null}
 
             </div>
 
         );
 
-    }, [agentesOrdenados, tanatoItensPorAgente]);
+    }, [agentesOrdenados, tanatoItensPorAgente, tanatoFalhas]);
 
 
 

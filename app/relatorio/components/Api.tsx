@@ -232,6 +232,19 @@ export async function listarLogPorId(id: string): Promise<LogItem[]> {
     }
 }
 
+/**
+ * Igual ao listarLogPorId, mas LANÇA erro quando a consulta falha (HTTP, rede,
+ * resposta que não é JSON). Assim quem chama distingue "falhou" de "sem histórico".
+ * 04/11/2026: usado na Análise Geral (Tanatopraxia).
+ */
+export async function listarLogPorIdOuErro(id: string): Promise<LogItem[]> {
+    const json = await fetchJson<any>(LOG_POR_ID(id), { ttlMs: 20_000 });
+    if (json?.sucesso && Array.isArray(json?.dados)) return json.dados as LogItem[];
+    if (Array.isArray(json)) return json as LogItem[];
+    if (json?.erro) throw new Error(String(json?.msg || "Erro ao consultar histórico"));
+    return [];
+}
+
 export async function listarAnalitico(
     opts?: { useCache?: boolean; ttlMs?: number },
 ): Promise<RegistroAnalise[]> {
