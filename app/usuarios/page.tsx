@@ -46,6 +46,7 @@ type Pessoa = {
     codigo_dominio: string | null;
     usuario_id: number | null;
     login: string | null;
+    nome_sistema: string | null;
     grupo: string | null;
     acesso_ativo: number | null;
 };
@@ -128,6 +129,25 @@ function limparLogin(s: string) {
         .replace(/[^a-z0-9._-]/g, '');
 }
 const sugerirLogin = (nome: string) => limparLogin(String(nome || '').trim().split(/\s+/)[0] || '');
+// 05/11/2026: nome no sistema = primeiro nome + último sobrenome (o servidor faz a mesma conta).
+const PARTICULAS = ['de', 'da', 'do', 'das', 'dos', 'e'];
+const SUFIXOS = ['junior', 'júnior', 'filho', 'neto', 'sobrinho'];
+function nomeProprio(nome: string) {
+    return String(nome || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase()
+        .split(' ')
+        .map((w, i) => (i > 0 && PARTICULAS.includes(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+        .join(' ');
+}
+function sugerirNomeSistema(nome: string) {
+    const p = nomeProprio(nome).split(' ').filter((w) => w && !PARTICULAS.includes(w));
+    if (p.length <= 2) return p.join(' ');
+    const ult = p[p.length - 1];
+    if (SUFIXOS.includes(ult.toLowerCase())) return `${p[0]} ${p[p.length - 2]} ${ult}`;
+    return `${p[0]} ${ult}`;
+}
 
 function iniciais(nome: string) {
     const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
@@ -279,6 +299,8 @@ export default function ColaboradoresUsuariosPage() {
     const [ligarExistente, setLigarExistente] = useState<number | ''>('');
     const [login, setLogin] = useState('');
     const [loginTocado, setLoginTocado] = useState(false);
+    const [nomeSistema, setNomeSistema] = useState('');
+    const [nomeSistemaTocado, setNomeSistemaTocado] = useState(false);
     const [grupo, setGrupo] = useState('');
     const [senha, setSenha] = useState('');
     const [verSenha, setVerSenha] = useState(false);
@@ -346,7 +368,7 @@ export default function ColaboradoresUsuariosPage() {
             if (filtro === 'desligados' && !(p.situacao === 'DESLIGADO' || (!p.colaborador_id && !p.acesso_ativo))) return false;
             if (filtro === 'sem_login' && !(p.colaborador_id && !p.usuario_id && p.situacao !== 'DESLIGADO')) return false;
             if (filtro === 'so_acesso' && p.colaborador_id) return false;
-            if (q && !semAcento(`${p.nome} ${p.login || ''} ${p.funcao || ''}`).includes(q)) return false;
+            if (q && !semAcento(`${p.nome} ${p.nome_sistema || ''} ${p.login || ''} ${p.funcao || ''}`).includes(q)) return false;
             return true;
         });
     }, [pessoas, busca, filtro]);
@@ -361,6 +383,8 @@ export default function ColaboradoresUsuariosPage() {
         setLigarExistente('');
         setLogin('');
         setLoginTocado(false);
+        setNomeSistema('');
+        setNomeSistemaTocado(false);
         setGrupo('');
         setSenha('');
         setVerSenha(false);
@@ -394,6 +418,8 @@ export default function ColaboradoresUsuariosPage() {
             setTemAcesso(true);
             setLogin(p.login || '');
             setLoginTocado(true);
+            setNomeSistema(p.nome_sistema || '');
+            setNomeSistemaTocado(true);
             setGrupo(p.grupo || '');
             setAcessoAtivo(!!p.acesso_ativo);
         }
@@ -471,6 +497,7 @@ export default function ColaboradoresUsuariosPage() {
         const v = e.target.value;
         setF((x) => ({ ...x, [k]: v }));
         if (k === 'nome' && !loginTocado && !usuarioId) setLogin(sugerirLogin(v));
+        if (k === 'nome' && !nomeSistemaTocado && !usuarioId) setNomeSistema(sugerirNomeSistema(v));
     };
 
     const loginRepetido = useMemo(() => {
@@ -497,7 +524,9 @@ export default function ColaboradoresUsuariosPage() {
                 if (loginRepetido) return setErroForm(`Já existe um usuário com o login "${l}".`);
                 if (!usuarioId && senha.trim().length < 6) return setErroForm('A senha precisa ter pelo menos 6 caracteres.');
                 if (usuarioId && trocarSenha && senha.trim() && senha.trim().length < 6) return setErroForm('A nova senha precisa ter pelo menos 6 caracteres.');
-                acesso = { usuario_id: usuarioId || 0, login: l, grupo, senha: trocarSenha || !usuarioId ? senha.trim() : '' };
+                const ns = nomeSistema.trim().replace(/\s+/g, ' ');
+                if (modo === 'colaborador' && !ns) return setErroForm('Preencha o nome no sistema.');
+                acesso = { usuario_id: usuarioId || 0, login: l, grupo, senha: trocarSenha || !usuarioId ? senha.trim() : '', ...(modo === 'colaborador' ? { nome_sistema: ns } : {}) };
             }
         }
         setSalvando(true);
@@ -505,7 +534,7 @@ export default function ColaboradoresUsuariosPage() {
             if (modo === 'acesso') {
                 await api('acesso_salvar', { nome, ...(acesso || {}) });
             } else {
-                await api('salvar', { colaborador: { ...f, nome }, acesso });
+                await api('salvar', { colaborador: { ...f, nome: nomeProprio(nome) }, acesso });
             }
             setAberta(false);
             setAviso(f.id || usuarioId ? `Alterações de ${nome} salvas.` : `${nome} cadastrado.`);
@@ -732,7 +761,12 @@ export default function ColaboradoresUsuariosPage() {
                                             <td className="py-2.5 pl-4 pr-4">
                                                 <div className="flex items-center gap-3">
                                                     <Avatar nome={p.nome} apagado={!ehAtivo(p)} />
-                                                    <span className="text-[15px] font-extrabold">{p.nome}</span>
+                                                    <span className="min-w-0">
+                                                        <span className="block text-[15px] font-extrabold">{p.nome}</span>
+                                                        {p.colaborador_id && p.nome_sistema && p.nome_sistema !== p.nome ? (
+                                                            <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">no sistema: {p.nome_sistema}</span>
+                                                        ) : null}
+                                                    </span>
                                                     {p.usuario_id && p.usuario_id === euId ? (
                                                         <span className="rounded-md bg-[#F2CB3F] px-1.5 py-0.5 text-[11px] font-extrabold text-[#313C55]">Você</span>
                                                     ) : null}
@@ -758,7 +792,9 @@ export default function ColaboradoresUsuariosPage() {
                                             <Avatar nome={p.nome} apagado={!ehAtivo(p)} />
                                             <span className="min-w-0 flex-1">
                                                 <span className="block truncate text-[15px] font-extrabold">{p.nome}</span>
-                                                <span className="mt-0.5 block truncate text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{p.funcao || (p.login ? `login ${p.login}` : '')}</span>
+                                                <span className="mt-0.5 block truncate text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                                    {[p.funcao, p.colaborador_id && p.nome_sistema && p.nome_sistema !== p.nome ? `no sistema: ${p.nome_sistema}` : '', !p.funcao && p.login ? `login ${p.login}` : ''].filter(Boolean).join(' · ')}
+                                                </span>
                                                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
                                                     <SeloSituacao s={p.situacao} />
                                                     <SeloAcesso p={p} grupos={grupos} />
@@ -943,8 +979,8 @@ export default function ColaboradoresUsuariosPage() {
                                 {aba === 'acesso' ? (
                                     <>
                                         {modo === 'acesso' ? (
-                                            <Campo rotulo="Nome completo">
-                                                <input ref={nomeRef} value={f.nome} onChange={set('nome')} placeholder="Ex.: Maria das Dores" className={CAMPO} autoComplete="off" />
+                                            <Campo rotulo="Nome no sistema">
+                                                <input ref={nomeRef} value={f.nome} onChange={set('nome')} placeholder="Ex.: Maria Souza" className={CAMPO} autoComplete="off" />
                                             </Campo>
                                         ) : null}
 
@@ -961,6 +997,7 @@ export default function ColaboradoresUsuariosPage() {
                                                             setVerSenha(true);
                                                             setTrocarSenha(true);
                                                             if (!login) setLogin(sugerirLogin(f.nome));
+                                                            if (!nomeSistema) setNomeSistema(sugerirNomeSistema(f.nome));
                                                         }
                                                     }}
                                                     className="size-5 accent-[#313C55]"
@@ -986,6 +1023,23 @@ export default function ColaboradoresUsuariosPage() {
 
                                                 {!ligarExistente ? (
                                                     <>
+                                                        {modo === 'colaborador' ? (
+                                                            <Campo rotulo="Nome no sistema">
+                                                                <input
+                                                                    value={nomeSistema}
+                                                                    onChange={(e) => {
+                                                                        setNomeSistemaTocado(true);
+                                                                        setNomeSistema(e.target.value);
+                                                                    }}
+                                                                    placeholder="Ex.: Maria Souza"
+                                                                    className={CAMPO}
+                                                                    autoComplete="off"
+                                                                    disabled={desligado}
+                                                                />
+                                                                <span className="mt-1.5 block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">É como a equipe vê esta pessoa no app: Messenger, OS, auditoria.</span>
+                                                            </Campo>
+                                                        ) : null}
+
                                                         <Campo rotulo="Login">
                                                             <input
                                                                 value={login}
