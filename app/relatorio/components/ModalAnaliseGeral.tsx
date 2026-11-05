@@ -891,7 +891,7 @@ function ModalListaTanato({
 
         itensOrdenados.reduce((acc: Record<string, number>, it) => {
 
-            const k = it.procedimento || "Tipo não informado";
+            const k = it.procedimento || "Tanatopraxia";
 
             acc[k] = (acc[k] || 0) + 1;
 
@@ -991,7 +991,7 @@ function ModalListaTanato({
 
                                         <span>Data/hora: {fmtDateHora(it.ts) || "-"}</span>
 
-                                        <span>Tipo: {it.procedimento || "não informado"}</span>
+                                        <span>Tipo: {it.procedimento || "Tanatopraxia"}</span>
 
                                         {it.reconstituicao && <span>Com reconstituição facial</span>}
 
@@ -1695,7 +1695,7 @@ export default function ModalAnaliseGeral({
 
             const linhaAt: any = (entry.logs || []).find((l: any) => l && (l.tanato_procedimento || l.reconstituicao_facial)) || {};
 
-            const procedimento = rotuloProcedimentoTanato(linhaAt.tanato_procedimento);
+            const procedimento = rotuloProcedimentoTanato(linhaAt.tanato_procedimento) || "Tanatopraxia"; // antigos sem o tipo: Tanatopraxia
 
             const reconstituicao = valorEhSim(linhaAt.reconstituicao_facial);
 

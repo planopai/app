@@ -303,8 +303,10 @@ function prepararOrigemResumo(
         delete origem.tanato_procedimento;
         delete origem.reconstituicao_facial;
     } else {
+        // Sem o tipo gravado (atendimentos antigos): Tanatopraxia, como era antes do campo.
         const proc = rotuloProcedimentoTanato(origem.tanato_procedimento);
         if (proc) origem.tanato_procedimento = proc;
+        else if (asBoolLocal(origem.tanato)) origem.tanato_procedimento = "Tanatopraxia";
         else delete origem.tanato_procedimento;
         const rec = String(origem.reconstituicao_facial ?? "").trim();
         if (rec) origem.reconstituicao_facial = asBoolLocal(rec) ? "Sim" : "Não";

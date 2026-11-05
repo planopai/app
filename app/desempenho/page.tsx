@@ -550,7 +550,8 @@ function calcularPainel(base: Base[], p: { inicio: string; fim: string; dias: nu
             status: x.status, status_rotulo: FASE_ROTULO_APP[x.status] ?? (x.r.status || "—"), no_quadro: x.r.status ? noQuadro(x.r) : false,
             ciclo_h: r2(x.ciclo), ocioso_h: r2(x.ocioso),
             etapas: Object.fromEntries(Object.entries(x.et).map(([k, e]) => [k, { h: r2(e.h)!, quem: e.quem }])),
-            tanato: ehSim(x.r.tanato), tanato_procedimento: ehSim(x.r.tanato) ? rotuloProcedimento(x.r.tanato_procedimento) : "",
+            // Sem o tipo gravado (atendimentos antigos): conta como Tanatopraxia, como era antes do campo.
+            tanato: ehSim(x.r.tanato), tanato_procedimento: ehSim(x.r.tanato) ? (rotuloProcedimento(x.r.tanato_procedimento) || "Tanatopraxia") : "",
             reconstituicao: ehSim(x.r.tanato) && ["sim", "s", "1", "true"].includes(norm(x.r.reconstituicao_facial)),
         })),
         etapas_definicao: ETAPAS.map(({ chave, rotulo, inicio, fim, credito, tipo }) => ({ chave, rotulo, inicio, fim, credito, tipo })),
@@ -1520,7 +1521,7 @@ function AbaTanato({ d, eq, abrir }: { d: Painel; eq: EquipeFiltro; abrir: (id: 
         const itens = d.lista.filter((x) => x.tanato).map((x) => {
             const cons = x.etapas.conservacao, esp = x.etapas.esp_conserv;
             const realizou = cons?.quem || esp?.quem || "";
-            return { x, tipo: x.tanato_procedimento || "Tipo não informado", realizou: realizou || "Não registrado", h: cons?.h ?? null, espera: esp?.h ?? null };
+            return { x, tipo: x.tanato_procedimento || "Tanatopraxia", realizou: realizou || "Não registrado", h: cons?.h ?? null, espera: esp?.h ?? null };
         });
         const tipos = conta(itens, (i) => i.tipo).sort((a, b) => {
             const ia = TIPOS_TANATO.indexOf(a.nome), ib = TIPOS_TANATO.indexOf(b.nome);
@@ -1537,7 +1538,7 @@ function AbaTanato({ d, eq, abrir }: { d: Painel; eq: EquipeFiltro; abrir: (id: 
         const hs = itens.map((i) => i.h).filter((v): v is number => v != null), es = itens.map((i) => i.espera).filter((v): v is number => v != null);
         return {
             itens: itens.sort((a, b) => String(b.x.criado_em).localeCompare(String(a.x.criado_em))), tipos, pessoas, convs, cruz, recPor,
-            rec: itens.filter((i) => i.x.reconstituicao).length, semTipo: itens.filter((i) => !i.x.tanato_procedimento).length,
+            rec: itens.filter((i) => i.x.reconstituicao).length,
             mediana: mediana(hs), p90: quantil(hs, 0.9), nH: hs.length, espera: mediana(es),
         };
     }, [d, eq]);
@@ -1574,7 +1575,7 @@ function AbaTanato({ d, eq, abrir }: { d: Painel; eq: EquipeFiltro; abrir: (id: 
                 <Kpi rotulo="Reconstituição facial" valor={fmtN(c.rec)} detalhe={`${fmtP(pct(c.rec, total))} das tanatopraxias`} />
                 <Kpi rotulo="Tempo de conservação" valor={fmtHM(c.mediana)} detalhe={c.nH ? `mediana · 90% até ${fmtHM(c.p90)} · n=${c.nH}` : "sem início e fim marcados"} />
                 <Kpi rotulo="Espera p/ conservação" valor={fmtHM(c.espera)} detalhe="da chegada do corpo ao início" />
-                <Kpi rotulo="Sem tipo registrado" valor={fmtN(c.semTipo)} detalhe="atendimentos antigos ou sem o campo" alerta={c.semTipo ? "atencao" : undefined} />
+                <Kpi rotulo="Tempo médio de conservação" valor={fmtHM(media(c.itens.map((i) => i.h).filter((v): v is number => v != null)))} detalhe="média do início ao fim" />
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
@@ -1624,7 +1625,7 @@ function AbaTanato({ d, eq, abrir }: { d: Painel; eq: EquipeFiltro; abrir: (id: 
                                 <tr key={i.x.id} onClick={() => abrir(i.x.id)} className="cursor-pointer border-t hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }}>
                                     <td className="px-2 py-2 tabular-nums sm:px-3">{dataHoraBR(i.x.criado_em)}</td>
                                     <td className="break-words px-2 py-2 font-bold sm:px-3">{i.x.falecido}</td>
-                                    <td className="px-2 py-2 sm:px-3"><span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold leading-tight" style={i.x.tanato_procedimento ? { background: corTipo(i.tipo), color: textoTipo(i.tipo) } : { background: "var(--dash-empty)", color: "var(--dash-text-soft)" }}>{i.tipo}</span></td>
+                                    <td className="px-2 py-2 sm:px-3"><span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold leading-tight" style={{ background: corTipo(i.tipo), color: textoTipo(i.tipo) }}>{i.tipo}</span></td>
                                     <td className="hidden px-3 py-2 md:table-cell">{i.x.reconstituicao ? <b style={{ color: "var(--dash-green)" }}>Sim</b> : "Não"}</td>
                                     <td className="hidden break-words px-3 py-2 sm:table-cell">{i.realizou}</td>
                                     <td className="hidden px-3 py-2 tabular-nums md:table-cell">{fmtHM(i.h)}</td>
@@ -1638,7 +1639,6 @@ function AbaTanato({ d, eq, abrir }: { d: Painel; eq: EquipeFiltro; abrir: (id: 
                         <button type="button" onClick={() => setMostrar((m) => m + 25)} className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-extrabold" style={{ background: "var(--dash-chip)", color: "var(--dash-text)" }}>Ver mais {fmtN(Math.min(25, lista.length - mostrar))}</button>
                     </div>
                 )}
-                {c.semTipo > 0 && <p className="mt-2 text-xs" style={{ color: "var(--dash-text-soft)" }}>&quot;Tipo não informado&quot;: atendimentos sem o campo Tipo de procedimento preenchido (anteriores à OS digital ou com o campo vazio).</p>}
             </Card>
         </div>
     );
@@ -1759,7 +1759,7 @@ function Ficha({ item, etapasDef, fechar }: { item: ListaItem; etapasDef: { chav
                         {[["Cadastro", dataHoraBR(item.criado_em)], ["Falecimento", dataBR(item.data_falecimento)], ["Idade", item.idade != null ? `${item.idade} anos` : "—"], ["Religião", item.religiao],
                         ["Velório", `${item.velorio}${item.local_velorio && !/^https?:/.test(item.local_velorio) ? ` — ${item.local_velorio}` : ""}`], ["Sepultamento", `${item.cemiterio} · ${dataBR(item.data_sepultamento)}`],
                         ["Urna", item.urna], ["Roupa", item.roupa || "—"],
-                        ["Tanatopraxia", item.tanato ? `${item.tanato_procedimento || "Tipo não informado"}${item.reconstituicao ? " · com reconstituição facial" : ""}` : "Não"],
+                        ["Tanatopraxia", item.tanato ? `${item.tanato_procedimento || "Tanatopraxia"}${item.reconstituicao ? " · com reconstituição facial" : ""}` : "Não"],
                         ["Ciclo total", fmtH(item.ciclo_h)], ["Tempo ocioso", fmtH(item.ocioso_h)]].map(([k, v]) => (
                             <React.Fragment key={k}><dt style={{ color: "var(--dash-text-soft)" }}>{k}</dt><dd className="break-words">{v}</dd></React.Fragment>))}
                     </dl>
