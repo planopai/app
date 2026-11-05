@@ -1510,9 +1510,9 @@ function normalizarTextoCoroa(v?: any): string {
 function coroaStatusLabel(v?: any): string {
     const s = normalizarTextoCoroa(v);
     if (s === "novo") return "Novo Pedido";
-    if (s === "coroa") return "Confeccionando Coroa";
-    if (s === "faixa") return "Confeccionando Faixa";
-    if (s === "finalizada") return "Coroa Finalizada";
+    // 05/11/2026: o app não separa mais coroa e faixa (INICIAR → Coroa Pronta → Entregue).
+    if (s === "coroa" || s === "faixa") return "Em Confecção";
+    if (s === "finalizada") return "Coroa Pronta";
     if (s === "entregue") return "Entregue";
     return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "Em Confecção";
 }
@@ -1521,7 +1521,7 @@ function coroaStatusClass(v?: any): string {
     const s = normalizarTextoCoroa(v);
     if (s === "novo") return "border-slate-600/70 bg-slate-700/65 text-slate-100";
     if (s === "coroa") return "border-sky-500/35 bg-sky-500/15 text-sky-200";
-    if (s === "faixa") return "border-violet-500/35 bg-violet-500/15 text-violet-200";
+    if (s === "faixa") return "border-sky-500/35 bg-sky-500/15 text-sky-200";
     if (s === "finalizada") return "border-emerald-500/35 bg-emerald-500/15 text-emerald-200";
     if (s === "entregue") return "border-green-500/35 bg-green-500/15 text-green-200";
     return "border-slate-600/70 bg-slate-800/60 text-slate-200";
@@ -1530,7 +1530,7 @@ function coroaStatusClass(v?: any): string {
 function coroaStatusIconType(v?: any): CoroaTvIconKey {
     const s = normalizarTextoCoroa(v);
     if (s === "coroa") return "flower";
-    if (s === "faixa") return "ribbon";
+    if (s === "faixa") return "flower";
     if (s === "finalizada" || s === "entregue") return "check";
     return "clipboard";
 }
@@ -5213,19 +5213,12 @@ function CoroaTimelineCell({
             skipped: false,
         },
         {
-            key: "coroa",
+            // 05/11/2026: uma etapa só (INICIAR grava coroa e faixa juntas).
+            key: "confeccao",
             icon: "flower" as CoroaTvIconKey,
-            label: "Confecção da Coroa",
-            ms: data.coroaMs,
-            active: data.coroaActive,
-            skipped: data.coroaSkipped,
-        },
-        {
-            key: "faixa",
-            icon: "ribbon" as CoroaTvIconKey,
-            label: "Confecção da Faixa",
-            ms: data.faixaMs,
-            active: data.faixaActive,
+            label: "Em Confecção",
+            ms: Math.max(data.coroaMs, data.faixaMs),
+            active: data.coroaActive || data.faixaActive,
             skipped: false,
         },
         {
@@ -5757,9 +5750,8 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
     const t = buildCoroaTimeline(pedido, nowMs);
     const etapas = [
         { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
-        { key: "coroa", icon: "flower" as CoroaTvIconKey, label: "Coroa", ms: t.coroaMs, ativo: t.coroaActive, pulado: t.coroaSkipped },
-        { key: "faixa", icon: "ribbon" as CoroaTvIconKey, label: "Faixa", ms: t.faixaMs, ativo: t.faixaActive, pulado: false },
-        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Concluída, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
+        { key: "confeccao", icon: "flower" as CoroaTvIconKey, label: "Em confecção", ms: Math.max(t.coroaMs, t.faixaMs), ativo: t.coroaActive || t.faixaActive, pulado: false },
+        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Pronta, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
     ];
     const ativas = etapas.filter((e) => e.ativo);
     const qtd = coroaQuantidade(pedido);
@@ -6414,9 +6406,8 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
     const t = buildCoroaTimeline(pedido, nowMs);
     const etapas = [
         { key: "aguardando", icon: "hourglass" as CoroaTvIconKey, label: "Aguardando", ms: t.aguardandoMs, ativo: t.aguardandoActive, pulado: false },
-        { key: "coroa", icon: "flower" as CoroaTvIconKey, label: "Coroa", ms: t.coroaMs, ativo: t.coroaActive, pulado: t.coroaSkipped },
-        { key: "faixa", icon: "ribbon" as CoroaTvIconKey, label: "Faixa", ms: t.faixaMs, ativo: t.faixaActive, pulado: false },
-        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Concluída, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
+        { key: "confeccao", icon: "flower" as CoroaTvIconKey, label: "Em confecção", ms: Math.max(t.coroaMs, t.faixaMs), ativo: t.coroaActive || t.faixaActive, pulado: false },
+        { key: "concluida", icon: "check" as CoroaTvIconKey, label: "Pronta, aguardando entrega", ms: t.concluidaMs, ativo: t.concluidaActive, pulado: false },
     ];
     const ativas = etapas.filter((e) => e.ativo);
     const qtd = coroaQuantidade(pedido);
@@ -6840,46 +6831,49 @@ function MobStyles() {
    Ações da coroa no Quadro (28/10/2026)
    Mesmas regras e mesmo endpoint da tela Coroa de Flores (acoesManualDoPedido,
    acaoManualConcluida, acaoManualLiberada): coroas.php acao=atualizar_status com item_id.
-   Coroa Finalizada exige a foto da coroa pronta.
+   05/11/2026: INICIAR → Coroa Pronta (foto obrigatória) → Entregue.
    ========================= */
-type AcaoCoroaTv = "coroa" | "faixa" | "finalizada" | "entregue";
+type AcaoCoroaTv = "iniciar" | "finalizada" | "entregue";
 
 const ACAO_COROA_TV_LABEL: Record<AcaoCoroaTv, string> = {
-    coroa: "Confeccionando Coroa",
-    faixa: "Confeccionando Faixa",
-    finalizada: "Coroa Finalizada",
+    iniciar: "INICIAR",
+    finalizada: "Coroa Pronta",
     entregue: "Entregue",
 };
 
 const FOTO_COROA_TV_MAX_BYTES = 12 * 1024 * 1024;
 
+function coroaTvFinalizada(p: CoroaTvPedido): boolean {
+    const status = normalizarTextoCoroa(p.status);
+    return Boolean(p.finalizada_em) || status === "finalizada" || status === "entregue";
+}
+
+function coroaTvEntregue(p: CoroaTvPedido): boolean {
+    return Boolean(p.entregue_em) || normalizarTextoCoroa(p.status) === "entregue";
+}
+
+/** Iniciada: tem início de coroa ou de faixa (registros antigos contam), ou já está pronta. */
+function coroaTvIniciada(p: CoroaTvPedido): boolean {
+    const status = normalizarTextoCoroa(p.status);
+    return Boolean(p.coroa_inicio_em) || Boolean(p.faixa_inicio_em) || status === "coroa" || status === "faixa" || coroaTvFinalizada(p);
+}
+
+/** Antes de iniciar: só INICIAR. Depois: só Coroa Pronta e Entregue. */
 function acoesCoroaTv(p: CoroaTvPedido): AcaoCoroaTv[] {
-    const acoes: AcaoCoroaTv[] = [];
-    if (!coroaSomenteArtificial(p)) acoes.push("coroa");
-    acoes.push("faixa", "finalizada", "entregue");
-    return acoes;
+    return coroaTvIniciada(p) ? ["finalizada", "entregue"] : ["iniciar"];
 }
 
 function acaoCoroaTvConcluida(p: CoroaTvPedido, alvo: AcaoCoroaTv): boolean {
-    const status = normalizarTextoCoroa(p.status);
-    const finalizada = Boolean(p.finalizada_em) || status === "finalizada" || status === "entregue";
-    const entregue = Boolean(p.entregue_em) || status === "entregue";
-    if (alvo === "coroa") return coroaSomenteArtificial(p) || Boolean(p.coroa_inicio_em) || finalizada;
-    if (alvo === "faixa") return Boolean(p.faixa_inicio_em) || finalizada;
-    if (alvo === "finalizada") return finalizada;
-    return entregue;
+    if (alvo === "iniciar") return coroaTvIniciada(p);
+    if (alvo === "finalizada") return coroaTvFinalizada(p);
+    return coroaTvEntregue(p);
 }
 
 function acaoCoroaTvLiberada(p: CoroaTvPedido, alvo: AcaoCoroaTv): boolean {
-    const finalizada = acaoCoroaTvConcluida(p, "finalizada");
-    const entregue = acaoCoroaTvConcluida(p, "entregue");
-    const exigeCoroa = !coroaSomenteArtificial(p);
-    if (alvo === "coroa") return exigeCoroa && !finalizada && !entregue && !acaoCoroaTvConcluida(p, "coroa");
-    if (alvo === "faixa") return !finalizada && !entregue && !acaoCoroaTvConcluida(p, "faixa");
-    if (alvo === "finalizada") {
-        const coroaOk = !exigeCoroa || acaoCoroaTvConcluida(p, "coroa");
-        return !finalizada && !entregue && coroaOk && acaoCoroaTvConcluida(p, "faixa");
-    }
+    const finalizada = coroaTvFinalizada(p);
+    const entregue = coroaTvEntregue(p);
+    if (alvo === "iniciar") return !coroaTvIniciada(p) && !entregue;
+    if (alvo === "finalizada") return !finalizada && !entregue;
     return finalizada && !entregue;
 }
 
@@ -6995,16 +6989,17 @@ function CoroaAcoesTv({
         setFoto(file);
     }
 
-    async function confirmarAcao() {
-        if (!confirmar) return;
-        if (confirmar === "finalizada" && !foto) {
-            setErro("Anexe a foto da coroa pronta para confirmar a finalização.");
+    async function confirmarAcao(alvoDireto?: AcaoCoroaTv) {
+        const alvo = alvoDireto ?? confirmar;
+        if (!alvo) return;
+        if (alvo === "finalizada" && !foto) {
+            setErro("Anexe a foto da coroa pronta para confirmar.");
             return;
         }
         setEnviando(true);
         setErro(null);
         try {
-            const json = await enviarAcaoCoroaTv(pedido, confirmar, confirmar === "finalizada" ? foto : null);
+            const json = await enviarAcaoCoroaTv(pedido, alvo, alvo === "finalizada" ? foto : null);
             const nova = await buscarCoroaTvAtual(pedido);
             const aviso =
                 json?.notificacao_enviada === false
@@ -7020,7 +7015,7 @@ function CoroaAcoesTv({
         }
     }
 
-    const titulo = confirmar === "finalizada" ? "Coroa Finalizada" : confirmar ? "Confirmar ação" : "Registrar uma ação";
+    const titulo = confirmar === "finalizada" ? "Coroa Pronta" : confirmar ? "Confirmar ação" : "Registrar uma ação";
 
     return (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 lg:items-center lg:p-4" role="dialog" aria-modal aria-label={titulo}>
@@ -7050,7 +7045,9 @@ function CoroaAcoesTv({
                                         onClick={() => {
                                             setErro(null);
                                             setFoto(null);
-                                            setConfirmar(alvo);
+                                            // INICIAR é um toque só, sem tela de confirmação.
+                                            if (alvo === "iniciar") void confirmarAcao("iniciar");
+                                            else setConfirmar(alvo);
                                         }}
                                         className={`${btn} border`}
                                         style={
@@ -7193,9 +7190,16 @@ function CoroaDrawer({
     const tipoTxt = (t?: string | null) => (t === "natural" ? "Natural" : t === "artificial" ? "Artificial" : "");
     const andamento = [
         { rotulo: "Pedido recebido", em: pedido.criado_em, por: pedido.criado_por },
-        { rotulo: "Coroa iniciada", em: pedido.coroa_inicio_em, por: pedido.coroa_inicio_por },
-        { rotulo: "Faixa iniciada", em: pedido.faixa_inicio_em, por: pedido.faixa_inicio_por },
-        { rotulo: "Coroa finalizada", em: pedido.finalizada_em, por: pedido.finalizada_por },
+        // 05/11/2026: um registro só de início (o primeiro entre coroa e faixa, para pedidos antigos).
+        (() => {
+            const c = parseLogTs(pedido.coroa_inicio_em || undefined);
+            const f = parseLogTs(pedido.faixa_inicio_em || undefined);
+            const usaCoroa = c > 0 && (f <= 0 || c <= f);
+            return usaCoroa
+                ? { rotulo: "Confecção iniciada", em: pedido.coroa_inicio_em, por: pedido.coroa_inicio_por }
+                : { rotulo: "Confecção iniciada", em: pedido.faixa_inicio_em, por: pedido.faixa_inicio_por };
+        })(),
+        { rotulo: "Coroa pronta", em: pedido.finalizada_em, por: pedido.finalizada_por },
         { rotulo: "Entregue", em: pedido.entregue_em, por: pedido.entregue_por },
     ].filter((l) => String(l.em ?? "").trim());
 

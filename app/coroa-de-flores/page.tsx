@@ -10,7 +10,8 @@
  * - estoque é reaproveitado em memória por 60s;
  * - falecidos do quadro são reaproveitados por 30s;
  * - após uma ação atualiza somente a aba afetada;
- * - coroas somente artificiais usam Faixa → Finalizada → Entregue;
+ * - 05/11/2026: fluxo simplificado para todas as coroas: INICIAR → Coroa Pronta (foto) → Entregue
+ *   (o coroas.php grava o início da coroa e da faixa no INICIAR; status gravados continuam os mesmos);
  * - o usuário atual é enviado como fallback para as notificações de ação;
  * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
  * - interface reduzida a Confecção + Finalizadas; Finalizadas reúne Venda Direta e Loja On-line;
@@ -107,6 +108,8 @@ async function osDaCoroa(pedidoId: number): Promise<{ id: number; numero: string
    PEDIDOS MANUAIS
    ========================================================= */
 type ManualStatus = "novo" | "coroa" | "faixa" | "finalizada" | "entregue";
+/** 05/11/2026: ações do app — INICIAR, Coroa Pronta (finalizada, com foto) e Entregue. */
+type ManualAcao = "iniciar" | "finalizada" | "entregue";
 type ManualPagamento = "pago" | "aguardando_pagamento";
 type ManualOrigem =
     | "ordem_servico"
@@ -283,9 +286,9 @@ type MateriaisInitResponse = {
 const MANUAL_STATUS_OPTIONS: Array<{ value: ManualStatus | "todos"; label: string }> = [
     { value: "todos", label: "Todos" },
     { value: "novo", label: "Aguardando Confecção" },
-    { value: "coroa", label: "Coroa em Confecção" },
-    { value: "faixa", label: "Faixa em Confecção" },
-    { value: "finalizada", label: "Finalizada" },
+    { value: "coroa", label: "Em Confecção" },
+    { value: "faixa", label: "Em Confecção" },
+    { value: "finalizada", label: "Coroa Pronta" },
     { value: "entregue", label: "Entregue" },
 ];
 
@@ -358,7 +361,7 @@ function manualStatusClass(status?: ManualStatus | string) {
         case "coroa":
             return "bg-blue-100 text-blue-800 border-blue-200";
         case "faixa":
-            return "bg-violet-100 text-violet-800 border-violet-200";
+            return "bg-blue-100 text-blue-800 border-blue-200";
         case "finalizada":
             return "bg-emerald-100 text-emerald-900 border-emerald-200";
         case "entregue":
@@ -404,97 +407,51 @@ function origemFinalizadaLabel(order?: ManualOrder | null): string {
     return pedidoEhOnline(order) ? "Loja On-line" : "Venda Direta";
 }
 
-function acaoManualLabel(target: Exclude<ManualStatus, "novo">) {
-    if (target === "coroa") return "Confeccionando Coroa";
-    if (target === "faixa") return "Confeccionando Faixa";
-    if (target === "finalizada") return "Coroa Finalizada";
+function acaoManualLabel(target: ManualAcao) {
+    if (target === "iniciar") return "INICIAR";
+    if (target === "finalizada") return "Coroa Pronta";
     return "Entregue";
 }
 
-function pedidoManualSomenteArtificial(order?: ManualOrder | null): boolean {
-    if (!order) return false;
+function coroaManualFinalizada(order: ManualOrder): boolean {
+    return Boolean(order.finalizada_em) || order.status === "finalizada" || order.status === "entregue";
+}
 
-    const itens = Array.isArray(order.itens) ? order.itens : [];
-    if (itens.length === 0) return false;
+function coroaManualEntregue(order: ManualOrder): boolean {
+    return Boolean(order.entregue_em) || order.status === "entregue";
+}
 
-    return itens.every(
-        (item) =>
-            String(item?.tipo_coroa || "")
-                .trim()
-                .toLowerCase() === "artificial",
+/** Iniciada: tem início de coroa ou de faixa (registros antigos contam), ou já está pronta. */
+function coroaManualIniciada(order: ManualOrder): boolean {
+    return (
+        Boolean(order.coroa_inicio_em) ||
+        Boolean(order.faixa_inicio_em) ||
+        order.status === "coroa" ||
+        order.status === "faixa" ||
+        coroaManualFinalizada(order)
     );
 }
 
-function pedidoManualExigeConfeccaoCoroa(order?: ManualOrder | null): boolean {
-    return !pedidoManualSomenteArtificial(order);
-}
-
-function acoesManualDoPedido(
-    order: ManualOrder,
-): ReadonlyArray<readonly [Exclude<ManualStatus, "novo">, string]> {
-    const acoes: Array<readonly [Exclude<ManualStatus, "novo">, string]> = [];
-
-    if (pedidoManualExigeConfeccaoCoroa(order)) {
-        acoes.push(["coroa", "Confeccionando Coroa"]);
-    }
-
-    acoes.push(
-        ["faixa", "Confeccionando Faixa"],
-        ["finalizada", "Coroa Finalizada"],
+/** Antes de iniciar: só INICIAR. Depois: só Coroa Pronta e Entregue. */
+function acoesManualDoPedido(order: ManualOrder): ReadonlyArray<readonly [ManualAcao, string]> {
+    if (!coroaManualIniciada(order)) return [["iniciar", "INICIAR"]];
+    return [
+        ["finalizada", "Coroa Pronta"],
         ["entregue", "Entregue"],
-    );
-
-    return acoes;
+    ];
 }
 
-function acaoManualConcluida(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
-    const finalizada =
-        Boolean(order.finalizada_em) ||
-        order.status === "finalizada" ||
-        order.status === "entregue";
-
-    const entregue =
-        Boolean(order.entregue_em) ||
-        order.status === "entregue";
-
-    if (target === "coroa") {
-        return (
-            !pedidoManualExigeConfeccaoCoroa(order) ||
-            Boolean(order.coroa_inicio_em) ||
-            finalizada
-        );
-    }
-
-    if (target === "faixa") return Boolean(order.faixa_inicio_em) || finalizada;
-    if (target === "finalizada") return finalizada;
-    return entregue;
+function acaoManualConcluida(order: ManualOrder, target: ManualAcao) {
+    if (target === "iniciar") return coroaManualIniciada(order);
+    if (target === "finalizada") return coroaManualFinalizada(order);
+    return coroaManualEntregue(order);
 }
 
-function acaoManualLiberada(order: ManualOrder, target: Exclude<ManualStatus, "novo">) {
-    const finalizada = acaoManualConcluida(order, "finalizada");
-    const entregue = acaoManualConcluida(order, "entregue");
-    const exigeCoroa = pedidoManualExigeConfeccaoCoroa(order);
-
-    if (target === "coroa") {
-        if (!exigeCoroa) return false;
-        return !finalizada && !entregue && !acaoManualConcluida(order, "coroa");
-    }
-
-    if (target === "faixa") {
-        return !finalizada && !entregue && !acaoManualConcluida(order, "faixa");
-    }
-
-    if (target === "finalizada") {
-        const coroaOk = !exigeCoroa || acaoManualConcluida(order, "coroa");
-
-        return (
-            !finalizada &&
-            !entregue &&
-            coroaOk &&
-            acaoManualConcluida(order, "faixa")
-        );
-    }
-
+function acaoManualLiberada(order: ManualOrder, target: ManualAcao) {
+    const finalizada = coroaManualFinalizada(order);
+    const entregue = coroaManualEntregue(order);
+    if (target === "iniciar") return !coroaManualIniciada(order) && !entregue;
+    if (target === "finalizada") return !finalizada && !entregue;
     return finalizada && !entregue;
 }
 
@@ -1917,9 +1874,9 @@ export default function Page() {
     const [confeccaoLoading, setConfeccaoLoading] = React.useState(false);
     const [confeccaoError, setConfeccaoError] = React.useState<string | null>(null);
     const [confeccaoQ, setConfeccaoQ] = React.useState("");
-    const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "coroa" | "faixa" | "finalizada">("todos");
+    const [confeccaoStatusFilter, setConfeccaoStatusFilter] = React.useState<"todos" | "novo" | "em_confeccao" | "finalizada">("todos");
     const [confeccaoAppliedQ, setConfeccaoAppliedQ] = React.useState("");
-    const [confeccaoAppliedStatus, setConfeccaoAppliedStatus] = React.useState<"todos" | "novo" | "coroa" | "faixa" | "finalizada">("todos");
+    const [confeccaoAppliedStatus, setConfeccaoAppliedStatus] = React.useState<"todos" | "novo" | "em_confeccao" | "finalizada">("todos");
     const [confeccaoRefreshToken, setConfeccaoRefreshToken] = React.useState(0);
     const [confeccaoPage, setConfeccaoPage] = React.useState(1);
     const confeccaoPerPage = 30;
@@ -2043,7 +2000,10 @@ export default function Page() {
                 separarPedidosPorCoroa(json.dados).filter(
                     (o) =>
                         o.status !== "entregue" &&
-                        (confeccaoAppliedStatus === "todos" || o.status === confeccaoAppliedStatus),
+                        (confeccaoAppliedStatus === "todos" ||
+                            (confeccaoAppliedStatus === "em_confeccao"
+                                ? o.status === "coroa" || o.status === "faixa"
+                                : o.status === confeccaoAppliedStatus)),
                 ),
             );
             setConfeccaoTotal(Math.max(0, Number(json.meta?.total || 0)));
@@ -2566,17 +2526,13 @@ export default function Page() {
     }
 
 
-    async function executarStatusManual(target: Exclude<ManualStatus, "novo">) {
+    async function executarStatusManual(target: ManualAcao) {
         if (!manualDetail) return;
-
-        if (target === "coroa" && !pedidoManualExigeConfeccaoCoroa(manualDetail)) {
-            setManualDetailMsg("Coroas artificiais não possuem a etapa “Confeccionando Coroa”.");
-            return;
-        }
 
         if (!acaoManualLiberada(manualDetail, target)) return;
 
-        if (!window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
+        // INICIAR é um toque só; Entregue tira a coroa da lista, então pede confirmação.
+        if (target === "entregue" && !window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
             return;
         }
 
@@ -2608,7 +2564,7 @@ export default function Page() {
         }
     }
 
-    function clicarAcaoManual(target: Exclude<ManualStatus, "novo">) {
+    function clicarAcaoManual(target: ManualAcao) {
         if (!manualDetail) return;
         if (!acaoManualLiberada(manualDetail, target)) return;
 
@@ -2643,7 +2599,7 @@ export default function Page() {
         if (!manualDetail) return;
 
         if (!finalizarFile) {
-            setFinalizarError("Anexe a foto da coroa pronta para confirmar a finalização.");
+            setFinalizarError("Anexe a foto da coroa pronta para confirmar.");
             return;
         }
 
@@ -2675,12 +2631,12 @@ export default function Page() {
             if (json?.notificacao_enviada === false) {
                 setManualDetailMsg(
                     json?.notificacao?.erro
-                        ? `A coroa foi finalizada, mas a notificação não foi enviada: ${json.notificacao.erro}`
-                        : "A coroa foi finalizada, mas o OneSignal não confirmou o envio da notificação.",
+                        ? `A coroa foi marcada como pronta, mas a notificação não foi enviada: ${json.notificacao.erro}`
+                        : "A coroa foi marcada como pronta, mas o OneSignal não confirmou o envio da notificação.",
                 );
             }
         } catch (e: any) {
-            setFinalizarError(e?.message || "Não foi possível finalizar o pedido.");
+            setFinalizarError(e?.message || "Não foi possível marcar a coroa como pronta.");
         } finally {
             setManualActionLoading(false);
         }
@@ -3178,14 +3134,13 @@ export default function Page() {
                                 <div className="flex gap-2">
                                     <select
                                         value={confeccaoStatusFilter}
-                                        onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "coroa" | "faixa" | "finalizada")}
+                                        onChange={(e) => setConfeccaoStatusFilter(e.target.value as "todos" | "novo" | "em_confeccao" | "finalizada")}
                                         className="w-full rounded-md border bg-background px-2 py-2 text-sm outline-none"
                                     >
                                         <option value="todos">Todos</option>
                                         <option value="novo">Aguardando Confecção</option>
-                                        <option value="coroa">Coroa em Confecção</option>
-                                        <option value="faixa">Faixa em Confecção</option>
-                                        <option value="finalizada">Coroa Finalizada</option>
+                                        <option value="em_confeccao">Em Confecção</option>
+                                        <option value="finalizada">Coroa Pronta</option>
                                     </select>
                                     <button type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white">
                                         Buscar
@@ -4428,7 +4383,7 @@ export default function Page() {
                             <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
                                 <div className="flex items-center justify-between border-b px-4 py-3">
                                     <div>
-                                        <div className="text-lg font-semibold">Coroa Finalizada</div>
+                                        <div className="text-lg font-semibold">Coroa Pronta</div>
                                         <div className="mt-0.5 text-xs text-muted-foreground">
                                             Anexe a foto da coroa pronta para confirmar.
                                         </div>
@@ -4491,7 +4446,7 @@ export default function Page() {
                                         disabled={manualActionLoading || !finalizarFile}
                                         onClick={confirmarFinalizacaoManual}
                                     >
-                                        {manualActionLoading ? "Finalizando..." : "Confirmar Coroa Finalizada"}
+                                        {manualActionLoading ? "Enviando..." : "Confirmar Coroa Pronta"}
                                     </button>
                                 </div>
                             </div>
