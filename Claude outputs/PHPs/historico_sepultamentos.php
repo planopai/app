@@ -477,7 +477,37 @@ if (isset($_GET['log']) && isset($_GET['id'])) {
             tanato_normalizar($row);
         }
 
-        responder(['sucesso' => true, 'dados' => $dados]);
+        // 05/11/2026: itens atuais do atendimento (Painel de Atendimentos). Atendimentos antigos não têm
+        // urna, roupa etc. no histórico, porque a edição só registrava as observações. Somente leitura;
+        // lista fechada de campos (sem CPF, telefone ou observações).
+        $atendimentoAtual = null;
+        if ($hasSep) {
+            $camposAtuais = [
+                'id', 'falecido', 'status', 'agente', 'convenio', 'tipo_atendimento',
+                'urna', 'roupa', 'roupa_propria', 'veu', 'veu_item', 'cordao', 'cordao_item', 'invol', 'invol_item',
+                'ornamentacao', 'ornamentacao_tipo', 'assistencia', 'tanato', 'tanato_produto_id', 'reconstituicao_facial',
+                'coroa_flores', 'coroa_tipo', 'coroa_modelo', 'kit_lanche', 'velorio_online', 'religiao',
+                'realiza_velorio', 'realiza_sepultamento', 'local_velorio', 'local_cerimonia', 'sala_velorio', 'local',
+                'data', 'data_nascimento', 'data_falecimento', 'data_inicio_velorio', 'hora_inicio_velorio',
+                'data_fim_velorio', 'hora_fim_velorio', 'foto_falecido',
+            ];
+            $colunasAtuais = [];
+            foreach ($camposAtuais as $c) {
+                if (column_exists($pdo, 'sepultamentos', $c)) $colunasAtuais[] = "s.`{$c}`";
+            }
+            if ($colunasAtuais) {
+                [, $tanatoJoinAtual] = tanato_campos($pdo, true);
+                $temProcAtual = $tanatoJoinAtual !== '';
+                $stAt = $pdo->prepare(
+                    "SELECT " . implode(', ', $colunasAtuais) . ($temProcAtual ? ", tp.nome AS tanato_procedimento" : "")
+                    . " FROM sepultamentos s{$tanatoJoinAtual} WHERE s.id = :id LIMIT 1"
+                );
+                $stAt->execute([':id' => $sepultamento_id]);
+                $atendimentoAtual = $stAt->fetch() ?: null;
+            }
+        }
+
+        responder(['sucesso' => true, 'dados' => $dados, 'atendimento' => $atendimentoAtual]);
     } catch (Exception $e) {
         responder(['erro' => true, 'msg' => 'Erro ao consultar histórico: ' . $e->getMessage()], 500);
     }

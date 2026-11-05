@@ -54,6 +54,8 @@ type Painel = {
         matriz: MatrizLinha[]; meses: string[]; mensal: { agente: string; meses: Record<string, number> }[];
         pontualidade: { velorio: Pontual & { por_agente: (Pontual & { agente: string })[] }; sepultamento: Pontual & { por_agente: (Pontual & { agente: string })[] } };
         registro_lote: { agente: string; trocas: number; em_lote: number; pct: number }[];
+        /** Ocorrências (05/11/2026): início e fim da ornamentação registrados com menos de ORN_MIN_OCORRENCIA min. */
+        ocorrencias_orn: { id: number; falecido: string; quando: string; inicio: string; fim: string; min: number }[];
         evidencias: { agente: string; ornamentacao: { n: number; com_foto: number; pct: number }; entrega: { n: number; com_foto: number; pct: number } }[];
         titulares: Contagem[];
     };
@@ -177,10 +179,20 @@ function extrairArray<T>(json: any): T[] {
 
 /* Cache do histórico em memória: atendimentos encerrados mudam pouco. */
 const HIST_CACHE = new Map<string, { exp: number; logs: LogItem[] }>();
+/**
+ * 05/11/2026: itens atuais do atendimento (urna, roupa, véu, ornamentação…) que o historico_sepultamentos.php
+ * devolve em "atendimento". Nos atendimentos antigos esses campos não estão no histórico.
+ */
+const ATUAL_CACHE = new Map<string, Registro>();
 async function carregarHistorico(id: string, encerrado: boolean): Promise<LogItem[]> {
     const hit = HIST_CACHE.get(id);
     if (hit && hit.exp > Date.now()) return hit.logs;
     const json = await getJson<any>(`${HISTORICO_URL}${encodeURIComponent(id)}`, 15000);
+    if (json && typeof json === "object" && !Array.isArray(json) && json.atendimento && typeof json.atendimento === "object") {
+        const atual: Registro = {};
+        for (const [k, v] of Object.entries(json.atendimento)) if (v !== null && v !== undefined && String(v).trim() !== "") atual[k] = v;
+        ATUAL_CACHE.set(id, atual);
+    }
     const logs = extrairArray<LogItem>(json).slice().sort((a, b) => tsOf(a.datahora) - tsOf(b.datahora));
     HIST_CACHE.set(id, { exp: Date.now() + (encerrado ? 30 : 2) * 60_000, logs });
     return logs;
@@ -318,6 +330,9 @@ function rotuloProcedimento(nome: any): string {
 }
 
 /* ---------------- Etapas (manual de procedimentos) ---------------- */
+
+/** Ornamentação com início e fim marcados em menos que isso (minutos) vira ocorrência para a Gestão. */
+const ORN_MIN_OCORRENCIA = 5;
 
 type EtapaDef = { chave: string; rotulo: string; inicio: string; fim: string; credito: string; tipo: "execucao" | "espera"; max: number };
 const ETAPAS: EtapaDef[] = [
@@ -479,6 +494,19 @@ function calcularPainel(base: Base[], p: { inicio: string; fim: string; dias: nu
         return { ...f(geral), por_agente: Object.entries(porAg).map(([agente, v]) => ({ agente, ...f(v) })).sort((a, b) => b.n - a.n) };
     };
 
+    const ocorrenciasOrn: Painel["equipe"]["ocorrencias_orn"] = [];
+    itens.forEach((x) => {
+        const a = x.T.fase05, b = x.T.fase06;
+        if (a === undefined || b === undefined) return;
+        const min = (b - a) / 60000;
+        if (min < 0 || min >= ORN_MIN_OCORRENCIA) return;
+        ocorrenciasOrn.push({
+            id: Number(x.b.id), falecido: String(x.r.falecido ?? "").trim() || "(sem nome)",
+            quando: `${isoDe(b)} ${new Date(b).toTimeString().slice(0, 8)}`, inicio: x.U.fase05 || "Não identificado", fim: x.U.fase06 || "Não identificado", min: r2(min, 1)!,
+        });
+    });
+    ocorrenciasOrn.sort((a, b) => b.quando.localeCompare(a.quando));
+
     const lote: Record<string, { trocas: number; em_lote: number }> = {};
     itens.forEach((x) => {
         const tr = [...x.trocas].sort((a, b) => a[0] - b[0]);
@@ -526,6 +554,7 @@ function calcularPainel(base: Base[], p: { inicio: string; fim: string; dias: nu
             matriz: matrizOut, meses, mensal: mensalOut,
             pontualidade: { velorio: pontual("fase08", "data_inicio_velorio", "hora_inicio_velorio", "fase07"), sepultamento: pontual("fase10", "data_fim_velorio", "hora_fim_velorio", "fase09") },
             registro_lote: Object.entries(lote).map(([agente, v]) => ({ agente, ...v, pct: pct(v.em_lote, v.trocas) })).sort((a, b) => b.trocas - a.trocas),
+            ocorrencias_orn: ocorrenciasOrn,
             evidencias: Object.entries(ev).map(([agente, v]) => ({ agente, ornamentacao: { n: v.on, com_foto: v.ook, pct: pct(v.ook, v.on) }, entrega: { n: v.en, com_foto: v.eok, pct: pct(v.eok, v.en) } }))
                 .sort((a, b) => b.ornamentacao.n + b.entrega.n - (a.ornamentacao.n + a.entrega.n)),
             titulares: conta(itens, (x) => x.b.agente),
@@ -958,6 +987,7 @@ function AbaGeral({ d, filtrar }: { d: Painel; filtrar: (campo: "convenio", v: s
     if (r.variacao_pct != null) destaques.push(["Tendência", <><b>{fmtN(r.total)}</b> atendimentos, <b>{r.variacao_pct >= 0 ? `${fmtP(r.variacao_pct)} a mais` : `${fmtP(-r.variacao_pct)} a menos`}</b> que no período anterior ({fmtN(r.anterior)}).</>]);
     if (d.convenios[0]) destaques.push(["Convênio", <><b>{d.convenios[0].nome}</b> responde por {fmtP((d.convenios[0].total / (r.total || 1)) * 100)} dos atendimentos.</>]);
     if (lenta) destaques.push(["Etapa mais longa", <>Fora o velório, <b>{lenta.rotulo.toLowerCase()}</b> tem a maior mediana: <b>{fmtH(lenta.mediana_h)}</b>.</>]);
+    if (d.equipe.ocorrencias_orn.length) destaques.push(["Ocorrência", <><b>{fmtN(d.equipe.ocorrencias_orn.length)}</b> ornamentação(ões) com início e fim marcados de uma vez. Veja quem registrou em <b>Desempenho da equipe</b>.</>, true]);
     if (piorQual) destaques.push(["Atenção ao cadastro", <><b>{piorQual.campo}</b> preenchido em só {fmtP(piorQual.pct)} dos atendimentos.</>, true]);
 
     return (
@@ -1015,7 +1045,54 @@ function AbaGeral({ d, filtrar }: { d: Painel; filtrar: (campo: "convenio", v: s
     );
 }
 
-function AbaEquipe({ d, av, eq }: { d: Painel; av: AvalEstado; eq: EquipeFiltro }) {
+function OcorrenciasOrnamentacao({ d, abrir }: { d: Painel; abrir: (id: number) => void }) {
+    const oc = d.equipe.ocorrencias_orn;
+    const porPessoa = useMemo(() => {
+        const m: Record<string, number> = {};
+        oc.forEach((o) => new Set([o.inicio, o.fim]).forEach((p) => { m[p] = (m[p] ?? 0) + 1; }));
+        return Object.entries(m).map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
+    }, [oc]);
+    return (
+        <section className="rounded-[20px] border p-4 sm:p-5" style={{ background: "var(--dash-danger-bg)", borderColor: "var(--dash-danger-border)" }}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <h3 className="text-base font-extrabold" style={{ color: "var(--dash-danger-text)" }}>Ocorrências · ornamentação registrada de uma vez · {fmtN(oc.length)}</h3>
+                    <p className="text-xs" style={{ color: "var(--dash-text)" }}>Início e fim da ornamentação marcados com menos de {ORN_MIN_OCORRENCIA} min de diferença. O tempo médio da ornamentação fica fora da realidade; oriente quem registrou a marcar cada etapa na hora. Clique para abrir o atendimento.</p>
+                </div>
+            </div>
+            {oc.length ? (
+                <>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {porPessoa.map((p) => (
+                            <span key={p.nome} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold" style={{ background: "var(--dash-card)", color: "var(--dash-text)", border: "1px solid var(--dash-danger-border)" }}>
+                                {p.nome} <b style={{ color: "var(--dash-danger-text)" }}>{fmtN(p.total)}</b>
+                            </span>))}
+                    </div>
+                    <div className="mt-3 max-h-80 overflow-y-auto overflow-x-hidden rounded-xl border" style={{ borderColor: "var(--dash-danger-border)", background: "var(--dash-card)" }}>
+                        <table className="w-full text-[12px] sm:text-sm" style={{ color: "var(--dash-text)" }}>
+                            <thead><tr style={{ background: "var(--dash-card-soft)" }}>
+                                {([["Fim registrado", ""], ["Falecido", ""], ["Marcou o início", "hidden sm:table-cell"], ["Marcou o fim", ""], ["Diferença", "hidden sm:table-cell"]] as const).map(([h, cl]) => (
+                                    <th key={h} className={`px-2 py-2 text-left text-[11px] font-extrabold leading-tight sm:px-3 sm:text-xs ${cl}`} style={{ color: "var(--dash-text-soft)" }}>{h}</th>))}
+                            </tr></thead>
+                            <tbody>
+                                {oc.map((o) => (
+                                    <tr key={o.id} onClick={() => abrir(o.id)} className="cursor-pointer border-t hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }}>
+                                        <td className="px-2 py-2 tabular-nums sm:px-3">{dataHoraBR(o.quando)}</td>
+                                        <td className="break-words px-2 py-2 font-bold sm:px-3">{o.falecido}</td>
+                                        <td className="hidden break-words px-3 py-2 sm:table-cell">{o.inicio}</td>
+                                        <td className="break-words px-2 py-2 sm:px-3">{o.fim}</td>
+                                        <td className="hidden px-3 py-2 tabular-nums sm:table-cell">{o.min < 1 ? `${Math.round(o.min * 60)} s` : `${o.min.toLocaleString("pt-BR")} min`}</td>
+                                    </tr>))}
+                            </tbody>
+                        </table>
+                    </div>
+                </>
+            ) : <p className="mt-2 text-sm" style={{ color: "var(--dash-text)" }}>Nenhuma ocorrência no período.</p>}
+        </section>
+    );
+}
+
+function AbaEquipe({ d, av, eq, abrir }: { d: Painel; av: AvalEstado; eq: EquipeFiltro; abrir: (id: number) => void }) {
     const [modo, setModo] = useState<"hn" | "n" | "horas">("hn");
     const e = d.equipe;
     const exec = e.etapas.filter((x) => x.tipo === "execucao");
@@ -1071,6 +1148,8 @@ function AbaEquipe({ d, av, eq }: { d: Painel; av: AvalEstado; eq: EquipeFiltro 
                 <Kpi rotulo="Sepultamento no horário" valor={fmtP(ps.no_horario_pct)} detalhe={`até 15 min · atraso mediano ${ps.atraso_mediana_min ?? "—"} min · n=${ps.n}`} alerta={ps.n && ps.no_horario_pct < 70 ? "atencao" : undefined} />
                 <Kpi rotulo="Fases marcadas em lote" valor={fmtP(loteTot ? (loteN / loteTot) * 100 : 0)} detalhe="< 60 s da fase anterior" alerta={loteTot && loteN / loteTot > 0.15 ? "atencao" : undefined} />
             </div>
+
+            {d.equipe.ocorrencias_orn.length > 0 && <OcorrenciasOrnamentacao d={d} abrir={abrir} />}
 
             <Card titulo="Tempo por etapa" dica="Mediana entre o início e o fim de cada etapa (manual de procedimentos)">
                 <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-7">
@@ -1904,7 +1983,7 @@ export default function PainelAtendimentosPage() {
         const id = String(b.atendimento_id ?? "").trim();
         const lg = logs[id] ?? null;
         const info = infoPorId.get(id);
-        const r: Registro = { ...(lg ? registroDoHistorico(lg) : {}), ...(info ?? {}) };
+        const r: Registro = { ...(lg ? registroDoHistorico(lg) : {}), ...(ATUAL_CACHE.get(id) ?? {}), ...(info ?? {}) };
         if (!r.falecido && b.falecido) r.falecido = b.falecido;
         const criou = lg?.find((l) => norm(l.acao) === "criou") ?? lg?.[0];
         let criadoTs = tsOf(criou?.datahora);
@@ -2011,7 +2090,7 @@ export default function PainelAtendimentosPage() {
                 {dados && (
                     <div style={{ opacity: carregando ? 0.6 : 1, transition: "opacity .15s" }}>
                         {aba === "geral" && <AbaGeral d={dados} filtrar={filtrar} />}
-                        {aba === "equipe" && <AbaEquipe d={painelDaEquipe(dados, equipe)} av={aval} eq={equipe} />}
+                        {aba === "equipe" && <AbaEquipe d={painelDaEquipe(dados, equipe)} av={aval} eq={equipe} abrir={setFichaId} />}
                         {aba === "tanato" && <AbaTanato d={dados} eq={equipe} abrir={setFichaId} />}
                         {aba === "perfil" && <AbaPerfil d={painelDaEquipe(dados, equipe)} />}
                         {aba === "visitas" && <AbaVisitas d={dados} av={aval} eq={equipe} abrirAtendimento={setFichaId} />}
