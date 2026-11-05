@@ -827,7 +827,35 @@ type TanatoItem = {
 
     ts: number;
 
+    /** 05/11/2026: tipo de procedimento (historico_sepultamentos.php → tanato_procedimento). */
+
+    procedimento: string;
+
+    reconstituicao: boolean;
+
 };
+
+
+
+/** Nome do procedimento como no Editar registro: só a primeira letra maiúscula. */
+
+function rotuloProcedimentoTanato(nome: any): string {
+
+    const t = String(nome ?? "").trim().replace(/\s+/g, " ");
+
+    if (!t) return "";
+
+    const n = norm(t);
+
+    if (n.startsWith("tanatopraxia avanc")) return "Tanatopraxia avançada";
+
+    if (n.startsWith("tanatopraxia")) return "Tanatopraxia";
+
+    if (n.startsWith("embalsam")) return "Embalsamamento";
+
+    return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+
+}
 
 
 
@@ -859,6 +887,22 @@ function ModalListaTanato({
 
     const itensOrdenados = [...(itens || [])].sort((a, b) => a.ts - b.ts);
 
+    const porTipo = Object.entries(
+
+        itensOrdenados.reduce((acc: Record<string, number>, it) => {
+
+            const k = it.procedimento || "Tipo não informado";
+
+            acc[k] = (acc[k] || 0) + 1;
+
+            return acc;
+
+        }, {})
+
+    ).sort((a, b) => b[1] - a[1]);
+
+    const comReconstituicao = itensOrdenados.filter((it) => it.reconstituicao).length;
+
 
 
     return (
@@ -874,6 +918,26 @@ function ModalListaTanato({
                         <div className="text-base font-bold">Tanatopraxia: {agente}</div>
 
                         <div className="text-xs text-gray-500 dark:text-[#AEB9CF]">{fmt0(itensOrdenados.length)} falecido(s)</div>
+
+                        {porTipo.length > 0 && (
+
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+
+                                {porTipo.map(([tipo, qtd]) => (
+
+                                    <span key={tipo} className="inline-flex items-center rounded-full bg-[#E9EFF6] px-2 py-0.5 text-[11px] font-bold text-[#313C55] dark:bg-[#3D6A99]/30 dark:text-white">{tipo}: {fmt0(qtd)}</span>
+
+                                ))}
+
+                                {comReconstituicao > 0 && (
+
+                                    <span className="inline-flex items-center rounded-full bg-[#EEF5D6] px-2 py-0.5 text-[11px] font-bold text-[#313C55] dark:bg-[#B3CE52]/25 dark:text-white">Reconstituição facial: {fmt0(comReconstituicao)}</span>
+
+                                )}
+
+                            </div>
+
+                        )}
 
                     </div>
 
@@ -926,6 +990,10 @@ function ModalListaTanato({
                                     <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-3 dark:text-[#AEB9CF]">
 
                                         <span>Data/hora: {fmtDateHora(it.ts) || "-"}</span>
+
+                                        <span>Tipo: {it.procedimento || "não informado"}</span>
+
+                                        {it.reconstituicao && <span>Com reconstituição facial</span>}
 
                                         <span>Entidade: {it.entityKey}</span>
 
@@ -1623,7 +1691,15 @@ export default function ModalAnaliseGeral({
 
             itensPorAgente[agenteK] = itensPorAgente[agenteK] || [];
 
-            itensPorAgente[agenteK].push({ entityKey, falecido, ts });
+            // Tipo do procedimento: vem em cada linha do histórico (dados atuais do atendimento).
+
+            const linhaAt: any = (entry.logs || []).find((l: any) => l && (l.tanato_procedimento || l.reconstituicao_facial)) || {};
+
+            const procedimento = rotuloProcedimentoTanato(linhaAt.tanato_procedimento);
+
+            const reconstituicao = valorEhSim(linhaAt.reconstituicao_facial);
+
+            itensPorAgente[agenteK].push({ entityKey, falecido, ts, procedimento, reconstituicao });
 
         }
 

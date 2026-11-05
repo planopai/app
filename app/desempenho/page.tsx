@@ -9,8 +9,11 @@
  *   historico_sepultamentos.php    → fases, responsáveis e horários (6 consultas por vez)
  *   visita.php?action=painel_avaliacoes → visitas, pós-atendimentos e notas por colaborador
  *   visita.php?action=obter        → respostas e fotos de uma avaliação (ficha)
+ *   rh_colaboradores.php?action=painel → grupo de acesso de cada pessoa (05/11/2026): as análises por pessoa
+ *                                        mostram só os grupos Agente e Tanatopraxista
  * Os cálculos são feitos no navegador.
- * Visual: mesmas variáveis --dash-* e fonte Nunito do Dashboard de desempenho.
+ * Visual (05/11/2026): cores da marca (azul #313C55, azul de ação #3D6A99, amarelo #F2CB3F, verde-lima #B3CE52),
+ * sem rolagem lateral nas tabelas.
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -32,6 +35,8 @@ type ListaItem = {
     idade: number | null; convenio: string; agente: string; velorio: string; local_velorio: string | null; cemiterio: string;
     urna: string; roupa: string | null; religiao: string; status: string; status_rotulo: string; no_quadro: boolean;
     ciclo_h: number | null; ocioso_h: number | null; etapas: Record<string, { h: number; quem: string }>;
+    /** Tanatopraxia (05/11/2026): Sim/Não, tipo de procedimento e reconstituição facial. */
+    tanato: boolean; tanato_procedimento: string; reconstituicao: boolean;
 };
 type Painel = {
     ok: boolean; need_login?: number; sem_permissao?: number; msg?: string; gerado_em: string;
@@ -80,6 +85,13 @@ function fmtH(h: number | null | undefined) {
     if (h < 48) return `${h.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h`;
     return `${(h / 24).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} dias`;
 }
+/** Horas no formato "9h 40min" (destaques do velório e da tanatopraxia). */
+function fmtHM(h: number | null | undefined) {
+    if (h == null || !Number.isFinite(h)) return "—";
+    const tot = Math.round(h * 60), hh = Math.floor(tot / 60), mm = tot % 60;
+    if (!hh) return `${mm}min`;
+    return mm ? `${hh}h ${pad2(mm)}min` : `${hh}h`;
+}
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const mesRotulo = (ym: string) => `${MESES[Number(ym.slice(5, 7)) - 1]}/${ym.slice(2, 4)}`;
 
@@ -114,10 +126,11 @@ const FASE_ROTULO: Record<string, string> = {
 };
 const faseNome = (s?: string | null) => { const k = String(s ?? "").trim().toLowerCase(); return FASE_ROTULO[k] ?? (s || "—"); };
 
+/** Cores da marca por fase (texto branco). */
 const STATUS_COR: Record<string, string> = {
-    aguardando: "bg-slate-500", fase01: "bg-amber-600", fase02: "bg-zinc-600", fase03: "bg-blue-600", fase04: "bg-fuchsia-600",
-    fase05: "bg-rose-600", fase06: "bg-fuchsia-700", fase12: "bg-emerald-600", fase07: "bg-cyan-600", fase08: "bg-violet-600",
-    fase09: "bg-orange-600", fase10: "bg-green-700", fase11: "bg-slate-700",
+    aguardando: "bg-[#7A8499]", fase01: "bg-[#3D6A99]", fase02: "bg-[#5B6478]", fase03: "bg-[#313C55]", fase04: "bg-[#5B6478]",
+    fase05: "bg-[#3D6A99]", fase06: "bg-[#5B6478]", fase12: "bg-[#5E8A1A]", fase07: "bg-[#3D6A99]", fase08: "bg-[#313C55]",
+    fase09: "bg-[#3D6A99]", fase10: "bg-[#5E8A1A]", fase11: "bg-[#7A8499]",
 };
 
 /* =========================================================
@@ -283,7 +296,25 @@ function registroDoHistorico(logs: LogItem[]): Registro {
         if (acao.startsWith("assinou")) r.__assinatura = true;
         if (l.status_novo) r.status = l.status_novo;
     }
+    // 05/11/2026: o historico_sepultamentos.php manda em cada linha os dados atuais da tanatopraxia do atendimento.
+    const ultima: any = logs[logs.length - 1];
+    if (ultima) {
+        if (ultima.tanato) r.tanato = ultima.tanato;
+        if (ultima.tanato_procedimento) r.tanato_procedimento = ultima.tanato_procedimento;
+        if (ultima.reconstituicao_facial) r.reconstituicao_facial = ultima.reconstituicao_facial;
+    }
     return r;
+}
+
+/** Nome do procedimento como no Editar registro: Tanatopraxia, Tanatopraxia avançada ou Embalsamamento. */
+function rotuloProcedimento(nome: any): string {
+    const t = String(nome ?? "").trim().replace(/\s+/g, " ");
+    if (!t) return "";
+    const n = norm(t);
+    if (n.startsWith("tanatopraxia avanc")) return "Tanatopraxia avançada";
+    if (n.startsWith("tanatopraxia")) return "Tanatopraxia";
+    if (n.startsWith("embalsam")) return "Embalsamamento";
+    return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
 }
 
 /* ---------------- Etapas (manual de procedimentos) ---------------- */
@@ -519,6 +550,8 @@ function calcularPainel(base: Base[], p: { inicio: string; fim: string; dias: nu
             status: x.status, status_rotulo: FASE_ROTULO_APP[x.status] ?? (x.r.status || "—"), no_quadro: x.r.status ? noQuadro(x.r) : false,
             ciclo_h: r2(x.ciclo), ocioso_h: r2(x.ocioso),
             etapas: Object.fromEntries(Object.entries(x.et).map(([k, e]) => [k, { h: r2(e.h)!, quem: e.quem }])),
+            tanato: ehSim(x.r.tanato), tanato_procedimento: ehSim(x.r.tanato) ? rotuloProcedimento(x.r.tanato_procedimento) : "",
+            reconstituicao: ehSim(x.r.tanato) && ["sim", "s", "1", "true"].includes(norm(x.r.reconstituicao_facial)),
         })),
         etapas_definicao: ETAPAS.map(({ chave, rotulo, inicio, fim, credito, tipo }) => ({ chave, rotulo, inicio, fim, credito, tipo })),
     };
@@ -532,29 +565,32 @@ function ThemeStyles() {
     return (
         <style jsx global>{`
             :root, html:not(.dark) {
-                --dash-bg: #f5fafe; --dash-card: #ffffff; --dash-card-soft: #f8fcff; --dash-text: #1f3552; --dash-text-soft: #5c7492;
-                --dash-border-light: #cfe4f3; --dash-border-strong: #2f6f91; --dash-blue: #4d8fd5; --dash-blue-dark: #226385;
-                --dash-yellow: #f2bc00; --dash-green: #1f7a2d; --dash-teal: #0f8b8d; --dash-slate: #5a6f86; --dash-empty: #e6eef5;
-                --dash-danger-border: #f2b0b0; --dash-danger-bg: #fff5f5; --dash-danger-text: #b53b3b; --dash-warn: #9a6700;
-                --dash-heat-1: #d6e8f8; --dash-heat-2: #a9cdf0; --dash-heat-3: #6aa9ee; --dash-heat-4: #2f7ec5; --dash-heat-5: #174f86;
+                --dash-bg: #F1F4F8; --dash-card: #FFFFFF; --dash-card-soft: #F6F8FB; --dash-text: #313C55; --dash-text-soft: #5B6478;
+                --dash-border-light: #E3E8F0; --dash-border-strong: #313C55; --dash-blue: #3D6A99; --dash-blue-dark: #313C55;
+                --dash-yellow: #F2CB3F; --dash-green: #5E8A1A; --dash-teal: #B3CE52; --dash-slate: #7A8499; --dash-empty: #E9EFF6;
+                --dash-lime: #B3CE52; --dash-band: #313C55; --dash-band-soft: #C9D3E3; --dash-chip: #E9EFF6; --dash-heat-text: #FFFFFF;
+                --dash-danger-border: #F5C2BD; --dash-danger-bg: #FEF3F2; --dash-danger-text: #B42318; --dash-warn: #8A6100;
+                --dash-heat-1: #E9EFF6; --dash-heat-2: #C5D3E6; --dash-heat-3: #8FA9CB; --dash-heat-4: #3D6A99; --dash-heat-5: #313C55;
                 color-scheme: light;
             }
             html.dark {
-                --dash-bg: #07111f; --dash-card: #101c2b; --dash-card-soft: #0b1624; --dash-text: #eaf4ff; --dash-text-soft: #9fb8d3;
-                --dash-border-light: #213952; --dash-border-strong: #62b48f; --dash-blue: #6aa9ee; --dash-blue-dark: #2f7ea5;
-                --dash-yellow: #f4c400; --dash-green: #45a85a; --dash-teal: #2db5b7; --dash-slate: #89a2ba; --dash-empty: #243446;
-                --dash-danger-border: #8a3b44; --dash-danger-bg: #321820; --dash-danger-text: #ffb7c0; --dash-warn: #e3b341;
-                --dash-heat-1: #16304c; --dash-heat-2: #1e4f7c; --dash-heat-3: #2f7ec5; --dash-heat-4: #6aa9ee; --dash-heat-5: #b9d9fb;
+                --dash-bg: #121826; --dash-card: #1C2334; --dash-card-soft: #232B3F; --dash-text: #FFFFFF; --dash-text-soft: #AEB9CF;
+                --dash-border-light: #2E3850; --dash-border-strong: #F2CB3F; --dash-blue: #6F96C4; --dash-blue-dark: #3D6A99;
+                --dash-yellow: #F2CB3F; --dash-green: #B3CE52; --dash-teal: #B3CE52; --dash-slate: #8E9AB3; --dash-empty: #2A3348;
+                --dash-lime: #B3CE52; --dash-band: #1C2334; --dash-band-soft: #AEB9CF; --dash-chip: rgba(61,106,153,.30); --dash-heat-text: #121826;
+                --dash-danger-border: #8A3B44; --dash-danger-bg: #3A1D22; --dash-danger-text: #FF9C92; --dash-warn: #F2CB3F;
+                --dash-heat-1: #232B3F; --dash-heat-2: #2E4466; --dash-heat-3: #3D6A99; --dash-heat-4: #6F96C4; --dash-heat-5: #B8CCE6;
                 color-scheme: dark;
             }
             html, body { background: var(--dash-bg) !important; }
+            header select option { color: #313C55; background: #FFFFFF; }
         `}</style>
     );
 }
 
 function Card({ titulo, dica, acao, children, className = "" }: { titulo?: string; dica?: string; acao?: React.ReactNode; children: React.ReactNode; className?: string }) {
     return (
-        <section className={`rounded-2xl border p-4 sm:p-5 min-w-0 ${className}`} style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)" }}>
+        <section className={`rounded-[20px] border p-4 sm:p-5 min-w-0 ${className}`} style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)" }}>
             {(titulo || acao) && (
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                     <div>
@@ -569,13 +605,16 @@ function Card({ titulo, dica, acao, children, className = "" }: { titulo?: strin
     );
 }
 
-function Kpi({ rotulo, valor, detalhe, alerta }: { rotulo: string; valor: React.ReactNode; detalhe?: React.ReactNode; alerta?: "ruim" | "atencao" }) {
-    const faixa = alerta === "ruim" ? "var(--dash-danger-text)" : alerta === "atencao" ? "var(--dash-warn)" : "transparent";
+function Kpi({ rotulo, valor, detalhe, alerta, destaque }: { rotulo: string; valor: React.ReactNode; detalhe?: React.ReactNode; alerta?: "ruim" | "atencao"; destaque?: "amarelo" }) {
+    const ponto = alerta === "ruim" ? "var(--dash-danger-text)" : alerta === "atencao" ? "var(--dash-yellow)" : null;
+    const amarelo = destaque === "amarelo";
     return (
-        <div className="rounded-2xl border p-4 min-w-0" style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)", borderLeft: `5px solid ${faixa}` }}>
-            <div className="text-xs font-bold" style={{ color: "var(--dash-text-soft)" }}>{rotulo}</div>
-            <div className="mt-1 text-2xl font-black tabular-nums" style={{ color: "var(--dash-text)" }}>{valor}</div>
-            {detalhe && <div className="mt-1 text-xs tabular-nums" style={{ color: "var(--dash-text-soft)" }}>{detalhe}</div>}
+        <div className="rounded-[20px] border p-4 min-w-0" style={amarelo ? { background: "#F2CB3F", borderColor: "#F2CB3F" } : { background: "var(--dash-card)", borderColor: "var(--dash-border-light)" }}>
+            <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: amarelo ? "#313C55" : "var(--dash-text-soft)" }}>
+                {ponto && <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: ponto }} aria-hidden />}{rotulo}
+            </div>
+            <div className="mt-1 text-[26px] font-black leading-tight tabular-nums" style={{ color: amarelo ? "#313C55" : "var(--dash-text)" }}>{valor}</div>
+            {detalhe && <div className="mt-1 text-xs tabular-nums" style={{ color: amarelo ? "#313C55" : "var(--dash-text-soft)" }}>{detalhe}</div>}
         </div>
     );
 }
@@ -597,9 +636,9 @@ function Barras({ itens, total, cor = "var(--dash-blue)", formato, semParticipac
             {itens.map((i) => (
                 <button key={i.nome} type="button" disabled={!onClick} onClick={() => onClick?.(i.nome)} title={i.extra ?? `${i.nome}: ${fmtN(i.total)}`}
                     className={`grid grid-cols-[minmax(90px,42%)_1fr] items-center gap-2 rounded-md px-1 py-0.5 text-left ${onClick ? "hover:bg-[var(--dash-card-soft)] cursor-pointer" : "cursor-default"}`}>
-                    <span className={`truncate text-right text-xs ${ativo === i.nome ? "font-extrabold" : "font-semibold"}`} style={{ color: "var(--dash-text)" }}>{i.nome}</span>
+                    <span className={`break-words text-right text-xs leading-tight ${ativo === i.nome ? "font-extrabold" : "font-semibold"}`} style={{ color: "var(--dash-text)" }}>{i.nome}</span>
                     <span className="flex items-center gap-2 min-w-0">
-                        <span className="h-3 rounded" style={{ width: `${Math.max(i.total ? 2 : 0, (i.total / (m || 1)) * 75)}%`, background: i.cor ?? cor }} />
+                        <span className="h-3 rounded-full" style={{ width: `${Math.max(i.total ? 2 : 0, (i.total / (m || 1)) * 75)}%`, background: i.cor ?? cor }} />
                         <span className="whitespace-nowrap text-xs tabular-nums" style={{ color: "var(--dash-text)" }}>
                             {formato ? formato(i.total) : fmtN(i.total)}
                             {!semParticipacao && <span style={{ color: "var(--dash-text-soft)" }}> · {fmtP(soma ? (i.total / soma) * 100 : 0)}</span>}
@@ -674,13 +713,14 @@ function MapaCalor({ m }: { m: number[][] }) {
     );
 }
 
-function Tabela({ cabecalho, linhas, larguraMin = 640 }: { cabecalho: React.ReactNode[]; linhas: React.ReactNode[][]; larguraMin?: number }) {
+/** Tabela sem rolagem lateral (05/11/2026): as colunas dividem a largura e o texto quebra. larguraMin não é mais usado. */
+function Tabela({ cabecalho, linhas }: { cabecalho: React.ReactNode[]; linhas: React.ReactNode[][]; larguraMin?: number }) {
     if (!linhas.length) return <Vazio />;
     return (
-        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--dash-border-light)" }}>
-            <table className="w-full text-sm" style={{ minWidth: larguraMin, color: "var(--dash-text)" }}>
-                <thead><tr style={{ background: "var(--dash-card-soft)" }}>{cabecalho.map((c, i) => <th key={i} className={`px-3 py-2 text-xs font-bold whitespace-nowrap ${i ? "text-right" : "text-left"}`} style={{ color: "var(--dash-text-soft)" }}>{c}</th>)}</tr></thead>
-                <tbody>{linhas.map((l, i) => <tr key={i} className="border-t" style={{ borderColor: "var(--dash-border-light)" }}>{l.map((c, j) => <td key={j} className={`px-3 py-2 tabular-nums whitespace-nowrap ${j ? "text-right" : "text-left font-semibold"}`}>{c}</td>)}</tr>)}</tbody>
+        <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--dash-border-light)" }}>
+            <table className="w-full text-[12px] sm:text-sm" style={{ color: "var(--dash-text)" }}>
+                <thead><tr style={{ background: "var(--dash-card-soft)" }}>{cabecalho.map((c, i) => <th key={i} className={`px-2 py-2 text-[11px] font-extrabold leading-tight sm:px-3 sm:text-xs ${i ? "text-right" : "text-left"}`} style={{ color: "var(--dash-text-soft)" }}>{c}</th>)}</tr></thead>
+                <tbody>{linhas.map((l, i) => <tr key={i} className="border-t" style={{ borderColor: "var(--dash-border-light)" }}>{l.map((c, j) => <td key={j} className={`px-2 py-2 tabular-nums break-words sm:px-3 ${j ? "text-right" : "text-left font-semibold"}`}>{c}</td>)}</tr>)}</tbody>
             </table>
         </div>
     );
@@ -726,6 +766,8 @@ const TIPO_AVAL: Record<string, string> = { visita: "Visita", pos_atendimento: "
 /** Notas de 1 a 5 exibidas em % (5 = 100%). */
 const NOTA_MAX = 5;
 const notaPct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round((v / NOTA_MAX) * 100)}%`);
+/** Texto legível sobre a cor da nota (amarelo leva texto azul-escuro). */
+const corNotaTexto = (m: number) => { const p = m / NOTA_MAX; return p >= 0.6 && p < 0.75 ? "#313C55" : "#FFFFFF"; };
 const corNota = (m: number) => { const p = m / NOTA_MAX; return p >= 0.9 ? "var(--dash-green)" : p >= 0.75 ? "var(--dash-blue)" : p >= 0.6 ? "var(--dash-yellow)" : "var(--dash-danger-text)"; };
 const avConcluida = (a: Avaliacao) => norm(a.status) === "visitado";
 const segH = (s: number | null | undefined) => (s == null ? null : s / 3600);
@@ -774,87 +816,205 @@ function avalDoPainel(d: Painel, av: AvalResp | null) {
 }
 
 /* =========================================================
+   EQUIPE (05/11/2026): só os grupos Agente e Tanatopraxista entram nas análises por pessoa.
+   Fonte: rh_colaboradores.php?action=painel (tela Colaboradores; só Gestão). Sem acesso, mostra todos.
+========================================================= */
+const RH_URL = "https://api.planoassistencialintegrado.com.br/rh_colaboradores.php?action=painel";
+
+type EquipeFiltro = { chaves: Set<string>; grupos: string[]; pessoas: number } | null;
+
+async function carregarEquipe(): Promise<EquipeFiltro> {
+    const ac = new AbortController();
+    const t = window.setTimeout(() => ac.abort(), 20000);
+    try {
+        const res = await fetch(`${RH_URL}&_ts=${Date.now()}`, { method: "GET", credentials: "include", cache: "no-store", signal: ac.signal });
+        if (!res.ok) return null;
+        const json = (await res.json().catch(() => null)) as any;
+        if (!json || json.erro) return null;
+        const dados = json.dados ?? json;
+        const grupos: { nome?: string; slug?: string }[] = Array.isArray(dados?.grupos) ? dados.grupos : [];
+        const pessoas: { nome?: string; nome_sistema?: string; login?: string; grupo?: string }[] = Array.isArray(dados?.pessoas) ? dados.pessoas : [];
+        const ehDaEquipe = (g: { nome?: string; slug?: string }) => /agente|tanato/.test(`${norm(g.slug)} ${norm(g.nome)}`);
+        const slugs = new Set(grupos.filter(ehDaEquipe).map((g) => norm(g.slug)));
+        if (!slugs.size) return null;
+        const nomesGrupo = grupos.filter(ehDaEquipe).map((g) => String(g.nome || g.slug || ""));
+        const chaves = new Set<string>();
+        const primeiro: Record<string, Set<number>> = {};
+        const dentroIdx = new Set<number>();
+        let n = 0;
+        pessoas.forEach((p, i) => {
+            const dentro = slugs.has(norm(p.grupo));
+            const nomes = [p.nome, p.nome_sistema].map(norm).filter(Boolean);
+            nomes.forEach((nm) => (primeiro[nm.split(" ")[0]] ??= new Set()).add(i));
+            if (!dentro) return;
+            dentroIdx.add(i);
+            n++;
+            [...nomes, norm(p.login)].filter(Boolean).forEach((k) => { chaves.add(k); const tk = k.split(" "); if (tk.length > 1) chaves.add(`${tk[0]} ${tk[tk.length - 1]}`); });
+        });
+        // Primeiro nome sozinho só vale quando ele é único entre todas as pessoas cadastradas.
+        Object.entries(primeiro).forEach(([pn, quem]) => { if (quem.size === 1 && dentroIdx.has([...quem][0])) chaves.add(pn); });
+        return { chaves, grupos: nomesGrupo, pessoas: n };
+    } catch {
+        return null;
+    } finally {
+        window.clearTimeout(t);
+    }
+}
+
+/** A pessoa (nome do histórico, login ou nome do cadastro) é do grupo Agente ou Tanatopraxista? Sem filtro carregado, todos entram. */
+function naEquipe(eq: EquipeFiltro, nome: string | null | undefined): boolean {
+    if (!eq) return true;
+    const n = norm(nome);
+    if (!n) return false;
+    if (eq.chaves.has(n)) return true;
+    const tk = n.split(" ");
+    return tk.length > 1 && eq.chaves.has(`${tk[0]} ${tk[tk.length - 1]}`);
+}
+
+/** Painel só com as pessoas da equipe nas análises por pessoa (os totais do período não mudam). */
+function painelDaEquipe(d: Painel, eq: EquipeFiltro): Painel {
+    if (!eq) return d;
+    const ok = (a: string) => naEquipe(eq, a);
+    const e = d.equipe;
+    return {
+        ...d,
+        equipe: {
+            ...e,
+            matriz: e.matriz.filter((l) => ok(l.agente)),
+            mensal: e.mensal.filter((l) => ok(l.agente)),
+            pontualidade: {
+                velorio: { ...e.pontualidade.velorio, por_agente: e.pontualidade.velorio.por_agente.filter((x) => ok(x.agente)) },
+                sepultamento: { ...e.pontualidade.sepultamento, por_agente: e.pontualidade.sepultamento.por_agente.filter((x) => ok(x.agente)) },
+            },
+            registro_lote: e.registro_lote.filter((x) => ok(x.agente)),
+            evidencias: e.evidencias.filter((x) => ok(x.agente)),
+            titulares: e.titulares.filter((x) => ok(x.nome)),
+        },
+        perfil: { ...d.perfil, qualidade_agente: d.perfil.qualidade_agente.filter((x) => ok(x.agente)) },
+    };
+}
+
+function AvisoEquipe({ eq }: { eq: EquipeFiltro }) {
+    return (
+        <div className="flex items-start gap-3 rounded-2xl px-4 py-3 text-sm" style={{ background: "var(--dash-chip)", color: "var(--dash-text)" }}>
+            <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0" style={{ color: "var(--dash-blue)" }}><circle cx="9" cy="7" r="4" /><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0-3-3.85" /></svg>
+            {eq
+                ? <span>Análises por pessoa só com os grupos <b>{eq.grupos.join(" e ")}</b> ({fmtN(eq.pessoas)} pessoa(s)), conforme a tela de Colaboradores.</span>
+                : <span>Não foi possível ler os grupos da tela de Colaboradores (acesso só da Gestão): mostrando todas as pessoas.</span>}
+        </div>
+    );
+}
+
+/* =========================================================
    ABAS
 ========================================================= */
 
+/** Duração do velório (etapa Velório: Entrega de corpo → saída para o sepultamento), geral e por local. */
+function velorioResumo(d: Painel) {
+    const itens = d.lista.filter((x) => x.etapas.velorio).map((x) => ({ local: x.velorio, h: x.etapas.velorio.h }));
+    const hs = itens.map((x) => x.h);
+    const grupoCurto = (l: string) => (l.startsWith("Memorial") ? "Memorial" : l);
+    const porLocal = (f: (l: string) => string) => {
+        const m: Record<string, number[]> = {};
+        itens.forEach((x) => (m[f(x.local)] ??= []).push(x.h));
+        return Object.entries(m).map(([nome, v]) => ({ nome, n: v.length, media: media(v)!, mediana: mediana(v)! })).sort((a, b) => b.n - a.n);
+    };
+    return { n: hs.length, media: media(hs), mediana: mediana(hs), grupos: porLocal(grupoCurto), locais: porLocal((l) => l) };
+}
+
+function DestaqueVelorio({ d }: { d: Painel }) {
+    const v = velorioResumo(d);
+    return (
+        <div className="relative col-span-2 overflow-hidden rounded-[24px] p-5 text-white sm:p-6" style={{ background: "var(--dash-band)", border: "1px solid var(--dash-border-light)" }}>
+            <span aria-hidden className="pointer-events-none absolute -bottom-20 -right-12 h-52 w-52 rounded-full" style={{ background: "rgba(179,206,82,.18)" }} />
+            <span aria-hidden className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full" style={{ border: "36px solid rgba(255,255,255,.05)" }} />
+            <div className="relative text-[11px] font-extrabold uppercase tracking-[.14em]" style={{ color: "#B3CE52" }}>Duração média dos velórios</div>
+            <div className="relative mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                <span className="text-[44px] font-black leading-none tabular-nums sm:text-[52px]" style={{ color: "#F2CB3F" }}>{fmtHM(v.media)}</span>
+                <span className="text-sm" style={{ color: "var(--dash-band-soft)" }}>{v.n ? `mediana ${fmtHM(v.mediana)} · ${fmtN(v.n)} velório(s) com início e fim marcados` : "sem velórios com início e fim marcados no período"}</span>
+            </div>
+            {v.grupos.length > 0 && (
+                <div className="relative mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {v.grupos.slice(0, 3).map((g) => (
+                        <div key={g.nome} className="rounded-2xl px-3 py-2" style={{ background: "rgba(255,255,255,.08)" }}>
+                            <div className="text-xs leading-tight" style={{ color: "var(--dash-band-soft)" }}>{g.nome} · {g.n}</div>
+                            <div className="text-lg font-black tabular-nums">{fmtHM(g.media)}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function AbaGeral({ d, filtrar }: { d: Painel; filtrar: (campo: "convenio", v: string) => void }) {
     const r = d.resumo;
-    const series = d.convenios.map((c) => ({ nome: c.nome, cor: corConv(c.nome) }));
-    const pontos = d.serie.pontos.map((p) => ({
-        rotulo: p.rotulo,
-        titulo: d.serie.granularidade === "semana" ? `Semana de ${p.rotulo}` : p.rotulo,
-        valores: series.map((s) => p.por_convenio[s.nome] ?? 0),
-    }));
     const piorQual = [...d.perfil.qualidade].sort((a, b) => a.pct - b.pct)[0];
     const lenta = [...d.equipe.etapas].filter((e) => e.tipo === "execucao" && e.chave !== "velorio" && e.n >= 3).sort((a, b) => (b.mediana_h ?? 0) - (a.mediana_h ?? 0))[0];
-    const topDia = [...d.dia_semana].sort((a, b) => b.media - a.media)[0];
-    const destaques: [string, React.ReactNode][] = [];
+    const vel = velorioResumo(d);
+    const nTanato = d.lista.filter((x) => x.tanato).length;
+    const destaques: [string, React.ReactNode, boolean?][] = [];
     if (r.variacao_pct != null) destaques.push(["Tendência", <><b>{fmtN(r.total)}</b> atendimentos, <b>{r.variacao_pct >= 0 ? `${fmtP(r.variacao_pct)} a mais` : `${fmtP(-r.variacao_pct)} a menos`}</b> que no período anterior ({fmtN(r.anterior)}).</>]);
-    if (topDia) destaques.push(["Pico de demanda", <><b>{topDia.dia}</b> é o dia mais movimentado ({topDia.media.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}/dia).</>]);
     if (d.convenios[0]) destaques.push(["Convênio", <><b>{d.convenios[0].nome}</b> responde por {fmtP((d.convenios[0].total / (r.total || 1)) * 100)} dos atendimentos.</>]);
     if (lenta) destaques.push(["Etapa mais longa", <>Fora o velório, <b>{lenta.rotulo.toLowerCase()}</b> tem a maior mediana: <b>{fmtH(lenta.mediana_h)}</b>.</>]);
-    if (piorQual) destaques.push(["Atenção ao cadastro", <><b>{piorQual.campo}</b> preenchido em só {fmtP(piorQual.pct)} dos atendimentos.</>]);
+    if (piorQual) destaques.push(["Atenção ao cadastro", <><b>{piorQual.campo}</b> preenchido em só {fmtP(piorQual.pct)} dos atendimentos.</>, true]);
 
     return (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
             {d.em_andamento.length > 0 && (
-                <div>
-                    <h2 className="mb-2 text-xs font-extrabold uppercase tracking-wider" style={{ color: "var(--dash-text-soft)" }}>Em andamento agora · {d.em_andamento.length}</h2>
-                    <div className="flex gap-3 overflow-x-auto pb-1">
+                <section>
+                    <h2 className="mb-2 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: "var(--dash-text-soft)" }}>Em andamento agora · {d.em_andamento.length}</h2>
+                    <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))" }}>
                         {d.em_andamento.map((a) => (
-                            <div key={a.id} className="min-w-[240px] rounded-xl border p-3" style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)" }}>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className="truncate text-sm font-extrabold" style={{ color: "var(--dash-text)" }}>{a.falecido}</span>
-                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${STATUS_COR[a.status] ?? "bg-slate-500"}`}>{a.status_rotulo}</span>
+                            <div key={a.id} className="min-w-0 rounded-2xl border p-3" style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)" }}>
+                                <div className="flex items-start justify-between gap-2">
+                                    <span className="line-clamp-2 break-words text-sm font-extrabold" style={{ color: "var(--dash-text)" }}>{a.falecido}</span>
+                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${STATUS_COR[a.status] ?? "bg-[#7A8499]"}`}>{a.status_rotulo}</span>
                                 </div>
                                 <div className="mt-1 text-xs" style={{ color: "var(--dash-text-soft)" }}>{a.velorio} · {a.convenio}</div>
                                 <div className="text-xs" style={{ color: "var(--dash-text-soft)" }}>Aberto há {fmtH(a.horas_desde_cadastro)}</div>
                             </div>
                         ))}
                     </div>
-                </div>
+                </section>
             )}
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                <Kpi rotulo="Atendimentos" valor={fmtN(r.total)} detalhe={r.variacao_pct == null ? `anterior: ${fmtN(r.anterior)}` : <span style={{ color: r.variacao_pct >= 0 ? "var(--dash-green)" : "var(--dash-danger-text)" }}>{r.variacao_pct >= 0 ? "▲" : "▼"} {fmtP(Math.abs(r.variacao_pct))} vs {fmtN(r.anterior)}</span>} />
-                <Kpi rotulo="Média por dia" valor={r.media_dia.toLocaleString("pt-BR")} detalhe={`${d.periodo.dias} dia(s)`} />
-                <Kpi rotulo="Pico em um dia" valor={r.pico ? fmtN(r.pico.total) : "—"} detalhe={r.pico ? `em ${dataBR(r.pico.data)}` : ""} />
-                <Kpi rotulo="Idade média" valor={r.idade_media != null ? `${r.idade_media} anos` : "—"} detalhe={`${fmtN(r.idade_n)} com nascimento`} />
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <DestaqueVelorio d={d} />
+                <Kpi rotulo="Atendimentos" valor={fmtN(r.total)} detalhe={r.variacao_pct == null ? `anterior: ${fmtN(r.anterior)}` : <span style={{ color: r.variacao_pct >= 0 ? "var(--dash-green)" : "var(--dash-danger-text)" }}><b>{r.variacao_pct >= 0 ? "▲" : "▼"} {fmtP(Math.abs(r.variacao_pct))}</b> vs {fmtN(r.anterior)}</span>} />
                 <Kpi rotulo="Cadastro → sepultamento" valor={fmtH(r.ciclo_mediana_h)} detalhe={r.ciclo_n ? `mediana · 90% em até ${fmtH(r.ciclo_p90_h)}` : "sem marcações"} />
+                <Kpi rotulo="Tanatopraxias" valor={fmtN(nTanato)} detalhe={`${fmtP(pct(nTanato, r.total))} dos atendimentos`} destaque="amarelo" />
+                <Kpi rotulo="Média por dia" valor={r.media_dia.toLocaleString("pt-BR")} detalhe={r.pico ? `pico de ${fmtN(r.pico.total)} em ${dataBR(r.pico.data)}` : `${d.periodo.dias} dia(s)`} />
+                <Kpi rotulo="Idade média" valor={r.idade_media != null ? `${r.idade_media} anos` : "—"} detalhe={`${fmtN(r.idade_n)} com nascimento`} />
                 <Kpi rotulo="Ainda no quadro" valor={fmtN(r.em_andamento_periodo)} detalhe="deste período" alerta={r.em_andamento_periodo ? "atencao" : undefined} />
             </div>
 
             {destaques.length > 0 && (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                    {destaques.map(([k, v]) => (
-                        <div key={k} className="rounded-xl border p-3 text-sm" style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)", color: "var(--dash-text-soft)" }}>
-                            <div className="mb-1 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: "var(--dash-blue-dark)" }}>{k}</div>
+                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))" }}>
+                    {destaques.map(([k, v, alerta]) => (
+                        <div key={k} className="rounded-2xl border p-4 text-sm" style={{ background: "var(--dash-card)", borderColor: "var(--dash-border-light)" }}>
+                            <div className="mb-1 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: alerta ? "var(--dash-danger-text)" : "var(--dash-blue)" }}>{k}</div>
                             <div style={{ color: "var(--dash-text)" }}>{v}</div>
                         </div>
                     ))}
                 </div>
             )}
 
-            <div className="grid gap-4 xl:grid-cols-3">
-                <Card titulo="Volume de atendimentos" dica={`Por ${d.serie.granularidade} · empilhado por convênio`} className="xl:col-span-2"
-                    acao={<div className="flex flex-wrap gap-3 text-xs" style={{ color: "var(--dash-text-soft)" }}>{series.map((s) => <span key={s.nome} className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: s.cor }} />{s.nome}</span>)}</div>}>
-                    <Colunas pontos={pontos} series={series} />
-                </Card>
+            <div className="grid gap-4 xl:grid-cols-2">
                 <Card titulo="Mix por convênio" dica="Clique para filtrar">
                     <Barras itens={d.convenios.map((c) => ({ ...c, cor: corConv(c.nome) }))} onClick={(v) => filtrar("convenio", v)} />
                 </Card>
-                <Card titulo="Quando os atendimentos chegam" dica="Horário de cadastro por dia da semana" className="xl:col-span-2"><MapaCalor m={d.heatmap} /></Card>
-                <Card titulo="Média por dia da semana" dica="Atendimentos por dia no período">
-                    <Barras itens={d.dia_semana.map((x) => ({ nome: x.dia, total: x.media, extra: `${x.total} em ${x.dias} dia(s)` }))} formato={(v) => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} semParticipacao />
+                <Card titulo="Duração do velório por local" dica={`Média entre a entrega do corpo e a saída para o sepultamento · ${fmtN(vel.n)} velório(s)`}>
+                    <Barras itens={vel.locais.map((x, i) => ({ nome: x.nome, total: r2(x.media, 2)!, cor: i === 0 ? "var(--dash-blue-dark)" : x.nome.startsWith("Memorial") ? "var(--dash-blue)" : "var(--dash-lime)", extra: `${x.nome}: média ${fmtHM(x.media)} · mediana ${fmtHM(x.mediana)} · ${x.n} velório(s)` }))} formato={(v) => fmtHM(v)} semParticipacao />
                 </Card>
-                <Card titulo="Local do velório" dica="Agrupado"><Barras itens={d.velorio} total={r.total} /></Card>
-                <Card titulo="Local de sepultamento" dica="Top 8"><Barras itens={d.cemiterio.slice(0, 8)} total={r.total} /></Card>
+                <Card titulo="Local do velório" dica="Agrupado · % dos atendimentos"><Barras itens={d.velorio} total={r.total} /></Card>
+                <Card titulo="Local de sepultamento" dica="Os 8 mais usados"><Barras itens={d.cemiterio.slice(0, 8)} total={r.total} /></Card>
             </div>
         </div>
     );
 }
 
-function AbaEquipe({ d, av }: { d: Painel; av: AvalEstado }) {
+function AbaEquipe({ d, av, eq }: { d: Painel; av: AvalEstado; eq: EquipeFiltro }) {
     const [modo, setModo] = useState<"hn" | "n" | "horas">("hn");
     const e = d.equipe;
     const exec = e.etapas.filter((x) => x.tipo === "execucao");
@@ -876,8 +1036,8 @@ function AbaEquipe({ d, av }: { d: Painel; av: AvalEstado }) {
             if (et) ((porEtapa[w] ??= {})[et] ??= []).push(n.nota_valor);
         });
         const naMatriz = new Set(e.matriz.map((l) => l.agente));
-        return { notasPorEtapa: porEtapa, notasGerais: gerais, pessoasSoComNota: Object.keys(gerais).filter((w) => !naMatriz.has(w)).sort((a, b) => a.localeCompare(b, "pt-BR")) };
-    }, [d, av.dados, e.matriz]);
+        return { notasPorEtapa: porEtapa, notasGerais: gerais, pessoasSoComNota: Object.keys(gerais).filter((w) => !naMatriz.has(w) && naEquipe(eq, w)).sort((a, b) => a.localeCompare(b, "pt-BR")) };
+    }, [d, av.dados, e.matriz, eq]);
 
     const linhas: MatrizLinha[] = modo === "hn" ? [...e.matriz, ...pessoasSoComNota.map((agente) => ({ agente, etapas: {}, total_n: 0, total_h: 0 }))] : e.matriz;
     const colMax: Record<string, number> = {};
@@ -886,17 +1046,18 @@ function AbaEquipe({ d, av }: { d: Painel; av: AvalEstado }) {
     const tom = (v: number | null, m: number) => {
         if (!v || !m) return {};
         const t = v / m, k = t > 0.8 ? 5 : t > 0.6 ? 4 : t > 0.4 ? 3 : t > 0.2 ? 2 : 1;
-        return { background: `var(--dash-heat-${k})`, color: k >= 4 ? "#fff" : "var(--dash-text)" };
+        return { background: `var(--dash-heat-${k})`, color: k >= 4 ? "var(--dash-heat-text)" : "var(--dash-text)" };
     };
     const chip = (arr?: number[]) => {
         if (!arr || !arr.length) return <span className="text-[11px]" style={{ color: "var(--dash-text-soft)" }}>sem nota</span>;
         const m = media(arr)!;
-        return <span className="mt-0.5 inline-block rounded-full px-2 text-[11px] font-extrabold tabular-nums text-white" style={{ background: corNota(m) }} title={`${arr.length} nota(s) da família`}>{notaPct(m)}</span>;
+        return <span className="mt-0.5 inline-block rounded-full px-2 text-[11px] font-extrabold tabular-nums" style={{ background: corNota(m), color: corNotaTexto(m) }} title={`${arr.length} nota(s) da família`}>{notaPct(m)}</span>;
     };
     const infoNotas = av.semPermissao ? "Sem permissão para ver as avaliações." : av.erro ? `Notas indisponíveis: ${av.erro}` : av.carregando ? "Carregando as notas…" : `${fmtN(Object.values(notasGerais).reduce((a, v) => a + v.length, 0))} notas da família no período.`;
 
     return (
         <div className="flex flex-col gap-4">
+            <AvisoEquipe eq={eq} />
             {semHistorico && (
                 <div className="rounded-xl border px-4 py-2 text-xs" style={{ borderColor: "var(--dash-border-light)", color: "var(--dash-text-soft)", background: "var(--dash-card)" }}>
                     {fmtN(d.resumo.total - d.resumo.com_historico)} atendimento(s) do período não têm histórico de fases e ficam de fora dos tempos.
@@ -935,20 +1096,20 @@ function AbaEquipe({ d, av }: { d: Painel; av: AvalEstado }) {
                 dica={modo === "hn" ? `Tempo médio de cada etapa e a nota média da família para quem foi responsável por ela (notas de 1 a 5 em %, 5 = 100%) · ${infoNotas}` : modo === "n" ? "Quantas etapas cada agente iniciou (quem tocou o comando de início)" : "Horas somadas das etapas que cada agente iniciou"}
                 acao={<div className="inline-flex rounded-lg border p-0.5" style={{ borderColor: "var(--dash-border-light)" }}>{([["hn", "Horas médias e nota"], ["n", "Quantidade"], ["horas", "Horas totais"]] as const).map(([k, l]) => (
                     <button key={k} type="button" onClick={() => setModo(k)} className="rounded-md px-3 py-1 text-xs font-bold" style={modo === k ? { background: "var(--dash-blue-dark)", color: "#fff" } : { color: "var(--dash-text-soft)" }}>{l}</button>))}</div>}>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] border-separate text-sm" style={{ borderSpacing: 3, color: "var(--dash-text)" }}>
+                <div>
+                    <table className="w-full table-fixed border-separate text-[11px] sm:text-sm" style={{ borderSpacing: 3, color: "var(--dash-text)" }}>
                         <thead><tr>
-                            <th className="text-left text-xs" style={{ color: "var(--dash-text-soft)" }}>Agente</th>
-                            {modo === "hn" && <th className="text-center text-xs font-bold" style={{ color: "var(--dash-text-soft)" }} title="Nota do primeiro atendimento (agente que abriu o atendimento)">1º atendimento</th>}
-                            {exec.map((x) => <th key={x.chave} className="text-center text-xs font-bold" style={{ color: "var(--dash-text-soft)" }}>{x.rotulo}</th>)}
-                            <th className="text-center text-xs" style={{ color: "var(--dash-text-soft)" }}>Total</th>
+                            <th className="w-[16%] text-left text-[10px] font-extrabold leading-tight sm:text-xs" style={{ color: "var(--dash-text-soft)" }}>Pessoa</th>
+                            {modo === "hn" && <th className="text-center text-[10px] font-extrabold leading-tight sm:text-xs" style={{ color: "var(--dash-text-soft)" }} title="Nota do primeiro atendimento (agente que abriu o atendimento)">1º atendimento</th>}
+                            {exec.map((x) => <th key={x.chave} className="break-words text-center text-[10px] font-extrabold leading-tight sm:text-xs" style={{ color: "var(--dash-text-soft)" }}>{x.rotulo}</th>)}
+                            <th className="text-center text-[10px] font-extrabold sm:text-xs" style={{ color: "var(--dash-text-soft)" }}>Total</th>
                         </tr></thead>
                         <tbody>
                             {linhas.map((l) => {
                                 const np = notasPorEtapa[l.agente] ?? {};
                                 return (
                                     <tr key={l.agente}>
-                                        <td className="font-bold whitespace-nowrap">{l.agente}</td>
+                                        <td className="break-words font-bold leading-tight">{l.agente}</td>
                                         {modo === "hn" && <td className="rounded-md px-2 py-1.5 text-center" style={{ background: np.resposta?.length ? "var(--dash-card-soft)" : undefined }}>{np.resposta?.length ? chip(np.resposta) : <span style={{ color: "var(--dash-text-soft)" }}>—</span>}</td>}
                                         {exec.map((x) => {
                                             const c = l.etapas[x.chave];
@@ -1002,7 +1163,7 @@ function AbaEquipe({ d, av }: { d: Painel; av: AvalEstado }) {
                                 l ? <span key="l" style={{ color: l.pct > 15 ? "var(--dash-danger-text)" : undefined }}>{fmtP(l.pct)}</span> : "—"];
                         })} larguraMin={520} />
                 </Card>
-                <Card titulo="Atendimentos abertos por agente" dica="Quem cadastrou o atendimento (campo agente)">
+                <Card titulo="Atendimentos abertos por pessoa" dica="Quem cadastrou o atendimento (campo agente)">
                     <Barras itens={e.titulares.slice(0, 12)} total={d.resumo.total} />
                 </Card>
             </div>
@@ -1018,12 +1179,12 @@ function Pill({ ok, texto }: { ok: boolean; texto: string }) {
 }
 function ChipNota({ m, n }: { m: number | null; n?: number }) {
     if (m == null) return <span className="text-xs" style={{ color: "var(--dash-text-soft)" }}>—</span>;
-    return <span className="inline-block rounded-full px-2 text-xs font-extrabold tabular-nums text-white" style={{ background: corNota(m) }} title={n != null ? `${n} nota(s)` : undefined}>{notaPct(m)}</span>;
+    return <span className="inline-block rounded-full px-2 text-xs font-extrabold tabular-nums" style={{ background: corNota(m), color: corNotaTexto(m) }} title={n != null ? `${n} nota(s)` : undefined}>{notaPct(m)}</span>;
 }
 
 type LinhaAgente = { w: string; n: number; aval: number; media: number; dist: number[]; max: number; baixas: number; vis: number; pos: number; atuou: number; cob: number | null };
 
-function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; abrirAtendimento: (id: number) => void }) {
+function AbaVisitas({ d, av, eq, abrirAtendimento }: { d: Painel; av: AvalEstado; eq: EquipeFiltro; abrirAtendimento: (id: number) => void }) {
     const [ordem, setOrdem] = useState<{ k: keyof LinhaAgente; dir: 1 | -1 }>({ k: "media", dir: -1 });
     const [aberta, setAberta] = useState<Avaliacao | null>(null);
 
@@ -1050,7 +1211,7 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
             g.notas.push(n.nota_valor!); g.av.add(n.avaliacao_id); g.at.add(n.atendimento_id);
             (n.tipo_avaliacao === "pos_atendimento" ? g.pos : g.vis).add(n.avaliacao_id);
         });
-        const agentes: LinhaAgente[] = Object.entries(G).map(([w, g]) => {
+        const agentes: LinhaAgente[] = Object.entries(G).filter(([w]) => naEquipe(eq, w)).map(([w, g]) => {
             const nAt = atuou[w]?.size ?? 0;
             return {
                 w, n: g.notas.length, aval: g.av.size, media: media(g.notas)!, dist: [1, 2, 3, 4, 5].map((k) => g.notas.filter((v) => v === k).length),
@@ -1074,7 +1235,7 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
             agentes, perguntas, porAvaliador, baixas, falecido,
             semVisita: elegVis.filter((x) => !visAlguma.has(x.id)), semPos: elegPos.filter((x) => !posAlguma.has(x.id)),
         };
-    }, [d, av.dados]);
+    }, [d, av.dados, eq]);
 
     if (av.semPermissao) return <Card><Vazio texto="Seu usuário não tem permissão para ver as avaliações (visita-avaliacao ou pos-atendimento-avaliacao)." /></Card>;
     if (av.erro) return <div className="rounded-xl border px-4 py-3 text-sm" style={{ background: "var(--dash-danger-bg)", borderColor: "var(--dash-danger-border)", color: "var(--dash-danger-text)" }}>Não foi possível carregar as avaliações: {av.erro}</div>;
@@ -1088,8 +1249,10 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
         return ordem.dir * (((va as number) ?? -1) - ((vb as number) ?? -1)) || b.n - a.n;
     });
     const MIN = 3;
-    const DC = ["var(--dash-danger-text)", "#e8743b", "var(--dash-yellow)", "var(--dash-blue)", "var(--dash-green)"];
-    const COLS: [keyof LinhaAgente | "dist", string][] = [["w", "Agente"], ["aval", "Avaliações"], ["media", "Nota média"], ["dist", "Distribuição"], ["max", "Nota máxima"], ["baixas", "Notas baixas"], ["vis", "Visita"], ["pos", "Pós"], ["atuou", "Atendimentos em que atuou"], ["cob", "Atendimentos avaliados"]];
+    const DC = ["var(--dash-danger-text)", "#E8743B", "var(--dash-yellow)", "var(--dash-blue)", "var(--dash-green)"];
+    const COLS: [keyof LinhaAgente | "dist", string][] = [["w", "Pessoa"], ["aval", "Avaliações"], ["media", "Nota média"], ["dist", "Distribuição"], ["max", "Nota máxima"], ["baixas", "Notas baixas"], ["vis", "Visita"], ["pos", "Pós"], ["atuou", "Atendimentos em que atuou"], ["cob", "Atendimentos avaliados"]];
+    /* Sem rolagem lateral: no celular ficam só as colunas principais. */
+    const COL_CLASSE: Partial<Record<keyof LinhaAgente | "dist", string>> = { dist: "hidden md:table-cell", max: "hidden lg:table-cell", vis: "hidden lg:table-cell", pos: "hidden lg:table-cell", atuou: "hidden md:table-cell", cob: "hidden md:table-cell" };
     const cov = (rot: string, a: number, b: number) => {
         const p = b ? (a / b) * 100 : 0;
         return (
@@ -1103,7 +1266,7 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
         <ul className="max-h-80 overflow-y-auto">
             {arr.map((x) => (
                 <li key={x.id}><button type="button" onClick={() => abrirAtendimento(x.id)} className="flex w-full justify-between gap-3 border-b px-1 py-1.5 text-left text-sm hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }}>
-                    <span className="font-semibold">{x.falecido}</span><span className="text-xs whitespace-nowrap tabular-nums" style={{ color: "var(--dash-text-soft)" }}>{x.status_rotulo} · {dataBR(x.criado_em)}</span>
+                    <span className="break-words font-semibold">{x.falecido}</span><span className="shrink-0 text-right text-xs tabular-nums" style={{ color: "var(--dash-text-soft)" }}>{x.status_rotulo} · {dataBR(x.criado_em)}</span>
                 </button></li>))}
         </ul>
     ) : <Vazio texto={vazio} />;
@@ -1129,13 +1292,14 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
                 </Card>
             </div>
 
-            <Card titulo="Desempenho por agente nas avaliações" dica="Notas da família a cada colaborador (1 a 5 em %, 5 = 100%) · o responsável de cada nota é definido pelo visita.php · clique no cabeçalho para ordenar">
+            <AvisoEquipe eq={eq} />
+            <Card titulo="Desempenho por pessoa nas avaliações" dica="Notas da família a cada colaborador (1 a 5 em %, 5 = 100%) · o responsável de cada nota é definido pelo visita.php · clique no cabeçalho para ordenar">
                 {agentes.length ? (
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[980px] text-sm" style={{ color: "var(--dash-text)" }}>
+                    <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--dash-border-light)" }}>
+                        <table className="w-full text-[12px] sm:text-sm" style={{ color: "var(--dash-text)" }}>
                             <thead><tr style={{ background: "var(--dash-card-soft)" }}>
                                 {COLS.map(([k, l]) => (
-                                    <th key={k} className={`px-2 py-2 text-xs font-bold whitespace-nowrap ${k === "w" ? "text-left" : "text-center"} ${k !== "dist" ? "cursor-pointer" : ""}`} style={{ color: "var(--dash-text-soft)" }}
+                                    <th key={k} className={`px-2 py-2 text-[11px] font-extrabold leading-tight sm:text-xs ${k === "w" ? "text-left" : "text-center"} ${k !== "dist" ? "cursor-pointer" : ""} ${COL_CLASSE[k] ?? ""}`} style={{ color: "var(--dash-text-soft)" }}
                                         onClick={() => k !== "dist" && setOrdem((o) => ({ k: k as keyof LinhaAgente, dir: o.k === k ? (o.dir === 1 ? -1 : 1) : k === "w" ? 1 : -1 }))}>
                                         {l}{ordem.k === k ? (ordem.dir === 1 ? " ↑" : " ↓") : ""}
                                     </th>))}
@@ -1143,16 +1307,16 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
                             <tbody>
                                 {agentes.map((r) => (
                                     <tr key={r.w} className="border-t" style={{ borderColor: "var(--dash-border-light)", opacity: r.n < MIN ? 0.62 : 1 }}>
-                                        <td className="px-2 py-1.5 font-bold whitespace-nowrap">{r.w}{r.n < MIN && <span className="ml-2 rounded px-1.5 text-[10px] font-semibold" style={{ background: "var(--dash-empty)" }}>amostra pequena</span>}</td>
+                                        <td className="break-words px-2 py-1.5 font-bold leading-tight">{r.w}{r.n < MIN && <span className="ml-2 inline-block rounded px-1.5 text-[10px] font-semibold" style={{ background: "var(--dash-empty)" }}>amostra pequena</span>}</td>
                                         <td className="px-2 text-center tabular-nums">{fmtN(r.aval)}</td>
-                                        <td className="px-2"><span className="flex items-center gap-2"><span className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: "var(--dash-empty)", minWidth: 70 }}><span className="block h-full rounded-full" style={{ width: `${(r.media / NOTA_MAX) * 100}%`, background: corNota(r.media) }} /></span><b className="tabular-nums">{notaPct(r.media)}</b></span></td>
-                                        <td className="px-2"><span className="flex h-2.5 w-32 overflow-hidden rounded" style={{ background: "var(--dash-empty)" }} title={r.dist.map((q, i) => `${(i + 1) * 20}%: ${q}`).join(" · ")}>{r.dist.map((q, i) => q ? <span key={i} style={{ width: `${(q / r.n) * 100}%`, background: DC[i] }} /> : null)}</span></td>
-                                        <td className="px-2 text-center tabular-nums">{fmtP(r.max)}</td>
+                                        <td className="px-2"><span className="flex items-center gap-2"><span className="hidden h-2 flex-1 overflow-hidden rounded-full sm:block" style={{ background: "var(--dash-empty)" }}><span className="block h-full rounded-full" style={{ width: `${(r.media / NOTA_MAX) * 100}%`, background: corNota(r.media) }} /></span><b className="tabular-nums">{notaPct(r.media)}</b></span></td>
+                                        <td className="hidden px-2 md:table-cell"><span className="flex h-2.5 w-full overflow-hidden rounded" style={{ background: "var(--dash-empty)" }} title={r.dist.map((q, i) => `${(i + 1) * 20}%: ${q}`).join(" · ")}>{r.dist.map((q, i) => q ? <span key={i} style={{ width: `${(q / r.n) * 100}%`, background: DC[i] }} /> : null)}</span></td>
+                                        <td className="hidden px-2 text-center tabular-nums lg:table-cell">{fmtP(r.max)}</td>
                                         <td className="px-2 text-center tabular-nums" style={{ color: r.baixas ? "var(--dash-danger-text)" : undefined, fontWeight: r.baixas ? 800 : undefined }}>{r.baixas}</td>
-                                        <td className="px-2 text-center tabular-nums">{r.vis}</td>
-                                        <td className="px-2 text-center tabular-nums">{r.pos}</td>
-                                        <td className="px-2 text-center tabular-nums">{r.atuou || "—"}</td>
-                                        <td className="px-2 text-center tabular-nums">{r.cob != null ? fmtP(r.cob) : "—"}</td>
+                                        <td className="hidden px-2 text-center tabular-nums lg:table-cell">{r.vis}</td>
+                                        <td className="hidden px-2 text-center tabular-nums lg:table-cell">{r.pos}</td>
+                                        <td className="hidden px-2 text-center tabular-nums md:table-cell">{r.atuou || "—"}</td>
+                                        <td className="hidden px-2 text-center tabular-nums md:table-cell">{r.cob != null ? fmtP(r.cob) : "—"}</td>
                                     </tr>))}
                             </tbody>
                         </table>
@@ -1164,7 +1328,7 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
             </Card>
 
             <div className="grid gap-4 xl:grid-cols-2">
-                <Card titulo="Nota média por agente" dica={`Só agentes com ${MIN} notas ou mais`}>
+                <Card titulo="Nota média por pessoa" dica={`Só pessoas com ${MIN} notas ou mais`}>
                     <Barras itens={c.agentes.filter((r) => r.n >= MIN).sort((a, b) => b.media - a.media).map((r) => ({ nome: r.w, total: Math.round((r.media / NOTA_MAX) * 100), cor: corNota(r.media), extra: `${r.w}: ${notaPct(r.media)} em ${r.n} notas` }))} max={100} semParticipacao formato={(v) => `${v}%`} />
                 </Card>
                 <Card titulo="Nota por pergunta" dica="Visita × pós-atendimento · média em % (5 = 100%)">
@@ -1178,18 +1342,18 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
 
             <Card titulo="Notas baixas (1 ou 2)" dica="Para retorno à família e à equipe · clique para abrir a avaliação">
                 {c.baixas.length ? (
-                    <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><tbody>
+                    <div className="overflow-hidden"><table className="w-full text-[12px] sm:text-sm"><tbody>
                         {c.baixas.slice(0, 60).map((n, i) => {
                             const a = c.avaliacoes.find((x) => x.id === n.avaliacao_id);
                             return (
                                 <tr key={i} className="border-t cursor-pointer hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }} onClick={() => a && setAberta(a)}>
-                                    <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{dataHoraBR(n.criado_em)}</td>
-                                    <td className="px-2 font-semibold">{c.falecido.get(n.atendimento_id) ?? `#${n.atendimento_id}`}</td>
-                                    <td className="px-2">{TIPO_AVAL[n.tipo_avaliacao] ?? n.tipo_avaliacao}</td>
-                                    <td className="px-2">{PERGUNTA_TITULO[n.pergunta_codigo] ?? n.pergunta_titulo}</td>
+                                    <td className="px-2 py-1.5 tabular-nums">{dataHoraBR(n.criado_em)}</td>
+                                    <td className="break-words px-2 font-semibold">{c.falecido.get(n.atendimento_id) ?? `#${n.atendimento_id}`}</td>
+                                    <td className="hidden px-2 md:table-cell">{TIPO_AVAL[n.tipo_avaliacao] ?? n.tipo_avaliacao}</td>
+                                    <td className="break-words px-2">{PERGUNTA_TITULO[n.pergunta_codigo] ?? n.pergunta_titulo}</td>
                                     <td className="px-2"><ChipNota m={n.nota_valor} /></td>
-                                    <td className="px-2">{n.responsavel_nome || "Não identificado"}</td>
-                                    <td className="px-2" style={{ color: "var(--dash-text-soft)" }}>{n.avaliador_nome || "—"}</td>
+                                    <td className="hidden break-words px-2 sm:table-cell">{n.responsavel_nome || "Não identificado"}</td>
+                                    <td className="hidden break-words px-2 lg:table-cell" style={{ color: "var(--dash-text-soft)" }}>{n.avaliador_nome || "—"}</td>
                                 </tr>);
                         })}
                     </tbody></table></div>
@@ -1198,22 +1362,22 @@ function AbaVisitas({ d, av, abrirAtendimento }: { d: Painel; av: AvalEstado; ab
 
             <Card titulo={`Avaliações do período · ${fmtN(c.avaliacoes.length)}`} dica="Clique para ver as respostas, observações e fotos">
                 {c.avaliacoes.length ? (
-                    <div className="max-h-[460px] overflow-auto rounded-lg border" style={{ borderColor: "var(--dash-border-light)" }}>
-                        <table className="w-full min-w-[980px] text-sm" style={{ color: "var(--dash-text)" }}>
-                            <thead className="sticky top-0" style={{ background: "var(--dash-card-soft)" }}><tr>{["Início", "Tipo", "Falecido", "Avaliador", "Situação", "Entrega de corpo → visita", "Duração", "Conversou com", "Nota"].map((h) => <th key={h} className="px-2 py-2 text-left text-xs font-bold whitespace-nowrap" style={{ color: "var(--dash-text-soft)" }}>{h}</th>)}</tr></thead>
+                    <div className="max-h-[460px] overflow-y-auto overflow-x-hidden rounded-xl border" style={{ borderColor: "var(--dash-border-light)" }}>
+                        <table className="w-full text-[12px] sm:text-sm" style={{ color: "var(--dash-text)" }}>
+                            <thead className="sticky top-0" style={{ background: "var(--dash-card-soft)" }}><tr>{([["Início", ""], ["Tipo", "hidden sm:table-cell"], ["Falecido", ""], ["Avaliador", "hidden md:table-cell"], ["Situação", "hidden sm:table-cell"], ["Entrega de corpo → visita", "hidden lg:table-cell"], ["Duração", "hidden lg:table-cell"], ["Conversou com", "hidden xl:table-cell"], ["Nota", ""]] as const).map(([h, cl]) => <th key={h} className={`px-2 py-2 text-left text-[11px] font-extrabold leading-tight sm:text-xs ${cl}`} style={{ color: "var(--dash-text-soft)" }}>{h}</th>)}</tr></thead>
                             <tbody>
                                 {c.avaliacoes.map((a) => {
                                     const ns = c.notas.filter((n) => n.avaliacao_id === a.id && n.nota_valor != null).map((n) => n.nota_valor!);
                                     return (
                                         <tr key={a.id} className="border-t cursor-pointer hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }} onClick={() => setAberta(a)}>
-                                            <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{dataHoraBR(a.inicio_em)}</td>
-                                            <td className="px-2">{TIPO_AVAL[a.tipo] ?? a.tipo}</td>
-                                            <td className="px-2 font-semibold">{a.falecido_nome || c.falecido.get(a.atendimento_id) || "—"}</td>
-                                            <td className="px-2">{a.avaliador_nome || "—"}</td>
-                                            <td className="px-2"><Pill ok={avConcluida(a)} texto={avConcluida(a) ? "Concluída" : "Em andamento"} /></td>
-                                            <td className="px-2 tabular-nums">{a.tipo === "visita" ? fmtH(segH(a.tempo_fase08_ate_visita_segundos)) : "—"}</td>
-                                            <td className="px-2 tabular-nums">{fmtH(segH(a.duracao_segundos))}</td>
-                                            <td className="px-2">{[a.com_quem_conversou, a.grau_parentesco].filter(Boolean).join(" · ") || "—"}</td>
+                                            <td className="px-2 py-1.5 tabular-nums">{dataHoraBR(a.inicio_em)}</td>
+                                            <td className="hidden px-2 sm:table-cell">{TIPO_AVAL[a.tipo] ?? a.tipo}</td>
+                                            <td className="break-words px-2 font-semibold">{a.falecido_nome || c.falecido.get(a.atendimento_id) || "—"}</td>
+                                            <td className="hidden break-words px-2 md:table-cell">{a.avaliador_nome || "—"}</td>
+                                            <td className="hidden px-2 sm:table-cell"><Pill ok={avConcluida(a)} texto={avConcluida(a) ? "Concluída" : "Em andamento"} /></td>
+                                            <td className="hidden px-2 tabular-nums lg:table-cell">{a.tipo === "visita" ? fmtH(segH(a.tempo_fase08_ate_visita_segundos)) : "—"}</td>
+                                            <td className="hidden px-2 tabular-nums lg:table-cell">{fmtH(segH(a.duracao_segundos))}</td>
+                                            <td className="hidden break-words px-2 xl:table-cell">{[a.com_quem_conversou, a.grau_parentesco].filter(Boolean).join(" · ") || "—"}</td>
                                             <td className="px-2"><ChipNota m={media(ns)} n={ns.length} /></td>
                                         </tr>);
                                 })}
@@ -1340,12 +1504,154 @@ function AbaPerfil({ d }: { d: Painel }) {
     );
 }
 
+/* =========================================================
+   TANATOPRAXIAS (05/11/2026): por tipo, quantidade total e quem realizou cada uma.
+   Quem realizou = quem iniciou a conservação (fase03). Tipo = sepultamentos.tanato_produto_id (nome do produto).
+========================================================= */
+const TIPOS_TANATO = ["Tanatopraxia", "Tanatopraxia avançada", "Embalsamamento"];
+const COR_TIPO: Record<string, string> = { "Tanatopraxia": "var(--dash-blue-dark)", "Tanatopraxia avançada": "var(--dash-blue)", "Embalsamamento": "var(--dash-lime)" };
+const corTipo = (t: string) => COR_TIPO[t] ?? "var(--dash-slate)";
+const textoTipo = (t: string) => (t === "Embalsamamento" ? "#313C55" : "#FFFFFF");
+
+function AbaTanato({ d, eq, abrir }: { d: Painel; eq: EquipeFiltro; abrir: (id: number) => void }) {
+    const [quem, setQuem] = useState("");
+    const [mostrar, setMostrar] = useState(25);
+    const c = useMemo(() => {
+        const itens = d.lista.filter((x) => x.tanato).map((x) => {
+            const cons = x.etapas.conservacao, esp = x.etapas.esp_conserv;
+            const realizou = cons?.quem || esp?.quem || "";
+            return { x, tipo: x.tanato_procedimento || "Tipo não informado", realizou: realizou || "Não registrado", h: cons?.h ?? null, espera: esp?.h ?? null };
+        });
+        const tipos = conta(itens, (i) => i.tipo).sort((a, b) => {
+            const ia = TIPOS_TANATO.indexOf(a.nome), ib = TIPOS_TANATO.indexOf(b.nome);
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        });
+        const pessoas = [...new Set(itens.map((i) => i.realizou))].map((nome) => {
+            const meus = itens.filter((i) => i.realizou === nome);
+            const hs = meus.map((i) => i.h).filter((v): v is number => v != null);
+            return { nome, n: meus.length, tipos: conta(meus, (i) => i.tipo), rec: meus.filter((i) => i.x.reconstituicao).length, media: media(hs), equipe: nome !== "Não registrado" && naEquipe(eq, nome) };
+        }).sort((a, b) => b.n - a.n);
+        const convs = [...new Set(itens.map((i) => i.x.convenio))].sort();
+        const cruz = tipos.map((t) => ({ tipo: t.nome, total: t.total, por: Object.fromEntries(convs.map((cv) => [cv, itens.filter((i) => i.tipo === t.nome && i.x.convenio === cv).length])) }));
+        const recPor = Object.fromEntries(convs.map((cv) => [cv, itens.filter((i) => i.x.reconstituicao && i.x.convenio === cv).length]));
+        const hs = itens.map((i) => i.h).filter((v): v is number => v != null), es = itens.map((i) => i.espera).filter((v): v is number => v != null);
+        return {
+            itens: itens.sort((a, b) => String(b.x.criado_em).localeCompare(String(a.x.criado_em))), tipos, pessoas, convs, cruz, recPor,
+            rec: itens.filter((i) => i.x.reconstituicao).length, semTipo: itens.filter((i) => !i.x.tanato_procedimento).length,
+            mediana: mediana(hs), p90: quantil(hs, 0.9), nH: hs.length, espera: mediana(es),
+        };
+    }, [d, eq]);
+
+    const total = c.itens.length;
+    const lista = quem ? c.itens.filter((i) => i.realizou === quem) : c.itens;
+    const segmento = (tipos: { nome: string; total: number }[], n: number) => (
+        <div className="flex h-3.5 overflow-hidden rounded-full" style={{ background: "var(--dash-empty)" }} aria-hidden>
+            {tipos.map((t) => <span key={t.nome} style={{ width: `${(t.total / (n || 1)) * 100}%`, background: corTipo(t.nome) }} />)}
+        </div>
+    );
+
+    if (!total) return <Card><Vazio texto="Nenhuma tanatopraxia nos atendimentos do período." /></Card>;
+
+    return (
+        <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="relative col-span-2 overflow-hidden rounded-[24px] p-5 text-white sm:p-6" style={{ background: "var(--dash-band)", border: "1px solid var(--dash-border-light)" }}>
+                    <span aria-hidden className="pointer-events-none absolute -bottom-20 -right-12 h-52 w-52 rounded-full" style={{ background: "rgba(242,203,63,.18)" }} />
+                    <div className="relative text-[11px] font-extrabold uppercase tracking-[.14em]" style={{ color: "#B3CE52" }}>Tanatopraxias no período</div>
+                    <div className="relative mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                        <span className="text-[44px] font-black leading-none tabular-nums sm:text-[52px]" style={{ color: "#F2CB3F" }}>{fmtN(total)}</span>
+                        <span className="text-sm" style={{ color: "var(--dash-band-soft)" }}>{fmtP(pct(total, d.resumo.total))} dos {fmtN(d.resumo.total)} atendimentos</span>
+                    </div>
+                    <div className="relative mt-4 flex h-3.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,.12)" }} aria-hidden>
+                        {c.tipos.map((t) => <span key={t.nome} style={{ width: `${(t.total / total) * 100}%`, background: t.nome === "Tanatopraxia" ? "#F2CB3F" : t.nome === "Tanatopraxia avançada" ? "#B3CE52" : t.nome === "Embalsamamento" ? "#FFFFFF" : "#7A8499" }} />)}
+                    </div>
+                    <div className="relative mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]" style={{ color: "var(--dash-band-soft)" }}>
+                        {c.tipos.map((t) => (
+                            <span key={t.nome} className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: t.nome === "Tanatopraxia" ? "#F2CB3F" : t.nome === "Tanatopraxia avançada" ? "#B3CE52" : t.nome === "Embalsamamento" ? "#FFFFFF" : "#7A8499" }} />{t.nome} <b className="text-white">{fmtN(t.total)}</b></span>
+                        ))}
+                    </div>
+                </div>
+                <Kpi rotulo="Reconstituição facial" valor={fmtN(c.rec)} detalhe={`${fmtP(pct(c.rec, total))} das tanatopraxias`} />
+                <Kpi rotulo="Tempo de conservação" valor={fmtHM(c.mediana)} detalhe={c.nH ? `mediana · 90% até ${fmtHM(c.p90)} · n=${c.nH}` : "sem início e fim marcados"} />
+                <Kpi rotulo="Espera p/ conservação" valor={fmtHM(c.espera)} detalhe="da chegada do corpo ao início" />
+                <Kpi rotulo="Sem tipo registrado" valor={fmtN(c.semTipo)} detalhe="atendimentos antigos ou sem o campo" alerta={c.semTipo ? "atencao" : undefined} />
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+                <Card titulo="Por tanatopraxista" dica="Quem iniciou a conservação · por tipo de procedimento · clique para filtrar a lista">
+                    <div className="flex flex-col gap-3">
+                        {c.pessoas.map((p) => (
+                            <button key={p.nome} type="button" onClick={() => { setQuem((q) => (q === p.nome ? "" : p.nome)); setMostrar(25); }}
+                                className="flex flex-col gap-2 rounded-2xl p-4 text-left" style={{ background: "var(--dash-card-soft)", outline: quem === p.nome ? "2px solid var(--dash-blue)" : undefined }}>
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <span className="break-words text-base font-extrabold" style={{ color: "var(--dash-text)" }}>{p.nome}{!p.equipe && p.nome !== "Não registrado" && eq ? <span className="ml-2 align-middle text-[11px] font-semibold" style={{ color: "var(--dash-text-soft)" }}>(fora dos grupos)</span> : null}</span>
+                                    <span className="text-2xl font-black tabular-nums" style={{ color: "var(--dash-text)" }}>{fmtN(p.n)}</span>
+                                </div>
+                                {segmento(p.tipos, p.n)}
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]" style={{ color: "var(--dash-text-soft)" }}>
+                                    {p.tipos.map((t) => <span key={t.nome}>{t.nome} <b style={{ color: "var(--dash-text)" }}>{fmtN(t.total)}</b></span>)}
+                                    <span>Reconstituição <b style={{ color: "var(--dash-text)" }}>{fmtN(p.rec)}</b></span>
+                                    <span>Tempo médio <b style={{ color: "var(--dash-text)" }}>{fmtHM(p.media)}</b></span>
+                                </div>
+                            </button>
+                        ))}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--dash-text-soft)" }}>
+                            {c.tipos.map((t) => <span key={t.nome} className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: corTipo(t.nome) }} />{t.nome}</span>)}
+                        </div>
+                    </div>
+                </Card>
+                <Card titulo="Por tipo e convênio" dica="Quantidade de cada procedimento">
+                    <Tabela cabecalho={["Tipo", ...c.convs, "Total"]}
+                        linhas={[
+                            ...c.cruz.map((t) => [<span key="t" className="inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold leading-tight" style={{ background: corTipo(t.tipo), color: textoTipo(t.tipo) }}>{t.tipo}</span>, ...c.convs.map((cv) => t.por[cv] || "—"), <b key="n">{fmtN(t.total)}</b>]),
+                            [<span key="r" className="inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold leading-tight" style={{ background: "var(--dash-chip)", color: "var(--dash-text)" }}>+ Reconstituição facial</span>, ...c.convs.map((cv) => c.recPor[cv] || "—"), <b key="n">{fmtN(c.rec)}</b>],
+                        ]} />
+                </Card>
+            </div>
+
+            <Card titulo={`Procedimentos realizados · ${fmtN(lista.length)}`} dica="Clique numa linha para ver a ficha do atendimento"
+                acao={<select value={quem} onChange={(e) => { setQuem(e.target.value); setMostrar(25); }} aria-label="Tanatopraxista" className="h-11 rounded-xl border-0 px-3 text-sm font-bold" style={{ background: "var(--dash-card-soft)", color: "var(--dash-text)" }}>
+                    <option value="">Todos os tanatopraxistas</option>{c.pessoas.map((p) => <option key={p.nome} value={p.nome}>{p.nome}</option>)}
+                </select>}>
+                <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--dash-border-light)" }}>
+                    <table className="w-full text-[12px] sm:text-sm" style={{ color: "var(--dash-text)" }}>
+                        <thead><tr style={{ background: "var(--dash-card-soft)" }}>
+                            {([["Cadastro", ""], ["Falecido", ""], ["Tipo", ""], ["Reconstituição", "hidden md:table-cell"], ["Realizou", "hidden sm:table-cell"], ["Duração", "hidden md:table-cell"], ["Convênio", "hidden lg:table-cell"]] as const).map(([h, cl]) => (
+                                <th key={h} className={`px-2 py-2 text-left text-[11px] font-extrabold leading-tight sm:px-3 sm:text-xs ${cl}`} style={{ color: "var(--dash-text-soft)" }}>{h}</th>))}
+                        </tr></thead>
+                        <tbody>
+                            {lista.slice(0, mostrar).map((i) => (
+                                <tr key={i.x.id} onClick={() => abrir(i.x.id)} className="cursor-pointer border-t hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }}>
+                                    <td className="px-2 py-2 tabular-nums sm:px-3">{dataHoraBR(i.x.criado_em)}</td>
+                                    <td className="break-words px-2 py-2 font-bold sm:px-3">{i.x.falecido}</td>
+                                    <td className="px-2 py-2 sm:px-3"><span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-extrabold leading-tight" style={i.x.tanato_procedimento ? { background: corTipo(i.tipo), color: textoTipo(i.tipo) } : { background: "var(--dash-empty)", color: "var(--dash-text-soft)" }}>{i.tipo}</span></td>
+                                    <td className="hidden px-3 py-2 md:table-cell">{i.x.reconstituicao ? <b style={{ color: "var(--dash-green)" }}>Sim</b> : "Não"}</td>
+                                    <td className="hidden break-words px-3 py-2 sm:table-cell">{i.realizou}</td>
+                                    <td className="hidden px-3 py-2 tabular-nums md:table-cell">{fmtHM(i.h)}</td>
+                                    <td className="hidden break-words px-3 py-2 lg:table-cell">{i.x.convenio}</td>
+                                </tr>))}
+                        </tbody>
+                    </table>
+                </div>
+                {lista.length > mostrar && (
+                    <div className="mt-3 flex justify-center">
+                        <button type="button" onClick={() => setMostrar((m) => m + 25)} className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-extrabold" style={{ background: "var(--dash-chip)", color: "var(--dash-text)" }}>Ver mais {fmtN(Math.min(25, lista.length - mostrar))}</button>
+                    </div>
+                )}
+                {c.semTipo > 0 && <p className="mt-2 text-xs" style={{ color: "var(--dash-text-soft)" }}>&quot;Tipo não informado&quot;: atendimentos sem o campo Tipo de procedimento preenchido (anteriores à OS digital ou com o campo vazio).</p>}
+            </Card>
+        </div>
+    );
+}
+
 type Ordem = { campo: keyof ListaItem; dir: 1 | -1 };
-const COLUNAS: [keyof ListaItem, string][] = [
-    ["id", "ID"], ["falecido", "Falecido"], ["criado_em", "Cadastro"], ["data_sepultamento", "Sepultamento"], ["idade", "Idade"],
-    ["convenio", "Convênio"], ["agente", "Agente"], ["velorio", "Velório"], ["cemiterio", "Cemitério"], ["urna", "Urna"],
-    ["ciclo_h", "Ciclo"], ["status_rotulo", "Fase"],
+/* Sem rolagem lateral (05/11/2026): em telas menores, colunas secundárias ficam ocultas (estão na ficha e no CSV). */
+const COLUNAS: [keyof ListaItem, string, string][] = [
+    ["id", "ID", "hidden lg:table-cell"], ["falecido", "Falecido", ""], ["criado_em", "Cadastro", ""], ["data_sepultamento", "Sepultamento", "hidden md:table-cell"], ["idade", "Idade", "hidden lg:table-cell"],
+    ["convenio", "Convênio", "hidden sm:table-cell"], ["agente", "Agente", "hidden md:table-cell"], ["velorio", "Velório", "hidden lg:table-cell"], ["cemiterio", "Cemitério", "hidden xl:table-cell"], ["urna", "Urna", "hidden xl:table-cell"],
+    ["ciclo_h", "Ciclo", "hidden lg:table-cell"], ["status_rotulo", "Fase", ""],
 ];
+const COL = (c: keyof ListaItem) => COLUNAS.find((x) => x[0] === c)?.[2] ?? "";
 
 function AbaLista({ d, abrir }: { d: Painel; abrir: (id: number) => void }) {
     const [busca, setBusca] = useState("");
@@ -1365,9 +1671,9 @@ function AbaLista({ d, abrir }: { d: Painel; abrir: (id: number) => void }) {
     const fatia = linhas.slice(pag * POR, pag * POR + POR);
 
     const exportar = () => {
-        const cab = ["ID", "Falecido", "Cadastro", "Falecimento", "Sepultamento", "Idade", "Convênio", "Agente", "Velório", "Local do velório", "Cemitério", "Urna", "Roupa", "Ciclo (h)", "Ocioso (h)", "Fase"];
+        const cab = ["ID", "Falecido", "Cadastro", "Falecimento", "Sepultamento", "Idade", "Convênio", "Agente", "Velório", "Local do velório", "Cemitério", "Urna", "Roupa", "Tanatopraxia", "Reconstituição facial", "Ciclo (h)", "Ocioso (h)", "Fase"];
         const q = (v: unknown) => { const s = v == null ? "" : String(v); return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-        const csv = [cab.join(";"), ...linhas.map((x) => [x.id, x.falecido, x.criado_em, x.data_falecimento, x.data_sepultamento, x.idade, x.convenio, x.agente, x.velorio, x.local_velorio, x.cemiterio, x.urna, x.roupa, x.ciclo_h?.toString().replace(".", ","), x.ocioso_h?.toString().replace(".", ","), x.status_rotulo].map(q).join(";"))].join("\n");
+        const csv = [cab.join(";"), ...linhas.map((x) => [x.id, x.falecido, x.criado_em, x.data_falecimento, x.data_sepultamento, x.idade, x.convenio, x.agente, x.velorio, x.local_velorio, x.cemiterio, x.urna, x.roupa, x.tanato ? (x.tanato_procedimento || "Sim") : "Não", x.tanato ? (x.reconstituicao ? "Sim" : "Não") : "", x.ciclo_h?.toString().replace(".", ","), x.ocioso_h?.toString().replace(".", ","), x.status_rotulo].map(q).join(";"))].join("\n");
         const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
         const a = document.createElement("a");
         a.href = url; a.download = `atendimentos_${d.periodo.inicio}_a_${d.periodo.fim}.csv`; a.click();
@@ -1377,32 +1683,32 @@ function AbaLista({ d, abrir }: { d: Painel; abrir: (id: number) => void }) {
     return (
         <Card titulo="Lista analítica" dica={`${fmtN(linhas.length)} atendimento(s) · clique numa linha para ver a ficha`}
             acao={<div className="flex flex-wrap gap-2">
-                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar falecido, agente, urna…" className="rounded-lg border px-3 py-1.5 text-sm" style={{ background: "var(--dash-card-soft)", borderColor: "var(--dash-border-light)", color: "var(--dash-text)" }} />
-                <button type="button" onClick={exportar} className="rounded-lg border px-3 py-1.5 text-sm font-bold" style={{ borderColor: "var(--dash-border-light)", color: "var(--dash-text)" }}>Exportar CSV</button>
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar falecido, agente, urna…" aria-label="Buscar" className="h-11 min-w-0 rounded-xl border-0 px-3 text-[16px] sm:text-sm" style={{ background: "var(--dash-card-soft)", color: "var(--dash-text)" }} />
+                <button type="button" onClick={exportar} className="inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-extrabold" style={{ background: "var(--dash-chip)", color: "var(--dash-text)" }}>Exportar CSV</button>
             </div>}>
-            <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--dash-border-light)" }}>
-                <table className="w-full min-w-[1100px] text-sm" style={{ color: "var(--dash-text)" }}>
+            <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--dash-border-light)" }}>
+                <table className="w-full text-[12px] sm:text-sm" style={{ color: "var(--dash-text)" }}>
                     <thead><tr style={{ background: "var(--dash-card-soft)" }}>
-                        {COLUNAS.map(([c, l]) => (
-                            <th key={c} onClick={() => setOrdem((o) => ({ campo: c, dir: o.campo === c ? (o.dir === 1 ? -1 : 1) : 1 }))} className="cursor-pointer select-none px-3 py-2 text-left text-xs font-bold whitespace-nowrap" style={{ color: "var(--dash-text-soft)" }}>
+                        {COLUNAS.map(([c, l, cl]) => (
+                            <th key={c} onClick={() => setOrdem((o) => ({ campo: c, dir: o.campo === c ? (o.dir === 1 ? -1 : 1) : 1 }))} className={`cursor-pointer select-none px-2 py-2 text-left text-[11px] font-extrabold leading-tight sm:px-3 sm:text-xs ${cl}`} style={{ color: "var(--dash-text-soft)" }}>
                                 {l}{ordem.campo === c ? (ordem.dir === 1 ? " ↑" : " ↓") : ""}
                             </th>))}
                     </tr></thead>
                     <tbody>
                         {fatia.map((x) => (
                             <tr key={x.id} onClick={() => abrir(x.id)} className="cursor-pointer border-t hover:bg-[var(--dash-card-soft)]" style={{ borderColor: "var(--dash-border-light)" }}>
-                                <td className="px-3 py-2 tabular-nums">#{x.id}</td>
-                                <td className="max-w-[240px] truncate px-3 py-2 font-bold">{x.falecido}</td>
-                                <td className="px-3 py-2 tabular-nums whitespace-nowrap">{dataHoraBR(x.criado_em)}</td>
-                                <td className="px-3 py-2 tabular-nums">{dataBR(x.data_sepultamento)}</td>
-                                <td className="px-3 py-2 tabular-nums">{x.idade ?? "—"}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">{x.convenio}</td>
-                                <td className="px-3 py-2">{x.agente}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">{x.velorio}</td>
-                                <td className="max-w-[200px] truncate px-3 py-2">{x.cemiterio}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">{x.urna}</td>
-                                <td className="px-3 py-2 tabular-nums">{fmtH(x.ciclo_h)}</td>
-                                <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold text-white whitespace-nowrap ${STATUS_COR[x.status] ?? "bg-slate-500"}`}>{x.status_rotulo}</span></td>
+                                <td className={`px-2 py-2 tabular-nums sm:px-3 ${COL("id")}`}>#{x.id}</td>
+                                <td className="break-words px-2 py-2 font-bold sm:px-3">{x.falecido}</td>
+                                <td className="px-2 py-2 tabular-nums sm:px-3">{dataHoraBR(x.criado_em)}</td>
+                                <td className={`px-3 py-2 tabular-nums ${COL("data_sepultamento")}`}>{dataBR(x.data_sepultamento)}</td>
+                                <td className={`px-3 py-2 tabular-nums ${COL("idade")}`}>{x.idade ?? "—"}</td>
+                                <td className={`break-words px-3 py-2 ${COL("convenio")}`}>{x.convenio}</td>
+                                <td className={`break-words px-3 py-2 ${COL("agente")}`}>{x.agente}</td>
+                                <td className={`break-words px-3 py-2 ${COL("velorio")}`}>{x.velorio}</td>
+                                <td className={`break-words px-3 py-2 ${COL("cemiterio")}`}>{x.cemiterio}</td>
+                                <td className={`break-words px-3 py-2 ${COL("urna")}`}>{x.urna}</td>
+                                <td className={`px-3 py-2 tabular-nums ${COL("ciclo_h")}`}>{fmtH(x.ciclo_h)}</td>
+                                <td className="px-2 py-2 sm:px-3"><span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold leading-tight text-white ${STATUS_COR[x.status] ?? "bg-[#7A8499]"}`}>{x.status_rotulo}</span></td>
                             </tr>
                         ))}
                     </tbody>
@@ -1442,17 +1748,19 @@ function Ficha({ item, etapasDef, fechar }: { item: ListaItem; etapasDef: { chav
                     <div>
                         <h2 className="text-xl font-black">{item.falecido}</h2>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--dash-text-soft)" }}>
-                            <span className={`rounded-full px-2 py-0.5 font-bold text-white ${STATUS_COR[item.status] ?? "bg-slate-500"}`}>{item.status_rotulo}</span>
+                            <span className={`rounded-full px-2 py-0.5 font-bold text-white ${STATUS_COR[item.status] ?? "bg-[#7A8499]"}`}>{item.status_rotulo}</span>
                             <span>#{item.id}</span><span>· {item.convenio}</span><span>· aberto por {item.agente}</span>
                         </div>
                     </div>
                     <button type="button" onClick={fechar} className="rounded-md border px-2 py-1 text-sm" style={{ borderColor: "var(--dash-border-light)" }} aria-label="Fechar">✕</button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 text-sm">
-                    <dl className="grid grid-cols-[150px_1fr] gap-x-3 gap-y-1">
+                    <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 sm:grid-cols-[150px_1fr]">
                         {[["Cadastro", dataHoraBR(item.criado_em)], ["Falecimento", dataBR(item.data_falecimento)], ["Idade", item.idade != null ? `${item.idade} anos` : "—"], ["Religião", item.religiao],
                         ["Velório", `${item.velorio}${item.local_velorio && !/^https?:/.test(item.local_velorio) ? ` — ${item.local_velorio}` : ""}`], ["Sepultamento", `${item.cemiterio} · ${dataBR(item.data_sepultamento)}`],
-                        ["Urna", item.urna], ["Roupa", item.roupa || "—"], ["Ciclo total", fmtH(item.ciclo_h)], ["Tempo ocioso", fmtH(item.ocioso_h)]].map(([k, v]) => (
+                        ["Urna", item.urna], ["Roupa", item.roupa || "—"],
+                        ["Tanatopraxia", item.tanato ? `${item.tanato_procedimento || "Tipo não informado"}${item.reconstituicao ? " · com reconstituição facial" : ""}` : "Não"],
+                        ["Ciclo total", fmtH(item.ciclo_h)], ["Tempo ocioso", fmtH(item.ocioso_h)]].map(([k, v]) => (
                             <React.Fragment key={k}><dt style={{ color: "var(--dash-text-soft)" }}>{k}</dt><dd className="break-words">{v}</dd></React.Fragment>))}
                     </dl>
                     <h4 className="mt-5 mb-2 text-xs font-extrabold uppercase tracking-wider" style={{ color: "var(--dash-text-soft)" }}>Tempo por etapa</h4>
@@ -1486,7 +1794,7 @@ function Ficha({ item, etapasDef, fechar }: { item: ListaItem; etapasDef: { chav
    PÁGINA
 ========================================================= */
 
-type Aba = "geral" | "equipe" | "perfil" | "visitas" | "lista";
+type Aba = "geral" | "equipe" | "tanato" | "perfil" | "visitas" | "lista";
 
 function diasEntre(a: string, b: string) { return Math.round((tsOf(b) - tsOf(a)) / 864e5) + 1; }
 function somaDias(s: string, n: number) { const d = new Date(tsOf(s)); d.setDate(d.getDate() + n); return iso(d); }
@@ -1513,6 +1821,14 @@ export default function PainelAtendimentosPage() {
     const [geradoEm, setGeradoEm] = useState<string>("");
     const [erro, setErro] = useState<{ tipo: "login" | "falha"; msg: string } | null>(null);
     const [aval, setAval] = useState<AvalEstado>({ carregando: false, erro: null, semPermissao: false, dados: null });
+    const [equipe, setEquipe] = useState<EquipeFiltro>(null);
+
+    /* Grupos de acesso da tela de Colaboradores (só Agente e Tanatopraxista nas análises por pessoa) */
+    useEffect(() => {
+        let vivo = true;
+        carregarEquipe().then((eq) => { if (vivo) setEquipe(eq); });
+        return () => { vivo = false; };
+    }, [recarga]);
 
     /* Avaliações de visita e pós-atendimento do período (visita.php) */
     useEffect(() => {
@@ -1620,8 +1936,8 @@ export default function PainelAtendimentosPage() {
     const escolherPreset = (p: Preset) => { setPreset(p); setRange(rangeDe(p)); };
     const filtrar = (campo: "convenio", v: string) => { if (campo === "convenio") setConvenio((c) => (c === v ? "" : v)); };
     const ficha = fichaId != null ? dados?.lista.find((x) => x.id === fichaId) ?? null : null;
-    const campo = "rounded-lg border px-2 py-1.5 text-sm";
-    const campoEstilo = { background: "var(--dash-card)", borderColor: "var(--dash-border-light)", color: "var(--dash-text)" } as const;
+    const campo = "h-11 min-w-0 rounded-xl border-0 px-3 text-sm font-bold [color-scheme:dark]";
+    const campoEstilo = { background: "rgba(255,255,255,.12)", color: "#FFFFFF" } as const;
 
     if (erro?.tipo === "login") {
         return (
@@ -1636,23 +1952,29 @@ export default function PainelAtendimentosPage() {
     }
 
     return (
-        <main className={`${nunito.className} min-h-screen`} style={{ background: "var(--dash-bg)", color: "var(--dash-text)" }}>
+        <main className={`${nunito.className} min-h-screen [contain:inline-size]`} style={{ background: "var(--dash-bg)", color: "var(--dash-text)" }}>
             <ThemeStyles />
-            <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6">
-                <header className="mb-3 flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <h1 className="text-2xl font-black">Painel de Atendimentos</h1>
-                        <p className="text-sm" style={{ color: "var(--dash-text-soft)" }}>{dataBR(range.inicio)} a {dataBR(range.fim)} · por data de cadastro{geradoEm ? ` · atualizado ${dataHoraBR(geradoEm)}` : ""}</p>
+            <header className="relative overflow-hidden px-4 pb-5 pt-6 text-white sm:px-6" style={{ background: "var(--dash-band)" }}>
+                <span aria-hidden className="pointer-events-none absolute -right-28 -top-40 h-[440px] w-[440px] rounded-full" style={{ border: "52px solid rgba(255,255,255,.05)" }} />
+                <span aria-hidden className="pointer-events-none absolute -top-14 right-36 hidden h-36 w-36 rounded-full sm:block" style={{ background: "rgba(242,203,63,.16)" }} />
+                <div className="relative mx-auto flex max-w-[1500px] flex-col gap-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[11px] font-extrabold uppercase tracking-[.18em]" style={{ color: "#B3CE52" }}>Gestão · atendimento funerário</div>
+                            <h1 className="mt-1 text-[26px] font-black leading-tight lg:text-[28px]">Painel de Atendimentos</h1>
+                            <p className="text-sm" style={{ color: "var(--dash-band-soft)" }}>{dataBR(range.inicio)} a {dataBR(range.fim)} · por data de cadastro{geradoEm ? ` · atualizado ${dataHoraBR(geradoEm)}` : ""}</p>
+                        </div>
+                        <button type="button" onClick={() => { HIST_CACHE.clear(); setLogs({}); setRecarga((n) => n + 1); }} disabled={carregando}
+                            className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] px-5 text-[15px] font-extrabold leading-none disabled:opacity-60" style={{ background: "#F2CB3F", color: "#313C55" }}>
+                            <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" /></svg>
+                            {carregando ? "Carregando…" : "Atualizar"}
+                        </button>
                     </div>
-                    <button type="button" onClick={() => { HIST_CACHE.clear(); setLogs({}); setRecarga((n) => n + 1); }} disabled={carregando} className="rounded-lg border px-3 py-1.5 text-sm font-bold disabled:opacity-50" style={campoEstilo}>{carregando ? "Carregando…" : "↻ Atualizar"}</button>
-                </header>
-
-                <div className="sticky top-0 z-20 -mx-1 mb-4 flex flex-col gap-2 px-1 py-2 backdrop-blur" style={{ background: "color-mix(in srgb, var(--dash-bg) 90%, transparent)" }}>
                     <div className="flex flex-wrap items-center gap-2">
-                        <div className="inline-flex flex-wrap rounded-lg border p-0.5" style={campoEstilo}>
+                        <div className="inline-flex flex-wrap gap-1 rounded-[22px] p-1" style={{ background: "rgba(255,255,255,.08)" }}>
                             {PRESETS.map(([k, l]) => (
-                                <button key={k} type="button" onClick={() => escolherPreset(k)} className="rounded-md px-2.5 py-1 text-xs font-bold whitespace-nowrap"
-                                    style={preset === k ? { background: "var(--dash-blue-dark)", color: "#fff" } : { color: "var(--dash-text-soft)" }}>{l}</button>))}
+                                <button key={k} type="button" onClick={() => escolherPreset(k)} className="inline-flex h-9 items-center justify-center rounded-full px-3 text-[13px] font-extrabold leading-none"
+                                    style={preset === k ? { background: "#F2CB3F", color: "#313C55" } : { color: "#FFFFFF" }}>{l}</button>))}
                         </div>
                         <input type="date" className={campo} style={campoEstilo} value={range.inicio} onChange={(e) => { if (!e.target.value) return; setPreset("custom"); setRange((r) => ({ inicio: e.target.value, fim: r.fim < e.target.value ? e.target.value : r.fim })); }} aria-label="Data inicial" />
                         <input type="date" className={campo} style={campoEstilo} value={range.fim} onChange={(e) => { if (!e.target.value) return; setPreset("custom"); setRange((r) => ({ inicio: r.inicio > e.target.value ? e.target.value : r.inicio, fim: e.target.value })); }} aria-label="Data final" />
@@ -1660,22 +1982,25 @@ export default function PainelAtendimentosPage() {
                             <option value="">Todos os convênios</option>{(dados?.opcoes.convenios ?? []).map((c) => <option key={c}>{c}</option>)}
                         </select>
                         <select className={campo} style={campoEstilo} value={agente} onChange={(e) => setAgente(e.target.value)} aria-label="Agente que abriu">
-                            <option value="">Todos os agentes</option>{(dados?.opcoes.agentes ?? []).map((c) => <option key={c}>{c}</option>)}
+                            <option value="">Todos os agentes</option>{(dados?.opcoes.agentes ?? []).filter((c) => naEquipe(equipe, c) || c === agente).map((c) => <option key={c}>{c}</option>)}
                         </select>
-                        {(convenio || agente) && <button type="button" onClick={() => { setConvenio(""); setAgente(""); }} className="text-xs font-bold underline" style={{ color: "var(--dash-blue-dark)" }}>Limpar filtros</button>}
+                        {(convenio || agente) && <button type="button" onClick={() => { setConvenio(""); setAgente(""); }} className="inline-flex h-11 items-center px-2 text-sm font-bold underline" style={{ color: "#F2CB3F" }}>Limpar filtros</button>}
                     </div>
                     {progresso && (
-                        <div className="flex items-center gap-3 text-xs" style={{ color: "var(--dash-text-soft)" }}>
-                            <span className="whitespace-nowrap">Carregando histórico das fases: {progresso.feitos} de {progresso.total}</span>
-                            <span className="h-1.5 flex-1 overflow-hidden rounded" style={{ background: "var(--dash-empty)" }}><span className="block h-full rounded" style={{ width: `${(progresso.feitos / Math.max(1, progresso.total)) * 100}%`, background: "var(--dash-blue)" }} /></span>
+                        <div className="flex items-center gap-3 text-xs" style={{ color: "var(--dash-band-soft)" }}>
+                            <span>Carregando histórico das fases: {progresso.feitos} de {progresso.total}</span>
+                            <span className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,.15)" }}><span className="block h-full rounded-full" style={{ width: `${(progresso.feitos / Math.max(1, progresso.total)) * 100}%`, background: "#F2CB3F" }} /></span>
                         </div>
                     )}
-                    <nav className="flex gap-1 overflow-x-auto border-b" style={{ borderColor: "var(--dash-border-light)" }} role="tablist">
-                        {([["geral", "Visão geral"], ["equipe", "Desempenho da equipe"], ["perfil", "Perfil dos atendimentos"], ["visitas", `Visitas e pós-atendimento${dados && aval.dados ? ` · ${avalDoPainel(dados, aval.dados).avaliacoes.length}` : ""}`], ["lista", `Lista analítica${dados ? ` · ${dados.lista.length}` : ""}`]] as [Aba, string][]).map(([k, l]) => (
-                            <button key={k} role="tab" aria-selected={aba === k} type="button" onClick={() => setAba(k)} className="-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-bold"
-                                style={{ borderColor: aba === k ? "var(--dash-blue-dark)" : "transparent", color: aba === k ? "var(--dash-text)" : "var(--dash-text-soft)" }}>{l}</button>))}
-                    </nav>
                 </div>
+            </header>
+
+            <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6">
+                <nav className="mb-5 flex flex-wrap gap-2" role="tablist" aria-label="Abas do painel">
+                    {([["geral", "Visão geral"], ["equipe", "Desempenho da equipe"], ["tanato", `Tanatopraxias${dados ? ` · ${dados.lista.filter((x) => x.tanato).length}` : ""}`], ["perfil", "Perfil dos atendimentos"], ["visitas", `Visitas e pós-atendimento${dados && aval.dados ? ` · ${avalDoPainel(dados, aval.dados).avaliacoes.length}` : ""}`], ["lista", `Lista analítica${dados ? ` · ${dados.lista.length}` : ""}`]] as [Aba, string][]).map(([k, l]) => (
+                        <button key={k} role="tab" aria-selected={aba === k} type="button" onClick={() => setAba(k)} className="inline-flex min-h-[44px] items-center justify-center rounded-full border px-4 text-sm font-extrabold leading-tight"
+                            style={aba === k ? { background: "var(--dash-blue-dark)", borderColor: "var(--dash-blue-dark)", color: "#FFFFFF" } : { background: "var(--dash-card)", borderColor: "var(--dash-border-light)", color: "var(--dash-text)" }}>{l}</button>))}
+                </nav>
 
                 {erro?.tipo === "falha" && (
                     <div className="mb-4 rounded-xl border px-4 py-3 text-sm" style={{ background: "var(--dash-danger-bg)", borderColor: "var(--dash-danger-border)", color: "var(--dash-danger-text)" }}>
@@ -1686,9 +2011,10 @@ export default function PainelAtendimentosPage() {
                 {dados && (
                     <div style={{ opacity: carregando ? 0.6 : 1, transition: "opacity .15s" }}>
                         {aba === "geral" && <AbaGeral d={dados} filtrar={filtrar} />}
-                        {aba === "equipe" && <AbaEquipe d={dados} av={aval} />}
-                        {aba === "perfil" && <AbaPerfil d={dados} />}
-                        {aba === "visitas" && <AbaVisitas d={dados} av={aval} abrirAtendimento={setFichaId} />}
+                        {aba === "equipe" && <AbaEquipe d={painelDaEquipe(dados, equipe)} av={aval} eq={equipe} />}
+                        {aba === "tanato" && <AbaTanato d={dados} eq={equipe} abrir={setFichaId} />}
+                        {aba === "perfil" && <AbaPerfil d={painelDaEquipe(dados, equipe)} />}
+                        {aba === "visitas" && <AbaVisitas d={dados} av={aval} eq={equipe} abrirAtendimento={setFichaId} />}
                         {aba === "lista" && <AbaLista d={dados} abrir={setFichaId} />}
                     </div>
                 )}

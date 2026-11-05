@@ -46,6 +46,8 @@ export const RESUMO_SECTIONS: ResumoSecaoConfig[] = [
         chaves: [
             "assistencia",
             "tanato",
+            "tanato_procedimento",
+            "reconstituicao_facial",
             "ornamentacao",
             "ornamentacao_tipo",
             "invol",

@@ -43,7 +43,20 @@ const ROTULOS_DERIVADOS: Record<string, string> = {
     insumos_tanatopraxia: "Insumos Tanatopraxia",
     coroas_detalhes: "Coroas de Flores",
     conservacao_itens: "Conservação do Corpo",
+    tanato_procedimento: "Tipo de procedimento",
+    reconstituicao_facial: "Reconstituição facial",
 };
+
+/** 05/11/2026: nome do procedimento da tanatopraxia como no Editar registro (só a primeira letra maiúscula). */
+function rotuloProcedimentoTanato(nome: any): string {
+    const t = String(nome ?? "").trim().replace(/\s+/g, " ");
+    if (!t) return "";
+    const n = t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (n.startsWith("tanatopraxia avanc")) return "Tanatopraxia avançada";
+    if (n.startsWith("tanatopraxia")) return "Tanatopraxia";
+    if (n.startsWith("embalsam")) return "Embalsamamento";
+    return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
 
 const CHAVES_DERIVADAS_POR_SECAO: Record<string, string[]> = {
     servicos: ["conservacao_itens"],
@@ -283,6 +296,19 @@ function prepararOrigemResumo(
         // de um único modelo/tipo.
         delete origem.coroa_tipo;
         delete origem.coroa_modelo;
+    }
+
+    // Tanatopraxia: tipo de procedimento e reconstituição facial (05/11/2026).
+    if (textoSimNaoEhNao(origem.tanato)) {
+        delete origem.tanato_procedimento;
+        delete origem.reconstituicao_facial;
+    } else {
+        const proc = rotuloProcedimentoTanato(origem.tanato_procedimento);
+        if (proc) origem.tanato_procedimento = proc;
+        else delete origem.tanato_procedimento;
+        const rec = String(origem.reconstituicao_facial ?? "").trim();
+        if (rec) origem.reconstituicao_facial = asBoolLocal(rec) ? "Sim" : "Não";
+        else delete origem.reconstituicao_facial;
     }
 
     // Campos dependentes só fazem sentido quando o serviço/item está ativo.

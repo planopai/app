@@ -1619,7 +1619,7 @@ export default function PermissoesPage() {
                             </div>
 
                             {/* Filtro por grupo */}
-                            <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
+                            <div className="mt-3 flex flex-wrap gap-1.5">
                                 {chipsFiltro.map((c) => {
                                     const ativo = filtroGrupo === c.k;
                                     return (
