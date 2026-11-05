@@ -229,7 +229,7 @@ export const MODULOS: Modulo[] = [
         icone: IconChartBar,
         hub: { href: "/gestao", slug: "gestao" },
         itens: [
-            { id: "usuarios", titulo: "Usuários", desc: "Contas e cargos", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog, secao: "Pessoas e acesso" },
+            { id: "usuarios", titulo: "Colaboradores/Usuários", desc: "Cadastro, login e acesso", href: "/usuarios", slugs: ["usuarios"], icone: IconUserCog, secao: "Pessoas e acesso" },
             { id: "permissoes", titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Pessoas e acesso" },
             { id: "auditoria", titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Pessoas e acesso" },
             { id: "organizar-menu", titulo: "Organizar menu", desc: "Módulos, seções e telas do menu", href: "/organizar-menu", slugs: ["gestao"], icone: IconLayoutSidebar, secao: "Pessoas e acesso" },

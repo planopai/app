@@ -608,7 +608,7 @@ export default function ColaboradoresUsuariosPage() {
             <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
                 <header className="mb-4 flex flex-wrap items-start gap-3">
                     <div className="min-w-0 flex-1">
-                        <h1 className="text-[24px] font-extrabold leading-tight lg:text-[28px]">Colaboradores e usuários</h1>
+                        <h1 className="text-[24px] font-extrabold leading-tight lg:text-[28px]">Colaboradores/Usuários</h1>
                     </div>
                     <button type="button" onClick={() => void carregar()} disabled={carregando} className={`${BTN_SEC} w-11 px-0`} aria-label="Atualizar" title="Atualizar">
                         <IconRefresh size={18} className={carregando ? 'animate-spin' : ''} />
