@@ -10,8 +10,8 @@
  * - estoque é reaproveitado em memória por 60s;
  * - falecidos do quadro são reaproveitados por 30s;
  * - após uma ação atualiza somente a aba afetada;
- * - 05/11/2026: fluxo simplificado para todas as coroas: INICIAR → Coroa Pronta (foto) → Entregue
- *   (o coroas.php grava o início da coroa e da faixa no INICIAR; status gravados continuam os mesmos);
+ * - 05/11/2026: fluxo simplificado para todas as coroas: só Coroa Pronta (foto) → Coroa Entregue
+ *   (o coroas.php grava o início da coroa e da faixa junto com a Coroa Pronta; status gravados continuam os mesmos);
  * - o usuário atual é enviado como fallback para as notificações de ação;
  * - pedidos criados manualmente nesta tela usam sempre origem Venda Direta;
  * - interface reduzida a Confecção + Finalizadas; Finalizadas reúne Venda Direta e Loja On-line;
@@ -410,7 +410,7 @@ function origemFinalizadaLabel(order?: ManualOrder | null): string {
 function acaoManualLabel(target: ManualAcao) {
     if (target === "iniciar") return "INICIAR";
     if (target === "finalizada") return "Coroa Pronta";
-    return "Entregue";
+    return "Coroa Entregue";
 }
 
 function coroaManualFinalizada(order: ManualOrder): boolean {
@@ -432,12 +432,11 @@ function coroaManualIniciada(order: ManualOrder): boolean {
     );
 }
 
-/** Antes de iniciar: só INICIAR. Depois: só Coroa Pronta e Entregue. */
-function acoesManualDoPedido(order: ManualOrder): ReadonlyArray<readonly [ManualAcao, string]> {
-    if (!coroaManualIniciada(order)) return [["iniciar", "INICIAR"]];
+/** Só 2 ações: Coroa Pronta (com foto) e Coroa Entregue. "iniciar" fica apenas por compatibilidade. */
+function acoesManualDoPedido(_order: ManualOrder): ReadonlyArray<readonly [ManualAcao, string]> {
     return [
         ["finalizada", "Coroa Pronta"],
-        ["entregue", "Entregue"],
+        ["entregue", "Coroa Entregue"],
     ];
 }
 
@@ -2531,7 +2530,7 @@ export default function Page() {
 
         if (!acaoManualLiberada(manualDetail, target)) return;
 
-        // INICIAR é um toque só; Entregue tira a coroa da lista, então pede confirmação.
+        // Coroa Entregue tira a coroa da lista, então pede confirmação.
         if (target === "entregue" && !window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
             return;
         }

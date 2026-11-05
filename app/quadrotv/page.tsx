@@ -6831,14 +6831,14 @@ function MobStyles() {
    Ações da coroa no Quadro (28/10/2026)
    Mesmas regras e mesmo endpoint da tela Coroa de Flores (acoesManualDoPedido,
    acaoManualConcluida, acaoManualLiberada): coroas.php acao=atualizar_status com item_id.
-   05/11/2026: INICIAR → Coroa Pronta (foto obrigatória) → Entregue.
+   05/11/2026: só Coroa Pronta (foto obrigatória) → Coroa Entregue (o início é gravado junto com a Coroa Pronta).
    ========================= */
 type AcaoCoroaTv = "iniciar" | "finalizada" | "entregue";
 
 const ACAO_COROA_TV_LABEL: Record<AcaoCoroaTv, string> = {
     iniciar: "INICIAR",
     finalizada: "Coroa Pronta",
-    entregue: "Entregue",
+    entregue: "Coroa Entregue",
 };
 
 const FOTO_COROA_TV_MAX_BYTES = 12 * 1024 * 1024;
@@ -6858,9 +6858,9 @@ function coroaTvIniciada(p: CoroaTvPedido): boolean {
     return Boolean(p.coroa_inicio_em) || Boolean(p.faixa_inicio_em) || status === "coroa" || status === "faixa" || coroaTvFinalizada(p);
 }
 
-/** Antes de iniciar: só INICIAR. Depois: só Coroa Pronta e Entregue. */
-function acoesCoroaTv(p: CoroaTvPedido): AcaoCoroaTv[] {
-    return coroaTvIniciada(p) ? ["finalizada", "entregue"] : ["iniciar"];
+/** Só 2 ações: Coroa Pronta (com foto) e Coroa Entregue. "iniciar" fica apenas por compatibilidade. */
+function acoesCoroaTv(_p: CoroaTvPedido): AcaoCoroaTv[] {
+    return ["finalizada", "entregue"];
 }
 
 function acaoCoroaTvConcluida(p: CoroaTvPedido, alvo: AcaoCoroaTv): boolean {

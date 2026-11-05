@@ -18,6 +18,8 @@ import {
     IconCamera,
     IconCar,
     IconCheck,
+    IconChevronDown,
+    IconChevronRight,
     IconClipboardCheck,
     IconClock,
     IconCoffee,
@@ -592,6 +594,7 @@ export default function ModalDetalheRegistro({
     const [fotosOpen, setFotosOpen] = useState(false);
     const [aba, setAba] = useState<AbaDetalhe>("resumo");
     const [soEtapas, setSoEtapas] = useState(false);
+    const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
     const [viewport, setViewport] =
         useState<VisualViewportState | null>(null);
 
@@ -657,6 +660,7 @@ export default function ModalDetalheRegistro({
         const celular = typeof window !== "undefined" && window.innerWidth < 1024;
         setAba(celular ? "linha" : "resumo");
         setSoEtapas(false);
+        setAbertos(new Set());
     }, [aberto, registro]);
 
     // Esc fecha as fotos ou a janela (não age se a Visita/Pós-atendimento estiver aberta por cima).
@@ -920,6 +924,14 @@ export default function ModalDetalheRegistro({
         }
         return out;
     }, [dados.linhaTempo, soEtapas]);
+
+    const alternarEvento = (chave: string) =>
+        setAbertos((atual) => {
+            const novo = new Set(atual);
+            if (novo.has(chave)) novo.delete(chave);
+            else novo.add(chave);
+            return novo;
+        });
 
     const qtdTudo = dados.linhaTempo.length;
     const qtdEtapas = dados.linhaTempo.filter((e) => e.etapa).length;
@@ -1548,19 +1560,11 @@ export default function ModalDetalheRegistro({
                                                                 <Ic size={16} stroke={2} />
                                                             </span>
                                                             <div className="flex min-w-0 flex-col gap-0.5 pt-1">
-                                                                <span
-                                                                    className={`break-words leading-snug ${ev.etapa
-                                                                        ? `text-[15px] font-extrabold ${TEXTO_FORTE}`
-                                                                        : `text-[14.5px] font-semibold ${TEXTO_MEDIO}`
-                                                                        }`}
-                                                                >
-                                                                    {ev.texto}
-                                                                </span>
-                                                                {ev.subitens.length ? (
-                                                                    <span className="break-words text-[13px] leading-relaxed text-[#5B6478] dark:text-[#AEB9CF]">
-                                                                        {ev.subitens.join(" · ")}
-                                                                    </span>
-                                                                ) : null}
+                                                                <ConteudoEvento
+                                                                    ev={ev}
+                                                                    aberto={abertos.has(`${d.dia}-${i}`)}
+                                                                    onAlternar={() => alternarEvento(`${d.dia}-${i}`)}
+                                                                />
                                                                 {ev.por ? (
                                                                     <span className="mt-0.5 self-start rounded-lg bg-[#F1F4F8] px-2 py-0.5 text-[12.5px] font-bold text-[#4A5368] lg:hidden dark:bg-[#1C2334] dark:text-[#D6DCE8]">
                                                                         {ev.por}
@@ -1694,5 +1698,125 @@ function ChipSituacao({ item }: { item: ItemEstoqueRelatorio }) {
             {pendente ? <IconClock size={13} stroke={2.5} /> : <IconCheck size={13} stroke={2.5} />}
             {pendente ? "Baixa pendente" : s}
         </span>
+    );
+}
+
+/* ============================== Evento da linha do tempo ============================== */
+
+/** Quantas informações de uma edição aparecem antes do "Ver todas". */
+const LIMITE_CAMPOS = 4;
+
+/**
+ * Separa o texto da edição (o mesmo do PDF: "Campo: valor · Campo: valor") em linhas.
+ * Uma informação só continua numa linha; várias viram uma lista curta, que abre por inteiro.
+ */
+function camposDaEdicao(texto: string) {
+    return texto
+        .split(" · ")
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => {
+            const i = p.indexOf(": ");
+            return i > 0 && i <= 60 ? { rotulo: p.slice(0, i), valor: p.slice(i + 2) } : { rotulo: "", valor: p };
+        });
+}
+
+function ConteudoEvento({
+    ev,
+    aberto,
+    onAlternar,
+}: {
+    ev: EventoLinhaTempo;
+    aberto: boolean;
+    onAlternar: () => void;
+}) {
+    const detalhe = ev.subitens.length ? (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+            {ev.subitens.map((s, k) => (
+                <li key={k} className="break-words text-[13px] leading-relaxed text-[#5B6478] dark:text-[#AEB9CF]">
+                    {s}
+                </li>
+            ))}
+        </ul>
+    ) : null;
+
+    // Etapas: uma por bloco, com a seta entre elas e "com foto" como etiqueta.
+    if (ev.etapa) {
+        const passos = ev.texto.split(" » ").map((t) => ({
+            nome: t.replace(/\s*\(com foto\)\s*/i, "").trim(),
+            foto: /\(com foto\)/i.test(t),
+        }));
+        return (
+            <div className="flex min-w-0 flex-col gap-1 pt-1">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    {passos.map((p, k) => (
+                        <React.Fragment key={k}>
+                            {k > 0 ? <IconChevronRight size={15} stroke={2.4} className="shrink-0 text-[#8893AA]" /> : null}
+                            <span className={`text-[15px] font-extrabold leading-snug ${TEXTO_FORTE}`}>{p.nome}</span>
+                            {p.foto ? (
+                                <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-bold ${CHIP_CINZA}`}>
+                                    <IconCamera size={12} stroke={2} />
+                                    foto
+                                </span>
+                            ) : null}
+                        </React.Fragment>
+                    ))}
+                </div>
+                {detalhe}
+            </div>
+        );
+    }
+
+    const campos = camposDaEdicao(ev.texto);
+
+    if (campos.length <= 1) {
+        const c = campos[0];
+        return (
+            <div className="flex min-w-0 flex-col gap-0.5 pt-1">
+                <span className={`break-words text-[14.5px] leading-snug ${TEXTO_MEDIO}`}>
+                    {c?.rotulo ? (
+                        <>
+                            <span className="font-semibold">{c.rotulo}:</span> <b className={TEXTO_FORTE}>{c.valor}</b>
+                        </>
+                    ) : (
+                        <span className="font-semibold">{c?.valor || ev.texto}</span>
+                    )}
+                </span>
+                {detalhe}
+            </div>
+        );
+    }
+
+    const visiveis = aberto ? campos : campos.slice(0, LIMITE_CAMPOS);
+    const escondidos = campos.length - LIMITE_CAMPOS;
+
+    return (
+        <div className="flex min-w-0 flex-col gap-1.5 pt-1">
+            <span className={`text-[14.5px] font-bold leading-snug ${TEXTO_MEDIO}`}>
+                Cadastro atualizado · {campos.length} informações
+            </span>
+            <dl className="m-0 grid grid-cols-1 gap-x-4 gap-y-1 rounded-xl bg-[#F6F8FB] px-3 py-2 sm:grid-cols-2 dark:bg-[#1C2334]">
+                {visiveis.map((c, k) => (
+                    <div key={k} className="flex min-w-0 flex-col py-0.5">
+                        {c.rotulo ? (
+                            <dt className="text-[12px] font-bold text-[#5B6478] dark:text-[#AEB9CF]">{c.rotulo}</dt>
+                        ) : null}
+                        <dd className={`m-0 break-words text-[13.5px] font-semibold leading-snug ${TEXTO_FORTE}`}>{c.valor}</dd>
+                    </div>
+                ))}
+            </dl>
+            {escondidos > 0 ? (
+                <button
+                    type="button"
+                    onClick={onAlternar}
+                    aria-expanded={aberto}
+                    className="inline-flex min-h-[36px] items-center gap-1 self-start rounded-lg px-1 text-[13px] font-extrabold text-[#3D6A99] hover:underline dark:text-[#A9BED6]"
+                >
+                    <IconChevronDown size={15} stroke={2.4} className={aberto ? "rotate-180" : ""} />
+                    {aberto ? "Mostrar menos" : `Ver todas (+${escondidos})`}
+                </button>
+            ) : null}
+            {detalhe}
+        </div>
     );
 }
