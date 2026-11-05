@@ -413,6 +413,14 @@ function acaoManualLabel(target: ManualAcao) {
     return "Coroa Entregue";
 }
 
+/** Log do "Ver" (05/11/2026): quem registrou Coroa Pronta e Coroa Entregue, e quando. */
+function logAcoesManual(order: ManualOrder): Array<{ rotulo: string; por: string; em: string | null }> {
+    return [
+        { rotulo: "Coroa Pronta", por: String(order.finalizada_por ?? "").trim(), em: order.finalizada_em || null },
+        { rotulo: "Coroa Entregue", por: String(order.entregue_por ?? "").trim(), em: order.entregue_em || null },
+    ];
+}
+
 function coroaManualFinalizada(order: ManualOrder): boolean {
     return Boolean(order.finalizada_em) || order.status === "finalizada" || order.status === "entregue";
 }
@@ -4532,6 +4540,29 @@ export default function Page() {
                                                 <div className="text-xs text-muted-foreground">
                                                     Criado em {formatDate(manualDetail.criado_em)} — Total <b>{totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</b>
                                                 </div>
+                                            </div>
+
+                                            {/* 05/11/2026: log das 2 ações (quem e quando). */}
+                                            <div className="mt-3 border-t pt-3">
+                                                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Histórico</div>
+                                                <ul className="space-y-2">
+                                                    {logAcoesManual(manualDetail).map((linha) => (
+                                                        <li key={linha.rotulo} className="flex items-start gap-2 text-sm">
+                                                            <span
+                                                                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${linha.em ? "bg-emerald-500" : "bg-slate-300"}`}
+                                                                aria-hidden
+                                                            />
+                                                            <div className="min-w-0">
+                                                                <div className="font-semibold">{linha.rotulo}</div>
+                                                                <div className="text-xs text-muted-foreground">
+                                                                    {linha.em
+                                                                        ? `${linha.por || "Usuário não informado"} · ${formatDate(linha.em)}`
+                                                                        : "Pendente"}
+                                                                </div>
+                                                            </div>
+                                                        </li>
+                                                    ))}
+                                                </ul>
                                             </div>
                                         </div>
 
