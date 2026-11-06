@@ -78,7 +78,7 @@ export default function BuscaGlobal({ className = "" }: { className?: string }) 
 
     return (
         <div className={`relative w-full max-w-[520px] ${className}`}>
-            <label className="flex h-11 items-center gap-2.5 rounded-xl bg-[#F1F4F8] px-3.5 text-[#5B6478] focus-within:ring-2 focus-within:ring-[#00AEEC] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+            <label className="flex h-11 items-center gap-2.5 rounded-xl border border-[#C9D1DE] bg-[#FFFFFF] px-3.5 text-[#5B6478] shadow-[0_1px_3px_rgba(49,60,85,.10)] transition hover:border-[#313C55] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:border-white/[0.18] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                 <IconSearch size={18} className="shrink-0" />
                 <input
                     ref={entrada}
