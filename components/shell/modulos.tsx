@@ -114,7 +114,7 @@ export const MODULOS: Modulo[] = [
     {
         id: "atendimento",
         titulo: "Atendimento",
-        desc: "Registro, homenagens e coroas",
+        desc: "Registro, homenagens, coroas e avisos",
         icone: IconClipboardList,
         hub: { href: "/servicos-funerarios", slug: "servicos-funerarios" },
         itens: [
@@ -124,32 +124,7 @@ export const MODULOS: Modulo[] = [
             { id: "homenagens", titulo: "Homenagens", desc: "Livro de homenagens", href: "/mensagens", slugs: ["mensagens"], icone: IconHeartHandshake },
             { id: "visita-avaliacao", titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao", "avaliacao"], icone: IconEye },
             { id: "coroas", titulo: "Coroa de Flores", desc: "Coroas naturais e artificiais", href: "/coroa-de-flores", slugs: ["coroa-de-flores"], icone: IconFlower, selo: "coroas" },
-        ],
-    },
-    {
-        id: "comunicacao",
-        titulo: "Comunicação",
-        desc: "Chat e avisos",
-        icone: IconSpeakerphone,
-        paraTodos: true,
-        hub: { href: "/comunicacao", slug: "comunicacao" },
-        itens: [
-            { id: "messenger", titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
-            // 14/10/2026: Configurações do Messenger (respostas rápidas, assinatura…). Nasce aqui; a Gestão move pelo Organizar menu.
-            { id: "messenger-config", titulo: "Configurações do Messenger", desc: "Respostas rápidas e ajustes do atendimento", href: "/messenger-config", slugs: ["messenger-config"], icone: IconSettings },
-            { id: "messenger-testes", titulo: "Testes da Aurora", desc: "Simulador e cenários avaliados pelo Claude", href: "/messenger-testes", slugs: ["messenger-config"], icone: IconRobot },
-            { id: "messenger-aprendizado", titulo: "Aprendizado da Aurora", desc: "Lições, exemplos e rascunhos para a Base", href: "/messenger-aprendizado", slugs: ["messenger-config"], icone: IconBrain },
-            { id: "messenger-habilidades", titulo: "Habilidades da Aurora", desc: "Como a Aurora atende em cada setor", href: "/messenger-habilidades", slugs: ["messenger-config"], icone: IconRobot },
-            // 15/10/2026: painel de monitoramento do atendimento (Gestão: mesma página do Histórico de clientes). Nasce aqui; mova pelo Organizar menu.
-            { id: "messenger-monitor", titulo: "Monitoramento do atendimento", desc: "Fila, atendentes e avaliações", href: "/messenger-monitor", slugs: ["messenger-historico"], icone: IconChartBar },
-            // 23/10/2026: Comprovantes do WhatsApp (a Aurora lê; o responsável marca a baixa). Servidor: aurora_01.php. Nasce aqui; mova pelo Organizar menu.
-            { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger"], icone: IconFileInvoice },
-            { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger"], icone: IconBell },
-            { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger"], icone: IconUserPlus },
-            { id: "messenger-funil-gestao", titulo: "Gestão do funil", desc: "Origem dos leads, conversão e desempenho", href: "/messenger-funil-gestao", slugs: ["messenger-historico"], icone: IconChartFunnel },
-            { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["associados", "messenger-historico"], icone: IconClipboardPlus },
-            { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-historico"], icone: IconAlertTriangle },
-            { id: "chat", titulo: "Chat (Aurora)", desc: "Converse com a Aurora", href: "/chat", slugs: ["chat"], icone: IconMessageCircle },
+            // 06/11/2026: Avisos veio da Comunicação (módulo extinto em 03/11/2026).
             { id: "avisos", titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
     },
@@ -206,14 +181,15 @@ export const MODULOS: Modulo[] = [
             { id: "parceiros", titulo: "Parceiros", desc: "Descontos e rede de parceiros", href: "/parceiros", slugs: ["parceiros"], icone: IconHeartHandshake },
             { id: "medicos", titulo: "Médicos", desc: "Rede de atendimento", href: "/medicos", slugs: ["medicos"], icone: IconStethoscope },
             { id: "sorteios", titulo: "Sorteios", desc: "Sorteios para associados", href: "/sorteios", slugs: ["sorteios"], icone: IconGift },
-            { id: "clube", titulo: "Clube PAI", desc: "Benefícios do clube", href: "/clube", slugs: ["clube"], icone: IconStar },
             { id: "noticias", titulo: "Notícias", desc: "Mensagens para o app dos clientes", href: "/noticias", slugs: ["noticias"], icone: IconNews },
+            // 06/11/2026: Propostas de adesão vieram da Comunicação.
+            { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["associados", "messenger-historico"], icone: IconClipboardPlus },
         ],
     },
     {
         id: "administrativo",
         titulo: "Administrativo",
-        desc: "Leads, pós-atendimento e consultas",
+        desc: "Leads, comprovantes, funil e consultas",
         icone: IconSettings,
         hub: { href: "/administrativo", slug: "administrativo" },
         itens: [
@@ -221,12 +197,17 @@ export const MODULOS: Modulo[] = [
             { id: "pos-atendimento", titulo: "Pós-atendimento", desc: "Avaliação depois do serviço", href: "/avaliacao", slugs: ["pos-atendimento-avaliacao"], icone: IconStar },
             { id: "relatorio-guias", titulo: "Relatório de consultas", desc: "Consultas realizadas", href: "/relatorio-guias", slugs: ["relatorio-guias"], icone: IconStethoscope },
             { id: "historico-sepultamentos", titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },
+            // 06/11/2026: vieram da Comunicação (decisão de 03/11/2026).
+            { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger"], icone: IconFileInvoice },
+            { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-historico"], icone: IconAlertTriangle },
+            { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger"], icone: IconUserPlus },
+            { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger"], icone: IconBell },
         ],
     },
     {
         id: "gestao",
         titulo: "Gestão",
-        desc: "Pessoas, permissões e indicadores",
+        desc: "Pessoas, folha, indicadores e Aurora",
         icone: IconChartBar,
         hub: { href: "/gestao", slug: "gestao" },
         itens: [
@@ -241,8 +222,16 @@ export const MODULOS: Modulo[] = [
             { id: "dashboard-estoque", titulo: "Dashboard do estoque", desc: "Saídas e transferências por produto", href: "/dashboard-estoque", slugs: ["dashboard-estoque"], icone: IconChartBar, secao: "Indicadores" },
             { id: "painel-estoque", titulo: "Painel do estoque", desc: "Consumo, cobertura e reposição", href: "/painel-estoque", slugs: ["painel-estoque"], icone: IconReportAnalytics, secao: "Indicadores" },
             { id: "telemetria", titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar, secao: "Indicadores" },
+            // 06/11/2026: veio da Comunicação.
+            { id: "messenger-funil-gestao", titulo: "Gestão do funil", desc: "Origem dos leads, conversão e desempenho", href: "/messenger-funil-gestao", slugs: ["messenger-historico"], icone: IconChartFunnel, secao: "Indicadores" },
             { id: "historico-clientes", titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages, secao: "Históricos" },
             { id: "conhecimento", titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain, secao: "Aurora" },
+            // 06/11/2026: configurações e monitoramento da Aurora/Messenger vieram da Comunicação.
+            { id: "messenger-config", titulo: "Configurações do Messenger", desc: "Respostas rápidas e ajustes do atendimento", href: "/messenger-config", slugs: ["messenger-config"], icone: IconSettings, secao: "Aurora" },
+            { id: "messenger-testes", titulo: "Testes da Aurora", desc: "Simulador e cenários avaliados pelo Claude", href: "/messenger-testes", slugs: ["messenger-config"], icone: IconRobot, secao: "Aurora" },
+            { id: "messenger-aprendizado", titulo: "Aprendizado da Aurora", desc: "Lições, exemplos e rascunhos para a Base", href: "/messenger-aprendizado", slugs: ["messenger-config"], icone: IconBrain, secao: "Aurora" },
+            { id: "messenger-habilidades", titulo: "Habilidades da Aurora", desc: "Como a Aurora atende em cada setor", href: "/messenger-habilidades", slugs: ["messenger-config"], icone: IconRobot, secao: "Aurora" },
+            { id: "messenger-monitor", titulo: "Monitoramento do atendimento", desc: "Fila, atendentes e avaliações", href: "/messenger-monitor", slugs: ["messenger-historico"], icone: IconChartBar, secao: "Aurora" },
         ],
     },
 ];

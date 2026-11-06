@@ -83,6 +83,9 @@ export function fixosPadrao(): ItemModulo[] {
     return FIXOS_PADRAO_IDS.map((id) => FIXOS.find((f) => f.id === id) || cat.get(id)?.item).filter((f): f is ItemModulo => !!f);
 }
 
+/** Módulos que saíram do padrão do código; se a organização salva ainda tiver um deles, ele é ignorado. */
+const MODULOS_EXTINTOS = ["comunicacao"];
+
 function hubDe(id: string, base?: Modulo): Modulo["hub"] {
     return base ? base.hub : { href: `/modulo/${id}`, slug: "" };
 }
@@ -101,6 +104,8 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
 
     for (const mc of config.modulos) {
         if (!mc || !mc.id || res.some((r) => r.id === mc.id)) continue;
+        // 06/11/2026: módulo extinto no código (Comunicação, decisão de 03/11/2026). As telas dele voltam ao módulo padrão de cada uma.
+        if (MODULOS_EXTINTOS.includes(mc.id)) continue;
         const base = padrao.get(mc.id);
         const itens: ItemModulo[] = [];
         for (const ic of mc.itens || []) {

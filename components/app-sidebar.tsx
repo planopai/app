@@ -7,6 +7,7 @@ import {
   IconAdjustmentsHorizontal,
   IconChevronDown,
   IconHelp,
+  IconHome,
   IconLogout,
 } from "@tabler/icons-react";
 
@@ -22,7 +23,8 @@ import {
 } from "@/components/ui/sidebar";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
-import { hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import { acharModuloPorRota, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
+import LogoPai from "@/components/shell/LogoPai";
 import { useMenu } from "@/components/shell/useMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
@@ -331,6 +333,137 @@ export function AppSidebar(
       </SidebarMenuButton>
     );
   };
+
+  /*
+   * 06/11/2026 — navegação nova no computador (decisão de 03/11/2026, prévia "PAI Conecta — prévia geral"):
+   * trilho estreito só com os módulos (ícone + nome). O clique abre a página do módulo, com as telas em ícones.
+   * As listas que abriam e fechavam saem do computador; no celular o menu continua o mesmo (MenuCelular).
+   */
+  const NOME_CURTO: Record<string, string> = { atendimento: "Atendim.", requisicoes: "Requis.", financeiro: "Financ.", administrativo: "Admin." };
+  const [menuUsuario, setMenuUsuario] = React.useState(false);
+  React.useEffect(() => {
+    setMenuUsuario(false);
+  }, [pathname]);
+  React.useEffect(() => {
+    if (!menuUsuario) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuUsuario(false);
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [menuUsuario]);
+
+  if (!isMobile) {
+    const atual = acharModuloPorRota(pathname || "/", menu.modulos, menu.fixos).modulo?.id ?? null;
+    const BOTAO =
+      "relative flex min-h-[62px] w-20 flex-col items-center justify-center gap-1 rounded-[14px] px-0.5 py-1.5 text-[11.5px] font-bold text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white";
+    const BOTAO_ATIVO = "bg-white/[0.16] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.16]";
+    const modulosRail = carregando
+      ? []
+      : menu.modulosPessoais
+          .filter((m) => moduloVisivel(m, has))
+          .map((m) => ({
+            id: m.id,
+            titulo: m.titulo,
+            curto: NOME_CURTO[m.id] || m.titulo,
+            href: destinoDoModulo(m, has),
+            Icon: m.icone as any,
+            pendente: itensVisiveis(m, has).some((i) => contadorDe(hrefDoItem(i, has)) > 0),
+          }));
+    return (
+      <Sidebar collapsible="offcanvas" data-pai-menu {...props}>
+        <nav aria-label="Módulos" className="flex h-full flex-col items-center gap-1 py-3">
+          <Link
+            href="/"
+            onClick={(event) => handleNavigate("/", event)}
+            aria-label="PAI Conecta — Início"
+            data-pai-logo-capsula
+            className="mb-2 flex flex-col items-center gap-1.5"
+          >
+            <span className="flex h-[52px] w-[68px] items-center justify-center rounded-2xl bg-[#FFFFFF]">
+              <LogoPai className="h-[30px] w-auto" />
+            </span>
+            <span className="text-[13px] font-extrabold leading-none tracking-[0.02em] text-white">Conecta</span>
+          </Link>
+
+          <div className="pai-menu-rolagem flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
+            <Link
+              href="/"
+              title="Início"
+              aria-current={pathname === "/" ? "page" : undefined}
+              onClick={(event) => handleNavigate("/", event)}
+              className={[BOTAO, pathname === "/" ? BOTAO_ATIVO : ""].join(" ")}
+            >
+              <IconHome className="size-[22px]" stroke={1.8} />
+              <span>Início</span>
+            </Link>
+            {carregando ? <span className="py-3 text-[12px] text-[#AEB9CF]">…</span> : null}
+            {modulosRail.map((m) => {
+              const ativo = atual === m.id;
+              return (
+                <Link
+                  key={m.id}
+                  href={m.href}
+                  title={m.titulo}
+                  aria-current={ativo ? "page" : undefined}
+                  onClick={(event) => handleNavigate(m.href, event)}
+                  className={[BOTAO, ativo ? BOTAO_ATIVO : ""].join(" ")}
+                >
+                  <m.Icon className="size-[22px]" stroke={1.8} />
+                  <span className="max-w-[76px] truncate">{m.curto}</span>
+                  {m.pendente ? <span className="absolute right-3 top-2 size-2.5 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="relative mt-2">
+            <button
+              type="button"
+              onClick={() => setMenuUsuario((v) => !v)}
+              aria-expanded={menuUsuario}
+              aria-haspopup="menu"
+              title={displayName}
+              className="grid size-11 place-items-center rounded-full bg-[#F2CB3F] text-[14px] font-extrabold text-[#313C55] hover:bg-[#E4BC30]"
+            >
+              {carregando ? "U" : initialsFromName(displayName)}
+            </button>
+            {menuUsuario ? (
+              <>
+                <button type="button" aria-label="Fechar" className="fixed inset-0 z-40 cursor-default" onClick={() => setMenuUsuario(false)} />
+                <div role="menu" className="absolute bottom-0 left-[calc(100%+12px)] z-50 w-60 rounded-2xl border border-[#E3E8F0] bg-[#FFFFFF] p-1.5 text-[#313C55] shadow-[0_16px_40px_rgba(49,60,85,.22)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white">
+                  <div className="truncate px-3 pb-2 pt-1.5 text-[14px] font-extrabold">{displayName}</div>
+                  {[
+                    { href: "/personalizar-barra", rotulo: "Personalizar menu", Icon: IconAdjustmentsHorizontal },
+                    { href: "/help", rotulo: "Ajuda", Icon: IconHelp },
+                  ].map((o) => (
+                    <Link
+                      key={o.href}
+                      role="menuitem"
+                      href={o.href}
+                      onClick={(event) => handleNavigate(o.href, event)}
+                      className="flex min-h-11 items-center gap-2.5 rounded-xl px-3 text-[14px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08]"
+                    >
+                      <o.Icon className="size-[18px]" /> {o.rotulo}
+                    </Link>
+                  ))}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                    className="flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[14px] font-bold hover:bg-[#EEF2F7] disabled:opacity-60 dark:hover:bg-white/[0.08]"
+                  >
+                    <IconLogout className="size-[18px]" /> {isLoggingOut ? "Saindo…" : "Sair da conta"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </nav>
+      </Sidebar>
+    );
+  }
 
   return (
     /*
