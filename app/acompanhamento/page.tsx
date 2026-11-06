@@ -4458,8 +4458,11 @@ export default function AcompanhamentoPage() {
         }
         falecidoSlot={!wizardEditing && tipoConvenio(convenioTextoWizard, osCampos.convenio_tipo) === "associado" ? (
           <div>
-            <label htmlFor="wizard-falecido" className="mb-1.5 block text-[13px] font-bold">Nome do Falecido *</label>
-            <select id="wizard-falecido" className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-base text-slate-800" disabled={wizardSubmitting || !contratoSelecionadoPAI || !pessoasContratoPAI.length}
+            <label htmlFor="wizard-falecido-pessoa" className="mb-1.5 block text-[13px] font-bold">Nome do Falecido *</label>
+            {/* 06/11/2026: salvarGrupoWizard lê o campo pelo id "wizard-falecido" no DOM. O select guarda o índice
+                da pessoa (0, 1, 2…), então o quadro recebia o número. O id fica no input oculto, com o nome escolhido. */}
+            <input id="wizard-falecido" type="hidden" value={pessoaEscolhidaPAI ? String((wizardData as any)?.falecido ?? "") : ""} readOnly />
+            <select id="wizard-falecido-pessoa" className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-base text-slate-800" disabled={wizardSubmitting || !contratoSelecionadoPAI || !pessoasContratoPAI.length}
               value={pessoaEscolhidaPAI}
               onChange={(e) => {
                 const idx = Number(e.target.value);
