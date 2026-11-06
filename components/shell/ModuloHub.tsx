@@ -20,8 +20,8 @@ import { formatarSelo, useContadores, type Contadores } from "./useContadores";
  *  - o número pendente de cada tela aparece no canto do bloco.
  */
 
-type Tom = "azul" | "amarelo" | "verde";
-const TOM_DO_MODULO: Record<string, Tom> = {
+export type Tom = "azul" | "amarelo" | "verde";
+export const TOM_DO_MODULO: Record<string, Tom> = {
     atendimento: "azul",
     requisicoes: "amarelo",
     estoque: "amarelo",
@@ -52,6 +52,72 @@ const CARTOES: Record<string, Cartao[]> = {
     estoque: [{ rotulo: "Abaixo do mínimo", chave: "estoque", sub: "produtos", href: "/estoque", estilo: "alerta" }],
 };
 
+/* ---------- peças do padrão das páginas (06/11/2026), usadas também pelo Início e pela Requisição de Material ---------- */
+
+export const GRADE_CARTOES = "grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-3.5";
+export const GRADE_BLOCOS = "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(172px,1fr))] lg:gap-3.5";
+export const ROTULO_SECAO = "text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]";
+export const BOTAO_PAGINA =
+    "inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-[18px] text-[14px] font-extrabold transition";
+export const BOTAO_PAGINA_PRI =
+    "border-[#313C55] bg-[#313C55] text-white hover:bg-[#232B40] dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]";
+export const BOTAO_PAGINA_SEC =
+    "border-[#C9D1DE] bg-white text-[#313C55] hover:border-[#313C55] dark:border-white/[0.2] dark:bg-[#232B3F] dark:text-white";
+
+/** Topo padrão: ícone + título e, à direita, os botões da página. */
+export function TopoPagina({ Icone, titulo, acoes }: { Icone: React.ElementType<any>; titulo: string; acoes?: React.ReactNode }) {
+    return (
+        <div className="flex flex-wrap items-center gap-3.5">
+            <span className="grid size-[52px] shrink-0 place-items-center rounded-2xl bg-[#313C55] text-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]">
+                <Icone size={26} />
+            </span>
+            <h1 className="min-w-0 flex-1 text-[24px] font-extrabold leading-tight lg:text-[30px]">{titulo}</h1>
+            {acoes ? <div className="flex w-full flex-wrap gap-2.5 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">{acoes}</div> : null}
+        </div>
+    );
+}
+
+/** Cartão de informação (número). Em 4 colunas fixas no computador: um cartão nunca estica a linha toda. */
+export function CartaoInfo({ rotulo, valor, sub, href, estilo }: { rotulo: string; valor: React.ReactNode; sub: string; href: string; estilo?: "escuro" | "alerta" }) {
+    return (
+        <Link
+            href={href}
+            className={[
+                "flex min-w-0 flex-col gap-1 rounded-[18px] border p-4 transition lg:px-5 lg:py-[18px]",
+                estilo === "escuro"
+                    ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
+                    : "border-[#E3E8F0] bg-white hover:border-[#C9D1DE] dark:border-white/[0.12] dark:bg-[#232B3F]",
+                estilo === "alerta" ? "shadow-[inset_5px_0_0_#F2CB3F]" : "",
+            ].join(" ")}
+        >
+            <span className={`text-[12px] font-extrabold uppercase leading-tight tracking-[0.08em] ${estilo === "escuro" ? "text-[#D6DCE8]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{rotulo}</span>
+            <span className="text-[28px] font-extrabold leading-tight tabular-nums lg:text-[32px]">{valor}</span>
+            <span className={`text-[12.5px] ${estilo === "escuro" ? "text-[#D6DCE8]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{sub}</span>
+        </Link>
+    );
+}
+
+/** Bloco de tela: ícone na cor do módulo, nome embaixo e o número pendente no canto. */
+export function BlocoTela({ titulo, href, Icone, tom = "azul", selo, dica }: { titulo: string; href: string; Icone: React.ElementType<any>; tom?: Tom; selo?: number | null; dica?: string }) {
+    return (
+        <Link
+            href={href}
+            title={dica}
+            className="relative flex min-h-[124px] flex-col items-center justify-center gap-3 rounded-[20px] border border-[#E3E8F0] bg-white px-3 py-4 text-center text-[14.5px] font-extrabold leading-tight shadow-sm transition hover:border-[#313C55] hover:shadow-[0_8px_22px_rgba(49,60,85,.10)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:border-white/50 lg:min-h-[140px] lg:text-[15px]"
+        >
+            {selo && selo > 0 ? (
+                <span className="absolute right-2.5 top-2.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F2CB3F] px-1.5 text-[11px] font-extrabold tabular-nums text-[#313C55]">
+                    {formatarSelo(selo)}
+                </span>
+            ) : null}
+            <span className={`grid size-14 place-items-center rounded-[18px] text-[#313C55] dark:text-white ${FUNDO_ICONE[tom]}`}>
+                <Icone size={28} stroke={1.8} />
+            </span>
+            <span className="break-words">{titulo}</span>
+        </Link>
+    );
+}
+
 function seloDoItem(i: ItemModulo, n: Contadores): number {
     if (i.selo === "aguardando") return n.aguardando ?? 0;
     if (i.selo === "coroas") return n.coroas ?? 0;
@@ -80,31 +146,14 @@ export default function ModuloHub({ moduloId }: { moduloId: string }) {
     return (
         <div className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(2rem+env(safe-area-inset-bottom))] text-[#313C55] [contain:inline-size] dark:bg-[#161C2A] dark:text-white">
             <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
-                <div className="mb-6 flex items-center gap-3.5">
-                    <span className="grid size-[52px] shrink-0 place-items-center rounded-2xl bg-[#313C55] text-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]">
-                        <Icon size={26} />
-                    </span>
-                    <h1 className="min-w-0 text-[24px] font-extrabold leading-tight lg:text-[30px]">{m.titulo}</h1>
+                <div className="mb-6">
+                    <TopoPagina Icone={Icon} titulo={m.titulo} />
                 </div>
 
                 {cartoes.length ? (
-                    <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] lg:gap-3.5">
+                    <div className={`mb-6 ${GRADE_CARTOES}`}>
                         {cartoes.map((c) => (
-                            <Link
-                                key={c.rotulo}
-                                href={c.href}
-                                className={[
-                                    "flex flex-col gap-1 rounded-[18px] border p-4 transition lg:px-5 lg:py-[18px]",
-                                    c.estilo === "escuro"
-                                        ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]"
-                                        : "border-[#E3E8F0] bg-white hover:border-[#C9D1DE] dark:border-white/[0.12] dark:bg-[#232B3F]",
-                                    c.estilo === "alerta" ? "shadow-[inset_5px_0_0_#F2CB3F]" : "",
-                                ].join(" ")}
-                            >
-                                <span className={`text-[12px] font-extrabold uppercase tracking-[0.08em] ${c.estilo === "escuro" ? "text-[#D6DCE8]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{c.rotulo}</span>
-                                <span className="text-[28px] font-extrabold leading-tight tabular-nums lg:text-[32px]">{numeros[c.chave] as number}</span>
-                                <span className={`text-[12.5px] ${c.estilo === "escuro" ? "text-[#D6DCE8]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{c.sub}</span>
-                            </Link>
+                            <CartaoInfo key={c.rotulo} rotulo={c.rotulo} valor={numeros[c.chave] as number} sub={c.sub} href={c.href} estilo={c.estilo} />
                         ))}
                     </div>
                 ) : null}
@@ -116,33 +165,13 @@ export default function ModuloHub({ moduloId }: { moduloId: string }) {
                         Nenhuma opção disponível para o seu usuário neste módulo.
                     </p>
                 ) : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(172px,1fr))] lg:gap-3.5">
-                        {itens.map((i, pos) => {
-                            const I = i.icone;
-                            const n = seloDoItem(i, numeros);
-                            return (
-                                <React.Fragment key={i.id}>
-                                    {i.secao && i.secao !== itens[pos - 1]?.secao ? (
-                                        <h2 className="col-span-full pt-3 text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] first:pt-0 dark:text-[#AEB9CF]">{i.secao}</h2>
-                                    ) : null}
-                                    <Link
-                                        href={hrefDoItem(i, has)}
-                                        title={i.desc}
-                                        className="relative flex min-h-[124px] flex-col items-center justify-center gap-3 rounded-[20px] border border-[#E3E8F0] bg-white px-3 py-4 text-center text-[14.5px] font-extrabold leading-tight shadow-sm transition hover:border-[#313C55] hover:shadow-[0_8px_22px_rgba(49,60,85,.10)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:border-white/50 lg:min-h-[140px] lg:text-[15px]"
-                                    >
-                                        {n > 0 ? (
-                                            <span className="absolute right-2.5 top-2.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F2CB3F] px-1.5 text-[11px] font-extrabold tabular-nums text-[#313C55]">
-                                                {formatarSelo(n)}
-                                            </span>
-                                        ) : null}
-                                        <span className={`grid size-14 place-items-center rounded-[18px] text-[#313C55] dark:text-white ${FUNDO_ICONE[tom]}`}>
-                                            <I size={28} stroke={1.8} />
-                                        </span>
-                                        <span className="break-words">{i.titulo}</span>
-                                    </Link>
-                                </React.Fragment>
-                            );
-                        })}
+                    <div className={GRADE_BLOCOS}>
+                        {itens.map((i, pos) => (
+                            <React.Fragment key={i.id}>
+                                {i.secao && i.secao !== itens[pos - 1]?.secao ? <h2 className={`col-span-full pt-3 first:pt-0 ${ROTULO_SECAO}`}>{i.secao}</h2> : null}
+                                <BlocoTela titulo={i.titulo} href={hrefDoItem(i, has)} Icone={i.icone} tom={tom} selo={seloDoItem(i, numeros)} dica={i.desc} />
+                            </React.Fragment>
+                        ))}
                     </div>
                 )}
             </div>

@@ -24,7 +24,7 @@ import {
 
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { acharModuloPorRota, destinoDoModulo, hrefDoItem, itensVisiveis, moduloVisivel } from "@/components/shell/modulos";
-import LogoPai from "@/components/shell/LogoPai";
+import { LogoVertical } from "@/components/shell/LogoPai";
 import { useMenu } from "@/components/shell/useMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { clearOfflineContextOnLogout } from "@/lib/offline/logout";
@@ -340,23 +340,11 @@ export function AppSidebar(
    * As listas que abriam e fechavam saem do computador; no celular o menu continua o mesmo (MenuCelular).
    */
   const NOME_CURTO: Record<string, string> = { atendimento: "Atendim.", requisicoes: "Requis.", financeiro: "Financ.", administrativo: "Admin." };
-  const [menuUsuario, setMenuUsuario] = React.useState(false);
-  React.useEffect(() => {
-    setMenuUsuario(false);
-  }, [pathname]);
-  React.useEffect(() => {
-    if (!menuUsuario) return;
-    const k = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuUsuario(false);
-    };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [menuUsuario]);
 
   if (!isMobile) {
     const atual = acharModuloPorRota(pathname || "/", menu.modulos, menu.fixos).modulo?.id ?? null;
     const BOTAO =
-      "relative flex min-h-[62px] w-20 flex-col items-center justify-center gap-1 rounded-[14px] px-0.5 py-1.5 text-[11.5px] font-bold text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white";
+      "relative flex min-h-[46px] w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1 text-[11px] font-bold leading-tight text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white";
     const BOTAO_ATIVO = "bg-white/[0.16] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.16]";
     const modulosRail = carregando
       ? []
@@ -372,21 +360,21 @@ export function AppSidebar(
           }));
     return (
       <Sidebar collapsible="offcanvas" data-pai-menu {...props}>
-        <nav aria-label="Módulos" className="flex h-full flex-col items-center gap-1 py-3">
+        <nav aria-label="Módulos" className="flex h-full flex-col items-center gap-0.5 py-3">
           <Link
             href="/"
             onClick={(event) => handleNavigate("/", event)}
             aria-label="PAI Conecta — Início"
             data-pai-logo-capsula
-            className="mb-2 flex flex-col items-center gap-1.5"
+            className="mb-2 flex shrink-0 flex-col items-center gap-1"
           >
-            <span className="flex h-[52px] w-[68px] items-center justify-center rounded-2xl bg-[#FFFFFF]">
-              <LogoPai className="h-[30px] w-auto" />
-            </span>
-            <span className="text-[13px] font-extrabold leading-none tracking-[0.02em] text-white">Conecta</span>
+            {/* 06/11/2026: logomarca vertical (símbolo + PAI) sem cápsula; no tema escuro o contorno é um pouco mais fino */}
+            <LogoVertical className="h-auto w-[56px] dark:hidden" />
+            <LogoVertical fino className="hidden h-auto w-[56px] dark:block" />
+            <span className="text-[13px] font-extrabold leading-none tracking-[0.04em] text-[#F2CB3F]">Conecta</span>
           </Link>
 
-          <div className="pai-menu-rolagem flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto">
+          <div className="pai-menu-rolagem flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto">
             <Link
               href="/"
               title="Início"
@@ -394,7 +382,7 @@ export function AppSidebar(
               onClick={(event) => handleNavigate("/", event)}
               className={[BOTAO, pathname === "/" ? BOTAO_ATIVO : ""].join(" ")}
             >
-              <IconHome className="size-[22px]" stroke={1.8} />
+              <IconHome className="size-5" stroke={1.8} />
               <span>Início</span>
             </Link>
             {carregando ? <span className="py-3 text-[12px] text-[#AEB9CF]">…</span> : null}
@@ -409,57 +397,14 @@ export function AppSidebar(
                   onClick={(event) => handleNavigate(m.href, event)}
                   className={[BOTAO, ativo ? BOTAO_ATIVO : ""].join(" ")}
                 >
-                  <m.Icon className="size-[22px]" stroke={1.8} />
+                  <m.Icon className="size-5" stroke={1.8} />
                   <span className="max-w-[76px] truncate">{m.curto}</span>
-                  {m.pendente ? <span className="absolute right-3 top-2 size-2.5 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
+                  {m.pendente ? <span className="absolute right-3.5 top-1.5 size-2 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
                 </Link>
               );
             })}
           </div>
 
-          <div className="relative mt-2">
-            <button
-              type="button"
-              onClick={() => setMenuUsuario((v) => !v)}
-              aria-expanded={menuUsuario}
-              aria-haspopup="menu"
-              title={displayName}
-              className="grid size-11 place-items-center rounded-full bg-[#F2CB3F] text-[14px] font-extrabold text-[#313C55] hover:bg-[#E4BC30]"
-            >
-              {carregando ? "U" : initialsFromName(displayName)}
-            </button>
-            {menuUsuario ? (
-              <>
-                <button type="button" aria-label="Fechar" className="fixed inset-0 z-40 cursor-default" onClick={() => setMenuUsuario(false)} />
-                <div role="menu" className="absolute bottom-0 left-[calc(100%+12px)] z-50 w-60 rounded-2xl border border-[#E3E8F0] bg-[#FFFFFF] p-1.5 text-[#313C55] shadow-[0_16px_40px_rgba(49,60,85,.22)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white">
-                  <div className="truncate px-3 pb-2 pt-1.5 text-[14px] font-extrabold">{displayName}</div>
-                  {[
-                    { href: "/personalizar-barra", rotulo: "Personalizar menu", Icon: IconAdjustmentsHorizontal },
-                    { href: "/help", rotulo: "Ajuda", Icon: IconHelp },
-                  ].map((o) => (
-                    <Link
-                      key={o.href}
-                      role="menuitem"
-                      href={o.href}
-                      onClick={(event) => handleNavigate(o.href, event)}
-                      className="flex min-h-11 items-center gap-2.5 rounded-xl px-3 text-[14px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08]"
-                    >
-                      <o.Icon className="size-[18px]" /> {o.rotulo}
-                    </Link>
-                  ))}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={handleLogout}
-                    disabled={isLoggingOut}
-                    className="flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-[14px] font-bold hover:bg-[#EEF2F7] disabled:opacity-60 dark:hover:bg-white/[0.08]"
-                  >
-                    <IconLogout className="size-[18px]" /> {isLoggingOut ? "Saindo…" : "Sair da conta"}
-                  </button>
-                </div>
-              </>
-            ) : null}
-          </div>
         </nav>
       </Sidebar>
     );
@@ -602,5 +547,94 @@ export function AppSidebar(
         </div>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+/**
+ * 06/11/2026: botão do usuário no canto superior direito do cabeçalho (computador), ao lado de "Online".
+ * Saiu do trilho lateral para não precisar de rolagem. Abre: Personalizar menu, Ajuda e Sair da conta
+ * (o mesmo "Sair" do menu: limpa o contexto offline, encerra a sessão e vai para o login).
+ */
+export function MenuUsuario({ className = "" }: { className?: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { perms, has } = usePerms();
+  const numeros = useContadores(perms, has);
+  const [aberto, setAberto] = React.useState(false);
+  const [saindo, setSaindo] = React.useState(false);
+  const [nome, setNome] = React.useState("Usuário");
+
+  React.useEffect(() => {
+    const raw = (readCookie("pai_name") || readCookie("pai_user") || "Usuário").trim().replace(/\s+/g, " ");
+    setNome(capitalizeFirstLetter(raw));
+  }, []);
+  React.useEffect(() => {
+    const completo = String(numeros.nome || "").trim();
+    if (completo) setNome(completo);
+  }, [numeros.nome]);
+  React.useEffect(() => {
+    setAberto(false);
+  }, [pathname]);
+  React.useEffect(() => {
+    if (!aberto) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAberto(false);
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [aberto]);
+
+  const sair = async () => {
+    if (saindo) return;
+    setSaindo(true);
+    try {
+      try {
+        await clearOfflineContextOnLogout();
+      } catch (error) {
+        console.error("[Logout] Falha ao limpar contexto offline:", error);
+      }
+      try {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } });
+      } catch (error) {
+        console.warn("[Logout] Não foi possível confirmar o logout no servidor:", error);
+      }
+    } finally {
+      router.replace("/login");
+      setSaindo(false);
+    }
+  };
+
+  const ITEM = "flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-[14px] font-bold hover:bg-[#EEF2F7] disabled:opacity-60 dark:hover:bg-white/[0.08]";
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        aria-haspopup="menu"
+        aria-label={`Usuário: ${nome}`}
+        title={nome}
+        className="grid size-10 place-items-center rounded-full bg-[#F2CB3F] text-[14px] font-extrabold text-[#313C55] hover:bg-[#E4BC30]"
+      >
+        {perms == null ? "U" : initialsFromName(nome)}
+      </button>
+      {aberto ? (
+        <>
+          <button type="button" aria-label="Fechar" tabIndex={-1} className="fixed inset-0 z-40 cursor-default" onClick={() => setAberto(false)} />
+          <div role="menu" className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-[#E3E8F0] bg-[#FFFFFF] p-1.5 text-[#313C55] shadow-[0_16px_40px_rgba(49,60,85,.22)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:text-white">
+            <div className="truncate px-3 pb-2 pt-1.5 text-[14px] font-extrabold">{nome}</div>
+            <Link role="menuitem" href="/personalizar-barra" className={ITEM}>
+              <IconAdjustmentsHorizontal className="size-[18px]" /> Personalizar menu
+            </Link>
+            <Link role="menuitem" href="/help" className={ITEM}>
+              <IconHelp className="size-[18px]" /> Ajuda
+            </Link>
+            <button type="button" role="menuitem" onClick={() => void sair()} disabled={saindo} className={ITEM}>
+              <IconLogout className="size-[18px]" /> {saindo ? "Saindo…" : "Sair da conta"}
+            </button>
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }

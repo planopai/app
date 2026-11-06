@@ -18,6 +18,7 @@ import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { destinoDoModulo, hrefDoItem, itemVisivel, moduloVisivel, type Icone } from "@/components/shell/modulos";
 import { useMenu } from "@/components/shell/useMenu";
 import { formatarSelo, useContadores } from "@/components/shell/useContadores";
+import { BlocoTela, CartaoInfo, GRADE_BLOCOS, GRADE_CARTOES, ROTULO_SECAO, TOM_DO_MODULO } from "@/components/shell/ModuloHub";
 
 /**
  * Tela inicial (rota "/"): junta o visual aprovado da repaginada com o que a home anterior já tinha.
@@ -125,11 +126,12 @@ export default function HomePage() {
     const nome = c.nome ? c.nome.trim().split(/\s+/)[0] : "";
 
     const resumo = useMemo(() => {
-        const itens: { label: string; valor: number | null; href: string; tom: Tom; icon: Icone; mostrar: boolean }[] = [
-            { label: "Serviços funerários", valor: c.servicos, href: "/quadro-acompanhamento", tom: "azul", icon: IconBuildingSkyscraper, mostrar: true },
-            { label: "Coroas de flores", valor: c.coroas, href: "/coroa-de-flores", tom: "verde", icon: IconFlower, mostrar: pronto && has("coroa-de-flores") },
-            { label: "Requisições para separar", valor: c.requisicoes, href: "/requisicoes", tom: "azul", icon: IconTruckDelivery, mostrar: pronto && has("requisicoes") },
-            { label: "Alertas de estoque", valor: c.estoque, href: has("estoque") ? "/estoque" : "/geral", tom: "amarelo", icon: IconAlertTriangle, mostrar: pronto && (has("geral") || has("estoque")) },
+        // 06/11/2026: cartões no padrão das páginas (rótulo, número e complemento; 4 colunas fixas)
+        const itens: { label: string; sub: string; estilo?: "escuro" | "alerta"; valor: number | null; href: string; tom: Tom; icon: Icone; mostrar: boolean }[] = [
+            { label: "Serviços funerários", sub: "em andamento", estilo: "escuro", valor: c.servicos, href: "/quadro-acompanhamento", tom: "azul", icon: IconBuildingSkyscraper, mostrar: true },
+            { label: "Coroas de flores", sub: "na fila de confecção", valor: c.coroas, href: "/coroa-de-flores", tom: "verde", icon: IconFlower, mostrar: pronto && has("coroa-de-flores") },
+            { label: "Requisições", sub: "para separar", valor: c.requisicoes, href: "/requisicoes", tom: "azul", icon: IconTruckDelivery, mostrar: pronto && has("requisicoes") },
+            { label: "Alertas de estoque", sub: "abaixo do mínimo", estilo: "alerta", valor: c.estoque, href: has("estoque") ? "/estoque" : "/geral", tom: "amarelo", icon: IconAlertTriangle, mostrar: pronto && (has("geral") || has("estoque")) },
         ];
         return itens.filter((i) => i.mostrar);
     }, [c, pronto, has]);
@@ -209,7 +211,7 @@ export default function HomePage() {
                 </section>
 
                 {/* PESQUISA DE FUNÇÕES */}
-                <div className="mt-5 flex h-[54px] items-center gap-2 rounded-xl border border-[#E3E8F0] bg-white px-3 shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F]">
+                <div className="mt-5 flex h-[54px] items-center gap-2 rounded-xl border lg:hidden border-[#E3E8F0] bg-white px-3 shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F]">
                     <IconSearch size={19} className="shrink-0 text-[#7A8396]" />
                     <input
                         type="search"
@@ -263,58 +265,32 @@ export default function HomePage() {
                     <>
                         {/* RESUMO */}
                         {resumo.length ? (
-                            <section aria-label="Resumo" className="mt-5 grid grid-cols-2 gap-3 sm:landscape:grid-cols-4 lg:grid-cols-4 lg:gap-4">
-                                {resumo.map((r) => {
-                                    const Icon = r.icon;
-                                    return (
-                                        <Link key={r.label} href={r.href} className={[CARD, "flex items-center gap-3 p-3.5 lg:gap-3.5 lg:p-4"].join(" ")}>
-                                            <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP[r.tom]].join(" ")}>
-                                                <Icon size={22} />
-                                            </span>
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-[26px] font-extrabold leading-none tabular-nums lg:text-[30px]">{dois(r.valor)}</span>
-                                                <span className="mt-1 block text-[13px] font-semibold leading-tight text-[#5B6478] dark:text-[#AEB9CF]">{r.label}</span>
-                                            </span>
-                                            <IconChevronRight size={18} className="hidden shrink-0 text-[#7A8396] lg:block" />
-                                        </Link>
-                                    );
-                                })}
+                            <section aria-label="Resumo" className={`mt-5 lg:mt-6 ${GRADE_CARTOES}`}>
+                                {resumo.map((r) => (
+                                    <CartaoInfo key={r.label} rotulo={r.label} valor={dois(r.valor)} sub={r.sub} href={r.href} estilo={r.estilo} />
+                                ))}
                             </section>
                         ) : null}
-
-                        {/* ACESSO RÁPIDO */}
-                        <h2 className="mb-3 mt-8 text-xl font-extrabold lg:mb-4 lg:mt-9">Acesso rápido</h2>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+                        {/* ACESSO RÁPIDO (06/11/2026: blocos no padrão das páginas, na cor do módulo de cada tela) */}
+                        <h2 className={`mb-3 mt-7 lg:mb-4 lg:mt-8 ${ROTULO_SECAO}`}>Acesso rápido</h2>
+                        <div className={GRADE_BLOCOS}>
                             {rapidos.map((f) => {
-                                const Icon = f.icone;
-                                const selo =
-                                    f.selo === "avisos" ? formatarSelo(c.avisos)
-                                        : f.selo === "messenger" ? formatarSelo(contMessenger)
-                                            : f.selo === "aguardando" ? formatarSelo(c.aguardando)
-                                                : f.selo === "coroas" ? formatarSelo(c.coroas)
-                                                    : f.selo === "estoque" ? formatarSelo(c.estoque)
-                                                        : f.id === "minhas-solicitacoes" ? formatarSelo(c.minhasRequisicoes)
-                                                            : "";
-                                return (
-                                    <Link key={f.id} href={hrefDoItem(f, has)} className={[CARD, "flex items-center gap-3.5 p-4"].join(" ")}>
-                                        <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP.azul].join(" ")}>
-                                            <Icon size={22} />
-                                        </span>
-                                        <span className="min-w-0 flex-1">
-                                            <span className="block text-[15px] font-extrabold">{f.titulo}</span>
-                                            <span className="block text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{f.desc}</span>
-                                        </span>
-                                        {selo ? (
-                                            <span className="inline-flex h-[22px] min-w-6 items-center justify-center rounded-full bg-[#F2CB3F] px-2 text-xs font-extrabold text-[#313C55]">{selo}</span>
-                                        ) : null}
-                                        <IconChevronRight size={18} className="shrink-0 text-[#7A8396]" />
-                                    </Link>
-                                );
+                                const n =
+                                    f.selo === "avisos" ? c.avisos
+                                        : f.selo === "messenger" ? contMessenger
+                                            : f.selo === "aguardando" ? c.aguardando
+                                                : f.selo === "coroas" ? c.coroas
+                                                    : f.selo === "estoque" ? c.estoque
+                                                        : f.id === "minhas-solicitacoes" ? c.minhasRequisicoes
+                                                            : null;
+                                const doModulo = menu.modulos.find((m) => m.itens.some((i) => i.id === f.id));
+                                return <BlocoTela key={f.id} titulo={f.titulo} href={hrefDoItem(f, has)} Icone={f.icone} tom={(doModulo && TOM_DO_MODULO[doModulo.id]) || "azul"} selo={n} dica={f.desc} />;
                             })}
                         </div>
-
                         {/* MÓDULOS */}
-                        <h2 className="mb-3 mt-8 text-xl font-extrabold lg:mb-4 lg:mt-9">Módulos</h2>
+                        {/* 06/11/2026: no computador os módulos ficam na barra lateral; aqui só no celular */}
+                        <div className="lg:hidden">
+                        <h2 className={`mb-3 mt-7 ${ROTULO_SECAO}`}>Módulos</h2>
                         {!pronto ? (
                             <div className={[CARD, "p-5 text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]"].join(" ")}>Carregando acessos disponíveis neste dispositivo...</div>
                         ) : (
@@ -336,6 +312,7 @@ export default function HomePage() {
                                 })}
                             </div>
                         )}
+                        </div>
                     </>
                 )}
             </div>

@@ -20,6 +20,7 @@ import { rotaExiste } from "@/components/shell/rotas";
 import { useMenu } from "@/components/shell/useMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { ModeSwitcher } from "./mode-switcher";
+import { MenuUsuario } from "@/components/app-sidebar";
 
 const TITULOS_EXTRA: Record<string, string> = {
   "/help": "Ajuda",
@@ -129,6 +130,9 @@ export function SiteHeader() {
               )}
             </Link>
           )}
+
+          {/* 06/11/2026: usuário no canto superior direito (computador); saiu do trilho lateral */}
+          <MenuUsuario className="ml-1 hidden lg:block" />
         </div>
       </div>
     </header>

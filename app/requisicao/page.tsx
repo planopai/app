@@ -13,6 +13,9 @@ import {
 } from "@tabler/icons-react";
 import { usePerms } from "../_perms/PermsProvider";
 import ItensTabela from "@/components/requisicoes/ItensTabela";
+import { BlocoTela, BOTAO_PAGINA, BOTAO_PAGINA_PRI, CartaoInfo, GRADE_BLOCOS, GRADE_CARTOES, ROTULO_SECAO, TopoPagina } from "@/components/shell/ModuloHub";
+import { useContadores } from "@/components/shell/useContadores";
+import { IconClipboardCheck as IconRequisicoes, IconShoppingCart } from "@tabler/icons-react";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const API_BASE = `${ENDPOINT}/requisicoes.php`;
@@ -770,6 +773,11 @@ export default function RequisicaoPage() {
     }, [rows]);
 
     const actions = perms == null ? [] : items.filter((item) => has(item.slug));
+    /* 06/11/2026: cartões de informação no padrão das páginas de módulo */
+    const numeros = useContadores(perms, has);
+    const emTransito = requisicoesAbertas.filter((r) => toStatus(r.status) === "EM_TRANSITO").length;
+    const atrasadas = requisicoesAbertas.filter((r) => isTruthy(r.atrasada_24h)).length;
+    const seloDaTela = (slug: string) => (slug === "requisicoes" ? numeros.requisicoes : slug === "minhas-solicitacoes" ? requisicoesAbertas.length : null);
 
     const closeCancel = useCallback(() => {
         if (saving) return;
@@ -909,13 +917,19 @@ export default function RequisicaoPage() {
     return (
         <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
             <div className="mx-auto flex max-w-[1120px] flex-col gap-3.5 px-4 pb-5 pt-4 lg:block lg:px-10 lg:pb-12 lg:pt-8">
+                {/* 06/11/2026: topo no padrão das páginas de módulo */}
                 <header className="lg:mb-6">
-                    <h1 className="text-2xl font-extrabold leading-tight text-[#313C55] dark:text-white lg:text-[28px]">
-                        Requisição de Material
-                    </h1>
-                    <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">
-                        Acompanhe as requisições abertas e confirme o recebimento quando o material chegar.
-                    </p>
+                    <TopoPagina
+                        Icone={IconRequisicoes}
+                        titulo="Requisições"
+                        acoes={
+                            perms != null && has("solicitar-produto") ? (
+                                <Link href="/solicitar-produto" className={`${BOTAO_PAGINA} ${BOTAO_PAGINA_PRI}`}>
+                                    <IconShoppingCart size={18} /> Pedir material
+                                </Link>
+                            ) : null
+                        }
+                    />
                 </header>
 
                 {error ? (
@@ -930,8 +944,37 @@ export default function RequisicaoPage() {
                     </div>
                 ) : null}
 
+                {!loading ? (
+                    <section aria-label="Resumo" className={`lg:mb-6 ${GRADE_CARTOES}`}>
+                        {perms != null && has("requisicoes") && numeros.requisicoes != null ? (
+                            <CartaoInfo rotulo="Para separar" valor={String(numeros.requisicoes).padStart(2, "0")} sub="requisições em aberto" href="/requisicoes" estilo="escuro" />
+                        ) : null}
+                        <CartaoInfo rotulo="Minhas em aberto" valor={String(requisicoesAbertas.length).padStart(2, "0")} sub="pendentes e em separação" href="/minhas-solicitacoes" estilo={has("requisicoes") ? undefined : "escuro"} />
+                        <CartaoInfo rotulo="Em trânsito" valor={String(emTransito).padStart(2, "0")} sub="a caminho" href="/minhas-solicitacoes" />
+                        <CartaoInfo rotulo="Atrasadas" valor={String(atrasadas).padStart(2, "0")} sub="há mais de 24 h" href="/minhas-solicitacoes" estilo="alerta" />
+                    </section>
+                ) : null}
+
+                <section className="lg:mb-8">
+                    {perms == null ? (
+                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6"].join(" ")}>
+                            Carregando permissões...
+                        </div>
+                    ) : actions.length ? (
+                        <div className={GRADE_BLOCOS}>
+                            {actions.map(({ title, href, icon, slug }) => (
+                                <BlocoTela key={href} titulo={title} href={href} Icone={icon} tom="amarelo" selo={seloDaTela(slug)} />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6"].join(" ")}>
+                            Nenhuma opção disponível para o seu usuário.
+                        </div>
+                    )}
+                </section>
+
                 <section>
-                    <h2 className={LBL_SECAO}>Suas requisições abertas</h2>
+                    <h2 className={`mb-3 ${ROTULO_SECAO}`}>Suas requisições abertas</h2>
 
                     {loading ? (
                         <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6 lg:text-[15px]"].join(" ")}>
@@ -956,37 +999,6 @@ export default function RequisicaoPage() {
                     )}
                 </section>
 
-                <section className="lg:mt-9">
-                    <h2 className={LBL_SECAO}>O que você quer fazer?</h2>
-
-                    {perms == null ? (
-                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6"].join(" ")}>
-                            Carregando permissões...
-                        </div>
-                    ) : actions.length ? (
-                        <div className="overflow-hidden rounded-2xl border border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F] max-lg:divide-y max-lg:divide-[#E3E8F0] max-lg:dark:divide-white/[0.12] lg:grid lg:grid-cols-2 lg:gap-4 lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:dark:bg-transparent">
-                            {actions.map(({ title, href, icon: Icon, chip }) => (
-                                <Link
-                                    key={href}
-                                    href={href}
-                                    className="flex min-h-[60px] items-center gap-3.5 px-4 text-[#313C55] transition-colors hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/[0.08] lg:min-h-0 lg:rounded-2xl lg:border lg:border-[#E3E8F0] lg:bg-white lg:p-4 lg:hover:border-[#313C55] lg:hover:bg-white lg:dark:border-white/[0.12] lg:dark:bg-[#232B3F] lg:dark:hover:border-white lg:dark:hover:bg-[#232B3F]"
-                                >
-                                    <span className={["grid size-10 shrink-0 place-items-center rounded-xl text-[#313C55] dark:text-white lg:size-11 lg:rounded-[14px]", chip].join(" ")}>
-                                        <Icon size={20} stroke={1.8} />
-                                    </span>
-
-                                    <span className="min-w-0 flex-1 text-[15px] font-extrabold">{title}</span>
-
-                                    <IconChevronRight size={20} stroke={1.8} className="shrink-0 text-[#5B6478] dark:text-[#AEB9CF]" />
-                                </Link>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className={[BOX, "p-[18px] text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF] lg:p-6"].join(" ")}>
-                            Nenhuma opção disponível para o seu usuário.
-                        </div>
-                    )}
-                </section>
             </div>
 
             <ReceberModal
