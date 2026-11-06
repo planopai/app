@@ -63,6 +63,7 @@ import {
 } from "@tabler/icons-react";
 import { IconChartFunnel } from "@tabler/icons-react"; // 27/10/2026: Gestão do funil
 import { IconSettingsDollar, IconWallet } from "@tabler/icons-react"; // 06/11/2026: Folha de pagamento
+import { IconReceipt2 } from "@tabler/icons-react"; // 06/11/2026: Folha do mês
 
 export type Icone = React.ElementType<any>;
 
@@ -215,6 +216,7 @@ export const MODULOS: Modulo[] = [
             { id: "permissoes", titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Pessoas e acesso" },
             { id: "auditoria", titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Pessoas e acesso" },
             { id: "organizar-menu", titulo: "Organizar menu", desc: "Módulos, seções e telas do menu", href: "/organizar-menu", slugs: ["gestao"], icone: IconLayoutSidebar, secao: "Pessoas e acesso" },
+            { id: "folha", titulo: "Folha do mês", desc: "Contracheques, extras, vales e pagamento", href: "/folha", slugs: ["gestao"], icone: IconReceipt2, secao: "Folha de pagamento" },
             { id: "folha-regras", titulo: "Regras de pagamento", desc: "Extra, comissões, bônus e descontos", href: "/folha-regras", slugs: ["gestao"], icone: IconSettingsDollar, secao: "Folha de pagamento" },
             { id: "folha-vales", titulo: "Vales e empréstimos", desc: "Vales da Unymos e empréstimos parcelados", href: "/folha-vales", slugs: ["gestao"], icone: IconWallet, secao: "Folha de pagamento" },
             { id: "balanco", titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
