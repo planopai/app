@@ -204,6 +204,16 @@ function classNota(n: number | null | undefined) {
     return "bg-emerald-50 dark:bg-[#404C43] text-emerald-700 dark:text-[#B3CE52] border-emerald-200 dark:border-[#B3CE52]/40";
 }
 
+/** Faixas da escala 1 a 5 (as mesmas cores de classNota). */
+function classificacaoNota(n: number | null | undefined): string | null {
+    const v = clampNota(n);
+    if (v == null) return null;
+    if (v < 2.5) return "Ruim";
+    if (v < 3.5) return "Regular";
+    if (v < 4.2) return "Bom";
+    return "Excelente";
+}
+
 function Card({
     titulo,
     valor,
@@ -776,7 +786,7 @@ export default function Page() {
 
                 <Secao
                     titulo="Desempenho por colaborador"
-                    descricao={`Nota consolidada usando ${pesoLabel}. Quando existe apenas uma origem, usa-se a média disponível.`}
+                    descricao={`Nota consolidada usando ${pesoLabel}. Quando existe apenas uma origem, usa-se a média disponível. Classificação: Excelente a partir de 4,20 · Bom de 3,50 a 4,19 · Regular de 2,50 a 3,49 · Ruim abaixo de 2,50.`}
                 >
                     {colaboradores.length === 0 ? (
                         <div className="py-10 text-center text-sm text-slate-500 dark:text-[#AEB9CF]">
@@ -799,6 +809,9 @@ export default function Page() {
                                         </th>
                                         <th className="px-3 py-3 text-center">
                                             Consolidada
+                                        </th>
+                                        <th className="px-3 py-3 text-center">
+                                            Classificação
                                         </th>
                                         <th className="px-3 py-3">Amostra</th>
                                     </tr>
@@ -857,6 +870,20 @@ export default function Page() {
                                                         item.media_consolidada,
                                                     )}
                                                 </span>
+                                            </td>
+
+                                            <td className="px-3 py-3 text-center">
+                                                {classificacaoNota(item.media_consolidada) ? (
+                                                    <span
+                                                        className={`inline-flex justify-center rounded-full border px-3 py-1 text-xs font-bold ${classNota(
+                                                            item.media_consolidada,
+                                                        )}`}
+                                                    >
+                                                        {classificacaoNota(item.media_consolidada)}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 dark:text-[#AEB9CF]">—</span>
+                                                )}
                                             </td>
 
                                             <td className="px-3 py-3 text-xs text-slate-500 dark:text-[#AEB9CF]">
