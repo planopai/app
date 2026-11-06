@@ -284,6 +284,25 @@ export function AppSidebar(
       .filter((group) => group.items.length > 0);
   }, [has, carregando, menu.modulosPessoais]);
 
+  /** 06/11/2026: módulos do menu do celular (blocos) e o módulo da tela atual. */
+  const modulosMenu = React.useMemo(
+    () =>
+      carregando
+        ? []
+        : menu.modulosPessoais
+            .filter((m) => moduloVisivel(m, has))
+            .map((m) => ({
+              id: m.id,
+              titulo: m.titulo,
+              href: destinoDoModulo(m, has),
+              Icon: m.icone as any,
+              pendente: itensVisiveis(m, has).some((i) => contadorDe(hrefDoItem(i, has)) > 0),
+            })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [carregando, menu.modulosPessoais, has, numeros, contMessenger],
+  );
+  const moduloAtual = acharModuloPorRota(pathname || "/", menu.modulos, menu.fixos).modulo?.id ?? null;
+
   /** Abre por padrão o grupo da rota atual, senão o primeiro. */
   const defaultOpenOne = React.useMemo((): GroupKey | null => {
     if (!visibleGroups.length) {
@@ -344,7 +363,7 @@ export function AppSidebar(
   if (!isMobile) {
     const atual = acharModuloPorRota(pathname || "/", menu.modulos, menu.fixos).modulo?.id ?? null;
     const BOTAO =
-      "relative flex min-h-[46px] w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1 text-[11px] font-bold leading-tight text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white";
+      "relative flex min-h-[54px] w-[84px] shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] px-0.5 py-1.5 text-[12px] font-bold leading-tight text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white";
     const BOTAO_ATIVO = "bg-white/[0.16] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.16]";
     const modulosRail = carregando
       ? []
@@ -374,7 +393,9 @@ export function AppSidebar(
             <span className="text-[13px] font-extrabold leading-none tracking-[0.04em] text-[#F2CB3F]">Conecta</span>
           </Link>
 
-          <div className="pai-menu-rolagem flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto">
+          <div className="pai-menu-rolagem min-h-0 w-full flex-1 overflow-y-auto">
+            {/* 06/11/2026: sem o botão do usuário, os módulos se espalham pela altura da barra (e rolam só se não couberem) */}
+            <div className="flex min-h-full flex-col items-center justify-evenly gap-1 py-1">
             <Link
               href="/"
               title="Início"
@@ -382,7 +403,7 @@ export function AppSidebar(
               onClick={(event) => handleNavigate("/", event)}
               className={[BOTAO, pathname === "/" ? BOTAO_ATIVO : ""].join(" ")}
             >
-              <IconHome className="size-5" stroke={1.8} />
+              <IconHome className="size-6" stroke={1.7} />
               <span>Início</span>
             </Link>
             {carregando ? <span className="py-3 text-[12px] text-[#AEB9CF]">…</span> : null}
@@ -397,12 +418,13 @@ export function AppSidebar(
                   onClick={(event) => handleNavigate(m.href, event)}
                   className={[BOTAO, ativo ? BOTAO_ATIVO : ""].join(" ")}
                 >
-                  <m.Icon className="size-5" stroke={1.8} />
+                  <m.Icon className="size-6" stroke={1.7} />
                   <span className="max-w-[76px] truncate">{m.curto}</span>
-                  {m.pendente ? <span className="absolute right-3.5 top-1.5 size-2 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
+                  {m.pendente ? <span className="absolute right-4 top-2 size-2.5 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
                 </Link>
               );
             })}
+            </div>
           </div>
 
         </nav>
@@ -422,14 +444,17 @@ export function AppSidebar(
         Usa bg-[#FFFFFF] e não bg-white: o globals.css troca .bg-white pela cor do cartão no tema escuro.
       */}
       <SidebarHeader className={isMobile ? "pt-[calc(1.5rem+env(safe-area-inset-top))]" : "pt-5"}>
+        {/* 06/11/2026: logomarca vertical (símbolo + PAI) e "Conecta" em amarelo, como no computador */}
         <Link
           href="/"
           onClick={(event) => handleNavigate("/", event)}
-          aria-label="Plano PAI — Início"
+          aria-label="PAI Conecta — Início"
           data-pai-logo-capsula
-          className="-ml-2 flex h-[68px] w-[188px] shrink-0 items-center rounded-r-[34px] bg-[#FFFFFF] pl-6"
+          className="flex shrink-0 items-center gap-3 px-3"
         >
-          <img src="/logo-pai-horizontal.svg" alt="Plano PAI" className="h-10 w-auto" />
+          <LogoVertical className="h-auto w-[46px] dark:hidden" />
+          <LogoVertical fino className="hidden h-auto w-[46px] dark:block" />
+          <span className="text-[20px] font-extrabold tracking-[0.04em] text-[#F2CB3F]">Conecta</span>
         </Link>
       </SidebarHeader>
 
@@ -455,40 +480,33 @@ export function AppSidebar(
               </div>
             )}
 
-            {visibleGroups.map((group) => {
-              const opened = openGroup === group.key;
-              return (
-                <div key={group.key}>
-                  <button
-                    onClick={() => toggleGroup(group.key)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF] hover:text-white"
-                    type="button"
-                    aria-expanded={opened}
-                  >
-                    <span>{group.category}</span>
-                    <IconChevronDown size={16} className={`transition ${opened ? "rotate-180" : ""}`} />
-                  </button>
-
-                  {opened && (
-                    <SidebarMenu className="space-y-0.5">
-                      {group.items.map((item, pos) => (
-                        <React.Fragment key={item.id}>
-                          {/* Seção dentro do módulo (ex.: Gestão → Pessoas e acesso) */}
-                          {item.secao && item.secao !== group.items[pos - 1]?.secao ? (
-                            <li className="list-none px-3 pb-0.5 pt-2.5 text-[12px] font-semibold text-[#AEB9CF]">
-                              {item.secao}
-                            </li>
-                          ) : null}
-                          <SidebarMenuItem>
-                            <MenuItem title={item.title} href={item.href} Icon={item.Icon} badge={contadorDe(item.href)} />
-                          </SidebarMenuItem>
-                        </React.Fragment>
-                      ))}
-                    </SidebarMenu>
-                  )}
-                </div>
-              );
-            })}
+            {/* 06/11/2026: módulos em blocos; o toque abre a página do módulo (telas em ícones), igual ao computador */}
+            <div>
+              <div className="flex w-full items-center px-3 py-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#AEB9CF]">Módulos</div>
+              <div className="grid grid-cols-3 gap-2 px-1 sm:grid-cols-4 landscape:grid-cols-5">
+                {modulosMenu.map((m) => {
+                  const ativo = moduloAtual === m.id;
+                  return (
+                    <Link
+                      key={m.id}
+                      href={m.href}
+                      onClick={(event) => handleNavigate(m.href, event)}
+                      aria-current={ativo ? "page" : undefined}
+                      className={[
+                        "relative flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-2xl px-1.5 py-3 text-center text-[13px] font-bold leading-tight text-[#E8ECF4]",
+                        ativo ? "bg-white/[0.16] font-extrabold text-white shadow-[inset_0_0_0_2px_#F2CB3F]" : "bg-white/[0.07] hover:bg-white/[0.12]",
+                      ].join(" ")}
+                    >
+                      <span className="grid size-11 place-items-center rounded-[14px] bg-white/[0.10] text-[#F2CB3F]">
+                        <m.Icon className="size-[22px]" stroke={1.8} />
+                      </span>
+                      <span className="break-words">{m.titulo}</span>
+                      {m.pendente ? <span className="absolute right-2.5 top-2.5 size-2.5 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </SidebarContent>

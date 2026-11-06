@@ -133,7 +133,12 @@ export default function AppShell({
             <SidebarInset className="max-lg:h-[100dvh] max-lg:min-h-0 max-lg:overflow-hidden md:max-lg:h-[calc(100dvh-1rem)]">
                 {/* Header global (remova se não quiser) */}
                 <SiteHeader />
-                <div data-pai-rolagem className="flex flex-1 flex-col max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain">
+                {/*
+                 * 06/11/2026: a tela ocupa só o espaço que sobra abaixo do cabeçalho. Várias telas usam min-h de 100dvh, que somado ao
+                 * cabeçalho passava da janela e fazia a página rolar ("mexer") mesmo sem conteúdo. Aqui a tela cresce até o fim
+                 * da área (flex-1) e o min-h dela é zerado, então só rola quando o conteúdo é maior que a tela.
+                 */}
+                <div data-pai-rolagem className="flex flex-1 flex-col max-lg:min-h-0 max-lg:overflow-y-auto max-lg:overscroll-y-contain [&>*]:flex-1 [&>*]:!min-h-0">
                     {children}
                 </div>
                 {/*

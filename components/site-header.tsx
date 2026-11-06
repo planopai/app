@@ -80,11 +80,11 @@ export function SiteHeader() {
         border-b bg-background shadow-sm
       "
     >
-      <div className="flex w-full items-center gap-2 px-4 md:gap-4 md:px-10">
+      <div className="flex w-full min-w-0 items-center gap-2 px-4 md:gap-4 md:px-10">
         {!barraVisivel && <BotaoMenuCelular />}
 
         {/* computador: caminho */}
-        <nav aria-label="Você está em" className="hidden items-center gap-1.5 text-[15px] md:flex">
+        <nav aria-label="Você está em" className="hidden min-w-0 shrink items-center gap-1.5 whitespace-nowrap text-[15px] md:flex">
           {modulo && item ? (
             <>
               <Link
@@ -105,7 +105,7 @@ export function SiteHeader() {
         <div className="min-w-0 flex-1 truncate text-[22px] font-extrabold md:hidden">{titulo}</div>
 
         {/* computador: pesquisa */}
-        <BuscaGlobal className="ml-4 hidden md:block" />
+        <BuscaGlobal className="ml-4 hidden min-w-[160px] flex-1 md:block" />
 
         <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
           <span className={pilula} role="status">
