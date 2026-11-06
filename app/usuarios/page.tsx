@@ -70,6 +70,8 @@ type Form = {
     filial: string;
     pix_tipo: string;
     pix_chave: string;
+    forma_pagamento: string;
+    fornecedor_unymos: string;
     banco: string;
     agencia: string;
     conta: string;
@@ -81,7 +83,7 @@ type Form = {
 
 const FORM_VAZIO: Form = {
     id: null, nome: '', funcao: '', cbo: '', codigo_dominio: '', vinculo: 'CLT', situacao: 'ATIVO', data_admissao: '', salario_base: '',
-    cpf: '', telefone: '', email: '', departamento: '', filial: '', pix_tipo: '', pix_chave: '', banco: '', agencia: '', conta: '',
+    cpf: '', telefone: '', email: '', departamento: '', filial: '', pix_tipo: '', pix_chave: '', forma_pagamento: '', fornecedor_unymos: '', banco: '', agencia: '', conta: '',
     observacao: '', data_desligamento: '', tipo_desligamento: '', motivo_desligamento: '',
 };
 
@@ -455,6 +457,8 @@ export default function ColaboradoresUsuariosPage() {
                 filial: c.filial || '',
                 pix_tipo: c.pix_tipo || '',
                 pix_chave: c.pix_chave || '',
+                forma_pagamento: c.forma_pagamento || '',
+                fornecedor_unymos: c.fornecedor_unymos || '',
                 banco: c.banco || '',
                 agencia: c.agencia || '',
                 conta: c.conta || '',
@@ -1180,6 +1184,23 @@ export default function ColaboradoresUsuariosPage() {
                                 {/* ---------- Pagamento ---------- */}
                                 {aba === 'pagamento' ? (
                                     <div className="grid gap-4 sm:grid-cols-2">
+                                        {/* 06/11/2026: forma de pagamento da folha (sem nada marcado) e fornecedor na Unymos (importação dos vales) */}
+                                        <div className="sm:col-span-2">
+                                            <span className={ROTULO}>Forma de pagamento</span>
+                                            <div className="flex flex-wrap gap-2" role="group" aria-label="Forma de pagamento">
+                                                {[
+                                                    ['PIX', 'Pix'],
+                                                    ['TRANSFERENCIA', 'Transferência bancária'],
+                                                ].map(([v, l]) => (
+                                                    <Chip key={v} ativo={f.forma_pagamento === v} onClick={() => !desligado && setF((x) => ({ ...x, forma_pagamento: x.forma_pagamento === v ? '' : v }))}>
+                                                        {l}
+                                                    </Chip>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <Campo rotulo="Fornecedor na Unymos" className="sm:col-span-2">
+                                            <input value={f.fornecedor_unymos} onChange={set('fornecedor_unymos')} maxLength={60} placeholder="Como aparece no relatório 92. Ex.: 438-WILLIAN SANTANA" className={CAMPO} disabled={desligado} />
+                                        </Campo>
                                         <Campo rotulo="Tipo da chave Pix">
                                             <select value={f.pix_tipo} onChange={set('pix_tipo')} className={CAMPO} disabled={desligado}>
                                                 <option value="">Sem Pix</option>
