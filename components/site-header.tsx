@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconBell, IconChevronRight } from "@tabler/icons-react";
+import { IconBell, IconChevronRight, IconStar, IconStarFilled } from "@tabler/icons-react";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { BotaoMenuCelular, useBarraVisivel } from "@/components/shell/MenuCelular";
@@ -60,6 +60,21 @@ export function SiteHeader() {
   const menu = useMenu();
   const { modulo, item, fixo } = acharModuloPorRota(pathname, menu.modulos, menu.fixos);
   const titulo = item?.titulo ?? fixo?.titulo ?? modulo?.titulo ?? tituloDaRota(pathname);
+  /* 06/11/2026: estrela ao lado do nome da tela, para favoritar (aparece no Início). Só em telas do menu, não no Início nem nas páginas de módulo. */
+  const telaId = (item ?? fixo)?.id && pathname !== "/" ? (item ?? fixo)!.id : null;
+  const favorita = telaId ? menu.favoritos.includes(telaId) : false;
+  const estrela = telaId ? (
+    <button
+      type="button"
+      onClick={() => void menu.alternarFavorito(telaId)}
+      aria-pressed={favorita}
+      aria-label={favorita ? "Tirar dos favoritos" : "Favoritar esta tela"}
+      title={favorita ? "Tirar dos favoritos" : "Favoritar (aparece no Início)"}
+      className="grid size-9 shrink-0 place-items-center rounded-lg text-[#98A1B3] hover:bg-accent hover:text-[#313C55] dark:hover:text-white"
+    >
+      {favorita ? <IconStarFilled size={19} className="text-[#F2CB3F]" /> : <IconStar size={19} />}
+    </button>
+  ) : null;
   const pronto = perms !== null;
   const temAvisos = pronto && has("avisos") && rotaExiste("/avisos");
   const pendentes = temAvisos ? numeros.avisos ?? 0 : 0;
@@ -99,10 +114,14 @@ export function SiteHeader() {
           ) : (
             <span className="font-extrabold">{titulo}</span>
           )}
+          {estrela}
         </nav>
 
         {/* celular: título da tela */}
-        <div className="min-w-0 flex-1 truncate text-[22px] font-extrabold md:hidden">{titulo}</div>
+        <div className="flex min-w-0 flex-1 items-center gap-1 md:hidden">
+          <span className="min-w-0 truncate text-[22px] font-extrabold">{titulo}</span>
+          {estrela}
+        </div>
 
         {/* computador: pesquisa */}
         <BuscaGlobal className="ml-4 hidden min-w-[160px] flex-1 md:block" />

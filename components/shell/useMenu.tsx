@@ -40,6 +40,9 @@ export type MenuPronto = {
     podeOrganizar: boolean;
     tabelasProntas: boolean;
     recarregar: () => Promise<void>;
+    /** 06/11/2026: ids das telas favoritas do usuário (Início). */
+    favoritos: string[];
+    alternarFavorito: (id: string) => Promise<void>;
 };
 
 /* ===== API ===== */
@@ -109,6 +112,27 @@ export function recarregarMenu(): Promise<void> {
     return buscando;
 }
 
+/**
+ * 06/11/2026: favorita ou tira dos favoritos (Início). Muda na hora na tela e grava nas preferências do usuário
+ * (menu_modulos.php · salvar_preferencias). Se o servidor recusar, volta como estava.
+ */
+export async function alternarFavorito(id: string): Promise<void> {
+    const antes = dados;
+    const prefs = { ...(dados?.preferencias || {}) };
+    const atual = Array.isArray(prefs.favoritos) ? prefs.favoritos : [];
+    prefs.favoritos = atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id];
+    dados = { ...(dados || { organizacao: null, pode_organizar: false }), preferencias: prefs } as RespostaMenu;
+    avisar();
+    try {
+        const r = await menuPost<PrefsMenu>("salvar_preferencias", { config: prefs });
+        dados = { ...(dados as RespostaMenu), preferencias: r.dados ?? prefs };
+        gravarCache(dados);
+    } catch {
+        dados = antes;
+    }
+    avisar();
+}
+
 /* Cálculo feito uma vez por resposta (não uma vez por componente). */
 let calculadoDe: RespostaMenu | null | undefined;
 let calculado: { modulos: Modulo[]; fixos: ItemModulo[]; modulosPessoais: Modulo[] } | null = null;
@@ -153,5 +177,7 @@ export function useMenu(): MenuPronto {
         podeOrganizar: !!dados?.pode_organizar,
         tabelasProntas: dados?.tabelas !== false,
         recarregar: recarregarMenu,
+        favoritos: Array.isArray(dados?.preferencias?.favoritos) ? dados!.preferencias!.favoritos! : [],
+        alternarFavorito,
     };
 }

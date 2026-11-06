@@ -40,6 +40,8 @@ export type PrefsMenu = {
     ocultos_itens?: string[];
     /** Ícone escolhido para cada atalho (id do atalho → nome do ícone). */
     icones?: Record<string, string>;
+    /** 06/11/2026: telas favoritas (Início), na ordem em que foram favoritadas. */
+    favoritos?: string[];
 };
 
 export type TelaCatalogo = { item: ItemModulo; moduloPadrao: string | null };

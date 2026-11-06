@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
     IconAlertTriangle,
@@ -10,6 +11,8 @@ import {
     IconFlower,
     IconPlus,
     IconSearch,
+    IconStar,
+    IconStarFilled,
     IconTruckDelivery,
     IconX,
 } from "@tabler/icons-react";
@@ -142,7 +145,32 @@ export default function HomePage() {
      * (FIXOS_PADRAO_IDS no modulos.tsx); Minhas Solicitações mostra o número das requisições abertas do usuário.
      */
     const menu = useMenu();
-    const rapidos = useMemo(() => menu.fixos.filter((i) => i.href !== "/" && pronto && itemVisivel(i, has)), [menu.fixos, pronto, has]);
+    /* 06/11/2026: o Início mostra os favoritos do usuário (estrela ao lado do nome da tela), sem limite.
+       Quem ainda não favoritou nada vê o Acesso rápido definido pela Gestão. */
+    const todasTelas = useMemo(() => {
+        const m = new Map<string, { item: (typeof menu.fixos)[number]; modulo: string; tom: string }>();
+        for (const mod of menu.modulos) for (const i of mod.itens) if (!m.has(i.id)) m.set(i.id, { item: i, modulo: mod.titulo, tom: TOM_DO_MODULO[mod.id] || "azul" });
+        for (const f of menu.fixos) if (!m.has(f.id)) m.set(f.id, { item: f, modulo: "Início", tom: "azul" });
+        return m;
+    }, [menu.modulos, menu.fixos]);
+    const favoritos = useMemo(
+        () => (pronto ? menu.favoritos.map((id) => todasTelas.get(id)?.item).filter((i): i is (typeof menu.fixos)[number] => !!i && i.href !== "/" && itemVisivel(i, has)) : []),
+        [menu.favoritos, todasTelas, pronto, has],
+    );
+    const usaFavoritos = favoritos.length > 0;
+    const rapidos = useMemo(
+        () => (usaFavoritos ? favoritos : menu.fixos.filter((i) => i.href !== "/" && pronto && itemVisivel(i, has))),
+        [usaFavoritos, favoritos, menu.fixos, pronto, has],
+    );
+    const [escolher, setEscolher] = useState(false);
+    useEffect(() => {
+        if (!escolher) return;
+        const k = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setEscolher(false);
+        };
+        window.addEventListener("keydown", k);
+        return () => window.removeEventListener("keydown", k);
+    }, [escolher]);
 
     const modulos = pronto ? menu.modulosPessoais.filter((m) => moduloVisivel(m, has)) : [];
 
@@ -272,7 +300,7 @@ export default function HomePage() {
                             </section>
                         ) : null}
                         {/* ACESSO RÁPIDO (06/11/2026: blocos no padrão das páginas, na cor do módulo de cada tela) */}
-                        <h2 className={`mb-3 mt-7 lg:mb-4 lg:mt-8 ${ROTULO_SECAO}`}>Acesso rápido</h2>
+                        <h2 className={`mb-3 mt-7 lg:mb-4 lg:mt-8 ${ROTULO_SECAO}`}>{usaFavoritos ? "Favoritos" : "Acesso rápido"}</h2>
                         <div className={GRADE_BLOCOS}>
                             {rapidos.map((f) => {
                                 const n =
@@ -286,7 +314,30 @@ export default function HomePage() {
                                 const doModulo = menu.modulos.find((m) => m.itens.some((i) => i.id === f.id));
                                 return <BlocoTela key={f.id} titulo={f.titulo} href={hrefDoItem(f, has)} Icone={f.icone} tom={(doModulo && TOM_DO_MODULO[doModulo.id]) || "azul"} selo={n} dica={f.desc} />;
                             })}
+                            {pronto ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setEscolher(true)}
+                                    className="flex min-h-[124px] flex-col items-center justify-center gap-3 rounded-[20px] border border-dashed border-[#C9D1DE] px-3 py-4 text-center text-[14.5px] font-extrabold text-[#5B6478] transition hover:border-[#313C55] hover:text-[#313C55] dark:border-white/[0.2] dark:text-[#AEB9CF] dark:hover:text-white lg:min-h-[140px] lg:text-[15px]"
+                                >
+                                    <span className="grid size-14 place-items-center rounded-[18px] bg-[#EEF2F7] dark:bg-white/[0.08]">
+                                        <IconPlus size={28} stroke={1.8} />
+                                    </span>
+                                    {usaFavoritos ? "Escolher favoritos" : "Adicionar favorito"}
+                                </button>
+                            ) : null}
                         </div>
+                        {escolher ? (
+                            <EscolherFavoritos
+                                fechar={() => setEscolher(false)}
+                                grupos={menu.modulos
+                                    .map((m) => ({ titulo: m.titulo, itens: m.itens.filter((i) => itemVisivel(i, has)) }))
+                                    .concat([{ titulo: "Início", itens: menu.fixos.filter((f) => f.href !== "/" && itemVisivel(f, has) && !menu.modulos.some((m) => m.itens.some((i) => i.id === f.id))) }])
+                                    .filter((g) => g.itens.length)}
+                                favoritos={menu.favoritos}
+                                alternar={(id) => void menu.alternarFavorito(id)}
+                            />
+                        ) : null}
                         {/* MÓDULOS */}
                         {/* 06/11/2026: no computador os módulos ficam na barra lateral; aqui só no celular */}
                         <div className="lg:hidden">
@@ -317,5 +368,63 @@ export default function HomePage() {
                 )}
             </div>
         </div>
+    );
+}
+
+/** 06/11/2026: janela para escolher as telas favoritas do Início (a mesma estrela do cabeçalho de cada tela). */
+function EscolherFavoritos({ fechar, grupos, favoritos, alternar }: { fechar: () => void; grupos: { titulo: string; itens: { id: string; titulo: string; icone: Icone }[] }[]; favoritos: string[]; alternar: (id: string) => void }) {
+    if (typeof document === "undefined") return null;
+    return createPortal(
+        <div
+            data-pai-overlay
+            role="dialog"
+            aria-modal="true"
+            aria-label="Favoritos do Início"
+            className="fixed inset-0 z-[70] flex items-end justify-center bg-[#313C55]/45 lg:items-center lg:p-6"
+            onClick={(e) => {
+                if (e.target === e.currentTarget) fechar();
+            }}
+        >
+            <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white text-[#313C55] shadow-2xl dark:bg-[#232B3F] dark:text-white lg:rounded-2xl">
+                <div className="flex items-center gap-3 border-b border-[#E3E8F0] px-5 py-3.5 dark:border-white/[0.08]">
+                    <h2 className="flex-1 text-[18px] font-extrabold">Favoritos do Início</h2>
+                    <button type="button" onClick={fechar} aria-label="Fechar" className="grid size-11 place-items-center rounded-xl hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08]">
+                        <IconX size={20} />
+                    </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                    {grupos.map((g) => (
+                        <div key={g.titulo} className="mb-4 last:mb-0">
+                            <div className={`mb-1.5 ${ROTULO_SECAO}`}>{g.titulo}</div>
+                            <div className="overflow-hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.08]">
+                                {g.itens.map((i) => {
+                                    const fav = favoritos.includes(i.id);
+                                    const I = i.icone;
+                                    return (
+                                        <button
+                                            key={i.id}
+                                            type="button"
+                                            aria-pressed={fav}
+                                            onClick={() => alternar(i.id)}
+                                            className="flex min-h-12 w-full items-center gap-3 border-t border-[#E3E8F0] px-3 text-left text-[14.5px] font-bold first:border-t-0 hover:bg-[#F6F8FB] dark:border-white/[0.08] dark:hover:bg-white/[0.04]"
+                                        >
+                                            <I size={20} className="shrink-0 text-[#5B6478] dark:text-[#AEB9CF]" />
+                                            <span className="min-w-0 flex-1 break-words">{i.titulo}</span>
+                                            {fav ? <IconStarFilled size={20} className="shrink-0 text-[#F2CB3F]" /> : <IconStar size={20} className="shrink-0 text-[#98A1B3]" />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex justify-end border-t border-[#E3E8F0] bg-[#F6F8FB] px-5 py-3 dark:border-white/[0.08] dark:bg-[#1C2334]">
+                    <button type="button" onClick={fechar} className="inline-flex h-11 items-center justify-center rounded-xl bg-[#313C55] px-5 text-[14px] font-extrabold text-white hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55]">
+                        Pronto
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
     );
 }
