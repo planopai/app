@@ -12,7 +12,7 @@ import { IconX } from "@tabler/icons-react";
 import { IconeAurora } from "@/components/shell/IconeAurora";
 import { IconFile, IconHome } from "@tabler/icons-react";
 import { useMenu } from "@/components/shell/useMenu";
-import { acharModuloPorRota } from "@/components/shell/modulos";
+import { acharModuloPorRota, MODULOS } from "@/components/shell/modulos";
 
 /* ======================================================================
  * 06/11/2026 — até 5 telas abertas em abas, como no navegador (decisão de 03/11/2026; computador e tablet deitado, ≥ 1024 px).
@@ -20,11 +20,25 @@ import { acharModuloPorRota } from "@/components/shell/modulos";
  * Dentro do quadro o app abre "limpo" (sem menu, cabeçalho e barra) e avisa a janela de cima quando muda de tela.
  * Clicar numa tela do menu, da pesquisa ou da página do módulo abre numa aba nova (ou vai para a aba em que ela já está).
  * Na 6ª, pede para fechar uma. O endereço da janela acompanha a aba ativa (o caminho no cabeçalho e a estrela seguem a aba).
+ * 07/11/2026: páginas raiz (Início e a página de cada módulo) não contam no limite de 5. Elas usam uma aba só,
+ * a "aba de navegação": abrir outra raiz troca a tela dessa aba em vez de abrir mais uma.
  * ==================================================================== */
 const MAX_ABAS = 5;
 const CHAVE_ABAS = "pai_abas_v1";
 const SEM_ABAS = ["/quadrotv"];
 type AbaTela = { id: string; src: string; path: string; titulo?: string };
+const RAIZES_FIXAS = ["/", "/inicio"];
+
+/** Página raiz = Início ou a página do módulo (o "hub"). Só o endereço exato; telas dentro do módulo contam normalmente. */
+function ehPaginaRaiz(path: string, modulos: { hub: { href: string } }[]): boolean {
+    const p = (path.split("?")[0] || "/").replace(/\/+$/, "") || "/";
+    return RAIZES_FIXAS.includes(p) || modulos.some((m) => m.hub.href === p);
+}
+
+/** Abas que contam no limite (as que não são página raiz). */
+function abasQueContam(lista: AbaTela[], modulos: { hub: { href: string } }[]): AbaTela[] {
+    return lista.filter((a) => !ehPaginaRaiz(a.path, modulos));
+}
 
 function novaId() {
     return Math.random().toString(36).slice(2, 10);
@@ -39,7 +53,21 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
     const [abas, setAbas] = React.useState<AbaTela[]>(() => {
         try {
             const j = JSON.parse(window.sessionStorage.getItem(CHAVE_ABAS) || "null");
-            if (Array.isArray(j?.abas) && j.abas.length) return (j.abas as AbaTela[]).slice(0, MAX_ABAS).map((a) => ({ ...a, src: a.path }));
+            if (Array.isArray(j?.abas) && j.abas.length) {
+                // reabre as raízes que estavam abertas (no máximo uma) + até 5 telas
+                const lista = (j.abas as AbaTela[]).map((a) => ({ ...a, src: a.path }));
+                let raiz = false;
+                let telas = 0;
+                return lista.filter((a) => {
+                    if (ehPaginaRaiz(a.path, MODULOS)) {
+                        if (raiz) return false;
+                        raiz = true;
+                        return true;
+                    }
+                    telas += 1;
+                    return telas <= MAX_ABAS;
+                });
+            }
         } catch {
             /* sem armazenamento: começa do zero */
         }
@@ -47,8 +75,8 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
     });
     const [ativa, setAtiva] = React.useState<string | null>(null);
     const [pedido, setPedido] = React.useState<string | null>(null);
-    const ref = React.useRef({ abas, ativa });
-    ref.current = { abas, ativa };
+    const ref = React.useRef({ abas, ativa, modulos: menu.modulos });
+    ref.current = { abas, ativa, modulos: menu.modulos };
 
     const nomeDa = React.useCallback(
         (path: string, reserva?: string) => {
@@ -65,7 +93,7 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
     );
 
     const abrir = React.useCallback((path: string) => {
-        const { abas: lista, ativa: at } = ref.current;
+        const { abas: lista, ativa: at, modulos } = ref.current;
         const atual = lista.find((a) => a.id === at);
         if (atual && atual.path === path) return;
         const ja = lista.find((a) => a.path === path);
@@ -73,7 +101,28 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
             setAtiva(ja.id);
             return;
         }
-        if (lista.length >= MAX_ABAS) {
+        // Página raiz: reaproveita a aba de navegação (uma raiz já aberta) e não conta no limite.
+        if (ehPaginaRaiz(path, modulos)) {
+            const raiz = lista.find((a) => ehPaginaRaiz(a.path, modulos));
+            if (raiz) {
+                const quadro = quadros.current[raiz.id];
+                if (raiz.src === path && quadro?.contentWindow) {
+                    try {
+                        quadro.contentWindow.location.assign(path);
+                    } catch {
+                        /* mesma origem; se falhar, o src abaixo resolve na próxima troca */
+                    }
+                }
+                setAbas(lista.map((a) => (a.id === raiz.id ? { ...a, src: path, path, titulo: undefined } : a)));
+                setAtiva(raiz.id);
+                return;
+            }
+            const nova = { id: novaId(), src: path, path };
+            setAbas([...lista, nova]);
+            setAtiva(nova.id);
+            return;
+        }
+        if (abasQueContam(lista, modulos).length >= MAX_ABAS) {
             setPedido(path);
             return;
         }
@@ -217,7 +266,7 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
                                   <h2 className="text-[20px] font-extrabold">{MAX_ABAS} abas abertas</h2>
                                   <p className="mt-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Feche uma para abrir {nomeDa(pedido).titulo}</p>
                               </div>
-                              {abas.map((a) => (
+                              {abasQueContam(abas, menu.modulos).map((a) => (
                                   <div key={a.id} className="flex items-center gap-3 border-t border-[#E3E8F0] px-6 py-2.5 text-[15px] font-bold dark:border-white/[0.08]">
                                       <span className="min-w-0 flex-1 truncate">{nomeDa(a.path, a.titulo).titulo}</span>
                                       <button
