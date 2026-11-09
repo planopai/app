@@ -2160,6 +2160,8 @@ export default function Page() {
     const [newError, setNewError] = React.useState<string | null>(null);
     const [newAtendimentoSelecionado, setNewAtendimentoSelecionado] = React.useState("");
     const [quantidadeCoroas, setQuantidadeCoroas] = React.useState(1);
+    /** 09/11/2026: o que está digitado no campo (pode ficar vazio enquanto a pessoa troca o número no celular). */
+    const [quantidadeTexto, setQuantidadeTexto] = React.useState("1");
     const [newItems, setNewItems] = React.useState<NovoCoroaItem[]>([criarNovoCoroaItem()]);
     const [newComprovante, setNewComprovante] = React.useState<File | null>(null);
     /** OS de coroa aberta por cima da tela (Concluir venda). Pedido antigo (sem OS): volta o anexo de comprovante de antes. */
@@ -2196,6 +2198,7 @@ export default function Page() {
             falecido: "",
         });
         setQuantidadeCoroas(1);
+        setQuantidadeTexto("1");
         setNewItems([criarNovoCoroaItem()]);
         setNewComprovante(null);
         setNewConvenioId("");
@@ -2213,6 +2216,7 @@ export default function Page() {
     function atualizarQuantidadeCoroas(valor: number) {
         const quantidade = Math.max(1, Math.min(20, Math.floor(Number(valor) || 1)));
         setQuantidadeCoroas(quantidade);
+        setQuantidadeTexto(String(quantidade));
 
         setNewItems((atuais) => {
             const proximos = atuais.slice(0, quantidade);
@@ -3932,15 +3936,27 @@ export default function Page() {
                                     {/* 4. Quantidade e dados de cada coroa */}
                                     <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm font-medium">Quantidade de Coroas *</label>
+                                        {/* 09/11/2026: campo de texto numérico. Antes, ao apagar o número, ele voltava
+                                            na hora para 1 e no celular não dava para trocar sem digitar outro antes.
+                                            Agora pode ficar vazio enquanto digita; vale o número de 1 a 20, e ao sair
+                                            do campo vazio ele volta para a quantidade atual. */}
                                         <input
-                                            type="number"
-                                            min={1}
-                                            max={20}
+                                            type="text"
                                             inputMode="numeric"
-                                            value={quantidadeCoroas}
-                                            onChange={(e) => atualizarQuantidadeCoroas(Number(e.target.value))}
+                                            pattern="[0-9]*"
+                                            maxLength={2}
+                                            value={quantidadeTexto}
+                                            onFocus={(e) => e.currentTarget.select()}
+                                            onChange={(e) => {
+                                                const digitos = e.target.value.replace(/\D+/g, "").slice(0, 2);
+                                                setQuantidadeTexto(digitos);
+                                                const n = Number(digitos);
+                                                if (digitos !== "" && n >= 1) atualizarQuantidadeCoroas(Math.min(20, n));
+                                            }}
+                                            onBlur={() => setQuantidadeTexto(String(quantidadeCoroas))}
                                             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                                         />
+                                        <p className="mt-1 text-xs text-muted-foreground">De 1 a 20 coroas.</p>
                                     </div>
 
                                     <div className="sm:col-span-2 space-y-4">
