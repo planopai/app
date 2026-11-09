@@ -6966,7 +6966,29 @@ function nomeUsuarioCoroaTv(): Promise<string> {
     return NOME_USUARIO_COROA_TV;
 }
 
-async function enviarAcaoCoroaTv(p: CoroaTvPedido, alvo: AcaoCoroaTv, foto?: File | null): Promise<any> {
+/** 09/11/2026: Coroa Entregue de coroa artificial (Venda Direta / Loja On-line): de qual estoque sai. */
+type DepositoBaixaTv = "MEMORIAL" | "FUNERARIA";
+type EntregaEstoqueTv = { nome: string; saldos: Record<DepositoBaixaTv, number>; deposito_do_pedido?: string | null };
+
+/** Pergunta ao servidor se esta coroa sai do estoque na entrega; se sim, devolve o saldo no MEMORIAL e na FUNERARIA. */
+async function consultarEstoqueEntregaTv(p: CoroaTvPedido): Promise<EntregaEstoqueTv[] | null> {
+    try {
+        const itemId = itemIdCoroaTv(p);
+        const res = await fetch(
+            `${API_DIRETA}/coroas.php?entrega_estoque=${p.id}${itemId ? `&item_id=${itemId}` : ""}&fresh=${Date.now()}`,
+            { credentials: "include", cache: "no-store" },
+        );
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.sucesso && json.precisa_deposito && Array.isArray(json.produtos) && json.produtos.length) {
+            return json.produtos as EntregaEstoqueTv[];
+        }
+    } catch {
+        /* sem a consulta: se precisar, o servidor pede a escolha na hora de confirmar */
+    }
+    return null;
+}
+
+async function enviarAcaoCoroaTv(p: CoroaTvPedido, alvo: AcaoCoroaTv, foto?: File | null, depositoBaixa?: DepositoBaixaTv): Promise<any> {
     const usuario = await nomeUsuarioCoroaTv();
     const itemId = itemIdCoroaTv(p);
     const dados: Record<string, string | number> = {
@@ -6975,6 +6997,7 @@ async function enviarAcaoCoroaTv(p: CoroaTvPedido, alvo: AcaoCoroaTv, foto?: Fil
         status: alvo,
         ...(itemId ? { item_id: itemId } : {}),
         ...(usuario ? { usuario_nome: usuario } : {}),
+        ...(depositoBaixa ? { deposito_baixa: depositoBaixa } : {}),
     };
 
     let res: Response;
@@ -6998,7 +7021,9 @@ async function enviarAcaoCoroaTv(p: CoroaTvPedido, alvo: AcaoCoroaTv, foto?: Fil
         throw new Error("Sessão expirada. Entre de novo.");
     }
     if (!res.ok || !json?.sucesso) {
-        throw new Error(json?.msg || "Não foi possível registrar a ação.");
+        const erro: Error & { dados?: any } = new Error(json?.msg || "Não foi possível registrar a ação.");
+        erro.dados = json;
+        throw erro;
     }
     return json;
 }
@@ -7034,7 +7059,16 @@ function CoroaAcoesTv({
     const [foto, setFoto] = useState<File | null>(null);
     const [enviando, setEnviando] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
+    const [estoqueEntrega, setEstoqueEntrega] = useState<EntregaEstoqueTv[] | null>(null);
+    const [depositoBaixa, setDepositoBaixa] = useState<DepositoBaixaTv | "">("");
     const azul = tema === "escuro" ? "#3D6A99" : "#313C55";
+
+    function abrirEstoqueEntrega(produtos: EntregaEstoqueTv[]) {
+        const sugerido = String(produtos[0]?.deposito_do_pedido || "").toUpperCase();
+        const temSaldo = (d: DepositoBaixaTv) => produtos.every((x) => Number(x.saldos?.[d] || 0) > 0);
+        setEstoqueEntrega(produtos);
+        setDepositoBaixa((sugerido === "MEMORIAL" || sugerido === "FUNERARIA") && temSaldo(sugerido) ? sugerido : "");
+    }
     const btn = "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 text-[14.5px] font-extrabold leading-tight disabled:opacity-50";
 
     function escolherFoto(file?: File | null) {
@@ -7060,10 +7094,19 @@ function CoroaAcoesTv({
             setErro("Anexe a foto da coroa pronta para confirmar.");
             return;
         }
+        if (alvo === "entregue" && estoqueEntrega && !depositoBaixa) {
+            setErro("Escolha de qual estoque sai a coroa: MEMORIAL ou FUNERÁRIA.");
+            return;
+        }
         setEnviando(true);
         setErro(null);
         try {
-            const json = await enviarAcaoCoroaTv(pedido, alvo, alvo === "finalizada" ? foto : null);
+            const json = await enviarAcaoCoroaTv(
+                pedido,
+                alvo,
+                alvo === "finalizada" ? foto : null,
+                alvo === "entregue" && depositoBaixa ? depositoBaixa : undefined,
+            );
             const nova = await buscarCoroaTvAtual(pedido);
             const aviso =
                 json?.notificacao_enviada === false
@@ -7073,13 +7116,20 @@ function CoroaAcoesTv({
                     : null;
             onConcluida(nova, aviso);
         } catch (e: any) {
-            setErro(e?.message || "Não foi possível registrar a ação.");
+            const dados = e?.dados;
+            if (alvo === "entregue" && dados?.precisa_deposito && Array.isArray(dados?.produtos)) {
+                abrirEstoqueEntrega(dados.produtos as EntregaEstoqueTv[]);
+                setErro("Escolha de qual estoque sai a coroa: MEMORIAL ou FUNERÁRIA.");
+            } else {
+                setErro(e?.message || "Não foi possível registrar a ação.");
+            }
         } finally {
             setEnviando(false);
         }
     }
 
-    const titulo = confirmar === "finalizada" ? "Coroa Pronta" : confirmar ? "Confirmar ação" : "Registrar uma ação";
+    const titulo =
+        confirmar === "finalizada" ? "Coroa Pronta" : confirmar === "entregue" ? "Coroa Entregue" : confirmar ? "Confirmar ação" : "Registrar uma ação";
 
     return (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 lg:items-center lg:p-4" role="dialog" aria-modal aria-label={titulo}>
@@ -7110,8 +7160,18 @@ function CoroaAcoesTv({
                                             setErro(null);
                                             setFoto(null);
                                             // INICIAR é um toque só, sem tela de confirmação.
-                                            if (alvo === "iniciar") void confirmarAcao("iniciar");
-                                            else setConfirmar(alvo);
+                                            if (alvo === "iniciar") {
+                                                void confirmarAcao("iniciar");
+                                                return;
+                                            }
+                                            setEstoqueEntrega(null);
+                                            setDepositoBaixa("");
+                                            setConfirmar(alvo);
+                                            if (alvo === "entregue") {
+                                                void consultarEstoqueEntregaTv(pedido).then((produtos) => {
+                                                    if (produtos) abrirEstoqueEntrega(produtos);
+                                                });
+                                            }
                                         }}
                                         className={`${btn} border`}
                                         style={
@@ -7130,8 +7190,46 @@ function CoroaAcoesTv({
                         </div>
                     )}
 
-                    {confirmar && confirmar !== "finalizada" && (
+                    {confirmar && confirmar !== "finalizada" && !(confirmar === "entregue" && estoqueEntrega) && (
                         <p className="text-[15px] font-semibold">Confirmar a ação “{ACAO_COROA_TV_LABEL[confirmar]}”?</p>
+                    )}
+
+                    {confirmar === "entregue" && estoqueEntrega && (
+                        <div className="grid gap-3">
+                            <p className="text-[14.5px] font-semibold" style={{ color: "var(--d-muted)" }}>De qual estoque sai a coroa?</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {(["MEMORIAL", "FUNERARIA"] as DepositoBaixaTv[]).map((dep) => {
+                                    const semSaldo = estoqueEntrega.some((x) => Number(x.saldos?.[dep] || 0) <= 0);
+                                    const ativo = depositoBaixa === dep;
+                                    return (
+                                        <button
+                                            key={dep}
+                                            type="button"
+                                            disabled={enviando || semSaldo}
+                                            onClick={() => {
+                                                setDepositoBaixa(dep);
+                                                setErro(null);
+                                            }}
+                                            className="rounded-xl border-2 px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                                            style={
+                                                ativo
+                                                    ? { background: azul, color: "#FFFFFF", borderColor: azul }
+                                                    : { background: "var(--d-sunk)", color: "var(--d-text)", borderColor: "var(--d-line)" }
+                                            }
+                                        >
+                                            <div className="text-[15px] font-extrabold">{dep === "FUNERARIA" ? "FUNERÁRIA" : "MEMORIAL"}</div>
+                                            {estoqueEntrega.map((x, i) => (
+                                                <div key={i} className="mt-1 text-[12.5px] font-semibold" style={{ opacity: 0.85 }}>
+                                                    {estoqueEntrega.length > 1 ? `${x.nome}: ` : "Saldo: "}
+                                                    <b>{Number(x.saldos?.[dep] || 0)}</b>
+                                                </div>
+                                            ))}
+                                            {semSaldo && <div className="mt-1 text-[12.5px] font-extrabold" style={{ color: "var(--d-crit)" }}>Sem saldo</div>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     )}
 
                     {confirmar === "finalizada" && (
@@ -7166,7 +7264,7 @@ function CoroaAcoesTv({
                     <button
                         type="button"
                         disabled={enviando}
-                        onClick={() => (confirmar ? (setConfirmar(null), setErro(null)) : onClose())}
+                        onClick={() => (confirmar ? (setConfirmar(null), setErro(null), setEstoqueEntrega(null), setDepositoBaixa("")) : onClose())}
                         className={`${btn} flex-1 border lg:flex-none`}
                         style={{ background: "var(--d-card)", borderColor: "var(--d-line)", color: "var(--d-text)" }}
                     >
@@ -7175,7 +7273,7 @@ function CoroaAcoesTv({
                     {confirmar && (
                         <button
                             type="button"
-                            disabled={enviando || (confirmar === "finalizada" && !foto)}
+                            disabled={enviando || (confirmar === "finalizada" && !foto) || (confirmar === "entregue" && !!estoqueEntrega && !depositoBaixa)}
                             onClick={() => void confirmarAcao()}
                             className={`${btn} flex-1 lg:flex-none`}
                             style={tema === "escuro" ? { background: "#F2CB3F", color: "#313C55" } : { background: "#313C55", color: "#FFFFFF" }}

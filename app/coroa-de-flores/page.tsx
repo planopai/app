@@ -115,6 +115,21 @@ type ManualOrigem =
     | "ordem_servico"
     | "venda_direta";
 
+/** 09/11/2026: Coroa Entregue de coroa artificial (Venda Direta / Loja On-line) — escolha do estoque da baixa. */
+type DepositoBaixa = "MEMORIAL" | "FUNERARIA";
+type EntregaEstoqueProduto = {
+    item_id: number;
+    produto_id: number;
+    nome: string;
+    deposito_do_pedido?: string | null;
+    saldos: Record<DepositoBaixa, number>;
+};
+type EntregaEstoqueEstado = {
+    produtos: EntregaEstoqueProduto[];
+    escolhido: DepositoBaixa | "";
+    erro: string | null;
+};
+
 type ManualCoroaItem = {
     id?: number;
     coroa_id?: number;
@@ -1916,6 +1931,7 @@ export default function Page() {
     /** 09/11/2026: pedidos da loja que o servidor recusou ao levar para a Confecção (aparece um aviso na aba). */
     const [onlineSyncErros, setOnlineSyncErros] = React.useState<Array<{ order_id: number; numero?: string; cliente?: string; criado_em?: string; message: string }>>([]);
     const [onlineSyncFalha, setOnlineSyncFalha] = React.useState<string | null>(null);
+    const [entregaEstoque, setEntregaEstoque] = React.useState<EntregaEstoqueEstado | null>(null);
     const onlineSyncPromiseRef = React.useRef<Promise<void> | null>(null);
 
     const sincronizarPedidosOnlineConfeccao = React.useCallback(async (force = false) => {
@@ -2471,7 +2487,9 @@ export default function Page() {
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.sucesso) {
-            throw new Error(json?.msg || "Não foi possível concluir a operação.");
+            const erro: Error & { dados?: any } = new Error(json?.msg || "Não foi possível concluir a operação.");
+            erro.dados = json;
+            throw erro;
         }
         return json;
     }
@@ -2539,13 +2557,14 @@ export default function Page() {
     }
 
 
-    async function executarStatusManual(target: ManualAcao) {
+    async function executarStatusManual(target: ManualAcao, depositoBaixa?: DepositoBaixa) {
         if (!manualDetail) return;
 
         if (!acaoManualLiberada(manualDetail, target)) return;
 
         // Coroa Entregue tira a coroa da lista, então pede confirmação.
-        if (target === "entregue" && !window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
+        // (Com a escolha do estoque, a própria janela de escolha é a confirmação.)
+        if (target === "entregue" && !depositoBaixa && !window.confirm(`Confirmar a ação “${acaoManualLabel(target)}”?`)) {
             return;
         }
 
@@ -2558,7 +2577,9 @@ export default function Page() {
                 id: manualDetail.id,
                 ...(manualDetail._item_id ? { item_id: manualDetail._item_id } : {}),
                 status: target,
+                ...(depositoBaixa ? { deposito_baixa: depositoBaixa } : {}),
             });
+            setEntregaEstoque(null);
 
             await carregarManualDetail(manualDetail.id, true);
             await fetchManualOrders(true);
@@ -2571,15 +2592,57 @@ export default function Page() {
                 );
             }
         } catch (e: any) {
-            setManualDetailMsg(e?.message || "Não foi possível registrar a ação.");
+            const dados = e?.dados;
+            if (target === "entregue" && dados?.precisa_deposito && Array.isArray(dados?.produtos)) {
+                // O servidor pediu a escolha do estoque (ex.: tela antiga sem a consulta prévia).
+                abrirEscolhaEstoque(dados.produtos as EntregaEstoqueProduto[]);
+            } else if (target === "entregue" && depositoBaixa) {
+                setEntregaEstoque((atual) => (atual ? { ...atual, erro: e?.message || "Não foi possível registrar a entrega." } : atual));
+            } else {
+                setManualDetailMsg(e?.message || "Não foi possível registrar a ação.");
+            }
         } finally {
             setManualActionLoading(false);
         }
     }
 
+    function abrirEscolhaEstoque(produtos: EntregaEstoqueProduto[]) {
+        // Sugere o estoque do pedido (Venda Direta) quando ele tem saldo para todas as coroas.
+        const sugerido = String(produtos[0]?.deposito_do_pedido || "").toUpperCase();
+        const temSaldo = (d: DepositoBaixa) => produtos.every((p) => Number(p.saldos?.[d] || 0) > 0);
+        const escolhido: DepositoBaixa | "" =
+            (sugerido === "MEMORIAL" || sugerido === "FUNERARIA") && temSaldo(sugerido) ? sugerido : "";
+        setEntregaEstoque({ produtos, escolhido, erro: null });
+    }
+
+    async function clicarCoroaEntregue() {
+        if (!manualDetail) return;
+        setManualDetailMsg(null);
+        try {
+            const u = new URL(COROAS_API, window.location.origin);
+            u.searchParams.set("entrega_estoque", String(manualDetail.id));
+            if (manualDetail._item_id) u.searchParams.set("item_id", String(manualDetail._item_id));
+            u.searchParams.set("fresh", String(Date.now()));
+            const res = await fetch(u.toString(), { credentials: "include", cache: "no-store" });
+            const json = await res.json().catch(() => null);
+            if (res.ok && json?.sucesso && json.precisa_deposito && Array.isArray(json.produtos) && json.produtos.length) {
+                abrirEscolhaEstoque(json.produtos as EntregaEstoqueProduto[]);
+                return;
+            }
+        } catch {
+            /* sem a consulta: segue; se precisar do estoque, o servidor pede e a janela abre */
+        }
+        void executarStatusManual("entregue");
+    }
+
     function clicarAcaoManual(target: ManualAcao) {
         if (!manualDetail) return;
         if (!acaoManualLiberada(manualDetail, target)) return;
+
+        if (target === "entregue") {
+            void clicarCoroaEntregue();
+            return;
+        }
 
         if (target === "finalizada") {
             setFinalizarFile(null);
@@ -4453,6 +4516,96 @@ export default function Page() {
                 )}
 
                 {/* Foto obrigatória para Finalizada */}
+                {entregaEstoque && (
+                    <NoCorpo>
+                        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-3">
+                            <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow-2xl">
+                                <div className="flex items-center justify-between border-b px-4 py-3">
+                                    <div>
+                                        <div className="text-lg font-semibold">Coroa Entregue</div>
+                                        <div className="mt-0.5 text-xs text-muted-foreground">
+                                            Escolha de qual estoque sai a coroa artificial.
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="rounded-md p-2 hover:bg-muted"
+                                        disabled={manualActionLoading}
+                                        onClick={() => setEntregaEstoque(null)}
+                                        aria-label="Fechar"
+                                    >
+                                        <IconX className="size-5" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3 p-4">
+                                    <div className="text-sm">
+                                        {entregaEstoque.produtos.map((p) => (
+                                            <div key={`${p.item_id}-${p.produto_id}`} className="font-medium">{p.nome}</div>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {(["MEMORIAL", "FUNERARIA"] as DepositoBaixa[]).map((dep) => {
+                                            const semSaldo = entregaEstoque.produtos.some((p) => Number(p.saldos?.[dep] || 0) <= 0);
+                                            const ativo = entregaEstoque.escolhido === dep;
+                                            return (
+                                                <button
+                                                    key={dep}
+                                                    type="button"
+                                                    disabled={manualActionLoading || semSaldo}
+                                                    onClick={() => setEntregaEstoque((atual) => (atual ? { ...atual, escolhido: dep, erro: null } : atual))}
+                                                    className={`rounded-xl border-2 p-3 text-left transition ${
+                                                        ativo
+                                                            ? "border-[#313C55] bg-[#313C55] text-white"
+                                                            : semSaldo
+                                                              ? "cursor-not-allowed border-dashed opacity-50"
+                                                              : "border-slate-200 hover:border-[#313C55] dark:border-white/15"
+                                                    }`}
+                                                >
+                                                    <div className="text-base font-bold">{dep === "FUNERARIA" ? "FUNERÁRIA" : "MEMORIAL"}</div>
+                                                    {entregaEstoque.produtos.map((p) => (
+                                                        <div key={p.item_id} className={`mt-1 text-xs ${ativo ? "text-white/85" : "text-muted-foreground"}`}>
+                                                            {entregaEstoque.produtos.length > 1 ? `${p.nome}: ` : "Saldo: "}
+                                                            <b>{Number(p.saldos?.[dep] || 0)}</b>
+                                                        </div>
+                                                    ))}
+                                                    {semSaldo && <div className="mt-1 text-xs font-semibold text-rose-600">Sem saldo</div>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {entregaEstoque.erro && (
+                                        <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                            {entregaEstoque.erro}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex justify-end gap-2 border-t px-4 py-3">
+                                    <button
+                                        type="button"
+                                        className="rounded-md border px-4 py-2 text-sm"
+                                        disabled={manualActionLoading}
+                                        onClick={() => setEntregaEstoque(null)}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="rounded-md bg-[#313C55] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                                        disabled={manualActionLoading || !entregaEstoque.escolhido}
+                                        onClick={() => {
+                                            if (entregaEstoque.escolhido) void executarStatusManual("entregue", entregaEstoque.escolhido);
+                                        }}
+                                    >
+                                        {manualActionLoading ? "Registrando…" : "Confirmar entrega"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </NoCorpo>
+                )}
+
                 {finalizarOpen && (
                     <NoCorpo>
                         <div
