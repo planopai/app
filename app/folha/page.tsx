@@ -9,6 +9,9 @@
  * - Situações: Aberta → Conferida → Aprovada → Paga. Qualquer pessoa da Gestão faz cada passo.
  * - Aba "Lançar na Unymos": o título único da folha (com rateio por equipe) e as guias GFD e DARF, para lançar à mão.
  * - Comissões são pagas à parte e não entram aqui.
+ * - Tipos de folha (09/11/2026): Mensal, Férias (uma por pessoa, com o período), 13º 1ª parcela e 13º 2ª parcela.
+ *   Férias e 13º entram pelo recibo do Domínio (arquivo ou lançado à mão) + o complemento proporcional do combinado.
+ *   Nelas não há vale automático: "Abater" prende um vale ou parcela em aberto à folha.
  * Back-end: rh_folha.php (novo). Só a Gestão acessa (o PHP confere).
  */
 
@@ -16,10 +19,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
     IconAlertTriangle,
+    IconArrowLeft,
+    IconBeach,
     IconCheck,
     IconChevronLeft,
     IconChevronRight,
     IconDownload,
+    IconEdit,
     IconFileSpreadsheet,
     IconPlus,
     IconReceipt2,
@@ -64,9 +70,13 @@ type Linha = {
     itens: Item[];
     avisos: string[];
 };
+type TipoFolha = 'MENSAL' | 'FERIAS' | 'DECIMO_1' | 'DECIMO_2';
 type Folha = {
     id: number;
     competencia: string;
+    tipo?: TipoFolha;
+    periodo_inicio?: string | null;
+    periodo_fim?: string | null;
     situacao: 'ABERTA' | 'CONFERIDA' | 'APROVADA' | 'PAGA';
     data_pagamento: string | null;
     conferido_em: string | null;
@@ -78,13 +88,25 @@ type Folha = {
 };
 type Totais = { liquido: number; extra: number; bonus: number; ajuste: number; descontos: number; a_pagar: number; saldo_negativo: number; pessoas: number };
 type Recolhimentos = {
-    gfd: { fgts: number; consignado: number; total: number; vencimento: string };
-    darf: { inss_retido: number; salario_familia: number; total: number; vencimento: string };
+    gfd: { fgts: number; consignado: number; decimo?: number; total: number; vencimento: string; gera?: boolean; nota?: string | null };
+    darf: { inss_retido: number; salario_familia: number; total: number; vencimento: string; gera?: boolean; nota?: string | null };
 };
 type Integracao = { id: number; origem: string; favorecido: string; descricao: string; natureza: string; natureza_unymos: string | null; valor: number; rateio: { equipe: string; valor: number }[] | null; vencimento: string | null; situacao: string; ref_externa: string | null };
 type Justificativa = { id: number; nome: string; tipo: 'ACRESCIMO' | 'DEBITO'; natureza: string };
 type Recibo = { codigo: string; nome: string; rubricas: (string | number | null)[][]; venc: number; desc: number; liq: number; base: number | null; fgts: number | null };
-type Detalhe = { contracheque: any; rubricas: { codigo: number; descricao: string; referencia: string | null; vencimento: string | null; desconto: string | null; natureza: string | null; trata_como: string | null }[]; tanatopraxias: { atendimento_id: number; falecido: string; data: string }[] };
+type Detalhe = { contracheque: any; rubricas: { codigo: number; descricao: string; referencia: string | null; vencimento: string | null; desconto: string | null; natureza: string | null; trata_como: string | null }[]; tanatopraxias: { atendimento_id: number; falecido: string; data: string }[];
+    vales_abertos?: { id: number; data: string; valor: string; descricao: string | null }[];
+    parcelas_abertas?: { id: number; numero: number; competencia: string; valor: string; total: number }[];
+};
+type FeriasItem = { id: number; referencia: string; colaborador_id: number; periodo_inicio: string | null; periodo_fim: string | null; situacao: string; data_pagamento: string | null; total_pagar: string; nome: string };
+type Hist = { competencia: string; tipo?: TipoFolha; referencia?: string; colaborador?: string | null; situacao: string; data_pagamento: string | null; total_pagar: string; origem: string };
+const TIPOS_FOLHA: [TipoFolha, string][] = [
+    ['MENSAL', 'Mensal'],
+    ['FERIAS', 'Férias'],
+    ['DECIMO_1', '13º · 1ª parcela'],
+    ['DECIMO_2', '13º · 2ª parcela'],
+];
+const NOME_TIPO: Record<TipoFolha, string> = { MENSAL: 'Folha mensal', FERIAS: 'Férias', DECIMO_1: '13º · 1ª parcela', DECIMO_2: '13º · 2ª parcela' };
 type AbaDet = 'contracheque' | 'bonus' | 'ajuste' | 'vales';
 
 const API_URL = 'https://api.planoassistencialintegrado.com.br/rh_folha.php';
@@ -367,13 +389,21 @@ function Celula({ rotulo, valor, onClick, forte, negativo }: { rotulo: string; v
 
 export default function FolhaPagamentoPage() {
     const [comp, setComp] = useState<string>(() => mesMais(hojeISO().slice(0, 7), -0));
+    const [tipo, setTipo] = useState<TipoFolha>('MENSAL');
+    const [ref, setRef] = useState('');
+    const [nomeFolha, setNomeFolha] = useState('');
+    const [ferias, setFerias] = useState<FeriasItem[]>([]);
+    const [colabs, setColabs] = useState<{ id: number; nome: string; codigo_dominio: string | null }[]>([]);
+    const [novaFerias, setNovaFerias] = useState<{ colaborador_id: string; inicio: string; fim: string; pagamento: string; editar: boolean } | null>(null);
+    const [manual, setManual] = useState<{ colaborador_id: string; liquido: string; inss: string; fgts: string; avos: string } | null>(null);
+    const [excluirFerias, setExcluirFerias] = useState(false);
     const [folha, setFolha] = useState<Folha | null>(null);
     const [linhas, setLinhas] = useState<Linha[]>([]);
     const [totais, setTotais] = useState<Totais | null>(null);
     const [rec, setRec] = useState<Recolhimentos | null>(null);
     const [avisos, setAvisos] = useState<string[]>([]);
     const [integ, setInteg] = useState<Integracao[]>([]);
-    const [hist, setHist] = useState<{ competencia: string; situacao: string; data_pagamento: string | null; total_pagar: string; origem: string }[]>([]);
+    const [hist, setHist] = useState<Hist[]>([]);
     const [justs, setJusts] = useState<Justificativa[]>([]);
     const [naturezas, setNaturezas] = useState<string[]>([]);
     const [carregando, setCarregando] = useState(true);
@@ -406,18 +436,23 @@ export default function FolhaPagamentoPage() {
         set(e?.message || padrao);
     };
 
-    const carregar = useCallback(async (c: string) => {
+    const carregar = useCallback(async (c: string, t: TipoFolha = 'MENSAL', r = '') => {
         setCarregando(true);
         setErroLista(null);
+        // férias sem pessoa escolhida: só a lista de férias do mês
+        const soLista = t === 'FERIAS' && !r;
         try {
-            const j = await api('painel', undefined, `&competencia=${c}`);
+            const j = await api('painel', undefined, `&competencia=${c}&tipo=${soLista ? 'MENSAL' : t}&ref=${encodeURIComponent(r)}`);
             const d = j.dados || {};
-            setFolha(d.folha || null);
-            setLinhas(Array.isArray(d.linhas) ? d.linhas : []);
-            setTotais(d.totais || null);
-            setRec(d.recolhimentos || null);
-            setAvisos(Array.isArray(d.avisos) ? d.avisos : []);
-            setInteg(Array.isArray(d.integracao) ? d.integracao : []);
+            setFerias(Array.isArray(d.ferias) ? d.ferias : []);
+            setColabs(Array.isArray(d.colaboradores) ? d.colaboradores : []);
+            setNomeFolha(soLista ? 'Férias' : d.nome_folha || '');
+            setFolha(soLista ? null : d.folha || null);
+            setLinhas(soLista ? [] : Array.isArray(d.linhas) ? d.linhas : []);
+            setTotais(soLista ? null : d.totais || null);
+            setRec(soLista ? null : d.recolhimentos || null);
+            setAvisos(soLista ? [] : Array.isArray(d.avisos) ? d.avisos : []);
+            setInteg(soLista ? [] : Array.isArray(d.integracao) ? d.integracao : []);
             setHist(Array.isArray(d.historico) ? d.historico : []);
             setJusts(Array.isArray(d.justificativas) ? d.justificativas : []);
             setNaturezas(Array.isArray(d.naturezas) ? d.naturezas : []);
@@ -429,8 +464,18 @@ export default function FolhaPagamentoPage() {
     }, []);
 
     useEffect(() => {
-        void carregar(comp);
-    }, [carregar, comp]);
+        void carregar(comp, tipo, ref);
+    }, [carregar, comp, tipo, ref]);
+    const recarregar = () => carregar(comp, tipo, ref);
+    const qs = `&competencia=${comp}&tipo=${tipo}&ref=${encodeURIComponent(ref)}`;
+    const chave = { competencia: comp, tipo, ref };
+    const mensal = tipo === 'MENSAL';
+    const listaFerias = tipo === 'FERIAS' && !ref;
+    const trocarTipo = (t: TipoFolha) => {
+        setTipo(t);
+        setRef('');
+        setAba('folha');
+    };
 
     useEffect(() => {
         if (!aviso) return;
@@ -454,7 +499,7 @@ export default function FolhaPagamentoPage() {
         setDetDados(null);
         setDet({ linha, aba: a });
         try {
-            const j = await api('detalhe', undefined, `&competencia=${comp}&colaborador_id=${linha.colaborador_id}`);
+            const j = await api('detalhe', undefined, `${qs}&colaborador_id=${linha.colaborador_id}`);
             setDetDados(j.dados);
         } catch (e: any) {
             tratarErro(e, 'Não foi possível abrir o detalhe.', setErroForm);
@@ -462,7 +507,7 @@ export default function FolhaPagamentoPage() {
     };
     const fecharDet = useCallback(() => setDet(null), []);
     const recarregarDet = async (cid: number) => {
-        const j = await api('painel', undefined, `&competencia=${comp}`);
+        const j = await api('painel', undefined, qs);
         const d = j.dados || {};
         setFolha(d.folha || null);
         setLinhas(d.linhas || []);
@@ -471,16 +516,34 @@ export default function FolhaPagamentoPage() {
         setJusts(d.justificativas || []);
         const nova = (d.linhas || []).find((x: Linha) => x.colaborador_id === cid);
         setDet((atual) => (atual && nova ? { ...atual, linha: nova } : atual));
+        if (!mensal) {
+            const dj = await api('detalhe', undefined, `${qs}&colaborador_id=${cid}`);
+            setDetDados(dj.dados);
+        }
     };
-    const lancar = async (tipo: 'BONUS' | 'AJUSTE') => {
+    const abater = async (origem: 'VALE' | 'PARCELA', id: number) => {
+        if (!det) return;
+        setSalvando(true);
+        setErroForm(null);
+        try {
+            const j = await api('abater', { ...chave, colaborador_id: det.linha.colaborador_id, origem, id });
+            setAviso(j.msg);
+            await recarregarDet(det.linha.colaborador_id);
+        } catch (e: any) {
+            tratarErro(e, 'Não foi possível abater.', setErroForm);
+        } finally {
+            setSalvando(false);
+        }
+    };
+    const lancar = async (tipoL: 'BONUS' | 'AJUSTE') => {
         if (!det) return;
         setErroForm(null);
         let corpo: Record<string, unknown>;
-        if (tipo === 'BONUS') {
+        if (tipoL === 'BONUS') {
             const v = paraNumero(novoBonus.valor);
             if (!v || Number.isNaN(v) || v <= 0) return setErroForm('Informe o valor do bônus.');
             if (!novoBonus.motivo.trim()) return setErroForm('Informe o motivo do bônus.');
-            corpo = { competencia: comp, colaborador_id: det.linha.colaborador_id, tipo, valor: v, descricao: novoBonus.motivo.trim() };
+            corpo = { competencia: comp, tipo_folha: tipo, ref, colaborador_id: det.linha.colaborador_id, tipo: tipoL, valor: v, descricao: novoBonus.motivo.trim() };
         } else {
             const v = paraNumero(novoAjuste.valor);
             if (!v || Number.isNaN(v) || v <= 0) return setErroForm('Informe o valor do ajuste.');
@@ -496,7 +559,7 @@ export default function FolhaPagamentoPage() {
                     const r = await api('justificativa_salvar', { nome: novaJust.nome.trim(), tipo: novaJust.tipo, natureza: novaJust.natureza.trim() }, '', RH_REGRAS);
                     jid = Number(r.dados?.id);
                 }
-                corpo = { competencia: comp, colaborador_id: det.linha.colaborador_id, tipo, valor: v, justificativa_id: jid, descricao: novoAjuste.obs.trim() };
+                corpo = { competencia: comp, tipo_folha: tipo, ref, colaborador_id: det.linha.colaborador_id, tipo: tipoL, valor: v, justificativa_id: jid, descricao: novoAjuste.obs.trim() };
             } catch (e: any) {
                 setSalvando(false);
                 return tratarErro(e, 'Não foi possível criar a justificativa.', setErroForm);
@@ -556,11 +619,11 @@ export default function FolhaPagamentoPage() {
         setSalvando(true);
         setErroForm(null);
         try {
-            const j = await api('contracheques_importar', { competencia: comp, arquivo: impArq?.name || '', recibos: impLido.recibos });
+            const j = await api('contracheques_importar', { ...chave, arquivo: impArq?.name || '', recibos: impLido.recibos });
             setImp(false);
             const sem: string[] = j.dados?.sem_colaborador || [];
             setAviso(j.msg + (sem.length ? ` Sem colaborador: ${sem.join(', ')}.` : ''));
-            await carregar(comp);
+            await recarregar();
         } catch (e: any) {
             tratarErro(e, 'Não foi possível importar.', setErroForm);
         } finally {
@@ -577,11 +640,11 @@ export default function FolhaPagamentoPage() {
         setSalvando(true);
         setErroForm(null);
         try {
-            const j = await api('situacao', { competencia: comp, acao: passo.acao, data_pagamento: passo.data || null });
+            const j = await api('situacao', { ...chave, acao: passo.acao, data_pagamento: passo.data || null });
             setPasso(null);
             setAviso(j.msg);
             if (passo.acao === 'aprovar') setAba('unymos');
-            await carregar(comp);
+            await recarregar();
         } catch (e: any) {
             tratarErro(e, 'Não foi possível concluir.', setErroForm);
         } finally {
@@ -591,7 +654,15 @@ export default function FolhaPagamentoPage() {
     const TEXTO_PASSO: Record<string, [string, string, string]> = {
         conferir: ['Conferir a folha', 'Os valores calculados (extra, bônus, vales e parcelas) ficam fixos. Para mudar depois, é preciso reabrir.', 'Conferir'],
         reabrir: ['Reabrir a folha', 'O cálculo volta a ser automático e os lançamentos para a Unymos que ainda estão pendentes são cancelados.', 'Reabrir'],
-        aprovar: ['Aprovar a folha', 'Nascem os lançamentos para a Unymos: o título da folha com rateio por equipe e as guias GFD e DARF.', 'Aprovar'],
+        aprovar: [
+            'Aprovar a folha',
+            tipo === 'MENSAL'
+                ? 'Nascem os lançamentos para a Unymos: o título da folha com rateio por equipe e as guias GFD e DARF (com o FGTS do 13º pago no mês, se houver).'
+                : tipo === 'FERIAS'
+                  ? 'Nasce o lançamento das férias para a Unymos. FGTS e INSS das férias saem com a folha mensal do Domínio.'
+                  : 'Nasce o título do 13º para a Unymos e, se houver INSS, o DARF do 13º (vence 20/12). O FGTS do 13º vai na GFD da folha mensal.',
+            'Aprovar',
+        ],
         pagar: ['Marcar como paga', 'Os vales ficam abatidos, as parcelas descontadas e o saldo negativo de quem ficou devendo vira vale na próxima folha.', 'Marcar como paga'],
     };
 
@@ -603,9 +674,78 @@ export default function FolhaPagamentoPage() {
             const j = await api('integracao_marcar', { id: item.id, lancado, ref_externa: ref.trim() });
             setMarcar(null);
             setAviso(j.msg);
-            await carregar(comp);
+            await recarregar();
         } catch (e: any) {
             tratarErro(e, 'Não foi possível marcar.', setErroForm);
+        } finally {
+            setSalvando(false);
+        }
+    };
+
+    /* ---- férias e recibo à mão ---- */
+    const salvarFerias = async () => {
+        if (!novaFerias) return;
+        if (!novaFerias.colaborador_id) return setErroForm('Escolha o colaborador.');
+        if (!novaFerias.inicio || !novaFerias.fim) return setErroForm('Informe o início e o fim das férias.');
+        setSalvando(true);
+        setErroForm(null);
+        try {
+            const j = await api('ferias_nova', {
+                competencia: comp,
+                colaborador_id: Number(novaFerias.colaborador_id),
+                periodo_inicio: novaFerias.inicio,
+                periodo_fim: novaFerias.fim,
+                data_pagamento: novaFerias.pagamento || null,
+            });
+            setNovaFerias(null);
+            setAviso(j.msg);
+            if (ref === novaFerias.colaborador_id) await recarregar();
+            else setRef(novaFerias.colaborador_id);
+        } catch (e: any) {
+            tratarErro(e, 'Não foi possível salvar as férias.', setErroForm);
+        } finally {
+            setSalvando(false);
+        }
+    };
+    const confirmarExcluirFerias = async () => {
+        setSalvando(true);
+        setErroForm(null);
+        try {
+            const j = await api('ferias_excluir', { competencia: comp, ref });
+            setExcluirFerias(false);
+            setAviso(j.msg);
+            setRef('');
+        } catch (e: any) {
+            tratarErro(e, 'Não foi possível excluir.', setErroForm);
+        } finally {
+            setSalvando(false);
+        }
+    };
+    const abrirManual = () => {
+        setErroForm(null);
+        setManual({ colaborador_id: tipo === 'FERIAS' ? ref : '', liquido: '', inss: '', fgts: '', avos: '' });
+    };
+    const salvarManual = async () => {
+        if (!manual) return;
+        const liq = paraNumero(manual.liquido);
+        if (!manual.colaborador_id) return setErroForm('Escolha o colaborador.');
+        if (!liq || liq <= 0) return setErroForm('Informe o líquido do recibo.');
+        setSalvando(true);
+        setErroForm(null);
+        try {
+            const j = await api('contracheque_manual', {
+                ...chave,
+                colaborador_id: Number(manual.colaborador_id),
+                liquido: liq,
+                inss: paraNumero(manual.inss) || 0,
+                fgts: paraNumero(manual.fgts) || 0,
+                avos: manual.avos ? Number(manual.avos) : 0,
+            });
+            setManual(null);
+            setAviso(j.msg);
+            await recarregar();
+        } catch (e: any) {
+            tratarErro(e, 'Não foi possível lançar o recibo.', setErroForm);
         } finally {
             setSalvando(false);
         }
@@ -616,7 +756,7 @@ export default function FolhaPagamentoPage() {
         try {
             const ExcelJS: any = (await import('exceljs')).default ?? (await import('exceljs'));
             const wb = new ExcelJS.Workbook();
-            const ws = wb.addWorksheet(`Folha ${comp}`);
+            const ws = wb.addWorksheet(mensal ? `Folha ${comp}` : `${NOME_TIPO[tipo].replace(/[^\w\sºª-]/g, '')} ${comp}`.slice(0, 31));
             ws.columns = [
                 { header: 'Colaborador', key: 'nome', width: 32 },
                 { header: 'Equipe', key: 'equipe', width: 16 },
@@ -651,7 +791,7 @@ export default function FolhaPagamentoPage() {
             const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
             const a = document.createElement('a');
             a.href = url;
-            a.download = `folha-${comp}.xlsx`;
+            a.download = `folha-${comp}${mensal ? '' : `-${tipo.toLowerCase()}${ref ? `-${ref}` : ''}`}.xlsx`;
             a.click();
             window.setTimeout(() => URL.revokeObjectURL(url), 2000);
         } catch {
@@ -674,16 +814,28 @@ export default function FolhaPagamentoPage() {
                         titulo="Folha de pagamento"
                         acoes={
                             <>
-                                <button type="button" className={BTN_SEC} onClick={() => void exportar()} disabled={!linhas.length}>
-                                    <IconDownload size={18} /> Exportar
-                                </button>
-                                {aberta ? (
-                                    <button type="button" className={BTN_SEC} onClick={abrirImp}>
-                                        <IconUpload size={18} /> Importar contracheques
+                                {listaFerias ? (
+                                    <button type="button" className={BTN_PRI} onClick={() => { setErroForm(null); setNovaFerias({ colaborador_id: '', inicio: '', fim: '', pagamento: '', editar: false }); }}>
+                                        <IconPlus size={18} /> Nova férias
                                     </button>
                                 ) : null}
-                                {aberta ? (
-                                    <button type="button" className={BTN_PRI} disabled={!linhas.length} onClick={() => setPasso({ acao: 'conferir', data: folha?.data_pagamento || quintoDiaUtil(comp) })}>
+                                {!listaFerias ? (
+                                    <button type="button" className={BTN_SEC} onClick={() => void exportar()} disabled={!linhas.length}>
+                                        <IconDownload size={18} /> Exportar
+                                    </button>
+                                ) : null}
+                                {aberta && !listaFerias ? (
+                                    <button type="button" className={BTN_SEC} onClick={abrirImp}>
+                                        <IconUpload size={18} /> {mensal ? 'Importar contracheques' : 'Importar recibo'}
+                                    </button>
+                                ) : null}
+                                {aberta && !listaFerias && !mensal ? (
+                                    <button type="button" className={BTN_SEC} onClick={abrirManual}>
+                                        <IconEdit size={18} /> Lançar à mão
+                                    </button>
+                                ) : null}
+                                {listaFerias ? null : aberta ? (
+                                    <button type="button" className={BTN_PRI} disabled={!linhas.length} onClick={() => setPasso({ acao: 'conferir', data: folha?.data_pagamento || (mensal ? quintoDiaUtil(comp) : hojeISO()) })}>
                                         <IconCheck size={18} /> Conferir
                                     </button>
                                 ) : folha?.situacao === 'CONFERIDA' ? (
@@ -719,17 +871,92 @@ export default function FolhaPagamentoPage() {
                     <button type="button" className={`${BTN_PEQ} size-11 px-0`} aria-label="Mês seguinte" onClick={() => setComp(mesMais(comp, 1))}>
                         <IconChevronRight size={20} />
                     </button>
-                    <span className={`${SELO} ${folha ? SITUACAO[folha.situacao][1] : S_MUDO}`}>{folha ? SITUACAO[folha.situacao][0] : 'Ainda não aberta'}</span>
+                    {listaFerias ? null : <span className={`${SELO} ${folha ? SITUACAO[folha.situacao][1] : S_MUDO}`}>{folha ? SITUACAO[folha.situacao][0] : 'Ainda não aberta'}</span>}
                     {folha?.data_pagamento ? <span className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">pagamento em {dataBR(folha.data_pagamento)}</span> : null}
                     {folha?.conferido_por_nome ? <span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">· conferida por {folha.conferido_por_nome}</span> : null}
                     {folha?.aprovado_por_nome ? <span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">· aprovada por {folha.aprovado_por_nome}</span> : null}
-                    <button type="button" className={`${BTN_PEQ} ml-auto size-11 px-0`} aria-label="Atualizar" onClick={() => void carregar(comp)}>
+                    <button type="button" className={`${BTN_PEQ} ml-auto size-11 px-0`} aria-label="Atualizar" onClick={() => void recarregar()}>
                         <IconRefresh size={18} />
                     </button>
                 </div>
 
+                {/* tipo de folha */}
+                <div role="tablist" aria-label="Tipo de folha" className="mb-4 flex flex-wrap gap-2">
+                    {TIPOS_FOLHA.map(([k, l]) => (
+                        <button
+                            key={k}
+                            type="button"
+                            role="tab"
+                            aria-selected={tipo === k}
+                            onClick={() => trocarTipo(k)}
+                            className={`min-h-11 rounded-xl px-3.5 text-[14px] font-extrabold ${tipo === k ? 'bg-[#313C55] text-white dark:bg-[#3D6A99]' : 'bg-white text-[#313C55] shadow-sm ring-1 ring-[#E3E8F0] dark:bg-white/[0.08] dark:text-white dark:ring-white/[0.08]'}`}
+                        >
+                            {l}
+                            {k === 'FERIAS' && ferias.length ? ` · ${ferias.length}` : ''}
+                        </button>
+                    ))}
+                </div>
+                {tipo === 'FERIAS' && ref ? (
+                    <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <button type="button" className={BTN_PEQ} onClick={() => setRef('')}>
+                            <IconArrowLeft size={16} /> Férias do mês
+                        </button>
+                        <b className="text-[15.5px]">{nomeFolha}</b>
+                        {folha?.periodo_inicio ? (
+                            <span className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                gozo de {dataBR(folha.periodo_inicio)} a {dataBR(folha.periodo_fim)}
+                            </span>
+                        ) : null}
+                        {aberta && folha ? (
+                            <>
+                                <button
+                                    type="button"
+                                    className={BTN_PEQ}
+                                    onClick={() => {
+                                        setErroForm(null);
+                                        setNovaFerias({ colaborador_id: ref, inicio: folha.periodo_inicio || '', fim: folha.periodo_fim || '', pagamento: folha.data_pagamento || '', editar: true });
+                                    }}
+                                >
+                                    <IconEdit size={16} /> Período
+                                </button>
+                                <button type="button" className={BTN_PEQ} onClick={() => { setErroForm(null); setExcluirFerias(true); }}>
+                                    <IconTrash size={16} /> Excluir
+                                </button>
+                            </>
+                        ) : null}
+                    </div>
+                ) : null}
+
                 {aviso ? <div className={`mb-3 rounded-xl px-4 py-3 text-[14px] font-bold ${S_OK}`}>{aviso}</div> : null}
                 {erroLista ? <div className={`${ERRO} mb-3`}>{erroLista}</div> : null}
+
+                {/* férias do mês */}
+                {listaFerias ? (
+                    <div className={`${CARTAO} overflow-hidden`}>
+                        <div className={`${NOTA} m-3`}>
+                            <span>
+                                Cada férias é uma folha à parte, no mês do pagamento: o recibo de férias do Domínio + o complemento do combinado (proporcional aos dias, com o 1/3). FGTS, INSS e descontos das férias vêm na folha mensal seguinte do Domínio.
+                            </span>
+                        </div>
+                        {carregando ? <div className="p-6 text-center text-[14px] text-[#5B6478]">Carregando…</div> : null}
+                        {!carregando && !ferias.length ? <div className="p-6 text-center text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Nenhuma férias paga em {mesBR(comp).toLowerCase()}.</div> : null}
+                        {ferias.map((f) => (
+                            <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => setRef(String(f.referencia))}
+                                className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#E3E8F0] px-4 py-3 text-left text-[14px] hover:bg-[#F6F8FB] dark:border-white/[0.08] dark:hover:bg-white/[0.04]"
+                            >
+                                <IconBeach size={20} className="shrink-0 text-[#7A8396]" />
+                                <b className="min-w-[160px] flex-1 break-words">{f.nome}</b>
+                                <span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{f.periodo_inicio ? `${dataBR(f.periodo_inicio)} a ${dataBR(f.periodo_fim)}` : 'sem período'}</span>
+                                <span className={`${SELO} ${SITUACAO[f.situacao as Folha['situacao']]?.[1] || S_MUDO}`}>{SITUACAO[f.situacao as Folha['situacao']]?.[0] || f.situacao}</span>
+                                <b className="w-28 text-right tabular-nums">{Number(f.total_pagar) ? brl(f.total_pagar) : '—'}</b>
+                                <IconChevronRight size={18} className="text-[#7A8396]" />
+                            </button>
+                        ))}
+                    </div>
+                ) : null}
 
                 {/* cartões */}
                 {totais ? (
@@ -749,19 +976,22 @@ export default function FolhaPagamentoPage() {
                             <div className="mt-1 text-[20px] font-extrabold tabular-nums">{brl(rec.gfd.total)}</div>
                             <div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 FGTS {brl(rec.gfd.fgts)} + consignado {brl(rec.gfd.consignado)}
+                                {rec.gfd.decimo ? ` + 13º ${brl(rec.gfd.decimo)}` : ''}
                             </div>
+                            {rec.gfd.nota ? <div className="mt-1 text-[12.5px] font-bold text-[#7A5D00] dark:text-[#F2CB3F]">{rec.gfd.nota}</div> : null}
                         </div>
                         <div>
-                            <div className={ROTULO_SECAO}>DARF do INSS · vence {dataBR(rec.darf.vencimento)}</div>
+                            <div className={ROTULO_SECAO}>{tipo === 'DECIMO_1' || tipo === 'DECIMO_2' ? 'DARF do INSS do 13º' : 'DARF do INSS'} · vence {dataBR(rec.darf.vencimento)}</div>
                             <div className="mt-1 text-[20px] font-extrabold tabular-nums">{brl(rec.darf.total)}</div>
                             <div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
                                 retido {brl(rec.darf.inss_retido)} − salário-família {brl(rec.darf.salario_familia)} · parte da empresa no DAS (Simples)
                             </div>
+                            {rec.darf.nota ? <div className="mt-1 text-[12.5px] font-bold text-[#7A5D00] dark:text-[#F2CB3F]">{rec.darf.nota}</div> : null}
                         </div>
                     </section>
                 ) : null}
 
-                <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto border-b border-[#E3E8F0] [scrollbar-width:none] dark:border-white/[0.08]">
+                <div role="tablist" className={`mb-4 flex gap-1 overflow-x-auto border-b border-[#E3E8F0] [scrollbar-width:none] dark:border-white/[0.08] ${listaFerias ? 'hidden' : ''}`}>
                     {(
                         [
                             ['folha', 'Folha'],
@@ -783,7 +1013,7 @@ export default function FolhaPagamentoPage() {
                 </div>
 
                 {/* ============================== Folha ============================== */}
-                {aba === 'folha' ? (
+                {aba === 'folha' && !listaFerias ? (
                     <div id="folha">
                         {avisos.length ? (
                             <div className={`${NOTA} mb-3`}>
@@ -803,11 +1033,18 @@ export default function FolhaPagamentoPage() {
                             <div className={`${CARTAO} p-6 text-center text-[14px] text-[#5B6478]`}>Carregando…</div>
                         ) : !linhas.length ? (
                             <div className={`${CARTAO} flex flex-col items-center gap-3 p-8 text-center text-[14px] text-[#5B6478] dark:text-[#AEB9CF]`}>
-                                <span>Nenhum contracheque nesta folha ainda.</span>
+                                <span>{mensal ? 'Nenhum contracheque nesta folha ainda.' : 'Nenhum recibo nesta folha ainda. Use o recibo do Domínio: importe o arquivo ou lance o valor à mão.'}</span>
                                 {aberta ? (
-                                    <button type="button" className={BTN_PRI} onClick={abrirImp}>
-                                        <IconUpload size={18} /> Importar contracheques do Domínio
-                                    </button>
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                        <button type="button" className={BTN_PRI} onClick={abrirImp}>
+                                            <IconUpload size={18} /> {mensal ? 'Importar contracheques do Domínio' : 'Importar recibo do Domínio'}
+                                        </button>
+                                        {!mensal ? (
+                                            <button type="button" className={BTN_SEC} onClick={abrirManual}>
+                                                <IconEdit size={18} /> Lançar à mão
+                                            </button>
+                                        ) : null}
+                                    </div>
                                 ) : null}
                             </div>
                         ) : (
@@ -872,7 +1109,7 @@ export default function FolhaPagamentoPage() {
                 ) : null}
 
                 {/* ============================== Lançar na Unymos ============================== */}
-                {aba === 'unymos' ? (
+                {aba === 'unymos' && !listaFerias ? (
                     <div className="flex flex-col gap-3">
                         <div className={NOTA}>
                             <span>
@@ -932,20 +1169,28 @@ export default function FolhaPagamentoPage() {
                 ) : null}
 
                 {/* ============================== Folhas anteriores ============================== */}
-                {aba === 'anteriores' ? (
+                {aba === 'anteriores' && !listaFerias ? (
                     <div className={`${CARTAO} overflow-hidden`}>
                         {!hist.length ? <div className="p-6 text-center text-[14px] text-[#5B6478]">Nenhuma folha registrada no sistema ainda.</div> : null}
                         {hist.map((h) => (
                             <button
-                                key={h.competencia}
+                                key={`${h.competencia}-${h.tipo || 'MENSAL'}-${h.referencia || ''}`}
                                 type="button"
                                 onClick={() => {
                                     setComp(h.competencia);
+                                    setTipo(h.tipo || 'MENSAL');
+                                    setRef(h.tipo === 'FERIAS' ? String(h.referencia || '') : '');
                                     setAba('folha');
                                 }}
                                 className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#E3E8F0] px-4 py-3 text-left text-[14px] first:border-t-0 hover:bg-[#F6F8FB] dark:border-white/[0.08] dark:hover:bg-white/[0.04]"
                             >
-                                <b className="min-w-[170px] flex-1">{mesBR(h.competencia)}</b>
+                                <span className="min-w-[170px] flex-1">
+                                    <b className="block">{mesBR(h.competencia)}</b>
+                                    <span className="block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                        {NOME_TIPO[h.tipo || 'MENSAL']}
+                                        {h.tipo === 'FERIAS' && h.colaborador ? ` · ${h.colaborador}` : ''}
+                                    </span>
+                                </span>
                                 <span className={`${SELO} ${SITUACAO[h.situacao as Folha['situacao']]?.[1] || S_MUDO}`}>{SITUACAO[h.situacao as Folha['situacao']]?.[0] || h.situacao}</span>
                                 <span className="w-28 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">{h.data_pagamento ? `paga ${dataBR(h.data_pagamento)}` : ''}</span>
                                 <b className="w-32 text-right tabular-nums">{Number(h.total_pagar) ? brl(h.total_pagar) : '—'}</b>
@@ -958,7 +1203,7 @@ export default function FolhaPagamentoPage() {
 
             {/* ============================== Detalhe do colaborador ============================== */}
             {det && linhaDet ? (
-                <Janela titulo={linhaDet.nome} sub={`${mesBR(comp)} · a pagar ${brl(linhaDet.a_pagar)}`} onFechar={fecharDet} largura="max-w-3xl">
+                <Janela titulo={linhaDet.nome} sub={`${mensal ? mesBR(comp) : nomeFolha} · a pagar ${brl(linhaDet.a_pagar)}`} onFechar={fecharDet} largura="max-w-3xl">
                     <div className="flex flex-col gap-4">
                         <div role="tablist" className="-mx-1 flex gap-1 overflow-x-auto [scrollbar-width:none]">
                             {(
@@ -1001,7 +1246,7 @@ export default function FolhaPagamentoPage() {
                             !detDados ? (
                                 <div className="text-[14px] text-[#5B6478]">Carregando…</div>
                             ) : !detDados.contracheque ? (
-                                <div className={NOTA}>Sem contracheque importado para esta pessoa neste mês.</div>
+                                <div className={NOTA}>{mensal ? 'Sem contracheque importado para esta pessoa neste mês.' : 'Sem recibo do Domínio nesta folha. Importe o arquivo ou use "Lançar à mão".'}</div>
                             ) : (
                                 <div className="overflow-hidden rounded-xl border border-[#E3E8F0] dark:border-white/[0.08]">
                                     <div className="max-h-[320px] overflow-y-auto">
@@ -1183,11 +1428,52 @@ export default function FolhaPagamentoPage() {
                                         <div key={k} className="flex items-center gap-3 border-t border-[#E3E8F0] px-3 py-2.5 text-[14px] first:border-t-0 dark:border-white/[0.08]">
                                             <span className="min-w-0 flex-1 break-words">{i.descricao}</span>
                                             <b className="tabular-nums text-[#B42318] dark:text-[#FF9C92]">{sinal(i.valor)}</b>
+                                            {aberta && i.id && !i.auto ? (
+                                                <button type="button" aria-label="Tirar" className="grid size-10 place-items-center rounded-xl text-[#5B6478] hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08]" disabled={salvando} onClick={() => void tirar(i.id!)}>
+                                                    <IconTrash size={18} />
+                                                </button>
+                                            ) : null}
                                         </div>
                                     ))
                                 ) : (
                                     <div className="px-3 py-3 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Sem vales nem descontos nesta folha.</div>
                                 )}
+                                {!mensal && aberta ? (
+                                    <div className="border-t border-[#E3E8F0] bg-[#F6F8FB] p-3 dark:border-white/[0.08] dark:bg-[#1C2334]">
+                                        <div className={`${ROTULO_SECAO} mb-1.5`}>Em aberto para abater nesta folha</div>
+                                        {!detDados ? (
+                                            <div className="text-[13.5px] text-[#5B6478]">Carregando…</div>
+                                        ) : !detDados.vales_abertos?.length && !detDados.parcelas_abertas?.length ? (
+                                            <div className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">Nenhum vale nem parcela em aberto.</div>
+                                        ) : (
+                                            <div className="flex flex-col gap-1.5">
+                                                {(detDados.vales_abertos || []).map((v) => (
+                                                    <div key={`v${v.id}`} className="flex flex-wrap items-center gap-3 text-[14px]">
+                                                        <span className="min-w-0 flex-1 break-words">
+                                                            Vale de {dataBR(v.data)}
+                                                            {v.descricao ? ` · ${v.descricao}` : ''}
+                                                        </span>
+                                                        <b className="tabular-nums">{brl(v.valor)}</b>
+                                                        <button type="button" className={BTN_PEQ} disabled={salvando} onClick={() => void abater('VALE', v.id)}>
+                                                            Abater
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {(detDados.parcelas_abertas || []).map((pa) => (
+                                                    <div key={`p${pa.id}`} className="flex flex-wrap items-center gap-3 text-[14px]">
+                                                        <span className="min-w-0 flex-1 break-words">
+                                                            Empréstimo · parcela {pa.numero}/{pa.total} ({mesBR(pa.competencia).toLowerCase()})
+                                                        </span>
+                                                        <b className="tabular-nums">{brl(pa.valor)}</b>
+                                                        <button type="button" className={BTN_PEQ} disabled={salvando} onClick={() => void abater('PARCELA', pa.id)}>
+                                                            Abater
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : null}
                                 {linhaDet.saldo_negativo ? (
                                     <div className={`border-t border-[#E3E8F0] px-3 py-2.5 text-[13.5px] dark:border-white/[0.08] ${S_AVISO}`}>
                                         Os descontos passam do que há a receber: {brl(linhaDet.saldo_negativo)} vão como vale para a próxima folha quando esta for paga.
@@ -1210,8 +1496,8 @@ export default function FolhaPagamentoPage() {
             {/* ============================== Importar contracheques ============================== */}
             {imp ? (
                 <Janela
-                    titulo="Importar contracheques"
-                    sub={`Folha de ${mesBR(comp).toLowerCase()}`}
+                    titulo={mensal ? 'Importar contracheques' : 'Importar recibo do Domínio'}
+                    sub={mensal ? `Folha de ${mesBR(comp).toLowerCase()}` : nomeFolha}
                     onFechar={fecharImp}
                     rodape={
                         <>
@@ -1227,7 +1513,12 @@ export default function FolhaPagamentoPage() {
                     <div className="flex flex-col gap-4">
                         <div className={NOTA}>
                             <span>
-                                Use o RECIBOS do Domínio (folha mensal). Abra no Excel e salve como <b>.xlsx</b>. Importar de novo troca os contracheques desta folha.
+                                {tipo === 'MENSAL'
+                                    ? 'Use o RECIBOS do Domínio (folha mensal).'
+                                    : tipo === 'FERIAS'
+                                      ? 'Use o recibo de férias do Domínio. Do arquivo fica só o recibo desta pessoa (pelo código do Domínio).'
+                                      : 'Use o recibo do 13º do Domínio (a parcela desta folha).'}{' '}
+                                Abra no Excel e salve como <b>.xlsx</b>. Importar de novo troca os recibos desta folha. Se o arquivo não for lido, use &quot;Lançar à mão&quot;.
                             </span>
                         </div>
                         <label className="flex cursor-pointer items-center gap-3 rounded-xl border-[1.5px] border-dashed border-[#C9D1DE] bg-[#F6F8FB] p-4 dark:border-white/[0.2] dark:bg-[#1C2334]">
@@ -1272,7 +1563,7 @@ export default function FolhaPagamentoPage() {
             {passo ? (
                 <Janela
                     titulo={TEXTO_PASSO[passo.acao][0]}
-                    sub={mesBR(comp)}
+                    sub={mensal ? mesBR(comp) : nomeFolha}
                     onFechar={fecharPasso}
                     largura="max-w-md"
                     rodape={
@@ -1289,7 +1580,7 @@ export default function FolhaPagamentoPage() {
                     <div className="flex flex-col gap-4">
                         <p className="text-[15px] leading-snug">{TEXTO_PASSO[passo.acao][1]}</p>
                         {passo.acao === 'conferir' || passo.acao === 'pagar' ? (
-                            <Campo rotulo="Data do pagamento" ajuda={passo.acao === 'conferir' ? 'Vales com data a partir deste dia ficam para a próxima folha.' : undefined}>
+                            <Campo rotulo="Data do pagamento" ajuda={passo.acao === 'conferir' && mensal ? 'Vales com data a partir deste dia ficam para a próxima folha.' : undefined}>
                                 <input type="date" className={CAMPO} value={passo.data} onChange={(e) => setPasso({ ...passo, data: e.target.value })} />
                             </Campo>
                         ) : null}
@@ -1299,6 +1590,134 @@ export default function FolhaPagamentoPage() {
                                 <span>{comAviso} linha(s) com aviso. Confira antes de seguir.</span>
                             </div>
                         ) : null}
+                        {erroForm ? <div className={ERRO}>{erroForm}</div> : null}
+                    </div>
+                </Janela>
+            ) : null}
+
+            {/* ============================== Nova férias / período ============================== */}
+            {novaFerias ? (
+                <Janela
+                    titulo={novaFerias.editar ? 'Período das férias' : 'Nova férias'}
+                    sub={`Pagas em ${mesBR(comp).toLowerCase()}`}
+                    onFechar={() => setNovaFerias(null)}
+                    largura="max-w-md"
+                    rodape={
+                        <>
+                            <button type="button" className={BTN_SEC} onClick={() => setNovaFerias(null)}>
+                                Voltar
+                            </button>
+                            <button type="button" className={BTN_PRI} disabled={salvando} onClick={() => void salvarFerias()}>
+                                {salvando ? 'Salvando…' : 'Salvar'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="flex flex-col gap-4">
+                        <Campo rotulo="Colaborador">
+                            <select className={CAMPO} value={novaFerias.colaborador_id} disabled={novaFerias.editar} onChange={(e) => setNovaFerias({ ...novaFerias, colaborador_id: e.target.value })}>
+                                <option value="">Escolha…</option>
+                                {colabs.map((c) => (
+                                    <option key={c.id} value={String(c.id)}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                            </select>
+                        </Campo>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Campo rotulo="Início do gozo">
+                                <input type="date" className={CAMPO} value={novaFerias.inicio} onChange={(e) => setNovaFerias({ ...novaFerias, inicio: e.target.value })} />
+                            </Campo>
+                            <Campo rotulo="Fim do gozo">
+                                <input type="date" className={CAMPO} value={novaFerias.fim} onChange={(e) => setNovaFerias({ ...novaFerias, fim: e.target.value })} />
+                            </Campo>
+                        </div>
+                        <Campo rotulo="Data do pagamento (opcional)">
+                            <input type="date" className={CAMPO} value={novaFerias.pagamento} onChange={(e) => setNovaFerias({ ...novaFerias, pagamento: e.target.value })} />
+                        </Campo>
+                        <div className={NOTA}>
+                            <span>O complemento usa os dias deste período. Dias vendidos (abono) são lidos do recibo do Domínio.</span>
+                        </div>
+                        {erroForm ? <div className={ERRO}>{erroForm}</div> : null}
+                    </div>
+                </Janela>
+            ) : null}
+
+            {/* ============================== Excluir férias ============================== */}
+            {excluirFerias ? (
+                <Janela
+                    titulo="Excluir férias"
+                    sub={nomeFolha}
+                    onFechar={() => setExcluirFerias(false)}
+                    largura="max-w-md"
+                    rodape={
+                        <>
+                            <button type="button" className={BTN_SEC} onClick={() => setExcluirFerias(false)}>
+                                Voltar
+                            </button>
+                            <button type="button" className={BTN_PRI} disabled={salvando} onClick={() => void confirmarExcluirFerias()}>
+                                {salvando ? 'Aguarde…' : 'Excluir'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="flex flex-col gap-4">
+                        <p className="text-[15px] leading-snug">Sai a folha destas férias com o recibo e os lançamentos. Vales e parcelas abatidos aqui voltam a ficar em aberto.</p>
+                        {erroForm ? <div className={ERRO}>{erroForm}</div> : null}
+                    </div>
+                </Janela>
+            ) : null}
+
+            {/* ============================== Recibo lançado à mão ============================== */}
+            {manual ? (
+                <Janela
+                    titulo="Lançar recibo à mão"
+                    sub={nomeFolha}
+                    onFechar={() => setManual(null)}
+                    largura="max-w-md"
+                    rodape={
+                        <>
+                            <button type="button" className={BTN_SEC} onClick={() => setManual(null)}>
+                                Voltar
+                            </button>
+                            <button type="button" className={BTN_PRI} disabled={salvando} onClick={() => void salvarManual()}>
+                                {salvando ? 'Salvando…' : 'Lançar'}
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="flex flex-col gap-4">
+                        <div className={NOTA}>
+                            <span>Copie os valores do recibo do Domínio. Lançar de novo para a mesma pessoa troca o recibo.</span>
+                        </div>
+                        {tipo !== 'FERIAS' ? (
+                            <Campo rotulo="Colaborador">
+                                <select className={CAMPO} value={manual.colaborador_id} onChange={(e) => setManual({ ...manual, colaborador_id: e.target.value })}>
+                                    <option value="">Escolha…</option>
+                                    {colabs.map((c) => (
+                                        <option key={c.id} value={String(c.id)}>
+                                            {c.nome}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Campo>
+                        ) : null}
+                        <div className="grid grid-cols-2 gap-3">
+                            <Campo rotulo="Líquido">
+                                <input className={CAMPO} inputMode="decimal" placeholder="R$ 0,00" value={manual.liquido} onChange={(e) => setManual({ ...manual, liquido: e.target.value })} />
+                            </Campo>
+                            <Campo rotulo="INSS descontado">
+                                <input className={CAMPO} inputMode="decimal" placeholder="R$ 0,00" value={manual.inss} onChange={(e) => setManual({ ...manual, inss: e.target.value })} />
+                            </Campo>
+                            <Campo rotulo="FGTS">
+                                <input className={CAMPO} inputMode="decimal" placeholder="R$ 0,00" value={manual.fgts} onChange={(e) => setManual({ ...manual, fgts: e.target.value })} />
+                            </Campo>
+                            {tipo === 'DECIMO_1' || tipo === 'DECIMO_2' ? (
+                                <Campo rotulo="Avos (meses)" ajuda="De 1 a 12. Vazio: 12/12.">
+                                    <input className={CAMPO} inputMode="numeric" maxLength={2} value={manual.avos} onChange={(e) => setManual({ ...manual, avos: e.target.value.replace(/\D/g, '') })} />
+                                </Campo>
+                            ) : null}
+                        </div>
                         {erroForm ? <div className={ERRO}>{erroForm}</div> : null}
                     </div>
                 </Janela>

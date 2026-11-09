@@ -126,7 +126,7 @@ const TIPOS: Record<string, { nome: string; desc: string; selo: string; campos: 
         nome: 'Extra',
         desc: 'Completa o líquido até um valor combinado',
         selo: 'bg-[#FCF3CC] text-[#7A5D00] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]',
-        padrao: {},
+        padrao: { ferias: 'MANTEM', decimo: 'PAGA' },
         campos: [
             { k: 'valor', rotulo: 'Valor total combinado no mês', tipo: 'valor' },
             {
@@ -141,7 +141,8 @@ const TIPOS: Record<string, { nome: string; desc: string; selo: string; campos: 
                 ],
                 ajuda: 'Líquido + consignado: o desconto do Crédito do Trabalhador continua sendo da pessoa (caso do Tharles).',
             },
-            { k: 'ferias', rotulo: 'No mês de férias', tipo: 'opcoes', opcoes: [['MANTEM', 'Mantém o extra'], ['NAO_PAGA', 'Não paga o extra']], ajuda: 'Férias vendidas entram como Ajuste manual.' },
+            { k: 'ferias', rotulo: 'Complemento nas férias', tipo: 'opcoes', opcoes: [['MANTEM', 'Paga o complemento'], ['NAO_PAGA', 'Não paga']], ajuda: 'Proporcional aos dias de férias (e dias vendidos), com o 1/3. No mês das férias o extra da folha mensal fica proporcional aos dias trabalhados.' },
+            { k: 'decimo', rotulo: 'Complemento no 13º', tipo: 'opcoes', opcoes: [['PAGA', 'Paga o complemento'], ['NAO_PAGA', 'Não paga']], ajuda: 'Proporcional aos meses (avos) do 13º do Domínio: metade na 1ª parcela e o restante na 2ª.' },
             {
                 k: 'afastamento',
                 rotulo: 'Atestado ou afastamento',
