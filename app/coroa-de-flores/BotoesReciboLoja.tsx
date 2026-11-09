@@ -1,6 +1,7 @@
 "use client";
 
-/* 09/11/2026: Recibo do pedido da Loja On-line no "Ver" do pedido de coroa — Visualizar, Baixar e Compartilhar. */
+/* 09/11/2026: comprovante (recibo) do pedido da Loja On-line — Ver, Baixar e Compartilhar.
+   Usado no "Ver" do pedido de coroa e na OS do Financeiro (pedido pago pelo site). */
 
 import React, { useState } from "react";
 import { obterReciboLoja } from "./reciboLoja";
@@ -8,7 +9,7 @@ import { obterReciboLoja } from "./reciboLoja";
 const btn =
     "inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-bold text-[#313C55] hover:bg-muted disabled:opacity-50 dark:text-white";
 
-export default function BotoesReciboLoja({ pedidoLojaId }: { pedidoLojaId?: string | number | null }) {
+export default function BotoesReciboLoja({ pedidoLojaId, titulo }: { pedidoLojaId?: string | number | null; titulo?: string }) {
     const [gerando, setGerando] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
     const id = String(pedidoLojaId ?? "").trim();
@@ -72,17 +73,17 @@ export default function BotoesReciboLoja({ pedidoLojaId }: { pedidoLojaId?: stri
     }
 
     return (
-        <div className="mt-2">
-            <div className="mb-1 text-xs font-medium">Recibo da loja (pedido #{id})</div>
+        <div className={titulo ? "mt-2" : ""}>
+            {titulo ? <div className="mb-1 text-xs font-medium">{titulo}</div> : null}
             <div className="flex flex-wrap gap-2">
                 <button type="button" className={btn} disabled={gerando} onClick={() => void visualizar()}>
-                    {gerando ? "Gerando…" : "Visualizar"}
+                    {gerando ? "Gerando…" : "Ver Comprovante"}
                 </button>
                 <button type="button" className={btn} disabled={gerando} onClick={() => void baixar()}>
-                    Baixar
+                    Baixar Comprovante
                 </button>
                 <button type="button" className={btn} disabled={gerando} onClick={() => void compartilhar()}>
-                    Compartilhar
+                    Compartilhar Comprovante
                 </button>
             </div>
             {msg && <div className="mt-1 text-xs text-muted-foreground">{msg}</div>}

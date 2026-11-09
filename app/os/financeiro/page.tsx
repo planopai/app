@@ -9,6 +9,7 @@ import {
 } from "../components/ListaOS";
 import { JanelaRelatorios } from "../components/RelatoriosOS";
 import { OS_API, apiJson, osGet, osPost as osPostBase, valorDigitado } from "../components/apiOS";
+import BotoesReciboLoja from "@/app/coroa-de-flores/BotoesReciboLoja";
 
 /** O Financeiro envia também os campos vazios (ex.: limpar a observação), como antes. */
 const osPost = (acao: string, params: Record<string, any> = {}) => osPostBase(acao, params, true);
@@ -43,6 +44,17 @@ const urlComprovante = (u?: string | null): string => {
         return `${ARQUIVOS_API}${m[0]}`;
     }
     return v;
+};
+
+/**
+ * 09/11/2026: número do pedido da Loja On-line de um lançamento pago pelo site.
+ * O lançamento automático grava "Pagamento online (site) — pedido nº 13132" na observação.
+ */
+const pedidoLojaDoPagamento = (p: any): string => {
+    const direto = String(p?.pedido_externo_id ?? p?.woocommerce_order_id ?? p?.origem_externa_id ?? "").replace(/\D+/g, "");
+    if (direto) return direto;
+    const m = String(p?.observacao ?? "").match(/pedido\s*n[º°o.]?\s*(\d+)/i);
+    return m ? m[1] : "";
 };
 
 const hoje = () => new Date().toLocaleDateString("sv-SE");
@@ -518,10 +530,17 @@ function DetalheOS({
                 : "concluída · assinatura pendente"
             : String(statusAtual || "").toLowerCase().replace("_", " ");
 
+    // 09/11/2026: OS paga pela Loja On-line (lançamento do site valendo e saldo zerado): já está paga,
+    // não pede para lançar recebimento; mostra o comprovante (recibo da loja) no lugar.
+    const pagamentoSite = (fin?.pagamentos || []).find((p: any) => p?.origem === "SITE" && !Number(p?.estornado));
+    const pedidoLojaPago = pagamentoSite ? pedidoLojaDoPagamento(pagamentoSite) : "";
+    const pagaPeloSite = Boolean(pagamentoSite) && totalPago > 0 && restante <= 0.005;
+
     const podeReceber =
         ["PRT", "DIF_SOC", "DIF_PRF", "COR", "PRF"].includes(linha.tipo) &&
         linha.status !== "CONVERTIDA" &&
-        linha.status !== "CANCELADA";
+        linha.status !== "CANCELADA" &&
+        !pagaPeloSite;
 
     const lancar = () =>
         executar(async () => {
@@ -939,6 +958,9 @@ function DetalheOS({
                                                 </td>
                                                 <td className="pl-3 text-xs">
                                                     {p.observacao || ""}
+                                                    {p.origem === "SITE" && pedidoLojaDoPagamento(p) && !(p.comprovantes || []).length ? (
+                                                        <BotaoReciboLancamento pedidoLoja={pedidoLojaDoPagamento(p)} />
+                                                    ) : null}
                                                     {(
                                                         p.comprovantes ||
                                                         []
@@ -1062,6 +1084,16 @@ function DetalheOS({
                             )}
                         </div>
                     </div>
+
+                    {pagaPeloSite && (
+                        <div className="w-full shrink-0 rounded-xl border border-[#E1E5EC] bg-white p-4 lg:w-[310px]">
+                            <div className="mb-2 text-lg font-extrabold">Pago pela Loja On-line</div>
+                            <div className="mb-3 rounded-lg bg-[#EEF5D6] px-3 py-2 text-sm text-[#313C55]">
+                                Pagamento confirmado pela loja{pedidoLojaPago ? ` (pedido nº ${pedidoLojaPago})` : ""}. Não é preciso lançar recebimento.
+                            </div>
+                            {pedidoLojaPago ? <BotoesReciboLoja pedidoLojaId={pedidoLojaPago} /> : null}
+                        </div>
+                    )}
 
                     {podeReceber && (
                         <div className="w-full shrink-0 rounded-xl border border-[#E1E5EC] bg-white p-4 lg:w-[310px]">
@@ -1630,5 +1662,32 @@ function Modal({
                 {children}
             </div>
         </div>
+    );
+}
+
+/** 09/11/2026: link "comprovante" do lançamento pago pelo site — abre o recibo do pedido da loja. */
+function BotaoReciboLancamento({ pedidoLoja }: { pedidoLoja: string }) {
+    const [gerando, setGerando] = useState(false);
+    const abrir = async () => {
+        const aba = window.open("", "_blank");
+        setGerando(true);
+        try {
+            const { obterReciboLoja } = await import("@/app/coroa-de-flores/reciboLoja");
+            const r = await obterReciboLoja(pedidoLoja);
+            const url = URL.createObjectURL(r.blob);
+            if (aba) aba.location.href = url;
+            else window.location.href = url;
+            setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        } catch (e: any) {
+            aba?.close();
+            alert(e?.message || "Não foi possível abrir o comprovante da loja.");
+        } finally {
+            setGerando(false);
+        }
+    };
+    return (
+        <button type="button" className="ml-2 font-bold text-[#3D6A99] dark:text-[#A9C3E0]" disabled={gerando} onClick={() => void abrir()}>
+            {gerando ? "gerando…" : "comprovante"}
+        </button>
     );
 }
