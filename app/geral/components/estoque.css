@@ -186,7 +186,7 @@ html.dark .estq .ck[aria-pressed="true"] i{background:#3D6A99;border-color:#3D6A
 .estq .cadb .cnt{position:absolute;top:8px;right:8px}
 .estq .cadgm .cadb{min-height:92px;padding:10px 4px}
 .estq .cadgm .cadb .ttl{font-size:12px}
-.estq .acc{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.estq .acc{border:1px solid var(--line);border-radius:12px;overflow:hidden;flex-shrink:0}
 .estq .acch{width:100%;display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 14px;border:0;background:var(--card);color:var(--text);font-family:inherit;text-align:left;cursor:pointer}
 .estq .acct{display:block;font-size:14px;font-weight:800}
 .estq .accr{display:block;font-size:12.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
