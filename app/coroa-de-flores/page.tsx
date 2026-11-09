@@ -2773,6 +2773,37 @@ export default function Page() {
         void fetchOrders();
     }, [tab, fetchOrders]);
 
+    /* 09/11/2026: pedidos da loja já registrados no PAI aparecem no histórico pelos dados do PAI
+       (tipo, quem fez os comandos, foto). Aqui descobrimos quais pedidos da loja existem no PAI,
+       para não mostrar em dobro e marcar os que não existem como "Não registrado no PAI". */
+    const [wooNoPai, setWooNoPai] = React.useState<Record<string, boolean>>({});
+    React.useEffect(() => {
+        const ids = (orders || [])
+            .map((o) => String(o.id || "").trim())
+            .filter((id) => id && !(id in wooNoPai));
+        if (!ids.length) return;
+        const controller = new AbortController();
+        (async () => {
+            try {
+                const u = new URL(COROAS_API, window.location.origin);
+                u.searchParams.set("online_existentes", ids.join(","));
+                const res = await fetch(u.toString(), { credentials: "include", cache: "no-store", signal: controller.signal });
+                const json = await res.json().catch(() => null);
+                if (!res.ok || !json?.sucesso || !Array.isArray(json.existentes)) return;
+                const existentes = new Set((json.existentes as unknown[]).map((v) => String(v)));
+                setWooNoPai((atual) => {
+                    const novo = { ...atual };
+                    for (const id of ids) novo[id] = existentes.has(id);
+                    return novo;
+                });
+            } catch {
+                /* sem resposta: os pedidos da loja ficam ocultos até a próxima tentativa */
+            }
+        })();
+        return () => controller.abort();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [orders]);
+
     React.useEffect(() => {
         return () => onlineAbortRef.current?.abort();
     }, []);
@@ -2952,7 +2983,10 @@ export default function Page() {
 
                 // Se o pedido online já existe no histórico local `coroas`,
                 // usa a versão local para não exibir o mesmo pedido duas vezes.
-                return !onlineJaRepresentados.has(id) && !onlineJaRepresentados.has(number);
+                if (onlineJaRepresentados.has(id) || onlineJaRepresentados.has(number)) return false;
+                // 09/11/2026: só mostra o pedido da loja quando ele NÃO existe no PAI (nem em confecção).
+                // Enquanto a conferência não respondeu, fica oculto para não aparecer em dobro.
+                return wooNoPai[id] === false;
             })
             .map((order) => {
                 const cliente = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`
@@ -2962,7 +2996,7 @@ export default function Page() {
                 return {
                     source: "online" as const,
                     key: `online-${order.id}`,
-                    origem: "Loja On-line",
+                    origem: "Loja On-line · Não registrado no PAI",
                     dataRaw: order.date_created || "",
                     dataLabel: formatDate(order.date_created),
                     cliente: cliente || "—",
@@ -2985,7 +3019,7 @@ export default function Page() {
             if (a.sortTime !== b.sortTime) return b.sortTime - a.sortTime;
             return b.key.localeCompare(a.key);
         });
-    }, [manualHistoricoOrders, orders, manualAppliedOrigem, modelosOnline]);
+    }, [manualHistoricoOrders, orders, manualAppliedOrigem, modelosOnline, wooNoPai]);
 
     const finalizadasLoading = manualLoading || loading;
     const finalizadasError = manualError || error;
