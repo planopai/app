@@ -19,11 +19,11 @@ import { acharModuloPorRota, MODULOS } from "@/components/shell/modulos";
  * Cada aba é a própria tela do app num quadro (iframe) da mesma origem: trocar de aba não perde o que estava na tela.
  * Dentro do quadro o app abre "limpo" (sem menu, cabeçalho e barra) e avisa a janela de cima quando muda de tela.
  * Clicar numa tela do menu, da pesquisa ou da página do módulo abre numa aba nova (ou vai para a aba em que ela já está).
- * Na 6ª, pede para fechar uma. O endereço da janela acompanha a aba ativa (o caminho no cabeçalho e a estrela seguem a aba).
- * 07/11/2026: páginas raiz (Início e a página de cada módulo) não contam no limite de 5. Elas usam uma aba só,
+ * Passou do limite (MAX_ABAS), pede para fechar uma. O endereço da janela acompanha a aba ativa (o caminho no cabeçalho e a estrela seguem a aba).
+ * 07/11/2026: páginas raiz (Início e a página de cada módulo) não contam no limite de abas. Elas usam uma aba só,
  * a "aba de navegação": abrir outra raiz troca a tela dessa aba em vez de abrir mais uma.
  * ==================================================================== */
-const MAX_ABAS = 5;
+const MAX_ABAS = 10; // 07/11/2026: aumentado de 5 para 10 (reaplicado em 09/11/2026)
 const CHAVE_ABAS = "pai_abas_v1";
 const SEM_ABAS = ["/quadrotv"];
 type AbaTela = { id: string; src: string; path: string; titulo?: string };
@@ -54,7 +54,7 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
         try {
             const j = JSON.parse(window.sessionStorage.getItem(CHAVE_ABAS) || "null");
             if (Array.isArray(j?.abas) && j.abas.length) {
-                // reabre as raízes que estavam abertas (no máximo uma) + até 5 telas
+                // reabre as raízes que estavam abertas (no máximo uma) + até MAX_ABAS telas
                 const lista = (j.abas as AbaTela[]).map((a) => ({ ...a, src: a.path }));
                 let raiz = false;
                 let telas = 0;
@@ -255,7 +255,7 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
                           data-pai-overlay
                           role="dialog"
                           aria-modal="true"
-                          aria-label="5 abas abertas"
+                          aria-label={`${MAX_ABAS} abas abertas`}
                           className="fixed inset-0 z-[70] flex items-center justify-center bg-[#313C55]/45 p-6"
                           onClick={(e) => {
                               if (e.target === e.currentTarget) cancelarPedido();

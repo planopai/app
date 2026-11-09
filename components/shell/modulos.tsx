@@ -64,6 +64,7 @@ import {
 import { IconChartFunnel } from "@tabler/icons-react"; // 27/10/2026: Gestão do funil
 import { IconSettingsDollar, IconWallet } from "@tabler/icons-react"; // 06/11/2026: Folha de pagamento
 import { IconReceipt2 } from "@tabler/icons-react"; // 06/11/2026: Folha do mês
+import { IconStars, IconCoin, IconRoute } from "@tabler/icons-react"; // 09/11/2026: avaliação, comissões e viagens
 
 export type Icone = React.ElementType<any>;
 
@@ -219,6 +220,9 @@ export const MODULOS: Modulo[] = [
             { id: "folha", titulo: "Folha do mês", desc: "Contracheques, extras, vales e pagamento", href: "/folha", slugs: ["gestao"], icone: IconReceipt2, secao: "Folha de pagamento" },
             { id: "folha-regras", titulo: "Regras de pagamento", desc: "Extra, comissões, bônus e descontos", href: "/folha-regras", slugs: ["gestao"], icone: IconSettingsDollar, secao: "Folha de pagamento" },
             { id: "folha-vales", titulo: "Vales e empréstimos", desc: "Vales da Unymos e empréstimos parcelados", href: "/folha-vales", slugs: ["gestao"], icone: IconWallet, secao: "Folha de pagamento" },
+            { id: "folha-avaliacao", titulo: "Avaliação dos agentes", desc: "Nota do mês que multiplica a comissão", href: "/folha-avaliacao", slugs: ["gestao"], icone: IconStars, secao: "Folha de pagamento" },
+            { id: "folha-comissoes", titulo: "Comissões", desc: "Agentes, vendas e viagens do mês", href: "/folha-comissoes", slugs: ["gestao"], icone: IconCoin, secao: "Folha de pagamento" },
+            { id: "folha-viagens", titulo: "Viagens", desc: "Viagens a outro município e valor pago", href: "/folha-viagens", slugs: ["gestao"], icone: IconRoute, secao: "Folha de pagamento" },
             { id: "balanco", titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
             { id: "desempenho", titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar, secao: "Indicadores" },
             { id: "dashboard-estoque", titulo: "Dashboard do estoque", desc: "Saídas e transferências por produto", href: "/dashboard-estoque", slugs: ["dashboard-estoque"], icone: IconChartBar, secao: "Indicadores" },
