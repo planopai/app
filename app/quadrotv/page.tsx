@@ -4903,7 +4903,7 @@ const DesktopTable = React.memo(function DesktopTable({
                                 </button>
 
                                 <div className="min-w-0 text-[12px] font-medium leading-tight text-slate-200" title={shown(r.local_velorio)}>
-                                    <div className="qa-truncate-2"><LocalVelorioValue value={r.local_velorio} /></div>
+                                    <div className="qa-truncate-2"><LocalVelorioQuadro r={r} /></div>
                                 </div>
 
                                 <div className="min-w-0 leading-tight">
@@ -4965,7 +4965,7 @@ const MobileCards = React.memo(function MobileCards({
                             <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                                 <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
                                     <div className="qa-text-muted">Local</div>
-                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioValue value={r.local_velorio} /></div>
+                                    <div className="mt-1 truncate font-semibold text-slate-100"><LocalVelorioQuadro r={r} /></div>
                                 </div>
                                 <div className="min-w-0 rounded-xl border border-slate-700/50 bg-slate-950/35 p-2">
                                     <div className="qa-text-muted">Sepultamento</div>
@@ -5696,7 +5696,7 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
                     <span>Aberto {tvDataHora(resumo.criadoTs)} · {resumo.abertoPor || shown(r.agente)}</span>
                 </div>
                 <div className="tv-place">
-                    <span className="tv-place-vel">{semVelorio ? "Sem velório" : <LocalVelorioValue value={r.local_velorio} />}</span>
+                    <span className="tv-place-vel">{semVelorio ? "Sem velório" : <LocalVelorioQuadro r={r} />}</span>
                     <span className="tv-place-sep">→ {sepultamentoTxt}</span>
                 </div>
             </div>
