@@ -5746,6 +5746,48 @@ function TvLinhaAtendimento({ resumo, onSelect }: { resumo: TvResumo; onSelect: 
     );
 }
 
+/** Frase da faixa de UMA coroa do cartão (cada cartão já é uma coroa só). */
+function coroaFraseCartao(pedido: CoroaTvPedido): string {
+    const itens = Array.isArray(pedido.itens) ? pedido.itens : [];
+    return sanitize(pedido.frase || itens[0]?.frase || "").trim();
+}
+
+/**
+ * Frase da faixa no cartão da coroa: mostra até 2 linhas; se a frase for maior,
+ * o texto rola sozinho dentro do cartão (desce até o fim, para e volta ao começo).
+ */
+function FraseRolagem({ texto, className }: { texto: string; className: string }) {
+    const caixaRef = useRef<HTMLDivElement | null>(null);
+    const textoRef = useRef<HTMLSpanElement | null>(null);
+    const [desloc, setDesloc] = useState(0);
+
+    useLayoutEffect(() => {
+        const caixa = caixaRef.current;
+        const conteudo = textoRef.current;
+        if (!caixa || !conteudo) return;
+        const medir = () => {
+            const sobra = Math.ceil(conteudo.scrollHeight - caixa.clientHeight);
+            setDesloc(sobra > 2 ? sobra : 0);
+        };
+        medir();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(medir) : null;
+        ro?.observe(caixa);
+        ro?.observe(conteudo);
+        return () => { ro?.disconnect(); };
+    }, [texto]);
+
+    const vazia = !texto;
+    const estilo = desloc
+        ? ({ "--frase-desloc": `-${desloc}px`, "--frase-tempo": `${Math.round(6 + desloc / 8)}s` } as React.CSSProperties)
+        : undefined;
+
+    return (
+        <div ref={caixaRef} className={`${className} ${vazia ? `${className}-vazia` : ""} ${desloc ? "frase-rolando" : ""}`} title={texto || undefined}>
+            <span ref={textoRef} className="frase-rolagem-txt" style={estilo}>{texto || "Sem frase informada"}</span>
+        </div>
+    );
+}
+
 function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs: number; atraso?: CoroaAtraso }) {
     const t = buildCoroaTimeline(pedido, nowMs);
     const etapas = [
@@ -5760,10 +5802,14 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
         ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
         : coroaStatusLabel(pedido.status);
     const hora = coroaDataHora(pedido.criado_em);
+    const frase = coroaFraseCartao(pedido);
 
     return (
         <div className={`tv-cr ${atraso ? "tv-cr-late" : ""}`}>
-            <div className="tv-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="tv-cr-top">
+                <span className="tv-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</span>
+                <span className="tv-cr-e">{agora}</span>
+            </div>
             <div className="tv-cr-s">Solicitante: <b>{shown(pedido.solicitante, "a definir")}</b></div>
             <div className="tv-cr-f">
                 {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
@@ -5774,7 +5820,7 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
                 <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
                 {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
             </div>
-            <div className="tv-cr-e">{agora}</div>
+            <FraseRolagem texto={frase} className="tv-cr-frase" />
             <div className="tv-mini">
                 {etapas.map((e) => (
                     <i key={e.key} title={`${e.label} • ${e.pulado ? "Não se aplica" : formatDurationMs(e.ms)}`}
@@ -6118,7 +6164,14 @@ function TvStyles() {
             .tv-band .tv-clist { flex-direction: row; }
             .tv-band .tv-cr { flex: 1; }
             .tv-cr { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; min-width: 0; }
-            .tv-cr-m { grid-column: 1 / -1; font-size: 20px; font-weight: 900; overflow-wrap: anywhere; }
+            .tv-cr-top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+            .tv-cr-m { font-size: 20px; font-weight: 900; overflow-wrap: anywhere; }
+            .tv-cr-frase { min-width: 0; align-self: center; border-left: 4px solid #F2CB3F; padding: 2px 0 2px 10px; font-size: 18px; font-weight: 800; line-height: 1.3; color: var(--text); overflow-wrap: anywhere; max-height: calc(18px * 1.3 * 2 + 4px); overflow: hidden; }
+            .tv-cr-frase-vazia { color: var(--text3); font-weight: 700; font-style: italic; }
+            .frase-rolagem-txt { display: block; }
+            .frase-rolando .frase-rolagem-txt { animation: frase-rolagem var(--frase-tempo, 8s) ease-in-out infinite; }
+            @keyframes frase-rolagem { 0%, 20% { transform: translateY(0); } 75%, 90% { transform: translateY(var(--frase-desloc, 0)); } 100% { transform: translateY(0); } }
+            @media (prefers-reduced-motion: reduce) { .frase-rolando { overflow-y: auto; } .frase-rolando .frase-rolagem-txt { animation: none; } }
             .tv-cr-s { grid-column: 1 / -1; font-size: 17px; font-weight: 700; color: var(--text2); overflow-wrap: anywhere; }
             .tv-cr-s b { color: var(--text); font-weight: 900; }
             .tv-cr-f { grid-column: 1 / -1; font-size: 17px; color: var(--text2); font-weight: 700; overflow-wrap: anywhere; }
@@ -6416,6 +6469,7 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
         ? ativas.map((e) => `${e.label} há ${tvDuracaoTexto(e.ms)}`).join(" · ")
         : coroaStatusLabel(pedido.status);
     const hora = coroaDataHora(pedido.criado_em);
+    const frase = coroaFraseCartao(pedido);
     const clicavel = !!onSelect;
 
     return (
@@ -6432,14 +6486,17 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
                 : {})}
         >
             {atraso && <div className="qm-flag qm-flag-warn">⏱ {atraso.longo}</div>}
-            <div className="qm-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</div>
+            <div className="qm-cr-top">
+                <span className="qm-cr-m">{qtd > 1 ? `${qtd}× ` : ""}{coroaModelos(pedido)}</span>
+                <span className="qm-cr-e">{agora}</span>
+            </div>
             <div className="qm-cr-s">Solicitante: <b>{shown(pedido.solicitante, "a definir")}</b></div>
             <div className="qm-cr-f">
                 {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
                 {hora ? ` · ${hora}` : ""}
             </div>
             <div className="qm-cr-r">
-                <span className="qm-cr-e">{agora}</span>
+                <FraseRolagem texto={frase} className="qm-cr-frase" />
                 <span className="qm-mini">
                     {etapas.map((e) => (
                         <i
@@ -6757,7 +6814,14 @@ function MobStyles() {
             .qm-cr-click:focus-visible { outline: 2px solid var(--qm-acc); outline-offset: 2px; }
             .qm-cr-late { box-shadow: inset 4px 0 0 var(--qm-warn), var(--qm-shadow); }
             .qm-cr .qm-flag { grid-area: auto; justify-self: start; }
+            .qm-cr-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
             .qm-cr-m { font-size: 14px; font-weight: 900; overflow-wrap: anywhere; }
+            .qm-cr-frase { flex: 1; min-width: 0; border-left: 3px solid #F2CB3F; padding: 2px 0 2px 8px; font-size: 13px; font-weight: 800; line-height: 1.3; color: var(--qm-text); overflow-wrap: anywhere; max-height: calc(13px * 1.3 * 2 + 4px); overflow: hidden; }
+            .qm-cr-frase-vazia { color: var(--qm-muted); font-weight: 700; font-style: italic; }
+            .frase-rolagem-txt { display: block; }
+            .frase-rolando .frase-rolagem-txt { animation: frase-rolagem var(--frase-tempo, 8s) ease-in-out infinite; }
+            @keyframes frase-rolagem { 0%, 20% { transform: translateY(0); } 75%, 90% { transform: translateY(var(--frase-desloc, 0)); } 100% { transform: translateY(0); } }
+            @media (prefers-reduced-motion: reduce) { .frase-rolando { overflow-y: auto; } .frase-rolando .frase-rolagem-txt { animation: none; } }
             .qm-cr-s { font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
             .qm-cr-s b { color: var(--qm-text); font-weight: 900; }
             .qm-cr-f { font-size: 12px; font-weight: 700; color: var(--qm-muted); overflow-wrap: anywhere; }
