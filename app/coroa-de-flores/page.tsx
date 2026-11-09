@@ -1913,6 +1913,9 @@ export default function Page() {
     const confeccaoAbortRef = React.useRef<AbortController | null>(null);
     const historicoAbortRef = React.useRef<AbortController | null>(null);
     const onlineSyncLoadedAtRef = React.useRef(0);
+    /** 09/11/2026: pedidos da loja que o servidor recusou ao levar para a Confecção (aparece um aviso na aba). */
+    const [onlineSyncErros, setOnlineSyncErros] = React.useState<Array<{ order_id: number; numero?: string; cliente?: string; criado_em?: string; message: string }>>([]);
+    const [onlineSyncFalha, setOnlineSyncFalha] = React.useState<string | null>(null);
     const onlineSyncPromiseRef = React.useRef<Promise<void> | null>(null);
 
     const sincronizarPedidosOnlineConfeccao = React.useCallback(async (force = false) => {
@@ -1948,12 +1951,15 @@ export default function Page() {
                 if (Array.isArray(json?.erros) && json.erros.length > 0) {
                     console.warn("Alguns pedidos online novos não foram sincronizados com a Confecção:", json.erros);
                 }
+                setOnlineSyncErros(Array.isArray(json?.erros) ? json.erros : []);
+                setOnlineSyncFalha(null);
 
                 onlineSyncLoadedAtRef.current = Date.now();
             } catch (error) {
                 // A lista de Confecção continua sendo carregada mesmo se a reconciliação
                 // com o WooCommerce falhar. O próximo refresh tenta novamente.
                 console.error("Falha na reconciliação WooCommerce → Confecção:", error);
+                setOnlineSyncFalha((error as any)?.message || "Não foi possível consultar a loja on-line.");
             } finally {
                 onlineSyncPromiseRef.current = null;
             }
@@ -3155,6 +3161,38 @@ export default function Page() {
                                 </div>
                             </div>
                         </form>
+
+                        {/* 09/11/2026: pedidos da loja que não entraram na Confecção, com o motivo. */}
+                        {(onlineSyncErros.length > 0 || onlineSyncFalha) && (
+                            <div className="mx-4 mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 lg:mx-6 dark:border-[#F2CB3F]/40 dark:bg-[#44453F] dark:text-[#F2CB3F]">
+                                {onlineSyncFalha ? (
+                                    <div>
+                                        <b>Não foi possível conferir a loja on-line agora.</b> {onlineSyncFalha} Toque em Atualizar para tentar de novo.
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="font-semibold">
+                                            {onlineSyncErros.length === 1
+                                                ? "1 pedido da loja on-line não entrou na Confecção:"
+                                                : `${onlineSyncErros.length} pedidos da loja on-line não entraram na Confecção:`}
+                                        </div>
+                                        <ul className="mt-2 space-y-1.5">
+                                            {onlineSyncErros.map((e) => (
+                                                <li key={e.order_id} className="leading-snug">
+                                                    <b>Woo #{e.numero || e.order_id}</b>
+                                                    {e.cliente ? ` · ${e.cliente}` : ""}
+                                                    {e.criado_em ? ` · ${formatDate(e.criado_em)}` : ""}
+                                                    <div className="text-xs opacity-90">{e.message}</div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <div className="mt-2 text-xs opacity-80">
+                                            Corrija o motivo (cadastro do produto ou saldo) e toque em Atualizar: o pedido entra sozinho.
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
 
                         {/* Confecção mobile */}
                         <div className="px-4 pb-6 md:hidden lg:px-6">

@@ -33,6 +33,8 @@ type WcOrderForProduction = {
     total?: string | number;
     shipping_total?: string | number;
     customer_note?: string;
+    date_created?: string;
+    date_created_gmt?: string;
     billing?: {
         first_name?: string;
         last_name?: string;
@@ -205,6 +207,8 @@ function payloadImportacao(order: WcOrderForProduction): Record<string, unknown>
         status_pagamento: "pago",
         total_pago: Number(order.total || 0) || null,
         frete: Number(order.shipping_total || 0) || null,
+        // 09/11/2026: o coroas.php usa a data do pedido para não reimportar pedidos antigos recusados.
+        wc_criado_em_gmt: String(order.date_created_gmt || "").trim() || null,
         itens,
     };
 }
@@ -248,10 +252,16 @@ async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOri
     const json = await res.json().catch(() => null);
 
     if (!res.ok || !json?.sucesso) {
-        const detalhe = json?.msg || json?.message || `HTTP ${res.status}`;
-        throw new Error(
-            `Falha ao enviar pedido WooCommerce #${order.id} para Confecção: ${detalhe}`,
-        );
+        // 09/11/2026: o motivo vai completo para a tela (antes só aparecia no console do navegador).
+        const naoMapeados = Array.isArray(json?.itens_nao_mapeados)
+            ? (json.itens_nao_mapeados as Array<{ nome?: string; sku?: string }>)
+                  .map((i) => `${String(i?.nome || "sem nome")}${i?.sku ? ` (SKU ${i.sku})` : " (sem SKU)"}`)
+                  .join("; ")
+            : "";
+        const detalhe = [json?.msg || json?.message || `HTTP ${res.status}`, naoMapeados ? `Produto(s): ${naoMapeados}` : ""]
+            .filter(Boolean)
+            .join(" ");
+        throw new Error(detalhe);
     }
 
     return { sincronizado: true, resultado: json };
@@ -337,7 +347,7 @@ export async function GET(req: Request) {
                 pedidos.map((order) => enviarPedidoParaConfeccao(order, url.origin)),
             );
 
-            const erros: Array<{ order_id: number; message: string }> = [];
+            const erros: Array<{ order_id: number; numero: string; cliente: string; criado_em: string; message: string }> = [];
             let sincronizados = 0;
             let duplicadosOuExistentes = 0;
 
@@ -352,8 +362,12 @@ export async function GET(req: Request) {
                     return;
                 }
 
+                const pedido = pedidos[index];
                 erros.push({
                     order_id: orderId,
+                    numero: String(pedido?.number || orderId),
+                    cliente: pedido ? nomeCliente(pedido) : "",
+                    criado_em: String(pedido?.date_created || ""),
                     message: resultado.reason?.message || "Falha ao sincronizar pedido.",
                 });
             });
