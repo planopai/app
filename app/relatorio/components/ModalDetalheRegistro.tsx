@@ -1074,6 +1074,7 @@ export default function ModalDetalheRegistro({
                                                 resumoFinal={resumoAtual}
                                                 materiaisMap={materiaisMap}
                                                 sepultamentoId={registroId}
+                                                registroAtual={(registroCompleto || registro) as any}
                                             />
                                         </div>
                                     </div>

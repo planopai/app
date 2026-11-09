@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogItem } from "./TiposHistorico";
 import { desenharRelatorio, montarDadosRelatorio } from "./PdfRelatorio";
-import { dadosTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
+import { dadosTermoVelorio, situacaoTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
 
 /* ==== helpers de API para pegar assinaturas e normalizar URL ==== */
 import {
@@ -30,6 +30,8 @@ interface Props {
     assinaturaRequerenteUrl?: string;
     sepultamentoId?: string | number;
     materiaisMap?: MateriaisMap;
+    /** 09/11/2026: registro atual do atendimento (Termo do Velório On-line, quando o proxy ainda não informa). */
+    registroAtual?: Record<string, any> | null;
 }
 
 /* =============== jsPDF via CDN =============== */
@@ -333,6 +335,7 @@ export default function BotaoExportarPdf({
     assinaturaRequerenteUrl,
     sepultamentoId,
     materiaisMap,
+    registroAtual,
 }: Props) {
     const [gerando, setGerando] = useState(false);
     const jsPdfOk = useJsPdfCdn();
@@ -398,19 +401,29 @@ export default function BotaoExportarPdf({
 
             const logoPng = await carregarLogoPng();
 
-            // 09/11/2026: Termo do Velório On-line (página própria no fim, só quando assinado).
+            // 09/11/2026: Termo do Velório On-line (página própria, junto com os termos de materiais e de veículo).
+            // Entra quando o atendimento tem Velório On-line ou quando o termo já foi assinado; sem assinatura,
+            // sai com as linhas em branco, como os outros termos.
             let termoVelorio: Parameters<typeof desenharRelatorio>[4];
-            const vel = (assinDb as any).velorio_online;
-            if (vel?.url) {
+            // Fonte principal: o registro do atendimento (já vem com as colunas do termo); o proxy é a reserva.
+            const termoReg = situacaoTermoVelorio(registroAtual);
+            const velProxy = (assinDb as any).velorio_online;
+            const vel = termoReg.assinado
+                ? { url: termoReg.url, nome: termoReg.nome, cpf: termoReg.cpf, em: termoReg.em, por: termoReg.por, versao: termoReg.versao }
+                : velProxy;
+            const temVelorioOnline = /^(sim|s|1|true)$/i.test(
+                String(registroAtual?.velorio_online ?? velProxy?.contratado ?? resumoFinal?.velorio_online ?? "").trim(),
+            );
+            if (vel?.url || temVelorioOnline) {
                 let assinaturaVelB64: string | undefined;
                 try {
-                    const urlVel = normAssUrl(vel.url);
+                    const urlVel = vel?.url ? normAssUrl(vel.url) : undefined;
                     if (urlVel) assinaturaVelB64 = await loadSignatureImage(urlVel, 800);
                 } catch { }
                 termoVelorio = {
                     dados: dadosTermoVelorio(
                         { id: idInferido, falecido: selecionadoNome, data_inicio_velorio: dados.dataVelorio },
-                        { nome: vel.nome || "", cpf: vel.cpf || "", em: vel.em, por: vel.por, versao: vel.versao },
+                        { nome: vel?.nome || "", cpf: vel?.cpf || "", em: vel?.em, por: vel?.por, versao: vel?.versao },
                     ),
                     assinaturaB64: assinaturaVelB64,
                 };

@@ -127,7 +127,7 @@ export type AssinaturaInfo = {
     responsavel?: { url?: string; nome?: string; cpf?: string };
     requerente?: { url?: string; nome?: string; cpf?: string };
     /** 09/11/2026: Termo de Responsabilidade do Velório On-line. */
-    velorio_online?: { url?: string; nome?: string; cpf?: string; em?: string; por?: string; versao?: string };
+    velorio_online?: { url?: string; nome?: string; cpf?: string; em?: string; por?: string; versao?: string; contratado?: string };
 };
 
 export async function pegarAssinaturasInfoPorId(

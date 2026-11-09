@@ -265,10 +265,12 @@ export function desenharCorpoTermoVelorio(doc: Doc, d: DadosTermoVelorio, assina
     y += 12;
 
     // Registro da assinatura digital
-    const registro =
-        `Assinado digitalmente${d.assinadoEm ? ` em ${d.assinadoEm}` : ""}` +
-        `${d.atendimentoId ? `, no atendimento nº ${d.atendimentoId}` : ""}` +
-        `${d.coletadoPor ? `, coletado por ${d.coletadoPor}` : ""}. Versão do termo: ${d.versao}.`;
+    // Sem assinatura (ex.: PDF do relatório de um atendimento com Velório On-line ainda sem o termo assinado).
+    const registro = d.assinadoEm
+        ? `Assinado digitalmente em ${d.assinadoEm}` +
+          `${d.atendimentoId ? `, no atendimento nº ${d.atendimentoId}` : ""}` +
+          `${d.coletadoPor ? `, coletado por ${d.coletadoPor}` : ""}. Versão do termo: ${d.versao}.`
+        : `Termo ainda não assinado no app${d.atendimentoId ? ` (atendimento nº ${d.atendimentoId})` : ""}. Versão do termo: ${d.versao}.`;
     doc.setDrawColor(COR.linha);
     doc.setFillColor("#F6F8FB");
     fonte(doc, 7.4, false, COR.cinza);

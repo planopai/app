@@ -627,7 +627,11 @@ function montarLinhaTempo(logs: LogItem[], materiaisMap?: MateriaisMap): EventoL
         }
 
         if (acao.includes("assinou")) {
-            const termo = acao.includes("requerente") ? "Requisição de veículo assinada" : "Termo de recebimento assinado";
+            const termo = acao.includes("velorio_online")
+                ? "Termo do Velório On-line assinado"
+                : acao.includes("requerente")
+                    ? "Requisição de veículo assinada"
+                    : "Termo de recebimento assinado";
             out.push({ dia, hora, texto: termo, subitens: [], por, etapa: false });
             continue;
         }
