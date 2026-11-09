@@ -26,6 +26,7 @@ import {
     IconCoffin,
     IconCross,
     IconDownload,
+    IconFileText,
     IconFlask,
     IconFlower,
     IconHeart,
@@ -58,6 +59,8 @@ import {
     type StatusAvaliacoesItem,
 } from "./Api";
 import BotaoExportarPdf from "./BotaoExportarPdf";
+import TermoVelorioOnlineModal from "@/app/acompanhamento/components/TermoVelorioOnlineModal";
+import { situacaoTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
 import { montarResumoFinalDoLog } from "./Normalizadores";
 import {
     fmtDuracao,
@@ -592,6 +595,8 @@ export default function ModalDetalheRegistro({
     const [loading, setLoading] = useState(false);
     const [materiaisMap, setMateriaisMap] = useState<MateriaisMap>({});
     const [fotosOpen, setFotosOpen] = useState(false);
+    /* 09/11/2026: Termo do Velório On-line (ver, baixar e compartilhar o PDF assinado). */
+    const [termoVelorioOpen, setTermoVelorioOpen] = useState(false);
     const [aba, setAba] = useState<AbaDetalhe>("resumo");
     const [soEtapas, setSoEtapas] = useState(false);
     const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
@@ -669,12 +674,13 @@ export default function ModalDetalheRegistro({
         const aoTeclar = (e: KeyboardEvent) => {
             if (e.key !== "Escape" || e.defaultPrevented) return;
             if (document.querySelector(".fixed.z-\\[80\\], .fixed.z-\\[100\\]")) return;
+            if (termoVelorioOpen) return; // a janela do termo fecha sozinha com o Esc
             if (fotosOpen) setFotosOpen(false);
             else onFechar();
         };
         window.addEventListener("keydown", aoTeclar);
         return () => window.removeEventListener("keydown", aoTeclar);
-    }, [aberto, fotosOpen, onFechar]);
+    }, [aberto, fotosOpen, onFechar, termoVelorioOpen]);
 
     useEffect(() => {
         if (!aberto || typeof window === "undefined") return;
@@ -1082,6 +1088,28 @@ export default function ModalDetalheRegistro({
                                     >
                                         <IconPhoto size={20} stroke={2} />
                                     </button>
+
+                                    {(() => {
+                                        const reg: any = registroCompleto || registro;
+                                        const termo = situacaoTermoVelorio(reg);
+                                        const temVelorioOnline = /^(sim|s|1|true)$/i.test(String(reg?.velorio_online ?? "").trim());
+                                        if (!termo.assinado && !temVelorioOnline) return null;
+                                        return (
+                                            <button
+                                                type="button"
+                                                className={`${BTN_ICONE} border ${termo.assinado
+                                                    ? "border-[#7BA11A]/50 bg-[#EEF5D6] text-[#313C55] hover:brightness-95 dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/20 dark:text-white"
+                                                    : "border-[#D5DCE6] bg-[#FFFFFF] text-[#313C55] dark:border-white/12 dark:bg-[#232B3F] dark:text-[#D6DCE8]"
+                                                    }`}
+                                                title={termo.assinado ? `Termo do Velório On-line assinado por ${termo.nome}` : "Termo do Velório On-line não assinado"}
+                                                aria-label="Termo do Velório On-line"
+                                                disabled={loading || !termo.assinado}
+                                                onClick={() => setTermoVelorioOpen(true)}
+                                            >
+                                                <IconFileText size={20} stroke={2} />
+                                            </button>
+                                        );
+                                    })()}
 
                                     {podeVerVisita ? (
                                         <button
@@ -1594,6 +1622,13 @@ export default function ModalDetalheRegistro({
                     </div>
                 </div>
             </div>
+
+            <TermoVelorioOnlineModal
+                open={termoVelorioOpen}
+                onClose={() => setTermoVelorioOpen(false)}
+                registro={(registroCompleto || registro) as any}
+                zIndex={100}
+            />
 
             {fotosOpen && (
                 <div

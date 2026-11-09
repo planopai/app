@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogItem } from "./TiposHistorico";
 import { desenharRelatorio, montarDadosRelatorio } from "./PdfRelatorio";
+import { dadosTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
 
 /* ==== helpers de API para pegar assinaturas e normalizar URL ==== */
 import {
@@ -397,6 +398,24 @@ export default function BotaoExportarPdf({
 
             const logoPng = await carregarLogoPng();
 
+            // 09/11/2026: Termo do Velório On-line (página própria no fim, só quando assinado).
+            let termoVelorio: Parameters<typeof desenharRelatorio>[4];
+            const vel = (assinDb as any).velorio_online;
+            if (vel?.url) {
+                let assinaturaVelB64: string | undefined;
+                try {
+                    const urlVel = normAssUrl(vel.url);
+                    if (urlVel) assinaturaVelB64 = await loadSignatureImage(urlVel, 800);
+                } catch { }
+                termoVelorio = {
+                    dados: dadosTermoVelorio(
+                        { id: idInferido, falecido: selecionadoNome, data_inicio_velorio: dados.dataVelorio },
+                        { nome: vel.nome || "", cpf: vel.cpf || "", em: vel.em, por: vel.por, versao: vel.versao },
+                    ),
+                    assinaturaB64: assinaturaVelB64,
+                };
+            }
+
             desenharRelatorio(
                 doc,
                 dados,
@@ -409,6 +428,7 @@ export default function BotaoExportarPdf({
                     assinaturaRequerenteB64: assinaturaReqB64,
                 },
                 logoPng,
+                termoVelorio,
             );
 
             const filename = `${String(selecionadoNome || "relatorio").toUpperCase()}.pdf`;

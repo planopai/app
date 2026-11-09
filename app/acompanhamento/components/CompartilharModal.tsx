@@ -6,6 +6,8 @@ import Modal from "./Modal";
 import type { Registro } from "./types";
 
 import EnviarObituario from "./EnviarObituario";
+import TermoVelorioOnlineModal, { type TermoVelorioSalvo } from "./TermoVelorioOnlineModal";
+import { situacaoTermoVelorio } from "./termoVelorioOnline";
 
 type Msg = {
     type: "success" | "error";
@@ -188,6 +190,14 @@ export default function CompartilharModal({
 }) {
     const [msg, setMsg] = useState<Msg | null>(null);
     const [opcaoAberta, setOpcaoAberta] = useState<OpcaoAberta>(null);
+    /* 09/11/2026: Termo de Responsabilidade do Velório On-line (assinado no app). */
+    const [termoOpen, setTermoOpen] = useState(false);
+    const [termoSalvo, setTermoSalvo] = useState<{ id: string; dados: TermoVelorioSalvo } | null>(null);
+    const registroComTermo = useMemo<Registro | null | undefined>(() => {
+        if (!registro || !termoSalvo || termoSalvo.id !== String(registro.id)) return registro;
+        return { ...registro, ...termoSalvo.dados } as Registro;
+    }, [registro, termoSalvo]);
+    const termoAssinado = situacaoTermoVelorio(registroComTermo).assinado;
 
     const nomeFalecido = useMemo(() => getNomeFalecido(registro), [registro]);
 
@@ -527,6 +537,20 @@ export default function CompartilharModal({
                             >
                                 Compartilhar
                             </button>
+
+                            {/* 09/11/2026: termo de responsabilidade. Compartilhar continua liberado sem o termo
+                                (a família pode liberar antes e assinar quando chegar ao local). */}
+                            <button
+                                type="button"
+                                className={`${termoAssinado
+                                    ? "w-full rounded-lg border border-[#7BA11A]/60 bg-[#EEF5D6] px-4 py-3 text-sm font-bold text-[#313C55] transition hover:brightness-95 dark:bg-[#B3CE52]/20 dark:text-white"
+                                    : "w-full rounded-lg border-2 border-dashed border-[#313C55]/40 bg-white px-4 py-3 text-sm font-bold text-[#313C55] transition hover:border-[#313C55] dark:border-white/30 dark:bg-[#232B3F] dark:text-white"
+                                    } disabled:pointer-events-none disabled:opacity-60 sm:col-span-2`}
+                                onClick={() => setTermoOpen(true)}
+                                disabled={!registro}
+                            >
+                                {termoAssinado ? "Termo ✓" : "Assinar Termo"}
+                            </button>
                         </>
                     )}
 
@@ -587,6 +611,16 @@ export default function CompartilharModal({
                     </div>
                 )}
             </Modal>
+
+            <TermoVelorioOnlineModal
+                open={termoOpen}
+                onClose={() => setTermoOpen(false)}
+                registro={registroComTermo}
+                zIndex={60}
+                onSaved={(dados) => {
+                    if (registro) setTermoSalvo({ id: String(registro.id), dados });
+                }}
+            />
         </>
     );
 }

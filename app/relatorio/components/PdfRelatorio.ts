@@ -4,6 +4,7 @@
    Página 1: resumo (falecido, responsável, velório, serviços, itens usados, observações)
    Página 2: tempo por etapa + linha do tempo em tabela
    Depois:   Termo de Recebimento de Material e Requisição de Veículo
+             (09/11/2026) Termo do Velório On-line, quando assinado
 
    Duas partes:
      - montarDadosRelatorio(): junta o resumo e o histórico num formato pronto para imprimir;
@@ -21,6 +22,7 @@ import {
     extrairDetalhesLogHumanos,
     extrairMateriais,
 } from "./FormatadorRelatorio";
+import { desenharCorpoTermoVelorio, type DadosTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
 
 /* ============================== Tipos ============================== */
 
@@ -1349,11 +1351,21 @@ function desenharMoldura(doc: Doc, d: DadosRelatorio, logoPng?: string) {
 
 /* ============================== Entrada ============================== */
 
-export function desenharRelatorio(doc: Doc, d: DadosRelatorio, termos: DadosTermos, logoPng?: string) {
+export function desenharRelatorio(
+    doc: Doc,
+    d: DadosRelatorio,
+    termos: DadosTermos,
+    logoPng?: string,
+    termoVelorio?: { dados: DadosTermoVelorio; assinaturaB64?: string },
+) {
     const pg = new Pagina(doc);
     desenharResumo(pg, d);
     desenharTemposELinha(pg, d);
     desenharTermoRecebimento(pg, d, termos);
     desenharRequisicao(pg, d, termos);
+    if (termoVelorio) {
+        pg.novaPagina();
+        desenharCorpoTermoVelorio(doc, termoVelorio.dados, termoVelorio.assinaturaB64, TOPO + 4, MARG);
+    }
     desenharMoldura(doc, d, logoPng);
 }
