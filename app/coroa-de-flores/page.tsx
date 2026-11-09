@@ -26,6 +26,7 @@
  */
 
 import * as React from "react";
+import BotoesReciboLoja from "./BotoesReciboLoja";
 import { createPortal } from "react-dom";
 import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
 import { JanelaOSPorId } from "@/app/os/components/OSDoAtendimento";
@@ -4835,8 +4836,11 @@ export default function Page() {
                                                 <div>
                                                     <div className="mb-1 text-xs font-medium">Comprovante</div>
                                                     {pedidoEhOnline(manualDetail) ? (
-                                                        <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                                                            Pagamento confirmado pelo WooCommerce. Não é necessário anexar comprovante manual.
+                                                        <div>
+                                                            <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                                                                Pagamento confirmado pelo WooCommerce. Não é necessário anexar comprovante manual.
+                                                            </div>
+                                                            <BotoesReciboLoja pedidoLojaId={manualDetail.origem_externa_id} />
                                                         </div>
                                                     ) : (
                                                         <div className="flex flex-col gap-2">
