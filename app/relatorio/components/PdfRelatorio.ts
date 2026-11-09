@@ -3,8 +3,8 @@
 
    Página 1: resumo (falecido, responsável, velório, serviços, itens usados, observações)
    Página 2: tempo por etapa + linha do tempo em tabela
-   Depois:   Termo de Recebimento de Material e Requisição de Veículo
-             (09/11/2026) Termo do Velório On-line, quando assinado
+   Depois:   Termo de Recebimento de Material, Requisição de Veículo e (09/11/2026) Termo do Velório On-line
+             — cada um só quando está completo e assinado (assinatura + nome + CPF).
 
    Duas partes:
      - montarDadosRelatorio(): junta o resumo e o histórico num formato pronto para imprimir;
@@ -1196,6 +1196,9 @@ export type DadosTermos = {
     cpfRequerente: string;
     assinaturaResponsavelB64?: string;
     assinaturaRequerenteB64?: string;
+    /** 09/11/2026: termo assinado e completo (assinatura gravada + nome + CPF). Só esses entram no PDF. */
+    recebimentoAssinado?: boolean;
+    requisicaoAssinada?: boolean;
 };
 
 function tituloTermo(pg: Pagina, texto: string) {
@@ -1365,8 +1368,9 @@ export function desenharRelatorio(
     const pg = new Pagina(doc);
     desenharResumo(pg, d);
     desenharTemposELinha(pg, d);
-    desenharTermoRecebimento(pg, d, termos);
-    desenharRequisicao(pg, d, termos);
+    // 09/11/2026: termos só entram no PDF quando estão completos e assinados (sem página em branco).
+    if (termos.recebimentoAssinado) desenharTermoRecebimento(pg, d, termos);
+    if (termos.requisicaoAssinada) desenharRequisicao(pg, d, termos);
     if (termoVelorio) {
         pg.novaPagina();
         desenharCorpoTermoVelorio(doc, termoVelorio.dados, termoVelorio.assinaturaB64, TOPO + 4, MARG);

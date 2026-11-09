@@ -30,6 +30,21 @@ const dataHoraBR = (s?: string | null) =>
         })
         : "—";
 
+/**
+ * 09/11/2026: os comprovantes ficam no servidor da API (api.planoassistencialintegrado.com.br/uploads/comprovantes).
+ * O os_principal.php devolve o caminho relativo ("/uploads/comprovantes/..."); aberto no domínio do app ele dava 404.
+ */
+const ARQUIVOS_API = "https://api.planoassistencialintegrado.com.br";
+const urlComprovante = (u?: string | null): string => {
+    const v = String(u ?? "").trim();
+    if (!v) return "";
+    const m = v.match(/\/uploads\/[^\s"']+/i);
+    if (m && (v.startsWith("/") || /^https?:\/\/(pai\.|app\.|www\.)?planoassistencialintegrado\.com\.br\//i.test(v))) {
+        return `${ARQUIVOS_API}${m[0]}`;
+    }
+    return v;
+};
+
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const inicioMes = () => hoje().slice(0, 8) + "01";
 
@@ -939,9 +954,9 @@ function DetalheOS({
                                                                 className="ml-2 font-bold text-[#3D6A99] dark:text-[#A9C3E0]"
                                                                 target="_blank"
                                                                 rel="noreferrer"
-                                                                href={
-                                                                    c.arquivo_url
-                                                                }
+                                                                href={urlComprovante(
+                                                                    c.arquivo_url,
+                                                                )}
                                                             >
                                                                 comprovante
                                                             </a>

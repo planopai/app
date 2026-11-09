@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogItem } from "./TiposHistorico";
 import { desenharRelatorio, montarDadosRelatorio } from "./PdfRelatorio";
-import { dadosTermoVelorio, situacaoTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
+import { carregarAssinaturaTermo, dadosTermoVelorio, situacaoTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
 
 /* ==== helpers de API para pegar assinaturas e normalizar URL ==== */
 import {
@@ -324,6 +324,11 @@ function inferirSepultamentoId(
     return undefined;
 }
 
+/** 09/11/2026: termo completo e assinado = assinatura gravada + nome + CPF com 11 dígitos. */
+function termoCompleto(url?: string, nome?: string, cpf?: string): boolean {
+    return Boolean(String(url ?? "").trim()) && Boolean(String(nome ?? "").trim()) && String(cpf ?? "").replace(/\D+/g, "").length === 11;
+}
+
 /* =============== Componente principal =============== */
 export default function BotaoExportarPdf({
     desabilitado,
@@ -373,10 +378,13 @@ export default function BotaoExportarPdf({
             try {
                 if (urlResp) assinaturaRespB64 = await loadSignatureImage(urlResp, 800);
             } catch { }
+            // 09/11/2026: a imagem fica no servidor da API; se o caminho pelo domínio principal falhar, busca direto lá.
+            if (!assinaturaRespB64 && urlResp) assinaturaRespB64 = await carregarAssinaturaTermo(decodeURIComponent(urlResp));
 
             try {
                 if (urlReq) assinaturaReqB64 = await loadSignatureImage(urlReq, 800);
             } catch { }
+            if (!assinaturaReqB64 && urlReq) assinaturaReqB64 = await carregarAssinaturaTermo(decodeURIComponent(urlReq));
 
             const respFromResumo = getNomeCpfAssinatura(resumoFinal, "responsavel", selecionadoAssinatura);
             const reqFromResumo = getNomeCpfAssinatura(resumoFinal, "requerente", selecionadoAssinatura);
@@ -402,8 +410,7 @@ export default function BotaoExportarPdf({
             const logoPng = await carregarLogoPng();
 
             // 09/11/2026: Termo do Velório On-line (página própria, junto com os termos de materiais e de veículo).
-            // Entra quando o atendimento tem Velório On-line ou quando o termo já foi assinado; sem assinatura,
-            // sai com as linhas em branco, como os outros termos.
+            // Só entra quando está completo e assinado (assinatura + nome + CPF), como os outros termos.
             let termoVelorio: Parameters<typeof desenharRelatorio>[4];
             // Fonte principal: o registro do atendimento (já vem com as colunas do termo); o proxy é a reserva.
             const termoReg = situacaoTermoVelorio(registroAtual);
@@ -411,15 +418,17 @@ export default function BotaoExportarPdf({
             const vel = termoReg.assinado
                 ? { url: termoReg.url, nome: termoReg.nome, cpf: termoReg.cpf, em: termoReg.em, por: termoReg.por, versao: termoReg.versao }
                 : velProxy;
-            const temVelorioOnline = /^(sim|s|1|true)$/i.test(
-                String(registroAtual?.velorio_online ?? velProxy?.contratado ?? resumoFinal?.velorio_online ?? "").trim(),
-            );
-            if (vel?.url || temVelorioOnline) {
-                let assinaturaVelB64: string | undefined;
-                try {
-                    const urlVel = vel?.url ? normAssUrl(vel.url) : undefined;
-                    if (urlVel) assinaturaVelB64 = await loadSignatureImage(urlVel, 800);
-                } catch { }
+            const cpfVel = String(vel?.cpf ?? "").replace(/\D+/g, "");
+            if (vel?.url && String(vel?.nome ?? "").trim() && cpfVel.length === 11) {
+                // A assinatura do termo fica no servidor da API (onde o informativo.php grava): busca direto lá;
+                // o caminho pelo domínio principal fica de reserva.
+                let assinaturaVelB64: string | undefined = await carregarAssinaturaTermo(String(vel.url));
+                if (!assinaturaVelB64) {
+                    try {
+                        const urlVel = normAssUrl(vel.url);
+                        if (urlVel) assinaturaVelB64 = await loadSignatureImage(urlVel, 800);
+                    } catch { }
+                }
                 termoVelorio = {
                     dados: dadosTermoVelorio(
                         { id: idInferido, falecido: selecionadoNome, data_inicio_velorio: dados.dataVelorio },
@@ -439,6 +448,8 @@ export default function BotaoExportarPdf({
                     cpfRequerente: reqInfo.cpf,
                     assinaturaResponsavelB64: assinaturaRespB64,
                     assinaturaRequerenteB64: assinaturaReqB64,
+                    recebimentoAssinado: termoCompleto(urlResp, respInfo.nome, respInfo.cpf),
+                    requisicaoAssinada: termoCompleto(urlReq, reqInfo.nome, reqInfo.cpf),
                 },
                 logoPng,
                 termoVelorio,
