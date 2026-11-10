@@ -4833,8 +4833,8 @@ export default function Page() {
                                                     </span>
                                                 </div>
 
-                                                <div>
-                                                    <div className="mb-1 text-xs font-medium">Comprovante</div>
+                                                <div className={pedidoEhOnline(manualDetail) ? "min-w-0 sm:flex-1 sm:pl-6" : ""}>
+                                                    {!pedidoEhOnline(manualDetail) && <div className="mb-1 text-xs font-medium">Comprovante</div>}
                                                     {pedidoEhOnline(manualDetail) ? (
                                                         <BotoesReciboLoja pedidoLojaId={manualDetail.origem_externa_id} />
                                                     ) : (

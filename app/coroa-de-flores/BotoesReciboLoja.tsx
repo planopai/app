@@ -6,8 +6,9 @@
 import React, { useState } from "react";
 import { obterReciboLoja } from "./reciboLoja";
 
+// Três botões numa linha, do mesmo tamanho. No celular estreito o texto quebra dentro do botão, sem empurrar para baixo.
 const btn =
-    "inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-bold text-[#313C55] hover:bg-muted disabled:opacity-50 dark:text-white";
+    "inline-flex min-h-9 w-full items-center justify-center rounded-md border px-2 py-1.5 text-center text-xs font-bold leading-tight text-[#313C55] hover:bg-muted disabled:opacity-50 sm:whitespace-nowrap dark:text-white";
 
 export default function BotoesReciboLoja({ pedidoLojaId, titulo }: { pedidoLojaId?: string | number | null; titulo?: string }) {
     const [gerando, setGerando] = useState(false);
@@ -75,7 +76,7 @@ export default function BotoesReciboLoja({ pedidoLojaId, titulo }: { pedidoLojaI
     return (
         <div className={titulo ? "mt-2" : ""}>
             {titulo ? <div className="mb-1 text-xs font-medium">{titulo}</div> : null}
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-3 gap-2">
                 <button type="button" className={btn} disabled={gerando} onClick={() => void visualizar()}>
                     {gerando ? "Gerando…" : "Ver Comprovante"}
                 </button>

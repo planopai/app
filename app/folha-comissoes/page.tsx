@@ -14,14 +14,17 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconAlertTriangle, IconCheck, IconChevronLeft, IconChevronRight, IconCoin, IconEdit, IconRefresh, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconChevronLeft, IconChevronRight, IconCoin, IconEdit, IconFileTypePdf, IconRefresh, IconSend, IconX } from '@tabler/icons-react';
 import { BOTAO_PAGINA, BOTAO_PAGINA_PRI, BOTAO_PAGINA_SEC, CartaoInfo, GRADE_CARTOES, ROTULO_SECAO, TopoPagina } from '@/components/shell/ModuloHub';
+import { gerarDemonstrativos, mascararPix, nomeArquivoPdf, type Demonstrativo, type DemoLinha, type EnvioChat } from '@/app/folha/components/demonstrativos';
+import EnviarChat from '@/app/folha/components/EnviarChat';
 
 type Item = { tipo: 'AGENTE' | 'VENDAS' | 'VIAGEM'; rotulo: string; valor: number; situacao: string; motivo: string | null; viagens?: { id: number; data: string; destino: string; valor: number }[] };
 type Pessoa = {
     colaborador_id: number;
     nome: string;
     nome_completo: string;
+    usuario_id?: number | null;
     equipe: string | null;
     forma_pagamento: 'PIX' | 'TRANSFERENCIA' | null;
     pix: string | null;
@@ -70,6 +73,14 @@ type OS = { os_id: number; numero_os: string; tipo: string; data: string; valor_
 type Aba = 'pessoas' | 'agentes' | 'vendas' | 'unymos' | 'anteriores';
 
 const URL_API = 'https://api.planoassistencialintegrado.com.br/rh_comissao.php';
+const URL_AVALIACAO = 'https://api.planoassistencialintegrado.com.br/rh_avaliacao.php';
+const PARTES_NOTA: [string, string][] = [
+    ['familias', 'famílias'],
+    ['gestor', 'gestor'],
+    ['pontualidade', 'pontualidade'],
+    ['comercial', 'comercial'],
+    ['registro', 'registro'],
+];
 const SITUACAO: Record<string, [string, string]> = {};
 const SIT_AGENTE: Record<string, string> = { A_PAGAR: 'A pagar', SEM_AVALIACAO: 'Sem avaliação', ABAIXO_MINIMO: 'Abaixo da mínima', CORTADA: 'Cortada', PAGO: 'Pago', SEM_REGRA: 'Sem regra', A_CONFIRMAR: 'A confirmar' };
 
@@ -348,6 +359,104 @@ export default function ComissoesPage() {
         if (ok && passo.acao === 'liberar') setAba('unymos');
     };
 
+    /* ---- demonstrativos em PDF ---- */
+    const [gerandoPdf, setGerandoPdf] = useState(false);
+    const [envio, setEnvio] = useState<EnvioChat[] | null>(null);
+    const montarDocs = async (lista: Pessoa[]): Promise<Demonstrativo[]> => {
+        if (!base) return [];
+        {
+            // partes da nota de cada agente (se a avaliação não abrir, o PDF sai só com a nota final)
+            const partes: Record<number, Record<string, { valor: number | null }>> = {};
+            const pesos: Record<string, number> = {};
+            try {
+                const j = await api(URL_AVALIACAO, 'painel', undefined, `&competencia=${comp}`);
+                (j.dados?.linhas || []).forEach((l: any) => (partes[l.colaborador_id] = l.partes));
+                Object.assign(pesos, j.dados?.pesos || {});
+            } catch {
+                /* segue sem as partes */
+            }
+            const docs: Demonstrativo[] = lista.map((p) => {
+                const secoes: Demonstrativo['secoes'] = [];
+                const ag = p.itens.find((i) => i.tipo === 'AGENTE');
+                if (ag) {
+                    const a = agentes.find((x) => x.colaborador_id === p.colaborador_id);
+                    const pt = partes[p.colaborador_id];
+                    const linhas: DemoLinha[] = [
+                        { descricao: 'Base do mês', detalhe: `OS particulares e diferenças concluídas no mês, sem translado${base.corrigida ? ' (corrigida pela Gestão)' : ''}`, valor: base.usada },
+                        { descricao: `Faixa da comissão: ${pctBR(base.percentual, 2)}% da base`, detalhe: 'valor de cada agente com nota 100', valor: base.valor_base },
+                        {
+                            descricao: 'Nota da avaliação do mês',
+                            detalhe: pt ? PARTES_NOTA.filter(([k]) => pt[k]?.valor !== null && pt[k]?.valor !== undefined).map(([k, r]) => `${r}${pesos[k] ? ` (${pesos[k]}%)` : ''} ${pctBR(pt[k].valor)}`).join(' · ') : null,
+                            texto: a?.nota !== null && a?.nota !== undefined ? pctBR(a.nota) : '—',
+                        },
+                        { descricao: 'Comissão de agente', detalhe: ag.motivo, valor: ag.valor, destaque: true },
+                    ];
+                    secoes.push({ titulo: 'Comissão de agente', linhas });
+                }
+                const vd = p.itens.find((i) => i.tipo === 'VENDAS');
+                if (vd) {
+                    const v = vendas.find((x) => x.colaborador_id === p.colaborador_id);
+                    secoes.push({
+                        titulo: 'Comissão de vendas',
+                        linhas: [
+                            { descricao: 'Vendas do mês', detalhe: v ? `${v.qtd_os} OS particulares e diferenças, sem translado${v.justificativa ? ` · ${v.justificativa}` : ''}` : null, valor: v?.vendas ?? null },
+                            ...(v?.forma === 'PERCENTUAL' && v.percentual !== null ? [{ descricao: 'Percentual', texto: `${pctBR(v.percentual, 2)}%` }] : []),
+                            { descricao: 'Comissão de vendas', detalhe: vd.situacao === 'A_CONFIRMAR' ? 'aguardando a confirmação da Gestão' : null, valor: vd.situacao === 'A_CONFIRMAR' ? 0 : vd.valor, destaque: true },
+                        ],
+                    });
+                }
+                const vg = p.itens.find((i) => i.tipo === 'VIAGEM');
+                if (vg?.viagens?.length) secoes.push({ titulo: 'Viagens', linhas: vg.viagens.map((x) => ({ descricao: `${dataBR(x.data)} · ${x.destino}`, valor: x.valor })) });
+                if (p.vales.length) secoes.push({ titulo: 'Vales abatidos', linhas: p.vales.map((v) => ({ descricao: `Vale de ${dataBR(v.data)}${v.descricao ? ` · ${v.descricao}` : ''}`, valor: -v.valor })) });
+                return {
+                    titulo: 'Demonstrativo de comissão',
+                    referencia: `Comissões de ${mesBR(comp).toLowerCase()}`,
+                    previa: aberta ? 'PRÉVIA · comissão ainda não liberada: os valores podem mudar' : null,
+                    colaborador: {
+                        nome: p.nome_completo || p.nome,
+                        equipe: p.equipe,
+                        pagamento: p.forma_pagamento === 'PIX' ? `Pix · ${mascararPix(p.pix) || 'chave não cadastrada'}` : p.forma_pagamento === 'TRANSFERENCIA' ? `Transferência · ${p.conta || 'conta não cadastrada'}` : null,
+                    },
+                    dataPagamento: com?.data_pagamento || null,
+                    secoes,
+                    total: p.a_pagar,
+                    saldoNegativo: p.saldo_negativo || 0,
+                };
+            });
+            return docs;
+        }
+    };
+    const gerarPdf = async (lista: Pessoa[], extra = '') => {
+        setGerandoPdf(true);
+        try {
+            await gerarDemonstrativos(await montarDocs(lista), `comissao-${comp}${extra ? `-${extra}` : ''}`);
+        } catch (e: any) {
+            setAviso(e?.message || 'Não foi possível gerar o PDF.');
+        } finally {
+            setGerandoPdf(false);
+        }
+    };
+
+    const prepararEnvio = async (lista: Pessoa[]) => {
+        setGerandoPdf(true);
+        try {
+            const docs = await montarDocs(lista);
+            setEnvio(
+                lista.map((p, i) => ({
+                    usuarioId: p.usuario_id ?? null,
+                    nome: p.nome,
+                    demo: docs[i],
+                    arquivo: nomeArquivoPdf(`comissao ${comp} ${p.nome}`),
+                    texto: `Seu demonstrativo de comissão de ${mesBR(comp).toLowerCase()}. A pagar: ${brl(p.a_pagar)}.${aberta ? ' (Prévia: os valores ainda podem mudar.)' : ''}`,
+                })),
+            );
+        } catch (e: any) {
+            setAviso(e?.message || 'Não foi possível preparar o envio.');
+        } finally {
+            setGerandoPdf(false);
+        }
+    };
+
     const fecharBase = useCallback(() => setCorrBase(null), []);
     const fecharVenda = useCallback(() => setConfVenda(null), []);
     const fecharOS = useCallback(() => setVerOS(null), []);
@@ -368,7 +477,14 @@ export default function ComissoesPage() {
                         Icone={IconCoin}
                         titulo="Comissões"
                         acoes={
-                            aberta ? (
+                            <>
+                            <button type="button" className={BTN_SEC} disabled={!comValor.length || gerandoPdf} onClick={() => void gerarPdf(comValor)}>
+                                <IconFileTypePdf size={18} /> {gerandoPdf ? 'Gerando…' : 'Demonstrativos'}
+                            </button>
+                            <button type="button" className={BTN_SEC} disabled={!comValor.length || gerandoPdf} onClick={() => void prepararEnvio(comValor)}>
+                                <IconSend size={18} /> Enviar pelo chat
+                            </button>
+                            {aberta ? (
                                 <button type="button" className={BTN_PRI} disabled={!comValor.length} onClick={() => { setErroForm(null); setPasso({ acao: 'liberar', data: com?.data_pagamento || hojeISO() }); }}>
                                     <IconCheck size={18} /> Liberar
                                 </button>
@@ -381,7 +497,8 @@ export default function ComissoesPage() {
                                         <IconCheck size={18} /> Marcar como paga
                                     </button>
                                 </>
-                            ) : null
+                            ) : null}
+                            </>
                         }
                     />
                 </div>
@@ -488,6 +605,26 @@ export default function ComissoesPage() {
                                         <b className="w-full min-w-0 break-words text-[15.5px] sm:w-auto sm:flex-1">{p.nome}</b>
                                         {p.forma_pagamento ? <span className={`${SELO} ${S_MUDO}`}>{p.forma_pagamento === 'PIX' ? `Pix · ${p.pix || 'sem chave'}` : p.conta || 'conta não cadastrada'}</span> : <span className={`${SELO} ${S_AVISO}`}>Sem forma de pagamento</span>}
                                         <b className="ml-auto text-[18px] tabular-nums">{brl(p.a_pagar)}</b>
+                                        <button
+                                            type="button"
+                                            aria-label={`Demonstrativo de ${p.nome} em PDF`}
+                                            title="Demonstrativo em PDF"
+                                            disabled={gerandoPdf}
+                                            className="grid size-10 place-items-center rounded-xl text-[#5B6478] hover:bg-[#EEF2F7] disabled:opacity-40 dark:hover:bg-white/[0.08]"
+                                            onClick={() => void gerarPdf([p], p.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '-'))}
+                                        >
+                                            <IconFileTypePdf size={20} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            aria-label={`Enviar o demonstrativo de ${p.nome} pelo chat`}
+                                            title="Enviar pelo chat"
+                                            disabled={gerandoPdf}
+                                            className="grid size-10 place-items-center rounded-xl text-[#5B6478] hover:bg-[#EEF2F7] disabled:opacity-40 dark:hover:bg-white/[0.08]"
+                                            onClick={() => void prepararEnvio([p])}
+                                        >
+                                            <IconSend size={20} />
+                                        </button>
                                     </div>
                                     <div className="flex flex-col text-[14px]">
                                         {p.itens.map((i, k) => (
@@ -849,6 +986,9 @@ export default function ComissoesPage() {
                         {erroForm ? <div className={ERRO}>{erroForm}</div> : null}
                     </div>
                 </Janela>
+            ) : null}
+            {envio ? (
+                <EnviarChat titulo={`Comissões · ${mesBR(comp)}`} envios={envio} previa={aberta} onFechar={() => setEnvio(null)} onConcluido={(m) => setAviso(m)} />
             ) : null}
         </div>
     );

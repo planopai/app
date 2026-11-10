@@ -27,6 +27,8 @@ import {
     IconDownload,
     IconEdit,
     IconFileSpreadsheet,
+    IconFileTypePdf,
+    IconSend,
     IconPlus,
     IconReceipt2,
     IconRefresh,
@@ -35,6 +37,8 @@ import {
     IconX,
 } from '@tabler/icons-react';
 import { BOTAO_PAGINA, BOTAO_PAGINA_PRI, BOTAO_PAGINA_SEC, CartaoInfo, GRADE_CARTOES, ROTULO_SECAO, TopoPagina } from '@/components/shell/ModuloHub';
+import { gerarDemonstrativos, mascararPix, nomeArquivoPdf, type Demonstrativo, type EnvioChat } from './components/demonstrativos';
+import EnviarChat from './components/EnviarChat';
 
 /* ============================== tipos ============================== */
 
@@ -52,6 +56,7 @@ type Linha = {
     colaborador_id: number;
     nome: string;
     nome_completo: string;
+    usuario_id?: number | null;
     funcao: string | null;
     equipe: string | null;
     codigo_dominio: string | null;
@@ -752,6 +757,65 @@ export default function FolhaPagamentoPage() {
     };
 
     /* ---- exportar ---- */
+    /* ---- demonstrativos em PDF ---- */
+    const [gerandoPdf, setGerandoPdf] = useState(false);
+    const demoDe = (l: Linha): Demonstrativo => {
+        const it = (tipos: string[]) => l.itens.filter((i) => tipos.includes(i.tipo));
+        const rot: Record<string, string> = { EXTRA: 'Extra', QUANTIDADE: 'Bônus por quantidade', BONUS: 'Bônus', AJUSTE: 'Ajuste', VALE: 'Vale', EMPRESTIMO: 'Empréstimo', DESCONTO: 'Desconto' };
+        const pag =
+            l.forma_pagamento === 'PIX' ? `Pix · ${mascararPix(l.pix) || 'chave não cadastrada'}` : l.forma_pagamento === 'TRANSFERENCIA' ? `Transferência · ${l.conta || 'conta não cadastrada'}` : null;
+        return {
+            titulo: 'Demonstrativo de pagamento',
+            referencia: mensal ? `Folha de pagamento de ${mesBR(comp).toLowerCase()}` : nomeFolha,
+            previa: aberta ? 'PRÉVIA · folha ainda não conferida: os valores podem mudar' : null,
+            colaborador: { nome: l.nome_completo || l.nome, funcao: l.funcao, equipe: l.equipe, pagamento: pag },
+            dataPagamento: folha?.data_pagamento || null,
+            secoes: [
+                {
+                    titulo: mensal ? 'Contracheque do Domínio' : 'Recibo do Domínio',
+                    linhas: [
+                        {
+                            descricao: 'Líquido do contracheque',
+                            detalhe: l.contracheque ? `vencimentos ${brl(l.contracheque.vencimentos)} - descontos ${brl(l.contracheque.descontos)}` : 'sem contracheque nesta folha',
+                            valor: l.liquido,
+                        },
+                    ],
+                },
+                { titulo: 'Extra e bônus', linhas: it(['EXTRA', 'QUANTIDADE', 'BONUS']).map((i) => ({ descricao: i.tipo === 'BONUS' && !i.auto ? 'Bônus do mês' : rot[i.tipo], detalhe: i.descricao, valor: i.valor })) },
+                { titulo: 'Ajuste manual', linhas: it(['AJUSTE']).map((i) => ({ descricao: i.descricao, detalhe: i.natureza, valor: i.valor })) },
+                { titulo: 'Vales e descontos', linhas: it(['VALE', 'EMPRESTIMO', 'DESCONTO']).map((i) => ({ descricao: i.descricao, valor: i.valor })) },
+            ],
+            total: l.a_pagar,
+            saldoNegativo: l.saldo_negativo || 0,
+            observacao: 'Os detalhes de proventos e descontos legais (INSS, FGTS etc.) estão no contracheque do Domínio.',
+        };
+    };
+    const gerarPdf = async (lista: Linha[], nome: string) => {
+        setGerandoPdf(true);
+        try {
+            await gerarDemonstrativos(lista.map(demoDe), nome);
+        } catch (e: any) {
+            setAviso(e?.message || 'Não foi possível gerar o PDF.');
+        } finally {
+            setGerandoPdf(false);
+        }
+    };
+    const [envio, setEnvio] = useState<EnvioChat[] | null>(null);
+    const prepararEnvio = (lista: Linha[]) =>
+        setEnvio(
+            lista.map((l) => {
+                const d = demoDe(l);
+                return {
+                    usuarioId: l.usuario_id ?? null,
+                    nome: l.nome,
+                    demo: d,
+                    arquivo: nomeArquivoPdf(`demonstrativo ${comp}${mensal ? '' : ` ${tipo}`} ${l.nome}`),
+                    texto: `Seu demonstrativo: ${d.referencia}. A pagar: ${brl(l.a_pagar)}.${aberta ? ' (Prévia: os valores ainda podem mudar.)' : ''}`,
+                };
+            }),
+        );
+    const nomePdf = (extra = '') => `demonstrativo-${comp}${mensal ? '' : `-${tipo.toLowerCase()}`}${extra ? `-${extra}` : ''}`;
+
     const exportar = async () => {
         try {
             const ExcelJS: any = (await import('exceljs')).default ?? (await import('exceljs'));
@@ -822,6 +886,16 @@ export default function FolhaPagamentoPage() {
                                 {!listaFerias ? (
                                     <button type="button" className={BTN_SEC} onClick={() => void exportar()} disabled={!linhas.length}>
                                         <IconDownload size={18} /> Exportar
+                                    </button>
+                                ) : null}
+                                {!listaFerias ? (
+                                    <button type="button" className={BTN_SEC} onClick={() => void gerarPdf(filtradas, nomePdf())} disabled={!filtradas.length || gerandoPdf}>
+                                        <IconFileTypePdf size={18} /> {gerandoPdf ? 'Gerando…' : 'Demonstrativos'}
+                                    </button>
+                                ) : null}
+                                {!listaFerias ? (
+                                    <button type="button" className={BTN_SEC} onClick={() => prepararEnvio(filtradas)} disabled={!filtradas.length}>
+                                        <IconSend size={18} /> Enviar pelo chat
                                     </button>
                                 ) : null}
                                 {aberta && !listaFerias ? (
@@ -1203,7 +1277,22 @@ export default function FolhaPagamentoPage() {
 
             {/* ============================== Detalhe do colaborador ============================== */}
             {det && linhaDet ? (
-                <Janela titulo={linhaDet.nome} sub={`${mensal ? mesBR(comp) : nomeFolha} · a pagar ${brl(linhaDet.a_pagar)}`} onFechar={fecharDet} largura="max-w-3xl">
+                <Janela
+                    titulo={linhaDet.nome}
+                    sub={`${mensal ? mesBR(comp) : nomeFolha} · a pagar ${brl(linhaDet.a_pagar)}`}
+                    onFechar={fecharDet}
+                    largura="max-w-3xl"
+                    rodape={
+                        <>
+                            <button type="button" className={BTN_SEC} disabled={gerandoPdf} onClick={() => void gerarPdf([linhaDet], nomePdf(semAcento(linhaDet.nome).replace(/\s+/g, '-')))}>
+                                <IconFileTypePdf size={18} /> {gerandoPdf ? 'Gerando…' : 'Demonstrativo em PDF'}
+                            </button>
+                            <button type="button" className={BTN_SEC} onClick={() => prepararEnvio([linhaDet])}>
+                                <IconSend size={18} /> Enviar pelo chat
+                            </button>
+                        </>
+                    }
+                >
                     <div className="flex flex-col gap-4">
                         <div role="tablist" className="-mx-1 flex gap-1 overflow-x-auto [scrollbar-width:none]">
                             {(
@@ -1748,6 +1837,15 @@ export default function FolhaPagamentoPage() {
                         {erroForm ? <div className={ERRO}>{erroForm}</div> : null}
                     </div>
                 </Janela>
+            ) : null}
+            {envio ? (
+                <EnviarChat
+                    titulo={`Demonstrativos · ${mensal ? mesBR(comp) : nomeFolha}`}
+                    envios={envio}
+                    previa={aberta}
+                    onFechar={() => setEnvio(null)}
+                    onConcluido={(m) => setAviso(m)}
+                />
             ) : null}
         </div>
     );
