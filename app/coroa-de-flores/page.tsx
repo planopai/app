@@ -224,6 +224,8 @@ type AtendimentoResumo = {
     tipo_atendimento?: string;
     realiza_velorio?: string;
     realiza_sepultamento?: string;
+    sala_velorio?: string | null;
+    local_cerimonia?: string | null;
 };
 
 type UsuarioAtualResponse = {
@@ -530,6 +532,166 @@ function atendimentoEstaNoQuadro(r: AtendimentoResumo) {
     // atendimentos já finalizados (ex.: Corpo Pronto sem velório e sem sepultamento, velório sem sepultamento).
     // Também sai o atendimento que só aguarda o recolhimento do material: o velório e o sepultamento já acabaram.
     return atendimentoDeveFicarNoQuadro(r) && !aguardandoRecolhimento(r);
+}
+
+/**
+ * 11/11/2026: regra nova da sala. Velório no Memorial: o Local de Entrega da coroa é sempre
+ * "Memorial Senhor do Bonfim – Sala NN", com a sala do atendimento (com três velórios ao mesmo tempo,
+ * a sala digitada à mão já levou coroa para a sala errada). Mesma regra do aurora_12.php no servidor.
+ */
+const MEMORIAL_NOME = "Memorial Senhor do Bonfim";
+
+function atendimentoNoMemorial(r?: AtendimentoResumo | null) {
+    if (!r) return false;
+    if (String(r.sala_velorio || "").trim()) return true;
+    const local = `${r.local_cerimonia || ""} ${r.local_velorio || ""}`.toLocaleLowerCase("pt-BR");
+    return local.includes("memorial");
+}
+
+/** Local de Entrega que vem do atendimento: Memorial com a sala; fora do Memorial, o Local do Velório. */
+function localEntregaDoAtendimento(r?: AtendimentoResumo | null) {
+    if (!r) return "";
+    if (atendimentoNoMemorial(r)) {
+        const sala = String(r.sala_velorio || "").trim();
+        return sala ? `${MEMORIAL_NOME} – ${sala}` : MEMORIAL_NOME;
+    }
+    return String(r.local_velorio || "").trim();
+}
+
+function localEhRetirada(local?: string | null) {
+    return /^retirada no local/i.test(String(local || "").trim());
+}
+
+/** 11/11/2026: quem abriu o pedido de Venda Direta (coroas.criado_por). Pedido do site e da OS não mostram. */
+function abertoPorManual(order?: ManualOrder | null) {
+    if (!order || pedidoEhOnline(order) || order.origem === "ordem_servico") return "";
+    const v = String(order.criado_por || "").trim();
+    if (!v) return "";
+    // Pedido feito pela Aurora no WhatsApp grava o id do usuário da Aurora.
+    if (/^\d+$/.test(v)) return "Aurora (WhatsApp)";
+    return v;
+}
+
+function nomeParaComparar(v?: string | null) {
+    return normalizarTextoEstoque(v)
+        .replace(/[^a-z0-9 ]+/g, " ")
+        .split(" ")
+        .filter((p) => p.length > 1 && !["de", "da", "do", "das", "dos"].includes(p));
+}
+
+/** Velório em andamento cujo nome bate com o do pedido (todas as palavras do nome mais curto, no mínimo 2). */
+function sugerirVelorio(falecido: string, atendimentos: AtendimentoResumo[]) {
+    const alvo = nomeParaComparar(falecido);
+    if (alvo.length === 0) return null;
+    const achados = atendimentos.filter((r) => {
+        const nome = nomeParaComparar(r.falecido);
+        const [curto, longo] = alvo.length <= nome.length ? [alvo, nome] : [nome, alvo];
+        return curto.length >= 2 && curto.every((p) => longo.includes(p));
+    });
+    return achados.length === 1 ? achados[0] : null;
+}
+
+/**
+ * 11/11/2026: vínculo do pedido com o velório no detalhe.
+ * - Sem vínculo (pedido do site ou digitado à mão): escolher o velório em andamento; no Memorial, o local vira a sala.
+ * - Com vínculo no Memorial e sala diferente da do atendimento (a sala mudou depois do pedido): aviso e botão para corrigir.
+ * Pedido da OS: o servidor acompanha a sala até a confecção começar; depois disso, vale o aviso acima.
+ */
+function VinculoVelorio({
+    pedido,
+    atendimentos,
+    carregando,
+    salvando,
+    onSalvar,
+}: {
+    pedido: ManualOrder;
+    atendimentos: AtendimentoResumo[];
+    carregando: boolean;
+    salvando: boolean;
+    onSalvar: (atendimento: AtendimentoResumo) => void;
+}) {
+    const sugestao = React.useMemo(
+        () => sugerirVelorio(pedido.falecido, atendimentos),
+        [pedido.falecido, atendimentos],
+    );
+    const [escolha, setEscolha] = React.useState("");
+    React.useEffect(() => {
+        setEscolha(sugestao?.id ? String(sugestao.id) : "");
+    }, [pedido.id, sugestao]);
+
+    if (pedido.status === "entregue" || pedido.entregue_em) return null;
+
+    const BOTAO =
+        "inline-flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl px-4 text-[14.5px] font-extrabold leading-none disabled:opacity-50";
+    const local = String(pedido.local_entrega || "").trim();
+    const idVinculado = Number(pedido.falecido_atendimento_id || 0);
+
+    if (idVinculado > 0) {
+        const vinculado = atendimentos.find((r) => Number(r.id) === idVinculado);
+        if (!vinculado || !atendimentoNoMemorial(vinculado) || localEhRetirada(local)) return null;
+        const certo = localEntregaDoAtendimento(vinculado);
+        if (certo === local) return null;
+        return (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-100">
+                <div className="font-bold">Sala diferente da do atendimento</div>
+                <div className="mt-1 break-words">
+                    O velório está em <b>{certo}</b>. O pedido está com: {local || "—"}.
+                </div>
+                <button
+                    type="button"
+                    disabled={salvando}
+                    onClick={() => onSalvar(vinculado)}
+                    className={`${BOTAO} mt-3 w-full bg-[#313C55] text-white hover:bg-[#232B40] sm:w-auto dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]`}
+                >
+                    Usar a sala do atendimento
+                </button>
+            </div>
+        );
+    }
+
+    // Pedido da OS sempre nasce vinculado ao atendimento.
+    if (pedido.origem === "ordem_servico") return null;
+    const escolhido = atendimentos.find((r) => String(r.id) === escolha) || null;
+    return (
+        <div className="rounded-lg border border-[#A9BED6] bg-[#E9EFF6] p-3 text-sm text-[#313C55] dark:border-[#3D6A99] dark:bg-[#3D6A99]/20 dark:text-white">
+            <div className="font-bold">Velório não vinculado</div>
+            <div className="mt-1">
+                {pedidoEhOnline(pedido)
+                    ? "Pedido do site: confira o nome do falecido e escolha o velório. No Memorial, a sala vem do atendimento."
+                    : "Escolha o velório do pedido. No Memorial, a sala vem do atendimento."}
+            </div>
+            {carregando && atendimentos.length === 0 ? (
+                <div className="mt-2 text-xs opacity-80">Consultando os velórios em andamento…</div>
+            ) : atendimentos.length === 0 ? (
+                <div className="mt-2 text-xs opacity-80">Nenhum velório em andamento.</div>
+            ) : (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <select
+                        value={escolha}
+                        onChange={(e) => setEscolha(e.target.value)}
+                        aria-label="Velório do pedido"
+                        className="h-11 min-w-0 flex-1 rounded-xl border-0 bg-[#FFFFFF] px-3 text-[16px] text-[#313C55] focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white"
+                    >
+                        <option value="">Selecione o velório</option>
+                        {atendimentos.map((r) => (
+                            <option key={String(r.id || r.falecido)} value={String(r.id || "")}>
+                                {String(r.falecido || "")}
+                                {localEntregaDoAtendimento(r) ? ` — ${localEntregaDoAtendimento(r)}` : ""}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        disabled={salvando || !escolhido}
+                        onClick={() => escolhido && onSalvar(escolhido)}
+                        className={`${BOTAO} bg-[#313C55] text-white hover:bg-[#232B40] dark:bg-[#F2CB3F] dark:text-[#313C55] dark:hover:bg-[#E4BC30]`}
+                    >
+                        Vincular
+                    </button>
+                </div>
+            )}
+        </div>
+    );
 }
 
 function normalizarTextoEstoque(v?: string | null) {
@@ -2182,6 +2344,12 @@ export default function Page() {
     // 11/11/2026: entrega ou retirada no local. Retirada grava "Retirada no local" no Local de Entrega
     // (o Quadro de Atendimentos mostra a etiqueta "Retirar no local").
     const [newRetirada, setNewRetirada] = React.useState(false);
+    // 11/11/2026: atendimento escolhido no Memorial trava o Local de Entrega com a sala do atendimento.
+    const atendimentoNovo = React.useMemo(
+        () => falecidosQuadro.find((r) => String(r.id || r.falecido || "") === newAtendimentoSelecionado) || null,
+        [falecidosQuadro, newAtendimentoSelecionado],
+    );
+    const localTravadoNovo = !newRetirada && atendimentoNoMemorial(atendimentoNovo);
 
     function resetNewForm() {
         setNewRetirada(false);
@@ -2301,6 +2469,13 @@ export default function Page() {
                     newForm.falecido.trim().toLocaleLowerCase("pt-BR"),
             );
 
+        // 11/11/2026: atendimento no Memorial (escolhido na lista ou achado pelo nome): a sala vem sempre do atendimento.
+        const localEntregaFinal = newRetirada
+            ? "Retirada no local"
+            : match && atendimentoNoMemorial(match)
+              ? localEntregaDoAtendimento(match)
+              : newForm.local_entrega.trim();
+
         setNewSaving(true);
 
         try {
@@ -2311,7 +2486,7 @@ export default function Page() {
                 acao: "novo",
                 solicitante: newForm.solicitante.trim(),
                 telefone: newForm.telefone.trim(),
-                local_entrega: newRetirada ? "Retirada no local" : newForm.local_entrega.trim(),
+                local_entrega: localEntregaFinal,
                 observacoes: newForm.observacoes.trim(),
                 quantidade_coroas: quantidadeCoroas,
                 itens: newItems.map((item, index) => ({
@@ -2414,6 +2589,41 @@ export default function Page() {
             if (finalizarPreview) URL.revokeObjectURL(finalizarPreview);
         };
     }, [finalizarPreview]);
+
+    // 11/11/2026: o detalhe confere a sala do velório vinculado (lista dos atendimentos em andamento).
+    React.useEffect(() => {
+        if (manualPanel === "ver") void carregarFalecidosQuadro(false);
+    }, [manualPanel, carregarFalecidosQuadro]);
+
+    /** 11/11/2026: vincula o pedido ao velório (ou atualiza a sala). No Memorial, o local vira a sala do atendimento. */
+    async function vincularVelorioManual(atendimento: AtendimentoResumo) {
+        if (!manualDetail) return;
+        const atendimentoId = Number(atendimento.id || 0);
+        if (!atendimentoId) return;
+        const localAtual = String(manualDetail.local_entrega || "").trim();
+        const localNovo = localEhRetirada(localAtual)
+            ? localAtual
+            : atendimentoNoMemorial(atendimento)
+              ? localEntregaDoAtendimento(atendimento)
+              : localAtual || localEntregaDoAtendimento(atendimento);
+
+        setManualActionLoading(true);
+        setManualDetailMsg(null);
+        try {
+            await postManual({
+                acao: "editar",
+                id: manualDetail.id,
+                falecido_atendimento_id: atendimentoId,
+                local_entrega: localNovo,
+            });
+            await carregarManualDetail(manualDetail.id, true);
+            await fetchManualOrders(true);
+        } catch (e: any) {
+            setManualDetailMsg(e?.message || "Não foi possível vincular o pedido ao velório.");
+        } finally {
+            setManualActionLoading(false);
+        }
+    }
 
     async function carregarManualDetail(id: number, forceFresh = false) {
         manualDetailAbortRef.current?.abort();
@@ -3299,6 +3509,9 @@ export default function Page() {
                                             <div className="min-w-0">
                                                 <div className="font-medium">{o.solicitante}</div>
                                                 <div className="mt-1 text-xs text-muted-foreground">{o.falecido}</div>
+                                                {abertoPorManual(o) && (
+                                                    <div className="mt-0.5 text-xs text-muted-foreground">Aberto por {abertoPorManual(o)}</div>
+                                                )}
                                             </div>
                                             <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${manualStatusClass(o.status)}`}>
                                                 {manualStatusLabel(o.status)}
@@ -3368,7 +3581,12 @@ export default function Page() {
                                                             {manualStatusLabel(o.status)}
                                                         </span>
                                                     </td>
-                                                    <td className="px-3 py-2">{o.solicitante}</td>
+                                                    <td className="px-3 py-2">
+                                                        <div>{o.solicitante}</div>
+                                                        {abertoPorManual(o) && (
+                                                            <div className="mt-0.5 text-xs text-muted-foreground">Aberto por {abertoPorManual(o)}</div>
+                                                        )}
+                                                    </td>
                                                     <td className="px-3 py-2">{o.falecido}</td>
                                                     <td className="px-3 py-2">
                                                         <div>{quantidadeManual(o)} {quantidadeManual(o) === 1 ? "coroa" : "coroas"}</div>
@@ -3857,7 +4075,8 @@ export default function Page() {
                                                 if (!atendimento) return;
 
                                                 const nomeFalecido = String(atendimento.falecido || "").trim();
-                                                const localVelorio = String(atendimento.local_velorio || "").trim();
+                                                // 11/11/2026: no Memorial vem com a sala do atendimento.
+                                                const localVelorio = localEntregaDoAtendimento(atendimento);
 
                                                 setNewForm((p) => ({
                                                     ...p,
@@ -3941,14 +4160,19 @@ export default function Page() {
                                         ) : (
                                             <>
                                                 <input
-                                                    value={newForm.local_entrega}
+                                                    value={localTravadoNovo ? localEntregaDoAtendimento(atendimentoNovo) : newForm.local_entrega}
                                                     onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
-                                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                    readOnly={localTravadoNovo}
+                                                    className={`w-full rounded-md border px-3 py-2 text-sm ${
+                                                        localTravadoNovo ? "cursor-not-allowed bg-muted font-semibold" : "bg-background"
+                                                    }`}
                                                     placeholder="Local da entrega"
                                                     aria-label="Local de Entrega"
                                                 />
                                                 <div className="mt-1 text-xs text-muted-foreground">
-                                                    Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente.
+                                                    {localTravadoNovo
+                                                        ? "Velório no Memorial: a sala vem do atendimento e não pode ser alterada aqui. Se a sala estiver errada, corrija no atendimento."
+                                                        : "Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente."}
                                                 </div>
                                             </>
                                         )}
@@ -4785,6 +5009,9 @@ export default function Page() {
                                                 <div><b>Pedido WooCommerce:</b> #{manualDetail.origem_externa_id}</div>
                                             )}
                                             <div><b>Cliente:</b> {manualDetail.solicitante || "—"}</div>
+                                            {abertoPorManual(manualDetail) && (
+                                                <div><b>Aberto por:</b> {abertoPorManual(manualDetail)}</div>
+                                            )}
                                             <div><b>Telefone:</b> {manualDetail.telefone || "—"}</div>
                                             <div><b>Valor:</b> {totalManual(manualDetail) > 0 ? dinheiroBRL(totalManual(manualDetail)) : "—"}</div>
                                             <div><b>Local de Entrega:</b> {manualDetail.local_entrega || "—"}</div>
@@ -4792,6 +5019,14 @@ export default function Page() {
                                             <div><b>Falecido(a):</b> {manualDetail.falecido || "—"}</div>
                                             <div className="whitespace-pre-wrap"><b>Frase da Coroa:</b> {pedidoFrasesManual(manualDetail)}</div>
                                         </div>
+
+                                        <VinculoVelorio
+                                            pedido={manualDetail}
+                                            atendimentos={falecidosQuadro}
+                                            carregando={falecidosLoading}
+                                            salvando={manualActionLoading}
+                                            onSalvar={vincularVelorioManual}
+                                        />
 
                                         {/* Status do pedido */}
                                         <div className="rounded-lg border p-3">
