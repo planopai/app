@@ -32,6 +32,7 @@ import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento
 import { JanelaOSPorId } from "@/app/os/components/OSDoAtendimento";
 import { BotaoCancelarPedidoCoroa } from "@/components/correcoes/CancelarPedidoCoroa";
 import { classeOpcaoSimNao, MarcaSimNao } from "@/app/acompanhamento/components/simNaoCores";
+import { atendimentoDeveFicarNoQuadro, aguardandoRecolhimento } from "@/components/atendimentos/regrasQuadro";
 import {
     IconCamera,
     IconCheck,
@@ -221,6 +222,8 @@ type AtendimentoResumo = {
     tanato?: string;
     ornamentacao?: string;
     tipo_atendimento?: string;
+    realiza_velorio?: string;
+    realiza_sepultamento?: string;
 };
 
 type UsuarioAtualResponse = {
@@ -522,24 +525,11 @@ function isTerceiro(r: AtendimentoResumo) {
 }
 
 function atendimentoEstaNoQuadro(r: AtendimentoResumo) {
-    const status = normalizeFuneralStatus(r.status);
-
-    // Mesmas regras de visibilidade da TabelaAtendimentos:
-    // - fase11 nunca aparece;
-    // - terceiro sai na fase10;
-    // - funerário sem Assistência=Sim sai na fase10;
-    // - funerário com Assistência=Sim permanece na fase10 e sai só na fase11.
-    if (status === "fase11") return false;
-
-    if (isTerceiro(r)) {
-        return status !== "fase10";
-    }
-
-    if (!isSim(r.assistencia)) {
-        return status !== "fase10";
-    }
-
-    return true;
+    // 11/11/2026: só atendimentos em andamento. Usa a mesma regra do Quadro (regrasQuadro.ts), que considera
+    // as rotas do atendimento (sem velório, sem sepultamento). A regra antiga daqui deixava aparecer
+    // atendimentos já finalizados (ex.: Corpo Pronto sem velório e sem sepultamento, velório sem sepultamento).
+    // Também sai o atendimento que só aguarda o recolhimento do material: o velório e o sepultamento já acabaram.
+    return atendimentoDeveFicarNoQuadro(r) && !aguardandoRecolhimento(r);
 }
 
 function normalizarTextoEstoque(v?: string | null) {
