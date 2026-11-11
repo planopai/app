@@ -50,6 +50,8 @@ type WcOrderForProduction = {
     };
     meta_data?: Meta[];
     line_items?: WcLineItem[];
+    /** Método de entrega escolhido no checkout (ex.: "Retirada no local"). */
+    shipping_lines?: Array<{ method_id?: string; method_title?: string }>;
 };
 
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
@@ -121,7 +123,21 @@ function falecido(order: WcOrderForProduction): string {
     );
 }
 
+/** 11/11/2026: cliente escolheu "Retirada no local" no checkout (método local_pickup ou título com "retirada"). */
+function ehRetiradaNoLocal(order: WcOrderForProduction): boolean {
+    return (order.shipping_lines || []).some(
+        (l) => /local_pickup|pickup/i.test(String(l?.method_id || "")) || /retirad/i.test(String(l?.method_title || "")),
+    );
+}
+
+/** Endereço digitado no checkout. Se for retirada, o texto começa com "Retirada no local" (é o que o quadro usa). */
 function localEntrega(order: WcOrderForProduction): string {
+    const endereco = enderecoEntrega(order);
+    if (ehRetiradaNoLocal(order)) return endereco ? `Retirada no local (destino: ${endereco})` : "Retirada no local";
+    return endereco;
+}
+
+function enderecoEntrega(order: WcOrderForProduction): string {
     return [
         order.shipping?.address_1,
         order.shipping?.address_2,

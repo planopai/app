@@ -5,7 +5,7 @@
  *
  * Linha de cada colaborador: Contracheque (líquido do Domínio) + Extra + Bônus + Ajuste manual − Vales = A pagar.
  * - O contracheque do Domínio é importado em .xlsx (RECIBOS salvo pelo Excel) e lido aqui no navegador.
- * - Cada coluna abre a janela com o detalhe (rubricas, tanatopraxias, bônus do mês, ajustes com justificativa, vales).
+ * - Cada coluna abre a janela com o detalhe (rubricas, tanatopraxias, coroas naturais prontas, bônus do mês, ajustes com justificativa, vales).
  * - Situações: Aberta → Conferida → Aprovada → Paga. Qualquer pessoa da Gestão faz cada passo.
  * - Aba "Lançar na Unymos": o título único da folha (com rateio por equipe) e as guias GFD e DARF, para lançar à mão.
  * - Comissões são pagas à parte e não entram aqui.
@@ -100,6 +100,7 @@ type Integracao = { id: number; origem: string; favorecido: string; descricao: s
 type Justificativa = { id: number; nome: string; tipo: 'ACRESCIMO' | 'DEBITO'; natureza: string };
 type Recibo = { codigo: string; nome: string; rubricas: (string | number | null)[][]; venc: number; desc: number; liq: number; base: number | null; fgts: number | null };
 type Detalhe = { contracheque: any; rubricas: { codigo: number; descricao: string; referencia: string | null; vencimento: string | null; desconto: string | null; natureza: string | null; trata_como: string | null }[]; tanatopraxias: { atendimento_id: number; falecido: string; data: string }[];
+    coroas?: { item_id: number; pedido_id: number; data: string; falecido: string | null; modelo: string | null }[];
     vales_abertos?: { id: number; data: string; valor: string; descricao: string | null }[];
     parcelas_abertas?: { id: number; numero: number; competencia: string; valor: string; total: number }[];
 };
@@ -1375,7 +1376,7 @@ export default function FolhaPagamentoPage() {
                                         itensDe(['EXTRA', 'QUANTIDADE', 'BONUS']).map((i, k) => (
                                             <div key={k} className="flex items-center gap-3 border-t border-[#E3E8F0] px-3 py-2.5 text-[14px] first:border-t-0 dark:border-white/[0.08]">
                                                 <span className="min-w-0 flex-1">
-                                                    <b className="block">{i.tipo === 'EXTRA' ? 'Extra' : i.tipo === 'QUANTIDADE' ? 'Bônus · tanatopraxia' : i.auto ? 'Bônus fixo' : 'Bônus do mês'}</b>
+                                                    <b className="block">{i.tipo === 'EXTRA' ? 'Extra' : i.tipo === 'QUANTIDADE' ? (i.descricao.startsWith('Coroas') ? 'Bônus · coroas naturais' : 'Bônus · tanatopraxia') : i.auto ? 'Bônus fixo' : 'Bônus do mês'}</b>
                                                     <span className="block break-words text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{i.descricao}</span>
                                                 </span>
                                                 <b className="tabular-nums">{brl(i.valor)}</b>
@@ -1399,6 +1400,23 @@ export default function FolhaPagamentoPage() {
                                                     <span className="w-20 tabular-nums">{dataBR(t.data)}</span>
                                                     <span className="min-w-0 flex-1 break-words">{t.falecido}</span>
                                                     <span className="text-[#5B6478] dark:text-[#AEB9CF]">#{t.atendimento_id}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {detDados?.coroas?.length ? (
+                                    <div>
+                                        <div className={`${ROTULO_SECAO} mb-1.5`}>Coroas naturais prontas no mês ({detDados.coroas.length})</div>
+                                        <div className="max-h-[200px] overflow-y-auto rounded-xl border border-[#E3E8F0] dark:border-white/[0.08]">
+                                            {detDados.coroas.map((c) => (
+                                                <div key={c.item_id} className="flex gap-3 border-t border-[#E3E8F0] px-3 py-2 text-[13.5px] first:border-t-0 dark:border-white/[0.08]">
+                                                    <span className="w-20 tabular-nums">{dataBR(c.data)}</span>
+                                                    <span className="min-w-0 flex-1 break-words">
+                                                        {c.falecido || 'Pedido avulso'}
+                                                        {c.modelo ? <span className="block text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">{c.modelo}</span> : null}
+                                                    </span>
+                                                    <span className="text-[#5B6478] dark:text-[#AEB9CF]">pedido #{c.pedido_id}</span>
                                                 </div>
                                             ))}
                                         </div>

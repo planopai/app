@@ -1535,6 +1535,16 @@ function coroaStatusIconType(v?: any): CoroaTvIconKey {
     return "clipboard";
 }
 
+/** 11/11/2026: coroa para retirar no local (o Local de Entrega começa com "Retirada no local"; a Loja On-line
+    grava assim quando o cliente escolhe "Retirada no local" no checkout). Sem isso, é entrega. */
+function coroaEhRetirada(p: { local_entrega?: string | null }): boolean {
+    return /retirad/i.test(String(p?.local_entrega ?? ""));
+}
+
+function coroaDestinoTexto(p: { local_entrega?: string | null }): string {
+    return coroaEhRetirada(p) ? "Retirada no local" : shown(p?.local_entrega, "entrega a definir");
+}
+
 function coroaOrigemLabel(v?: any): string {
     const s = normalizarTextoCoroa(v).replace(/\s+/g, "_");
 
@@ -5812,10 +5822,11 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
             </div>
             <div className="tv-cr-s">Solicitante: <b>{shown(pedido.solicitante, "a definir")}</b></div>
             <div className="tv-cr-f">
-                {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
+                {shown(pedido.falecido, "a definir")} · {coroaDestinoTexto(pedido)}
                 {hora ? ` · ${hora}` : ""}
             </div>
             <div className="tv-cr-foot">
+                <span className={`tv-ent ${coroaEhRetirada(pedido) ? "tv-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
                 <span className="tv-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
                 <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
                 {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
@@ -6178,6 +6189,8 @@ function TvStyles() {
             .tv-cr-e { font-size: 17px; font-weight: 800; color: var(--live-fg); overflow-wrap: anywhere; }
             .tv-cr-late { box-shadow: inset 5px 0 0 var(--warn); border-color: var(--warn-bd); }
             .tv-origem { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: var(--infobg); color: var(--acc-text); white-space: nowrap; }
+            .tv-ent { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: rgba(0, 174, 236, .2); color: var(--acc-text); white-space: nowrap; }
+            .tv-ent-ret { background: #F2CB3F; color: #313C55; }
             .tv-cr-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
             .tv-cr-late-t { font-size: 16px; font-weight: 900; color: var(--warn); background: var(--warnbg); border-radius: 8px; padding: 2px 8px; justify-self: start; overflow-wrap: anywhere; max-width: 100%; }
             .tv-sum-late { color: var(--warn); font-weight: 900; }
@@ -6492,7 +6505,7 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             </div>
             <div className="qm-cr-s">Solicitante: <b>{shown(pedido.solicitante, "a definir")}</b></div>
             <div className="qm-cr-f">
-                {shown(pedido.falecido, "a definir")} · {shown(pedido.local_entrega, "entrega a definir")}
+                {shown(pedido.falecido, "a definir")} · {coroaDestinoTexto(pedido)}
                 {hora ? ` · ${hora}` : ""}
             </div>
             <div className="qm-cr-r">
@@ -6510,6 +6523,7 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
                 </span>
             </div>
             <div className="qm-cr-foot">
+                <span className={`qm-ent ${coroaEhRetirada(pedido) ? "qm-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
                 <span className="qm-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
                 <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
             </div>
@@ -6834,6 +6848,8 @@ function MobStyles() {
             .qm-mini-live { background: var(--qm-livebg); border-color: var(--qm-livebd) !important; color: var(--qm-live) !important; }
             .qm-mini-na { border-style: dashed !important; opacity: .5; }
             .qm-cr-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+            .qm-ent { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: rgba(0, 174, 236, .2); color: var(--qm-acctext); }
+            .qm-ent-ret { background: #F2CB3F; color: #313C55; }
             .qm-origem { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: var(--qm-accbg); color: var(--qm-acctext); }
             .qm-pay { justify-self: start; font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; }
             .qm-pay-ok { background: var(--qm-okbg); color: var(--qm-ok); }

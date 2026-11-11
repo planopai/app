@@ -10,7 +10,16 @@ import { obterReciboLoja } from "./reciboLoja";
 const btn =
     "inline-flex min-h-9 w-full items-center justify-center rounded-md border px-2 py-1.5 text-center text-xs font-bold leading-tight text-[#313C55] hover:bg-muted disabled:opacity-50 sm:whitespace-nowrap dark:text-white";
 
-export default function BotoesReciboLoja({ pedidoLojaId, titulo }: { pedidoLojaId?: string | number | null; titulo?: string }) {
+export default function BotoesReciboLoja({
+    pedidoLojaId,
+    titulo,
+    somenteVer = false,
+}: {
+    pedidoLojaId?: string | number | null;
+    titulo?: string;
+    /** 11/11/2026: só o botão "Ver Comprovante" (Novos Planos). */
+    somenteVer?: boolean;
+}) {
     const [gerando, setGerando] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
     const id = String(pedidoLojaId ?? "").trim();
@@ -76,17 +85,23 @@ export default function BotoesReciboLoja({ pedidoLojaId, titulo }: { pedidoLojaI
     return (
         <div className={titulo ? "mt-2" : ""}>
             {titulo ? <div className="mb-1 text-xs font-medium">{titulo}</div> : null}
-            <div className="grid grid-cols-3 gap-2">
-                <button type="button" className={btn} disabled={gerando} onClick={() => void visualizar()}>
+            {somenteVer ? (
+                <button type="button" className={`${btn} sm:w-auto sm:px-4`} disabled={gerando} onClick={() => void visualizar()}>
                     {gerando ? "Gerando…" : "Ver Comprovante"}
                 </button>
-                <button type="button" className={btn} disabled={gerando} onClick={() => void baixar()}>
-                    Baixar Comprovante
-                </button>
-                <button type="button" className={btn} disabled={gerando} onClick={() => void compartilhar()}>
-                    Compartilhar Comprovante
-                </button>
-            </div>
+            ) : (
+                <div className="grid grid-cols-3 gap-2">
+                    <button type="button" className={btn} disabled={gerando} onClick={() => void visualizar()}>
+                        {gerando ? "Gerando…" : "Ver Comprovante"}
+                    </button>
+                    <button type="button" className={btn} disabled={gerando} onClick={() => void baixar()}>
+                        Baixar Comprovante
+                    </button>
+                    <button type="button" className={btn} disabled={gerando} onClick={() => void compartilhar()}>
+                        Compartilhar Comprovante
+                    </button>
+                </div>
+            )}
             {msg && <div className="mt-1 text-xs text-muted-foreground">{msg}</div>}
         </div>
     );

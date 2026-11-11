@@ -429,7 +429,7 @@ function Detalhe({ id, onFechar, onMudou }: { id: number; onFechar: () => void; 
                                     {/* 11/11/2026: comprovante (recibo) do pedido pago na Loja On-line, igual ao das coroas. */}
                                     {c.wc_pedido_id && c.pago_em && c.status !== "cancelado" ? (
                                         <div className="mb-2 mt-1">
-                                            <BotoesReciboLoja pedidoLojaId={c.wc_pedido_id} />
+                                            <BotoesReciboLoja pedidoLojaId={c.wc_pedido_id} somenteVer />
                                         </div>
                                     ) : null}
                                     <Linha2 rotulo="Carência">

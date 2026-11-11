@@ -2189,8 +2189,12 @@ export default function Page() {
         observacoes: "",
         falecido: "",
     });
+    // 11/11/2026: entrega ou retirada no local. Retirada grava "Retirada no local" no Local de Entrega
+    // (o Quadro de Atendimentos mostra a etiqueta "Retirar no local").
+    const [newRetirada, setNewRetirada] = React.useState(false);
 
     function resetNewForm() {
+        setNewRetirada(false);
         setNewForm({
             solicitante: "",
             telefone: "",
@@ -2248,7 +2252,7 @@ export default function Page() {
             return;
         }
 
-        if (!newForm.local_entrega.trim()) {
+        if (!newRetirada && !newForm.local_entrega.trim()) {
             setNewError("Preencha o campo Local de Entrega.");
             return;
         }
@@ -2317,7 +2321,7 @@ export default function Page() {
                 acao: "novo",
                 solicitante: newForm.solicitante.trim(),
                 telefone: newForm.telefone.trim(),
-                local_entrega: newForm.local_entrega.trim(),
+                local_entrega: newRetirada ? "Retirada no local" : newForm.local_entrega.trim(),
                 observacoes: newForm.observacoes.trim(),
                 quantidade_coroas: quantidadeCoroas,
                 itens: newItems.map((item, index) => ({
@@ -3920,18 +3924,44 @@ export default function Page() {
                                         />
                                     </div>
 
-                                    {/* 3. Local do velório = local de entrega */}
+                                    {/* 3. Entregar ou retirar no local; se entregar, Local do velório = local de entrega */}
                                     <div className="sm:col-span-2">
-                                        <label className="mb-1 block text-sm font-medium">Local de Entrega *</label>
-                                        <input
-                                            value={newForm.local_entrega}
-                                            onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
-                                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                            placeholder="Local da entrega"
-                                        />
-                                        <div className="mt-1 text-xs text-muted-foreground">
-                                            Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente.
+                                        <label className="mb-1 block text-sm font-medium">Entrega *</label>
+                                        <div className="mb-2 grid grid-cols-2 gap-2">
+                                            {([false, true] as const).map((ret) => (
+                                                <button
+                                                    key={String(ret)}
+                                                    type="button"
+                                                    onClick={() => setNewRetirada(ret)}
+                                                    aria-pressed={newRetirada === ret}
+                                                    className={`min-h-10 rounded-md border px-3 py-2 text-sm font-bold ${
+                                                        newRetirada === ret
+                                                            ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                                                            : "bg-background hover:bg-muted"
+                                                    }`}
+                                                >
+                                                    {ret ? "Retirar no local" : "Entregar"}
+                                                </button>
+                                            ))}
                                         </div>
+                                        {newRetirada ? (
+                                            <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                                                O cliente vai retirar a coroa no local. Não precisa informar endereço.
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <input
+                                                    value={newForm.local_entrega}
+                                                    onChange={(e) => setNewForm((p) => ({ ...p, local_entrega: e.target.value }))}
+                                                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                                    placeholder="Local da entrega"
+                                                    aria-label="Local de Entrega"
+                                                />
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    Ao selecionar um atendimento, este campo recebe automaticamente o Local do Velório. Se o atendimento não tiver local cadastrado, preencha manualmente.
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
 
                                     {/* 4. Quantidade e dados de cada coroa */}

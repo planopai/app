@@ -159,7 +159,7 @@ const TIPOS: Record<string, { nome: string; desc: string; selo: string; campos: 
     },
     QUANTIDADE: {
         nome: 'Por quantidade',
-        desc: 'Tanatopraxia, viagens, plantões, remoções',
+        desc: 'Tanatopraxia, coroas naturais, viagens, plantões, remoções',
         selo: 'bg-[#EEF5D6] text-[#3F5A0A] dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]',
         padrao: { pagamento: 'SALARIO', os_cancelada: 'NAO_CONTA' },
         campos: [
@@ -170,6 +170,7 @@ const TIPOS: Record<string, { nome: string; desc: string; selo: string; campos: 
                 largo: true,
                 opcoes: [
                     ['CONSERVACAO_OS', 'Tanatopraxia nas OS'],
+                    ['COROA_NATURAL_PRONTA', 'Coroas naturais prontas'],
                     ['VIAGEM_OUTRO_MUNICIPIO', 'Viagens a outros municípios'],
                     ['PLANTAO', 'Plantões da escala'],
                     ['REMOCAO_OS', 'Remoções nas OS'],
@@ -196,7 +197,9 @@ const TIPOS: Record<string, { nome: string; desc: string; selo: string; campos: 
                 ? 'Forma ou valor ainda a confirmar: pode salvar assim. Enquanto estiver vazio, a folha avisa e não calcula as viagens.'
                 : p.origem === 'CONSERVACAO_OS'
                   ? 'Conta as OS do mês em que ele está registrado como técnico da tanatopraxia.'
-                  : null,
+                  : p.origem === 'COROA_NATURAL_PRONTA'
+                    ? 'Conta as coroas naturais em que ele deu o comando "Coroa Pronta" na lista de produção, no mês (pedidos cancelados não contam).'
+                    : null,
     },
     COMISSAO_FATURAMENTO: {
         nome: 'Comissão de agente',
@@ -261,7 +264,7 @@ const TIPOS: Record<string, { nome: string; desc: string; selo: string; campos: 
     },
 };
 const ORDEM_TIPOS = ['EXTRA', 'QUANTIDADE', 'COMISSAO_FATURAMENTO', 'COMISSAO_VENDAS', 'BONUS_FIXO', 'DESCONTO_RECORRENTE'];
-const ROT_ORIGEM: Record<string, string> = { CONSERVACAO_OS: 'tanatopraxia', VIAGEM_OUTRO_MUNICIPIO: 'viagem', PLANTAO: 'plantão', REMOCAO_OS: 'remoção', MANUAL: 'unidade' };
+const ROT_ORIGEM: Record<string, string> = { CONSERVACAO_OS: 'tanatopraxia', COROA_NATURAL_PRONTA: 'coroa natural', VIAGEM_OUTRO_MUNICIPIO: 'viagem', PLANTAO: 'plantão', REMOCAO_OS: 'remoção', MANUAL: 'unidade' };
 
 function campoTipo(c: CampoDef, p: Params) {
     return typeof c.tipo === 'function' ? c.tipo(p) : c.tipo;
