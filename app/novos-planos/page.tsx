@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import BotoesReciboLoja from "@/app/coroa-de-flores/BotoesReciboLoja";
 
 const API = "https://api.planoassistencialintegrado.com.br/planos-novos.php";
 const LOGIN_URL = "https://pai.planoassistencialintegrado.com.br/login";
@@ -425,6 +426,12 @@ function Detalhe({ id, onFechar, onMudou }: { id: number; onFechar: () => void; 
                                     <Linha2 rotulo="Mensalidade">{brl(c.valor_mensalidade)}{c.valor_agregados > 0 ? ` (inclui ${brl(c.valor_agregados)} de ${c.qtd_agregados_pagos} agregado${c.qtd_agregados_pagos > 1 ? "s" : ""})` : ""}</Linha2>
                                     <Linha2 rotulo="Adesão">{brl(c.valor_adesao)}{c.valor_pago != null ? ` · pago ${brl(c.valor_pago)}` : ""}</Linha2>
                                     <Linha2 rotulo="Pagamento">{c.pago_em ? `${dataBR(c.pago_em, true)} · ${c.pagamento_metodo || ""}` : "Não confirmado"}{c.wc_pedido_id ? ` · pedido #${c.wc_pedido_id}` : ""}</Linha2>
+                                    {/* 11/11/2026: comprovante (recibo) do pedido pago na Loja On-line, igual ao das coroas. */}
+                                    {c.wc_pedido_id && c.pago_em && c.status !== "cancelado" ? (
+                                        <div className="mb-2 mt-1">
+                                            <BotoesReciboLoja pedidoLojaId={c.wc_pedido_id} />
+                                        </div>
+                                    ) : null}
                                     <Linha2 rotulo="Carência">
                                         {c.carencia ? <>Desde {dataBR(c.carencia.inicio, true)}<br />Natural até {dataBR(c.carencia.natural_ate)} · acidente até {dataBR(c.carencia.acidental_ate, true)}</> : "Começa no pagamento"}
                                     </Linha2>

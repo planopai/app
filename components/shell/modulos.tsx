@@ -217,6 +217,7 @@ export const MODULOS: Modulo[] = [
             { id: "permissoes", titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Pessoas e acesso" },
             { id: "auditoria", titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Pessoas e acesso" },
             { id: "organizar-menu", titulo: "Organizar menu", desc: "Módulos, seções e telas do menu", href: "/organizar-menu", slugs: ["gestao"], icone: IconLayoutSidebar, secao: "Pessoas e acesso" },
+            { id: "folha-painel", titulo: "Painel da folha", desc: "Custo da folha por mês, equipe e pessoa", href: "/folha-painel", slugs: ["gestao"], icone: IconChartBar, secao: "Folha de pagamento" },
             { id: "folha", titulo: "Folha do mês", desc: "Contracheques, extras, vales e pagamento", href: "/folha", slugs: ["gestao"], icone: IconReceipt2, secao: "Folha de pagamento" },
             { id: "folha-regras", titulo: "Regras de pagamento", desc: "Extra, comissões, bônus e descontos", href: "/folha-regras", slugs: ["gestao"], icone: IconSettingsDollar, secao: "Folha de pagamento" },
             { id: "folha-vales", titulo: "Vales e empréstimos", desc: "Vales da Unymos e empréstimos parcelados", href: "/folha-vales", slugs: ["gestao"], icone: IconWallet, secao: "Folha de pagamento" },
