@@ -132,8 +132,13 @@ function lugar(l: Lead) {
 }
 
 /* CSV para o Excel do Brasil: separador ";" e BOM para os acentos. */
+// 11/11/2026: os leads vêm de um formulário público. Texto que começa com = + - @ vira fórmula no Excel
+// (risco de abrir link ou comando ao abrir a planilha); o apóstrofo na frente faz o Excel tratar como texto.
 function csvCampo(v: string) {
-    return `"${String(v ?? "").replace(/"/g, '""')}"`;
+    let t = String(v ?? "");
+    // Telefone como "+55 77 99999-0000" não é fórmula e fica como está.
+    if (/^[=+\-@\t\r]/.test(t) && !/^[+\-]?[\d\s().\-]+$/.test(t)) t = `'${t}`;
+    return `"${t.replace(/"/g, '""')}"`;
 }
 function baixarCSV(nome: string, leads: Lead[]) {
     const cab = ["Nome Completo", "País", "Estado", "Cidade", "Telefone", "Data de registro"];
@@ -246,9 +251,13 @@ export default function LeadsPage() {
                 window.location.href = "/login";
                 return;
             }
-            if (!res.ok) throw new Error("Não foi possível carregar os leads. Tente de novo.");
-            const data = (await res.json()) as ApiLead[];
-            if (!Array.isArray(data)) throw new Error("Resposta inesperada do servidor.");
+            // 11/11/2026: resposta vazia ou fora do formato não mostra mais o erro técnico do navegador.
+            const data = (await res.json().catch(() => null)) as ApiLead[] | { erro?: string; msg?: string } | null;
+            if (!res.ok) {
+                const msg = data && !Array.isArray(data) ? data.msg || data.erro : "";
+                throw new Error(msg || "Não foi possível carregar os leads. Tente de novo.");
+            }
+            if (!Array.isArray(data)) throw new Error("Resposta inesperada do servidor. Tente de novo.");
             const mapped: Lead[] = data.map((item) => {
                 const nome = String(item.nome ?? "").trim();
                 const estado = String(item.estado ?? "").trim();
@@ -440,7 +449,10 @@ export default function LeadsPage() {
                             {busca ? (
                                 <button
                                     type="button"
-                                    onClick={() => setBusca("")}
+                                    onClick={() => {
+                                        setBusca("");
+                                        setPage(1);
+                                    }}
                                     aria-label="Limpar busca"
                                     className="absolute right-0.5 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-lg text-[#5B6478] hover:bg-[#E3E8F0] dark:text-[#AEB9CF] dark:hover:bg-white/[0.08]"
                                 >

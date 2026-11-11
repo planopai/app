@@ -231,6 +231,8 @@ type CoroaTvPedido = {
     falecido?: string | null;
     status_pagamento?: string | null;
     origem?: string | null;
+    /** Id do pedido na loja do site (WooCommerce). Preenchido = pedido online, mesmo com origem venda_direta. */
+    origem_externa_id?: string | number | null;
     status?: string | null;
     comprovante_url?: string | null;
     criado_por?: string | null;
@@ -1563,6 +1565,15 @@ function coroaOrigemLabel(v?: any): string {
     }
 
     return decodeHtmlEntitiesDeep(String(v ?? "")).trim() || "a definir";
+}
+
+/**
+ * 11/11/2026: origem do pedido. O pedido da loja do site é gravado com origem "venda_direta" e o id do
+ * WooCommerce em origem_externa_id; por isso o Quadro mostrava "Venda Direta". É a mesma regra da tela de Coroas.
+ */
+function coroaOrigemPedido(pedido?: CoroaTvPedido | null): string {
+    if (String(pedido?.origem_externa_id ?? "").trim()) return "Pedido Online";
+    return coroaOrigemLabel(pedido?.origem);
 }
 
 function coroaQuantidade(order?: CoroaTvPedido | null): number {
@@ -5827,7 +5838,7 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
             </div>
             <div className="tv-cr-foot">
                 <span className={`tv-ent ${coroaEhRetirada(pedido) ? "tv-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
-                <span className="tv-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
+                <span className="tv-origem">Origem: {coroaOrigemPedido(pedido)}</span>
                 <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
                 {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
             </div>
@@ -6524,7 +6535,7 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             </div>
             <div className="qm-cr-foot">
                 <span className={`qm-ent ${coroaEhRetirada(pedido) ? "qm-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
-                <span className="qm-origem">Origem: {coroaOrigemLabel(pedido.origem)}</span>
+                <span className="qm-origem">Origem: {coroaOrigemPedido(pedido)}</span>
                 <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
             </div>
         </div>
@@ -7396,7 +7407,7 @@ function CoroaDrawer({
                             </div>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <span className="qa-tag qa-tag-status qa-tag-xs">{coroaStatusLabel(pedido.status)}</span>
-                                <span className="qa-tag qa-tag-info qa-tag-xs">{coroaOrigemLabel(pedido.origem)}</span>
+                                <span className="qa-tag qa-tag-info qa-tag-xs">{coroaOrigemPedido(pedido)}</span>
                                 <span className={`qa-tag qa-tag-xs ${pago ? "qa-tag-ok" : "qa-tag-warn"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
                             </div>
                             {atraso && <div className="qd-flag qd-flag-warn" style={{ background: "var(--d-warnbg)", color: "var(--d-warn)" }}>⏱ {atraso.longo}</div>}
@@ -7461,7 +7472,7 @@ function CoroaDrawer({
                                 <Field label="Telefone" value={shown(pedido.telefone, "a definir")} />
                                 <Field label="Falecido" value={shown(pedido.falecido, "a definir")} className="sm:col-span-2" />
                                 <Field label="Entrega" value={shown(pedido.local_entrega, "a definir")} className="sm:col-span-2" />
-                                <Field label="Origem" value={coroaOrigemLabel(pedido.origem)} />
+                                <Field label="Origem" value={coroaOrigemPedido(pedido)} />
                                 <Field
                                     label="Pagamento"
                                     value={
