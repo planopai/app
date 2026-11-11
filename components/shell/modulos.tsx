@@ -65,6 +65,7 @@ import { IconChartFunnel } from "@tabler/icons-react"; // 27/10/2026: Gestão do
 import { IconSettingsDollar, IconWallet } from "@tabler/icons-react"; // 06/11/2026: Folha de pagamento
 import { IconReceipt2 } from "@tabler/icons-react"; // 06/11/2026: Folha do mês
 import { IconStars, IconCoin, IconRoute } from "@tabler/icons-react"; // 09/11/2026: avaliação, comissões e viagens
+import { IconReceipt, IconCreditCard, IconAdjustmentsDollar } from "@tabler/icons-react"; // 11/11/2026: financeiro da empresa
 
 export type Icone = React.ElementType<any>;
 
@@ -169,6 +170,9 @@ export const MODULOS: Modulo[] = [
             { id: "financeiro", titulo: "Financeiro da OS", desc: "Painel, recebimentos e devoluções", href: "/os/financeiro", slugs: ["os-financeiro"], icone: IconCurrencyDollar },
             { id: "os-relatorio", titulo: "Relatório de OS", desc: "Particular, diferença e coroa", href: "/os/relatorio", slugs: ["os-relatorio"], icone: IconReportAnalytics },
             { id: "convenio", titulo: "Convênios", desc: "Planos, prefeituras e itens", href: "/convenio", slugs: ["convenio"], icone: IconShieldLock },
+            { id: "contas-pagar", titulo: "Contas a pagar", desc: "Títulos, rateio, pagamentos e alertas", href: "/contas-pagar", slugs: ["gestao"], icone: IconReceipt, secao: "Financeiro da empresa" },
+            { id: "cartao-credito", titulo: "Cartão de crédito", desc: "Compras, faturas e limite", href: "/cartao-credito", slugs: ["gestao"], icone: IconCreditCard, secao: "Financeiro da empresa" },
+            { id: "financeiro-config", titulo: "Configurações do financeiro", desc: "Plano de contas, contas, áreas e orçamento", href: "/financeiro-config", slugs: ["gestao"], icone: IconAdjustmentsDollar, secao: "Financeiro da empresa" },
         ],
     },
     {

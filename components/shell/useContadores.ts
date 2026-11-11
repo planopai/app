@@ -92,6 +92,40 @@ function normNomeAviso(s: string): string {
     return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
+// 11/11/2026: as consultas eram feitas uma depois da outra (quem sou → Quadro → avisos → coroas → requisições →
+// estoque). Coroas esperava as três primeiras e o estoque esperava todas; por isso esses cartões demoravam mais.
+// Agora saem todas juntas e cada número aparece assim que a sua resposta chega. Os últimos números ficam guardados
+// na sessão do navegador e aparecem na hora ao reabrir o app (são trocados pelos novos em seguida).
+const CHAVE_CACHE = "pai_contadores_v1";
+
+function lerCache(): Partial<Contadores> | null {
+    try {
+        if (typeof window === "undefined") return null;
+        const bruto = window.sessionStorage.getItem(CHAVE_CACHE);
+        return bruto ? (JSON.parse(bruto) as Partial<Contadores>) : null;
+    } catch {
+        return null;
+    }
+}
+
+function gravarCache() {
+    try {
+        if (typeof window !== "undefined") window.sessionStorage.setItem(CHAVE_CACHE, JSON.stringify(estado));
+    } catch {
+        /* sem armazenamento: só não guarda */
+    }
+}
+
+let cacheLido = false;
+function aplicarCacheUmaVez() {
+    if (cacheLido) return;
+    cacheLido = true;
+    const c = lerCache();
+    if (c) estado = { ...estado, ...c };
+}
+
+type SaldoContador = { produto_id: number; quantidade: number | string; minimo?: number | string; maximo?: number | string };
+
 async function atualizar() {
     if (emAndamento) return;
     if (typeof document !== "undefined" && document.hidden) return;
@@ -103,34 +137,47 @@ async function atualizar() {
     const has = temAcesso;
     const t = Date.now();
 
-    try {
-        const who = await getJson<{ nome?: string }>(`${ENDPOINT}/pai_api.php?action=whoami&_=${t}`, sig);
+    // Quem sou e o Quadro: o "aguardando sua ação" precisa dos dois; o resto não depende de ninguém.
+    const pWho = getJson<{ nome?: string }>(`${ENDPOINT}/pai_api.php?action=whoami&_=${t}`, sig).then((who) => {
         const completo = String(who?.nome || "").trim();
         if (completo) publicar({ nome: completo });
+        return completo;
+    });
 
-        // Quadro e Minhas OS são de todos: os números de atendimento também.
-        const lista = await getJson<RegistroRegra[]>(`${ENDPOINT}/informativo.php?listar=1&_=${t}`, sig);
-        let nomesNoQuadro: Set<string> | null = null;
-        if (Array.isArray(lista)) {
-            const noQuadro = lista.filter(atendimentoDeveFicarNoQuadro);
-            nomesNoQuadro = new Set(
-                noQuadro.map((r) => normNomeAviso(String((r as { falecido?: unknown })?.falecido ?? ""))).filter(Boolean),
-            );
-            publicar({
-                servicos: noQuadro.length,
-                recolher: noQuadro.filter(aguardandoRecolhimento).length,
-                aguardando: completo ? noQuadro.filter((r) => aguardaAcaoDe(r, completo)).length : null,
-            });
-        }
+    // Quadro e Minhas OS são de todos: os números de atendimento também.
+    const pQuadro = getJson<RegistroRegra[]>(`${ENDPOINT}/informativo.php?listar=1&_=${t}`, sig).then((lista) => {
+        if (!Array.isArray(lista)) return null;
+        const noQuadro = lista.filter(atendimentoDeveFicarNoQuadro);
+        publicar({ servicos: noQuadro.length, recolher: noQuadro.filter(aguardandoRecolhimento).length });
+        return noQuadro;
+    });
 
-        const av = await getJson<{ finalizado?: number | string | boolean; mensagem?: string; sepultamento_id?: unknown }[]>(
+    const tarefas: Promise<unknown>[] = [pWho, pQuadro];
+
+    tarefas.push(
+        Promise.all([pWho, pQuadro]).then(([completo, noQuadro]) => {
+            if (noQuadro) publicar({ aguardando: completo ? noQuadro.filter((r) => aguardaAcaoDe(r, completo)).length : null });
+        }),
+    );
+
+    tarefas.push(
+        getJson<{ finalizado?: number | string | boolean; mensagem?: string; sepultamento_id?: unknown }[]>(
             `${ENDPOINT}/avisos.php?listar=1&_nocache=${t}`,
             sig,
-        );
-        if (Array.isArray(av)) {
+        ).then(async (av) => {
+            if (!Array.isArray(av)) return;
             // Igual à tela Avisos: o avisos.php novo já tira os avisos de atendimentos fora do Quadro (e devolve
-            // "sepultamento_id" em todos); com o servidor antigo, o filtro é pelo nome do falecido.
+            // "sepultamento_id" em todos); com o servidor antigo, o filtro é pelo nome do falecido (espera o Quadro).
             const servidorFiltra = av.length > 0 && av.every((a) => a && "sepultamento_id" in a);
+            let nomesNoQuadro: Set<string> | null = null;
+            if (!servidorFiltra) {
+                const noQuadro = await pQuadro;
+                if (noQuadro) {
+                    nomesNoQuadro = new Set(
+                        noQuadro.map((r) => normNomeAviso(String((r as { falecido?: unknown })?.falecido ?? ""))).filter(Boolean),
+                    );
+                }
+            }
             const ativos = av.filter((a) => {
                 if (Number(a?.finalizado) === 1 || a?.finalizado === true) return false;
                 if (servidorFiltra || !nomesNoQuadro) return true;
@@ -139,54 +186,66 @@ async function atualizar() {
                 return nomesNoQuadro.has(normNomeAviso(nome));
             });
             publicar({ avisos: ativos.length });
-        }
+        }),
+    );
 
-        if (has("coroa-de-flores")) {
-            // Um cartão por coroa (07/10/2026): conta as COROAS ainda não entregues (etapa de cada coroa),
-            // não os pedidos. Sem a etapa na coroa (servidor antigo), usa a do pedido.
-            const j = await getJson<{ sucesso?: boolean; dados?: PedidoCoroaContador[] }>(
+    if (has("coroa-de-flores")) {
+        // Um cartão por coroa (07/10/2026): conta as COROAS ainda não entregues (etapa de cada coroa),
+        // não os pedidos. Sem a etapa na coroa (servidor antigo), usa a do pedido.
+        tarefas.push(
+            getJson<{ sucesso?: boolean; dados?: PedidoCoroaContador[] }>(
                 `${ENDPOINT}/coroas.php?listar=1&grupo=confeccao&page=1&per_page=100&fresh=${t}`,
                 sig,
-            );
-            if (j?.sucesso && Array.isArray(j.dados)) {
-                publicar({ coroas: contarCoroasNaoEntregues(j.dados) });
-            }
-        }
+            ).then((j) => {
+                if (j?.sucesso && Array.isArray(j.dados)) publicar({ coroas: contarCoroasNaoEntregues(j.dados) });
+            }),
+        );
+    }
 
-        const urlMinhas = `${ENDPOINT}/requisicoes.php?action=minhas&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=50&_=${t}`;
-        let minhasJaContadas = false;
-        if (has("requisicoes") || has("requisicao")) {
-            const operador = has("requisicoes");
-            const url = operador ? `${ENDPOINT}/requisicoes.php?action=fila&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=200&_ts=${t}` : urlMinhas;
-            const j = await getJson<{ ok?: boolean; rows?: unknown[] }>(url, sig);
-            if (j?.ok && Array.isArray(j.rows)) {
-                publicar(operador ? { requisicoes: j.rows.length } : { requisicoes: j.rows.length, minhasRequisicoes: j.rows.length });
-                minhasJaContadas = !operador;
-            }
-        }
-
-        // Atalho "Minhas solicitações" do Início: requisições abertas do próprio usuário (reaproveita a consulta acima quando é a mesma).
-        if (has("minhas-solicitacoes") && !minhasJaContadas) {
-            const j = await getJson<{ ok?: boolean; rows?: unknown[] }>(urlMinhas, sig);
-            if (j?.ok && Array.isArray(j.rows)) publicar({ minhasRequisicoes: j.rows.length });
-        }
-
-        if (has("geral") || has("estoque") || has("produtos")) {
-            const j = await getJson<{
-                ok?: boolean;
-                saldos?: { produto_id: number; quantidade: number | string; minimo?: number | string; maximo?: number | string }[];
-            }>(`${ENDPOINT}/materiais_gerais.php?init=1&_ts=${t}`, sig);
-            if (j?.ok && Array.isArray(j.saldos)) {
-                const baixos = new Set<number>();
-                for (const s of j.saldos) {
-                    const q = Math.max(0, Math.floor(Number(s.quantidade) || 0));
-                    const min = Math.max(0, Math.floor(Number(s.minimo) || 0));
-                    const max = Math.max(0, Math.floor(Number(s.maximo) || 0));
-                    if (min > 0 && max > 0 && q <= min) baixos.add(Number(s.produto_id));
+    const urlMinhas = `${ENDPOINT}/requisicoes.php?action=minhas&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=50&_=${t}`;
+    const operador = has("requisicoes");
+    const soMinhas = !operador && has("requisicao");
+    if (operador || soMinhas) {
+        const url = operador ? `${ENDPOINT}/requisicoes.php?action=fila&status=PENDENTE,EM_SEPARACAO,EM_TRANSITO&limit=200&_ts=${t}` : urlMinhas;
+        tarefas.push(
+            getJson<{ ok?: boolean; rows?: unknown[] }>(url, sig).then((j) => {
+                if (j?.ok && Array.isArray(j.rows)) {
+                    publicar(operador ? { requisicoes: j.rows.length } : { requisicoes: j.rows.length, minhasRequisicoes: j.rows.length });
                 }
-                publicar({ estoque: baixos.size });
-            }
-        }
+            }),
+        );
+    }
+
+    // Atalho "Minhas solicitações" do Início: requisições abertas do próprio usuário (a consulta acima já serve
+    // quando é a mesma, isto é, quando a pessoa não opera a fila).
+    if (has("minhas-solicitacoes") && !soMinhas) {
+        tarefas.push(
+            getJson<{ ok?: boolean; rows?: unknown[] }>(urlMinhas, sig).then((j) => {
+                if (j?.ok && Array.isArray(j.rows)) publicar({ minhasRequisicoes: j.rows.length });
+            }),
+        );
+    }
+
+    if (has("geral") || has("estoque") || has("produtos")) {
+        tarefas.push(
+            getJson<{ ok?: boolean; saldos?: SaldoContador[] }>(`${ENDPOINT}/materiais_gerais.php?init=1&_ts=${t}`, sig).then((j) => {
+                if (j?.ok && Array.isArray(j.saldos)) {
+                    const baixos = new Set<number>();
+                    for (const s of j.saldos) {
+                        const q = Math.max(0, Math.floor(Number(s.quantidade) || 0));
+                        const min = Math.max(0, Math.floor(Number(s.minimo) || 0));
+                        const max = Math.max(0, Math.floor(Number(s.maximo) || 0));
+                        if (min > 0 && max > 0 && q <= min) baixos.add(Number(s.produto_id));
+                    }
+                    publicar({ estoque: baixos.size });
+                }
+            }),
+        );
+    }
+
+    try {
+        await Promise.allSettled(tarefas);
+        gravarCache();
     } finally {
         emAndamento = false;
     }
@@ -202,7 +261,9 @@ export function useContadores(perms: unknown, has: (slug: string) => boolean): C
     });
 
     useEffect(() => {
+        aplicarCacheUmaVez();
         const f = () => forcar((n) => n + 1);
+        f();
         ouvintes.add(f);
         return () => {
             ouvintes.delete(f);
