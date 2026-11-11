@@ -6189,7 +6189,7 @@ function TvStyles() {
             .tv-cr-e { font-size: 17px; font-weight: 800; color: var(--live-fg); overflow-wrap: anywhere; }
             .tv-cr-late { box-shadow: inset 5px 0 0 var(--warn); border-color: var(--warn-bd); }
             .tv-origem { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: var(--infobg); color: var(--acc-text); white-space: nowrap; }
-            .tv-ent { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: rgba(0, 174, 236, .2); color: var(--acc-text); white-space: nowrap; }
+            .tv-ent { font-size: 14px; font-weight: 900; padding: 2px 10px; border-radius: 999px; background: #3F6212; color: #F2CB3F; white-space: nowrap; }
             .tv-ent-ret { background: #F2CB3F; color: #313C55; }
             .tv-cr-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
             .tv-cr-late-t { font-size: 16px; font-weight: 900; color: var(--warn); background: var(--warnbg); border-radius: 8px; padding: 2px 8px; justify-self: start; overflow-wrap: anywhere; max-width: 100%; }
@@ -6848,7 +6848,7 @@ function MobStyles() {
             .qm-mini-live { background: var(--qm-livebg); border-color: var(--qm-livebd) !important; color: var(--qm-live) !important; }
             .qm-mini-na { border-style: dashed !important; opacity: .5; }
             .qm-cr-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-            .qm-ent { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: rgba(0, 174, 236, .2); color: var(--qm-acctext); }
+            .qm-ent { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: #3F6212; color: #F2CB3F; }
             .qm-ent-ret { background: #F2CB3F; color: #313C55; }
             .qm-origem { font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; background: var(--qm-accbg); color: var(--qm-acctext); }
             .qm-pay { justify-self: start; font-size: 11px; font-weight: 900; border-radius: 999px; padding: 1px 8px; }
