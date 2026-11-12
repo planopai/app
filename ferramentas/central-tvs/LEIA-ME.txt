@@ -1,0 +1,29 @@
+﻿CENTRAL DAS TVs - Plano PAI
+===========================
+
+Controla pelo PC as TVs das salas e dos painéis (volume, mudo, ligar/desligar a tela,
+abrir/recarregar a página, print da tela e reiniciar), pela rede Wi-Fi.
+
+COMO ABRIR
+1. O adb.exe precisa estar em C:\adb (Platform-Tools do Android).
+2. Dê dois cliques em "Abrir Central das TVs.bat".
+3. O navegador abre em http://localhost:8790. Deixe a janela preta aberta enquanto usa.
+
+COMO ELA ACHA AS TVs
+- Procura na rede do PC todos os aparelhos com o ADB ligado (porta 5555) e mostra pelo
+  NOME de cada TV. Se o Starlink trocar o IP, basta clicar em "Procurar TVs".
+- O PC precisa estar no MESMO Wi-Fi das TVs.
+
+PARA UMA TV APARECER
+- Ligada e com imagem (ou com "Wi-Fi em espera" ativado).
+- Opções do desenvolvedor: depuração (USB e pela rede) ligada.
+- Na primeira vez, aceitar na tela da TV "Permitir depuração" > "Sempre permitir deste computador".
+- O nome da TV (SALA 01, PAINEL 01...) é o nome do aparelho: Configurações > Sistema > Sobre > Nome do dispositivo.
+
+ABRIR PÁGINA
+- Os endereços de cada TV ficam em tvs.json (criado na primeira vez). O nome no arquivo
+  precisa ser igual ao nome da TV.
+
+SEGURANÇA
+- A Central só aceita comandos deste próprio PC.
+- Deixe as TVs e o PC num Wi-Fi com senha, separado do Wi-Fi dos visitantes.

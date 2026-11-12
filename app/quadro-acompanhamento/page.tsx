@@ -1421,62 +1421,112 @@ function etapasPreenchidas(registro: Registro) {
 
 /* =========================
    Texto para copiar
+   12/11/2026: resumo completo do atendimento (itens, tanatopraxia com o tipo, translado,
+   coroas, velório, sepultamento e as 4 observações), com os campos novos do Editar registro.
    ========================= */
-function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> = {}) {
-    const v = (k: string) => decodeHtmlEntitiesDeep(String(r?.[k] ?? "")).trim();
+
+/** Coroa do pedido ligado ao atendimento (coroas.php?por_atendimento=1). */
+type CoroaCopia = { tipo: string; modelo: string; frase: string };
+
+async function carregarCoroasCopia(atendimentoId: string | number): Promise<CoroaCopia[]> {
+    const url = `${API_DIRETA}/coroas.php?por_atendimento=1&atendimento_id=${encodeURIComponent(String(atendimentoId))}&_nocache=${Date.now()}`;
+    const res = await fetch(url, { credentials: "include", cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.sucesso) throw new Error(json?.msg || "Não foi possível carregar as coroas do atendimento.");
+    const itens: any[] = Array.isArray(json?.dado?.itens) ? json.dado.itens : [];
+    return itens.map((it) => ({
+        tipo: it?.tipo_coroa === "artificial" ? "Artificial" : it?.tipo_coroa === "natural" ? "Natural" : "",
+        modelo: decodeHtmlEntitiesDeep(String(it?.modelo_coroa ?? "")).trim(),
+        frase: decodeHtmlEntitiesDeep(String(it?.frase ?? "")).trim(),
+    }));
+}
+
+const txtCampo = (r: Registro | null | undefined, k: string) => decodeHtmlEntitiesDeep(String((r as any)?.[k] ?? "")).trim();
+const ehSim = (t: string) => ["1", "true", "t", "sim", "s", "yes", "y"].includes(t.trim().toLowerCase());
+const ehNao = (t: string) => ["0", "false", "f", "não", "nao", "n", "no"].includes(t.trim().toLowerCase());
+
+/** Sim/Não com o item do estoque: "Sim — Véu branco", "Não" ou o fallback. */
+function simItemTexto(flag: string, item: string, fallback = "A DEFINIR"): string {
+    if (ehSim(flag)) return item ? `Sim — ${item}` : "Sim";
+    if (ehNao(flag)) return "Não";
+    return flag || fallback;
+}
+
+/** Tanatopraxia com o tipo do procedimento (tanato_procedimento vem do informativo.php). */
+function tanatoTexto(r: Registro, fallback = "A DEFINIR"): string {
+    const t = txtCampo(r, "tanato");
+    if (!ehSim(t)) return t || fallback;
+    const proc = txtCampo(r, "tanato_procedimento");
+    const recon = ehSim(txtCampo(r, "reconstituicao_facial")) ? " + reconstituição facial" : "";
+    return `Sim${proc ? ` — ${proc}` : ""}${recon}`;
+}
+
+/** Translado (campos da OS gravados no atendimento): partida → destino (km). */
+function transladoTexto(r: Registro, fallback = "A DEFINIR"): string {
+    const t = txtCampo(r, "translado");
+    if (!ehSim(t)) return t || fallback;
+    const origem = txtCampo(r, "translado_origem");
+    const destino = txtCampo(r, "translado_destino");
+    const km = txtCampo(r, "translado_km").replace(".", ",");
+    const rota = origem || destino ? ` — ${origem || "partida a definir"} → ${destino || "destino a definir"}` : "";
+    return `Sim${rota}${km ? ` (${km} km)` : ""}`;
+}
+
+/** Coroas: lista do pedido; sem o pedido carregado, usa o tipo/modelo gravados no atendimento. */
+function coroasLinhas(r: Registro, coroas?: CoroaCopia[] | null): string[] {
+    if (coroas && coroas.length) {
+        return coroas.map((c, i) => {
+            const partes = [c.tipo, c.modelo].filter(Boolean).join(" — ") || "modelo a definir";
+            return `${coroas.length > 1 ? `${i + 1}) ` : ""}${partes}${c.frase ? ` — Frase: "${c.frase}"` : ""}`;
+        });
+    }
+    const legado = [txtCampo(r, "coroa_tipo"), txtCampo(r, "coroa_modelo")].filter(Boolean).join(" — ");
+    return legado ? [legado] : [];
+}
+
+function coroaTexto(r: Registro, coroas?: CoroaCopia[] | null, fallback = "A DEFINIR"): string {
+    const f = txtCampo(r, "coroa_flores");
+    if (!ehSim(f)) return f || fallback;
+    const n = coroas?.length ?? 0;
+    return n > 1 ? `Sim (${n} coroas)` : "Sim";
+}
+
+/** Velório/sepultamento: registros antigos sem a coluna contam como "Sim". */
+const temVelorio = (r: Registro) => !ehNao(txtCampo(r, "realiza_velorio"));
+const temSepultamento = (r: Registro) => !ehNao(txtCampo(r, "realiza_sepultamento"));
+
+/** Local do velório: mesma regra do LocalVelorioQuadro — Memorial + sala, ou tipo + endereço. */
+function localVelorioTexto(r: Registro): string {
+    const tipoLocal = txtCampo(r, "local_cerimonia");
+    const endRaw = txtCampo(r, "local_velorio");
+    const endereco = endRaw && isGoogleMapsRota(endRaw) ? ensureHttpsUrl(endRaw) : endRaw;
+    const sala = nomeSalaVelorio(txtCampo(r, "sala_velorio"));
+    const memorial = tipoLocal ? /memorial/i.test(tipoLocal) : !!sala || /memorial/i.test(endRaw);
+    if (memorial) return `Memorial Senhor do Bonfim · ${sala || "sala a definir"}`;
+    if (tipoLocal && !/^outro$/i.test(tipoLocal)) return `${tipoLocal} · ${endereco || "endereço a definir"}`;
+    return endereco || "A DEFINIR";
+}
+
+function dataHoraTexto(d?: string, h?: string): string {
+    const data = dateOr(d);
+    const hora = timeOr(h);
+    if (data === "a definir" && hora === "a definir") return "A DEFINIR";
+    return `${data} às ${hora}`;
+}
+
+function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> = {}, coroas?: CoroaCopia[] | null) {
+    const v = (k: string) => txtCampo(r, k);
     const atend = (v("convenio") || "A DEFINIR").toUpperCase();
+    const dataOuDefinir = (d: string) => (dateOr(d) === "a definir" ? "A DEFINIR" : dateOr(d));
 
     const ornTipoRaw = v("ornamentacao_tipo") || v("ornamentacao");
     const ornTipo = ornTipoRaw
         ? (ornTipoRaw.charAt(0).toUpperCase() + ornTipoRaw.slice(1)).replace(/\s+/g, " ")
         : "A DEFINIR";
 
-    const involRaw = r?.invol;
-    const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
-    const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
-
-    // Local do velório (12/11/2026): mesma regra do LocalVelorioQuadro — Memorial + sala, ou tipo + endereço.
-    const localVelClipboard = (() => {
-        const tipoLocal = v("local_cerimonia");
-        const endRaw = v("local_velorio");
-        const endereco = endRaw && isGoogleMapsRota(endRaw) ? ensureHttpsUrl(endRaw) : endRaw;
-        const sala = nomeSalaVelorio(v("sala_velorio"));
-        const memorial = tipoLocal ? /memorial/i.test(tipoLocal) : !!sala || /memorial/i.test(endRaw);
-        if (memorial) return `Memorial Senhor do Bonfim · ${sala || "sala a definir"}`;
-        if (tipoLocal && !/^outro$/i.test(tipoLocal)) return `${tipoLocal} · ${endereco || "endereço a definir"}`;
-        return endereco || "A DEFINIR";
-    })();
-
-    // Tanatopraxia (12/11/2026): tipo do procedimento (tanato_procedimento, vem do informativo.php) e reconstituição facial.
-    const tanatoRaw = v("tanato");
-    const tanatoSim = tanatoRaw.toLowerCase() === "sim";
-    const tanatoProc = v("tanato_procedimento");
-    const tanatoTexto = tanatoSim && tanatoProc ? `Sim — ${tanatoProc}` : tanatoRaw || "A DEFINIR";
-    const reconstituicaoLinha = tanatoSim && v("reconstituicao_facial").toLowerCase() === "sim" ? [`*Reconstituição facial:* Sim`] : [];
-
-    // Translado (12/11/2026): campos da OS gravados no atendimento.
-    const transladoRaw = v("translado");
-    const transladoTexto = (() => {
-        if (transladoRaw.toLowerCase() !== "sim") return transladoRaw || "A DEFINIR";
-        const origem = v("translado_origem");
-        const destino = v("translado_destino");
-        const km = v("translado_km").replace(".", ",");
-        const rota = origem || destino ? ` — ${origem || "partida a definir"} → ${destino || "destino a definir"}` : "";
-        return `Sim${rota}${km ? ` (${km} km)` : ""}`;
-    })();
-
-    // Observações (12/11/2026): o atendimento grava em 4 campos; o campo antigo "observacao" fica só para registros antigos.
-    const obsLinhas = (
-        [
-            ["Obs. do atendimento", v("observacao_atendimento")],
-            ["Obs. dos itens", v("observacao_itens")],
-            ["Obs. do velório", v("observacao_velorio01")],
-            ["Obs. do sepultamento", v("observacao_velorio02")],
-            ["Observação", v("observacao")],
-        ] as const
-    )
-        .filter(([, t]) => !!t)
-        .map(([k, t]) => `*${k}:* ${t}`);
+    const involYN = ehSim(String(r?.invol ?? "")) ? "SIM" : "NÃO";
+    const involItem = v("invol_item");
+    const involTexto = involYN === "SIM" && involItem ? `SIM — ${involItem}` : involYN;
 
     const structured = extractMateriaisStructuredWithKey(r);
     const flat = normalizeMateriaisFromRegistro(r);
@@ -1519,21 +1569,58 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
                 }),
             ];
 
+    const coroaLinhas = ehSim(v("coroa_flores")) ? coroasLinhas(r, coroas).map((l) => `• ${l}`) : [];
+
+    const velorioLinhas = temVelorio(r)
+        ? [
+            `*Local do Velório:* ${localVelorioTexto(r)}`,
+            `*Início do Velório:* ${dataHoraTexto(v("data_inicio_velorio"), v("hora_inicio_velorio"))}`,
+            ...(v("velorio_online") ? [`*Velório Online:* ${v("velorio_online")}`] : []),
+        ]
+        : [`*Velório:* Não haverá velório`];
+
+    const sepultamentoLinhas = temSepultamento(r)
+        ? [
+            `*Local do Sepultamento:* ${v("local_sepultamento") || v("local") || "A DEFINIR"}`,
+            `*Sepultamento:* ${dataHoraTexto(v("data_fim_velorio"), v("hora_fim_velorio"))}`,
+        ]
+        : [`*Sepultamento:* Não haverá sepultamento`];
+
+    const obsLinhas = (
+        [
+            ["Obs. do atendimento", v("observacao_atendimento")],
+            ["Obs. dos itens", v("observacao_itens")],
+            ["Obs. do velório", v("observacao_velorio01")],
+            ["Obs. do sepultamento", v("observacao_velorio02")],
+            ["Observação", v("observacao")],
+        ] as const
+    )
+        .filter(([, t]) => !!t)
+        .map(([k, t]) => `*${k}:* ${t}`);
+
     const lines = [
         `*ATENDIMENTO ${atend}*`,
+        ...(v("contrato_numero") ? [`*Contrato:* ${v("contrato_numero")}`] : []),
         `*Falecido:* ${v("falecido") || "A DEFINIR"}`,
+        `*Nascimento:* ${dataOuDefinir(v("data_nascimento"))}`,
+        `*Falecimento:* ${dataOuDefinir(v("data_falecimento"))}`,
+        `*Responsável:* ${v("nome_responsavel") || "A DEFINIR"}`,
         `*Contato:* ${v("contato") || "A DEFINIR"}`,
         `*Religião:* ${v("religiao") || "A DEFINIR"}`,
         `*Urna:* ${v("urna") || "A DEFINIR"}`,
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
+        `*Véu:* ${simItemTexto(v("veu"), v("veu_item"))}`,
+        `*Cordão São Francisco:* ${simItemTexto(v("cordao"), v("cordao_item"))}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
-        `*Tanato:* ${tanatoTexto}`,
-        ...reconstituicaoLinha,
-        `*Invol:* ${involYN}`,
-        `*Translado:* ${transladoTexto}`,
+        `*Tanato:* ${tanatoTexto(r)}`,
+        `*Invol:* ${involTexto}`,
+        `*Translado:* ${transladoTexto(r)}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
+        `*Kit Lanche:* ${simItemTexto(v("kit_lanche"), "")}`,
+        `*Coroa de Flores:* ${coroaTexto(r, coroas)}${coroaLinhas.length ? `\n${coroaLinhas.join("\n")}` : ""}`,
         ...materiaisClipboardLines,
-        `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
+        ...velorioLinhas,
+        ...sepultamentoLinhas,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
         ...(obsLinhas.length ? obsLinhas : [`*Observação:* A DEFINIR`]),
     ];
@@ -2551,6 +2638,8 @@ export default function QuadroAtendimentoPage() {
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
     const [copied, setCopied] = useState(false);
+    // Coroas do atendimento aberto (12/11/2026): carregadas ao abrir, para a cópia e a janela mostrarem modelo e frase.
+    const [detailCoroas, setDetailCoroas] = useState<CoroaCopia[] | null>(null);
 
     // Ação aberta diretamente dentro do Quadro, sem sair para /atendimento.
     const [acaoOpen, setAcaoOpen] = useState(false);
@@ -3544,7 +3633,7 @@ export default function QuadroAtendimentoPage() {
 
     const handleCopy = useCallback(async () => {
         if (!detail) return;
-        const text = buildClipboardText(detail, matLookup);
+        const text = buildClipboardText(detail, matLookup, detailCoroas);
         try {
             await navigator.clipboard.writeText(text);
             setCopied(true);
@@ -3565,7 +3654,25 @@ export default function QuadroAtendimentoPage() {
                 document.body.removeChild(ta);
             }
         }
-    }, [detail, matLookup]);
+    }, [detail, matLookup, detailCoroas]);
+
+    const detailCoroaId = detail ? String((detail as any).id ?? "") : "";
+    const detailCoroaFlag = detail ? txtCampo(detail, "coroa_flores") : "";
+    useEffect(() => {
+        setDetailCoroas(null);
+        if (!detailCoroaId || !ehSim(detailCoroaFlag)) return;
+        let vivo = true;
+        carregarCoroasCopia(detailCoroaId)
+            .then((itens) => {
+                if (vivo) setDetailCoroas(itens);
+            })
+            .catch(() => {
+                // sem o pedido: a cópia usa o tipo/modelo gravados no atendimento
+            });
+        return () => {
+            vivo = false;
+        };
+    }, [detailCoroaId, detailCoroaFlag]);
 
     const carregarHistoricoDoDetalhe = useCallback(async (r: Registro) => {
         setDetailLogs([]);
@@ -4533,6 +4640,7 @@ export default function QuadroAtendimentoPage() {
                         timelineLoading={detailLogsLoading}
                         timelineError={detailLogsError}
                         matLookup={matLookup}
+                        coroas={detailCoroas}
                         faltam={[...missingEtapa0(detail), ...missingEtapa1(detail), ...missingEtapa2(detail)].map((k) => LABELS[k] ?? k)}
                         onRegistrarAcao={() => abrirRegistrarAcao(detail)}
                         visita={visitaPermitida ? { status: visitaStatusDetalhe, onClick: () => abrirVisita(detail) } : null}
@@ -4573,6 +4681,7 @@ function DetalheAtendimentoDrawer({
     timelineLoading,
     timelineError,
     matLookup,
+    coroas,
     faltam,
     onRegistrarAcao,
     visita,
@@ -4591,6 +4700,8 @@ function DetalheAtendimentoDrawer({
     timelineLoading: boolean;
     timelineError: string | null | undefined;
     matLookup: any;
+    /** Coroas do pedido ligado ao atendimento (null = ainda não carregou ou não tem). */
+    coroas?: CoroaCopia[] | null;
     faltam: string[];
     /** Abre o Registrar ação dentro do Quadro (a função é a do Quadro: fecha esta janela e abre o AcaoModal). */
     onRegistrarAcao: () => void;
@@ -4642,9 +4753,26 @@ function DetalheAtendimentoDrawer({
         ["Urna", shown(detail.urna)],
         ["Roupa", shown(detail.roupa)],
         ["Assistência", shown(detail.assistencia)],
-        ["Tanatopraxia", shown(detail.tanato)],
-        ["Invol", involSimNao(detail.invol)],
+        ["Véu", simItemTexto(txtCampo(detail, "veu"), txtCampo(detail, "veu_item"), "a definir")],
+        ["Cordão São Francisco", simItemTexto(txtCampo(detail, "cordao"), txtCampo(detail, "cordao_item"), "a definir")],
+        ["Tanatopraxia", tanatoTexto(detail, "a definir")],
+        ["Invol", involSimNao(detail.invol) === "Sim" && txtCampo(detail, "invol_item") ? `Sim — ${txtCampo(detail, "invol_item")}` : involSimNao(detail.invol)],
+        ["Translado", transladoTexto(detail, "a definir")],
         ["Ornamentação", shown((detail.ornamentacao_tipo ?? detail.ornamentacao) as string)],
+        ["Kit Lanche", simItemTexto(txtCampo(detail, "kit_lanche"), "", "a definir")],
+        [
+            "Coroa de Flores",
+            ehSim(txtCampo(detail, "coroa_flores")) && coroasLinhas(detail, coroas).length ? (
+                <span key="coroas" className="flex flex-col items-end gap-0.5">
+                    <span>{coroaTexto(detail, coroas)}</span>
+                    {coroasLinhas(detail, coroas).map((l, i) => (
+                        <span key={i} className="text-xs font-bold text-[var(--d-muted)]">{l}</span>
+                    ))}
+                </span>
+            ) : (
+                coroaTexto(detail, coroas, "a definir")
+            ),
+        ],
     ];
     if (normalizeMateriaisFromRegistro(detail).filter((x) => isRealMaterialForClipboard(x) && !isJsonNoiseLine(x)).length > 0) {
         itens.push(["Materiais", <MateriaisValue key="mat" registro={detail} lookup={matLookup} />]);
@@ -4715,9 +4843,11 @@ function DetalheAtendimentoDrawer({
                         {([
                             ["Aberto em", tvDataHora(resumo.criadoTs) || "—"],
                             ["Agente", shown(detail.agente)],
+                            ["Nascimento", dateOr((detail as any).data_nascimento)],
+                            ["Falecimento", dateOr((detail as any).data_falecimento)],
                             ["Contato", <ContatoDoAtendimento key="contato" nome={(detail as any).nome_responsavel} telefone={detail.contato} vazio={shown(detail.contato)} />],
                             ["Religião", shown(detail.religiao)],
-                            ["Convênio", shown(detail.convenio)],
+                            ["Convênio", txtCampo(detail, "contrato_numero") ? `${shown(detail.convenio)} · contrato ${txtCampo(detail, "contrato_numero")}` : shown(detail.convenio)],
                             ["Situação", `${resumo.atualLabel} · há ${tvDuracaoTexto(resumo.atualDesdeMs)}`],
                         ] as Array<[string, React.ReactNode]>).map(([k, v]) => (
                             <div key={k} className="min-w-0">
@@ -4772,15 +4902,28 @@ function DetalheAtendimentoDrawer({
                     <div className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1.5 text-sm">
                         <span className="font-extrabold text-[var(--d-muted)]">Velório</span>
                         <span className="font-extrabold">
-                            <LocalVelorioQuadro r={detail} />
-                            {" · "}
-                            {dateOr(detail.data_inicio_velorio)} {timeOr(detail.hora_inicio_velorio)}
+                            {temVelorio(detail) ? (
+                                <>
+                                    <LocalVelorioQuadro r={detail} />
+                                    {" · "}
+                                    {dateOr(detail.data_inicio_velorio)} {timeOr(detail.hora_inicio_velorio)}
+                                    {txtCampo(detail, "velorio_online") ? ` · online: ${txtCampo(detail, "velorio_online")}` : ""}
+                                </>
+                            ) : (
+                                "Não haverá velório"
+                            )}
                         </span>
                         <span className="font-extrabold text-[var(--d-muted)]">Sepultamento</span>
                         <span className="font-extrabold">
-                            {shown(detail.local_sepultamento || detail.local)}
-                            {" · "}
-                            {dateOr(detail.data_fim_velorio)} {timeOr(detail.hora_fim_velorio)}
+                            {temSepultamento(detail) ? (
+                                <>
+                                    {shown(detail.local_sepultamento || detail.local)}
+                                    {" · "}
+                                    {dateOr(detail.data_fim_velorio)} {timeOr(detail.hora_fim_velorio)}
+                                </>
+                            ) : (
+                                "Não haverá sepultamento"
+                            )}
                         </span>
                     </div>
 

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Central das TVs · Plano PAI</title>
+<style>
+:root{--fundo:#161C2A;--cx:#232B3F;--cx2:#2B3550;--borda:rgba(255,255,255,.1);--am:#F2CB3F;--txt:#fff;--suave:#AEB9CF;--verde:#7BC67E;--verm:#FF8A80}
+*{box-sizing:border-box}
+body{margin:0;font-family:Nunito,"Segoe UI",system-ui,sans-serif;background:var(--fundo);color:var(--txt)}
+.pg{max-width:1280px;margin:0 auto;padding:24px}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{margin:0;font-size:26px;font-weight:900}
+h1 em{font-style:normal;color:var(--am)}
+.sub{color:var(--suave);font-size:14px;font-weight:700;margin-top:2px}
+.dir{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer}
+.bt{border:1px solid var(--borda);background:var(--cx);color:#fff;border-radius:12px;padding:10px 14px;font-weight:800;font-size:14px;min-height:42px}
+.bt:hover{border-color:rgba(255,255,255,.3)}
+.bt:disabled{opacity:.45;cursor:not-allowed}
+.bt--am{background:var(--am);color:#232B3F;border-color:var(--am)}
+.bt--verm{color:var(--verm)}
+.aviso{background:rgba(255,138,128,.12);border:1px solid rgba(255,138,128,.4);color:#FFD6D2;border-radius:12px;padding:10px 14px;font-weight:700;font-size:14px;margin-bottom:14px}
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
+.tv{background:var(--cx);border:1px solid var(--borda);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.tv-topo{display:flex;align-items:center;gap:10px}
+.tv h2{margin:0;font-size:20px;font-weight:900;flex:1}
+.tv h2 small{display:block;font-size:12px;color:var(--suave);font-weight:700;margin-top:2px}
+.pill{font-size:12px;font-weight:900;padding:5px 10px;border-radius:999px;background:rgba(123,198,126,.15);color:var(--verde)}
+.pill--off{background:rgba(174,185,207,.15);color:var(--suave)}
+.pill--erro{background:rgba(255,138,128,.15);color:var(--verm)}
+.tela{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#0B1020;border:1px solid var(--borda);display:grid;place-items:center;color:var(--suave);font-size:13px;font-weight:700}
+.tela img{width:100%;height:100%;object-fit:contain;display:block}
+.tela small{position:absolute;right:8px;bottom:6px;background:rgba(0,0,0,.6);padding:2px 8px;border-radius:999px;font-size:11px}
+.vol{display:flex;align-items:center;gap:8px}
+.vol input{flex:1;accent-color:var(--am)}
+.vol b{min-width:62px;text-align:right;font-size:14px}
+.linha{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.linha .bt{padding:9px 6px;font-size:13px}
+.msg{font-size:12px;font-weight:700;color:var(--suave);min-height:16px}
+.msg.erro{color:var(--verm)}
+.vazio{grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--suave);font-weight:700;background:var(--cx);border-radius:18px;border:1px dashed var(--borda)}
+.vazio b{display:block;color:#fff;font-size:18px;margin-bottom:6px}
+.gira{display:inline-block;width:16px;height:16px;border:3px solid rgba(255,255,255,.25);border-top-color:var(--am);border-radius:50%;animation:g 1s linear infinite;vertical-align:-3px;margin-right:6px}
+@keyframes g{to{transform:rotate(360deg)}}
+.geral{background:var(--cx);border:1px solid var(--borda);border-radius:18px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+.geral span{font-weight:900;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="pg">
+  <header>
+    <div>
+      <h1>Central das <em>TVs</em></h1>
+      <div class="sub" id="sub">Procurando as TVs na rede…</div>
+    </div>
+    <div class="dir">
+      <button class="bt" id="prints">Atualizar prints</button>
+      <button class="bt bt--am" id="buscar">Procurar TVs</button>
+    </div>
+  </header>
+  <div class="aviso" id="aviso" hidden></div>
+  <div class="geral">
+    <span>Todas as TVs:</span>
+    <button class="bt" data-todas="vol_menos">Volume −</button>
+    <button class="bt" data-todas="vol_mais">Volume +</button>
+    <button class="bt" data-todas="mudo">Mudo</button>
+    <button class="bt" data-todas="abrir_pagina">Abrir páginas</button>
+    <button class="bt" data-todas="ligar">Ligar telas</button>
+  </div>
+  <div class="grade" id="grade"></div>
+</div>
+
+<script>
+const H = { 'X-Central': '1' };
+let tvs = [];
+
+function $(s, b) { return (b || document).querySelector(s); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+
+async function buscar() {
+  $('#buscar').disabled = true;
+  $('#sub').innerHTML = '<span class="gira"></span>Procurando as TVs na rede (alguns segundos)…';
+  try {
+    const r = await fetch('/api/buscar', { headers: H });
+    const d = await r.json();
+    if (d.erro) throw new Error(d.erro);
+    tvs = Array.isArray(d.tvs) ? d.tvs : (d.tvs ? [d.tvs] : []);
+    $('#sub').textContent = `${tvs.length} ${tvs.length === 1 ? 'TV encontrada' : 'TVs encontradas'} na rede ${d.rede} · PC ${d.pc} · ${d.hora}`;
+    $('#aviso').hidden = true;
+    desenhar();
+    atualizarPrints();
+  } catch (e) {
+    $('#sub').textContent = 'Não foi possível procurar as TVs.';
+    $('#aviso').textContent = e.message; $('#aviso').hidden = false;
+  } finally { $('#buscar').disabled = false; }
+}
+
+function desenhar() {
+  const g = $('#grade');
+  if (!tvs.length) {
+    g.innerHTML = '<div class="vazio"><b>Nenhuma TV encontrada</b>Confira se as TVs estão ligadas, com imagem, no mesmo Wi-Fi do PC e com a depuração pela rede ativada. Depois clique em "Procurar TVs".</div>';
+    return;
+  }
+  g.innerHTML = tvs.map(t => {
+    const ok = t.status === 'ok';
+    const pill = !ok ? (t.status === 'nao_autorizada' ? '<span class="pill pill--erro">Aceite na TV</span>' : '<span class="pill pill--erro">Sem resposta</span>')
+      : (t.tela === false ? '<span class="pill pill--off">Tela desligada</span>' : '<span class="pill">Ligada</span>');
+    const max = t.volumeMax || 15, v = t.volume == null ? '' : t.volume;
+    return `<section class="tv" data-ip="${esc(t.ip)}">
+      <div class="tv-topo"><h2>${esc(t.nome)}<small>${esc(t.ip)}</small></h2>${pill}</div>
+      <div class="tela" data-tela>${ok ? 'Carregando print…' : (t.status === 'nao_autorizada' ? 'Na TV, marque "Sempre permitir" e confirme. Depois clique em Procurar TVs.' : 'A TV não respondeu.')}</div>
+      <div class="vol"><span>🔊</span><input type="range" min="0" max="${max}" value="${v === '' ? 0 : v}" data-vol ${v === '' || !ok ? 'disabled' : ''}><b data-vol-txt>${v === '' ? '—' : Math.round(v / max * 100) + '%'}</b></div>
+      <div class="linha">
+        <button class="bt" data-a="vol_menos" ${ok ? '' : 'disabled'}>Vol −</button>
+        <button class="bt" data-a="vol_mais" ${ok ? '' : 'disabled'}>Vol +</button>
+        <button class="bt" data-a="mudo" ${ok ? '' : 'disabled'}>Mudo</button>
+        <button class="bt" data-a="print" ${ok ? '' : 'disabled'}>Print</button>
+        <button class="bt" data-a="abrir_pagina" ${ok ? '' : 'disabled'}>Abrir página</button>
+        <button class="bt" data-a="recarregar" ${ok ? '' : 'disabled'}>Recarregar</button>
+        <button class="bt" data-a="${t.tela === false ? 'ligar' : 'desligar'}" ${ok ? '' : 'disabled'}>${t.tela === false ? 'Ligar' : 'Desligar'}</button>
+        <button class="bt bt--verm" data-a="reiniciar" ${ok ? '' : 'disabled'}>Reiniciar</button>
+      </div>
+      <div class="msg" data-msg></div>
+    </section>`;
+  }).join('');
+}
+
+async function acao(ip, a, valor) {
+  const card = document.querySelector(`.tv[data-ip="${ip}"]`);
+  const msg = card && $('[data-msg]', card);
+  if (a === 'print') { print(ip); return; }
+  if (a === 'reiniciar' && !confirm('Reiniciar esta TV? Ela fica alguns minutos sem imagem.')) return;
+  if (msg) { msg.className = 'msg'; msg.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(`/api/acao?ip=${encodeURIComponent(ip)}&acao=${a}&valor=${encodeURIComponent(valor || '')}`, { method: 'POST', headers: H });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.msg || 'Falhou.');
+    const i = tvs.findIndex(t => t.ip === ip);
+    if (i >= 0 && d.tv) { tvs[i] = d.tv; }
+    if (card && d.tv) {
+      const max = d.tv.volumeMax || 15;
+      if (d.tv.volume != null) { $('[data-vol]', card).value = d.tv.volume; $('[data-vol-txt]', card).textContent = Math.round(d.tv.volume / max * 100) + '%'; }
+      if (a === 'ligar' || a === 'desligar') desenhar();
+    }
+    if (msg) msg.textContent = 'Feito às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    if (['abrir_pagina', 'recarregar', 'ligar', 'inicio', 'voltar'].includes(a)) setTimeout(() => print(ip), 2500);
+  } catch (e) { if (msg) { msg.className = 'msg erro'; msg.textContent = e.message; } }
+}
+
+function print(ip) {
+  const card = document.querySelector(`.tv[data-ip="${ip}"]`); if (!card) return;
+  const tela = $('[data-tela]', card);
+  const img = new Image();
+  img.onload = () => { tela.innerHTML = ''; tela.appendChild(img); const s = document.createElement('small'); s.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); tela.appendChild(s); };
+  img.onerror = () => { tela.textContent = 'Não foi possível tirar o print.'; };
+  img.alt = 'Tela da TV';
+  img.src = `/print?ip=${encodeURIComponent(ip)}&t=${Date.now()}`;
+}
+function atualizarPrints() { tvs.filter(t => t.status === 'ok').forEach((t, i) => setTimeout(() => print(t.ip), i * 400)); }
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-a]');
+  if (b) { acao(b.closest('.tv').dataset.ip, b.dataset.a); return; }
+  const todas = e.target.closest('[data-todas]');
+  if (todas) tvs.filter(t => t.status === 'ok').forEach(t => acao(t.ip, todas.dataset.todas));
+});
+document.addEventListener('change', e => {
+  if (e.target.matches('[data-vol]')) acao(e.target.closest('.tv').dataset.ip, 'volume', e.target.value);
+});
+document.addEventListener('input', e => {
+  if (e.target.matches('[data-vol]')) { const max = +e.target.max || 15; e.target.closest('.vol').querySelector('[data-vol-txt]').textContent = Math.round(e.target.value / max * 100) + '%'; }
+});
+$('#buscar').onclick = buscar;
+$('#prints').onclick = atualizarPrints;
+buscar();
+setInterval(atualizarPrints, 60000);
+</script>
+</body>
+</html>
