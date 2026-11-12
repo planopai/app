@@ -35,7 +35,7 @@ button{font:inherit;cursor:pointer}
 .vol{display:flex;align-items:center;gap:8px}
 .vol input{flex:1;accent-color:var(--am)}
 .vol b{min-width:62px;text-align:right;font-size:14px}
-.linha{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.linha{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .linha .bt{padding:9px 6px;font-size:13px}
 .msg{font-size:12px;font-weight:700;color:var(--suave);min-height:16px}
 .msg.erro{color:var(--verm)}
@@ -65,6 +65,7 @@ button{font:inherit;cursor:pointer}
     <button class="bt" data-todas="vol_menos">Volume −</button>
     <button class="bt" data-todas="vol_mais">Volume +</button>
     <button class="bt" data-todas="mudo">Mudo</button>
+    <button class="bt" data-todas="tvbro">Abrir TV Bro</button>
     <button class="bt" data-todas="abrir_pagina">Abrir páginas</button>
     <button class="bt" data-todas="ligar">Ligar telas</button>
   </div>
@@ -86,7 +87,8 @@ async function buscar() {
     const d = await r.json();
     if (d.erro) throw new Error(d.erro);
     tvs = Array.isArray(d.tvs) ? d.tvs : (d.tvs ? [d.tvs] : []);
-    $('#sub').textContent = `${tvs.length} ${tvs.length === 1 ? 'TV encontrada' : 'TVs encontradas'} na rede ${d.rede} · PC ${d.pc} · ${d.hora}`;
+    const on = tvs.filter(t => t.status !== 'fora_da_rede').length, off = tvs.length - on;
+    $('#sub').textContent = `${on} ${on === 1 ? 'TV na rede' : 'TVs na rede'}${off ? ` · ${off} fora da rede` : ''} · rede ${d.rede} · PC ${d.pc} · ${d.hora}`;
     $('#aviso').hidden = true;
     desenhar();
     atualizarPrints();
@@ -104,6 +106,17 @@ function desenhar() {
   }
   g.innerHTML = tvs.map(t => {
     const ok = t.status === 'ok';
+    if (t.status === 'fora_da_rede') {
+      return `<section class="tv" data-ip="${esc(t.ip)}" data-nome="${esc(t.nome)}">
+        <div class="tv-topo"><h2>${esc(t.nome)}<small>último IP ${esc(t.ip)}${t.visto ? ' · vista em ' + esc(t.visto) : ''}</small></h2><span class="pill pill--off">Fora da rede</span></div>
+        <div class="tela">A TV está desligada ou fora do Wi-Fi.</div>
+        <div class="linha" style="grid-template-columns:1fr 1fr">
+          <button class="bt bt--am" data-a="ligar" ${t.mac ? '' : 'disabled'}>Ligar pela rede</button>
+          <button class="bt" data-recarregar>Procurar de novo</button>
+        </div>
+        <div class="msg" data-msg>${t.mac ? 'Funciona se a TV estiver com "ligar pela rede / Wi-Fi em espera" ativado.' : 'Sem o endereço físico (MAC) desta TV: ligue pelo controle.'}</div>
+      </section>`;
+    }
     const pill = !ok ? (t.status === 'nao_autorizada' ? '<span class="pill pill--erro">Aceite na TV</span>' : '<span class="pill pill--erro">Sem resposta</span>')
       : (t.tela === false ? '<span class="pill pill--off">Tela desligada</span>' : '<span class="pill">Ligada</span>');
     const max = t.volumeMax || 15, v = t.volume == null ? '' : t.volume;
@@ -115,11 +128,12 @@ function desenhar() {
         <button class="bt" data-a="vol_menos" ${ok ? '' : 'disabled'}>Vol −</button>
         <button class="bt" data-a="vol_mais" ${ok ? '' : 'disabled'}>Vol +</button>
         <button class="bt" data-a="mudo" ${ok ? '' : 'disabled'}>Mudo</button>
-        <button class="bt" data-a="print" ${ok ? '' : 'disabled'}>Print</button>
+        <button class="bt bt--am" data-a="tvbro" ${ok ? '' : 'disabled'}>TV Bro</button>
         <button class="bt" data-a="abrir_pagina" ${ok ? '' : 'disabled'}>Abrir página</button>
         <button class="bt" data-a="recarregar" ${ok ? '' : 'disabled'}>Recarregar</button>
         <button class="bt" data-a="${t.tela === false ? 'ligar' : 'desligar'}" ${ok ? '' : 'disabled'}>${t.tela === false ? 'Ligar' : 'Desligar'}</button>
         <button class="bt bt--verm" data-a="reiniciar" ${ok ? '' : 'disabled'}>Reiniciar</button>
+        <button class="bt" data-a="print" ${ok ? '' : 'disabled'}>Print</button>
       </div>
       <div class="msg" data-msg></div>
     </section>`;
@@ -131,6 +145,13 @@ async function acao(ip, a, valor) {
   const msg = card && $('[data-msg]', card);
   if (a === 'print') { print(ip); return; }
   if (a === 'reiniciar' && !confirm('Reiniciar esta TV? Ela fica alguns minutos sem imagem.')) return;
+  if (a === 'desligar') {
+    const tv = tvs.find(t => t.ip === ip);
+    const txt = tv && tv.mac
+      ? 'Desligar esta TV?\n\nAo desligar, a TV costuma sair do Wi-Fi. Para ligar de novo pela Central, ela precisa estar com "ligar pela rede / Wi-Fi em espera" ativado nas configurações; se não ligar, use o controle.'
+      : 'Desligar esta TV?\n\nAo desligar, a TV sai do Wi-Fi e a Central NÃO consegue ligá-la de novo. Só pelo controle.';
+    if (!confirm(txt)) return;
+  }
   if (msg) { msg.className = 'msg'; msg.textContent = 'Enviando…'; }
   try {
     const r = await fetch(`/api/acao?ip=${encodeURIComponent(ip)}&acao=${a}&valor=${encodeURIComponent(valor || '')}`, { method: 'POST', headers: H });
@@ -143,8 +164,10 @@ async function acao(ip, a, valor) {
       if (d.tv.volume != null) { $('[data-vol]', card).value = d.tv.volume; $('[data-vol-txt]', card).textContent = Math.round(d.tv.volume / max * 100) + '%'; }
       if (a === 'ligar' || a === 'desligar') desenhar();
     }
+    if (d.msg && msg) { msg.textContent = d.msg; return; }
     if (msg) msg.textContent = 'Feito às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    if (['abrir_pagina', 'recarregar', 'ligar', 'inicio', 'voltar'].includes(a)) setTimeout(() => print(ip), 2500);
+    if (a === 'desligar') setTimeout(buscar, 4000);
+    if (['abrir_pagina', 'tvbro', 'recarregar', 'ligar', 'inicio', 'voltar'].includes(a)) setTimeout(() => print(ip), 2500);
   } catch (e) { if (msg) { msg.className = 'msg erro'; msg.textContent = e.message; } }
 }
 
@@ -160,10 +183,11 @@ function print(ip) {
 function atualizarPrints() { tvs.filter(t => t.status === 'ok').forEach((t, i) => setTimeout(() => print(t.ip), i * 400)); }
 
 document.addEventListener('click', e => {
+  if (e.target.closest('[data-recarregar]')) { buscar(); return; }
   const b = e.target.closest('[data-a]');
   if (b) { acao(b.closest('.tv').dataset.ip, b.dataset.a); return; }
   const todas = e.target.closest('[data-todas]');
-  if (todas) tvs.filter(t => t.status === 'ok').forEach(t => acao(t.ip, todas.dataset.todas));
+  if (todas) tvs.filter(t => t.status === 'ok' || todas.dataset.todas === 'ligar').forEach(t => acao(t.ip, todas.dataset.todas));
 });
 document.addEventListener('change', e => {
   if (e.target.matches('[data-vol]')) acao(e.target.closest('.tv').dataset.ip, 'volume', e.target.value);

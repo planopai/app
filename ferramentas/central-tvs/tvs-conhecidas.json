@@ -1,0 +1,38 @@
+﻿{
+    "PAINEL 01":  {
+                      "visto":  "12/11/2026 17:05",
+                      "ip":  "192.168.1.123",
+                      "mac":  "",
+                      "navegador":  "com.phlox.tvwebbrowser"
+                  },
+    "PAINEL 02":  {
+                      "visto":  "12/11/2026 17:05",
+                      "ip":  "192.168.1.99",
+                      "mac":  "",
+                      "navegador":  "com.phlox.tvwebbrowser"
+                  },
+    "SALA 02":  {
+                    "visto":  "12/11/2026 17:05",
+                    "ip":  "192.168.1.32",
+                    "mac":  "",
+                    "navegador":  "com.phlox.tvwebbrowser"
+                },
+    "SALA 01":  {
+                    "visto":  "12/11/2026 17:05",
+                    "ip":  "192.168.1.27",
+                    "mac":  "",
+                    "navegador":  "com.phlox.tvwebbrowser"
+                },
+    "SALA 03":  {
+                    "visto":  "12/11/2026 17:05",
+                    "ip":  "192.168.1.78",
+                    "mac":  "",
+                    "navegador":  "com.phlox.tvwebbrowser"
+                },
+    "PAINEL 03":  {
+                      "visto":  "12/11/2026 17:05",
+                      "ip":  "192.168.1.226",
+                      "mac":  "",
+                      "navegador":  "com.phlox.tvwebbrowser"
+                  }
+}

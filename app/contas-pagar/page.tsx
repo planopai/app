@@ -5,6 +5,9 @@
  * Títulos com parcelas e rateio (natureza, local, área · linha, veículo), instalações de consumo, recorrentes (previsto → confirmar),
  * pagamento com juros/multa/desconto e comprovante, estorno e cancelamento com motivo, alertas (fora do padrão, orçamento, sem comprovante).
  * Sem etapa de autorização. A fatura do cartão chega aqui como um título só (as compras ficam em /cartao-credito).
+ * 12/11/2026 (etapa 3): lista ou planilha (rolagem para o lado, colunas à escolha, total do filtro, exportar), filtros avançados,
+ * pagamento em lote, botão Mais (prorrogar, natureza, pedir cancelamento e histórico), situação Cancelados. Cancelar passa pela Gestão
+ * (fin_pagar_acoes.php; a decisão é na aba Aprovações da Tesouraria).
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -14,7 +17,10 @@ import {
     IconAlertTriangle,
     IconArrowBackUp,
     IconBan,
+    IconColumns,
     IconCreditCard,
+    IconDownload,
+    IconFilter,
     IconPaperclip,
     IconPencil,
     IconPlus,
@@ -56,6 +62,7 @@ import {
     S_MUDO,
     S_OK,
     S_RUIM,
+    SelectNatureza,
     SELO,
     SUB,
     URL_PAGAR,
@@ -65,6 +72,9 @@ import {
     type Cadastros,
     type LinhaEdicao,
 } from './components/fin';
+import { BarraMassa, baixarCsv, ChipsFiltro, JanelaColunas, Paginacao, Planilha, TrocaModo, useColunas, type ColunaPlan } from './components/planilha';
+
+const URL_ACOES = 'https://api.planoassistencialintegrado.com.br/fin_pagar_acoes.php';
 
 type LinhaRat = { natureza_id: number; natureza: string; local_id: number | null; local: string | null; area_id: number | null; area: string | null; veiculo_id: number | null; veiculo: string | null; valor: number };
 type Titulo = {
@@ -93,7 +103,10 @@ type Titulo = {
     baixa: { id: number; data: string; conta_id: number; conta: string; valor_pago: number; juros: number; multa: number; desconto: number } | null;
     anexos: number;
     comprovantes: number;
+    cancelado_motivo?: string | null;
 };
+type Pendente = { tipo: string; motivo: string };
+type FAP = { td?: string; de?: string; ate?: string; pessoa?: string; natureza?: string; doc?: string; vmin?: string; vmax?: string; anexo?: string; forma?: string; conta?: string };
 type Detalhe = Titulo & {
     baixas: { id: number; data: string; valor_pago: number; juros: number; multa: number; desconto: number; por: string | null; em: string; estornado_em: string | null; estornado_por: string | null; estorno_motivo: string | null }[];
     anexos_lista: { id: number; nome: string; tipo: string; tamanho: number; comprovante: boolean; em: string }[];
@@ -109,12 +122,24 @@ type Dados = {
     faturas_abertas: { conta_id: number; conta: string; vencimento: string; fechamento: string; valor: number; lancamentos: number }[];
     mes_fechado: boolean;
 };
-type Filtro = 'aberto' | 'vencidos' | 'hoje' | 'semana' | 'previstos' | 'pagos' | 'todos';
+type Filtro = 'aberto' | 'vencidos' | 'hoje' | 'semana' | 'previstos' | 'pagos' | 'cancelados' | 'todos';
 
 const ORIGEM: Partial<Record<Titulo['origem'], string>> = { RECORRENTE: 'todo mês', FOLHA: 'da Folha', COMISSAO: 'das Comissões', ESTOQUE: 'do Estoque', CARTAO: 'do Cartão' };
-const ACAO: Record<string, string> = { incluiu: 'Lançado', alterou: 'Alterado', confirmou: 'Valor confirmado', pagou: 'Pago', estornou: 'Pagamento estornado', cancelou: 'Cancelado', fatura_fechada: 'Fatura fechada' };
+const ACAO: Record<string, string> = {
+    incluiu: 'Lançado',
+    alterou: 'Alterado',
+    confirmou: 'Valor confirmado',
+    pagou: 'Pago',
+    estornou: 'Pagamento estornado',
+    cancelou: 'Cancelado',
+    fatura_fechada: 'Fatura fechada',
+    prorrogou: 'Vencimento prorrogado',
+    pediu_cancelamento: 'Cancelamento pedido à Gestão',
+    recusou_cancelamento: 'Cancelamento recusado pela Gestão',
+};
 
-function situacaoDe(t: Titulo, hoje: string): { txt: string; cls: string; k: 'pago' | 'previsto' | 'vencido' | 'hoje' | 'aberto' } {
+function situacaoDe(t: Titulo, hoje: string): { txt: string; cls: string; k: 'pago' | 'previsto' | 'vencido' | 'hoje' | 'aberto' | 'cancelado' } {
+    if (t.situacao === 'CANCELADO') return { txt: 'Cancelado', cls: S_MUDO, k: 'cancelado' };
     if (t.situacao === 'PAGO') return { txt: 'Pago', cls: S_OK, k: 'pago' };
     if (t.situacao === 'PREVISTO') return { txt: 'Previsto', cls: S_MUDO, k: 'previsto' };
     if (t.vencimento < hoje) return { txt: 'Vencido', cls: S_RUIM, k: 'vencido' };
@@ -135,6 +160,18 @@ export default function ContasPagarPage() {
     const [confirmar, setConfirmar] = useState<Titulo | null>(null);
     const [detalhe, setDetalhe] = useState<number | null>(null);
     const { avisar, aviso } = useAviso();
+    const [modo, setModo] = useState<'lista' | 'planilha'>('lista');
+    const [fa, setFa] = useState<FAP>({});
+    const [ordem, setOrdem] = useState('venc');
+    const [pagina, setPagina] = useState(0);
+    const [pp, setPp] = useState(100);
+    const [marc, setMarc] = useState<Set<number>>(new Set());
+    const [loteConta, setLoteConta] = useState<number | ''>('');
+    const [loteData, setLoteData] = useState('');
+    const [loteOcupado, setLoteOcupado] = useState(false);
+    const [janela, setJanela] = useState<null | 'filtros' | 'colunas' | { acoes: Titulo }>(null);
+    const [cancelados, setCancelados] = useState<Titulo[]>([]);
+    const [pendentes, setPendentes] = useState<Record<number, Pendente>>({});
 
     const carregar = useCallback(async () => {
         setCarregando(true);
@@ -142,6 +179,32 @@ export default function ContasPagarPage() {
             const j = await api(URL_PAGAR, 'titulos');
             setD(j.dados);
             setErro(null);
+            try {
+                const x = await api(URL_ACOES, 'extras');
+                setPendentes(x.dados.pendentes || {});
+                setCancelados(
+                    (x.dados.cancelados as any[]).map((c) => ({
+                        ...c,
+                        pessoa_id: null,
+                        forma_id: null,
+                        exige_comprovante: false,
+                        linha_digitavel: null,
+                        situacao: 'CANCELADO',
+                        recorrente_id: null,
+                        instalacao_id: null,
+                        instalacao: null,
+                        fatura_conta_id: null,
+                        fatura_vencimento: null,
+                        grupo: null,
+                        rateio: c.natureza ? [{ natureza_id: 0, natureza: c.natureza, local_id: null, local: null, area_id: null, area: null, veiculo_id: null, veiculo: null, valor: c.valor }] : [],
+                        baixa: null,
+                        anexos: 0,
+                        comprovantes: 0,
+                    })),
+                );
+            } catch {
+                /* fin_pagar_acoes.php ainda não subiu: segue sem cancelados e pedidos */
+            }
         } catch (e: any) {
             const m = mensagemErro(e, 'Não foi possível carregar o contas a pagar.');
             if (m) setErro(m);
@@ -159,8 +222,26 @@ export default function ContasPagarPage() {
     const lista = useMemo(() => {
         if (!d) return [];
         const q = busca.trim().toLowerCase();
-        return d.titulos.filter((t) => {
+        const base = filtro === 'cancelados' ? cancelados : d.titulos;
+        const vmin = paraNumero(fa.vmin ?? '') ?? null;
+        const vmax = paraNumero(fa.vmax ?? '') ?? null;
+        return base.filter((t) => {
             const s = situacaoDe(t, hoje).k;
+            if (filtro === 'cancelados' && s !== 'cancelado') return false;
+            if (fa.de || fa.ate) {
+                const dt = fa.td === 'emis' ? t.emissao : fa.td === 'comp' ? (t.competencia ? t.competencia + '-01' : null) : fa.td === 'pago' ? t.baixa?.data ?? null : t.vencimento;
+                const de = fa.td === 'comp' && fa.de ? fa.de.slice(0, 7) + '-01' : fa.de;
+                if (!dt || (de && dt < de) || (fa.ate && dt > fa.ate)) return false;
+            }
+            if (fa.pessoa && t.pessoa !== fa.pessoa) return false;
+            if (fa.natureza && !t.rateio.some((r) => r.natureza === fa.natureza)) return false;
+            if (fa.doc && !`${t.documento || ''} ${t.descricao} ${t.linha_digitavel || ''}`.toLowerCase().includes(fa.doc.toLowerCase())) return false;
+            if (vmin !== null && t.valor < vmin) return false;
+            if (vmax !== null && t.valor > vmax) return false;
+            if (fa.anexo === 'com' && !t.anexos) return false;
+            if (fa.anexo === 'sem' && t.anexos) return false;
+            if (fa.forma && t.forma !== fa.forma) return false;
+            if (fa.conta && t.baixa?.conta !== fa.conta) return false;
             if (filtro === 'aberto' && s === 'pago') return false;
             if (filtro === 'vencidos' && s !== 'vencido') return false;
             if (filtro === 'hoje' && s !== 'hoje') return false;
@@ -171,7 +252,117 @@ export default function ContasPagarPage() {
             if (q && !`${t.pessoa} ${t.descricao} ${t.documento || ''} ${t.rateio.map((r) => r.natureza).join(' ')}`.toLowerCase().includes(q)) return false;
             return true;
         });
-    }, [d, filtro, busca, area, hoje, sem, cad]);
+    }, [d, filtro, busca, area, hoje, sem, cad, cancelados, fa]);
+
+    // planilha: ordem, página, seleção e colunas
+    useEffect(() => {
+        setPagina(0);
+        setMarc(new Set());
+    }, [filtro, busca, area, fa, ordem, pp]);
+    const ordenada = useMemo(
+        () =>
+            lista
+                .slice()
+                .sort((a, b) =>
+                    ordem === 'valor' ? b.valor - a.valor : ordem === 'forn' ? (a.pessoa || '').localeCompare(b.pessoa || '') : a.vencimento < b.vencimento ? -1 : a.vencimento > b.vencimento ? 1 : a.id - b.id,
+                ),
+        [lista, ordem],
+    );
+    const paginaLinhas = ordenada.slice(pagina * pp, pagina * pp + pp);
+    const selecionavel = useCallback((t: Titulo) => t.situacao === 'ABERTO' && t.origem !== 'CARTAO' && !pendentes[t.id], [pendentes]);
+    const selFiltro = ordenada.filter(selecionavel);
+    const todosFiltro = selFiltro.length > 0 && selFiltro.every((t) => marc.has(t.id));
+    const marcados = (d?.titulos ?? []).filter((t) => marc.has(t.id) && selecionavel(t));
+    const marcar = (ids: number[], on: boolean) =>
+        setMarc((m) => {
+            const n = new Set(m);
+            ids.forEach((id) => (on ? n.add(id) : n.delete(id)));
+            return n;
+        });
+    const pagarLote = async () => {
+        if (!loteConta) return avisar('Escolha a conta de onde saiu o dinheiro.');
+        setLoteOcupado(true);
+        try {
+            const j = await api(URL_ACOES, 'pagar_lote', { ids: marcados.map((t) => t.id), data: loteData || hoje, conta_id: loteConta });
+            avisar(j.msg);
+            setMarc(new Set());
+            void carregar();
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível pagar em lote.');
+            if (m) avisar(m);
+        } finally {
+            setLoteOcupado(false);
+        }
+    };
+    const juros = (t: Titulo) => (t.baixa ? t.baixa.juros + t.baixa.multa : 0);
+    const COLUNAS: ColunaPlan<Titulo>[] = useMemo(
+        () => [
+            { id: 'nat', rotulo: 'Natureza', largura: 210, valor: (t) => (t.rateio.length ? t.rateio[0].natureza + (t.rateio.length > 1 ? ` + ${t.rateio.length - 1}` : '') : t.origem === 'CARTAO' ? 'Compras do cartão' : '—') },
+            { id: 'centro', rotulo: 'Área · local', largura: 200, valor: (t) => t.instalacao || [t.rateio[0]?.local, t.rateio[0]?.area, t.rateio[0]?.veiculo].filter(Boolean).join(' · ') || '—' },
+            { id: 'doc', rotulo: 'Documento', largura: 120, valor: (t) => t.documento || '—' },
+            { id: 'emis', rotulo: 'Emissão', largura: 110, padrao: false, valor: (t) => dataBR(t.emissao) || '—' },
+            { id: 'comp', rotulo: 'Competência', largura: 125, valor: (t) => (t.competencia ? `${t.competencia.slice(5)}/${t.competencia.slice(0, 4)}` : '—') },
+            { id: 'venc', rotulo: 'Vencimento', largura: 120, valor: (t) => dataBR(t.vencimento) },
+            { id: 'parc', rotulo: 'Parcela', largura: 80, valor: (t) => t.parcela || '—' },
+            { id: 'valor', rotulo: 'Valor', largura: 120, num: true, valor: (t) => brl(t.valor), texto: (t) => t.valor },
+            { id: 'enc', rotulo: 'Juros e multa', largura: 120, num: true, valor: (t) => (juros(t) ? <span className="text-[#B42318] dark:text-[#FF9C92]">{brl(juros(t))}</span> : '—'), texto: (t) => juros(t) },
+            { id: 'pago', rotulo: 'Valor pago', largura: 120, num: true, valor: (t) => (t.baixa ? brl(t.baixa.valor_pago) : '—'), texto: (t) => t.baixa?.valor_pago ?? '' },
+            { id: 'forma', rotulo: 'Forma', largura: 150, valor: (t) => t.forma || '—' },
+            {
+                id: 'sit',
+                rotulo: 'Situação',
+                largura: 180,
+                valor: (t) => {
+                    const s = pendentes[t.id] ? { txt: 'Cancelamento pedido', cls: S_AVISO } : situacaoDe(t, hoje);
+                    return <span className={`${SELO} ${s.cls}`}>{s.txt}</span>;
+                },
+                texto: (t) => (pendentes[t.id] ? 'Cancelamento pedido' : situacaoDe(t, hoje).txt),
+            },
+            {
+                id: 'atraso',
+                rotulo: 'Atraso',
+                largura: 80,
+                num: true,
+                valor: (t) => (t.situacao === 'ABERTO' && t.vencimento < hoje ? `${Math.round((Date.parse(hoje) - Date.parse(t.vencimento)) / 864e5)}d` : '—'),
+            },
+            { id: 'pagoem', rotulo: 'Pago em', largura: 110, valor: (t) => dataBR(t.baixa?.data) || '—' },
+            { id: 'conta', rotulo: 'Saiu da conta', largura: 190, valor: (t) => t.baixa?.conta || '—' },
+            { id: 'anexos', rotulo: 'Anexos', largura: 80, num: true, valor: (t) => String(t.anexos || 0) },
+            { id: 'origem', rotulo: 'Origem', largura: 130, padrao: false, valor: (t) => ORIGEM[t.origem] || 'lançado' },
+            { id: 'linha', rotulo: 'Linha digitável', largura: 330, padrao: false, valor: (t) => t.linha_digitavel || '—' },
+            { id: 'motivo', rotulo: 'Motivo do cancelamento', largura: 240, padrao: false, valor: (t) => t.cancelado_motivo || pendentes[t.id]?.motivo || '—' },
+        ],
+        [hoje, pendentes],
+    );
+    const cols = useColunas('pai_fin_pagar_colunas', COLUNAS);
+    const somaV = ordenada.reduce((s, t) => s + t.valor, 0);
+    const somaJ = ordenada.reduce((s, t) => s + juros(t), 0);
+    const somaP = ordenada.reduce((s, t) => s + (t.baixa?.valor_pago ?? 0), 0);
+    const chips = useMemo(() => {
+        const tira = (k: (keyof FAP)[]) => () =>
+            setFa((f) => {
+                const n = { ...f };
+                k.forEach((x) => delete n[x]);
+                return n;
+            });
+        const TD: Record<string, string> = { venc: 'Vencimento', emis: 'Emissão', comp: 'Competência', pago: 'Pagamento' };
+        const c: { rotulo: string; tirar: () => void }[] = [];
+        if (fa.de || fa.ate) c.push({ rotulo: `${TD[fa.td || 'venc']}${fa.de ? ` de ${dataBR(fa.de)}` : ''}${fa.ate ? ` até ${dataBR(fa.ate)}` : ''}`, tirar: tira(['de', 'ate', 'td']) });
+        const nomes: [keyof FAP, string][] = [
+            ['pessoa', 'Fornecedor'],
+            ['natureza', 'Natureza'],
+            ['doc', 'Documento'],
+            ['vmin', 'Valor de'],
+            ['vmax', 'Valor até'],
+            ['forma', 'Forma'],
+            ['conta', 'Conta'],
+        ];
+        nomes.forEach(([k, r]) => {
+            if (fa[k]) c.push({ rotulo: `${r}: ${fa[k]}`, tirar: tira([k]) });
+        });
+        if (fa.anexo) c.push({ rotulo: fa.anexo === 'com' ? 'Com anexo' : 'Sem anexo', tirar: tira(['anexo']) });
+        return c;
+    }, [fa]);
 
     const grupos = useMemo(() => {
         const g: { dia: string; itens: Titulo[] }[] = [];
@@ -274,6 +465,7 @@ export default function ContasPagarPage() {
                             ['semana', 'Próximos 7 dias'],
                             ['previstos', 'Previstos'],
                             ['pagos', 'Pagos'],
+                            ['cancelados', 'Cancelados'],
                             ['todos', 'Todos'],
                         ] as [Filtro, string][]
                     ).map(([k, r]) => (
@@ -286,7 +478,7 @@ export default function ContasPagarPage() {
                             <IconSearch size={18} className="text-[#5B6478]" />
                             <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Fornecedor, descrição ou natureza" aria-label="Buscar" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" />
                         </label>
-                        <select className="h-11 min-w-0 flex-1 rounded-xl bg-white px-3 text-[15px] dark:bg-[#232B3F] lg:flex-none" value={area} onChange={(e) => setArea(e.target.value ? Number(e.target.value) : '')} aria-label="Área">
+                        <select className="h-11 min-w-0 flex-1 basis-full rounded-xl bg-white px-3 text-[15px] dark:bg-[#232B3F] sm:basis-auto lg:flex-none" value={area} onChange={(e) => setArea(e.target.value ? Number(e.target.value) : '')} aria-label="Área">
                             <option value="">Todas as áreas</option>
                             {cad?.areas.map((a) => (
                                 <option key={a.id} value={a.id}>
@@ -294,13 +486,119 @@ export default function ContasPagarPage() {
                                 </option>
                             ))}
                         </select>
+                        <button type="button" className={`${BTN_PEQ} ${chips.length ? 'border-[#313C55] bg-[#E9EFF6]' : ''}`} onClick={() => setJanela('filtros')}>
+                            <IconFilter size={18} /> Filtros{chips.length ? ` (${chips.length})` : ''}
+                        </button>
+                        <TrocaModo modo={modo} onModo={setModo} />
                         <button type="button" className={BTN_PEQ} onClick={() => void carregar()} aria-label="Atualizar">
                             <IconRefresh size={18} />
                         </button>
                     </div>
                 </div>
+                <ChipsFiltro chips={chips} onLimpar={() => setFa({})} />
 
-                <div className={`${CARTAO} overflow-hidden`}>
+                {modo === 'planilha' ? (
+                    <>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <b className="text-[15px]">{ordenada.length.toLocaleString('pt-BR')} título(s)</b>
+                            <span className={`${SUB} font-bold`}>{brl(somaV)}</span>
+                            <span className="flex-1" />
+                            <select className="h-11 rounded-xl bg-white px-3 text-[15px] dark:bg-[#232B3F]" value={ordem} onChange={(e) => setOrdem(e.target.value)} aria-label="Ordem">
+                                <option value="venc">Ordem: vencimento</option>
+                                <option value="valor">Ordem: maior valor</option>
+                                <option value="forn">Ordem: fornecedor</option>
+                            </select>
+                            <button type="button" className={BTN_PEQ} disabled={!selFiltro.length} onClick={() => marcar(selFiltro.map((t) => t.id), !todosFiltro)}>
+                                {todosFiltro ? `Desmarcar os ${selFiltro.length}` : `Marcar os ${selFiltro.length} em aberto do filtro`}
+                            </button>
+                            <button type="button" className={BTN_PEQ} onClick={() => setJanela('colunas')}>
+                                <IconColumns size={18} /> Colunas
+                            </button>
+                            <button
+                                type="button"
+                                className={BTN_PEQ}
+                                disabled={!ordenada.length}
+                                onClick={() => {
+                                    baixarCsv(`contas-a-pagar-${hoje}.csv`, { rotulo: 'Fornecedor · descrição', texto: (t: Titulo) => `${t.pessoa ? t.pessoa + ' · ' : ''}${t.descricao}` }, COLUNAS, cols.vis, ordenada);
+                                    avisar(`Planilha baixada com ${ordenada.length} título(s).`);
+                                }}
+                            >
+                                <IconDownload size={18} /> Exportar
+                            </button>
+                        </div>
+                        <Planilha
+                            colunas={COLUNAS}
+                            vis={cols.vis}
+                            linhas={paginaLinhas}
+                            carregando={carregando}
+                            fixa={{
+                                rotulo: 'Fornecedor · descrição',
+                                valor: (t) => (
+                                    <>
+                                        <b className="line-clamp-2 break-words">{t.pessoa || '—'}</b>
+                                        <span className={`${SUB} line-clamp-1`}>
+                                            {t.descricao}
+                                            {t.parcela ? ` · parcela ${t.parcela}` : ''}
+                                        </span>
+                                    </>
+                                ),
+                            }}
+                            acoes={(t) => (
+                                <>
+                                    {t.situacao === 'PREVISTO' ? (
+                                        <button type="button" className={BTN_PEQ} onClick={() => setConfirmar(t)}>
+                                            Confirmar
+                                        </button>
+                                    ) : null}
+                                    {t.situacao === 'ABERTO' && !pendentes[t.id] ? (
+                                        <button type="button" className={BTN_PEQ_PRI} onClick={() => setPagar(t)}>
+                                            Pagar
+                                        </button>
+                                    ) : null}
+                                    {t.origem !== 'CARTAO' && t.situacao !== 'CANCELADO' ? (
+                                        <button type="button" className={BTN_PEQ} onClick={() => setJanela({ acoes: t })}>
+                                            Mais
+                                        </button>
+                                    ) : null}
+                                </>
+                            )}
+                            selecionavel={selecionavel}
+                            marcados={marc}
+                            onMarcar={marcar}
+                            onLinha={(t) => (t.situacao === 'CANCELADO' ? undefined : setDetalhe(t.id))}
+                            rodape={{ rotulo: `Total do filtro · ${ordenada.length.toLocaleString('pt-BR')}`, valores: { valor: brl(somaV), enc: brl(somaJ), pago: brl(somaP) } }}
+                        />
+                        <Paginacao pagina={pagina} pp={pp} total={ordenada.length} onPagina={setPagina} onPp={setPp} />
+                        <div className={SUB}>Role para o lado para ver todas as colunas. Fornecedor e Ações ficam fixos; o rodapé soma o filtro inteiro.</div>
+                    </>
+                ) : null}
+
+                {marcados.length ? (
+                    <BarraMassa>
+                        <b>{marcados.length} marcado(s)</b>
+                        <b className="text-[18px] tabular-nums">{brl(marcados.reduce((s, t) => s + t.valor, 0))}</b>
+                        <span className="flex-1" />
+                        <select className="h-11 min-w-0 rounded-xl bg-white px-3 text-[15px] text-[#313C55]" value={loteConta} onChange={(e) => setLoteConta(e.target.value ? Number(e.target.value) : '')} aria-label="Conta">
+                            <option value="">Saiu da conta…</option>
+                            {cad?.contas
+                                .filter((c) => c.ativo && c.tipo !== 'CARTAO')
+                                .map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                        </select>
+                        <input type="date" className="h-11 rounded-xl bg-white px-3 text-[15px] text-[#313C55]" value={loteData || hoje} max={hoje} onChange={(e) => setLoteData(e.target.value)} aria-label="Data do pagamento" />
+                        <button type="button" className="h-11 rounded-xl bg-white/15 px-4 font-extrabold" onClick={() => setMarc(new Set())}>
+                            Limpar
+                        </button>
+                        <button type="button" className="h-11 rounded-xl bg-[#F2CB3F] px-4 font-extrabold text-[#313C55]" disabled={loteOcupado} onClick={() => void pagarLote()}>
+                            Pagar {marcados.length}
+                        </button>
+                    </BarraMassa>
+                ) : null}
+
+                <div className={`${CARTAO} overflow-hidden ${modo === 'planilha' ? 'hidden' : ''}`}>
                     <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(0,1.3fr)_130px_130px_120px_110px] gap-3 bg-[#F6F8FB] px-4 py-2.5 text-[12px] font-extrabold uppercase tracking-[0.08em] text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF] lg:grid">
                         <span>Fornecedor</span>
                         <span>Natureza · rateio</span>
@@ -337,6 +635,7 @@ export default function ContasPagarPage() {
                                                 <div className="flex flex-wrap items-center gap-1.5 text-[15px] font-extrabold">
                                                     <span className="break-words">{t.pessoa || '—'}</span>
                                                     {ORIGEM[t.origem] ? <span className={`${SELO} ${S_AB}`}>{ORIGEM[t.origem]}</span> : null}
+                                                    {pendentes[t.id] ? <span className={`${SELO} ${S_AVISO}`}>Cancelamento pedido</span> : null}
                                                 </div>
                                                 <div className={`${SUB} line-clamp-2 break-words`}>
                                                     {t.descricao}
@@ -374,9 +673,14 @@ export default function ContasPagarPage() {
                                                         Confirmar
                                                     </button>
                                                 ) : null}
-                                                {t.situacao === 'ABERTO' ? (
+                                                {t.situacao === 'ABERTO' && !pendentes[t.id] ? (
                                                     <button type="button" className={BTN_PEQ_PRI} onClick={() => setPagar(t)}>
                                                         Pagar
+                                                    </button>
+                                                ) : null}
+                                                {t.origem !== 'CARTAO' && t.situacao !== 'CANCELADO' ? (
+                                                    <button type="button" className={BTN_PEQ} onClick={() => setJanela({ acoes: t })}>
+                                                        Mais
                                                     </button>
                                                 ) : null}
                                             </div>
@@ -447,6 +751,32 @@ export default function ContasPagarPage() {
                     onConfirmar={(t) => {
                         setDetalhe(null);
                         setConfirmar(t);
+                    }}
+                    pendente={pendentes[detalhe] ?? null}
+                />
+            ) : null}
+            {janela === 'filtros' && d ? (
+                <FiltrosPagar
+                    fa={fa}
+                    titulos={[...d.titulos, ...cancelados]}
+                    onFechar={() => setJanela(null)}
+                    onAplicar={(f) => {
+                        setFa(f);
+                        setJanela(null);
+                    }}
+                />
+            ) : null}
+            {janela === 'colunas' ? <JanelaColunas colunas={COLUNAS} vis={cols.vis} onMudar={cols.setVis} onPadrao={cols.voltarPadrao} onFechar={() => setJanela(null)} fixas="Fornecedor e Ações" /> : null}
+            {janela && typeof janela === 'object' && cad ? (
+                <AcoesPagar
+                    cad={cad}
+                    t={janela.acoes}
+                    pendente={pendentes[janela.acoes.id] ?? null}
+                    onFechar={() => setJanela(null)}
+                    onMudou={(m) => {
+                        setJanela(null);
+                        avisar(m);
+                        void carregar();
                     }}
                 />
             ) : null}
@@ -888,6 +1218,7 @@ function DetalheTitulo({
     onEditar,
     onPagar,
     onConfirmar,
+    pendente,
 }: {
     id: number;
     hoje: string;
@@ -896,6 +1227,7 @@ function DetalheTitulo({
     onEditar: (t: Titulo) => void;
     onPagar: (t: Titulo) => void;
     onConfirmar: (t: Titulo) => void;
+    pendente: Pendente | null;
 }) {
     const [t, setT] = useState<Detalhe | null>(null);
     const [erro, setErro] = useState<string | null>(null);
@@ -922,7 +1254,8 @@ function DetalheTitulo({
         setOcupado(true);
         setErro(null);
         try {
-            const j = await api(URL_PAGAR, acao, { id: t.id, motivo });
+            // 12/11/2026: cancelar passa pela Gestão (pedido); estornar continua direto
+            const j = acao === 'cancelar' ? await api(URL_ACOES, 'pedir_cancelamento', { id: t.id, motivo }) : await api(URL_PAGAR, acao, { id: t.id, motivo });
             onMudou(j.msg);
             setAcao(null);
             setMotivo('');
@@ -952,7 +1285,7 @@ function DetalheTitulo({
     };
 
     const s = t ? situacaoDe(t, hoje) : null;
-    const podeAlterar = t && (t.situacao === 'PREVISTO' || t.situacao === 'ABERTO') && t.origem !== 'CARTAO';
+    const podeAlterar = t && (t.situacao === 'PREVISTO' || t.situacao === 'ABERTO') && t.origem !== 'CARTAO' && !pendente;
 
     return (
         <Janela
@@ -965,7 +1298,7 @@ function DetalheTitulo({
                     <>
                         {podeAlterar ? (
                             <button type="button" className={BTN_SEC} onClick={() => setAcao('cancelar')}>
-                                <IconBan size={18} /> Cancelar título
+                                <IconBan size={18} /> Pedir cancelamento
                             </button>
                         ) : null}
                         {t.situacao === 'PAGO' ? (
@@ -983,7 +1316,7 @@ function DetalheTitulo({
                                 Confirmar valor
                             </button>
                         ) : null}
-                        {t.situacao === 'ABERTO' ? (
+                        {t.situacao === 'ABERTO' && !pendente ? (
                             <button type="button" className={BTN_PRI} onClick={() => onPagar(t)}>
                                 Pagar
                             </button>
@@ -1000,6 +1333,7 @@ function DetalheTitulo({
                         {ORIGEM[t.origem] ? <span className={`${SELO} ${S_AB}`}>{ORIGEM[t.origem]}</span> : null}
                         <span className="ml-auto text-[24px] font-extrabold tabular-nums">{brl(t.valor)}</span>
                     </div>
+                    {pendente ? <div className={`${NOTA} ${S_AVISO}`}>Cancelamento pedido · motivo: {pendente.motivo}. Está na aba Aprovações da Tesouraria, esperando a Gestão.</div> : null}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[14px] lg:grid-cols-4">
                         <Info r="Vencimento" v={dataBR(t.vencimento)} />
                         <Info r="Competência" v={`${t.competencia.slice(5)}/${t.competencia.slice(0, 4)}`} />
@@ -1099,7 +1433,7 @@ function DetalheTitulo({
                                     Desistir
                                 </button>
                                 <button type="button" className={BTN_PEQ_PRI} disabled={ocupado} onClick={() => void executar()}>
-                                    {acao === 'estornar' ? 'Estornar' : 'Cancelar título'}
+                                    {acao === 'estornar' ? 'Estornar' : 'Pedir à Gestão'}
                                 </button>
                             </div>
                         </div>
@@ -1117,5 +1451,244 @@ function Info({ r, v }: { r: string; v: React.ReactNode }) {
             <div className="text-[11.5px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:text-[#AEB9CF]">{r}</div>
             <div className="break-words font-bold">{v}</div>
         </div>
+    );
+}
+
+/* ============================== filtros avançados (12/11/2026) ============================== */
+
+function FiltrosPagar({ fa, titulos, onFechar, onAplicar }: { fa: FAP; titulos: Titulo[]; onFechar: () => void; onAplicar: (f: FAP) => void }) {
+    const [f, setF] = useState<FAP>({ td: 'venc', ...fa });
+    const set = (k: keyof FAP) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+    const uniq = (l: (string | null | undefined)[]) => Array.from(new Set(l.filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
+    const opcoes = useMemo(
+        () => ({
+            pessoas: uniq(titulos.map((t) => t.pessoa)),
+            naturezas: uniq(titulos.flatMap((t) => t.rateio.map((r) => r.natureza))),
+            formas: uniq(titulos.map((t) => t.forma)),
+            contas: uniq(titulos.map((t) => t.baixa?.conta)),
+        }),
+        [titulos],
+    );
+    const sel = (k: keyof FAP, rotulo: string, lista: string[], todos = 'Todos') => (
+        <label className="flex min-w-0 flex-col">
+            <span className={ROTULO}>{rotulo}</span>
+            <select className={CAMPO} value={f[k] || ''} onChange={set(k)}>
+                <option value="">{todos}</option>
+                {lista.map((x) => (
+                    <option key={x}>{x}</option>
+                ))}
+            </select>
+        </label>
+    );
+    const inp = (k: keyof FAP, rotulo: string, tipo = 'text', ph = '') => (
+        <label className="flex min-w-0 flex-col">
+            <span className={ROTULO}>{rotulo}</span>
+            <input className={CAMPO} type={tipo} value={f[k] || ''} onChange={set(k)} placeholder={ph} inputMode={tipo === 'text' && ph === '0,00' ? 'decimal' : undefined} />
+        </label>
+    );
+    return (
+        <Janela
+            titulo="Filtros"
+            sub="Valem para a lista e para a planilha, junto com a busca, a área e os botões de situação."
+            largura="max-w-3xl"
+            onFechar={onFechar}
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={() => setF({ td: 'venc' })}>
+                        Limpar tudo
+                    </button>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Voltar
+                    </button>
+                    <button
+                        type="button"
+                        className={BTN_PRI}
+                        onClick={() => {
+                            const n: FAP = {};
+                            (Object.keys(f) as (keyof FAP)[]).forEach((k) => {
+                                if (f[k]) n[k] = f[k];
+                            });
+                            if (!n.de && !n.ate) delete n.td;
+                            onAplicar(n);
+                        }}
+                    >
+                        Aplicar
+                    </button>
+                </>
+            }
+        >
+            <div className={ROTULO}>Período</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label className="flex min-w-0 flex-col">
+                    <span className={ROTULO}>Data de</span>
+                    <select className={CAMPO} value={f.td || 'venc'} onChange={set('td')}>
+                        <option value="venc">Vencimento</option>
+                        <option value="emis">Emissão</option>
+                        <option value="comp">Competência</option>
+                        <option value="pago">Pagamento</option>
+                    </select>
+                </label>
+                {inp('de', 'De', 'date')}
+                {inp('ate', 'Até', 'date')}
+            </div>
+            <div className={ROTULO}>Título</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {sel('pessoa', 'Fornecedor', opcoes.pessoas)}
+                {sel('natureza', 'Natureza', opcoes.naturezas, 'Todas')}
+                {inp('doc', 'Documento / NF', 'text', 'Número da nota ou boleto')}
+                {inp('vmin', 'Valor de', 'text', '0,00')}
+                {inp('vmax', 'Valor até', 'text', '0,00')}
+                <label className="flex min-w-0 flex-col">
+                    <span className={ROTULO}>Anexo</span>
+                    <select className={CAMPO} value={f.anexo || ''} onChange={set('anexo')}>
+                        <option value="">Todos</option>
+                        <option value="com">Com anexo</option>
+                        <option value="sem">Sem anexo</option>
+                    </select>
+                </label>
+            </div>
+            <div className={ROTULO}>Pagamento</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {sel('forma', 'Forma', opcoes.formas, 'Todas')}
+                {sel('conta', 'Saiu da conta', opcoes.contas, 'Todas')}
+            </div>
+        </Janela>
+    );
+}
+
+/* ============================== mais ações (12/11/2026) ============================== */
+
+function AcoesPagar({ cad, t, pendente, onFechar, onMudou }: { cad: Cadastros; t: Titulo; pendente: Pendente | null; onFechar: () => void; onMudou: (m: string) => void }) {
+    const aberto = (t.situacao === 'ABERTO' || t.situacao === 'PREVISTO') && !pendente;
+    const [aba, setAba] = useState(aberto ? 'prorrogar' : 'historico');
+    const [venc, setVenc] = useState(t.vencimento);
+    const [motivo, setMotivo] = useState('');
+    const [nat, setNat] = useState<number | null>(t.rateio.length === 1 ? t.rateio[0].natureza_id : null);
+    const [hist, setHist] = useState<{ acao: string; criado_em: string; nome: string | null }[] | null>(null);
+    const [erro, setErro] = useState<string | null>(null);
+    const [ocupado, setOcupado] = useState(false);
+    useEffect(() => {
+        if (aba !== 'historico' || hist) return;
+        void (async () => {
+            try {
+                const j = await api(URL_PAGAR, 'titulo', undefined, `&id=${t.id}`);
+                setHist(j.dados.historico);
+            } catch (e: any) {
+                const m = mensagemErro(e, 'Não foi possível carregar o histórico.');
+                if (m) setErro(m);
+            }
+        })();
+    }, [aba, hist, t.id]);
+    const enviar = async (acao: string, corpo: Record<string, unknown>) => {
+        setOcupado(true);
+        setErro(null);
+        try {
+            const j = await api(URL_ACOES, acao, { id: t.id, ...corpo });
+            onMudou(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível concluir.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    const abas: [string, string][] = [
+        ...((aberto ? [['prorrogar', 'Prorrogar vencimento']] : []) as [string, string][]),
+        ...((t.situacao !== 'CANCELADO' && t.rateio.length === 1 ? [['natureza', 'Alterar natureza']] : []) as [string, string][]),
+        ...((aberto ? [['cancelar', 'Cancelar']] : []) as [string, string][]),
+        ['historico', 'Histórico'],
+    ];
+    return (
+        <Janela titulo={t.pessoa || 'Título'} sub={`${t.descricao}${t.parcela ? ` · parcela ${t.parcela}` : ''} · ${brl(t.valor)} · vence ${dataBR(t.vencimento)}`} onFechar={onFechar}>
+            <div className="flex flex-wrap gap-2">
+                {abas.map(([k, r]) => (
+                    <button key={k} type="button" className={PILULA(aba === k)} onClick={() => setAba(k)}>
+                        {r}
+                    </button>
+                ))}
+            </div>
+            {pendente ? <div className={`${NOTA} ${S_AVISO}`}>Cancelamento pedido · motivo: {pendente.motivo}. Está na aba Aprovações da Tesouraria, esperando a Gestão.</div> : null}
+            {aba === 'prorrogar' ? (
+                <>
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="flex flex-col">
+                            <span className={ROTULO}>Vencimento atual</span>
+                            <div className={`${CAMPO} flex items-center font-extrabold`}>{dataBR(t.vencimento)}</div>
+                        </label>
+                        <label className="flex flex-col">
+                            <span className={ROTULO}>Novo vencimento</span>
+                            <input type="date" className={CAMPO} value={venc} onChange={(e) => setVenc(e.target.value)} />
+                        </label>
+                    </div>
+                    <label className="flex flex-col">
+                        <span className={ROTULO}>Motivo (opcional)</span>
+                        <input className={CAMPO} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: boleto novo, acordo com o fornecedor" />
+                    </label>
+                    <div className="flex justify-end">
+                        <button type="button" className={BTN_PRI} disabled={ocupado || venc === t.vencimento} onClick={() => void enviar('prorrogar', { vencimento: venc, motivo })}>
+                            Prorrogar
+                        </button>
+                    </div>
+                </>
+            ) : null}
+            {aba === 'natureza' ? (
+                <>
+                    <label className="flex flex-col">
+                        <span className={ROTULO}>Nova natureza (atual: {t.rateio[0]?.natureza})</span>
+                        <SelectNatureza cad={cad} value={nat} onChange={setNat} classe={CAMPO} />
+                    </label>
+                    <div className={SUB}>Num mês já fechado a troca não é aceita (o DRE daquele mês não muda).</div>
+                    <div className="flex justify-end">
+                        <button type="button" className={BTN_PRI} disabled={ocupado || !nat} onClick={() => void enviar('natureza', { natureza_id: nat })}>
+                            Alterar natureza
+                        </button>
+                    </div>
+                </>
+            ) : null}
+            {aba === 'cancelar' ? (
+                <>
+                    <label className="flex flex-col">
+                        <span className={ROTULO}>Motivo do cancelamento</span>
+                        <select className={CAMPO} value={motivo} onChange={(e) => setMotivo(e.target.value)}>
+                            <option value="">Escolha o motivo</option>
+                            <option>Lançado em duplicidade</option>
+                            <option>Valor lançado errado</option>
+                            <option>Fornecedor cancelou a cobrança</option>
+                            <option>Outro</option>
+                        </select>
+                    </label>
+                    <div className={`${NOTA} ${S_AVISO}`}>O cancelamento vai para a Gestão (aba Aprovações da Tesouraria). Até lá o título fica &quot;Cancelamento pedido&quot; e não pode ser pago.</div>
+                    <div className="flex justify-end">
+                        <button type="button" className={BTN_PRI} disabled={ocupado || !motivo} onClick={() => void enviar('pedir_cancelamento', { motivo })}>
+                            Pedir cancelamento
+                        </button>
+                    </div>
+                </>
+            ) : null}
+            {aba === 'historico' ? (
+                hist ? (
+                    hist.length ? (
+                        <div className="flex flex-col gap-1.5">
+                            {hist
+                                .slice()
+                                .reverse()
+                                .map((h, i) => (
+                                    <div key={i} className="rounded-xl border border-[#EEF2F7] px-3 py-2 text-[14px] dark:border-white/[0.08]">
+                                        <b>{ACAO[h.acao] || h.acao}</b>
+                                        <div className={SUB}>
+                                            {dataBR(h.criado_em)} {h.criado_em.slice(11, 16)} · {h.nome || 'automático'}
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+                    ) : (
+                        <div className={SUB}>Sem registros.</div>
+                    )
+                ) : (
+                    <div className="py-4 text-center text-[#5B6478]">Carregando…</div>
+                )
+            ) : null}
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
     );
 }

@@ -1,7 +1,7 @@
 ﻿CENTRAL DAS TVs - Plano PAI
 ===========================
 
-Controla pelo PC as TVs das salas e dos painéis (volume, mudo, ligar/desligar a tela,
+Controla pelo PC as TVs das salas e dos painéis (volume, mudo, descanso/acordar,
 abrir/recarregar a página, print da tela e reiniciar), pela rede Wi-Fi.
 
 COMO ABRIR
@@ -23,6 +23,19 @@ PARA UMA TV APARECER
 ABRIR PÁGINA
 - Os endereços de cada TV ficam em tvs.json (criado na primeira vez). O nome no arquivo
   precisa ser igual ao nome da TV.
+
+TV BRO
+- O botão "TV Bro" abre o navegador TV Bro. "Abrir página" abre o endereço da TV já dentro do TV Bro.
+
+DESCANSO E ACORDAR (no lugar de desligar)
+- As TVs desligadas saem do Wi-Fi e só voltam pelo controle; por isso a Central não desliga mais.
+- "Descanso" abre uma página toda preta no TV Bro: a tela fica apagada, mas a TV continua ligada e no Wi-Fi.
+- "Acordar" (ou "Abrir página") volta para a página normal da TV.
+- O endereço da página preta pode ser trocado em tvs.json com a chave "DESCANSO".
+- Se alguém desligar uma TV pelo controle, ela aparece como "Fora da rede": ligue pelo controle e clique em "Procurar TVs".
+
+USAR EM OUTRO PC
+- Para funcionar em outro PC, aceite "Sempre permitir" na TV também para ele (ou copie a pasta .android do usuário).
 
 SEGURANÇA
 - A Central só aceita comandos deste próprio PC.

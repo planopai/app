@@ -4,7 +4,9 @@
 #
 # Como usar: dê dois cliques em "Abrir Central das TVs.bat". O navegador abre em http://localhost:8790
 # - Acha as TVs sozinha na rede (porta 5555) e mostra pelo NOME de cada uma (o IP pode mudar: tudo bem).
-# - Volume (+, -, mudo, valor exato), ligar/desligar a tela, recarregar a página, abrir o painel, print da tela, reiniciar.
+# - Volume (+, -, mudo, valor exato), ligar/desligar a tela, abrir o TV Bro, abrir/recarregar a página, print, reiniciar.
+# - Lembra das TVs já vistas (tvs-conhecidas.json): TV desligada continua na tela e pode ser ligada pela rede
+#   (Wake-on-LAN), se a TV tiver "ligar pela rede / Wi-Fi em espera".
 # Só funciona neste PC (o painel só atende em localhost) e só com TVs que já autorizaram este PC
 # ("Permitir depuração" > "Sempre permitir deste computador").
 #
@@ -18,6 +20,8 @@ $AdbPath  = 'C:\adb\adb.exe'
 $Pasta    = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Config   = Join-Path $Pasta 'tvs.json'          # nomes e endereços das páginas de cada TV (criado na 1ª vez)
 $Prints   = Join-Path $Pasta 'prints'
+$Conhecidas = Join-Path $Pasta 'tvs-conhecidas.json'   # nome, último IP e MAC de cada TV já encontrada
+$PacoteTvBro = 'com.phlox.tvwebbrowser'                # navegador TV Bro (o pacote é confirmado em cada TV)
 
 if (-not (Test-Path $AdbPath)) {
     $achado = Get-Command adb.exe -ErrorAction SilentlyContinue
@@ -100,6 +104,50 @@ function Procurar-Portas([string]$Base, [int]$PortaTv) {
     return $abertos
 }
 
+function Ler-Conhecidas {
+    try {
+        $j = Get-Content -Path $Conhecidas -Raw -Encoding UTF8 | ConvertFrom-Json
+        $h = @{}
+        foreach ($p in $j.PSObject.Properties) { $h[$p.Name] = $p.Value }
+        return $h
+    } catch { return @{} }
+}
+function Gravar-Conhecidas($H) {
+    try { ($H | ConvertTo-Json -Depth 4) | Out-File -FilePath $Conhecidas -Encoding UTF8 } catch {}
+}
+
+function Mac-Da-Tv([string]$Alvo) {
+    foreach ($ifc in 'wlan0', 'eth0') {
+        $m = Adb @('-s', $Alvo, 'shell', 'cat', "/sys/class/net/$ifc/address") 4000
+        if ($m -match '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' -and $m -ne '00:00:00:00:00:00' -and $m -ne '02:00:00:00:00:00') { return $m.Trim() }
+    }
+    return ''
+}
+
+function Pacote-Navegador([string]$Alvo) {
+    $lista = Adb @('-s', $Alvo, 'shell', 'pm', 'list', 'packages') 6000
+    if ($lista -match "package:($([regex]::Escape($PacoteTvBro)))\b") { return $PacoteTvBro }
+    foreach ($linha in ($lista -split "`n")) {
+        if ($linha -match 'package:(\S*(tvbro|tvwebbrowser)\S*)') { return $Matches[1].Trim() }
+    }
+    return ''
+}
+
+function Acordar-Pela-Rede([string]$Mac, [string]$Ip) {
+    # Wake-on-LAN: "pacote mágico" (6x FF + 16x o MAC) para a rede inteira.
+    $bytesMac = $Mac -split '[:-]' | ForEach-Object { [Convert]::ToByte($_, 16) }
+    $lista = New-Object System.Collections.Generic.List[byte]
+    for ($i = 0; $i -lt 6; $i++) { $lista.Add(0xFF) }
+    for ($i = 0; $i -lt 16; $i++) { foreach ($b in $bytesMac) { $lista.Add([byte]$b) } }
+    $pacote = $lista.ToArray()
+    $udp = New-Object System.Net.Sockets.UdpClient
+    $udp.EnableBroadcast = $true
+    $destinos = @('255.255.255.255')
+    if ($Ip -match '^(\d+\.\d+\.\d+)\.\d+$') { $destinos += "$($Matches[1]).255" }
+    foreach ($d in $destinos) { foreach ($porta in 9, 7) { for ($i = 0; $i -lt 3; $i++) { [void]$udp.Send($pacote, $pacote.Length, $d, $porta) } } }
+    $udp.Close()
+}
+
 $script:TVs = @()     # lista atual: Nome, Ip, Status, Volume, VolumeMax, Tela
 $script:UltimaBusca = $null
 
@@ -120,6 +168,22 @@ function Ler-Volume([string]$Alvo) {
     if ($s -match 'volume is (\d+) in range \[(\d+)\.\.(\d+)\]') { return @{ Atual = [int]$Matches[1]; Max = [int]$Matches[3] } }
     $s = Adb @('-s', $Alvo, 'shell', 'media', 'volume', '--stream', '3', '--get') 4000
     if ($s -match 'volume is (\d+) in range \[(\d+)\.\.(\d+)\]') { return @{ Atual = [int]$Matches[1]; Max = [int]$Matches[3] } }
+    # TVs TCL (painéis) não respondem aos comandos acima: lê do relatório de áudio do Android.
+    $d = Adb @('-s', $Alvo, 'shell', 'dumpsys', 'audio') 6000
+    $bloco = [regex]::Match($d, '(?s)- STREAM_MUSIC:(.*?)(- STREAM_|\z)')
+    if ($bloco.Success) {
+        $b = $bloco.Groups[1].Value
+        $max = $null; $atual = $null
+        if ($b -match 'Max:\s*(\d+)') { $max = [int]$Matches[1] }
+        if ($b -match 'streamVolume:\s*(\d+)') { $atual = [int]$Matches[1] }
+        elseif ($b -match 'Current:[^\r\n]*?\(speaker\):\s*(\d+)') { $atual = [int]$Matches[1] }
+        elseif ($b -match 'Current:[^\r\n]*?\):\s*(\d+)') { $atual = [int]$Matches[1] }
+        if ($max -ne $null -and $atual -ne $null) {
+            # O relatório guarda o volume x10 em alguns Androids antigos.
+            if ($atual -gt $max -and ($atual % 10) -eq 0) { $atual = [int]($atual / 10) }
+            return @{ Atual = $atual; Max = $max }
+        }
+    }
     return @{ Atual = $null; Max = $null }
 }
 
@@ -132,13 +196,39 @@ function Buscar-TVs {
         $alvo = "${ip}:5555"
         Adb @('connect', $alvo) 5000 | Out-Null
         $info = Info-Tv $alvo
+        $nome = $(if ($info.Nome) { $info.Nome } else { $ip })
+        $mac = ''
+        $nav = ''
+        if ($info.Status -eq 'ok') {
+            $mac = Mac-Da-Tv $alvo
+            $nav = Pacote-Navegador $alvo
+            $conh = Ler-Conhecidas
+            $antes = $conh[$nome]
+            if (-not $mac -and $antes) { $mac = [string]$antes.mac }
+            $conh[$nome] = @{ ip = $ip; mac = $mac; navegador = $nav; visto = (Get-Date -Format 'dd/MM/yyyy HH:mm') }
+            Gravar-Conhecidas $conh
+        }
         $lista += [pscustomobject]@{
-            nome = $(if ($info.Nome) { $info.Nome } else { $ip })
+            nome = $nome
             ip = $ip
             status = $info.Status
             tela = $info.Tela
             volume = $info.Volume
             volumeMax = $info.VolumeMax
+            mac = $mac
+            navegador = $nav
+            visto = ''
+        }
+    }
+    # TVs que já apareceram antes e agora não responderam (desligadas ou fora do Wi-Fi).
+    $conh = Ler-Conhecidas
+    foreach ($nome in $conh.Keys) {
+        if (-not ($lista | Where-Object { $_.nome -eq $nome })) {
+            $c = $conh[$nome]
+            $lista += [pscustomobject]@{
+                nome = $nome; ip = [string]$c.ip; status = 'fora_da_rede'; tela = $false; volume = $null; volumeMax = $null
+                mac = [string]$c.mac; navegador = [string]$c.navegador; visto = [string]$c.visto
+            }
         }
     }
     $script:TVs = @($lista | Sort-Object nome)
@@ -155,6 +245,14 @@ function Executar([string]$Ip, [string]$Acao, [string]$Valor) {
     $tv = Tv-Por-Ip $Ip
     if (-not $tv) { return @{ ok = $false; msg = 'TV não encontrada. Clique em "Procurar TVs".' } }
     $alvo = "${Ip}:5555"
+    if ($tv.status -ne 'ok' -and $Acao -ne 'ligar') {
+        return @{ ok = $false; msg = 'A TV está fora da rede (desligada ou sem Wi-Fi). Use "Ligar" ou ligue pelo controle e clique em Procurar TVs.' }
+    }
+    if ($Acao -eq 'ligar' -and $tv.status -ne 'ok') {
+        if (-not $tv.mac) { return @{ ok = $false; msg = 'Não sei o endereço físico (MAC) desta TV para ligar pela rede. Ligue pelo controle uma vez com a Central aberta e clique em Procurar TVs.' } }
+        Acordar-Pela-Rede $tv.mac $tv.ip
+        return @{ ok = $true; tv = $tv; msg = 'Pedido de ligar enviado pela rede. Se a TV aceitar, ela aparece em até 1 minuto: clique em Procurar TVs.' }
+    }
     $teclas = @{
         'vol_mais' = 'KEYCODE_VOLUME_UP'; 'vol_menos' = 'KEYCODE_VOLUME_DOWN'; 'mudo' = 'KEYCODE_VOLUME_MUTE'
         'ligar' = 'KEYCODE_WAKEUP'; 'desligar' = 'KEYCODE_SLEEP'; 'voltar' = 'KEYCODE_BACK'; 'inicio' = 'KEYCODE_HOME'
@@ -168,12 +266,42 @@ function Executar([string]$Ip, [string]$Acao, [string]$Valor) {
             if (-not [int]::TryParse($Valor, [ref]$n)) { return @{ ok = $false; msg = 'Volume inválido.' } }
             $saida = Adb @('-s', $alvo, 'shell', 'cmd', 'media_session', 'volume', '--stream', '3', '--set', [string]$n)
             if ($saida -match 'Unknown|Error|not found') { $saida = Adb @('-s', $alvo, 'shell', 'media', 'volume', '--stream', '3', '--set', [string]$n) }
+            $agora = Ler-Volume $alvo
+            if ($agora.Atual -ne $null -and $agora.Atual -ne $n) {
+                # Não obedeceu ao valor direto (TCL): chega lá apertando Vol+/Vol- quantas vezes precisar.
+                for ($volta = 0; $volta -lt 3 -and $agora.Atual -ne $n; $volta++) {
+                    $dif = $n - $agora.Atual
+                    $tecla = $(if ($dif -gt 0) { '24' } else { '25' })
+                    $qtd = [Math]::Min([Math]::Abs($dif), 40)
+                    Adb (@('-s', $alvo, 'shell', 'input', 'keyevent') + (@($tecla) * $qtd)) 15000 | Out-Null
+                    $agora = Ler-Volume $alvo
+                }
+            }
+            $saida = ''
+        }
+        'tvbro' {
+            $pac = $tv.navegador
+            if (-not $pac) { $pac = Pacote-Navegador $alvo; $tv.navegador = $pac }
+            if (-not $pac) { return @{ ok = $false; msg = 'O TV Bro não está instalado nesta TV.' } }
+            $saida = Adb @('-s', $alvo, 'shell', 'monkey', '-p', $pac, '-c', 'android.intent.category.LAUNCHER', '1')
+            if ($saida -match 'No activities found|aborted') { return @{ ok = $false; msg = "Não consegui abrir o TV Bro ($saida)." } }
+            $saida = ''
         }
         'abrir_pagina' {
             $paginas = Ler-Paginas
             $url = $paginas[$tv.nome.ToUpper().Trim()]
             if (-not $url) { return @{ ok = $false; msg = "Sem endereço para '$($tv.nome)' no arquivo tvs.json." } }
-            $saida = Adb @('-s', $alvo, 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', $url)
+            $pac = $tv.navegador
+            if (-not $pac) { $pac = Pacote-Navegador $alvo; $tv.navegador = $pac }
+            if ($pac) {
+                # Abre o endereço dentro do TV Bro (o navegador das TVs).
+                $saida = Adb @('-s', $alvo, 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', $url, '-p', $pac)
+                if ($saida -match 'Error|unable to resolve') { $saida = Adb @('-s', $alvo, 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', $url) }
+            } else {
+                $saida = Adb @('-s', $alvo, 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', $url)
+            }
+            if ($saida -match 'Error') { return @{ ok = $false; msg = "Não consegui abrir a página ($saida)." } }
+            $saida = ''
         }
         'reiniciar' { $saida = Adb @('-s', $alvo, 'reboot') 6000 }
         default { return @{ ok = $false; msg = 'Ação desconhecida.' } }
@@ -202,6 +330,13 @@ function Tirar-Print([string]$Ip) {
     if (-not $p.WaitForExit(15000)) { try { $p.Kill() } catch {}; return $null }
     $copia.Wait(3000) | Out-Null
     $bytes = $ms.ToArray()
+    # TVs TCL escrevem avisos ("Init wrapper sys mutex...") antes da imagem: corta tudo antes do início do PNG.
+    $ini = -1
+    for ($i = 0; $i -lt [Math]::Min($bytes.Length - 4, 4096); $i++) {
+        if ($bytes[$i] -eq 0x89 -and $bytes[$i + 1] -eq 0x50 -and $bytes[$i + 2] -eq 0x4E -and $bytes[$i + 3] -eq 0x47) { $ini = $i; break }
+    }
+    if ($ini -lt 0) { return $null }
+    if ($ini -gt 0) { $bytes = [byte[]]$bytes[$ini..($bytes.Length - 1)] }
     if ($bytes.Length -lt 100) { return $null }
     [System.IO.File]::WriteAllBytes($arq, $bytes)
     return $bytes
