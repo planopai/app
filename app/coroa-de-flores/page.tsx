@@ -176,6 +176,8 @@ type ManualOrder = {
     origem: ManualOrigem;
     /** ID do pedido no WooCommerce quando o registro veio da loja online. */
     origem_externa_id?: string | null;
+    /** 12/11/2026: forma de pagamento do pedido do site (PIX, CREDITO, DEBITO), vinda do coroas.php. NSU e TID ficam só no Financeiro. */
+    forma_pagamento?: string | null;
     status: ManualStatus;
     comprovante_url?: string | null;
     comprovante_mime?: string | null;
@@ -907,6 +909,15 @@ function pedidoFrasesManual(order?: ManualOrder | null) {
     return itens
         .map((item, index) => `${item.ordem || index + 1}) ${item.frase || "—"}`)
         .join(" | ");
+}
+
+/** 12/11/2026: forma de pagamento do pedido do site (Pix ou cartão). Vazio quando não há (pedido do balcão, OS). */
+function formaPagamentoCoroa(order?: { forma_pagamento?: string | null } | null): string {
+    const f = String(order?.forma_pagamento ?? "").trim().toUpperCase();
+    if (f === "PIX") return "PIX";
+    if (f === "CREDITO") return "Cartão de crédito";
+    if (f === "DEBITO") return "Cartão de débito";
+    return "";
 }
 
 function pagamentoAutomaticoManual(order?: ManualOrder | null) {
@@ -3240,7 +3251,7 @@ export default function Page() {
                 cliente: order.solicitante || "—",
                 modelo: modelosCoroaHistorico(order),
                 tipo: tipoCoroaHistorico(order),
-                totalLabel: totalManual(order) > 0 ? dinheiroBRL(totalManual(order)) : "—",
+                totalLabel: (totalManual(order) > 0 ? dinheiroBRL(totalManual(order)) : "—") + (formaPagamentoCoroa(order) ? ` · ${formaPagamentoCoroa(order)}` : ""),
                 statusLabel: manualStatusLabel(order.status),
                 statusClass: manualStatusClass(order.status),
                 sortTime: parseTime(order.criado_em),
@@ -3524,6 +3535,9 @@ export default function Page() {
                                             <span className={`rounded-full border px-2 py-0.5 text-[10px] ${pagamentoAutomaticoClass(o)}`}>
                                                 {pagamentoAutomaticoManual(o)}
                                             </span>
+                                            {formaPagamentoCoroa(o) && (
+                                                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-700">{formaPagamentoCoroa(o)}</span>
+                                            )}
                                             <span className="rounded-full border px-2 py-0.5 text-[10px]">{origemPedidoLabel(o)}</span>
                                             {o.coroa_autorizada_prefeitura === "Sim" && o.convenio_id ? (
                                                 <span className="rounded-full border border-[#00AEEC] bg-[#E6F7FE] px-2 py-0.5 text-[10px] text-[#313C55]">Prefeitura</span>
@@ -3596,6 +3610,9 @@ export default function Page() {
                                                         <span className={`rounded-full border px-2 py-0.5 text-xs ${pagamentoAutomaticoClass(o)}`}>
                                                             {pagamentoAutomaticoManual(o)}
                                                         </span>
+                                                        {formaPagamentoCoroa(o) && (
+                                                            <div className="mt-1 text-xs text-muted-foreground">{formaPagamentoCoroa(o)}</div>
+                                                        )}
                                                     </td>
                                                     <td className="px-3 py-2">
                                                         {origemPedidoLabel(o)}
@@ -5086,6 +5103,9 @@ export default function Page() {
                                                     <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${pagamentoAutomaticoClass(manualDetail)}`}>
                                                         {pagamentoAutomaticoManual(manualDetail)}
                                                     </span>
+                                                    {formaPagamentoCoroa(manualDetail) && (
+                                                        <div className="mt-1 text-xs text-muted-foreground">Forma: {formaPagamentoCoroa(manualDetail)}</div>
+                                                    )}
                                                 </div>
 
                                                 <div className={pedidoEhOnline(manualDetail) ? "min-w-0 sm:flex-1 sm:pl-6" : ""}>

@@ -233,6 +233,8 @@ type CoroaTvPedido = {
     origem?: string | null;
     /** Id do pedido na loja do site (WooCommerce). Preenchido = pedido online, mesmo com origem venda_direta. */
     origem_externa_id?: string | number | null;
+    /** 12/11/2026: forma de pagamento do pedido do site (PIX, CREDITO, DEBITO), vinda do coroas.php. NSU e TID ficam só no Financeiro. */
+    forma_pagamento?: string | null;
     status?: string | null;
     comprovante_url?: string | null;
     criado_por?: string | null;
@@ -1433,8 +1435,48 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
     const involStr = decodeHtmlEntitiesDeep(String(involRaw ?? "")).trim().toLowerCase();
     const involYN = ["1", "true", "t", "sim", "s", "yes", "y"].includes(involStr) ? "SIM" : "NÃO";
 
-    const localVelRaw = v("local_velorio") || "A DEFINIR";
-    const localVelClipboard = isGoogleMapsRota(localVelRaw) ? ensureHttpsUrl(localVelRaw) : localVelRaw;
+    // Local do velório (12/11/2026): mesma regra do LocalVelorioQuadro — Memorial + sala, ou tipo + endereço.
+    const localVelClipboard = (() => {
+        const tipoLocal = v("local_cerimonia");
+        const endRaw = v("local_velorio");
+        const endereco = endRaw && isGoogleMapsRota(endRaw) ? ensureHttpsUrl(endRaw) : endRaw;
+        const sala = nomeSalaVelorio(v("sala_velorio"));
+        const memorial = tipoLocal ? /memorial/i.test(tipoLocal) : !!sala || /memorial/i.test(endRaw);
+        if (memorial) return `Memorial Senhor do Bonfim · ${sala || "sala a definir"}`;
+        if (tipoLocal && !/^outro$/i.test(tipoLocal)) return `${tipoLocal} · ${endereco || "endereço a definir"}`;
+        return endereco || "A DEFINIR";
+    })();
+
+    // Tanatopraxia (12/11/2026): tipo do procedimento (tanato_procedimento, vem do informativo.php) e reconstituição facial.
+    const tanatoRaw = v("tanato");
+    const tanatoSim = tanatoRaw.toLowerCase() === "sim";
+    const tanatoProc = v("tanato_procedimento");
+    const tanatoTexto = tanatoSim && tanatoProc ? `Sim — ${tanatoProc}` : tanatoRaw || "A DEFINIR";
+    const reconstituicaoLinha = tanatoSim && v("reconstituicao_facial").toLowerCase() === "sim" ? [`*Reconstituição facial:* Sim`] : [];
+
+    // Translado (12/11/2026): campos da OS gravados no atendimento.
+    const transladoRaw = v("translado");
+    const transladoTexto = (() => {
+        if (transladoRaw.toLowerCase() !== "sim") return transladoRaw || "A DEFINIR";
+        const origem = v("translado_origem");
+        const destino = v("translado_destino");
+        const km = v("translado_km").replace(".", ",");
+        const rota = origem || destino ? ` — ${origem || "partida a definir"} → ${destino || "destino a definir"}` : "";
+        return `Sim${rota}${km ? ` (${km} km)` : ""}`;
+    })();
+
+    // Observações (12/11/2026): o atendimento grava em 4 campos; o campo antigo "observacao" fica só para registros antigos.
+    const obsLinhas = (
+        [
+            ["Obs. do atendimento", v("observacao_atendimento")],
+            ["Obs. dos itens", v("observacao_itens")],
+            ["Obs. do velório", v("observacao_velorio01")],
+            ["Obs. do sepultamento", v("observacao_velorio02")],
+            ["Observação", v("observacao")],
+        ] as const
+    )
+        .filter(([, t]) => !!t)
+        .map(([k, t]) => `*${k}:* ${t}`);
 
     const structured = extractMateriaisStructuredWithKey(r);
     const flat = normalizeMateriaisFromRegistro(r);
@@ -1485,13 +1527,15 @@ function buildClipboardText(r: Registro, lookup: Record<string, MatLookupInfo> =
         `*Urna:* ${v("urna") || "A DEFINIR"}`,
         `*Roupa:* ${v("roupa") || "A DEFINIR"}`,
         `*Assistência:* ${v("assistencia") || "A DEFINIR"}`,
-        `*Tanato:* ${v("tanato") || "A DEFINIR"}`,
+        `*Tanato:* ${tanatoTexto}`,
+        ...reconstituicaoLinha,
         `*Invol:* ${involYN}`,
+        `*Translado:* ${transladoTexto}`,
         `*Ornamentação:* ${ornTipo || "A DEFINIR"}`,
         ...materiaisClipboardLines,
         `*Local do Velório:* ${localVelClipboard || "A DEFINIR"}`,
         `*Agente:* ${v("agente") || "A DEFINIR"}`,
-        `*Observação:* ${v("observacao") || "A DEFINIR"}`,
+        ...(obsLinhas.length ? obsLinhas : [`*Observação:* A DEFINIR`]),
     ];
 
     return lines.join("\n\n");
@@ -1614,6 +1658,15 @@ function coroaPagamentoLabel(order?: CoroaTvPedido | null): string {
     if (status === "pago") return "Pago";
 
     return "Aguardando";
+}
+
+/** 12/11/2026: marca curta da forma de pagamento do pedido do site no Quadro: "Pago · PIX", "Pago · Crédito", "Pago · Débito". */
+function coroaPagamentoTexto(order?: CoroaTvPedido | null): string {
+    const label = coroaPagamentoLabel(order);
+    if (label !== "Pago") return label;
+    const f = String(order?.forma_pagamento ?? "").trim().toUpperCase();
+    const forma = f === "PIX" ? "PIX" : f === "CREDITO" ? "Crédito" : f === "DEBITO" ? "Débito" : "";
+    return forma ? `Pago · ${forma}` : "Pago";
 }
 
 function coroaPagamentoClass(order?: CoroaTvPedido | null): string {
@@ -5437,7 +5490,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                             <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                                 <CoroaTvIcon type="wallet" />
                                             </span>
-                                            <span>{coroaPagamentoLabel(pedido)}</span>
+                                            <span>{coroaPagamentoTexto(pedido)}</span>
                                         </span>
                                     </div>
 
@@ -5514,7 +5567,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                         <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                             <CoroaTvIcon type="wallet" />
                                         </span>
-                                        {coroaPagamentoLabel(pedido)}
+                                        {coroaPagamentoTexto(pedido)}
                                     </span>
 
                                     <CoroaTimelineCell
@@ -5839,7 +5892,7 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
             <div className="tv-cr-foot">
                 <span className={`tv-ent ${coroaEhRetirada(pedido) ? "tv-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
                 <span className="tv-origem">Origem: {coroaOrigemPedido(pedido)}</span>
-                <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? coroaPagamentoTexto(pedido) : "Aguardando pagamento"}</span>
                 {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
             </div>
             <FraseRolagem texto={frase} className="tv-cr-frase" />
@@ -6536,7 +6589,7 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             <div className="qm-cr-foot">
                 <span className={`qm-ent ${coroaEhRetirada(pedido) ? "qm-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
                 <span className="qm-origem">Origem: {coroaOrigemPedido(pedido)}</span>
-                <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? coroaPagamentoTexto(pedido) : "Aguardando pagamento"}</span>
             </div>
         </div>
     );
@@ -7408,7 +7461,7 @@ function CoroaDrawer({
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <span className="qa-tag qa-tag-status qa-tag-xs">{coroaStatusLabel(pedido.status)}</span>
                                 <span className="qa-tag qa-tag-info qa-tag-xs">{coroaOrigemPedido(pedido)}</span>
-                                <span className={`qa-tag qa-tag-xs ${pago ? "qa-tag-ok" : "qa-tag-warn"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                                <span className={`qa-tag qa-tag-xs ${pago ? "qa-tag-ok" : "qa-tag-warn"}`}>{pago ? coroaPagamentoTexto(pedido) : "Aguardando pagamento"}</span>
                             </div>
                             {atraso && <div className="qd-flag qd-flag-warn" style={{ background: "var(--d-warnbg)", color: "var(--d-warn)" }}>⏱ {atraso.longo}</div>}
                         </div>
@@ -7477,7 +7530,7 @@ function CoroaDrawer({
                                     label="Pagamento"
                                     value={
                                         <>
-                                            {pago ? "Pago" : "Aguardando"}
+                                            {pago ? coroaPagamentoTexto(pedido) : "Aguardando"}
                                             {String(pedido.comprovante_url ?? "").trim() ? (
                                                 <>
                                                     {" · "}

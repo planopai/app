@@ -233,6 +233,8 @@ type CoroaTvPedido = {
     origem?: string | null;
     /** Id do pedido na loja do site (WooCommerce). Preenchido = pedido online, mesmo com origem venda_direta. */
     origem_externa_id?: string | number | null;
+    /** 12/11/2026: forma de pagamento do pedido do site (PIX, CREDITO, DEBITO), vinda do coroas.php. NSU e TID ficam só no Financeiro. */
+    forma_pagamento?: string | null;
     status?: string | null;
     comprovante_url?: string | null;
     criado_por?: string | null;
@@ -1614,6 +1616,15 @@ function coroaPagamentoLabel(order?: CoroaTvPedido | null): string {
     if (status === "pago") return "Pago";
 
     return "Aguardando";
+}
+
+/** 12/11/2026: marca curta da forma de pagamento do pedido do site no Quadro: "Pago · PIX", "Pago · Crédito", "Pago · Débito". */
+function coroaPagamentoTexto(order?: CoroaTvPedido | null): string {
+    const label = coroaPagamentoLabel(order);
+    if (label !== "Pago") return label;
+    const f = String(order?.forma_pagamento ?? "").trim().toUpperCase();
+    const forma = f === "PIX" ? "PIX" : f === "CREDITO" ? "Crédito" : f === "DEBITO" ? "Débito" : "";
+    return forma ? `Pago · ${forma}` : "Pago";
 }
 
 function coroaPagamentoClass(order?: CoroaTvPedido | null): string {
@@ -5437,7 +5448,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                             <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                                 <CoroaTvIcon type="wallet" />
                                             </span>
-                                            <span>{coroaPagamentoLabel(pedido)}</span>
+                                            <span>{coroaPagamentoTexto(pedido)}</span>
                                         </span>
                                     </div>
 
@@ -5514,7 +5525,7 @@ const CoroasTvBoard = React.memo(function CoroasTvBoard({
                                         <span className="qa-coroa-badge-icon h-2.5 w-2.5 shrink-0">
                                             <CoroaTvIcon type="wallet" />
                                         </span>
-                                        {coroaPagamentoLabel(pedido)}
+                                        {coroaPagamentoTexto(pedido)}
                                     </span>
 
                                     <CoroaTimelineCell
@@ -5839,7 +5850,7 @@ function TvCartaoCoroa({ pedido, nowMs, atraso }: { pedido: CoroaTvPedido; nowMs
             <div className="tv-cr-foot">
                 <span className={`tv-ent ${coroaEhRetirada(pedido) ? "tv-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
                 <span className="tv-origem">Origem: {coroaOrigemPedido(pedido)}</span>
-                <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                <span className={`tv-pay ${pago ? "tv-pay-ok" : "tv-pay-pend"}`}>{pago ? coroaPagamentoTexto(pedido) : "Aguardando pagamento"}</span>
                 {atraso && <span className="tv-cr-late-t">⏱ {atraso.longo}</span>}
             </div>
             <FraseRolagem texto={frase} className="tv-cr-frase" />
@@ -6536,7 +6547,7 @@ function MobCartaoCoroa({ pedido, nowMs, atraso, onSelect }: { pedido: CoroaTvPe
             <div className="qm-cr-foot">
                 <span className={`qm-ent ${coroaEhRetirada(pedido) ? "qm-ent-ret" : ""}`}>{coroaEhRetirada(pedido) ? "Retirar no local" : "Entregar"}</span>
                 <span className="qm-origem">Origem: {coroaOrigemPedido(pedido)}</span>
-                <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                <span className={`qm-pay ${pago ? "qm-pay-ok" : "qm-pay-pend"}`}>{pago ? coroaPagamentoTexto(pedido) : "Aguardando pagamento"}</span>
             </div>
         </div>
     );
@@ -7408,7 +7419,7 @@ function CoroaDrawer({
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <span className="qa-tag qa-tag-status qa-tag-xs">{coroaStatusLabel(pedido.status)}</span>
                                 <span className="qa-tag qa-tag-info qa-tag-xs">{coroaOrigemPedido(pedido)}</span>
-                                <span className={`qa-tag qa-tag-xs ${pago ? "qa-tag-ok" : "qa-tag-warn"}`}>{pago ? "Pago" : "Aguardando pagamento"}</span>
+                                <span className={`qa-tag qa-tag-xs ${pago ? "qa-tag-ok" : "qa-tag-warn"}`}>{pago ? coroaPagamentoTexto(pedido) : "Aguardando pagamento"}</span>
                             </div>
                             {atraso && <div className="qd-flag qd-flag-warn" style={{ background: "var(--d-warnbg)", color: "var(--d-warn)" }}>⏱ {atraso.longo}</div>}
                         </div>
@@ -7477,7 +7488,7 @@ function CoroaDrawer({
                                     label="Pagamento"
                                     value={
                                         <>
-                                            {pago ? "Pago" : "Aguardando"}
+                                            {pago ? coroaPagamentoTexto(pedido) : "Aguardando"}
                                             {String(pedido.comprovante_url ?? "").trim() ? (
                                                 <>
                                                     {" · "}
