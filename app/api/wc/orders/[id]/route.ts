@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getWC } from "@/lib/woocommerce";
+import { exigirAcessoPedidosLoja } from "@/lib/wcSessao"; // 12/11/2026: pedidos da loja só com login
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -248,7 +249,11 @@ async function enviarPedidoParaConfeccao(order: WcOrderForProduction, requestOri
     return { sincronizado: true, resultado: json };
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+    // 12/11/2026 (segurança): detalhe do pedido tem dados pessoais do comprador; só com login.
+    const bloqueio = await exigirAcessoPedidosLoja(req);
+    if (bloqueio) return bloqueio;
+
     try {
         const wc = getWC();
         const { data } = await wc.get(`orders/${params.id}`);
@@ -272,6 +277,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+    // 12/11/2026 (segurança): alterar pedido da loja só com login.
+    const bloqueio = await exigirAcessoPedidosLoja(req);
+    if (bloqueio) return bloqueio;
+
     try {
         const wc = getWC();
         const body = await req.json();

@@ -1,9 +1,13 @@
 // app/api/wc/diag/route.ts
 import { NextResponse } from "next/server";
+import { exigirAcessoPedidosLoja } from "@/lib/wcSessao"; // 12/11/2026: diagnóstico só com login
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: Request) {
+    const bloqueio = await exigirAcessoPedidosLoja(req);
+    if (bloqueio) return bloqueio;
+
     const all = process.env ?? {};
     const wcKeys = Object.keys(all).filter(k => k.startsWith("WC_"));
     return NextResponse.json({

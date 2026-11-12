@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getWC } from "@/lib/woocommerce";
+import { exigirAcessoPedidosLoja } from "@/lib/wcSessao"; // 12/11/2026: pedidos da loja só com login
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -340,6 +341,10 @@ async function listarStatusCompleto(
  * GET ?sync_confeccao=1: reconcilia pedidos processing/completed com coroas.php.
  */
 export async function GET(req: Request) {
+    // 12/11/2026 (segurança): a lista de pedidos tem dados pessoais dos compradores; só com login e a página coroa-de-flores.
+    const bloqueio = await exigirAcessoPedidosLoja(req);
+    if (bloqueio) return bloqueio;
+
     try {
         const wc = getWC();
         const url = new URL(req.url);
