@@ -1,15 +1,17 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-explicit-any -- a biblioteca do globo (globe.gl, carregada por <script>) não tem tipos aqui */
 
 /**
  * 12/11/2026: aba "Mapa" da página /leads.
- * Globo 3D com as cidades de onde as pessoas acompanharam o velório online (mesmos leads e filtros da lista).
- * - globe.gl (MIT) servido pelo próprio app em /noprecache/leads-mapa/ (fora do cache do PWA; só baixa ao abrir o mapa);
- * - coordenadas das cidades do Brasil (IBGE) no mesmo lugar; nada é enviado a serviços de mapa de terceiros;
- * - cidade é encontrada pelo estado (sigla) + nome; nomes com erro de digitação ficam em "sem localização".
+ * Mapa (Leaflet + OpenStreetMap, o mesmo da telemetria) com as cidades de onde as pessoas acompanharam
+ * o velório online; mesmos leads e filtros da lista.
+ * - coordenadas das cidades do Brasil (IBGE) servidas pelo próprio app em /noprecache/leads-mapa/;
+ * - cada cidade é uma bolinha com a quantidade; o ponto fica no CENTRO da cidade (o lead só tem a cidade digitada);
+ * - cidade encontrada pelo estado (sigla) + nome; nomes com erro de digitação ficam em "sem localização".
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import { IconBrandWhatsapp, IconChevronLeft, IconMapPinOff } from "@tabler/icons-react";
 
 export type LeadMapa = {
@@ -31,7 +33,6 @@ type Ponto = {
     lng: number;
     km: number;
     pessoas: LeadMapa[];
-    memorial?: boolean;
 };
 
 type Municipios = Record<string, Record<string, [string, number, number]>>;
@@ -125,56 +126,54 @@ const iniciais = (nome: string) =>
         .map((p) => p[0]!.toUpperCase())
         .join("") || "?";
 
-/* Carrega o globe.gl uma única vez (UMD expõe window.Globe). */
-let promessaGlobe: Promise<any> | null = null;
-function carregarGlobe(): Promise<any> {
-    const w = window as any;
-    if (w.Globe) return Promise.resolve(w.Globe);
-    if (promessaGlobe) return promessaGlobe;
-    promessaGlobe = new Promise((ok, falha) => {
-        const s = document.createElement("script");
-        s.src = `${BASE}/globe.gl.min.js?v=2.41.4`;
-        s.async = true;
-        s.onload = () => (w.Globe ? ok(w.Globe) : falha(new Error("Globe indisponível")));
-        s.onerror = () => {
-            promessaGlobe = null;
-            falha(new Error("Não foi possível carregar o mapa."));
-        };
-        document.head.appendChild(s);
-    });
-    return promessaGlobe;
-}
-
-let promessaDados: Promise<{ mun: Municipios; paises: any }> | null = null;
-function carregarDados() {
-    if (!promessaDados) {
-        promessaDados = Promise.all([
-            fetch(`${BASE}/municipios-br.json?v=1`).then((r) => (r.ok ? r.json() : Promise.reject(new Error("municípios")))),
-            fetch(`${BASE}/paises.geo.json?v=1`).then((r) => (r.ok ? r.json() : Promise.reject(new Error("países")))),
-        ])
-            .then(([mun, paises]) => ({ mun: mun as Municipios, paises }))
+let promessaMun: Promise<Municipios> | null = null;
+function carregarMunicipios() {
+    if (!promessaMun) {
+        promessaMun = fetch(`${BASE}/municipios-br.json?v=1`)
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error("Não foi possível carregar as cidades."))))
             .catch((e) => {
-                promessaDados = null;
+                promessaMun = null;
                 throw e;
             });
     }
-    return promessaDados;
+    return promessaMun;
 }
 
+/** Tamanho da bolinha pela quantidade de pessoas (raiz: 835 não fica gigante perto de 1). */
+const raio = (n: number) => Math.round(11 + Math.min(22, Math.sqrt(n) * 1.5));
+
+function iconeCidade(p: Ponto, ativo: boolean) {
+    const n = p.pessoas.length;
+    const d = raio(n) * 2;
+    const html =
+        `<div class="ml-pin${ativo ? " ml-pin--on" : ""}" style="width:${d}px;height:${d}px">` +
+        `<span>${n > 999 ? Math.round(n / 100) / 10 + "k" : n}</span></div>`;
+    return L.divIcon({ html, className: "ml-pin-box", iconSize: [d, d], iconAnchor: [d / 2, d / 2] });
+}
+
+const ICONE_MEMORIAL = L.divIcon({
+    html: '<div class="ml-mem"><i></i><b>Memorial · Barreiras</b></div>',
+    className: "ml-pin-box",
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+});
+
 export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
-    const caixaRef = useRef<HTMLDivElement>(null);
-    const globoRef = useRef<HTMLDivElement>(null);
-    const gRef = useRef<any>(null);
-    const [dados, setDados] = useState<{ mun: Municipios; paises: any } | null>(null);
+    const mapaEl = useRef<HTMLDivElement>(null);
+    const mapaRef = useRef<L.Map | null>(null);
+    const camadaRef = useRef<L.LayerGroup | null>(null);
+    const linhasRef = useRef<L.LayerGroup | null>(null);
+    const marcadores = useRef<Map<string, L.Marker>>(new Map());
+    const [mun, setMun] = useState<Municipios | null>(null);
     const [erro, setErro] = useState<string | null>(null);
-    const [pronto, setPronto] = useState(false);
     const [sel, setSel] = useState<Ponto | null>(null);
-    const [vista, setVista] = useState<"mundo" | "brasil" | "memorial">("mundo");
+    const [linhas, setLinhas] = useState(false);
+    const [vista, setVista] = useState<"tudo" | "brasil" | "regiao">("tudo");
 
     useEffect(() => {
         let vivo = true;
-        Promise.all([carregarGlobe(), carregarDados()])
-            .then(([, d]) => vivo && setDados(d))
+        carregarMunicipios()
+            .then((m) => vivo && setMun(m))
             .catch((e) => vivo && setErro(e?.message || "Não foi possível carregar o mapa."));
         return () => {
             vivo = false;
@@ -183,10 +182,10 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
 
     /* ---- agrupa os leads por cidade ---- */
     const { pontos, semLocal, cidades, paisesN, longe } = useMemo(() => {
-        if (!dados) return { pontos: [] as Ponto[], semLocal: 0, cidades: 0, paisesN: 0, longe: null as Ponto | null };
+        if (!mun) return { pontos: [] as Ponto[], semLocal: 0, cidades: 0, paisesN: 0, longe: null as Ponto | null };
         const unicas = new Map<string, [string, string, number, number]>();
         const vistos = new Map<string, number>();
-        for (const [uf, lista] of Object.entries(dados.mun))
+        for (const [uf, lista] of Object.entries(mun))
             for (const [k, v] of Object.entries(lista)) {
                 vistos.set(k, (vistos.get(k) || 0) + 1);
                 unicas.set(k, [uf, v[0], v[1], v[2]]);
@@ -196,7 +195,7 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
         const mapa = new Map<string, Ponto>();
         let sem = 0;
         for (const l of leads) {
-            const loc = localizar(l, dados.mun, unicas);
+            const loc = localizar(l, mun, unicas);
             if (!loc) {
                 sem++;
                 continue;
@@ -213,7 +212,7 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
         arr.forEach((p) => p.pessoas.sort((a, b) => (b.registro?.getTime() ?? 0) - (a.registro?.getTime() ?? 0)));
         const lg = arr.reduce<Ponto | null>((m, p) => (!m || p.km > m.km ? p : m), null);
         return { pontos: arr, semLocal: sem, cidades: arr.length, paisesN: new Set(arr.map((p) => p.pais)).size, longe: lg };
-    }, [dados, leads]);
+    }, [mun, leads]);
 
     const totalNoMapa = useMemo(() => pontos.reduce((s, p) => s + p.pessoas.length, 0), [pontos]);
     const exterior = useMemo(() => {
@@ -222,178 +221,117 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
         return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
     }, [pontos]);
 
-    /* ---- cria o globo ---- */
+    /* ---- cria o mapa (mesmo mapa da telemetria: OpenStreetMap) ---- */
     useEffect(() => {
-        if (!dados || !globoRef.current || gRef.current) return;
-        const Globe = (window as any).Globe;
-        if (!Globe) return;
-        const el = globoRef.current;
-        const g = Globe()(el)
-            .backgroundColor("rgba(0,0,0,0)")
-            .showAtmosphere(true)
-            .atmosphereColor("#3AA0FF")
-            .atmosphereAltitude(0.2)
-            .hexPolygonsData(dados.paises.features)
-            .hexPolygonResolution(3)
-            .hexPolygonMargin(0.42)
-            .hexPolygonUseDots(true)
-            .hexPolygonColor((f: any) => (f.properties?.n === "Brazil" ? "rgba(120,170,255,0.95)" : "rgba(70,110,190,0.55)"))
-            .pointLat("lat")
-            .pointLng("lng")
-            .pointColor((p: Ponto) => (p.memorial ? "#34D27B" : "#F2CB3F"))
-            .pointRadius((p: Ponto) => 0.12 + Math.min(0.3, Math.log10(p.pessoas.length + 1) * 0.1))
-            .pointAltitude((p: Ponto) => 0.008 + Math.log10(p.pessoas.length + 1) * 0.028)
-            .pointLabel(() => "")
-            .ringColor((r: any) => (t: number) => (r.memorial ? `rgba(52,210,123,${1 - t})` : `rgba(242,203,63,${(1 - t) * 0.8})`))
-            .ringMaxRadius((r: any) => (r.memorial ? 5 : 2.5))
-            .ringPropagationSpeed(2.2)
-            .ringRepeatPeriod(1400)
-            .arcStartLat("lat")
-            .arcStartLng("lng")
-            .arcEndLat(() => MEMORIAL.lat)
-            .arcEndLng(() => MEMORIAL.lng)
-            .arcColor(() => ["rgba(242,203,63,0.85)", "rgba(58,160,255,0.35)"])
-            .arcStroke((p: Ponto) => (p.pessoas.length >= 20 ? 0.6 : 0.25))
-            .arcDashLength(0.5)
-            .arcDashGap(1.2)
-            .arcDashInitialGap(() => Math.random() * 2)
-            .arcDashAnimateTime(2600)
-            .arcAltitudeAutoScale(0.45)
-            .htmlLat("lat")
-            .htmlLng("lng")
-            .htmlAltitude((d: Ponto) => 0.008 + Math.log10(d.pessoas.length + 1) * 0.028)
-            .htmlElement((d: Ponto) => {
-                const e = document.createElement("div");
-                e.style.cssText =
-                    "background:rgba(10,16,32,.88);border:1px solid #F2CB3F;border-radius:12px;padding:7px 11px;color:#fff;font:800 12px Nunito,system-ui,sans-serif;white-space:nowrap;transform:translate(-50%,-140%);box-shadow:0 0 24px rgba(242,203,63,.35);pointer-events:none";
-                const b = document.createElement("b");
-                b.style.cssText = "display:block;font-size:14px;font-weight:900";
-                b.textContent = d.cidade;
-                const s = document.createElement("span");
-                s.style.color = "#F2CB3F";
-                s.textContent = `${fmt(d.pessoas.length)} ${d.pessoas.length === 1 ? "pessoa" : "pessoas"}`;
-                e.appendChild(b);
-                e.appendChild(s);
-                e.appendChild(document.createTextNode(` · ${fmt(Math.round(d.km))} km`));
-                return e;
-            });
-        const mat = g.globeMaterial?.();
-        if (mat) {
-            mat.color?.set?.("#0A1730");
-            mat.emissive?.set?.("#06101F");
-            mat.shininess = 8;
-        }
-        g.controls().autoRotate = true;
-        g.controls().autoRotateSpeed = 0.35;
-        g.pointOfView({ lat: -2, lng: -30, altitude: 2.6 }, 0);
-        gRef.current = g;
-
-        const ajustar = () => {
-            const r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) g.width(r.width).height(r.height);
-        };
-        ajustar();
-        const ro = new ResizeObserver(ajustar);
-        ro.observe(el);
-        setPronto(true);
+        if (!mun || !mapaEl.current || mapaRef.current) return;
+        const map = L.map(mapaEl.current, { zoomControl: true, worldCopyJump: true, minZoom: 2, attributionControl: true });
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        }).addTo(map);
+        map.setView([-13.5, -46.5], 5);
+        linhasRef.current = L.layerGroup().addTo(map);
+        camadaRef.current = L.layerGroup().addTo(map);
+        L.marker([MEMORIAL.lat, MEMORIAL.lng], { icon: ICONE_MEMORIAL, zIndexOffset: -1000, keyboard: false, interactive: false }).addTo(map);
+        mapaRef.current = map;
+        const lista = marcadores.current;
+        const ro = new ResizeObserver(() => map.invalidateSize());
+        ro.observe(mapaEl.current);
         return () => {
             ro.disconnect();
-            try {
-                g.pauseAnimation?.();
-                g._destructor?.();
-            } catch {
-                /* nada */
-            }
-            el.innerHTML = "";
-            gRef.current = null;
+            map.remove();
+            mapaRef.current = null;
+            camadaRef.current = null;
+            linhasRef.current = null;
+            lista.clear();
         };
-    }, [dados]);
+    }, [mun]);
 
-    /* ---- dados no globo (mudam com os filtros) ---- */
+    /* ---- cidades e linhas (mudam com os filtros) ---- */
     useEffect(() => {
-        const g = gRef.current;
-        if (!g) return;
-        g.pointsData(pontos)
-            .arcsData(pontos.filter((p) => p.km > 30))
-            .ringsData([...pontos.filter((p) => p.pessoas.length >= 20), { ...MEMORIAL, memorial: true }])
-            .onPointClick((p: Ponto) => setSel(p));
-        if (sel && !pontos.some((p) => p.chave === sel.chave)) setSel(null);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pontos, pronto]);
+        const map = mapaRef.current;
+        const cam = camadaRef.current;
+        const lin = linhasRef.current;
+        if (!map || !cam || !lin) return;
+        cam.clearLayers();
+        lin.clearLayers();
+        marcadores.current.clear();
+        // Menores por cima, para as cidades pequenas perto de Barreiras continuarem clicáveis.
+        [...pontos].reverse().forEach((p, i) => {
+            const m = L.marker([p.lat, p.lng], { icon: iconeCidade(p, false), zIndexOffset: i, riseOnHover: true, title: p.cidade });
+            m.bindTooltip(
+                `<b>${escapar(p.cidade)}${p.uf ? " · " + p.uf : ""}</b><br>${fmt(p.pessoas.length)} ${p.pessoas.length === 1 ? "pessoa" : "pessoas"}${p.km < 30 ? "" : ` · ${fmt(Math.round(p.km))} km`}`,
+                { direction: "top", offset: [0, -raio(p.pessoas.length)], className: "ml-tip" },
+            );
+            m.on("click", () => setSel(p));
+            m.addTo(cam);
+            marcadores.current.set(p.chave, m);
+            if (p.km > 30)
+                L.polyline(
+                    [
+                        [p.lat, p.lng],
+                        [MEMORIAL.lat, MEMORIAL.lng],
+                    ],
+                    { color: "#F2B705", weight: p.pessoas.length >= 20 ? 2.4 : 1.2, opacity: 0.55, dashArray: "4 6", interactive: false },
+                ).addTo(lin);
+        });
+        setSel((s) => (s && pontos.some((p) => p.chave === s.chave) ? pontos.find((p) => p.chave === s.chave)! : null));
+    }, [pontos]);
+
+    useEffect(() => {
+        const map = mapaRef.current;
+        const lin = linhasRef.current;
+        if (!map || !lin) return;
+        if (linhas) lin.addTo(map);
+        else lin.remove();
+    }, [linhas, pontos]);
 
     /* ---- cidade escolhida ---- */
     useEffect(() => {
-        const g = gRef.current;
-        if (!g) return;
-        if (sel) {
-            g.controls().autoRotate = false;
-            g.pointOfView({ lat: sel.lat, lng: sel.lng, altitude: sel.pais === "Brasil" ? 0.9 : 1.4 }, 1200);
-            g.htmlElementsData([sel]);
-        } else {
-            g.htmlElementsData([]);
-        }
-    }, [sel, pronto]);
+        const map = mapaRef.current;
+        if (!map) return;
+        marcadores.current.forEach((m, k) => {
+            const p = pontos.find((x) => x.chave === k);
+            if (p) m.setIcon(iconeCidade(p, !!sel && sel.chave === k));
+        });
+        if (sel) map.flyTo([sel.lat, sel.lng], Math.max(map.getZoom(), sel.pais === "Brasil" ? 9 : 7), { duration: 0.9 });
+    }, [sel, pontos]);
 
-    const irPara = (v: "mundo" | "brasil" | "memorial") => {
-        const g = gRef.current;
+    const irPara = (v: "tudo" | "brasil" | "regiao") => {
+        const map = mapaRef.current;
         setVista(v);
         setSel(null);
-        if (!g) return;
-        if (v === "mundo") {
-            g.controls().autoRotate = true;
-            g.pointOfView({ lat: -2, lng: -30, altitude: 2.6 }, 1200);
-        } else if (v === "brasil") {
-            g.controls().autoRotate = false;
-            g.pointOfView({ lat: -14, lng: -50, altitude: 1.15 }, 1200);
-        } else {
-            g.controls().autoRotate = false;
-            g.pointOfView({ lat: MEMORIAL.lat, lng: MEMORIAL.lng, altitude: 0.55 }, 1200);
-        }
+        if (!map) return;
+        if (v === "brasil") map.flyToBounds([[-33.8, -73.9], [5.3, -34.8]], { duration: 0.9 });
+        else if (v === "regiao") map.flyTo([MEMORIAL.lat, MEMORIAL.lng], 7, { duration: 0.9 });
+        else if (pontos.length) map.flyToBounds(L.latLngBounds(pontos.map((p) => [p.lat, p.lng] as [number, number])).pad(0.15), { duration: 0.9 });
     };
 
     const top = pontos.slice(0, 7);
     const maxTop = top[0]?.pessoas.length || 1;
 
     return (
-        <div
-            ref={caixaRef}
-            className="relative grid overflow-hidden rounded-3xl border border-white/[0.08] text-white lg:h-[660px] lg:grid-cols-[minmax(0,1fr)_360px]"
-            style={{ background: "radial-gradient(1200px 600px at 35% 45%,#14254A 0%,#0B1222 55%,#070C17 100%)" }}
-        >
-            {/* Globo */}
-            <div className="relative h-[380px] min-w-0 sm:h-[460px] lg:h-full">
-                <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                        backgroundImage:
-                            "linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px)",
-                        backgroundSize: "44px 44px",
-                        maskImage: "radial-gradient(circle at 50% 50%,#000 30%,transparent 75%)",
-                        WebkitMaskImage: "radial-gradient(circle at 50% 50%,#000 30%,transparent 75%)",
-                    }}
-                />
-                <div ref={globoRef} className="absolute inset-0 cursor-grab active:cursor-grabbing" aria-label="Globo com as cidades dos leads" />
+        <div className="relative grid overflow-hidden rounded-2xl border border-[#E3E8F0] bg-white shadow-sm dark:border-white/[0.12] dark:bg-[#232B3F] lg:h-[680px] lg:grid-cols-[minmax(0,1fr)_360px]">
+            <style>{CSS_MAPA}</style>
+            {/* Mapa */}
+            <div className="relative h-[420px] min-w-0 sm:h-[480px] lg:h-full">
+                <div ref={mapaEl} className="absolute inset-0 z-0" aria-label="Mapa com as cidades dos leads" />
 
-                <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-wrap gap-2 lg:left-5 lg:top-4">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-[#7CAAFF]/25 bg-[#0A1020]/70 px-3 py-1.5 text-[11px] font-black tracking-[0.08em] text-[#CFE0FF] backdrop-blur">
-                        <i className="size-2 rounded-full bg-[#34D27B] shadow-[0_0_0_4px_rgba(52,210,123,.2)]" />
-                        MEMORIAL · BARREIRAS
-                    </span>
-                    {dados ? (
-                        <span className="rounded-full border border-[#7CAAFF]/25 bg-[#0A1020]/70 px-3 py-1.5 text-[11px] font-black tracking-[0.08em] text-[#CFE0FF] backdrop-blur">
-                            {fmt(totalNoMapa)} {totalNoMapa === 1 ? "PESSOA" : "PESSOAS"} · {fmt(cidades)} {cidades === 1 ? "CIDADE" : "CIDADES"} · {paisesN}{" "}
-                            {paisesN === 1 ? "PAÍS" : "PAÍSES"}
+                <div className="pointer-events-none absolute right-3 top-3 z-[500] flex flex-col items-end gap-2">
+                    {mun ? (
+                        <span className="rounded-full bg-[#232B3F]/90 px-3 py-1.5 text-[12px] font-extrabold text-white shadow">
+                            {fmt(totalNoMapa)} {totalNoMapa === 1 ? "pessoa" : "pessoas"} · {fmt(cidades)} {cidades === 1 ? "cidade" : "cidades"} · {paisesN}{" "}
+                            {paisesN === 1 ? "país" : "países"}
                         </span>
                     ) : null}
                 </div>
 
-                <div className="absolute bottom-3 left-3 z-10 flex gap-2 lg:bottom-4 lg:left-5">
+                <div className="absolute bottom-6 left-3 right-3 z-[500] flex gap-1.5 sm:gap-2">
                     {(
                         [
-                            ["mundo", "Mundo"],
+                            ["tudo", "Todos"],
                             ["brasil", "Brasil"],
-                            ["memorial", "Memorial"],
+                            ["regiao", "Região"],
                         ] as const
                     ).map(([v, r]) => (
                         <button
@@ -401,58 +339,68 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
                             type="button"
                             onClick={() => irPara(v)}
                             aria-pressed={vista === v}
-                            className={`min-h-10 rounded-xl border px-3.5 text-[13px] font-black backdrop-blur ${
-                                vista === v ? "border-[#F2CB3F] bg-[#0A1020]/75 text-[#F2CB3F]" : "border-white/[0.14] bg-[#0A1020]/75 text-white"
+                            className={`min-h-10 rounded-xl px-3 text-[13px] font-extrabold shadow ${
+                                vista === v ? "bg-[#F2CB3F] text-[#313C55]" : "bg-white text-[#313C55] hover:bg-[#F1F4F8]"
                             }`}
                         >
                             {r}
                         </button>
                     ))}
+                    <button
+                        type="button"
+                        onClick={() => setLinhas((x) => !x)}
+                        aria-pressed={linhas}
+                        className={`min-h-10 rounded-xl px-3 text-[13px] font-extrabold shadow ${linhas ? "bg-[#313C55] text-white" : "bg-white text-[#313C55]"}`}
+                    >
+                        Linhas
+                    </button>
                 </div>
 
-                {!dados && !erro ? (
-                    <div className="absolute inset-0 grid place-items-center text-[14px] font-bold text-[#AEB9CF]">
+                {!mun && !erro ? (
+                    <div className="absolute inset-0 z-[600] grid place-items-center bg-[#F6F8FB] text-[14px] font-bold text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                         <div className="flex flex-col items-center gap-3">
-                            <div className="size-10 animate-spin rounded-full border-4 border-white/20 border-t-[#F2CB3F]" />
+                            <div className="size-10 animate-spin rounded-full border-4 border-[#C9D1DE] border-t-[#F2CB3F]" />
                             Carregando o mapa…
                         </div>
                     </div>
                 ) : null}
                 {erro ? (
-                    <div className="absolute inset-0 grid place-items-center p-6 text-center text-[14px] font-bold text-[#FF9C92]">
+                    <div className="absolute inset-0 z-[600] grid place-items-center bg-[#F6F8FB] p-6 text-center text-[14px] font-bold text-[#B42318] dark:bg-[#1C2334] dark:text-[#FF9C92]">
                         {erro} Verifique a internet e abra a aba de novo.
                     </div>
                 ) : null}
             </div>
 
             {/* Painel */}
-            <aside className="relative z-10 border-t border-white/[0.08] bg-[#0E1526]/85 p-4 backdrop-blur lg:overflow-y-auto lg:border-l lg:border-t-0 lg:p-5">
+            <aside className="relative border-t border-[#E3E8F0] p-4 dark:border-white/[0.08] lg:overflow-y-auto lg:border-l lg:border-t-0 lg:p-5">
                 {sel ? (
                     <div>
-                        <button type="button" onClick={() => setSel(null)} className="mb-3 inline-flex min-h-10 items-center gap-1 text-[13px] font-black text-[#7FA7E8]">
+                        <button type="button" onClick={() => setSel(null)} className="mb-3 inline-flex min-h-10 items-center gap-1 text-[13px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">
                             <IconChevronLeft size={16} />
                             Voltar ao resumo
                         </button>
-                        <div className="rounded-2xl border border-[#F2CB3F]/45 bg-gradient-to-br from-[#F2CB3F]/15 to-[#F2CB3F]/[0.03] p-4">
-                            <p className="text-[11px] font-black tracking-[0.14em] text-[#F2CB3F]">
+                        <div className="rounded-2xl border border-[#F2CB3F] bg-[#FFF8DD] p-4 dark:bg-[#F2CB3F]/10">
+                            <p className="text-[11px] font-black tracking-[0.14em] text-[#8A6D00] dark:text-[#F2CB3F]">
                                 {sel.pais.toUpperCase()}
                                 {sel.uf ? ` · ${sel.uf}` : ""}
                             </p>
                             <h2 className="mt-1 text-[24px] font-black leading-tight">{sel.cidade}</h2>
-                            <p className="mt-1 text-[13px] font-bold text-[#CFD8EA]">
-                                {fmt(sel.pessoas.length)} {sel.pessoas.length === 1 ? "pessoa acompanhou" : "pessoas acompanharam"} daqui · {fmt(Math.round(sel.km))} km do Memorial
+                            <p className="mt-1 text-[13px] font-bold text-[#5B6478] dark:text-[#CFD8EA]">
+                                {fmt(sel.pessoas.length)} {sel.pessoas.length === 1 ? "pessoa acompanhou" : "pessoas acompanharam"} daqui · {sel.km < 30 ? "cidade do Memorial" : `${fmt(Math.round(sel.km))} km do Memorial`}
                             </p>
                         </div>
-                        <h3 className="mb-1 mt-5 text-[12px] font-black tracking-[0.14em] text-[#F2CB3F]">QUEM ACOMPANHOU</h3>
+                        <h3 className="mb-1 mt-5 text-[12px] font-black tracking-[0.14em] text-[#5B6478] dark:text-[#AEB9CF]">QUEM ACOMPANHOU</h3>
                         <ul>
                             {sel.pessoas.slice(0, 80).map((p) => {
                                 const f = foneWhats(p.telefone);
                                 return (
-                                    <li key={p.id} className="flex items-center gap-3 border-b border-white/[0.06] py-2.5">
-                                        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#2B3A5C] text-[12px] font-black text-[#CFE0FF]">{iniciais(p.nome)}</span>
+                                    <li key={p.id} className="flex items-center gap-3 border-b border-[#E3E8F0] py-2.5 dark:border-white/[0.06]">
+                                        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#E8EEF7] text-[12px] font-black text-[#3D6A99] dark:bg-[#2B3A5C] dark:text-[#CFE0FF]">
+                                            {iniciais(p.nome)}
+                                        </span>
                                         <div className="min-w-0 flex-1">
-                                            <b className="block truncate text-[14px] font-black">{p.nome || "Sem nome"}</b>
-                                            <span className="block truncate text-[12px] font-bold text-[#AEB9CF]">
+                                            <b className="block truncate text-[14px] font-extrabold">{p.nome || "Sem nome"}</b>
+                                            <span className="block truncate text-[12px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                                                 {[dataBr(p.registro), f.texto].filter(Boolean).join(" · ")}
                                             </span>
                                         </div>
@@ -462,7 +410,7 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 aria-label={`WhatsApp de ${p.nome}`}
-                                                className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#B3CE52]/50 text-[#CFE38A] hover:bg-[#B3CE52]/15"
+                                                className="grid size-10 shrink-0 place-items-center rounded-xl border border-[#B3CE52] bg-[#EEF5D6] text-[#3F5A0A] hover:bg-[#E3EEC2] dark:border-[#B3CE52]/50 dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]"
                                             >
                                                 <IconBrandWhatsapp size={18} />
                                             </a>
@@ -472,7 +420,7 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
                             })}
                         </ul>
                         {sel.pessoas.length > 80 ? (
-                            <p className="mt-3 text-[13px] font-bold text-[#AEB9CF]">
+                            <p className="mt-3 text-[13px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
                                 e mais {fmt(sel.pessoas.length - 80)}. Use a busca da lista com o nome da cidade para ver todos.
                             </p>
                         ) : null}
@@ -491,22 +439,19 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
 
                         {top.length ? (
                             <>
-                                <h3 className="mb-2.5 mt-5 text-[12px] font-black tracking-[0.14em] text-[#F2CB3F]">CIDADES QUE MAIS ACOMPANHARAM</h3>
+                                <h3 className="mb-2.5 mt-5 text-[12px] font-black tracking-[0.14em] text-[#5B6478] dark:text-[#AEB9CF]">CIDADES QUE MAIS ACOMPANHARAM</h3>
                                 <ul className="grid gap-1">
                                     {top.map((p, i) => (
                                         <li key={p.chave}>
-                                            <button type="button" onClick={() => setSel(p)} className="grid w-full grid-cols-[20px_1fr_auto] items-center gap-x-2 rounded-lg py-1.5 text-left hover:bg-white/[0.04]">
-                                                <i className="text-[12px] not-italic text-[#7FA7E8]">{i + 1}</i>
+                                            <button type="button" onClick={() => setSel(p)} className="grid w-full grid-cols-[20px_1fr_auto] items-center gap-x-2 rounded-lg px-1 py-1.5 text-left hover:bg-[#F1F4F8] dark:hover:bg-white/[0.04]">
+                                                <i className="text-[12px] not-italic text-[#7A8396]">{i + 1}</i>
                                                 <span className="truncate text-[14px] font-extrabold">
                                                     {p.cidade}
                                                     {p.uf ? ` · ${p.uf}` : ""}
                                                 </span>
                                                 <span className="text-[14px] font-extrabold">{fmt(p.pessoas.length)}</span>
-                                                <span className="col-start-2 col-end-4 mt-1 h-[5px] rounded-full bg-white/[0.07]">
-                                                    <span
-                                                        className="block h-full rounded-full bg-gradient-to-r from-[#F2CB3F] to-[#FF9F43]"
-                                                        style={{ width: `${(p.pessoas.length / maxTop) * 100}%` }}
-                                                    />
+                                                <span className="col-start-2 col-end-4 mt-1 h-[5px] rounded-full bg-[#E3E8F0] dark:bg-white/[0.07]">
+                                                    <span className="block h-full rounded-full bg-[#F2CB3F]" style={{ width: `${(p.pessoas.length / maxTop) * 100}%` }} />
                                                 </span>
                                             </button>
                                         </li>
@@ -517,7 +462,7 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
 
                         {exterior.length ? (
                             <>
-                                <h3 className="mb-2 mt-5 text-[12px] font-black tracking-[0.14em] text-[#F2CB3F]">FORA DO BRASIL</h3>
+                                <h3 className="mb-2 mt-5 text-[12px] font-black tracking-[0.14em] text-[#5B6478] dark:text-[#AEB9CF]">FORA DO BRASIL</h3>
                                 <ul className="grid gap-1.5">
                                     {exterior.map(([pais, n]) => (
                                         <li key={pais} className="flex items-center justify-between text-[14px] font-extrabold">
@@ -530,15 +475,17 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
                         ) : null}
 
                         {semLocal > 0 ? (
-                            <p className="mt-5 flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 text-[12px] font-bold text-[#AEB9CF]">
+                            <p className="mt-5 flex items-start gap-2 rounded-xl border border-[#E3E8F0] bg-[#F6F8FB] p-3 text-[12px] font-semibold text-[#5B6478] dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-[#AEB9CF]">
                                 <IconMapPinOff size={16} className="mt-0.5 shrink-0" />
                                 {fmt(semLocal)} {semLocal === 1 ? "lead está" : "leads estão"} sem cidade reconhecida (nome digitado errado ou teste) e não {semLocal === 1 ? "aparece" : "aparecem"} no mapa.
                             </p>
                         ) : null}
-                        {dados && pontos.length === 0 ? (
-                            <p className="mt-5 text-[14px] font-bold text-[#AEB9CF]">Nenhum lead com cidade reconhecida nos filtros atuais.</p>
+                        {mun && pontos.length === 0 ? (
+                            <p className="mt-5 text-[14px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">Nenhum lead com cidade reconhecida nos filtros atuais.</p>
                         ) : null}
-                        <p className="mt-5 text-[12px] font-bold text-[#7A8396]">Toque numa cidade do globo para ver quem acompanhou de lá. Arraste para girar.</p>
+                        <p className="mt-5 text-[12px] font-semibold text-[#7A8396]">
+                            Cada bolinha é uma cidade; o número é quantas pessoas acompanharam de lá. Toque para ver os nomes. O ponto fica no centro da cidade.
+                        </p>
                     </div>
                 )}
             </aside>
@@ -546,12 +493,28 @@ export default function MapaLeads({ leads }: { leads: LeadMapa[] }) {
     );
 }
 
+function escapar(s: string) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+const CSS_MAPA = `
+.ml-pin-box{background:none;border:0}
+.ml-pin{display:grid;place-items:center;border-radius:50%;background:rgba(242,203,63,.85);border:2px solid #fff;box-shadow:0 2px 8px rgba(35,43,63,.45);color:#232B3F;font:900 12px Nunito,system-ui,sans-serif;cursor:pointer;transition:transform .15s}
+.ml-pin:hover{transform:scale(1.08)}
+.ml-pin--on{background:#313C55;color:#F2CB3F;border-color:#F2CB3F;box-shadow:0 0 0 6px rgba(242,203,63,.35),0 2px 8px rgba(35,43,63,.45)}
+.ml-mem{position:relative;width:18px;height:18px}
+.ml-mem i{position:absolute;inset:0;border-radius:50%;background:#2EA866;border:3px solid #fff;box-shadow:0 0 0 6px rgba(46,168,102,.3)}
+.ml-mem b{position:absolute;left:50%;top:calc(100% + 30px);transform:translateX(-50%);white-space:nowrap;background:#2EA866;color:#fff;font:800 11px Nunito,system-ui,sans-serif;padding:3px 8px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.ml-tip{font:700 12px Nunito,system-ui,sans-serif;border-radius:10px;padding:6px 9px}
+.leaflet-container{font-family:Nunito,system-ui,sans-serif}
+`;
+
 function Kpi({ rotulo, valor, sub }: { rotulo: string; valor: string; sub?: string }) {
     return (
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-3">
-            <small className="block text-[11px] font-black tracking-[0.12em] text-[#7FA7E8]">{rotulo}</small>
+        <div className="rounded-2xl border border-[#E3E8F0] bg-[#F6F8FB] p-3 dark:border-white/[0.08] dark:bg-white/[0.04]">
+            <small className="block text-[11px] font-black tracking-[0.12em] text-[#3D6A99] dark:text-[#7FA7E8]">{rotulo}</small>
             <b className="mt-0.5 block truncate text-[24px] font-black leading-tight">{valor}</b>
-            {sub ? <span className="block truncate text-[12px] font-bold text-[#AEB9CF]">{sub}</span> : null}
+            {sub ? <span className="block truncate text-[12px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{sub}</span> : null}
         </div>
     );
 }
