@@ -12,9 +12,13 @@
  * - seleção com barra fixa (Exportar selecionados / Limpar) e "Exportar" do que está filtrado;
  * - CSV com ";" e acentos certos para abrir direto no Excel, com a data de registro;
  * - paginação com total e registros por página. Sem alert(): avisos na própria tela.
+ *
+ * 12/11/2026: abas "Lista" e "Mapa". O mapa (globo 3D, MapaLeads.tsx) mostra de onde cada pessoa acompanhou,
+ * com os mesmos filtros da lista; só é carregado quando a aba é aberta.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
     IconBrandWhatsapp,
     IconChevronLeft,
@@ -22,8 +26,10 @@ import {
     IconChevronsLeft,
     IconChevronsRight,
     IconDownload,
+    IconList,
     IconRefresh,
     IconSearch,
+    IconWorld,
     IconX,
 } from "@tabler/icons-react";
 
@@ -54,6 +60,14 @@ type Lead = {
 };
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br/obter_leads.php";
+
+// Globo 3D só no navegador e só quando a aba "Mapa" é aberta (não pesa a lista).
+const MapaLeads = dynamic(() => import("./MapaLeads"), {
+    ssr: false,
+    loading: () => (
+        <div className="grid h-[380px] place-items-center rounded-3xl bg-[#0B1222] text-[14px] font-bold text-[#AEB9CF] lg:h-[660px]">Carregando o mapa…</div>
+    ),
+});
 
 /* ============================== utilidades ============================== */
 
@@ -238,6 +252,7 @@ export default function LeadsPage() {
     const [ordem, setOrdem] = useState<Ordem>("recentes");
     const [selected, setSelected] = useState<Set<number>>(new Set());
 
+    const [aba, setAba] = useState<"lista" | "mapa">("lista");
     const [porPagina, setPorPagina] = useState(20);
     const [page, setPage] = useState(1);
 
@@ -513,6 +528,33 @@ export default function LeadsPage() {
                     </div>
                 </div>
 
+                {/* Abas: Lista e Mapa (o mapa respeita a busca e os filtros acima) */}
+                <div role="tablist" aria-label="Ver leads em" className="mb-4 inline-flex gap-1 rounded-2xl border border-[#E3E8F0] bg-white p-1 dark:border-white/[0.12] dark:bg-[#232B3F]">
+                    {(
+                        [
+                            ["lista", "Lista", IconList],
+                            ["mapa", "Mapa", IconWorld],
+                        ] as const
+                    ).map(([v, r, Icone]) => (
+                        <button
+                            key={v}
+                            type="button"
+                            role="tab"
+                            aria-selected={aba === v}
+                            onClick={() => setAba(v)}
+                            className={[
+                                "inline-flex min-h-11 items-center gap-2 rounded-xl px-4 text-[14px] font-extrabold transition",
+                                aba === v
+                                    ? "bg-[#F2CB3F] text-[#313C55]"
+                                    : "text-[#5B6478] hover:bg-[#F1F4F8] hover:text-[#313C55] dark:text-[#AEB9CF] dark:hover:bg-white/[0.06] dark:hover:text-white",
+                            ].join(" ")}
+                        >
+                            <Icone size={18} />
+                            {r}
+                        </button>
+                    ))}
+                </div>
+
                 {/* Mensagens */}
                 {erro ? (
                     <div className="mb-4 flex items-center gap-3 rounded-xl border border-[#F3B8B2] bg-[#FDECEA] px-4 py-3 text-[14px] font-semibold text-[#B42318] dark:border-[#FF9C92]/30 dark:bg-[#FF9C92]/10 dark:text-[#FF9C92]">
@@ -529,6 +571,9 @@ export default function LeadsPage() {
                 ) : null}
 
                 {/* Lista */}
+                {aba === "mapa" ? (
+                    <MapaLeads leads={filtered} />
+                ) : (
                 <div className={`${CARTAO} overflow-hidden`}>
                     {/* Barra da lista */}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#E3E8F0] px-4 py-2.5 dark:border-white/[0.08]">
@@ -713,10 +758,11 @@ export default function LeadsPage() {
                         </div>
                     ) : null}
                 </div>
+                )}
             </div>
 
             {/* Barra de seleção (fica por cima, acima da barra de baixo do celular) */}
-            {selected.size > 0 ? (
+            {selected.size > 0 && aba === "lista" ? (
                 <div className="fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 px-4 lg:bottom-6">
                     <div className="mx-auto flex max-w-xl items-center gap-2 rounded-2xl bg-[#313C55] p-2 pl-4 text-white shadow-2xl dark:bg-[#1C2334] dark:ring-1 dark:ring-white/[0.12]">
                         <span className="min-w-0 flex-1 text-[14px] font-extrabold">
