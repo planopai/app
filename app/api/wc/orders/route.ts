@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getWC } from "@/lib/woocommerce";
 import { exigirAcessoPedidosLoja } from "@/lib/wcSessao"; // 12/11/2026: pedidos da loja só com login
+import { pagamentoDoPedido } from "@/lib/wcPagamento"; // 12/11/2026: forma, NSU e TID para o Financeiro
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,6 +56,10 @@ type WcOrderForProduction = {
     line_items?: WcLineItem[];
     /** Método de entrega escolhido no checkout (ex.: "Retirada no local"). */
     shipping_lines?: Array<{ method_id?: string; method_title?: string }>;
+    /** 12/11/2026 (Financeiro): forma de pagamento e data em que o pedido foi pago. */
+    payment_method?: string;
+    payment_method_title?: string;
+    date_paid?: string | null;
 };
 
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
@@ -226,6 +231,8 @@ function payloadImportacao(order: WcOrderForProduction): Record<string, unknown>
         frete: Number(order.shipping_total || 0) || null,
         // 09/11/2026: o coroas.php usa a data do pedido para não reimportar pedidos antigos recusados.
         wc_criado_em_gmt: String(order.date_created_gmt || "").trim() || null,
+        // 12/11/2026: forma de pagamento, NSU (cartão e Pix), TID e autorização, para o Contas a receber.
+        pagamento: pagamentoDoPedido(order),
         itens,
     };
 }
