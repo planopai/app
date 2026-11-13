@@ -180,6 +180,7 @@ export const MODULOS: Modulo[] = [
             { id: "cartao-credito", titulo: "Cartão de crédito", desc: "Compras, faturas e limite", href: "/cartao-credito", slugs: ["gestao"], icone: IconCreditCard, secao: "Financeiro da empresa" },
             { id: "financeiro-config", titulo: "Configurações do financeiro", desc: "Plano de contas, contas, áreas e orçamento", href: "/financeiro-config", slugs: ["gestao"], icone: IconAdjustmentsDollar, secao: "Financeiro da empresa" },
             { id: "tesouraria", titulo: "Tesouraria", desc: "Caixas, bancos, transferências e conciliação", href: "/tesouraria", slugs: ["tesouraria", "gestao"], icone: IconBuildingBank, secao: "Financeiro da empresa" },
+            { id: "resultados", titulo: "Resultados", desc: "DRE, fluxo de caixa, ISS retido e contador", href: "/resultados", slugs: ["gestao"], icone: IconChartBar, secao: "Financeiro da empresa" },
         ],
     },
     {
