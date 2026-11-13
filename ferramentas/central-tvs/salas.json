@@ -1,0 +1,14 @@
+{
+  "SALA 01": {
+    "painel": "PAINEL 01",
+    "dentro": "SALA 01"
+  },
+  "SALA 02": {
+    "painel": "PAINEL 02",
+    "dentro": "SALA 02"
+  },
+  "SALA 03": {
+    "painel": "PAINEL 03",
+    "dentro": "SALA 03"
+  }
+}

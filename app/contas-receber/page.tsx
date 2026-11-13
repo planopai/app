@@ -10,21 +10,29 @@
  * 13/11/2026: tela enxuta (faixa de totais, filtros numa linha); o financeiro (página Tesouraria) usa a tela e a Gestão tem o menu
  * com Cartões e Cielo, Comissões e Configurações; cartão exige NSU; cheque; ISS retido; anexos; o título da OS é recebido aqui
  * pelo mesmo lançamento do Financeiro da OS (os_principal.php), que vira baixa no contas a receber.
+ * 13/11/2026 (parte 2, fin_receber_acoes.php): negociar o saldo da OS em parcelas (a promissória da OS continua valendo),
+ * Prefeitura por NF (mês em apuração → Emitir NF por empenho, com a alíquota do mês), avulso que repete todo mês,
+ * recibo em PDF e pelo WhatsApp (número oficial) e, no menu Gestão, Atrasos por faixa e ISS das prefeituras.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
     IconAdjustmentsDollar,
+    IconArrowsSplit2,
+    IconBrandWhatsapp,
     IconCash,
     IconChevronDown,
     IconColumns,
+    IconClockExclamation,
     IconCreditCard,
     IconDownload,
+    IconFileInvoice,
     IconFilter,
     IconPaperclip,
     IconPlus,
     IconPrinter,
+    IconReceiptTax,
     IconRefresh,
     IconSearch,
     IconUpload,
@@ -48,6 +56,7 @@ import {
     hojeISO,
     Janela,
     mensagemErro,
+    mesBR,
     NOTA,
     numCampo,
     paraNumero,
@@ -68,6 +77,8 @@ import { BarraMassa, baixarCsv, CaixaMarcar, ChipsFiltro, JanelaColunas, Paginac
 
 const URL_REC = 'https://api.planoassistencialintegrado.com.br/fin_receber.php';
 const URL_CIELO = 'https://api.planoassistencialintegrado.com.br/fin_cielo.php';
+const URL_ACOES = 'https://api.planoassistencialintegrado.com.br/fin_receber_acoes.php';
+const URL_RECIBO = (baixaId: number) => `${URL_ACOES}?action=recibo&formato=pdf&baixa_id=${baixaId}`;
 
 /* ============================== tipos ============================== */
 
@@ -121,6 +132,8 @@ type Linha = {
     observacao: string | null;
     lancado_por: string | null;
     cancelado_motivo: string | null;
+    negociacao_de?: number | null;
+    nf?: { numero: string; iss: number } | null;
 };
 type Card = { n: number; v: number };
 type Lista = {
@@ -135,7 +148,7 @@ type Lista = {
 type Sit = 'aberto' | 'vencidos' | 'hoje' | 'semana' | 'previstos' | 'recebidos' | 'a_confirmar' | 'cancelados' | 'todos';
 type FA = { td?: string; de?: string; ate?: string; pessoa_id?: string; natureza_id?: string; forma_id?: string; cobrador_id?: string; conta_id?: string; vmin?: string; vmax?: string };
 
-const ORIGEM_NOME: Record<string, string> = { OS: 'OS', PREFEITURA: 'Prefeitura', COROA_SITE: 'Coroas do site', AVULSO: 'Avulso', MANUAL: 'Avulso', CONVENIO: 'Convênio', RECORRENTE: 'Recorrente' };
+const ORIGEM_NOME: Record<string, string> = { OS: 'OS', PREFEITURA: 'Prefeitura', COROA_SITE: 'Coroas do site', AVULSO: 'Avulso', MANUAL: 'Avulso', CONVENIO: 'Prefeitura · NF', RECORRENTE: 'Recorrente' };
 const PEDIDO_NOME: Record<string, string> = { CANCELAMENTO: 'Cancelamento pedido', ESTORNO: 'Estorno pedido', DESCONTO: 'Desconto pedido' };
 const ACAO_NOME: Record<string, string> = {
     incluiu: 'Lançado',
@@ -232,7 +245,11 @@ export default function ContasReceberPage() {
         | { k: 'colunas' }
         | { k: 'comissoes' }
         | { k: 'cartoes' }
+        | { k: 'nf'; grupo: GrupoNf }
+        | { k: 'iss' }
+        | { k: 'atrasos' }
     >(null);
+    const [versaoPref, setVersaoPref] = useState(0);
     const { avisar, aviso } = useAviso();
     const [menuG, setMenuG] = useState(false);
     const gestao = !!cad?.gestao;
@@ -466,6 +483,11 @@ export default function ContasReceberPage() {
                     Receber
                 </button>
             ) : null}
+            {l.origem === 'OS' && l.situacao === 'ABERTO' && !l.negociacao_de && !l.pedido && !modoConfirmar ? (
+                <button type="button" className={BTN_PEQ} onClick={() => setJanela({ k: 'acoes', id: l.id, aba: 'negociar' })}>
+                    Negociar
+                </button>
+            ) : null}
             <button type="button" className={BTN_PEQ} onClick={() => setJanela({ k: 'acoes', id: l.id })}>
                 Mais
             </button>
@@ -478,6 +500,7 @@ export default function ContasReceberPage() {
         if (m) avisar(m);
         setMarc(new Map());
         void carregar();
+        setVersaoPref((v) => v + 1);
     };
 
     return (
@@ -499,6 +522,8 @@ export default function ContasReceberPage() {
                                                 [
                                                     [IconCreditCard, 'Cartões e Cielo', `${cards?.cartao.n ?? 0} parcela(s) a receber · ${brl(cards?.cartao.v ?? 0)}`, () => setJanela({ k: 'cartoes' })],
                                                     [IconUsers, 'Comissões de cobrança', 'relatório e cobradores', () => setJanela({ k: 'comissoes' })],
+                                                    [IconClockExclamation, 'Atrasos por faixa', '1–30, 31–60, 61–90 e mais de 90 dias', () => setJanela({ k: 'atrasos' })],
+                                                    [IconReceiptTax, 'ISS das prefeituras', 'alíquota do mês e quem retém', () => setJanela({ k: 'iss' })],
                                                 ] as [React.ElementType, string, string, () => void][]
                                             ).map(([Ic, r, sub, act]) => (
                                                 <button
@@ -554,7 +579,7 @@ export default function ContasReceberPage() {
                     <select className={`${SELECAO} flex-1 lg:w-56 lg:flex-none`} value={origem} onChange={(e) => setOrigem(e.target.value)} aria-label="Origem">
                         <option value="">Todas as origens</option>
                         <option value="OS">OS (particular, diferença e coroa)</option>
-                        <option value="PREFEITURA">Prefeitura</option>
+                        <option value="PREFEITURA,CONVENIO">Prefeitura (OS a faturar e NF)</option>
                         <option value="COROA_SITE">Coroas do site</option>
                         <option value="AVULSO">Avulsos</option>
                     </select>
@@ -605,6 +630,10 @@ export default function ContasReceberPage() {
                         <IconDownload size={18} /> Exportar
                     </button>
                 </div>
+
+                {(origem === '' || origem === 'PREFEITURA,CONVENIO') && (sit === 'aberto' || sit === 'todos') && !buscaQ ? (
+                    <PainelPrefeitura versao={versaoPref} onEmitir={(g) => setJanela({ k: 'nf', grupo: g })} />
+                ) : null}
 
                 {modo === 'planilha' ? (
                     <Planilha
@@ -751,6 +780,7 @@ export default function ContasReceberPage() {
                     }}
                     onReceber={(l) => setJanela({ k: 'receber', linhas: [l] })}
                     linha={linhas.find((l) => l.id === janela.id) ?? null}
+                    abaInicial={janela.aba}
                 />
             ) : null}
             {janela?.k === 'novo' && cad ? (
@@ -778,6 +808,9 @@ export default function ContasReceberPage() {
             {janela?.k === 'colunas' ? <JanelaColunas colunas={COLUNAS} vis={cols.vis} onMudar={cols.setVis} onPadrao={cols.voltarPadrao} onFechar={() => setJanela(null)} fixas="Cliente e Ações" /> : null}
             {janela?.k === 'comissoes' && cad ? <Comissoes cad={cad} onFechar={() => setJanela(null)} onCad={() => void carregarCad()} avisar={avisar} /> : null}
             {janela?.k === 'cartoes' ? <Cartoes onFechar={() => setJanela(null)} avisar={avisar} /> : null}
+            {janela?.k === 'nf' ? <EmitirNf grupo={janela.grupo} hoje={hoje} onFechar={() => setJanela(null)} onFeito={feito} /> : null}
+            {janela?.k === 'iss' ? <IssPrefeituras onFechar={() => setJanela(null)} onFeito={feito} /> : null}
+            {janela?.k === 'atrasos' ? <Atrasos onFechar={() => setJanela(null)} onAbrir={(id) => setJanela({ k: 'acoes', id })} /> : null}
             {aviso}
         </div>
     );
@@ -849,7 +882,7 @@ function Tabela({ cab, linhas, num = [] }: { cab: string[]; linhas: React.ReactN
 function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: Linha[]; hoje: string; onFechar: () => void; onFeito: (m: string) => void }) {
     const um = linhas.length === 1 ? linhas[0] : null;
     const [data, setData] = useState(hoje);
-    const [forma, setForma] = useState('PIX');
+    const [forma, setForma] = useState(um?.origem === 'CONVENIO' ? 'TRANSFERENCIA' : 'PIX');
     const [conta, setConta] = useState<number | ''>('');
     const [cobrarEnc, setCobrarEnc] = useState(um ? um.cobrar_encargos : true);
     const [multa, setMulta] = useState('');
@@ -866,7 +899,7 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
     const [erro, setErro] = useState<string | null>(null);
     const [ocupado, setOcupado] = useState(false);
     const [chq, setChq] = useState({ banco: '', numero: '', bom: '' });
-    const [iss, setIss] = useState('');
+    const [iss, setIss] = useState(um?.nf?.iss ? numCampo(um.nf.iss) : '');
     const [arquivo, setArquivo] = useState<File | null>(null);
     const ehConvenio = !!um && (um.origem === 'PREFEITURA' || um.origem === 'CONVENIO');
 
@@ -875,7 +908,7 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
     useEffect(() => {
         const bb = cad.contas.find((c) => c.tipo === 'BANCO' && /brasil/i.test(c.nome) && !/rende/i.test(c.nome));
         const itau = cad.contas.find((c) => c.tipo === 'BANCO' && /ita[uú]/i.test(c.nome));
-        setConta(forma === 'DINHEIRO' ? '' : cartao ? bb?.id ?? '' : forma === 'PIX' ? itau?.id ?? '' : (c => c?.id ?? '')(contas.find((c) => c.tipo === 'BANCO')));
+        setConta(forma === 'DINHEIRO' ? '' : cartao || um?.origem === 'CONVENIO' ? bb?.id ?? '' : forma === 'PIX' ? itau?.id ?? '' : (c => c?.id ?? '')(contas.find((c) => c.tipo === 'BANCO')));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [forma]);
     useEffect(() => {
@@ -1215,23 +1248,19 @@ function textoHistorico(h: Detalhe['historico'][number]): string {
     return '';
 }
 
-function imprimirRecibo(t: Detalhe) {
-    const b = t.baixas.filter((x) => !x.estornado_em).pop();
-    if (!b) return;
-    const w = window.open('', '_blank', 'width=720,height=900');
-    if (!w) return;
-    const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
-    w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Recibo ${t.id}</title>
-<style>body{font-family:Arial,sans-serif;color:#222;margin:40px}h1{font-size:22px;margin:0 0 4px}.sub{color:#555;font-size:13px}.box{border:1px solid #999;border-radius:8px;padding:18px;margin-top:22px}
-.v{font-size:26px;font-weight:bold}.l{display:flex;justify-content:space-between;margin:6px 0;font-size:14px}.ass{margin-top:70px;border-top:1px solid #333;width:320px;text-align:center;padding-top:6px;font-size:13px}</style></head><body>
-<h1>RECIBO</h1><div class="sub">PAI - Plano Assistencial Integrado LTDA · CNPJ 03.726.651/0001-51 · Barreiras-BA</div>
-<div class="box"><div class="l"><span>Recebemos de</span><b>${esc(t.pessoa?.nome || '—')}</b></div><div class="l"><span>Referente a</span><b>${esc(t.descricao)}</b></div>
-<div class="l"><span>Data</span><b>${dataBR(b.data)}</b></div><div class="l"><span>Forma</span><b>${esc(b.forma || '—')}</b></div>
-${b.multa + b.juros ? `<div class="l"><span>Multa e juros</span><b>${brl(b.multa + b.juros)}</b></div>` : ''}${b.desconto ? `<div class="l"><span>Desconto</span><b>${brl(b.desconto)}</b></div>` : ''}
-<div class="l"><span>Valor recebido</span><span class="v">${brl(b.valor_pago)}</span></div></div><div class="ass">PAI - Plano Assistencial Integrado</div>
-<script>window.onload=function(){window.print()}</script></body></html>`);
-    w.document.close();
+/** Recibo de um recebimento: PDF do servidor (sem Dompdf no servidor, abre a folha para imprimir). */
+function abrirRecibo(baixaId: number) {
+    window.open(URL_RECIBO(baixaId), '_blank', 'noopener');
 }
+
+type Extra = {
+    negociacao: { mae_id: number; em: string; por: string | null; valor_os: number; parcelas: { id: number; parcela: string; vencimento: string; valor: number; situacao: string; recebido: number }[] } | null;
+    pode_negociar: boolean;
+    saldo: number;
+    nf: { id: number; numero: string; empenho: string; emissao: string; competencia: string; convenio: string; aliquota: number; valor: number; iss: number; iss_retido: boolean; situacao: string; oss: { id: number; descricao: string; data: string; valor: number }[] } | null;
+    baixas: { id: number; data: string; valor_pago: number }[];
+    whatsapp: string;
+};
 
 function Acoes({
     cad,
@@ -1241,6 +1270,7 @@ function Acoes({
     onFechar,
     onMudou,
     onReceber,
+    abaInicial,
 }: {
     cad: Cad;
     id: number;
@@ -1249,9 +1279,13 @@ function Acoes({
     onFechar: () => void;
     onMudou: (m: string) => void;
     onReceber: (l: Linha) => void;
+    abaInicial?: string;
 }) {
     const [t, setT] = useState<Detalhe | null>(null);
-    const [aba, setAba] = useState('resumo');
+    const [ex, setEx] = useState<Extra | null>(null);
+    const [aba, setAba] = useState(abaInicial || 'resumo');
+    const [ngN, setNgN] = useState(3);
+    const [ngPrim, setNgPrim] = useState(diaMais(hoje, 30));
     const [erro, setErro] = useState<string | null>(null);
     const [ocupado, setOcupado] = useState(false);
     const [venc, setVenc] = useState('');
@@ -1278,11 +1312,52 @@ function Acoes({
             setObs(x.observacao ?? '');
             setNat(x.rateio[0]?.natureza_id ?? '');
             setArea(x.rateio[0]?.area_id ?? '');
+            const e2 = await api(URL_ACOES, 'extra', undefined, `&id=${id}`).catch(() => null);
+            setEx(e2?.dados ?? null);
         } catch (e: any) {
             const m = mensagemErro(e, 'Não foi possível abrir o título.');
             if (m) setErro(m);
         }
     }, [id]);
+
+    // negociação: parcelas iguais (a última acerta os centavos), uma por mês a partir do 1º vencimento
+    const ngParcelas = useMemo(() => {
+        const saldo = ex?.saldo ?? 0;
+        const n = Math.max(1, ngN);
+        const base = Math.floor((saldo / n) * 100) / 100;
+        return Array.from({ length: n }, (_, i) => ({
+            vencimento: mesMaisDia(ngPrim, i),
+            valor: i === n - 1 ? Math.round((saldo - base * (n - 1)) * 100) / 100 : base,
+        }));
+    }, [ex?.saldo, ngN, ngPrim]);
+    const negociar = async () => {
+        setOcupado(true);
+        setErro(null);
+        try {
+            const j = await api(URL_ACOES, 'negociar', { id, parcelas: ngParcelas });
+            onMudou(j.msg);
+            onFechar();
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível negociar.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    const [enviandoWa, setEnviandoWa] = useState(false);
+    const reciboWhats = async (baixaId: number) => {
+        setEnviandoWa(true);
+        setErro(null);
+        try {
+            const j = await api(URL_ACOES, 'recibo_whats', { baixa_id: baixaId });
+            onMudou(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível enviar o recibo.');
+            if (m) setErro(m);
+        } finally {
+            setEnviandoWa(false);
+        }
+    };
     useEffect(() => {
         void carregar();
     }, [carregar]);
@@ -1308,6 +1383,7 @@ function Acoes({
     const abas: [string, string][] = t
         ? [
               ['resumo', 'Resumo'],
+              ...((ex?.pode_negociar ? [['negociar', 'Negociar saldo']] : []) as [string, string][]),
               ...((aberto && !t.pedido ? [['prorrogar', 'Prorrogar']] : []) as [string, string][]),
               ...((t.situacao !== 'CANCELADO' ? [['cobranca', 'Cobrança'], ['natureza', 'Natureza']] : []) as [string, string][]),
               ...((aberto && !t.pedido ? [['cancelar', 'Cancelar']] : []) as [string, string][]),
@@ -1331,10 +1407,15 @@ function Acoes({
                         <button type="button" className={BTN_SEC} onClick={onFechar}>
                             Voltar
                         </button>
-                        {t.situacao === 'PAGO' && t.baixas.some((b) => !b.estornado_em) ? (
-                            <button type="button" className={BTN_SEC} onClick={() => imprimirRecibo(t)}>
-                                <IconPrinter size={18} /> Recibo
-                            </button>
+                        {ex?.baixas.length ? (
+                            <>
+                                <button type="button" className={BTN_SEC} onClick={() => abrirRecibo(ex.baixas[0].id)}>
+                                    <IconPrinter size={18} /> Recibo
+                                </button>
+                                <button type="button" className={BTN_SEC} disabled={enviandoWa} onClick={() => void reciboWhats(ex.baixas[0].id)}>
+                                    <IconBrandWhatsapp size={18} /> {enviandoWa ? 'Enviando…' : 'Recibo no WhatsApp'}
+                                </button>
+                            </>
                         ) : null}
                         {t.da_os ? (
                             <Link href="/os/financeiro" className={BTN_SEC}>
@@ -1387,6 +1468,41 @@ function Acoes({
                                     </div>
                                 </div>
                             ) : null}
+                            {ex?.negociacao ? (
+                                <div className="flex flex-col gap-1.5">
+                                    <div className={ROTULO}>Saldo negociado</div>
+                                    <div className={NOTA}>
+                                        <span>
+                                            Negociado em {dataBR(ex.negociacao.em)}
+                                            {ex.negociacao.por ? ` por ${ex.negociacao.por}` : ''} em {ex.negociacao.parcelas.length} parcela(s). A nota promissória assinada na OS continua valendo até o saldo zerar.
+                                        </span>
+                                    </div>
+                                    <Tabela
+                                        cab={['Parcela', 'Vencimento', 'Valor', 'Recebido', 'Situação']}
+                                        num={[2, 3]}
+                                        linhas={ex.negociacao.parcelas.map((p) => [
+                                            <b key="p">{p.parcela}{p.id === t.id ? ' · esta' : ''}</b>,
+                                            dataBR(p.vencimento),
+                                            brl(p.valor),
+                                            p.recebido ? brl(p.recebido) : '—',
+                                            p.situacao === 'PAGO' ? 'recebida' : p.situacao === 'CANCELADO' ? 'cancelada' : p.vencimento < hoje ? 'vencida' : 'em aberto',
+                                        ])}
+                                    />
+                                </div>
+                            ) : null}
+                            {ex?.nf ? (
+                                <div className="flex flex-col gap-1.5">
+                                    <div className={ROTULO}>NF {ex.nf.numero} · empenho {ex.nf.empenho}</div>
+                                    <div className={NOTA}>
+                                        <span>
+                                            {ex.nf.convenio} · atendimentos de {comp(ex.nf.competencia)} · emitida em {dataBR(ex.nf.emissao)} · ISS {numCampo(ex.nf.aliquota)}% = {brl(ex.nf.iss)}
+                                            {ex.nf.iss_retido ? ` retido na fonte: o depósito esperado é ${brl(ex.nf.valor - ex.nf.iss)}.` : ' não retido (vai no DAS): o depósito vem cheio.'}
+                                            {ex.nf.situacao === 'CANCELADA' ? ' NF cancelada.' : ''}
+                                        </span>
+                                    </div>
+                                    <Tabela cab={['OS', 'Data', 'Valor']} num={[2]} linhas={ex.nf.oss.map((o) => [o.descricao, dataBR(o.data), brl(o.valor)])} />
+                                </div>
+                            ) : null}
                             {t.recebimentos_os?.length ? (
                                 <div className="flex flex-col gap-1.5">
                                     <div className={ROTULO}>Recebimentos lançados na OS</div>
@@ -1411,6 +1527,11 @@ function Acoes({
                                                 {b.confirmacao === 'A_CONFIRMAR' ? ' · a confirmar no banco' : b.confirmacao === 'CONFIRMADA' ? ' · confirmado no banco' : ''}
                                                 {b.estornado_em ? ` · estornado em ${dataBR(b.estornado_em)} por ${b.estornado_por || '—'}: ${b.estorno_motivo || ''}` : ''}
                                             </span>
+                                            {!b.estornado_em ? (
+                                                <button type="button" className="ml-auto shrink-0 font-extrabold underline" onClick={() => abrirRecibo(b.id)}>
+                                                    recibo
+                                                </button>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>
@@ -1431,6 +1552,37 @@ function Acoes({
                                     ])}
                                 />
                             ) : null}
+                        </>
+                    ) : null}
+
+                    {aba === 'negociar' && ex?.pode_negociar ? (
+                        <>
+                            <div className={NOTA}>
+                                <span>
+                                    Saldo da OS hoje: <b>{brl(ex.saldo)}</b>. As parcelas viram títulos a receber ligados à OS e o saldo antigo sai da lista. Cada parcela é recebida como hoje (pela OS) e a
+                                    baixa cai na parcela escolhida. A nota promissória assinada na OS continua valendo até o saldo zerar; a negociação não gera promissória nova.
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Campo rotulo="Parcelas">
+                                    <select className={CAMPO} value={ngN} onChange={(e) => setNgN(Number(e.target.value))}>
+                                        {[1, 2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((n) => (
+                                            <option key={n} value={n}>
+                                                {n === 1 ? '1 (nova data)' : `${n}x`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </Campo>
+                                <Campo rotulo="1º vencimento">
+                                    <input type="date" className={CAMPO} value={ngPrim} min={hoje} onChange={(e) => setNgPrim(e.target.value)} />
+                                </Campo>
+                            </div>
+                            <Tabela cab={['Parcela', 'Vencimento', 'Valor']} num={[2]} linhas={ngParcelas.map((p, i) => [`${i + 1}/${ngParcelas.length}`, dataBR(p.vencimento), brl(p.valor)])} />
+                            <div className="flex justify-end">
+                                <button type="button" className={BTN_PRI} disabled={ocupado || !ngPrim || ngPrim < hoje} onClick={() => void negociar()}>
+                                    <IconArrowsSplit2 size={18} /> Gerar parcelas
+                                </button>
+                            </div>
                         </>
                     ) : null}
 
@@ -1655,6 +1807,8 @@ function Novo({ cad, hoje, onFechar, onSalvo }: { cad: Cad; hoje: string; onFech
     const [emissao, setEmissao] = useState(hoje);
     const [venc, setVenc] = useState(diaMais(hoje, 10));
     const [parcelas, setParcelas] = useState(1);
+    const [mensal, setMensal] = useState(false);
+    const [meses, setMeses] = useState(6);
     const [nat, setNat] = useState<number | ''>('');
     const [area, setArea] = useState<number | ''>('');
     const [local, setLocal] = useState<number | ''>('');
@@ -1675,16 +1829,17 @@ function Novo({ cad, hoje, onFechar, onSalvo }: { cad: Cad; hoje: string; onFech
         setOcupado(true);
         setErro(null);
         try {
-            const j = await api(URL_REC, 'salvar', {
+            const j = await api(mensal ? URL_ACOES : URL_REC, mensal ? 'lancar_mensal' : 'salvar', {
+                meses: mensal ? meses : undefined,
                 pessoa_id: pessoa !== 'novo' && pessoa ? pessoa : null,
                 pessoa_nome: pessoa === 'novo' ? pessoaNome : null,
                 descricao: desc,
                 documento: doc,
                 valor: paraNumero(valor),
                 emissao,
-                competencia: emissao.slice(0, 7),
+                competencia: mensal ? venc.slice(0, 7) : emissao.slice(0, 7),
                 vencimento: venc,
-                parcelas,
+                parcelas: mensal ? 1 : parcelas,
                 natureza_id: nat || null,
                 area_id: area || null,
                 local_id: local || null,
@@ -1715,7 +1870,7 @@ function Novo({ cad, hoje, onFechar, onSalvo }: { cad: Cad; hoje: string; onFech
                         Voltar
                     </button>
                     <button type="button" className={BTN_PRI} disabled={ocupado} onClick={() => void salvar()}>
-                        Lançar
+                        {mensal ? `Lançar ${meses} meses` : 'Lançar'}
                     </button>
                 </>
             }
@@ -1743,7 +1898,7 @@ function Novo({ cad, hoje, onFechar, onSalvo }: { cad: Cad; hoje: string; onFech
                 <Campo rotulo="Descrição" classe="sm:col-span-2">
                     <input className={CAMPO} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ex.: ressarcimento de contrato, aluguel de sala" />
                 </Campo>
-                <Campo rotulo="Valor total">
+                <Campo rotulo={mensal ? 'Valor de cada mês' : 'Valor total'}>
                     <input className={CAMPO} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
                 </Campo>
                 <Campo rotulo="Documento">
@@ -1755,15 +1910,27 @@ function Novo({ cad, hoje, onFechar, onSalvo }: { cad: Cad; hoje: string; onFech
                 <Campo rotulo="1º vencimento">
                     <input type="date" className={CAMPO} value={venc} onChange={(e) => setVenc(e.target.value)} />
                 </Campo>
-                <Campo rotulo="Parcelas">
-                    <select className={CAMPO} value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>
-                        {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
-                            <option key={n} value={n}>
-                                {n === 1 ? 'À vista (1)' : `${n} parcelas mensais`}
-                            </option>
-                        ))}
-                    </select>
-                </Campo>
+                {mensal ? (
+                    <Campo rotulo="Quantos meses">
+                        <select className={CAMPO} value={meses} onChange={(e) => setMeses(Number(e.target.value))}>
+                            {Array.from({ length: 35 }, (_, i) => i + 2).map((n) => (
+                                <option key={n} value={n}>
+                                    {n} meses
+                                </option>
+                            ))}
+                        </select>
+                    </Campo>
+                ) : (
+                    <Campo rotulo="Parcelas">
+                        <select className={CAMPO} value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>
+                            {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                                <option key={n} value={n}>
+                                    {n === 1 ? 'À vista (1)' : `${n} parcelas mensais`}
+                                </option>
+                            ))}
+                        </select>
+                    </Campo>
+                )}
                 <Campo rotulo="Forma de cobrança">
                     <select className={CAMPO} value={forma} onChange={(e) => setForma(e.target.value ? Number(e.target.value) : '')}>
                         <option value="">—</option>
@@ -1823,6 +1990,15 @@ function Novo({ cad, hoje, onFechar, onSalvo }: { cad: Cad; hoje: string; onFech
                     <input className={CAMPO} value={obs} onChange={(e) => setObs(e.target.value)} />
                 </Campo>
             </div>
+            <Liga on={mensal} onClick={() => setMensal(!mensal)} rotulo="Repete todo mês (ex.: aluguel de material ortopédico)" />
+            {mensal ? (
+                <div className={NOTA}>
+                    <span>
+                        Cria {meses} títulos de {brl(paraNumero(valor) ?? 0)} de uma vez, um por mês, com o mesmo dia de vencimento (total {brl((paraNumero(valor) ?? 0) * meses)}). Se o item for devolvido antes,
+                        os meses que sobrarem saem pelo pedido de cancelamento.
+                    </span>
+                </div>
+            ) : null}
             <Liga on={enc} onClick={() => setEnc(!enc)} rotulo={`Cobrar multa de ${numCampo(cad.padrao.multa_pct)}% e juros de ${numCampo(cad.padrao.juros_pct)}% ao mês se atrasar`} />
             {erro ? <div className={ERRO}>{erro}</div> : null}
         </Janela>
@@ -2580,6 +2756,7 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
             fd.append('data_pagamento', data);
             fd.append('valor', String(v));
             fd.append('observacao', obs);
+            if (linha.negociacao_de) fd.append('fin_titulo_id', String(linha.id)); // saldo negociado: a baixa cai nesta parcela
             if (forma === 'PIX' || forma === 'TRANSFERENCIA') fd.append('conta_chave', contaChave);
             if (cartao) {
                 fd.append('nsu', nsu);
@@ -2607,7 +2784,7 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
     return (
         <Janela
             titulo={`Receber · ${linha.pessoa || linha.descricao}`}
-            sub={os ? `OS ${os.numero} · total ${brl(os.valor_total)} · recebido ${brl(os.recebido)}` : 'Carregando a OS…'}
+            sub={os ? `OS ${os.numero} · total ${brl(os.valor_total)} · recebido ${brl(os.recebido)}${linha.negociacao_de && linha.parcela ? ` · parcela ${linha.parcela} de ${brl(linha.valor)}` : ''}` : 'Carregando a OS…'}
             onFechar={onFechar}
             rodape={
                 <>
@@ -2722,6 +2899,456 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
                     <IconPaperclip size={18} />
                     {arquivo ? <span className="truncate">{arquivo.name}</span> : 'Foto ou PDF do comprovante (obrigatório)'}
                 </label>
+            ) : null}
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
+    );
+}
+
+/* ============================== parte 2 (13/11/2026): Prefeitura por NF, ISS, atrasos ============================== */
+
+/** Mesmo dia, n meses depois (dia 31 vira o último dia do mês, quando o mês é menor). */
+function mesMaisDia(iso: string, n: number): string {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+    const [y, m, d] = iso.split('-').map(Number);
+    const t = y * 12 + (m - 1) + n;
+    const ny = Math.floor(t / 12);
+    const nm = (t % 12) + 1;
+    const ultimo = new Date(ny, nm, 0).getDate();
+    return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, ultimo)).padStart(2, '0')}`;
+}
+
+type GrupoNf = {
+    chave: string;
+    convenio: string;
+    nome: string;
+    competencia: string;
+    situacao: 'APURACAO' | 'EMITIR';
+    fecha_em: string;
+    vencimento: string;
+    retem: boolean | null;
+    conta: string | null;
+    aliquota: number | null;
+    total: number;
+    oss: { titulo_id: number; os: string | null; descricao: string; data: string; valor: number }[];
+};
+
+/** Quadro "Prefeitura · a faturar": OS da Prefeitura ainda sem NF, por convênio e mês. */
+function PainelPrefeitura({ versao, onEmitir }: { versao: number; onEmitir: (g: GrupoNf) => void }) {
+    const [grupos, setGrupos] = useState<GrupoNf[] | null>(null);
+    const [aberto, setAberto] = useState(true);
+    useEffect(() => {
+        void (async () => {
+            try {
+                const j = await api(URL_ACOES, 'nf_meses');
+                setGrupos(j.dados.grupos);
+            } catch {
+                setGrupos([]);
+            }
+        })();
+    }, [versao]);
+    if (!grupos || !grupos.length) return null;
+    const emitir = grupos.filter((g) => g.situacao === 'EMITIR').length;
+    return (
+        <div className={`${CARTAO} overflow-hidden`}>
+            <button type="button" className="flex min-h-12 w-full items-center gap-2 px-4 py-2.5 text-left" onClick={() => setAberto(!aberto)} aria-expanded={aberto}>
+                <IconFileInvoice size={20} />
+                <b className="text-[15px]">Prefeitura · a faturar</b>
+                <span className={SUB}>
+                    {grupos.length} mês(es){emitir ? ` · ${emitir} para emitir NF` : ''}
+                </span>
+                <IconChevronDown size={18} className={`ml-auto transition ${aberto ? 'rotate-180' : ''}`} />
+            </button>
+            {aberto
+                ? grupos.map((g) => (
+                      <div key={g.chave} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-t border-[#EEF2F7] px-4 py-3 dark:border-white/[0.06] lg:grid-cols-[minmax(0,1.6fr)_130px_170px_auto]">
+                          <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5 text-[15px] font-extrabold">
+                                  <span className="break-words">{g.nome}</span>
+                                  <span className={`${SELO} ${S_AB}`}>{mesBR(g.competencia)}</span>
+                              </div>
+                              <div className={SUB}>
+                                  {g.oss.length} OS · {g.retem === null ? 'retenção do ISS ainda não configurada' : g.retem ? 'retém o ISS na fonte' : 'não retém o ISS'}
+                                  {g.situacao === 'EMITIR' ? ` · pagamento previsto até ${dataBR(g.vencimento)}` : ''}
+                              </div>
+                          </div>
+                          <div className="text-right text-[15px] font-extrabold tabular-nums lg:order-none">{brl(g.total)}</div>
+                          <div className="hidden lg:block">
+                              <span className={`${SELO} ${g.situacao === 'EMITIR' ? S_AVISO : S_MUDO}`}>{g.situacao === 'EMITIR' ? 'Emitir NF' : `Em apuração · fecha em ${diaMes(g.fecha_em)}`}</span>
+                          </div>
+                          <div className="col-span-2 flex justify-end lg:col-span-1">
+                              {g.situacao === 'EMITIR' ? (
+                                  <button type="button" className={BTN_PEQ_PRI} onClick={() => onEmitir(g)}>
+                                      Emitir NF
+                                  </button>
+                              ) : (
+                                  <span className={`${SELO} ${S_MUDO} lg:hidden`}>Em apuração · fecha em {diaMes(g.fecha_em)}</span>
+                              )}
+                          </div>
+                      </div>
+                  ))
+                : null}
+        </div>
+    );
+}
+
+/** Emitir NF de um mês de um convênio: as OS do mês, em qual nota cada uma entra (uma por empenho), número e empenho de cada nota. */
+function EmitirNf({ grupo, hoje, onFechar, onFeito }: { grupo: GrupoNf; hoje: string; onFechar: () => void; onFeito: (m: string) => void }) {
+    const [aliq, setAliq] = useState(grupo.aliquota !== null ? numCampo(grupo.aliquota) : '');
+    const [emissao, setEmissao] = useState(hoje);
+    const [retem, setRetem] = useState(grupo.retem ?? false);
+    const [qtd, setQtd] = useState(1);
+    const [notaDe, setNotaDe] = useState<Record<number, number>>({});
+    const [num, setNum] = useState<string[]>(['']);
+    const [emp, setEmp] = useState<string[]>(['']);
+    const [erro, setErro] = useState<string | null>(null);
+    const [ocupado, setOcupado] = useState(false);
+    const a = paraNumero(aliq) ?? 0;
+    const notas = Array.from({ length: qtd }, (_, i) => {
+        const oss = grupo.oss.filter((o) => (notaDe[o.titulo_id] ?? 0) === i);
+        const valor = Math.round(oss.reduce((s, o) => s + o.valor, 0) * 100) / 100;
+        const iss = Math.round(valor * a) / 100;
+        return { i, oss, valor, iss, liquido: retem ? valor - iss : valor };
+    });
+    const mudarQtd = (n: number) => {
+        setQtd(n);
+        setNum((x) => Array.from({ length: n }, (_, i) => x[i] ?? ''));
+        setEmp((x) => Array.from({ length: n }, (_, i) => x[i] ?? ''));
+        setNotaDe((m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v < n ? v : 0])));
+    };
+    const salvar = async () => {
+        if (!a) return setErro('Informe a alíquota do ISS do mês.');
+        const usadas = notas.filter((n) => n.oss.length);
+        if (usadas.some((n) => !num[n.i].trim() || !emp[n.i].trim())) return setErro('Informe o número e o empenho de cada nota.');
+        setOcupado(true);
+        setErro(null);
+        try {
+            const j = await api(URL_ACOES, 'nf_emitir', {
+                convenio: grupo.convenio,
+                competencia: grupo.competencia,
+                emissao,
+                aliquota: a,
+                retem,
+                notas: usadas.map((n) => ({ numero: num[n.i].trim(), empenho: emp[n.i].trim(), titulo_ids: n.oss.map((o) => o.titulo_id) })),
+            });
+            onFeito(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível registrar as notas.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    const usadas = notas.filter((n) => n.oss.length);
+    return (
+        <Janela
+            titulo={`Emitir NF · ${grupo.nome}`}
+            sub={`Atendimentos de ${mesBR(grupo.competencia)} · ${grupo.oss.length} OS · ${brl(grupo.total)}`}
+            largura="max-w-3xl"
+            onFechar={onFechar}
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Voltar
+                    </button>
+                    <button type="button" className={BTN_PRI} disabled={ocupado} onClick={() => void salvar()}>
+                        Registrar {usadas.length} NF
+                    </button>
+                </>
+            }
+        >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Campo rotulo="Alíquota do ISS do mês (%)">
+                    <input className={CAMPO} inputMode="decimal" value={aliq} onChange={(e) => setAliq(e.target.value)} placeholder="ex.: 4,50" />
+                </Campo>
+                <Campo rotulo="Emitida em">
+                    <input type="date" className={CAMPO} value={emissao} max={hoje} onChange={(e) => setEmissao(e.target.value)} />
+                </Campo>
+                <Campo rotulo="Quantas notas (uma por empenho)">
+                    <select className={CAMPO} value={qtd} onChange={(e) => mudarQtd(Number(e.target.value))}>
+                        {Array.from({ length: Math.min(10, grupo.oss.length) }, (_, i) => i + 1).map((n) => (
+                            <option key={n} value={n}>
+                                {n}
+                            </option>
+                        ))}
+                    </select>
+                </Campo>
+            </div>
+            <Liga on={retem} onClick={() => setRetem(!retem)} rotulo="O convênio retém o ISS na fonte (o depósito vem sem ele)" />
+            <div className={SUB}>A alíquota efetiva do Simples vale para todas as notas do mês e fica guardada em ISS das prefeituras (menu Gestão).</div>
+            {qtd > 1 ? (
+                <div className="flex flex-col gap-1.5">
+                    <div className={ROTULO}>Em qual nota cada OS entra</div>
+                    <div className={`${CARTAO} overflow-hidden`}>
+                        {grupo.oss.map((o) => (
+                            <div key={o.titulo_id} className="flex items-center gap-3 border-t border-[#EEF2F7] px-3 py-2 first:border-t-0 dark:border-white/[0.06]">
+                                <span className="min-w-0 flex-1 break-words text-[14px]">
+                                    {o.descricao} · {dataBR(o.data)}
+                                </span>
+                                <b className="tabular-nums">{brl(o.valor)}</b>
+                                <select className={`${SELECAO} w-28`} value={notaDe[o.titulo_id] ?? 0} onChange={(e) => setNotaDe({ ...notaDe, [o.titulo_id]: Number(e.target.value) })}>
+                                    {Array.from({ length: qtd }, (_, i) => (
+                                        <option key={i} value={i}>
+                                            NF {i + 1}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+            {notas.map((n) => (
+                <div key={n.i} className={`${CARTAO} flex flex-col gap-3 p-3 ${n.oss.length ? '' : 'opacity-60'}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <b>NF {n.i + 1}</b>
+                        <span className={SUB}>{n.oss.length} OS</span>
+                        <span className="ml-auto text-right text-[14px] tabular-nums">
+                            {brl(n.valor)} · ISS {brl(n.iss)}
+                            {retem ? ' retido' : ' no DAS'} · <b>depósito {brl(n.liquido)}</b>
+                        </span>
+                    </div>
+                    {qtd === 1 ? <div className={SUB}>{n.oss.map((o) => o.os || o.descricao).join(' · ')}</div> : null}
+                    <div className="grid grid-cols-2 gap-3">
+                        <Campo rotulo="Número da NF">
+                            <input className={CAMPO} value={num[n.i] ?? ''} onChange={(e) => setNum(num.map((x, i) => (i === n.i ? e.target.value : x)))} />
+                        </Campo>
+                        <Campo rotulo="Empenho">
+                            <input className={CAMPO} value={emp[n.i] ?? ''} onChange={(e) => setEmp(emp.map((x, i) => (i === n.i ? e.target.value : x)))} />
+                        </Campo>
+                    </div>
+                </div>
+            ))}
+            <div className={NOTA}>
+                <span>
+                    Cada NF vira um título a receber de {grupo.nome}, com vencimento em {dataBR(grupo.vencimento)}, e as OS saem do quadro &quot;a faturar&quot;. Na baixa, o ISS retido já vem preenchido e o título
+                    é quitado pelo valor cheio da NF.
+                </span>
+            </div>
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
+    );
+}
+
+/** ISS das prefeituras (Gestão): alíquota efetiva do Simples por mês e, por convênio, se retém o ISS e a conta onde o dinheiro cai. */
+function IssPrefeituras({ onFechar, onFeito }: { onFechar: () => void; onFeito: (m: string) => void }) {
+    const [d, setD] = useState<{ convenios: { convenio: string; nome: string; retem_iss: boolean; conta_id: number | null }[]; aliquotas: { competencia: string; aliquota: number | null }[]; contas: { id: number; nome: string }[] } | null>(null);
+    const [aliq, setAliq] = useState<Record<string, string>>({});
+    const [erro, setErro] = useState<string | null>(null);
+    const [ocupado, setOcupado] = useState(false);
+    useEffect(() => {
+        void (async () => {
+            try {
+                const j = await api(URL_ACOES, 'iss_config');
+                setD(j.dados);
+                setAliq(Object.fromEntries((j.dados.aliquotas as { competencia: string; aliquota: number | null }[]).map((a) => [a.competencia, a.aliquota !== null ? numCampo(a.aliquota) : ''])));
+            } catch (e: any) {
+                const m = mensagemErro(e, 'Não foi possível carregar.');
+                if (m) setErro(m);
+            }
+        })();
+    }, []);
+    const salvar = async () => {
+        if (!d) return;
+        setOcupado(true);
+        setErro(null);
+        try {
+            const j = await api(URL_ACOES, 'iss_config', {
+                aliquotas: Object.entries(aliq)
+                    .filter(([, v]) => v.trim())
+                    .map(([competencia, v]) => ({ competencia, aliquota: paraNumero(v) })),
+                convenios: d.convenios,
+            });
+            onFeito(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível gravar.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    return (
+        <Janela
+            titulo="ISS das prefeituras"
+            sub="Usado na emissão das NF dos convênios públicos."
+            largura="max-w-3xl"
+            onFechar={onFechar}
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Voltar
+                    </button>
+                    <button type="button" className={BTN_PRI} disabled={ocupado || !d} onClick={() => void salvar()}>
+                        Gravar
+                    </button>
+                </>
+            }
+        >
+            {!d && !erro ? <div className="py-6 text-center text-[#5B6478]">Carregando…</div> : null}
+            {d ? (
+                <>
+                    <div className={ROTULO}>Convênios</div>
+                    {d.convenios.length ? (
+                        d.convenios.map((c, i) => (
+                            <div key={c.convenio} className={`${CARTAO} grid grid-cols-1 items-center gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto_220px]`}>
+                                <b className="break-words">{c.nome}</b>
+                                <Liga on={c.retem_iss} onClick={() => setD({ ...d, convenios: d.convenios.map((x, j) => (j === i ? { ...x, retem_iss: !x.retem_iss } : x)) })} rotulo="Retém o ISS" />
+                                <select
+                                    className={SELECAO}
+                                    value={c.conta_id ?? ''}
+                                    aria-label="Conta onde o pagamento cai"
+                                    onChange={(e) => setD({ ...d, convenios: d.convenios.map((x, j) => (j === i ? { ...x, conta_id: e.target.value ? Number(e.target.value) : null } : x)) })}
+                                >
+                                    <option value="">Conta onde cai…</option>
+                                    {d.contas.map((ct) => (
+                                        <option key={ct.id} value={ct.id}>
+                                            {ct.nome}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        ))
+                    ) : (
+                        <div className={SUB}>Nenhuma OS de Prefeitura ainda.</div>
+                    )}
+                    <div className={ROTULO}>Alíquota efetiva do Simples por mês (%)</div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {d.aliquotas.map((a) => (
+                            <Campo key={a.competencia} rotulo={mesBR(a.competencia)}>
+                                <input className={CAMPO} inputMode="decimal" value={aliq[a.competencia] ?? ''} placeholder="—" onChange={(e) => setAliq({ ...aliq, [a.competencia]: e.target.value })} />
+                            </Campo>
+                        ))}
+                    </div>
+                    <div className={SUB}>A alíquota do mês vale para todas as NF daquele mês. Quem retém o ISS deposita sem ele, e o ISS retido entra no relatório do contador (etapa 4).</div>
+                </>
+            ) : null}
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
+    );
+}
+
+type LinhaAtraso = { id: number; cliente: string; origem: string; descricao: string; parcela: string | null; vencimento: string; dias: number; saldo: number };
+const FAIXAS_ATRASO: [string, number, number][] = [
+    ['1 a 30 dias', 1, 30],
+    ['31 a 60 dias', 31, 60],
+    ['61 a 90 dias', 61, 90],
+    ['Mais de 90 dias', 91, 100000],
+];
+
+/** Atrasos por faixa (Gestão): títulos vencidos em aberto de OS e avulsos, por cliente. */
+function Atrasos({ onFechar, onAbrir }: { onFechar: () => void; onAbrir: (id: number) => void }) {
+    const [linhas, setLinhas] = useState<LinhaAtraso[] | null>(null);
+    const [hojeA, setHojeA] = useState(hojeISO());
+    const [fx, setFx] = useState(0);
+    const [erro, setErro] = useState<string | null>(null);
+    useEffect(() => {
+        void (async () => {
+            try {
+                const j = await api(URL_ACOES, 'atrasos');
+                setLinhas(j.dados.linhas);
+                setHojeA(j.dados.hoje);
+            } catch (e: any) {
+                const m = mensagemErro(e, 'Não foi possível carregar.');
+                if (m) setErro(m);
+            }
+        })();
+    }, []);
+    const naFaixa = (f: [string, number, number]) => (linhas ?? []).filter((l) => l.dias >= f[1] && l.dias <= f[2]);
+    const totais = FAIXAS_ATRASO.map((f) => naFaixa(f).reduce((s, l) => s + l.saldo, 0));
+    const maior = Math.max(1, ...totais);
+    const clientes = useMemo(() => {
+        const g = new Map<string, { cliente: string; origem: string; n: number; saldo: number; dias: number; id: number }>();
+        naFaixa(FAIXAS_ATRASO[fx]).forEach((l) => {
+            const k = `${l.cliente}|${l.origem}`;
+            const x = g.get(k) || { cliente: l.cliente, origem: l.origem, n: 0, saldo: 0, dias: 0, id: l.id };
+            x.n++;
+            x.saldo += l.saldo;
+            if (l.dias > x.dias) {
+                x.dias = l.dias;
+                x.id = l.id;
+            }
+            g.set(k, x);
+        });
+        return Array.from(g.values()).sort((a, b) => b.saldo - a.saldo);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [linhas, fx]);
+    const exportar = () => {
+        const cel = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+        const faixaDe = (d: number) => FAIXAS_ATRASO.find((f) => d >= f[1] && d <= f[2])?.[0] || '';
+        const csv = [['Cliente', 'Origem', 'Descrição', 'Parcela', 'Vencimento', 'Dias de atraso', 'Faixa', 'Saldo'].map(cel).join(';')]
+            .concat(
+                (linhas ?? []).map((l) =>
+                    [l.cliente, ORIGEM_NOME[l.origem] || l.origem, l.descricao, l.parcela || '', dataBR(l.vencimento), l.dias, faixaDe(l.dias), l.saldo.toFixed(2).replace('.', ',')].map(cel).join(';'),
+                ),
+            )
+            .join('\r\n');
+        const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `atrasos-${hojeA}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    return (
+        <Janela
+            titulo="Atrasos por faixa"
+            sub={`Títulos vencidos e em aberto em ${dataBR(hojeA)} · OS, avulsos e mensalidades (Prefeitura e cartão têm prazo próprio)`}
+            largura="max-w-4xl"
+            onFechar={onFechar}
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Voltar
+                    </button>
+                    <button type="button" className={BTN_PRI} disabled={!linhas?.length} onClick={exportar}>
+                        <IconDownload size={18} /> Exportar
+                    </button>
+                </>
+            }
+        >
+            {!linhas && !erro ? <div className="py-6 text-center text-[#5B6478]">Carregando…</div> : null}
+            {linhas ? (
+                <>
+                    <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                        {FAIXAS_ATRASO.map((f, i) => {
+                            const on = fx === i;
+                            return (
+                                <button
+                                    key={f[0]}
+                                    type="button"
+                                    aria-pressed={on}
+                                    onClick={() => setFx(i)}
+                                    className={`flex min-h-[86px] flex-col gap-1 rounded-2xl border px-3 py-2.5 text-left ${on ? 'border-[#313C55] bg-[#E9EFF6] dark:border-[#3D6A99] dark:bg-[#3D6A99]/20' : 'border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]'}`}
+                                >
+                                    <span className="text-[11.5px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:text-[#AEB9CF]">{f[0]}</span>
+                                    <span className="text-[18px] font-extrabold tabular-nums">{brl(totais[i])}</span>
+                                    <span className={SUB}>{naFaixa(f).length} título(s)</span>
+                                    <span className="h-1.5 overflow-hidden rounded-full bg-[#EEF2F7] dark:bg-white/[0.08]">
+                                        <span className="block h-full rounded-full bg-[#B42318] dark:bg-[#FF9C92]" style={{ width: `${Math.round((totais[i] / maior) * 100)}%` }} />
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className={ROTULO}>Clientes com atraso de {FAIXAS_ATRASO[fx][0]} · maiores valores primeiro</div>
+                    {clientes.length ? (
+                        <Tabela
+                            cab={['Cliente', 'Origem', 'Títulos', 'Maior atraso', 'Em aberto']}
+                            num={[2, 3, 4]}
+                            linhas={clientes.map((c) => [
+                                <button key="c" type="button" className="text-left font-extrabold hover:underline" onClick={() => onAbrir(c.id)}>
+                                    {c.cliente}
+                                </button>,
+                                ORIGEM_NOME[c.origem] || c.origem,
+                                String(c.n),
+                                `${c.dias} dias`,
+                                <b key="v">{brl(c.saldo)}</b>,
+                            ])}
+                        />
+                    ) : (
+                        <div className={SUB}>Nenhum título nesta faixa.</div>
+                    )}
+                </>
             ) : null}
             {erro ? <div className={ERRO}>{erro}</div> : null}
         </Janela>

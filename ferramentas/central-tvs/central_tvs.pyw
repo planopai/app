@@ -188,21 +188,53 @@ def ligar_pela_rede(tv):
         return None
     inicio = time.time()
     ultimo_envio = 0
+    ultima_varredura = time.time()
     while time.time() - inicio < 90:
         if time.time() - ultimo_envio > 15:
             enviar_wol(mac, ip)
             ultimo_envio = time.time()
+        if time.time() - ultima_varredura > 25 and ip:
+            # Pode ter voltado com outro IP (o roteador não fixa): procura na rede quem tem esse MAC.
+            ultima_varredura = time.time()
+            for outro in procurar_ips(ip.rsplit('.', 1)[0] + '.'):
+                if outro != ip and mac_pela_rede(outro) == mac:
+                    ip = outro
+                    break
         if ip and porta_aberta(ip):
             time.sleep(2)
             alvo = f'{ip}:{PORTA}'
             adb(['connect', alvo], 5)
             shell(alvo, 'input', 'keyevent', 'KEYCODE_WAKEUP', timeout=5)  # se só a rede acordou, acende a tela
-            time.sleep(1)
+            time.sleep(1.5)
             novo = ler_tv(ip)
+            if novo.get('status') == 'ok' and novo.get('tela') is False:
+                shell(alvo, 'input', 'keyevent', 'KEYCODE_POWER', timeout=5)  # TCL que ignora o WAKEUP
+                time.sleep(1.5)
+                novo = ler_tv(ip)
             if novo.get('status') == 'ok':
                 novo['mac'] = mac
                 return novo
         time.sleep(3)
+    return None
+
+
+def conferir_tv(tv):
+    """Conferência rápida de uma TV conhecida (usada a cada 30 s): devolve os dados atualizados ou None se não mudou."""
+    ip = tv.get('ip', '')
+    if not ip or tv.get('ligando'):
+        return None
+    aberta = porta_aberta(ip)
+    if tv['status'] == 'ok':
+        if not aberta:
+            return {**tv, 'status': 'fora_da_rede', 'visto': time.strftime('%d/%m/%Y %H:%M')}
+        m = re.search(r'mWakefulness=(\w+)', shell(f'{ip}:{PORTA}', 'dumpsys', 'power', timeout=6))
+        tela = (m.group(1) == 'Awake') if m else tv.get('tela')
+        return {**tv, 'tela': tela} if tela != tv.get('tela') else None
+    if aberta:
+        novo = ler_tv(ip)
+        if novo.get('status') == 'ok' and novo.get('nome') == tv.get('nome'):
+            novo['mac'] = novo.get('mac') or tv.get('mac', '')
+            return novo
     return None
 
 
@@ -503,6 +535,7 @@ class App:
         self._topo()
         self._area()
         self.raiz.after(100, self._processar_fila)
+        self.raiz.after(30000, self._conferencia)
         if not ADB:
             self.status.configure(text='Não achei o adb.exe. Coloque em C:\\adb e abra de novo.', fg=COR_ERRO)
         else:
@@ -661,6 +694,30 @@ class App:
         self.status.configure(text=f"PC {r['meu']} · {on} TV(s) encontrada(s) · {time.strftime('%H:%M:%S')}",
                               fg=COR_SUAVE if on else COR_ERRO)
         self.atualizar_prints()
+
+    # -- conferência automática (a cada 30 s): mantém os cards certos sem precisar clicar em Procurar --
+    def _conferencia(self):
+        self.raiz.after(30000, self._conferencia)
+        if self.buscando or not ADB:
+            return
+        itens = [(k, dict(t)) for k, t in self.tvs.items() if t['status'] in ('ok', 'fora_da_rede')]
+
+        def tarefa():
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                return [(k, r) for (k, _), r in zip(itens, ex.map(lambda kt: conferir_tv(kt[1]), itens)) if r]
+
+        self._em_segundo_plano(tarefa, self._fim_conferencia)
+
+    def _fim_conferencia(self, mudancas):
+        for chave, novo in mudancas or []:
+            atual = self.tvs.get(chave)
+            if not atual or atual.get('ligando') or atual.get('nome') != novo.get('nome'):
+                continue
+            voltou = atual['status'] != 'ok' and novo['status'] == 'ok'
+            self.tvs[chave] = novo
+            self._redesenhar_um(chave, 'Voltou à rede às ' + time.strftime('%H:%M:%S') if voltou else '')
+            if novo['status'] == 'ok':
+                self.raiz.after(1500, lambda c=chave: self.print_tv(c))
 
     # -- prints -------------------------------------------------------------
     def print_tv(self, ip):
