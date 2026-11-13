@@ -874,7 +874,8 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
     const contas = cad.contas.filter((c) => (forma === 'DINHEIRO' ? c.tipo === 'CAIXA' : c.tipo !== 'CAIXA'));
     useEffect(() => {
         const bb = cad.contas.find((c) => c.tipo === 'BANCO' && /brasil/i.test(c.nome) && !/rende/i.test(c.nome));
-        setConta(forma === 'DINHEIRO' ? '' : cartao ? bb?.id ?? '' : (c => c?.id ?? '')(contas.find((c) => c.tipo === 'BANCO')));
+        const itau = cad.contas.find((c) => c.tipo === 'BANCO' && /ita[uú]/i.test(c.nome));
+        setConta(forma === 'DINHEIRO' ? '' : cartao ? bb?.id ?? '' : forma === 'PIX' ? itau?.id ?? '' : (c => c?.id ?? '')(contas.find((c) => c.tipo === 'BANCO')));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [forma]);
     useEffect(() => {
@@ -2536,6 +2537,7 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
     const [chq, setChq] = useState({ banco: '', numero: '', bom: '' });
     const [iss, setIss] = useState('');
     const [obs, setObs] = useState('');
+    const [contaChave, setContaChave] = useState('ITAU');
     const [arquivo, setArquivo] = useState<File | null>(null);
     const [erro, setErro] = useState<string | null>(null);
     const [ocupado, setOcupado] = useState(false);
@@ -2578,6 +2580,7 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
             fd.append('data_pagamento', data);
             fd.append('valor', String(v));
             fd.append('observacao', obs);
+            if (forma === 'PIX' || forma === 'TRANSFERENCIA') fd.append('conta_chave', contaChave);
             if (cartao) {
                 fd.append('nsu', nsu);
                 fd.append('bandeira', bandeira);
@@ -2666,6 +2669,24 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
                     ) : null}
                 </div>
             ) : null}
+            {forma === 'PIX' || forma === 'TRANSFERENCIA' ? (
+                <Campo rotulo={forma === 'PIX' ? 'Pix recebido por' : 'Banco da transferência'}>
+                    <select className={CAMPO} value={contaChave} onChange={(e) => setContaChave(e.target.value)}>
+                        {forma === 'PIX' ? (
+                            <>
+                                <option value="ITAU">Pix CNPJ · Itaú</option>
+                                <option value="SICREDI">Link de pagamento · Sicredi</option>
+                            </>
+                        ) : (
+                            <>
+                                <option value="ITAU">Itaú</option>
+                                <option value="SICREDI">Sicredi</option>
+                                <option value="BB">Banco do Brasil</option>
+                            </>
+                        )}
+                    </select>
+                </Campo>
+            ) : null}
             {forma === 'CHEQUE' ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <Campo rotulo="Número *">
@@ -2686,7 +2707,7 @@ function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: str
             ) : null}
             <div className={NOTA}>
                 {forma === 'DINHEIRO'
-                    ? 'Dinheiro entra no seu caixa aberto (sem caixa aberto, vai para o caixa da Tesouraria e fica anotado).'
+                    ? 'Dinheiro entra no seu caixa aberto. Sem caixa aberto, fica no Caixa Atendimento Funerário, para ser entregue ao caixa aberto.'
                     : cartao
                       ? 'Vira cartão a receber da Cielo, conferido pelo NSU.'
                       : 'Fica "a confirmar no banco" até aparecer no extrato.'}

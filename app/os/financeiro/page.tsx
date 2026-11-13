@@ -444,6 +444,7 @@ function DetalheOS({
         cheque_numero: "",
         cheque_bom_para: "",
         iss_retido: "",
+        conta_chave: "ITAU",
     });
     const [estorno, setEstorno] = useState<any>(null);
     const [motivoEstorno, setMotivoEstorno] = useState("");
@@ -557,6 +558,7 @@ function DetalheOS({
             if (ehCartaoRec && !rec.nsu.replace(/\D/g, "")) throw new Error("Cartão: informe o NSU do comprovante.");
             if (ehCartaoRec && !rec.bandeira) throw new Error("Cartão: escolha a bandeira.");
             if (rec.forma_pagamento === "CHEQUE" && (!rec.cheque_numero.trim() || !rec.cheque_bom_para)) throw new Error("Cheque: informe o número e o bom para.");
+            if (rec.forma_pagamento === "TRANSFERENCIA" && !rec.conta_chave) throw new Error("Transferência: escolha o banco em que o cliente depositou.");
             let finId = proposta?.id;
 
             if (!finId) {
@@ -587,6 +589,7 @@ function DetalheOS({
                 fd.append("cheque_numero", rec.cheque_numero);
                 fd.append("cheque_bom_para", rec.cheque_bom_para);
             }
+            if (rec.forma_pagamento === "PIX" || rec.forma_pagamento === "TRANSFERENCIA") fd.append("conta_chave", rec.conta_chave);
             if (linha.tipo === "PRF" && valorDigitado(rec.iss_retido) > 0) fd.append("iss_retido", String(valorDigitado(rec.iss_retido)));
             if (arquivo) fd.append("comprovante", arquivo, arquivo.name || "comprovante.jpg");
             const r = await apiJson(OS_API, { method: "POST", body: fd });
@@ -1191,6 +1194,27 @@ function DetalheOS({
                                     />
                                 </Campo>
                             </div>
+
+                            {rec.forma_pagamento === "PIX" || rec.forma_pagamento === "TRANSFERENCIA" ? (
+                                <div className="mb-3">
+                                    <Campo rotulo={rec.forma_pagamento === "PIX" ? "Pix recebido por" : "Banco da transferência"}>
+                                        <select className={inputCls} value={rec.conta_chave} onChange={(e) => setRec({ ...rec, conta_chave: e.target.value })}>
+                                            {rec.forma_pagamento === "PIX" ? (
+                                                <>
+                                                    <option value="ITAU">Pix CNPJ · Itaú</option>
+                                                    <option value="SICREDI">Link de pagamento · Sicredi</option>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <option value="ITAU">Itaú</option>
+                                                    <option value="SICREDI">Sicredi</option>
+                                                    <option value="BB">Banco do Brasil</option>
+                                                </>
+                                            )}
+                                        </select>
+                                    </Campo>
+                                </div>
+                            ) : null}
 
                             {ehCartaoRec ? (
                                 <div className="mb-3 grid grid-cols-2 gap-2">

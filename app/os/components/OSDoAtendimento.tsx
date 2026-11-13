@@ -509,7 +509,7 @@ const SEM_COMPROVANTE = ["DINHEIRO"];
 const COMPROVANTE_MAX = 15 * 1024 * 1024;
 
 // 13/11/2026: cartão leva NSU (obrigatório), bandeira e máquina; cheque leva número e bom para (vão para o contas a receber)
-type LinhaPagamento = { forma: string; valor: string; parcelas: number; arquivo: File | null; nsu?: string; bandeira?: string; maquina?: string; cheque_numero?: string; cheque_bom_para?: string; cheque_banco?: string };
+type LinhaPagamento = { forma: string; valor: string; parcelas: number; arquivo: File | null; nsu?: string; bandeira?: string; maquina?: string; cheque_numero?: string; cheque_bom_para?: string; cheque_banco?: string; conta_chave?: string };
 const EH_CARTAO = (f: string) => f === "CARTAO_DEBITO" || f === "CARTAO_CREDITO";
 
 /**
@@ -581,6 +581,7 @@ export function ConcluirVendaModal({
                         valor: num(l.valor),
                         parcelas: l.forma === "CARTAO_CREDITO" ? l.parcelas : null,
                         ...(EH_CARTAO(l.forma) ? { nsu: l.nsu || "", bandeira: l.bandeira || "", maquina: l.maquina || "424" } : {}),
+                        ...(l.forma === "PIX" || l.forma === "TRANSFERENCIA" ? { conta_chave: l.conta_chave || "ITAU" } : {}),
                         ...(l.forma === "CHEQUE" ? { cheque_numero: l.cheque_numero || "", cheque_bom_para: l.cheque_bom_para || "", cheque_banco: l.cheque_banco || "" } : {}),
                     })),
                 ),
@@ -625,6 +626,22 @@ export function ConcluirVendaModal({
                                             ))}
                                         </select>
                                     </label>
+                                ) : null}
+                                {l.forma === "PIX" || l.forma === "TRANSFERENCIA" ? (
+                                    <select aria-label={`Conta do pagamento ${i + 1}`} className={`${inputCls} mt-2`} value={l.conta_chave || "ITAU"} onChange={(e) => mudar(i, { conta_chave: e.target.value })}>
+                                        {l.forma === "PIX" ? (
+                                            <>
+                                                <option value="ITAU">Pix CNPJ · Itaú</option>
+                                                <option value="SICREDI">Link de pagamento · Sicredi</option>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <option value="ITAU">Transferência para o Itaú</option>
+                                                <option value="SICREDI">Transferência para o Sicredi</option>
+                                                <option value="BB">Transferência para o Banco do Brasil</option>
+                                            </>
+                                        )}
+                                    </select>
                                 ) : null}
                                 {EH_CARTAO(l.forma) ? (
                                     <div className="mt-2 grid grid-cols-3 gap-2">
