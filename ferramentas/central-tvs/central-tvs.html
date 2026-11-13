@@ -67,7 +67,8 @@ button{font:inherit;cursor:pointer}
     <button class="bt" data-todas="mudo">Mudo</button>
     <button class="bt" data-todas="tvbro">Abrir TV Bro</button>
     <button class="bt" data-todas="abrir_pagina">Abrir páginas</button>
-    <button class="bt" data-todas="ligar">Ligar telas</button>
+    <button class="bt" data-todas="descanso">Descanso (tela preta)</button>
+    <button class="bt" data-todas="acordar">Acordar (abrir páginas)</button>
   </div>
   <div class="grade" id="grade"></div>
 </div>
@@ -131,7 +132,7 @@ function desenhar() {
         <button class="bt bt--am" data-a="tvbro" ${ok ? '' : 'disabled'}>TV Bro</button>
         <button class="bt" data-a="abrir_pagina" ${ok ? '' : 'disabled'}>Abrir página</button>
         <button class="bt" data-a="recarregar" ${ok ? '' : 'disabled'}>Recarregar</button>
-        <button class="bt" data-a="${t.tela === false ? 'ligar' : 'desligar'}" ${ok ? '' : 'disabled'}>${t.tela === false ? 'Ligar' : 'Desligar'}</button>
+        <button class="bt" data-a="${t.descanso ? 'acordar' : 'descanso'}" ${ok ? '' : 'disabled'}>${t.descanso ? 'Acordar' : 'Descanso'}</button>
         <button class="bt bt--verm" data-a="reiniciar" ${ok ? '' : 'disabled'}>Reiniciar</button>
         <button class="bt" data-a="print" ${ok ? '' : 'disabled'}>Print</button>
       </div>
@@ -145,13 +146,6 @@ async function acao(ip, a, valor) {
   const msg = card && $('[data-msg]', card);
   if (a === 'print') { print(ip); return; }
   if (a === 'reiniciar' && !confirm('Reiniciar esta TV? Ela fica alguns minutos sem imagem.')) return;
-  if (a === 'desligar') {
-    const tv = tvs.find(t => t.ip === ip);
-    const txt = tv && tv.mac
-      ? 'Desligar esta TV?\n\nAo desligar, a TV costuma sair do Wi-Fi. Para ligar de novo pela Central, ela precisa estar com "ligar pela rede / Wi-Fi em espera" ativado nas configurações; se não ligar, use o controle.'
-      : 'Desligar esta TV?\n\nAo desligar, a TV sai do Wi-Fi e a Central NÃO consegue ligá-la de novo. Só pelo controle.';
-    if (!confirm(txt)) return;
-  }
   if (msg) { msg.className = 'msg'; msg.textContent = 'Enviando…'; }
   try {
     const r = await fetch(`/api/acao?ip=${encodeURIComponent(ip)}&acao=${a}&valor=${encodeURIComponent(valor || '')}`, { method: 'POST', headers: H });
@@ -162,12 +156,11 @@ async function acao(ip, a, valor) {
     if (card && d.tv) {
       const max = d.tv.volumeMax || 15;
       if (d.tv.volume != null) { $('[data-vol]', card).value = d.tv.volume; $('[data-vol-txt]', card).textContent = Math.round(d.tv.volume / max * 100) + '%'; }
-      if (a === 'ligar' || a === 'desligar') desenhar();
+      if (['ligar', 'descanso', 'acordar'].includes(a)) desenhar();
     }
     if (d.msg && msg) { msg.textContent = d.msg; return; }
     if (msg) msg.textContent = 'Feito às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    if (a === 'desligar') setTimeout(buscar, 4000);
-    if (['abrir_pagina', 'tvbro', 'recarregar', 'ligar', 'inicio', 'voltar'].includes(a)) setTimeout(() => print(ip), 2500);
+    if (['abrir_pagina', 'acordar', 'descanso', 'tvbro', 'recarregar', 'ligar', 'inicio', 'voltar'].includes(a)) setTimeout(() => print(ip), 2500);
   } catch (e) { if (msg) { msg.className = 'msg erro'; msg.textContent = e.message; } }
 }
 

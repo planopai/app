@@ -435,6 +435,15 @@ function DetalheOS({
         valor: "",
         data_pagamento: hoje(),
         observacao: "",
+        // 13/11/2026: cartão (NSU obrigatório), cheque e ISS retido vão para o contas a receber
+        nsu: "",
+        bandeira: "",
+        maquina: "424",
+        parcelas: "1",
+        cheque_banco: "",
+        cheque_numero: "",
+        cheque_bom_para: "",
+        iss_retido: "",
     });
     const [estorno, setEstorno] = useState<any>(null);
     const [motivoEstorno, setMotivoEstorno] = useState("");
@@ -542,8 +551,12 @@ function DetalheOS({
         linha.status !== "CANCELADA" &&
         !pagaPeloSite;
 
+    const ehCartaoRec = rec.forma_pagamento === "CARTAO_DEBITO" || rec.forma_pagamento === "CARTAO_CREDITO";
     const lancar = () =>
         executar(async () => {
+            if (ehCartaoRec && !rec.nsu.replace(/\D/g, "")) throw new Error("Cartão: informe o NSU do comprovante.");
+            if (ehCartaoRec && !rec.bandeira) throw new Error("Cartão: escolha a bandeira.");
+            if (rec.forma_pagamento === "CHEQUE" && (!rec.cheque_numero.trim() || !rec.cheque_bom_para)) throw new Error("Cheque: informe o número e o bom para.");
             let finId = proposta?.id;
 
             if (!finId) {
@@ -563,6 +576,18 @@ function DetalheOS({
             fd.append("data_pagamento", rec.data_pagamento);
             fd.append("observacao", rec.observacao);
             fd.append("valor", String(valorDigitado(rec.valor)));
+            if (ehCartaoRec) {
+                fd.append("nsu", rec.nsu);
+                fd.append("bandeira", rec.bandeira);
+                fd.append("maquina", rec.maquina);
+                fd.append("parcelas", rec.forma_pagamento === "CARTAO_CREDITO" ? rec.parcelas : "1");
+            }
+            if (rec.forma_pagamento === "CHEQUE") {
+                fd.append("cheque_banco", rec.cheque_banco);
+                fd.append("cheque_numero", rec.cheque_numero);
+                fd.append("cheque_bom_para", rec.cheque_bom_para);
+            }
+            if (linha.tipo === "PRF" && valorDigitado(rec.iss_retido) > 0) fd.append("iss_retido", String(valorDigitado(rec.iss_retido)));
             if (arquivo) fd.append("comprovante", arquivo, arquivo.name || "comprovante.jpg");
             const r = await apiJson(OS_API, { method: "POST", body: fd });
 
@@ -570,6 +595,10 @@ function DetalheOS({
                 ...rec,
                 valor: "",
                 observacao: "",
+                nsu: "",
+                cheque_numero: "",
+                cheque_bom_para: "",
+                iss_retido: "",
             });
             setArquivo(null);
             setInputArquivo((n) => n + 1);
@@ -1162,6 +1191,62 @@ function DetalheOS({
                                     />
                                 </Campo>
                             </div>
+
+                            {ehCartaoRec ? (
+                                <div className="mb-3 grid grid-cols-2 gap-2">
+                                    <Campo rotulo="NSU / DOC *">
+                                        <input inputMode="numeric" className={inputCls} placeholder="do comprovante" value={rec.nsu} onChange={(e) => setRec({ ...rec, nsu: e.target.value })} />
+                                    </Campo>
+                                    <Campo rotulo="Bandeira">
+                                        <select className={inputCls} value={rec.bandeira} onChange={(e) => setRec({ ...rec, bandeira: e.target.value })}>
+                                            <option value="">Escolha</option>
+                                            {["Visa", "Master", "Elo", "Amex", "Hipercard"].map((b) => (
+                                                <option key={b}>{b}</option>
+                                            ))}
+                                        </select>
+                                    </Campo>
+                                    <Campo rotulo="Máquina">
+                                        <select className={inputCls} value={rec.maquina} onChange={(e) => setRec({ ...rec, maquina: e.target.value })}>
+                                            <option value="424">…424 · OS</option>
+                                            <option value="423">…423 · escritório</option>
+                                        </select>
+                                    </Campo>
+                                    {rec.forma_pagamento === "CARTAO_CREDITO" ? (
+                                        <Campo rotulo="Parcelas">
+                                            <select className={inputCls} value={rec.parcelas} onChange={(e) => setRec({ ...rec, parcelas: e.target.value })}>
+                                                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
+                                                    <option key={n} value={n}>
+                                                        {n === "1" ? "À vista" : `${n}x`}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </Campo>
+                                    ) : null}
+                                </div>
+                            ) : null}
+
+                            {rec.forma_pagamento === "CHEQUE" ? (
+                                <div className="mb-3 grid grid-cols-2 gap-2">
+                                    <Campo rotulo="Número *">
+                                        <input className={inputCls} value={rec.cheque_numero} onChange={(e) => setRec({ ...rec, cheque_numero: e.target.value })} />
+                                    </Campo>
+                                    <Campo rotulo="Bom para *">
+                                        <input type="date" className={inputCls} value={rec.cheque_bom_para} onChange={(e) => setRec({ ...rec, cheque_bom_para: e.target.value })} />
+                                    </Campo>
+                                    <Campo rotulo="Banco do cheque">
+                                        <input className={inputCls} value={rec.cheque_banco} onChange={(e) => setRec({ ...rec, cheque_banco: e.target.value })} />
+                                    </Campo>
+                                </div>
+                            ) : null}
+
+                            {linha.tipo === "PRF" ? (
+                                <div className="mb-3">
+                                    <Campo rotulo="ISS retido pela Prefeitura">
+                                        <input inputMode="decimal" className={inputCls} placeholder="0,00" value={rec.iss_retido} onChange={(e) => setRec({ ...rec, iss_retido: e.target.value })} />
+                                    </Campo>
+                                    <div className="mt-1 text-xs text-[#5B6478]">Lance o valor cheio da NF. O ISS retido fica registrado e o banco recebe o valor sem ele.</div>
+                                </div>
+                            ) : null}
 
                             <div className="mb-3">
                                 <Campo rotulo="Observação">

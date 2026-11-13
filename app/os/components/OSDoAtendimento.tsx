@@ -508,7 +508,9 @@ const ROTULO_FORMA: Record<string, string> = {
 const SEM_COMPROVANTE = ["DINHEIRO"];
 const COMPROVANTE_MAX = 15 * 1024 * 1024;
 
-type LinhaPagamento = { forma: string; valor: string; parcelas: number; arquivo: File | null };
+// 13/11/2026: cartão leva NSU (obrigatório), bandeira e máquina; cheque leva número e bom para (vão para o contas a receber)
+type LinhaPagamento = { forma: string; valor: string; parcelas: number; arquivo: File | null; nsu?: string; bandeira?: string; maquina?: string; cheque_numero?: string; cheque_bom_para?: string; cheque_banco?: string };
+const EH_CARTAO = (f: string) => f === "CARTAO_DEBITO" || f === "CARTAO_CREDITO";
 
 /**
  * Concluir venda: fecha a OS (valores travados, vai para o financeiro). Pagamento do momento opcional, em uma ou mais formas,
@@ -540,6 +542,9 @@ export function ConcluirVendaModal({
         for (const [i, l] of linhas.entries()) {
             if (!(num(l.valor) > 0)) return `Pagamento ${i + 1}: informe o valor.`;
             if (!SEM_COMPROVANTE.includes(l.forma) && !l.arquivo) return `Pagamento ${i + 1} (${ROTULO_FORMA[l.forma]}): anexe a foto do comprovante.`;
+            if (EH_CARTAO(l.forma) && !(l.nsu || "").replace(/\D/g, "")) return `Pagamento ${i + 1} (${ROTULO_FORMA[l.forma]}): informe o NSU do comprovante.`;
+            if (EH_CARTAO(l.forma) && !l.bandeira) return `Pagamento ${i + 1} (${ROTULO_FORMA[l.forma]}): escolha a bandeira.`;
+            if (l.forma === "CHEQUE" && (!(l.cheque_numero || "").trim() || !l.cheque_bom_para)) return `Pagamento ${i + 1} (cheque): informe o número e o bom para.`;
         }
         if (pago > total + 0.009) return `Os pagamentos somam ${brl(pago)}, mais que o total (${brl(total)}).`;
         return "";
@@ -568,7 +573,18 @@ export function ConcluirVendaModal({
             fd.append("concluir", "1");
             fd.append("os_id", String(os.id));
             fd.append("concluir_juntas", "1");
-            fd.append("pagamentos", JSON.stringify(linhas.map((l) => ({ forma: l.forma, valor: num(l.valor), parcelas: l.forma === "CARTAO_CREDITO" ? l.parcelas : null }))));
+            fd.append(
+                "pagamentos",
+                JSON.stringify(
+                    linhas.map((l) => ({
+                        forma: l.forma,
+                        valor: num(l.valor),
+                        parcelas: l.forma === "CARTAO_CREDITO" ? l.parcelas : null,
+                        ...(EH_CARTAO(l.forma) ? { nsu: l.nsu || "", bandeira: l.bandeira || "", maquina: l.maquina || "424" } : {}),
+                        ...(l.forma === "CHEQUE" ? { cheque_numero: l.cheque_numero || "", cheque_bom_para: l.cheque_bom_para || "", cheque_banco: l.cheque_banco || "" } : {}),
+                    })),
+                ),
+            );
             linhas.forEach((l, i) => l.arquivo && fd.append(`comprovante_${i}`, l.arquivo, l.arquivo.name || `comprovante_${i}.jpg`));
             const r = await apiJson(OS_API, { method: "POST", body: fd });
             onConcluido(r?.msg || "Venda concluída.");
@@ -609,6 +625,26 @@ export function ConcluirVendaModal({
                                             ))}
                                         </select>
                                     </label>
+                                ) : null}
+                                {EH_CARTAO(l.forma) ? (
+                                    <div className="mt-2 grid grid-cols-3 gap-2">
+                                        <input inputMode="numeric" aria-label={`NSU do pagamento ${i + 1}`} className={inputCls} placeholder="NSU / DOC *" value={l.nsu || ""} onChange={(e) => mudar(i, { nsu: e.target.value })} />
+                                        <select aria-label={`Bandeira do pagamento ${i + 1}`} className={inputCls} value={l.bandeira || ""} onChange={(e) => mudar(i, { bandeira: e.target.value })}>
+                                            <option value="">Bandeira</option>
+                                            {["Visa", "Master", "Elo", "Amex", "Hipercard"].map((b) => <option key={b}>{b}</option>)}
+                                        </select>
+                                        <select aria-label={`Máquina do pagamento ${i + 1}`} className={inputCls} value={l.maquina || "424"} onChange={(e) => mudar(i, { maquina: e.target.value })}>
+                                            <option value="424">Máquina …424 · OS</option>
+                                            <option value="423">Máquina …423 · escritório</option>
+                                        </select>
+                                    </div>
+                                ) : null}
+                                {l.forma === "CHEQUE" ? (
+                                    <div className="mt-2 grid grid-cols-3 gap-2">
+                                        <input aria-label={`Número do cheque ${i + 1}`} className={inputCls} placeholder="Número *" value={l.cheque_numero || ""} onChange={(e) => mudar(i, { cheque_numero: e.target.value })} />
+                                        <input type="date" aria-label={`Bom para do cheque ${i + 1}`} className={inputCls} value={l.cheque_bom_para || ""} onChange={(e) => mudar(i, { cheque_bom_para: e.target.value })} />
+                                        <input aria-label={`Banco do cheque ${i + 1}`} className={inputCls} placeholder="Banco" value={l.cheque_banco || ""} onChange={(e) => mudar(i, { cheque_banco: e.target.value })} />
+                                    </div>
                                 ) : null}
                                 {SEM_COMPROVANTE.includes(l.forma) ? (
                                     <div className="mt-2 text-xs text-[#6B7488] dark:text-[#AEB9CF]">Dinheiro: sem comprovante (o Financeiro confere pelo caixa).</div>

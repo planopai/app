@@ -6,7 +6,10 @@
  * Lista ou planilha (rolagem para o lado, colunas à escolha, total do filtro, exportar), paginação no servidor para o volume do Plano,
  * baixa individual ou em massa com multa 2% e juros 1% ao mês (com opção de não cobrar), cobrador e relatório de comissões,
  * Pix/transferência/boleto "a confirmar no banco", cartão a receber conferido com a Cielo, prorrogar e alterar direto (com histórico),
- * cancelamento, estorno e desconto com aprovação da Gestão. As OS se recebem no Financeiro da OS: aqui só aparecem.
+ * cancelamento, estorno e desconto com aprovação da Gestão.
+ * 13/11/2026: tela enxuta (faixa de totais, filtros numa linha); o financeiro (página Tesouraria) usa a tela e a Gestão tem o menu
+ * com Cartões e Cielo, Comissões e Configurações; cartão exige NSU; cheque; ISS retido; anexos; o título da OS é recebido aqui
+ * pelo mesmo lançamento do Financeiro da OS (os_principal.php), que vira baixa no contas a receber.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -14,10 +17,12 @@ import Link from 'next/link';
 import {
     IconAdjustmentsDollar,
     IconCash,
+    IconChevronDown,
     IconColumns,
     IconCreditCard,
     IconDownload,
     IconFilter,
+    IconPaperclip,
     IconPlus,
     IconPrinter,
     IconRefresh,
@@ -25,7 +30,7 @@ import {
     IconUpload,
     IconUsers,
 } from '@tabler/icons-react';
-import { GRADE_CARTOES, TopoPagina } from '@/components/shell/ModuloHub';
+import { TopoPagina } from '@/components/shell/ModuloHub';
 import {
     api,
     brl,
@@ -58,6 +63,7 @@ import {
     SUB,
     useAviso,
 } from '../contas-pagar/components/fin';
+import { OS_API, apiJson, osPost } from '../os/components/apiOS';
 import { BarraMassa, baixarCsv, CaixaMarcar, ChipsFiltro, JanelaColunas, Paginacao, Planilha, TrocaModo, useColunas, type ColunaPlan } from '../contas-pagar/components/planilha';
 
 const URL_REC = 'https://api.planoassistencialintegrado.com.br/fin_receber.php';
@@ -76,6 +82,7 @@ type Cad = {
     clientes: { id: number; nome: string }[];
     usuarios: { id: number; nome: string }[];
     padrao: { multa_pct: number; juros_pct: number };
+    gestao: boolean;
 };
 type Baixa = { id: number; data: string; conta: string; forma: string | null; valor_pago: number; juros: number; multa: number; desconto: number; confirmacao: string; cobrador: string | null };
 type Linha = {
@@ -149,6 +156,28 @@ const ACAO_NOME: Record<string, string> = {
 };
 const CAMPO_NOME: Record<string, string> = { forma_id: 'forma', cobrador_id: 'cobrador', comissao_pct: 'comissão %', cobrar_encargos: 'cobrar multa e juros', observacao: 'observação', natureza_id: 'natureza', valor: 'valor', situacao: 'situação' };
 const BANDEIRAS = ['Visa', 'Master', 'Elo', 'Amex', 'Hipercard'];
+const URL_ANEXO = (id: number) => `${URL_REC}?action=anexo&id=${id}`;
+const FORMAS_OS: [string, string][] = [
+    ['PIX', 'Pix'],
+    ['DINHEIRO', 'Dinheiro'],
+    ['CARTAO_DEBITO', 'Cartão de débito'],
+    ['CARTAO_CREDITO', 'Cartão de crédito'],
+    ['TRANSFERENCIA', 'Transferência'],
+    ['CHEQUE', 'Cheque'],
+];
+const ehCartao = (f: string) => f === 'CARTAO_DEBITO' || f === 'CARTAO_CREDITO';
+
+/** Envia um anexo (nota, contrato, comprovante) para o título ou para a baixa. */
+async function anexarArquivo(destino: { titulo_id?: number; baixa_id?: number }, arquivo: File) {
+    const fd = new FormData();
+    Object.entries(destino).forEach(([k, v]) => v && fd.append(k, String(v)));
+    fd.append('arquivo', arquivo);
+    const r = await fetch(`${URL_REC}?action=anexar`, { method: 'POST', credentials: 'include', body: fd });
+    if (r.status === 401) throw new SessaoExpirada('Sessão expirada.');
+    const j = await r.json().catch(() => null);
+    if (!j || j.erro) throw new Error(j?.msg || 'Não foi possível anexar o arquivo.');
+    return j;
+}
 const CANAIS: [string, string][] = [
     ['MAQUINA_ESCRITORIO', 'Máquina …423 · escritório'],
     ['MAQUINA_OS', 'Máquina …424 · OS'],
@@ -174,6 +203,7 @@ function encargos(l: Pick<Linha, 'valor' | 'vencimento' | 'multa_pct' | 'juros_p
 
 const MOD_NOME: Record<string, string> = { DEBITO: 'débito', CREDITO: 'crédito', PARCELADO: 'parcelado', PIX: 'Pix' };
 const cartaoTxt = (bandeira: string | null | undefined, mod: string, parcelas = 1) => (mod === 'PIX' ? 'Pix' : `${bandeira || '—'} ${MOD_NOME[mod] || mod.toLowerCase()}${parcelas > 1 ? ` ${parcelas}x` : ''}`);
+const SELECAO = 'h-11 min-w-0 rounded-xl border border-[#E3E8F0] bg-white px-3 text-[15px] dark:border-white/[0.12] dark:bg-[#232B3F]';
 const comp = (c?: string | null) => (c ? `${c.slice(5, 7)}/${c.slice(0, 4)}` : '—');
 
 /* ============================== página ============================== */
@@ -204,6 +234,8 @@ export default function ContasReceberPage() {
         | { k: 'cartoes' }
     >(null);
     const { avisar, aviso } = useAviso();
+    const [menuG, setMenuG] = useState(false);
+    const gestao = !!cad?.gestao;
 
     useEffect(() => {
         const t = setTimeout(() => setBuscaQ(busca.trim()), 350);
@@ -408,35 +440,31 @@ export default function ContasReceberPage() {
     }, [linhas]);
 
     const cards = d?.cards;
-    const cartao = (id: Sit | null, rotulo: string, c: Card | undefined, s: string, opts: { escuro?: boolean; ruim?: boolean; onClick?: () => void } = {}) => (
-        <button
-            type="button"
-            onClick={opts.onClick ?? (() => id && setSit(sit === id ? 'aberto' : id))}
-            className={[
-                'flex min-w-0 flex-col gap-1 rounded-[18px] border p-4 text-left transition lg:px-5 lg:py-[18px]',
-                opts.escuro ? 'border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]' : 'border-[#E3E8F0] bg-white hover:border-[#C9D1DE] dark:border-white/[0.12] dark:bg-[#232B3F]',
-                id && sit === id ? (opts.escuro ? 'shadow-[inset_0_0_0_3px_#F2CB3F]' : 'shadow-[inset_0_0_0_2px_#313C55] dark:shadow-[inset_0_0_0_2px_#F2CB3F]') : '',
-            ].join(' ')}
-        >
-            <span className={`text-[12px] font-extrabold uppercase tracking-[0.08em] ${opts.escuro ? 'text-[#D6DCE8]' : 'text-[#5B6478] dark:text-[#AEB9CF]'}`}>{rotulo}</span>
-            <span className={`text-[21px] font-extrabold leading-tight tabular-nums sm:text-[26px] ${opts.ruim && c?.n ? 'text-[#B42318] dark:text-[#FF9C92]' : ''}`}>{brl(c?.v ?? 0)}</span>
-            <span className={`text-[12.5px] ${opts.escuro ? 'text-[#D6DCE8]' : 'text-[#5B6478] dark:text-[#AEB9CF]'}`}>
-                {c?.n ?? 0} {s}
-            </span>
-        </button>
-    );
+    const faixa = (id: Sit, rotulo: string, c: Card | undefined, ruim = false) => {
+        const on = sit === id;
+        return (
+            <button
+                key={id}
+                type="button"
+                onClick={() => setSit(on ? 'aberto' : id)}
+                aria-pressed={on}
+                className={`flex min-h-[76px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-2xl border px-3 py-2.5 text-center transition ${
+                    on ? 'border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]' : 'border-[#E3E8F0] bg-white hover:border-[#313C55] dark:border-white/[0.12] dark:bg-[#232B3F]'
+                }`}
+            >
+                <span className={`text-[11.5px] font-extrabold uppercase tracking-[0.06em] ${on ? 'opacity-80' : 'text-[#5B6478] dark:text-[#AEB9CF]'}`}>{rotulo}</span>
+                <span className={`text-[19px] font-extrabold leading-tight tabular-nums ${ruim && c?.n && !on ? 'text-[#B42318] dark:text-[#FF9C92]' : ''}`}>{brl(c?.v ?? 0)}</span>
+                <span className={`text-[12px] ${on ? 'opacity-80' : 'text-[#5B6478] dark:text-[#AEB9CF]'}`}>{c?.n ?? 0} título(s)</span>
+            </button>
+        );
+    };
 
     const botoesLinha = (l: Linha) => (
         <>
-            {selecionavel(l) && !modoConfirmar ? (
+            {(selecionavel(l) || (l.da_os && l.situacao === 'ABERTO' && !l.pedido)) && !modoConfirmar ? (
                 <button type="button" className={BTN_PEQ_PRI} onClick={() => setJanela({ k: 'receber', linhas: [l] })}>
                     Receber
                 </button>
-            ) : null}
-            {l.da_os && l.situacao === 'ABERTO' ? (
-                <Link href="/os/financeiro" className={BTN_PEQ}>
-                    Na OS
-                </Link>
             ) : null}
             <button type="button" className={BTN_PEQ} onClick={() => setJanela({ k: 'acoes', id: l.id })}>
                 Mais
@@ -460,15 +488,46 @@ export default function ContasReceberPage() {
                     titulo="Contas a receber"
                     acoes={
                         <>
-                            <button type="button" className={BTN_SEC} onClick={() => setJanela({ k: 'cartoes' })}>
-                                <IconCreditCard size={18} /> Cartões e Cielo
-                            </button>
-                            <button type="button" className={BTN_SEC} onClick={() => setJanela({ k: 'comissoes' })}>
-                                <IconUsers size={18} /> Comissões
-                            </button>
-                            <Link href="/financeiro-config" className={BTN_SEC}>
-                                <IconAdjustmentsDollar size={18} /> Configurações
-                            </Link>
+                            {gestao ? (
+                                <div className="relative">
+                                    <button type="button" className={`${BTN_SEC} w-full`} aria-expanded={menuG} onClick={() => setMenuG(!menuG)}>
+                                        <IconAdjustmentsDollar size={18} /> Gestão <IconChevronDown size={16} />
+                                    </button>
+                                    {menuG ? (
+                                        <div className="absolute right-0 top-[calc(100%+6px)] z-[30] flex w-[300px] flex-col overflow-hidden rounded-2xl border border-[#C9D1DE] bg-white shadow-xl dark:border-white/[0.15] dark:bg-[#232B3F]">
+                                            {(
+                                                [
+                                                    [IconCreditCard, 'Cartões e Cielo', `${cards?.cartao.n ?? 0} parcela(s) a receber · ${brl(cards?.cartao.v ?? 0)}`, () => setJanela({ k: 'cartoes' })],
+                                                    [IconUsers, 'Comissões de cobrança', 'relatório e cobradores', () => setJanela({ k: 'comissoes' })],
+                                                ] as [React.ElementType, string, string, () => void][]
+                                            ).map(([Ic, r, sub, act]) => (
+                                                <button
+                                                    key={r}
+                                                    type="button"
+                                                    className="flex min-h-14 items-center gap-3 border-t border-[#E3E8F0] px-4 py-2.5 text-left first:border-t-0 hover:bg-[#F6F8FB] dark:border-white/[0.08] dark:hover:bg-white/[0.04]"
+                                                    onClick={() => {
+                                                        setMenuG(false);
+                                                        act();
+                                                    }}
+                                                >
+                                                    <Ic size={20} />
+                                                    <span className="min-w-0">
+                                                        <b className="block text-[14.5px]">{r}</b>
+                                                        <span className={SUB}>{sub}</span>
+                                                    </span>
+                                                </button>
+                                            ))}
+                                            <Link href="/financeiro-config" className="flex min-h-14 items-center gap-3 border-t border-[#E3E8F0] px-4 py-2.5 hover:bg-[#F6F8FB] dark:border-white/[0.08] dark:hover:bg-white/[0.04]">
+                                                <IconAdjustmentsDollar size={20} />
+                                                <span className="min-w-0">
+                                                    <b className="block text-[14.5px]">Configurações do financeiro</b>
+                                                    <span className={SUB}>contas, naturezas, áreas</span>
+                                                </span>
+                                            </Link>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : null}
                             <button type="button" className={BTN_PRI} disabled={!cad} onClick={() => setJanela({ k: 'novo' })}>
                                 <IconPlus size={18} /> Novo título
                             </button>
@@ -479,47 +538,38 @@ export default function ContasReceberPage() {
                 {erro ? <div className={ERRO}>{erro}</div> : null}
                 {d?.mes_fechado ? <div className={`${NOTA} ${S_AVISO}`}>O mês atual está fechado: recebimentos dele estão travados até a Gestão reabrir.</div> : null}
 
-                <div className={`${GRADE_CARTOES} lg:grid-cols-6`}>
-                    {cartao('vencidos', 'Vencidos', cards?.vencidos, 'título(s)', { ruim: true })}
-                    {cartao('hoje', 'Vence hoje', cards?.hoje, 'título(s)', { escuro: true })}
-                    {cartao('semana', 'Próximos 7 dias', cards?.semana, 'título(s)')}
-                    {cartao('recebidos', 'Recebido no mês', cards?.recebido_mes, 'baixa(s)')}
-                    {cartao('a_confirmar', 'A confirmar no banco', cards?.a_confirmar, 'Pix/transferência/boleto')}
-                    {cartao(null, 'Cartão a receber', cards?.cartao, 'parcela(s) da Cielo', { onClick: () => setJanela({ k: 'cartoes' }) })}
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+                    {faixa('vencidos', 'Vencidos', cards?.vencidos, true)}
+                    {faixa('hoje', 'Vence hoje', cards?.hoje)}
+                    {faixa('semana', 'Próximos 7 dias', cards?.semana)}
+                    {faixa('recebidos', 'Recebido no mês', cards?.recebido_mes)}
+                    {faixa('a_confirmar', 'A confirmar no banco', cards?.a_confirmar)}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    {(
-                        [
-                            ['aberto', 'Em aberto'],
-                            ['vencidos', 'Vencidos'],
-                            ['hoje', 'Vence hoje'],
-                            ['semana', 'Próximos 7 dias'],
-                            ['previstos', 'Previstos'],
-                            ['recebidos', 'Recebidos'],
-                            ['a_confirmar', 'A confirmar'],
-                            ['cancelados', 'Cancelados'],
-                            ['todos', 'Todos'],
-                        ] as [Sit, string][]
-                    ).map(([k, r]) => (
-                        <button key={k} type="button" className={PILULA(sit === k)} onClick={() => setSit(k)}>
-                            {r}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex h-11 w-full min-w-0 items-center gap-2 rounded-xl bg-white px-3 dark:bg-[#232B3F] lg:w-80">
+                    <label className="flex h-11 w-full min-w-0 items-center gap-2 rounded-xl border border-[#E3E8F0] bg-white px-3 dark:border-white/[0.12] dark:bg-[#232B3F] lg:w-72">
                         <IconSearch size={18} className="text-[#5B6478]" />
                         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Cliente, descrição, OS ou documento" aria-label="Buscar" className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" />
                     </label>
-                    <select className="h-11 min-w-0 flex-1 rounded-xl bg-white px-3 text-[15px] dark:bg-[#232B3F] lg:flex-none" value={origem} onChange={(e) => setOrigem(e.target.value)} aria-label="Origem">
+                    <select className={`${SELECAO} flex-1 lg:w-56 lg:flex-none`} value={origem} onChange={(e) => setOrigem(e.target.value)} aria-label="Origem">
                         <option value="">Todas as origens</option>
                         <option value="OS">OS (particular, diferença e coroa)</option>
                         <option value="PREFEITURA">Prefeitura</option>
                         <option value="COROA_SITE">Coroas do site</option>
                         <option value="AVULSO">Avulsos</option>
                     </select>
-                    <button type="button" className={`${BTN_PEQ} ${chips.length ? 'border-[#313C55] bg-[#E9EFF6]' : ''}`} onClick={() => setJanela({ k: 'filtros' })}>
+                    <select className={`${SELECAO} flex-1 lg:w-48 lg:flex-none`} value={sit} onChange={(e) => setSit(e.target.value as Sit)} aria-label="Situação">
+                        <option value="aberto">Em aberto</option>
+                        <option value="vencidos">Vencidos</option>
+                        <option value="hoje">Vence hoje</option>
+                        <option value="semana">Próximos 7 dias</option>
+                        <option value="previstos">Previstos</option>
+                        <option value="recebidos">Recebidos</option>
+                        <option value="a_confirmar">A confirmar no banco</option>
+                        <option value="cancelados">Cancelados</option>
+                        <option value="todos">Todos</option>
+                    </select>
+                    <button type="button" className={`${BTN_PEQ} ${chips.length ? 'border-[#313C55] bg-[#E9EFF6] dark:bg-[#3D6A99]/25' : ''}`} onClick={() => setJanela({ k: 'filtros' })}>
                         <IconFilter size={18} /> Filtros{chips.length ? ` (${chips.length})` : ''}
                     </button>
                     <TrocaModo modo={modo} onModo={setModo} />
@@ -627,15 +677,15 @@ export default function ContasReceberPage() {
                                                     </div>
                                                 </div>
                                                 <div className="text-right lg:hidden">
-                                                    <div className="text-[16px] font-extrabold tabular-nums">{brl(l.baixa?.valor_pago ?? l.valor)}</div>
+                                                    <div className="text-[16px] font-extrabold tabular-nums">{brl(l.situacao === 'PAGO' && l.baixa ? l.baixa.valor_pago : l.valor)}</div>
                                                     <span className={`${SELO} ${s.cls}`}>{s.txt}</span>
                                                 </div>
                                                 <div className="hidden min-w-0 text-[14px] lg:block">
                                                     <div className="line-clamp-1 font-bold">{l.natureza || '—'}</div>
-                                                    <div className={`${SUB} line-clamp-1`}>{l.baixa ? `${l.baixa.forma || ''} · ${l.baixa.conta}` : l.forma || ''}</div>
+                                                    <div className={`${SUB} line-clamp-1`}>{l.situacao === 'PAGO' && l.baixa ? `${l.baixa.forma || ''} · ${l.baixa.conta}` : l.forma || ''}</div>
                                                 </div>
                                                 <div className="hidden text-right lg:block">
-                                                    <div className="text-[15px] font-extrabold tabular-nums">{brl(l.baixa?.valor_pago ?? l.valor)}</div>
+                                                    <div className="text-[15px] font-extrabold tabular-nums">{brl(l.situacao === 'PAGO' && l.baixa ? l.baixa.valor_pago : l.valor)}</div>
                                                     {l.multa_hoje + l.juros_hoje ? <div className="text-[12.5px] font-bold text-[#B42318] dark:text-[#FF9C92]">+ {brl(l.multa_hoje + l.juros_hoje)}</div> : null}
                                                     {l.da_os && l.recebido && l.situacao === 'ABERTO' ? <div className={SUB}>recebido {brl(l.recebido)}</div> : null}
                                                 </div>
@@ -677,12 +727,18 @@ export default function ContasReceberPage() {
                 ) : null}
 
                 <div className={SUB}>
-                    Os títulos das OS vêm sozinhos do Financeiro da OS e da página de Coroas e são recebidos lá. Mensalidades seguem na Unymos até o módulo do Plano. Nada é apagado: cancelamento, estorno e desconto
-                    passam pela Gestão e ficam no histórico.
+                    Os títulos das OS vêm sozinhos das OS fechadas e da página de Coroas. Receber aqui ou no Financeiro da OS é a mesma baixa. Mensalidades seguem na Unymos até o módulo do Plano. Nada é
+                    apagado: cancelamento, estorno e desconto passam pela Gestão e ficam no histórico.
                 </div>
             </div>
 
-            {janela?.k === 'receber' && cad ? <Receber cad={cad} linhas={janela.linhas} hoje={hoje} onFechar={() => setJanela(null)} onFeito={feito} /> : null}
+            {janela?.k === 'receber' && cad ? (
+                janela.linhas.length === 1 && janela.linhas[0].da_os ? (
+                    <ReceberOS linha={janela.linhas[0]} hoje={hoje} onFechar={() => setJanela(null)} onFeito={feito} />
+                ) : (
+                    <Receber cad={cad} linhas={janela.linhas} hoje={hoje} onFechar={() => setJanela(null)} onFeito={feito} />
+                )
+            ) : null}
             {janela?.k === 'acoes' && cad ? (
                 <Acoes
                     cad={cad}
@@ -809,6 +865,10 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
     const [usarDesc, setUsarDesc] = useState(false);
     const [erro, setErro] = useState<string | null>(null);
     const [ocupado, setOcupado] = useState(false);
+    const [chq, setChq] = useState({ banco: '', numero: '', bom: '' });
+    const [iss, setIss] = useState('');
+    const [arquivo, setArquivo] = useState<File | null>(null);
+    const ehConvenio = !!um && (um.origem === 'PREFEITURA' || um.origem === 'CONVENIO');
 
     const cartao = forma === 'CARTAO_DEBITO' || forma === 'CARTAO_CREDITO';
     const contas = cad.contas.filter((c) => (forma === 'DINHEIRO' ? c.tipo === 'CAIXA' : c.tipo !== 'CAIXA'));
@@ -846,11 +906,15 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
             }, 0)
           : 0;
     const descV = um && desc && usarDesc ? desc.valor : 0;
-    const total = Math.round((totalSem + totalEnc - descV) * 100) / 100;
+    const issV = um ? paraNumero(iss) ?? 0 : 0;
+    const total = Math.round((totalSem + totalEnc - descV - issV) * 100) / 100;
 
     const salvar = async () => {
         if (!conta) return setErro(forma === 'DINHEIRO' ? 'Escolha o caixa onde o dinheiro entrou.' : 'Escolha a conta onde o dinheiro entrou.');
-        if (cartao && um && !bandeira) return setErro('Escolha a bandeira do cartão.');
+        if (cartao && !um) return setErro('Cartão se recebe um por vez (cada venda tem o seu NSU).');
+        if (cartao && !nsu.replace(/\D/g, '')) return setErro('Informe o NSU do comprovante do cartão.');
+        if (cartao && !bandeira) return setErro('Escolha a bandeira do cartão.');
+        if (forma === 'CHEQUE' && (!chq.numero.trim() || !chq.bom)) return setErro('Cheque: informe o número e o bom para.');
         setOcupado(true);
         setErro(null);
         try {
@@ -861,6 +925,12 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                 if (desc && usarDesc) {
                     corpo.desconto = desc.valor;
                     corpo.aprovacao_id = desc.id;
+                }
+                if (issV > 0) corpo.iss_retido = issV;
+                if (forma === 'CHEQUE') {
+                    corpo.cheque_banco = chq.banco;
+                    corpo.cheque_numero = chq.numero;
+                    corpo.cheque_bom_para = chq.bom;
                 }
             }
             if (cartao) {
@@ -873,6 +943,13 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                 }
             }
             const j = await api(URL_REC, 'receber', corpo);
+            if (arquivo && j.dados?.baixa_ids?.[0]) {
+                try {
+                    await anexarArquivo({ baixa_id: j.dados.baixa_ids[0] }, arquivo);
+                } catch (e: any) {
+                    return onFeito(`${j.msg} O comprovante não foi anexado (${e?.message || 'erro'}): anexe pelo botão Mais.`);
+                }
+            }
             onFeito(j.msg);
         } catch (e: any) {
             const m = mensagemErro(e, 'Não foi possível receber.');
@@ -905,7 +982,7 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                 <Campo rotulo="Forma">
                     <select className={CAMPO} value={forma} onChange={(e) => setForma(e.target.value)}>
                         {cad.formas
-                            .filter((f) => f.codigo !== 'DEBITO_AUTOMATICO')
+                            .filter((f) => f.codigo !== 'DEBITO_AUTOMATICO' && (um || (!ehCartao(f.codigo) && f.codigo !== 'CHEQUE')))
                             .map((f) => (
                                 <option key={f.codigo} value={f.codigo}>
                                     {f.nome}
@@ -924,8 +1001,30 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                     </select>
                 </Campo>
             </div>
-            {forma === 'PIX' || forma === 'TRANSFERENCIA' || forma === 'BOLETO' ? (
+            {forma === 'PIX' || forma === 'TRANSFERENCIA' || forma === 'BOLETO' || forma === 'CHEQUE' ? (
                 <div className={NOTA}>Fica como &quot;recebido · a confirmar no banco&quot; até o valor aparecer no extrato.</div>
+            ) : null}
+            {!um ? <div className={SUB}>Cartão e cheque se recebem um por vez: cada um tem o seu NSU ou número.</div> : null}
+            {forma === 'CHEQUE' && um ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Campo rotulo="Número *">
+                        <input className={CAMPO} value={chq.numero} onChange={(e) => setChq({ ...chq, numero: e.target.value })} />
+                    </Campo>
+                    <Campo rotulo="Bom para *">
+                        <input type="date" className={CAMPO} value={chq.bom} onChange={(e) => setChq({ ...chq, bom: e.target.value })} />
+                    </Campo>
+                    <Campo rotulo="Banco do cheque">
+                        <input className={CAMPO} value={chq.banco} onChange={(e) => setChq({ ...chq, banco: e.target.value })} />
+                    </Campo>
+                </div>
+            ) : null}
+            {ehConvenio ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Campo rotulo="ISS retido pelo tomador">
+                        <input className={CAMPO} inputMode="decimal" value={iss} onChange={(e) => setIss(e.target.value)} placeholder="0,00" />
+                    </Campo>
+                    <div className={`${SUB} flex items-end`}>O título quita pelo valor cheio da NF; o ISS retido fica na baixa (relatório de ISS) e o banco recebe {brl(total)}.</div>
+                </div>
             ) : null}
             {cartao ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -959,7 +1058,7 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                     ) : null}
                     {um ? (
                         <>
-                            <Campo rotulo="NSU / DOC" classe="col-span-1">
+                            <Campo rotulo="NSU / DOC *" classe="col-span-1">
                                 <input className={CAMPO} value={nsu} inputMode="numeric" onChange={(e) => setNsu(e.target.value)} placeholder="do comprovante" />
                             </Campo>
                             <Campo rotulo="Autorização">
@@ -967,7 +1066,7 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                             </Campo>
                         </>
                     ) : null}
-                    <div className={`${SUB} col-span-2 sm:col-span-4`}>Vira cartão a receber da Cielo (líquido da taxa) e é conferido pelo NSU no arquivo da Cielo.</div>
+                    <div className={`${SUB} col-span-2 sm:col-span-4`}>O NSU é obrigatório: é por ele que a venda é conferida no arquivo da Cielo. Vira cartão a receber, já sem a taxa.</div>
                 </div>
             ) : null}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1025,11 +1124,19 @@ function Receber({ cad, linhas, hoje, onFechar, onFeito }: { cad: Cad; linhas: L
                     Gestão ficam de fora.
                 </div>
             )}
+            {um && forma !== 'DINHEIRO' ? (
+                <label className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border-[1.5px] border-dashed px-3 text-[14px] font-bold ${arquivo ? 'border-[#7BA11A]' : 'border-[#C9D1DE] dark:border-white/25'}`}>
+                    <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
+                    <IconPaperclip size={18} />
+                    {arquivo ? <span className="truncate">{arquivo.name}</span> : 'Anexar comprovante (opcional)'}
+                </label>
+            ) : null}
             <div className="flex items-center justify-between rounded-xl bg-[#F6F8FB] px-4 py-3 dark:bg-[#1C2334]">
                 <span className="text-[14px] font-bold">
                     {brl(totalSem)}
                     {totalEnc ? ` + ${brl(totalEnc)} multa e juros` : ''}
                     {descV ? ` − ${brl(descV)} desconto` : ''}
+                    {issV ? ` − ${brl(issV)} ISS retido` : ''}
                 </span>
                 <b className="text-[22px] tabular-nums">{brl(total)}</b>
             </div>
@@ -1089,6 +1196,8 @@ type Detalhe = {
     pedidos: { id: number; tipo: string; situacao: string; motivo: string; valor: number; pedido_em: string; decidido_em: string | null; pedido_por: string | null; decidido_por: string | null; usado: boolean }[];
     historico: { acao: string; dados: any; em: string; nome: string | null }[];
     pedido: { id: number; tipo: string; motivo: string } | null;
+    os: { id: number; numero: string; status: string; valor_total: number; criada_em: string | null; assinada_em: string | null; financeiro_id: number | null; proposta: string | null; recebido: number } | null;
+    anexos: { id: number; nome: string; comprovante: boolean; em: string }[];
 };
 
 function textoHistorico(h: Detalhe['historico'][number]): string {
@@ -1203,6 +1312,7 @@ function Acoes({
               ...((aberto && !t.pedido ? [['cancelar', 'Cancelar']] : []) as [string, string][]),
               ...((t.situacao === 'ABERTO' && !t.da_os && !t.pedido ? [['desconto', 'Desconto']] : []) as [string, string][]),
               ...((t.situacao === 'PAGO' && !t.da_os && !t.pedido ? [['estorno', 'Estorno']] : []) as [string, string][]),
+              ['anexos', `Anexos${t.anexos.length ? ` (${t.anexos.length})` : ''}`],
               ['historico', 'Histórico'],
           ]
         : [];
@@ -1230,7 +1340,7 @@ function Acoes({
                                 Abrir no Financeiro da OS
                             </Link>
                         ) : null}
-                        {linha && t.situacao === 'ABERTO' && !t.da_os && !t.pedido ? (
+                        {linha && t.situacao === 'ABERTO' && !t.pedido ? (
                             <button type="button" className={BTN_PRI} onClick={() => onReceber(linha)}>
                                 Receber
                             </button>
@@ -1266,6 +1376,16 @@ function Acoes({
                             {t.multa_hoje + t.juros_hoje ? <div className={`${NOTA} ${S_RUIM}`}>Hoje: multa {brl(t.multa_hoje)} + juros {brl(t.juros_hoje)} = {brl(t.valor + t.multa_hoje + t.juros_hoje)}</div> : null}
                             {t.cancelado_motivo ? <div className={NOTA}>Cancelado: {t.cancelado_motivo}</div> : null}
                             {t.observacao ? <div className={NOTA}>{t.observacao}</div> : null}
+                            {t.os ? (
+                                <div className="flex flex-col gap-1.5">
+                                    <div className={ROTULO}>Como este título nasceu</div>
+                                    <div className={NOTA}>
+                                        OS {t.os.numero} · total {brl(t.os.valor_total)} · {t.os.assinada_em ? `assinada em ${dataBR(t.os.assinada_em)}` : `aberta em ${dataBR(t.os.criada_em)}`}
+                                        {t.os.status !== 'FECHADA' ? ` · situação ${t.os.status.toLowerCase().replace('_', ' ')}` : ''} · recebido até agora {brl(t.os.recebido)}. Cada recebimento lançado aqui ou no Financeiro da OS
+                                        é uma baixa só.
+                                    </div>
+                                </div>
+                            ) : null}
                             {t.recebimentos_os?.length ? (
                                 <div className="flex flex-col gap-1.5">
                                     <div className={ROTULO}>Recebimentos lançados na OS</div>
@@ -1443,6 +1563,48 @@ function Acoes({
                                 </button>
                             </div>
                         </>
+                    ) : null}
+
+                    {aba === 'anexos' ? (
+                        <div className="flex flex-col gap-2">
+                            <label className={`${BTN_PEQ} w-fit cursor-pointer`}>
+                                <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    className="sr-only"
+                                    onChange={async (e) => {
+                                        const f = e.target.files?.[0];
+                                        e.target.value = '';
+                                        if (!f) return;
+                                        setOcupado(true);
+                                        setErro(null);
+                                        try {
+                                            const j = await anexarArquivo({ titulo_id: id }, f);
+                                            onMudou(j.msg);
+                                            await carregar();
+                                        } catch (er: any) {
+                                            const m = mensagemErro(er, 'Não foi possível anexar.');
+                                            if (m) setErro(m);
+                                        } finally {
+                                            setOcupado(false);
+                                        }
+                                    }}
+                                />
+                                <IconPaperclip size={18} /> Anexar arquivo
+                            </label>
+                            {t.anexos.length ? (
+                                t.anexos.map((a) => (
+                                    <a key={a.id} href={URL_ANEXO(a.id)} target="_blank" rel="noreferrer" className={`${NOTA} items-center hover:underline`}>
+                                        <IconPaperclip size={16} className="shrink-0" />
+                                        <span className="min-w-0 flex-1 break-words">{a.nome}</span>
+                                        {a.comprovante ? <span className={`${SELO} ${S_OK}`}>comprovante</span> : null}
+                                        <span className={SUB}>{dataBR(a.em)}</span>
+                                    </a>
+                                ))
+                            ) : (
+                                <div className={SUB}>Nenhum arquivo. Nota, boleto, contrato ou comprovante (PDF ou foto).</div>
+                            )}
+                        </div>
                     ) : null}
 
                     {aba === 'historico' ? (
@@ -2350,6 +2512,195 @@ function Cartoes({ onFechar, avisar }: { onFechar: () => void; avisar: (m: strin
                         </div>
                     </div>
                 </>
+            ) : null}
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
+    );
+}
+
+/* ============================== receber título da OS (13/11/2026) ============================== */
+
+/**
+ * Título que veio da OS: o recebimento é lançado no financeiro da OS (os_principal.php), o mesmo da tela Financeiro da OS.
+ * Lá ele vira baixa aqui: dinheiro no caixa de quem recebeu, Pix e cheque a confirmar, cartão a receber pelo NSU.
+ */
+function ReceberOS({ linha, hoje, onFechar, onFeito }: { linha: Linha; hoje: string; onFechar: () => void; onFeito: (m: string) => void }) {
+    const [os, setOs] = useState<Detalhe['os']>(null);
+    const [forma, setForma] = useState('PIX');
+    const [valor, setValor] = useState(numCampo(Math.max(0, linha.valor - linha.recebido)));
+    const [data, setData] = useState(hoje);
+    const [nsu, setNsu] = useState('');
+    const [bandeira, setBandeira] = useState('');
+    const [maquina, setMaquina] = useState('424');
+    const [parcelas, setParcelas] = useState('1');
+    const [chq, setChq] = useState({ banco: '', numero: '', bom: '' });
+    const [iss, setIss] = useState('');
+    const [obs, setObs] = useState('');
+    const [arquivo, setArquivo] = useState<File | null>(null);
+    const [erro, setErro] = useState<string | null>(null);
+    const [ocupado, setOcupado] = useState(false);
+    const prefeitura = linha.origem === 'PREFEITURA';
+    const cartao = ehCartao(forma);
+
+    useEffect(() => {
+        void (async () => {
+            try {
+                const j = await api(URL_REC, 'titulo', undefined, `&id=${linha.id}`);
+                setOs(j.dados.os);
+            } catch (e: any) {
+                const m = mensagemErro(e, 'Não foi possível abrir a OS.');
+                if (m) setErro(m);
+            }
+        })();
+    }, [linha.id]);
+
+    const salvar = async () => {
+        const v = paraNumero(valor) ?? 0;
+        if (!os) return setErro('A OS ainda não carregou.');
+        if (v <= 0) return setErro('Informe o valor recebido.');
+        if (cartao && !nsu.replace(/\D/g, '')) return setErro('Informe o NSU do comprovante do cartão.');
+        if (cartao && !bandeira) return setErro('Escolha a bandeira do cartão.');
+        if (forma === 'CHEQUE' && (!chq.numero.trim() || !chq.bom)) return setErro('Cheque: informe o número e o bom para.');
+        if (forma !== 'DINHEIRO' && !arquivo) return setErro('Anexe a foto ou o PDF do comprovante (só o dinheiro dispensa).');
+        setOcupado(true);
+        setErro(null);
+        try {
+            let finId = os.financeiro_id;
+            if (!finId) {
+                const p = await osPost('financeiro_criar_proposta', { os_id: os.id, valor_alvo: os.valor_total, tipo_proposta: 'MISTO' });
+                finId = p?.dados?.id;
+            }
+            if (!finId) throw new Error('Não foi possível abrir o financeiro da OS.');
+            const fd = new FormData();
+            fd.append('financeiro_registrar_pagamento', '1');
+            fd.append('financeiro_id', String(finId));
+            fd.append('forma_pagamento', forma);
+            fd.append('data_pagamento', data);
+            fd.append('valor', String(v));
+            fd.append('observacao', obs);
+            if (cartao) {
+                fd.append('nsu', nsu);
+                fd.append('bandeira', bandeira);
+                fd.append('maquina', maquina);
+                fd.append('parcelas', forma === 'CARTAO_CREDITO' ? parcelas : '1');
+            }
+            if (forma === 'CHEQUE') {
+                fd.append('cheque_banco', chq.banco);
+                fd.append('cheque_numero', chq.numero);
+                fd.append('cheque_bom_para', chq.bom);
+            }
+            if (prefeitura && (paraNumero(iss) ?? 0) > 0) fd.append('iss_retido', String(paraNumero(iss)));
+            if (arquivo) fd.append('comprovante', arquivo, arquivo.name || 'comprovante.jpg');
+            const r = await apiJson(OS_API, { method: 'POST', body: fd });
+            onFeito(`${r?.msg || 'Recebimento lançado.'} Entrou na OS ${os.numero} e no contas a receber.`);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível receber.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+
+    return (
+        <Janela
+            titulo={`Receber · ${linha.pessoa || linha.descricao}`}
+            sub={os ? `OS ${os.numero} · total ${brl(os.valor_total)} · recebido ${brl(os.recebido)}` : 'Carregando a OS…'}
+            onFechar={onFechar}
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Voltar
+                    </button>
+                    <button type="button" className={BTN_PRI} disabled={ocupado || !os} onClick={() => void salvar()}>
+                        Receber {brl(paraNumero(valor) ?? 0)}
+                    </button>
+                </>
+            }
+        >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Campo rotulo="Forma">
+                    <select className={CAMPO} value={forma} onChange={(e) => setForma(e.target.value)}>
+                        {FORMAS_OS.map(([k, r]) => (
+                            <option key={k} value={k}>
+                                {r}
+                            </option>
+                        ))}
+                    </select>
+                </Campo>
+                <Campo rotulo="Valor">
+                    <input className={CAMPO} inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} />
+                </Campo>
+                <Campo rotulo="Data">
+                    <input type="date" className={CAMPO} value={data} max={hoje} onChange={(e) => setData(e.target.value)} />
+                </Campo>
+            </div>
+            {cartao ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Campo rotulo="NSU / DOC *">
+                        <input className={CAMPO} inputMode="numeric" value={nsu} onChange={(e) => setNsu(e.target.value)} placeholder="do comprovante" />
+                    </Campo>
+                    <Campo rotulo="Bandeira">
+                        <select className={CAMPO} value={bandeira} onChange={(e) => setBandeira(e.target.value)}>
+                            <option value="">Escolha</option>
+                            {BANDEIRAS.map((b) => (
+                                <option key={b}>{b}</option>
+                            ))}
+                        </select>
+                    </Campo>
+                    <Campo rotulo="Máquina">
+                        <select className={CAMPO} value={maquina} onChange={(e) => setMaquina(e.target.value)}>
+                            <option value="424">…424 · OS</option>
+                            <option value="423">…423 · escritório</option>
+                        </select>
+                    </Campo>
+                    {forma === 'CARTAO_CREDITO' ? (
+                        <Campo rotulo="Parcelas">
+                            <select className={CAMPO} value={parcelas} onChange={(e) => setParcelas(e.target.value)}>
+                                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
+                                    <option key={n} value={n}>
+                                        {n === '1' ? 'À vista' : `${n}x`}
+                                    </option>
+                                ))}
+                            </select>
+                        </Campo>
+                    ) : null}
+                </div>
+            ) : null}
+            {forma === 'CHEQUE' ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Campo rotulo="Número *">
+                        <input className={CAMPO} value={chq.numero} onChange={(e) => setChq({ ...chq, numero: e.target.value })} />
+                    </Campo>
+                    <Campo rotulo="Bom para *">
+                        <input type="date" className={CAMPO} value={chq.bom} onChange={(e) => setChq({ ...chq, bom: e.target.value })} />
+                    </Campo>
+                    <Campo rotulo="Banco do cheque">
+                        <input className={CAMPO} value={chq.banco} onChange={(e) => setChq({ ...chq, banco: e.target.value })} />
+                    </Campo>
+                </div>
+            ) : null}
+            {prefeitura ? (
+                <Campo rotulo="ISS retido pela Prefeitura">
+                    <input className={CAMPO} inputMode="decimal" value={iss} onChange={(e) => setIss(e.target.value)} placeholder="0,00" />
+                </Campo>
+            ) : null}
+            <div className={NOTA}>
+                {forma === 'DINHEIRO'
+                    ? 'Dinheiro entra no seu caixa aberto (sem caixa aberto, vai para o caixa da Tesouraria e fica anotado).'
+                    : cartao
+                      ? 'Vira cartão a receber da Cielo, conferido pelo NSU.'
+                      : 'Fica "a confirmar no banco" até aparecer no extrato.'}
+                {prefeitura ? ' Lance o valor cheio da NF; o ISS retido fica registrado e o banco recebe o valor sem ele.' : ''}
+            </div>
+            <Campo rotulo="Observação">
+                <input className={CAMPO} value={obs} onChange={(e) => setObs(e.target.value)} />
+            </Campo>
+            {forma !== 'DINHEIRO' ? (
+                <label className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border-[1.5px] border-dashed px-3 text-[14px] font-bold ${arquivo ? 'border-[#7BA11A]' : 'border-[#C9D1DE] dark:border-white/25'}`}>
+                    <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
+                    <IconPaperclip size={18} />
+                    {arquivo ? <span className="truncate">{arquivo.name}</span> : 'Foto ou PDF do comprovante (obrigatório)'}
+                </label>
             ) : null}
             {erro ? <div className={ERRO}>{erro}</div> : null}
         </Janela>
