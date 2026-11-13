@@ -35,6 +35,7 @@ import {
     IconClipboardPlus,
     IconCurrencyDollar,
     IconDeviceDesktopAnalytics,
+    IconDeviceTv,
     IconEye,
     IconFileInvoice,
     IconFlower,
@@ -129,6 +130,8 @@ export const MODULOS: Modulo[] = [
             { id: "homenagens", titulo: "Homenagens", desc: "Livro de homenagens", href: "/mensagens", slugs: ["mensagens"], icone: IconHeartHandshake },
             { id: "visita-avaliacao", titulo: "Visita de avaliação", desc: "Avaliação das visitas", href: "/avaliacao", slugs: ["visita-avaliacao", "avaliacao"], icone: IconEye },
             { id: "coroas", titulo: "Coroa de Flores", desc: "Coroas naturais e artificiais", href: "/coroa-de-flores", slugs: ["coroa-de-flores"], icone: IconFlower, selo: "coroas" },
+            // 13/11/2026: TVs das salas (painel de fora + TV de dentro) pelo app, via agente do PC do Memorial
+            { id: "salas-tv", titulo: "Salas do Memorial", desc: "Ligar e desligar as TVs das salas", href: "/salas-tv", slugs: ["salas-tv"], icone: IconDeviceTv },
             // 06/11/2026: Avisos veio da Comunicação (módulo extinto em 03/11/2026).
             { id: "avisos", titulo: "Avisos", desc: "Comunicados da equipe", href: "/avisos", slugs: ["avisos"], icone: IconBell, selo: "avisos" },
         ],
