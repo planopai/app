@@ -1,0 +1,11 @@
+ATUALIZACAO SALAS DO MEMORIAL 1.2 (13/11/2026)
+Junta: URL certa sempre, camadas de ligar/desligar e velocidade.
+
+1) HOSTGATOR (pasta da API): troque salas_tv_agente.php e salas_tv_comum.php.
+2) APP: troque app/salas-tv/page.tsx e faca o git push.
+3) PC DO MEMORIAL (na pasta do agente):
+   - remover_agente.bat (botao direito > Executar como administrador)
+   - troque agente_salas.pyw (e salas_pai.pyw, se usa a janela)
+   - instalar_agente.bat (como administrador). A chave continua a mesma.
+   - Na 1a vez o agente cria o tvs.json com a URL de cada TV. Para mudar um endereco, edite esse arquivo.
+O banco nao muda. Pode subir em qualquer ordem: o agente novo funciona com o PHP antigo e vice-versa.

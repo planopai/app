@@ -45,7 +45,7 @@ async function apiJson(url: string, init?: RequestInit) {
 
 /* ============================== tipos ============================== */
 
-type EstadoTV = "ligada" | "tela_apagada" | "desligada" | "nao_autorizada" | "desconhecida";
+type EstadoTV = "ligada" | "tela_apagada" | "desligada" | "sem_controle" | "nao_autorizada" | "desconhecida";
 type Acao = "ligar" | "desligar" | "atualizar" | "volume";
 type Situacao = "pendente" | "executando" | "concluido" | "falhou" | "expirado";
 
@@ -106,6 +106,7 @@ const TEXTO_ESTADO: Record<EstadoTV, { txt: string; ponto: string; cor: string }
     ligada: { txt: "Ligada", ponto: "bg-[#3FBF7F] shadow-[0_0_8px_#3FBF7F]", cor: "text-[#2E8B5B] dark:text-[#5FE09A]" },
     tela_apagada: { txt: "Tela apagada", ponto: "bg-[#F2CB3F]", cor: "text-[#8A6D00] dark:text-[#F2CB3F]" },
     desligada: { txt: "Desligada", ponto: "bg-[#A3ACBD] dark:bg-[#5A6580]", cor: "text-[#5B6478] dark:text-[#AEB9CF]" },
+    sem_controle: { txt: "Na rede, sem controle", ponto: "bg-[#F2CB3F]", cor: "text-[#8A6D00] dark:text-[#F2CB3F]" },
     nao_autorizada: { txt: "Falta autorizar o PC", ponto: "bg-[#E5484D]", cor: "text-[#B42318] dark:text-[#FF9C92]" },
     desconhecida: { txt: "Sem informação", ponto: "bg-[#A3ACBD] dark:bg-[#5A6580]", cor: "text-[#5B6478] dark:text-[#AEB9CF]" },
 };
@@ -265,7 +266,13 @@ function CartaoSala({
                     </span>
                 </div>
             )}
-            {!ocupado && !recente && ligadas === 1 && (
+            {!ocupado && !recente && [s.painel, s.dentro].some((t) => t.estado === "sem_controle") && (
+                <div className="rounded-xl bg-[#FCF3CC] px-3 py-2.5 text-[14px] font-semibold text-[#8A6D00] dark:bg-[#F2CB3F]/16 dark:text-[#F2CB3F]">
+                    {s.painel.estado === "sem_controle" ? "Painel" : "TV de dentro"} na rede, mas sem a depuração (ADB): ative de novo em
+                    Opções do desenvolvedor da TV. Acontece na TCL depois de queda de energia.
+                </div>
+            )}
+            {!ocupado && !recente && ligadas === 1 && ![s.painel, s.dentro].some((t) => t.estado === "sem_controle") && (
                 <div className="rounded-xl bg-[#FCF3CC] px-3 py-2.5 text-[14px] font-semibold text-[#8A6D00] dark:bg-[#F2CB3F]/16 dark:text-[#F2CB3F]">
                     Só uma das TVs está ligada. Toque em Ligar sala para ligar as duas.
                 </div>
@@ -349,6 +356,11 @@ export default function SalasTvPage() {
     const [erro, setErro] = useState("");
     const [aviso, setAviso] = useState("");
     const [enviando, setEnviando] = useState<Record<string, boolean>>({});
+    const [rapido, setRapido] = useState(false); // consulta a cada 1 s logo depois de um clique
+    const rapidoTimer = useRef<number | null>(null);
+    useEffect(() => () => {
+        if (rapidoTimer.current) window.clearTimeout(rapidoTimer.current);
+    }, []);
     const carregandoRef = useRef(false);
 
     const carregar = useCallback(async () => {
@@ -365,25 +377,28 @@ export default function SalasTvPage() {
         }
     }, []);
 
-    // Atualiza sozinho: 3 s com pedido andando, 10 s parado; pausa com a aba escondida.
+    // Atualiza sozinho: 1 s logo depois de um clique e enquanto há pedido andando, 10 s parado; pausa com a aba escondida.
     const temAndamento = !!estado?.salas.some((s) => andando(s.ultimo_pedido)) || Object.values(enviando).some(Boolean);
     useEffect(() => {
         carregar();
         const id = window.setInterval(() => {
             if (document.visibilityState === "visible") carregar();
-        }, temAndamento ? 3000 : 10000);
+        }, rapido || temAndamento ? 1000 : 10000);
         const voltou = () => document.visibilityState === "visible" && carregar();
         document.addEventListener("visibilitychange", voltou);
         return () => {
             window.clearInterval(id);
             document.removeEventListener("visibilitychange", voltou);
         };
-    }, [carregar, temAndamento]);
+    }, [carregar, temAndamento, rapido]);
 
     const pedir = useCallback(
         async (sala: string, acao: Acao, valor?: number) => {
             setAviso("");
             setEnviando((m) => ({ ...m, [sala]: true }));
+            setRapido(true);
+            if (rapidoTimer.current) window.clearTimeout(rapidoTimer.current);
+            rapidoTimer.current = window.setTimeout(() => setRapido(false), 20000);
             try {
                 await apiJson(`${API}?action=pedir`, {
                     method: "POST",
