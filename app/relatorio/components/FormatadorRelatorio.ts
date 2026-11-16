@@ -313,6 +313,19 @@ function prepararOrigemResumo(
         else delete origem.reconstituicao_facial;
     }
 
+    // Serviço terceirizado (16/11/2026): só aparece com o serviço = Sim; vazio (antigos) = não informado.
+    if (textoSimNaoEhNao(origem.tanato)) delete origem.tanato_terceirizado;
+    else if (String(origem.tanato_terceirizado ?? "").trim()) origem.tanato_terceirizado = asBoolLocal(origem.tanato_terceirizado) ? "Sim" : "Não";
+    else delete origem.tanato_terceirizado;
+    if (!asBoolLocal(origem.translado)) {
+        delete origem.translado_terceirizado;
+        if (!String(origem.translado ?? "").trim()) delete origem.translado;
+    } else if (String(origem.translado_terceirizado ?? "").trim()) {
+        origem.translado_terceirizado = asBoolLocal(origem.translado_terceirizado) ? "Sim" : "Não";
+    } else {
+        delete origem.translado_terceirizado;
+    }
+
     // Campos dependentes só fazem sentido quando o serviço/item está ativo.
     if (textoSimNaoEhNao(origem.veu)) {
         delete origem.veu_item;

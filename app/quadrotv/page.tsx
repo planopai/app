@@ -7959,9 +7959,18 @@ function StatusTimelineCell({
     );
 }
 
+/** Serviço terceirizado = "Sim" (16/11/2026). Vazio/NULL (registros antigos) = não. */
+function terceirizado(v: unknown): boolean {
+    const t = String(v ?? "").trim().toLowerCase();
+    return t === "sim" || t === "s" || t === "1";
+}
+
 function isStatusStepSkipped(registro: Registro, stepKey: string): boolean {
-    // Tanatopraxia explicitamente marcada como "Não".
-    if (stepKey === "fase03") return isNao(registro.tanato);
+    // 16/11/2026: remoção (translado) terceirizada: não passa por "Indo retirar o óbito".
+    if (stepKey === "fase01") return terceirizado((registro as any).translado) && terceirizado((registro as any).translado_terceirizado);
+
+    // Tanatopraxia explicitamente marcada como "Não" ou feita por terceiros (16/11/2026).
+    if (stepKey === "fase03") return isNao(registro.tanato) || terceirizado((registro as any).tanato_terceirizado);
 
     // Ornamentação explicitamente marcada como "Não".
     if (stepKey === "fase05") return isNao(registro.ornamentacao);

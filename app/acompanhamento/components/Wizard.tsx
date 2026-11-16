@@ -2313,6 +2313,8 @@ export default function Wizard({
                             const conteudo = ((): React.ReactNode => {
                                 if (step.id === "ornamentacao_tipo" && ornamentacaoVal !== "Sim") return null;
                                 if (step.id === "arrumacao" && tanatoVal !== "Sim") return null;
+                                // 16/11/2026: tanatopraxia terceirizada não usa insumos da conservação.
+                                if (step.id === "arrumacao" && osCampos?.tanato_terceirizado === "Sim") return null;
                                 // Os campos legados coroa_tipo/coroa_modelo não são mais renderizados: a configuração
                                 // completa de 1..20 coroas fica no editor abaixo de Coroa de Flores.
                                 if (step.id === "coroa_tipo" || step.id === "coroa_modelo" || step.id === "coroas_itens") return null;

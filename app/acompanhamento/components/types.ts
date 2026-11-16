@@ -118,6 +118,10 @@ export type Registro = {
 
     assistencia?: string;
     tanato?: string;
+    // 16/11/2026: serviço terceirizado (Sim pula Início/Fim da conservação / Indo retirar o óbito).
+    tanato_terceirizado?: string;
+    translado?: string;
+    translado_terceirizado?: string;
 
     ornamentacao?: string;
     ornamentacao_tipo?: string;

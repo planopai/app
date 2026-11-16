@@ -1653,6 +1653,32 @@ export default function ModalAnaliseGeral({
 
 
 
+        // ===== TANATO TERCEIRIZADA (16/11/2026) =====
+        // Atendimentos do período com tanatopraxia marcada como "Serviço terceirizado = Sim".
+        // A informação vem da listagem (atendimentos em andamento) ou do histórico já carregado
+        // (cada linha traz os dados atuais do atendimento). Entram no total com o nome "Terceirizado".
+        const tercKeys = new Set<string>();
+        const itensTerceirizado: TanatoItem[] = [];
+        for (const r of dadosPeriodo) {
+            const anyR = r as any;
+            const key = getEntityKey(r);
+            if (!key || tercKeys.has(key)) continue;
+            const logsEnt: any[] = cacheRef.current[key]?.logs || [];
+            const linhaT: any = logsEnt.find((l: any) => l && String(l.tanato_terceirizado ?? "").trim() !== "") || {};
+            const tanatoAtivo = !!anyR.tanatopraxia_ativa || valorEhSim(anyR.tanato) || valorEhSim(linhaT.tanato);
+            const terc = valorEhSim(anyR.tanato_terceirizado) || valorEhSim(linhaT.tanato_terceirizado);
+            if (!tanatoAtivo || !terc) continue;
+            tercKeys.add(key);
+            const dRef = parseDateFlex(String(anyR.data_referencia || anyR.data || ""));
+            itensTerceirizado.push({
+                entityKey: key,
+                falecido: String(anyR.falecido || falecidoByEntity[key] || ""),
+                ts: dRef ? dRef.getTime() : Number.NaN,
+                procedimento: rotuloProcedimentoTanato(linhaT.tanato_procedimento || anyR.tanato_procedimento) || "Tanatopraxia",
+                reconstituicao: valorEhSim(linhaT.reconstituicao_facial ?? anyR.reconstituicao_facial),
+            });
+        }
+
         // ===== TANATO (somente início PURO + somente Sandro/Joseildo) =====
 
         for (const [entityKey, entry] of Object.entries(cacheRef.current)) {
@@ -1660,6 +1686,8 @@ export default function ModalAnaliseGeral({
             if (!entry?.fetched) continue;
 
             if (!tanatoEntities.keySet.has(entityKey)) continue;
+
+            if (tercKeys.has(entityKey)) continue; // terceirizada: conta em "Terceirizado"
 
 
 
@@ -1762,6 +1790,12 @@ export default function ModalAnaliseGeral({
             .map(([k, count]) => ({ key: k, display: displayByKey[k] || titleCase(k), count }))
 
             .sort((a, b) => b.count - a.count);
+
+        // Terceirizado entra por último e soma no total (16/11/2026).
+        if (itensTerceirizado.length) {
+            agentesOrdenados.push({ key: "terceirizado", display: "Terceirizado", count: itensTerceirizado.length });
+            itensPorAgente.terceirizado = itensTerceirizado;
+        }
 
 
 

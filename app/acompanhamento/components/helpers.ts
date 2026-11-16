@@ -178,6 +178,23 @@ export function acaoToStatus(acao: string) {
     return map[acao] ?? "fase01";
 }
 
+/** Serviço marcado como terceirizado ("Sim"). Vazio/NULL (registros antigos) = não terceirizado. */
+export function isTerceirizado(v?: string | null) {
+    const s = String(v ?? "").trim().toLowerCase();
+    return s === "sim" || s === "s" || s === "1";
+}
+
+/**
+ * 16/11/2026: tanatopraxia terceirizada → sem Início/Fim da conservação.
+ * Translado terceirizado → sem Indo retirar o óbito (começa em Corpo na Clínica).
+ */
+export function pulaConservacaoTerceirizada(r?: { tanato?: string; tanato_terceirizado?: string | null } | null) {
+    return !!r && !isTanatoNo(r.tanato) && isTerceirizado(r.tanato_terceirizado);
+}
+export function pulaRetiradaTerceirizada(r?: { translado?: string | null; translado_terceirizado?: string | null } | null) {
+    return !!r && isTerceirizado(r.translado) && isTerceirizado(r.translado_terceirizado);
+}
+
 export function isTanatoNo(v?: string) {
     if (!v) return false;
     const s = v.trim().toLowerCase();
@@ -544,6 +561,9 @@ export type StatusConsulta = {
     local_velorio: string;
     sala_velorio: string;
     tanato: string;
+    translado: string;
+    tanato_terceirizado: string;
+    translado_terceirizado: string;
     ornamentacao: string;
     assistencia: string;
     realiza_velorio: string;
@@ -577,6 +597,9 @@ export async function consultarStatusAtual(
         local_velorio: String(data.local_velorio ?? ""),
         sala_velorio: String(data.sala_velorio ?? ""),
         tanato: String(data.tanato ?? ""),
+        translado: String(data.translado ?? ""),
+        tanato_terceirizado: String(data.tanato_terceirizado ?? ""),
+        translado_terceirizado: String(data.translado_terceirizado ?? ""),
         ornamentacao: String(data.ornamentacao ?? ""),
         assistencia: String(data.assistencia ?? ""),
         realiza_velorio: String(data.realiza_velorio ?? ""),
@@ -607,6 +630,9 @@ export type RegistroFluxo = {
     assistencia?: string;
     realiza_velorio?: string;
     realiza_sepultamento?: string;
+    tanato_terceirizado?: string;
+    translado?: string;
+    translado_terceirizado?: string;
 };
 
 export function isVelorioMemorial(
@@ -641,7 +667,8 @@ export function fasesVisiveisDoRegistro(
     fases: readonly string[]
 ): string[] {
     const skipTransportando = isVelorioMemorial(r);
-    const skipConservacao = isTanatoNo(r.tanato);
+    const skipConservacao = isTanatoNo(r.tanato) || pulaConservacaoTerceirizada(r);
+    const skipRetirada = pulaRetiradaTerceirizada(r);
     const skipOrnamentacao = isNao(r.ornamentacao);
     const skipMaterialRecolhido = isNao(r.assistencia);
 
@@ -651,6 +678,7 @@ export function fasesVisiveisDoRegistro(
 
     return fases.filter((fase) => {
         if (skipTransportando && fase === "fase07") return false;
+        if (skipRetirada && fase === "fase01") return false;
         if (skipConservacao && (fase === "fase03" || fase === "fase04")) return false;
         if (skipOrnamentacao && (fase === "fase05" || fase === "fase06")) return false;
         if (skipVelorio && (fase === "fase07" || fase === "fase08")) return false;
@@ -699,6 +727,9 @@ export async function proximaFaseOnline(
             local_velorio: s.local_velorio,
             sala_velorio: s.sala_velorio,
             tanato: s.tanato,
+            tanato_terceirizado: s.tanato_terceirizado,
+            translado: s.translado,
+            translado_terceirizado: s.translado_terceirizado,
             ornamentacao: s.ornamentacao,
             assistencia: s.assistencia,
             realiza_velorio: s.realiza_velorio,

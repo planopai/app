@@ -327,7 +327,7 @@ export function montarDadosRelatorio(params: {
     const arr = extrairArrumacao(r.arrumacao_json ?? r.arrumacao);
     const servicos: Array<[string, string]> = [];
     if (txt(r.assistencia)) servicos.push(["Assistência", g("assistencia")]);
-    if (txt(r.tanato)) servicos.push(["Tanatopraxia", g("tanato")]);
+    if (txt(r.tanato)) servicos.push(["Tanatopraxia", sim(r.tanato) && sim(r.tanato_terceirizado) ? `${g("tanato")} · terceirizada` : g("tanato")]);
     if (sim(r.reconstituicao_facial)) servicos.push(["Reconstituição facial", "Sim"]);
     if (txt(r.ornamentacao)) {
         servicos.push(["Ornamentação", sim(r.ornamentacao) && g("ornamentacao_tipo") ? `Sim · ${g("ornamentacao_tipo")}` : g("ornamentacao")]);
@@ -336,7 +336,7 @@ export function montarDadosRelatorio(params: {
     if (sim(r.translado)) {
         const trajeto = [g("translado_origem"), g("translado_destino")].filter(Boolean).join(" » ");
         const km = txt(r.translado_km) ? `${g("translado_km")} km` : "";
-        servicos.push(["Translado", [trajeto, km].filter(Boolean).join(" · ") || "Sim"]);
+        servicos.push(["Translado", [trajeto, km, sim(r.translado_terceirizado) ? "terceirizado" : ""].filter(Boolean).join(" · ") || "Sim"]);
     }
     if (sim(r.kit_lanche)) servicos.push(["Kit lanche", "Sim"]);
 

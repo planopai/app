@@ -1023,6 +1023,11 @@ export default function AcompanhamentoPage() {
           coroa_codigo_barras: String(it?.coroa_codigo_barras ?? ""),
           coroa_deposito_nome: String(it?.coroa_deposito_nome ?? ""),
 
+          // ✅ SERVIÇO TERCEIRIZADO (16/11/2026): pula Início/Fim da conservação / Indo retirar o óbito
+          translado: String(it?.translado ?? ""),
+          tanato_terceirizado: String(it?.tanato_terceirizado ?? ""),
+          translado_terceirizado: String(it?.translado_terceirizado ?? ""),
+
           // ✅ ROTEAMENTO VELÓRIO / SEPULTAMENTO
           realiza_velorio: String(it?.realiza_velorio ?? ""),
           realiza_sepultamento: String(it?.realiza_sepultamento ?? ""),

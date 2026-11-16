@@ -52,6 +52,14 @@ export type OsCampos = {
      * Vale com tanato_autorizado_prefeitura / translado_autorizado_prefeitura = "Sim" (botão Particular | Prefeitura).
      */
     prefeitura_apoio_convenio_id: string;
+    /**
+     * Serviço terceirizado (16/11/2026). Só registro operacional: NÃO muda o cálculo da OS.
+     * Tanatopraxia = Sim → conservação feita por terceiros (o fluxo pula Início/Fim da conservação).
+     * Translado = Sim → remoção feita por terceiros (o fluxo pula Indo retirar o óbito).
+     * Já vem "Não" quando o serviço é marcado como Sim.
+     */
+    tanato_terceirizado: SimNao;
+    translado_terceirizado: SimNao;
 };
 
 export const OS_CAMPOS_VAZIO: OsCampos = {
@@ -72,6 +80,8 @@ export const OS_CAMPOS_VAZIO: OsCampos = {
     coroa_autorizada_prefeitura: "",
     pacote_coroa: "",
     prefeitura_apoio_convenio_id: "",
+    tanato_terceirizado: "",
+    translado_terceirizado: "",
 };
 
 export const PLANOS = ["LIGHT", "FLEX", "PLUS", "MAX"] as const;
@@ -251,6 +261,9 @@ export async function salvarEsincronizarOS(
             translado_km: transladoSim ? c.translado_km : "",
             translado_autorizado_prefeitura: (tipo === "prefeitura" && !negado) || assoc ? (transladoSim ? c.translado_autorizado_prefeitura : "") : "",
             prefeitura_apoio_convenio_id: apoio ? c.prefeitura_apoio_convenio_id : "",
+            // Terceirizado: sem resposta com o serviço = Sim vale "Não" (padrão); serviço = Não limpa.
+            tanato_terceirizado: tanatoSim ? (c.tanato_terceirizado || "Não") : "",
+            translado_terceirizado: transladoSim ? (c.translado_terceirizado || "Não") : "",
         },
         true,
     );
@@ -316,6 +329,22 @@ function Autorizacao({ servico, valor, onChange, disabled }: { servico: "tanatop
             {valor === "Sim" ? <span className="rounded-full bg-[#EEF5D6] px-3 py-1 text-xs font-extrabold text-[#313C55]">entra no contrato</span> : null}
             {valor === "Não" ? <span className="rounded-full bg-[#E9EFF6] px-3 py-1 text-xs font-extrabold text-[#313C55]">{servico === "coroa" ? "vai para a família (preço particular)" : "vai para a diferença da família"}</span> : null}
             {valor === "" ? <span className="text-xs font-extrabold text-[#B42318] dark:text-[#FF9C92]">obrigatório</span> : null}
+        </div>
+    );
+}
+
+/** Serviço terceirizado (16/11/2026): vale para qualquer convênio; não muda o valor da OS. */
+function Terceirizado({ servico, valor, onChange, disabled }: { servico: "tanatopraxia" | "translado"; valor: SimNao; onChange: (v: SimNao) => void; disabled?: boolean }) {
+    const v: SimNao = valor || "Não";
+    return (
+        <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-[#C9D1DE] bg-[#E9EFF6] px-4 py-2.5 text-[#313C55] dark:border-white/20 dark:bg-[#3D6A99]/20 dark:text-white">
+            <div className="min-w-[180px] flex-1 text-sm font-extrabold">Serviço terceirizado?</div>
+            <SimNaoBotoes valor={v} onChange={onChange} disabled={disabled} />
+            {v === "Sim" ? (
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-[#313C55] dark:bg-white/10 dark:text-white">
+                    {servico === "translado" ? "começa em Corpo na Clínica" : "sem Início/Fim da conservação"}
+                </span>
+            ) : null}
         </div>
     );
 }
@@ -973,6 +1002,16 @@ export function SecaoOSAtendimento({
     }, [mostraResumo, osPartId, versao, recarga, calcularAjuste]);
     const opcoes = modelosProcedimento(modelos);
 
+    // Serviço terceirizado (16/11/2026): ao marcar o serviço como Sim, a pergunta já vem "Não".
+    useEffect(() => {
+        if (disabled) return;
+        const parcial: Partial<OsCampos> = {};
+        if (mostraProc && tanatoSim && !valores.tanato_terceirizado) parcial.tanato_terceirizado = "Não";
+        if (mostraTransl && valores.translado === "Sim" && !valores.translado_terceirizado) parcial.translado_terceirizado = "Não";
+        if (Object.keys(parcial).length) onChange(parcial);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [disabled, mostraProc, mostraTransl, tanatoSim, valores.translado, valores.tanato_terceirizado, valores.translado_terceirizado]);
+
     /* Resumo da OS: valores do cálculo com a tela atual; sem cálculo, os valores da OS salva.
        Associado (09/10/2026): a mesma prévia diz se a tanatopraxia e o translado têm parte sem cobertura do plano (botão Particular | Prefeitura). */
     const assoc = tipo === "associado";
@@ -1054,6 +1093,7 @@ export function SecaoOSAtendimento({
                             </div>
                         ) : null}
                         {mostraApoioTan ? <PagadorApoio campo="tanato_autorizado_prefeitura" valores={valores} onChange={onChange} disabled={disabled} /> : null}
+                        <Terceirizado servico="tanatopraxia" valor={valores.tanato_terceirizado} onChange={(v) => onChange({ tanato_terceirizado: v })} disabled={disabled} />
                     </div>
 
                     <LinhaSimNao rotulo="Reconstituição facial" valor={valores.reconstituicao_facial} onChange={(v) => onChange({ reconstituicao_facial: v })} disabled={disabled}>
@@ -1107,6 +1147,7 @@ export function SecaoOSAtendimento({
                                     <Autorizacao servico="translado" valor={valores.translado_autorizado_prefeitura} onChange={(v) => onChange({ translado_autorizado_prefeitura: v })} disabled={disabled} />
                                 ) : null}
                                 {mostraApoioTra ? <PagadorApoio campo="translado_autorizado_prefeitura" valores={valores} onChange={onChange} disabled={disabled} /> : null}
+                                <Terceirizado servico="translado" valor={valores.translado_terceirizado} onChange={(v) => onChange({ translado_terceirizado: v })} disabled={disabled} />
                             </div>
                         ) : null}
                     </LinhaSimNao>

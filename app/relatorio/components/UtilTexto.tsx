@@ -36,7 +36,6 @@ export function overrideCampoNome(originalKey: string, nomeAtual: string) {
     const MAP: Record<string, string> = {
         assinatura_requerente: "Termo de Requisição de Veículo",
         assinatura_responsavel: "Termo de Recebimento de Material",
-        assinatura_velorio_online: "Termo do Velório On-line",
 
         falecido: "Falecido(a)",
         contato: "Contato",
@@ -56,6 +55,9 @@ export function overrideCampoNome(originalKey: string, nomeAtual: string) {
         religiao: "Religião",
         convenio: "Convênio",
         tanato: "Tanatopraxia",
+        tanato_terceirizado: "Tanatopraxia terceirizada",
+        translado: "Translado",
+        translado_terceirizado: "Translado terceirizado",
         invol: "Invol",
         invol_item: "Invol Utilizado",
         kit_lanche: "Kit Lanche",

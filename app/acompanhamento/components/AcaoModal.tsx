@@ -10,6 +10,8 @@ import { BotaoCorrecoesAtendimento } from "@/components/correcoes/CorrecoesAtend
 import {
     acaoToStatus,
     isTanatoNo,
+    pulaConservacaoTerceirizada,
+    pulaRetiradaTerceirizada,
     proximaFaseDoRegistro,
     normalizarStatus,
     consultarStatusAtual,
@@ -216,6 +218,9 @@ export default function AcaoModal({
                 local_velorio: online.local_velorio || registroLocal?.local_velorio || "",
                 sala_velorio: online.sala_velorio || registroLocal?.sala_velorio || "",
                 tanato: online.tanato || registroLocal?.tanato || "",
+                translado: online.translado || registroLocal?.translado || "",
+                tanato_terceirizado: online.tanato_terceirizado || registroLocal?.tanato_terceirizado || "",
+                translado_terceirizado: online.translado_terceirizado || registroLocal?.translado_terceirizado || "",
                 ornamentacao: online.ornamentacao || registroLocal?.ornamentacao || "",
                 assistencia: online.assistencia || registroLocal?.assistencia || "",
                 realiza_velorio: online.realiza_velorio || registroLocal?.realiza_velorio || "",
@@ -237,7 +242,9 @@ export default function AcaoModal({
         tipoEfetivo === "terceiro" ||
         (tipoEfetivo !== "funerario" && isTerceiroBySession(acaoId));
 
-    const skipConservacao = !!efetivo && isTanatoNo(efetivo.tanato);
+    // 16/11/2026: tanatopraxia terceirizada também pula Início/Fim da conservação; translado terceirizado pula Indo retirar o óbito.
+    const skipConservacao = !!efetivo && (isTanatoNo(efetivo.tanato) || pulaConservacaoTerceirizada(efetivo));
+    const skipRetirada = !!efetivo && pulaRetiradaTerceirizada(efetivo);
     const skipOrnamentacao = !!efetivo && isNao(efetivo.ornamentacao);
     const skipTransportando = !!efetivo && isVelorioMemorial(efetivo);
     const skipMaterialRecolhido = !!efetivo && isNao(efetivo.assistencia);
@@ -249,6 +256,7 @@ export default function AcaoModal({
         return (fases as readonly Fase[]).filter((f) => {
             if (efetivo && f === efetivo.status) return true;
             if (skipTransportando && f === "fase07") return false;
+            if (skipRetirada && f === "fase01") return false;
             if (skipConservacao && (f === "fase03" || f === "fase04")) return false;
             if (skipOrnamentacao && (f === "fase05" || f === "fase06")) return false;
             if (skipVelorio && (f === "fase07" || f === "fase08")) return false;
@@ -260,6 +268,7 @@ export default function AcaoModal({
         isTerceiro,
         efetivo,
         skipTransportando,
+        skipRetirada,
         skipConservacao,
         skipOrnamentacao,
         skipVelorio,
@@ -281,6 +290,9 @@ export default function AcaoModal({
                 local_velorio: efetivo.local_velorio,
                 sala_velorio: efetivo.sala_velorio,
                 tanato: efetivo.tanato,
+                tanato_terceirizado: efetivo.tanato_terceirizado,
+                translado: efetivo.translado,
+                translado_terceirizado: efetivo.translado_terceirizado,
                 ornamentacao: efetivo.ornamentacao,
                 assistencia: efetivo.assistencia,
                 realiza_velorio: efetivo.realiza_velorio,
