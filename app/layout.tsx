@@ -75,25 +75,46 @@ export const metadata: Metadata = {
  * internet, no máximo uma vez por minuto. Sem internet, mostra um aviso no lugar
  * de deixar a pessoa olhando para o logo.
  */
-const SCRIPT_RECUPERACAO = `(function(){try{
-var feito=false,K="pai_recuperacao_tela";
-function aviso(){if(document.getElementById("pai-aviso-recuperacao"))return;
+const SCRIPT_RECUPERACAO = String.raw`(function(){try{
+var feito=false,K="pai_recuperacao_tela",KD="pai_recuperacao_diag",erros=[];
+function anota(t){t=String(t||"").slice(0,220);if(erros.indexOf(t)<0&&erros.length<8)erros.push(t);}
+window.addEventListener("error",function(e){var t=e&&e.target;
+if(t&&t!==window&&(t.src||t.href)){anota("Arquivo não carregou: "+(t.src||t.href).replace(location.origin,""));}
+else{anota("Erro: "+(e&&e.message)+" "+String((e&&e.filename)||"").replace(location.origin,"")+":"+(e&&e.lineno||""));}},true);
+window.addEventListener("unhandledrejection",function(e){var r=e&&e.reason;anota("Promessa: "+(r&&(r.message||r)));});
+function esc(t){return String(t).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});}
+function diag(){var sw=navigator.serviceWorker;var ua=navigator.userAgent.match(/OS (\d+[_\d]*)/);
+var l=["Tela: "+location.pathname,"Internet: "+(navigator.onLine!==false?"sim":"não"),"Modo offline ativo: "+(sw&&sw.controller?"sim":"não"),"iOS: "+(ua?ua[1].replace(/_/g,"."):"-"),"Abriu em: "+Math.round(performance.now()/1000)+" s"];
+var ant="";try{ant=sessionStorage.getItem(KD)||"";}catch(e){}
+return l.concat(erros).join("\n")+(ant?"\n--- tentativa anterior ---\n"+ant:"");}
+function aviso(online){if(document.getElementById("pai-aviso-recuperacao"))return;
 var d=document.createElement("div");d.id="pai-aviso-recuperacao";
-d.setAttribute("style","position:fixed;inset:0;z-index:2147483647;background:#fff;color:#313C55;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif");
-d.innerHTML='<p style="font-size:19px;font-weight:800;margin:0 0 10px">Esta tela não está guardada para uso sem internet</p><p style="font-size:15px;margin:0 0 22px;max-width:340px;line-height:1.45">Conecte à internet e toque em Tentar de novo. As ações já registradas neste aparelho continuam guardadas.</p><button type="button" style="font-size:16px;font-weight:700;padding:12px 22px;border-radius:12px;border:0;background:#313C55;color:#fff">Tentar de novo</button>';
-d.querySelector("button").onclick=function(){location.reload();};
-(document.body||document.documentElement).appendChild(d);}
+d.setAttribute("style","position:fixed;inset:0;z-index:2147483647;background:#fff;color:#313C55;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:auto");
+var titulo=online?"O PAI não conseguiu abrir":"Esta tela não está guardada para uso sem internet";
+var texto=online?"Toque em Tentar de novo. Se continuar, tire um print desta tela e mande para o suporte.":"Conecte à internet e toque em Tentar de novo. As ações já registradas neste aparelho continuam guardadas.";
+d.innerHTML='<p style="font-size:19px;font-weight:800;margin:0 0 10px">'+titulo+'</p><p style="font-size:15px;margin:0 0 22px;max-width:340px;line-height:1.45">'+texto+'</p><button type="button" style="font-size:16px;font-weight:700;padding:12px 22px;border-radius:12px;border:0;background:#313C55;color:#fff">Tentar de novo</button><pre style="margin:22px 0 0;max-width:100%;white-space:pre-wrap;word-break:break-all;text-align:left;font-size:11px;line-height:1.4;color:#5B6478">'+esc(diag())+'</pre>';
+d.querySelector("button").onclick=function(){try{sessionStorage.removeItem(K);sessionStorage.removeItem(KD);}catch(e){}location.reload();};
+(document.body||document.documentElement).appendChild(d);detalhar(d.querySelector("pre"));}
+function detalhar(pre){try{var mais=[];var sw=navigator.serviceWorker;
+var pReg=sw&&sw.getRegistration?sw.getRegistration().then(function(r){if(!r){mais.push("Service worker: nenhum");return;}
+function nome(w){return w?String(w.scriptURL||"").split("/").pop()+" ("+w.state+")":"-";}
+mais.push("SW ativo: "+nome(r.active));if(r.installing)mais.push("SW instalando: "+nome(r.installing));if(r.waiting)mais.push("SW esperando: "+nome(r.waiting));}).catch(function(e){mais.push("SW erro: "+e);}):Promise.resolve();
+var pCache=window.caches?caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.open(k).then(function(c){return c.keys();}).then(function(x){mais.push("Cache "+k.replace(location.origin,"")+": "+x.length);});}));}).then(function(){
+return caches.match(location.pathname,{ignoreSearch:true}).then(function(r){if(!r){mais.push("Tela guardada: não");return;}
+return r.text().then(function(h){var a=(h.match(/\/_next\/static\/[^"'\s)\\]+\.(?:js|css)/g)||[]).filter(function(v,i,l){return l.indexOf(v)===i;});var falta=0,ex="";
+return Promise.all(a.map(function(u){return caches.match(u,{ignoreSearch:true}).then(function(x){if(!x){falta++;if(!ex)ex=u;}});})).then(function(){mais.push("Tela guardada: sim; arquivos "+a.length+", faltando "+falta+(ex?" (ex.: "+ex+")":""));});});});}).catch(function(e){mais.push("Cache erro: "+e);}):Promise.resolve();
+Promise.all([pReg,pCache]).then(function(){pre.textContent=pre.textContent+"\n"+mais.join("\n");});}catch(e){}}
 function conferir(){if(feito||window.__paiHidratou)return;feito=true;
 var online=navigator.onLine!==false,ult=0;
 try{ult=+sessionStorage.getItem(K)||0;}catch(e){}
 if(online&&Date.now()-ult>60000){
-try{sessionStorage.setItem(K,String(Date.now()));}catch(e){}
+try{sessionStorage.setItem(K,String(Date.now()));sessionStorage.setItem(KD,diag());}catch(e){}
 var p=location.pathname;
 var limpar=window.caches?Promise.all(["start-url","pai-pages-v2"].map(function(n){return caches.open(n).then(function(c){return c.delete(p,{ignoreSearch:true});});})):Promise.resolve();
 limpar.catch(function(){}).then(function(){location.reload();});return;}
-aviso();}
-window.addEventListener("load",function(){setTimeout(conferir,4000);});
-setTimeout(conferir,20000);
+aviso(online);}
+window.addEventListener("load",function(){setTimeout(conferir,6000);});
+setTimeout(conferir,25000);
 }catch(e){}})();`;
 
 export default async function RootLayout({

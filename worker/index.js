@@ -1216,23 +1216,15 @@ self.addEventListener(
 );
 
 /*
- * 16/11/2026: versão nova só assume com as telas essenciais guardadas.
+ * 16/11/2026: telas essenciais da versão nova.
  *
- * O next-pwa ativa a versão nova na hora (skipWaiting) e apaga os arquivos
- * da versão anterior. Se a tela guardada ainda fosse a antiga, ela abriria em
- * branco sem internet (pede arquivos que não existem mais). Aqui, durante a
- * instalação, a versão nova baixa e guarda a Home e a tela de Atendimentos.
- * Se a rede falhar, a instalação falha e o aparelho continua na versão
- * anterior, que segue funcionando; o navegador tenta de novo depois.
- *
- * Sem login (a tela redireciona para /login), não há o que guardar: a
- * instalação segue e as cópias antigas dessas telas são apagadas.
- *
- * 16/11/2026 (2): as telas baixadas na instalação ficam num cache à parte
- * (PAI_CACHE_ESSENCIAIS_NOVAS) e só passam para os caches usados pelo app
- * no "activate". Enquanto a versão anterior ainda está no comando (o iPhone
- * pode demorar a terminar a instalação), ela continua servindo as telas
- * dela, que combinam com os arquivos dela.
+ * Na instalação, a versão nova baixa a Home e a tela de Atendimentos e guarda
+ * num cache à parte (PAI_CACHE_ESSENCIAIS_NOVAS). No "activate" elas passam
+ * para os caches usados pelo app. Assim a versão anterior, enquanto ainda está
+ * no comando (o iPhone pode demorar a terminar a instalação), continua servindo
+ * as telas dela. Se o download falhar (sem login, sem permissão, rede ruim), a
+ * instalação segue e fica a cópia que já existia; os arquivos dela continuam
+ * guardados em PAI_CACHE_ARQUIVOS (mais abaixo).
  *
  * A lista precisa ser igual a ROTAS_ESSENCIAIS_OFFLINE em lib/offline/routes.ts.
  */
@@ -1307,32 +1299,19 @@ async function guardarTelasEssenciais() {
 
 /**
  * No activate: passa as telas da versão nova para os caches do app.
- *
- * As outras telas guardadas e os dados RSC são da versão anterior, cujos
- * arquivos o Workbox apaga agora (cleanupOutdatedCaches). Sem internet elas
- * abririam sem estilo ou paradas no logo, então saem do cache; o app
- * (RegisterSW) guarda de novo as da versão nova logo em seguida.
+ * Tela que não foi baixada na instalação (sem login, sem permissão ou rede
+ * ruim) fica com a cópia que já existia: os arquivos dela continuam
+ * guardados em PAI_CACHE_ARQUIVOS, então ela segue abrindo sem internet.
  */
 async function publicarTelasEssenciais() {
   if (!(await caches.has(PAI_CACHE_ESSENCIAIS_NOVAS))) return;
   const novas = await caches.open(PAI_CACHE_ESSENCIAIS_NOVAS);
 
-  const essenciais = new Set(PAI_ROTAS_ESSENCIAIS.map((i) => caminhoDe(i.rota)));
-  const paginas = await caches.open("pai-pages-v2");
-  for (const req of await paginas.keys()) {
-    if (!essenciais.has(caminhoDe(req.url))) await paginas.delete(req);
-  }
-  await caches.delete("pai-rsc-v1");
-
   for (const item of PAI_ROTAS_ESSENCIAIS) {
-    const destino = await caches.open(item.cache);
     const resposta = await novas.match(item.rota);
-    if (resposta) {
-      await destino.put(item.rota, resposta);
-    } else {
-      // Não foi guardada (sem login ou sem permissão): a cópia antiga é de outra versão.
-      await destino.delete(item.rota, { ignoreSearch: true });
-    }
+    if (!resposta) continue;
+    const destino = await caches.open(item.cache);
+    await destino.put(item.rota, resposta);
   }
 
   await caches.delete(PAI_CACHE_ESSENCIAIS_NOVAS);
@@ -1340,20 +1319,122 @@ async function publicarTelasEssenciais() {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    guardarTelasEssenciais().catch((error) => {
-      console.warn(
-        "[PWA] Versão nova não instalada: telas essenciais não foram guardadas.",
-        error
-      );
-      throw error;
-    })
+    Promise.all([
+      /*
+       * 16/11/2026 (3): falha ao baixar as telas não impede mais a instalação.
+       * No iPhone a instalação só anda com o app aberto; bloquear deixava o
+       * aparelho preso numa versão velha. Com os arquivos guardados por
+       * nome (abaixo), uma tela de outra versão também abre sem internet.
+       */
+      guardarTelasEssenciais().catch((error) => {
+        console.warn("[PWA] Telas essenciais não guardadas na instalação.", error);
+      }),
+      guardarArquivosDaVersaoAnterior().catch((error) => {
+        console.warn("[PWA] Arquivos da versão anterior não copiados.", error);
+      }),
+    ])
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    publicarTelasEssenciais().catch((error) => {
-      console.warn("[PWA] Não foi possível publicar as telas essenciais.", error);
-    })
+    Promise.all([
+      publicarTelasEssenciais().catch((error) => {
+        console.warn("[PWA] Não foi possível publicar as telas essenciais.", error);
+      }),
+      podarArquivosAntigos().catch(() => undefined),
+    ])
   );
 });
+
+/*
+ * 16/11/2026 (3): arquivos do app (/_next/static) guardados pelo nome.
+ *
+ * Causa da tela parada no logo sem internet (iPhone): a tela guardada era de
+ * uma versão e os arquivos de estilo/script guardados eram de outra. Na troca
+ * de versão o Workbox apaga os arquivos da versão anterior; a tela que ficou
+ * guardada não acha mais os dela.
+ *
+ * Esses arquivos têm o conteúdo no nome (nunca mudam), então podem ser
+ * guardados para sempre sem risco. Aqui:
+ *  - qualquer arquivo /_next/static é procurado em TODOS os caches primeiro
+ *    (precache da versão atual, cópia da anterior, ou guardado no uso);
+ *  - o que vier da internet fica guardado em PAI_CACHE_ARQUIVOS;
+ *  - na instalação, os arquivos da versão que está saindo são copiados para
+ *    PAI_CACHE_ARQUIVOS antes de o Workbox apagá-los;
+ *  - na ativação, sai o que tem mais de PAI_ARQUIVOS_DIAS dias.
+ *
+ * Este listener é registrado antes do Workbox (importScripts vem antes do
+ * precacheAndRoute no sw.js), então responde primeiro.
+ */
+const PAI_CACHE_ARQUIVOS = "pai-arquivos-v1";
+const PAI_ARQUIVOS_DIAS = 21;
+
+function ehArquivoDoApp(request) {
+  if (request.method !== "GET") return false;
+  try {
+    const url = new URL(request.url);
+    return url.origin === self.location.origin && url.pathname.startsWith("/_next/static/");
+  } catch {
+    return false;
+  }
+}
+
+function chaveDoArquivo(url) {
+  const u = new URL(url, self.location.origin);
+  return u.origin + u.pathname;
+}
+
+async function responderArquivoDoApp(request) {
+  const guardado = await caches.match(request, { ignoreSearch: true });
+  if (guardado) return guardado;
+
+  const resposta = await fetch(request);
+  if (resposta && resposta.ok && resposta.type === "basic") {
+    try {
+      const cache = await caches.open(PAI_CACHE_ARQUIVOS);
+      await cache.put(chaveDoArquivo(request.url), resposta.clone());
+    } catch {
+      // Sem espaço: o app segue, só não guarda.
+    }
+  }
+  return resposta;
+}
+
+self.addEventListener("fetch", (event) => {
+  if (!ehArquivoDoApp(event.request)) return;
+  event.respondWith(responderArquivoDoApp(event.request));
+});
+
+async function guardarArquivosDaVersaoAnterior() {
+  const nomes = (await caches.keys()).filter((n) => n.indexOf("workbox-precache") === 0);
+  if (!nomes.length) return;
+  const destino = await caches.open(PAI_CACHE_ARQUIVOS);
+
+  for (const nome of nomes) {
+    const origem = await caches.open(nome);
+    for (const req of await origem.keys()) {
+      let caminho = "";
+      try {
+        caminho = new URL(req.url).pathname;
+      } catch {
+        continue;
+      }
+      if (!caminho.startsWith("/_next/static/")) continue;
+      const chave = chaveDoArquivo(req.url);
+      if (await destino.match(chave)) continue;
+      const resp = await origem.match(req);
+      if (resp) await destino.put(chave, resp);
+    }
+  }
+}
+
+async function podarArquivosAntigos() {
+  const cache = await caches.open(PAI_CACHE_ARQUIVOS);
+  const limite = Date.now() - PAI_ARQUIVOS_DIAS * 24 * 60 * 60 * 1000;
+  for (const req of await cache.keys()) {
+    const resp = await cache.match(req);
+    const data = Date.parse((resp && resp.headers.get("date")) || "");
+    if (Number.isFinite(data) && data < limite) await cache.delete(req);
+  }
+}

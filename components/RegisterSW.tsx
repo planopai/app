@@ -158,8 +158,8 @@ async function fetchRouteHtml(
 }
 
 /**
- * 16/11/2026: só guarda uma tela se os arquivos (JS e CSS) que ela pede já
- * estiverem guardados pelo Service Worker em comando. Logo depois de um deploy,
+ * 16/11/2026: só guarda uma tela se os arquivos (JS e CSS) que ela pede
+ * estiverem guardados no aparelho (os que faltam são baixados antes). Logo depois de um deploy,
  * o servidor já devolve a tela nova, mas o Service Worker ainda é o anterior:
  * guardar essa tela faria ela abrir sem estilo ou parada no logo sem internet.
  */
@@ -185,7 +185,22 @@ async function arquivosDaTelaGuardados(
         const achou = await caches
             .match(arquivo, { ignoreSearch: true })
             .catch(() => undefined);
-        if (!achou) return false;
+        if (achou) continue;
+
+        /*
+         * Falta o arquivo: baixa agora. O pedido passa pelo Service Worker
+         * (worker/index.js), que guarda em pai-arquivos-v1.
+         */
+        try {
+            const r = await fetch(arquivo, { credentials: "same-origin" });
+            if (!r.ok) return false;
+        } catch {
+            return false;
+        }
+        const agora = await caches
+            .match(arquivo, { ignoreSearch: true })
+            .catch(() => undefined);
+        if (!agora) return false;
     }
 
     return true;

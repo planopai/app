@@ -86,7 +86,6 @@ import {
   loadCachedRegistros,
   saveRegistrosSnapshot,
 } from "@/lib/offline/registros";
-import ProntidaoOffline from "@/components/offline/ProntidaoOffline";
 import {
   applyPendingActionsToRegistros,
   isOperationalOfflineCommand,
@@ -4399,15 +4398,6 @@ export default function AcompanhamentoPage() {
         </div>
         <BotoesTopoAtendimentos onNovoRegistro={() => iniciarNovoRegistro("funerario")} />
       </header>
-
-      {/* 16/11/2026: selo "Pronto para offline" + fila deste aparelho. */}
-      <ProntidaoOffline
-        onSincronizar={async () => {
-          await flushOfflineQueue();
-          await syncOperationalQueue();
-          await fetchRegistros();
-        }}
-      />
 
       <TabelaAtendimentos
         selecionadoId={acaoOpen ? acaoId : null}
