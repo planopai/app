@@ -157,6 +157,40 @@ async function fetchRouteHtml(
     }
 }
 
+/**
+ * 16/11/2026: só guarda uma tela se os arquivos (JS e CSS) que ela pede já
+ * estiverem guardados pelo Service Worker em comando. Logo depois de um deploy,
+ * o servidor já devolve a tela nova, mas o Service Worker ainda é o anterior:
+ * guardar essa tela faria ela abrir sem estilo ou parada no logo sem internet.
+ */
+async function arquivosDaTelaGuardados(
+    response: Response
+): Promise<boolean> {
+    if (!navigator.serviceWorker?.controller) return false;
+
+    let html = "";
+    try {
+        html = await response.clone().text();
+    } catch {
+        return false;
+    }
+
+    const arquivos = Array.from(
+        new Set(
+            html.match(/\/_next\/static\/[^"'\s)\\]+\.(?:js|css)/g) ?? []
+        )
+    );
+
+    for (const arquivo of arquivos) {
+        const achou = await caches
+            .match(arquivo, { ignoreSearch: true })
+            .catch(() => undefined);
+        if (!achou) return false;
+    }
+
+    return true;
+}
+
 async function cacheHasRoute(
     cache: Cache,
     route: string
@@ -199,6 +233,10 @@ async function prepareOneRoute(
         await fetchRouteHtml(route);
 
     if (!response) {
+        return false;
+    }
+
+    if (!(await arquivosDaTelaGuardados(response))) {
         return false;
     }
 
@@ -432,6 +470,16 @@ async function runOperationalSyncNow(reason: string): Promise<void> {
 export default function RegisterSW() {
     const pathname = usePathname();
     const vinhaDeTelaPublicaRef = useRef(false);
+
+    /*
+     * 16/11/2026: avisa o script de recuperação do layout (app/layout.tsx)
+     * que o app abriu de verdade. Se isso não acontecer, ele tenta de novo
+     * pela internet ou mostra um aviso, em vez de ficar parado no logo.
+     */
+    useEffect(() => {
+        (window as any).__paiHidratou = true;
+        document.getElementById("pai-aviso-recuperacao")?.remove();
+    }, []);
 
     /*
      * Também tenta sincronizar a cada navegação.

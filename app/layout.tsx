@@ -65,6 +65,37 @@ export const metadata: Metadata = {
   },
 };
 
+/*
+ * 16/11/2026: recuperação da tela parada no logo.
+ *
+ * Se a tela guardada no aparelho for de uma versão antiga, os arquivos de estilo e
+ * de script dela não existem mais: a página fica parada no logo, sem estilo. Este
+ * script não depende desses arquivos. Se o app não abrir (RegisterSW marca
+ * window.__paiHidratou), ele apaga a cópia guardada desta tela e recarrega pela
+ * internet, no máximo uma vez por minuto. Sem internet, mostra um aviso no lugar
+ * de deixar a pessoa olhando para o logo.
+ */
+const SCRIPT_RECUPERACAO = `(function(){try{
+var feito=false,K="pai_recuperacao_tela";
+function aviso(){if(document.getElementById("pai-aviso-recuperacao"))return;
+var d=document.createElement("div");d.id="pai-aviso-recuperacao";
+d.setAttribute("style","position:fixed;inset:0;z-index:2147483647;background:#fff;color:#313C55;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif");
+d.innerHTML='<p style="font-size:19px;font-weight:800;margin:0 0 10px">Esta tela não está guardada para uso sem internet</p><p style="font-size:15px;margin:0 0 22px;max-width:340px;line-height:1.45">Conecte à internet e toque em Tentar de novo. As ações já registradas neste aparelho continuam guardadas.</p><button type="button" style="font-size:16px;font-weight:700;padding:12px 22px;border-radius:12px;border:0;background:#313C55;color:#fff">Tentar de novo</button>';
+d.querySelector("button").onclick=function(){location.reload();};
+(document.body||document.documentElement).appendChild(d);}
+function conferir(){if(feito||window.__paiHidratou)return;feito=true;
+var online=navigator.onLine!==false,ult=0;
+try{ult=+sessionStorage.getItem(K)||0;}catch(e){}
+if(online&&Date.now()-ult>60000){
+try{sessionStorage.setItem(K,String(Date.now()));}catch(e){}
+var p=location.pathname;
+var limpar=window.caches?Promise.all(["start-url","pai-pages-v2"].map(function(n){return caches.open(n).then(function(c){return c.delete(p,{ignoreSearch:true});});})):Promise.resolve();
+limpar.catch(function(){}).then(function(){location.reload();});return;}
+aviso();}
+window.addEventListener("load",function(){setTimeout(conferir,4000);});
+setTimeout(conferir,20000);
+}catch(e){}})();`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -94,6 +125,7 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="App Plano PAI 2.0" />
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_RECUPERACAO }} />
       </head>
 
       <body

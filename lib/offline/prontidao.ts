@@ -104,7 +104,7 @@ async function conferirTela(rota: string): Promise<"ok" | "ausente" | "antiga"> 
   }
 
   const scripts = Array.from(
-    new Set(html.match(/\/_next\/static\/[^"'\s)\\]+\.js/g) ?? []),
+    new Set(html.match(/\/_next\/static\/[^"'\s)\\]+\.(?:js|css)/g) ?? []),
   );
   for (const src of scripts) {
     const achou = await caches.match(src, { ignoreSearch: true }).catch(() => undefined);

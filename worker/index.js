@@ -1228,6 +1228,12 @@ self.addEventListener(
  * Sem login (a tela redireciona para /login), não há o que guardar: a
  * instalação segue e as cópias antigas dessas telas são apagadas.
  *
+ * 16/11/2026 (2): as telas baixadas na instalação ficam num cache à parte
+ * (PAI_CACHE_ESSENCIAIS_NOVAS) e só passam para os caches usados pelo app
+ * no "activate". Enquanto a versão anterior ainda está no comando (o iPhone
+ * pode demorar a terminar a instalação), ela continua servindo as telas
+ * dela, que combinam com os arquivos dela.
+ *
  * A lista precisa ser igual a ROTAS_ESSENCIAIS_OFFLINE em lib/offline/routes.ts.
  */
 const PAI_ROTAS_ESSENCIAIS = [
@@ -1236,6 +1242,7 @@ const PAI_ROTAS_ESSENCIAIS = [
 ];
 
 const PAI_INSTALACAO_TIMEOUT_MS = 25 * 1000;
+const PAI_CACHE_ESSENCIAIS_NOVAS = "pai-essenciais-nova-versao";
 
 function caminhoDe(url) {
   try {
@@ -1266,10 +1273,13 @@ async function buscarTelaEssencial(rota) {
 }
 
 async function guardarTelasEssenciais() {
+  // Começa limpo: sobra de uma instalação anterior que não terminou não vale.
+  await caches.delete(PAI_CACHE_ESSENCIAIS_NOVAS);
+  const novas = await caches.open(PAI_CACHE_ESSENCIAIS_NOVAS);
+
   for (const item of PAI_ROTAS_ESSENCIAIS) {
     // Erro de rede ou tempo esgotado: rejeita e mantém a versão anterior.
     const response = await buscarTelaEssencial(item.rota);
-    const cache = await caches.open(item.cache);
 
     const finalPath = caminhoDe(response.url || item.rota);
     const esperado = caminhoDe(item.rota);
@@ -1280,8 +1290,7 @@ async function guardarTelasEssenciais() {
       response.status === 401 ||
       response.status === 403
     ) {
-      // Sem login ou sem permissão: não guarda e apaga a cópia antiga.
-      await cache.delete(item.rota, { ignoreSearch: true });
+      // Sem login ou sem permissão: não guarda (a cópia antiga é apagada no activate).
       continue;
     }
 
@@ -1292,8 +1301,41 @@ async function guardarTelasEssenciais() {
       );
     }
 
-    await cache.put(item.rota, response.clone());
+    await novas.put(item.rota, response.clone());
   }
+}
+
+/**
+ * No activate: passa as telas da versão nova para os caches do app.
+ *
+ * As outras telas guardadas e os dados RSC são da versão anterior, cujos
+ * arquivos o Workbox apaga agora (cleanupOutdatedCaches). Sem internet elas
+ * abririam sem estilo ou paradas no logo, então saem do cache; o app
+ * (RegisterSW) guarda de novo as da versão nova logo em seguida.
+ */
+async function publicarTelasEssenciais() {
+  if (!(await caches.has(PAI_CACHE_ESSENCIAIS_NOVAS))) return;
+  const novas = await caches.open(PAI_CACHE_ESSENCIAIS_NOVAS);
+
+  const essenciais = new Set(PAI_ROTAS_ESSENCIAIS.map((i) => caminhoDe(i.rota)));
+  const paginas = await caches.open("pai-pages-v2");
+  for (const req of await paginas.keys()) {
+    if (!essenciais.has(caminhoDe(req.url))) await paginas.delete(req);
+  }
+  await caches.delete("pai-rsc-v1");
+
+  for (const item of PAI_ROTAS_ESSENCIAIS) {
+    const destino = await caches.open(item.cache);
+    const resposta = await novas.match(item.rota);
+    if (resposta) {
+      await destino.put(item.rota, resposta);
+    } else {
+      // Não foi guardada (sem login ou sem permissão): a cópia antiga é de outra versão.
+      await destino.delete(item.rota, { ignoreSearch: true });
+    }
+  }
+
+  await caches.delete(PAI_CACHE_ESSENCIAIS_NOVAS);
 }
 
 self.addEventListener("install", (event) => {
@@ -1304,6 +1346,14 @@ self.addEventListener("install", (event) => {
         error
       );
       throw error;
+    })
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    publicarTelasEssenciais().catch((error) => {
+      console.warn("[PWA] Não foi possível publicar as telas essenciais.", error);
     })
   );
 });
