@@ -16,6 +16,7 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const DB_NAME = "pai-operacional-offline";
 
 const STORES = {
+  meta: "meta",
   records: "records",
   actions: "actions",
   photos: "photos",
@@ -1125,6 +1126,23 @@ async function executeBackgroundSync() {
       );
     }
 
+    /*
+     * 16/11/2026: guarda a hora da última sincronização completa
+     * (mesma chave de lib/offline/sync-engine.ts), mostrada no painel
+     * "Pronto para offline" da tela de Atendimentos.
+     */
+    if (!summary.blockedAuth && hasStore(db, STORES.meta)) {
+      try {
+        await putRow(db, STORES.meta, {
+          key: "ultimaSincronizacao",
+          value: { em: Date.now(), userId: String(userId) },
+          updatedAt: Date.now(),
+        });
+      } catch {
+        // Só serve para o painel.
+      }
+    }
+
     return summary;
   } catch (error) {
     if (
@@ -1196,3 +1214,96 @@ self.addEventListener(
     }
   }
 );
+
+/*
+ * 16/11/2026: versão nova só assume com as telas essenciais guardadas.
+ *
+ * O next-pwa ativa a versão nova na hora (skipWaiting) e apaga os arquivos
+ * da versão anterior. Se a tela guardada ainda fosse a antiga, ela abriria em
+ * branco sem internet (pede arquivos que não existem mais). Aqui, durante a
+ * instalação, a versão nova baixa e guarda a Home e a tela de Atendimentos.
+ * Se a rede falhar, a instalação falha e o aparelho continua na versão
+ * anterior, que segue funcionando; o navegador tenta de novo depois.
+ *
+ * Sem login (a tela redireciona para /login), não há o que guardar: a
+ * instalação segue e as cópias antigas dessas telas são apagadas.
+ *
+ * A lista precisa ser igual a ROTAS_ESSENCIAIS_OFFLINE em lib/offline/routes.ts.
+ */
+const PAI_ROTAS_ESSENCIAIS = [
+  { rota: "/", cache: "start-url" },
+  { rota: "/acompanhamento", cache: "pai-pages-v2" },
+];
+
+const PAI_INSTALACAO_TIMEOUT_MS = 25 * 1000;
+
+function caminhoDe(url) {
+  try {
+    const p = new URL(url, self.location.origin).pathname.replace(/\/+$/, "");
+    return p || "/";
+  } catch {
+    return "";
+  }
+}
+
+async function buscarTelaEssencial(rota) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PAI_INSTALACAO_TIMEOUT_MS);
+  try {
+    return await fetch(rota, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function guardarTelasEssenciais() {
+  for (const item of PAI_ROTAS_ESSENCIAIS) {
+    // Erro de rede ou tempo esgotado: rejeita e mantém a versão anterior.
+    const response = await buscarTelaEssencial(item.rota);
+    const cache = await caches.open(item.cache);
+
+    const finalPath = caminhoDe(response.url || item.rota);
+    const esperado = caminhoDe(item.rota);
+    const foiParaOutraTela = finalPath !== esperado;
+
+    if (
+      foiParaOutraTela ||
+      response.status === 401 ||
+      response.status === 403
+    ) {
+      // Sem login ou sem permissão: não guarda e apaga a cópia antiga.
+      await cache.delete(item.rota, { ignoreSearch: true });
+      continue;
+    }
+
+    const tipo = (response.headers.get("content-type") || "").toLowerCase();
+    if (!response.ok || !tipo.includes("text/html")) {
+      throw new Error(
+        `Tela ${item.rota} indisponível na instalação (HTTP ${response.status}).`
+      );
+    }
+
+    await cache.put(item.rota, response.clone());
+  }
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    guardarTelasEssenciais().catch((error) => {
+      console.warn(
+        "[PWA] Versão nova não instalada: telas essenciais não foram guardadas.",
+        error
+      );
+      throw error;
+    })
+  );
+});

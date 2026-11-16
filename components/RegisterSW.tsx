@@ -16,6 +16,7 @@ import {
 } from "@/lib/offline/network";
 import { syncOperationalQueue } from "@/lib/offline/sync-engine";
 import { requestOperationalBackgroundSync } from "@/lib/offline/background-sync";
+import { pedirArmazenamentoPersistente } from "@/lib/offline/storage";
 
 const WARMUP_STATE_KEY =
     "pai_offline_routes_warmup_v2";
@@ -621,6 +622,11 @@ export default function RegisterSW() {
                 await navigator.serviceWorker.ready;
 
                 if (cancelled) return;
+
+                // 16/11/2026: pede ao navegador para não apagar a fila offline sozinho.
+                if (!emTelaPublica()) {
+                    void pedirArmazenamentoPersistente();
+                }
 
                 /*
                  * Esta etapa é o ponto central:

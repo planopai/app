@@ -16,7 +16,9 @@ export type OfflineActionStatus =
   | "sending"
   | "synced"
   | "requires_attention"
-  | "blocked_auth";
+  | "blocked_auth"
+  /** 16/11/2026: recusada pelo servidor e dispensada pela pessoa no painel "Pronto para offline". Não é enviada de novo. */
+  | "dismissed";
 
 export type OfflineAction = {
   operationId: string;
@@ -321,6 +323,30 @@ export async function updateOfflineAction(
     updatedAt: Date.now(),
   };
   await idbPut(OFFLINE_STORES.actions, next);
+  return next;
+}
+
+/**
+ * Dispensa uma ação que o servidor recusou (requires_attention). Ela nunca foi aplicada
+ * no servidor; dispensar só tira o aviso do aparelho. Ações pendentes não podem ser
+ * dispensadas por aqui (seriam perdidas).
+ */
+export async function dismissOfflineAction(
+  action: OfflineAction,
+): Promise<OfflineAction> {
+  if (action.status !== "requires_attention") {
+    throw new Error("Só dá para dispensar uma ação que o servidor recusou.");
+  }
+  const next = await updateOfflineAction(action, { status: "dismissed" });
+  try {
+    await patchCachedRegistro(
+      action.recordId,
+      { __syncStatus: undefined },
+      action.userId,
+    );
+  } catch {
+    // O aviso some na próxima atualização da lista.
+  }
   return next;
 }
 

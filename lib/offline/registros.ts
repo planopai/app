@@ -6,7 +6,13 @@ import {
   idbGetAllByIndex,
   idbPut,
   replaceRecordsForUser,
+  setMeta,
 } from "./db";
+
+/** Meta com o horário da última lista recebida do servidor (painel "Pronto para offline"). */
+export function chaveMetaSnapshot(userId: string): string {
+  return `snapshotEm:${userId}`;
+}
 import { getCurrentOfflineSession } from "./session";
 
 export type CachedRegistroRow<T = any> = {
@@ -76,6 +82,11 @@ export async function saveRegistrosSnapshot<T extends Record<string, any>>(
       }
 
       await replaceRecordsForUser(resolvedUserId, rows);
+      try {
+        await setMeta(chaveMetaSnapshot(resolvedUserId), now);
+      } catch {
+        // Só serve para o painel; a lista já foi guardada.
+      }
     });
 
   snapshotWriteTailByUser.set(resolvedUserId, current);

@@ -11,6 +11,14 @@ export const PAI_START_CACHE = "start-url";
 export const PAI_PAGES_CACHE = "pai-pages-v2";
 export const PAI_RSC_CACHE = "pai-rsc-v1";
 
+/**
+ * Telas que a equipe usa na rua (16/11/2026). O Service Worker novo só assume depois
+ * de guardar estas telas da versão nova (worker/index.js, evento install), para não
+ * abrir em branco sem internet logo depois de um deploy. A lista do worker precisa
+ * ser igual a esta.
+ */
+export const ROTAS_ESSENCIAIS_OFFLINE = ["/", "/acompanhamento"] as const;
+
 export const OFFLINE_ROUTES = [
   "/",
 

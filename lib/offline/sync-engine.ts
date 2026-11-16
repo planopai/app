@@ -15,6 +15,18 @@ import {
   getOfflinePhoto,
 } from "./photos";
 import { patchCachedRegistro } from "./registros";
+import { setMeta } from "./db";
+
+/** Meta da última sincronização completa (painel "Pronto para offline"). O worker grava a mesma chave. */
+export const META_ULTIMA_SINCRONIZACAO = "ultimaSincronizacao";
+
+async function registrarSincronizacaoCompleta(userId: string): Promise<void> {
+  try {
+    await setMeta(META_ULTIMA_SINCRONIZACAO, { em: Date.now(), userId: String(userId) });
+  } catch {
+    // Só serve para o painel.
+  }
+}
 import {
   getSignaturesForUser,
   signatureToDataUrl,
@@ -436,9 +448,13 @@ async function runSync(): Promise<SyncSummary> {
   }
 
   const blockedRecords = new Set<string>();
+  let interrompido = false;
 
   for (const original of actions) {
-    if (!browserSaysOnline()) break;
+    if (!browserSaysOnline()) {
+      interrompido = true;
+      break;
+    }
     if (blockedRecords.has(original.recordId)) continue;
 
     if (String(original.userId) !== String(session.userId)) {
@@ -499,6 +515,7 @@ async function runSync(): Promise<SyncSummary> {
         });
 
         summary.blockedAuth = true;
+        interrompido = true;
         break;
       }
 
@@ -538,11 +555,16 @@ async function runSync(): Promise<SyncSummary> {
         status === 429
       ) {
         await requestOperationalBackgroundSync();
+        interrompido = true;
         break;
       }
 
       blockedRecords.add(action.recordId);
     }
+  }
+
+  if (!interrompido && !summary.blockedAuth) {
+    await registrarSincronizacaoCompleta(session.userId);
   }
 
   dispatchSyncComplete(summary);
