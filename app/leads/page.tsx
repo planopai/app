@@ -15,6 +15,11 @@
  *
  * 12/11/2026: abas "Lista" e "Mapa". O mapa (globo 3D, MapaLeads.tsx) mostra de onde cada pessoa acompanhou,
  * com os mesmos filtros da lista; só é carregado quando a aba é aberta.
+ *
+ * 16/11/2026 (LGPD): aceite de contato. O formulário público passa a ter a caixa (opcional) "Aceito receber do
+ * Plano PAI... informações sobre planos". Colunas leads.aceita_contato (1 aceitou, 0 não aceitou, NULL cadastro
+ * antes do aviso) e leads.aceite_em. A tela mostra a situação, filtra "Só quem aceita contato" e leva ao CSV.
+ * Enquanto o obter_leads.php não devolver as colunas, todos aparecem como "Sem registro".
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -43,7 +48,12 @@ type ApiLead = {
     cidade: string | null;
     telefone: string | null;
     data_registro?: string | null;
+    aceita_contato?: string | number | null;
+    aceite_em?: string | null;
 };
+
+/** sim = marcou a caixa; nao = não marcou; antigo = cadastro de antes do aviso (sem registro). */
+type Aceite = "sim" | "nao" | "antigo";
 
 type Lead = {
     id: number;
@@ -56,6 +66,8 @@ type Lead = {
     foneDigitos: string;
     registro: Date | null;
     registroTxt: string;
+    aceite: Aceite;
+    aceiteTxt: string;
     busca: string;
 };
 
@@ -154,9 +166,19 @@ function csvCampo(v: string) {
     if (/^[=+\-@\t\r]/.test(t) && !/^[+\-]?[\d\s().\-]+$/.test(t)) t = `'${t}`;
     return `"${t.replace(/"/g, '""')}"`;
 }
+const ACEITE_ROTULO: Record<Aceite, string> = { sim: "Aceita contato", nao: "Não aceitou", antigo: "Sem registro" };
+const ACEITE_CSV: Record<Aceite, string> = { sim: "Sim", nao: "Não", antigo: "Sem registro" };
+
+function paraAceite(v: unknown): Aceite {
+    if (v === null || v === undefined || v === "") return "antigo";
+    return Number(v) === 1 ? "sim" : "nao";
+}
+
 function baixarCSV(nome: string, leads: Lead[]) {
-    const cab = ["Nome Completo", "País", "Estado", "Cidade", "Telefone", "Data de registro"];
-    const linhas = leads.map((l) => [l.nome, l.pais, l.estado, l.cidade, l.telefone, l.registroTxt].map(csvCampo).join(";"));
+    const cab = ["Nome Completo", "País", "Estado", "Cidade", "Telefone", "Data de registro", "Aceita contato", "Data do aceite"];
+    const linhas = leads.map((l) =>
+        [l.nome, l.pais, l.estado, l.cidade, l.telefone, l.registroTxt, ACEITE_CSV[l.aceite], l.aceiteTxt].map(csvCampo).join(";"),
+    );
     const blob = new Blob(["﻿" + [cab.map(csvCampo).join(";"), ...linhas].join("\r\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -221,6 +243,21 @@ function Indicador({ rotulo, valor, sub }: { rotulo: string; valor: string; sub?
     );
 }
 
+function SeloAceite({ aceite }: { aceite: Aceite }) {
+    const cor =
+        aceite === "sim"
+            ? "border-[#B3CE52] bg-[#EEF5D6] text-[#3F5A0A] dark:border-[#B3CE52]/50 dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]"
+            : "border-[#E3E8F0] bg-[#F1F4F8] text-[#5B6478] dark:border-white/[0.12] dark:bg-white/[0.06] dark:text-[#AEB9CF]";
+    return (
+        <span
+            className={`inline-flex items-center whitespace-nowrap rounded-lg border px-2 py-0.5 text-[12px] font-extrabold ${cor}`}
+            title={aceite === "antigo" ? "Cadastro feito antes do aviso de contato no formulário" : undefined}
+        >
+            {ACEITE_ROTULO[aceite]}
+        </span>
+    );
+}
+
 function BotaoWhats({ numero, nome }: { numero: string | null; nome: string }) {
     if (!numero) return null;
     return (
@@ -250,6 +287,7 @@ export default function LeadsPage() {
     const [periodo, setPeriodo] = useState<Periodo>("todos");
     const [uf, setUf] = useState("");
     const [ordem, setOrdem] = useState<Ordem>("recentes");
+    const [soAceite, setSoAceite] = useState(false);
     const [selected, setSelected] = useState<Set<number>>(new Set());
 
     const [aba, setAba] = useState<"lista" | "mapa">("lista");
@@ -280,6 +318,8 @@ export default function LeadsPage() {
                 const telefone = String(item.telefone ?? "").trim();
                 const registro = parseData(item.data_registro);
                 const ufx = paraUF(estado);
+                const aceite = paraAceite(item.aceita_contato);
+                const aceiteData = parseData(item.aceite_em);
                 return {
                     id: Number(item.id),
                     nome,
@@ -291,6 +331,8 @@ export default function LeadsPage() {
                     foneDigitos: digitos(telefone),
                     registro,
                     registroTxt: registro ? dataCompleta(registro) : String(item.data_registro ?? ""),
+                    aceite,
+                    aceiteTxt: aceite === "sim" && aceiteData ? dataCompleta(aceiteData) : "",
                     busca: semAcento([nome, cidade, estado, ufx].join(" ")),
                 };
             });
@@ -342,6 +384,7 @@ export default function LeadsPage() {
 
         const arr = leads.filter((l) => {
             if (uf && l.uf !== uf) return false;
+            if (soAceite && l.aceite !== "sim") return false;
             if (desde !== null && (!l.registro || l.registro.getTime() < desde)) return false;
             if (q) {
                 const porTexto = q.split(/\s+/).every((p) => l.busca.indexOf(p) >= 0);
@@ -357,7 +400,7 @@ export default function LeadsPage() {
             return (b.registro?.getTime() ?? 0) - (a.registro?.getTime() ?? 0) || b.id - a.id;
         });
         return arr;
-    }, [leads, busca, periodo, uf, ordem]);
+    }, [leads, busca, periodo, uf, ordem, soAceite]);
 
     const pages = Math.max(1, Math.ceil(filtered.length / porPagina));
     useEffect(() => {
@@ -366,11 +409,12 @@ export default function LeadsPage() {
 
     const pageData = useMemo(() => filtered.slice((page - 1) * porPagina, page * porPagina), [filtered, page, porPagina]);
 
-    const temFiltro = Boolean(busca || uf || periodo !== "todos");
+    const temFiltro = Boolean(busca || uf || periodo !== "todos" || soAceite);
     const limparFiltros = () => {
         setBusca("");
         setUf("");
         setPeriodo("todos");
+        setSoAceite(false);
         setPage(1);
     };
 
@@ -514,6 +558,15 @@ export default function LeadsPage() {
                                     {r}
                                 </Chip>
                             ))}
+                            <Chip
+                                ativo={soAceite}
+                                onClick={() => {
+                                    setSoAceite((v) => !v);
+                                    setPage(1);
+                                }}
+                            >
+                                Só quem aceita contato
+                            </Chip>
                             {temFiltro ? (
                                 <button
                                     type="button"
@@ -639,6 +692,7 @@ export default function LeadsPage() {
                                         <th className="py-2.5 pr-4">Nome</th>
                                         <th className="py-2.5 pr-4">Cidade</th>
                                         <th className="py-2.5 pr-4">Telefone</th>
+                                        <th className="py-2.5 pr-4">Contato</th>
                                         <th className="py-2.5 pr-4 text-right">Registro</th>
                                     </tr>
                                 </thead>
@@ -671,6 +725,9 @@ export default function LeadsPage() {
                                                         <BotaoWhats numero={f.whats} nome={l.nome} />
                                                     </div>
                                                 </td>
+                                                <td className="py-2 pr-4" title={l.aceiteTxt ? `Aceite em ${l.aceiteTxt}` : undefined}>
+                                                    <SeloAceite aceite={l.aceite} />
+                                                </td>
                                                 <td className="py-2 pr-4 text-right text-[13px] text-[#5B6478] dark:text-[#AEB9CF]" title={dataCompleta(l.registro)}>
                                                     {dataCurta(l.registro)}
                                                 </td>
@@ -701,7 +758,10 @@ export default function LeadsPage() {
                                                 <span className="block truncate text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
                                                     {lugar(l)} · {dataCurta(l.registro)}
                                                 </span>
-                                                <span className="block text-[13px] font-semibold tabular-nums">{f.texto}</span>
+                                                <span className="flex flex-wrap items-center gap-2 text-[13px] font-semibold tabular-nums">
+                                                    {f.texto}
+                                                    <SeloAceite aceite={l.aceite} />
+                                                </span>
                                             </button>
                                             <BotaoWhats numero={f.whats} nome={l.nome} />
                                         </li>
