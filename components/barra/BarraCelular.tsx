@@ -21,6 +21,8 @@ import { usePerms } from "@/app/_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { useContadores } from "@/components/shell/useContadores";
 import { IconeAtalho, useBarra } from "./atalhos";
+import { useMenu } from "@/components/shell/useMenu";
+import { caminhoDaTela } from "@/components/shell/menuOrganizado"; // 17/11/2026: caminho no nome do atalho
 
 export const EVENTO_OCULTAR_BARRA = "pai:ocultar-barra";
 
@@ -36,6 +38,7 @@ export default function BarraCelular() {
     const sidebar = useSidebar() as any;
     const { perms, has } = usePerms();
     const barra = useBarra();
+    const menu = useMenu(); // 17/11/2026: caminho dos atalhos
     const temMessenger = perms !== null && has("messenger");
     const naoLidas = useNaoLidas(temMessenger);
     const numeros = useContadores(perms, has);
@@ -57,6 +60,11 @@ export default function BarraCelular() {
     const semBarraNaRota = ROTAS_SEM_BARRA.some((r) => pathname === r || pathname.startsWith(r + "/"));
     if (perms === null || semBarraNaRota || ocultaPelaTela) return null;
 
+    /** 17/11/2026: nome completo do atalho (módulo › seção › tela), lido pelo leitor de tela e mostrado ao segurar o dedo. */
+    const nomeCompleto = (i: { id: string; rotulo: string }) => {
+        const c = caminhoDaTela(menu.modulos, i.id);
+        return c ? `${c} › ${i.rotulo}` : i.rotulo;
+    };
     const itens = barra.celular.itens.filter((i) => barra.carregada || !i.pagina || has(i.pagina)).slice(0, 5);
     const contMsg = naoLidas.total + naoLidas.fila;
     /* Número no atalho: Messenger (não lidas + fila), Atendimentos (aguardando sua ação), Avisos, Estoque (no mínimo) e Coroas (fila). */
@@ -99,7 +107,7 @@ export default function BarraCelular() {
                     {itens.map((i) => {
                         const on = ativo(i.rota);
                         return (
-                            <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} className={classeItem(on)} onClick={fecharMenu}>
+                            <Link key={i.id} href={i.rota} aria-current={on ? "page" : undefined} aria-label={nomeCompleto(i)} title={nomeCompleto(i)} className={classeItem(on)} onClick={fecharMenu}>
                                 <span className="relative">
                                     <IconeAtalho id={i.id} className="h-[22px] w-[22px]" />
                                     {numeroDe(i.id) > 0 && (

@@ -109,6 +109,13 @@ export function SiteHeader() {
                 {modulo.titulo}
               </Link>
               <IconChevronRight size={16} className="shrink-0 text-[#7A8396]" />
+              {/* 17/11/2026: caminho completo (módulo › seção › tela) */}
+              {item.secao ? (
+                <>
+                  <span className="font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{item.secao}</span>
+                  <IconChevronRight size={16} className="shrink-0 text-[#7A8396]" />
+                </>
+              ) : null}
               <span className="font-extrabold">{item.titulo}</span>
             </>
           ) : (
@@ -119,7 +126,18 @@ export function SiteHeader() {
 
         {/* celular: título da tela */}
         <div className="flex min-w-0 flex-1 items-center gap-1 md:hidden">
-          <span className="min-w-0 truncate text-[22px] font-extrabold">{titulo}</span>
+          {/* 17/11/2026: no celular, o caminho (módulo › seção) fica em cima do nome da tela */}
+          {modulo && item ? (
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="truncate text-[11.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">
+                {modulo.titulo}
+                {item.secao ? ` › ${item.secao}` : ""}
+              </span>
+              <span className="min-w-0 truncate text-[19px] font-extrabold">{titulo}</span>
+            </span>
+          ) : (
+            <span className="min-w-0 truncate text-[22px] font-extrabold">{titulo}</span>
+          )}
           {estrela}
         </div>
 

@@ -55,7 +55,7 @@ export default function BuscaGlobal({ className = "" }: { className?: string }) 
             lista.push({ chave: "m:" + m.id, titulo: `Visão geral de ${m.titulo}`, onde: m.titulo, desc: m.desc, href: destinoDoModulo(m, has), texto: normaliza(`${m.titulo} ${m.desc} visao geral`) });
             for (const i of itensVisiveis(m, has)) {
                 const href = hrefDoItem(i, has);
-                lista.push({ chave: `i:${m.id}:${i.titulo}`, titulo: i.titulo, onde: m.titulo, desc: i.desc, href, texto: normaliza(`${i.titulo} ${i.desc} ${m.titulo} ${i.secao || ""}`) });
+                lista.push({ chave: `i:${m.id}:${i.titulo}`, titulo: i.titulo, onde: i.secao ? `${m.titulo} › ${i.secao}` : m.titulo, desc: i.desc, href, texto: normaliza(`${i.titulo} ${i.desc} ${m.titulo} ${i.secao || ""}`) });
             }
         }
         return lista;

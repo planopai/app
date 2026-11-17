@@ -20,6 +20,7 @@ import { usePerms } from "./_perms/PermsProvider";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { destinoDoModulo, hrefDoItem, itemVisivel, moduloVisivel, type Icone } from "@/components/shell/modulos";
 import { useMenu } from "@/components/shell/useMenu";
+import { caminhoDaTela } from "@/components/shell/menuOrganizado"; // 17/11/2026: caminho da tela
 import { formatarSelo, useContadores } from "@/components/shell/useContadores";
 import { BlocoTela, CartaoInfo, GRADE_BLOCOS, GRADE_CARTOES, ROTULO_SECAO, TOM_DO_MODULO } from "@/components/shell/ModuloHub";
 
@@ -70,11 +71,19 @@ const APELIDOS: { title: string; href: string; slug: string; group: string }[] =
     { title: "Descontos", href: "/parceiros", slug: "parceiros", group: "Plano" },
     { title: "Enviar Notícias", href: "/noticias", slug: "noticias", group: "Plano" },
     { title: "Médicos Parceiros", href: "/medicos", slug: "medicos", group: "Plano" },
-    { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Administrativo" },
-    { title: "Painel de Atendimentos", href: "/desempenho", slug: "desempenho", group: "Gestão" },
-    { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Estoque" },
-    { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Gestão" },
-    { title: "Requisição de Material", href: "/requisicao", slug: "requisicao", group: "Requisições" },
+    { title: "Relatório de Consultas", href: "/relatorio-guias", slug: "relatorio-guias", group: "Plano › Rede de Descontos" },
+    { title: "Painel de Atendimentos", href: "/desempenho", slug: "desempenho", group: "Indicadores" },
+    { title: "Consulta de Produtos", href: "/produtos", slug: "produtos", group: "Requisições e Estoque › Estoque" },
+    { title: "Relatório", href: "/relatorio", slug: "relatorio", group: "Atendimento" },
+    { title: "Requisição de Material", href: "/requisicao", slug: "requisicao", group: "Requisições e Estoque" },
+    // 17/11/2026: nomes de antes da organização aprovada (a pesquisa continua achando)
+    { title: "Solicitar Produto", href: "/solicitar-produto", slug: "solicitar-produto", group: "Requisições e Estoque › Requisições" },
+    { title: "Minhas Solicitações", href: "/minhas-solicitacoes", slug: "minhas-solicitacoes", group: "Requisições e Estoque › Requisições" },
+    { title: "Financeiro da OS", href: "/os/financeiro", slug: "os-financeiro", group: "Financeiro › Ordem de Serviço" },
+    { title: "Folha do Mês", href: "/folha", slug: "folha", group: "Pessoal › Folha de Pagamento" },
+    { title: "Histórico de Sepultamentos", href: "/relatorio", slug: "relatorio", group: "Atendimento" },
+    { title: "Resultados", href: "/dre", slug: "dre", group: "Financeiro › Resultados" },
+    { title: "Chat", href: "/chat", slug: "*", group: "Aurora" },
 ];
 
 function normalizeSearch(value: string) {
@@ -178,16 +187,17 @@ export default function HomePage() {
     const resultados = useMemo(() => {
         const q = normalizeSearch(busca);
         if (!q || !pronto) return [];
-        const base: { title: string; href: string; group: string; icone: Icone }[] = [
+        const base: { title: string; href: string; group: string; secao?: string; icone: Icone }[] = [
             ...menu.modulos.flatMap((m) =>
-                itensVisiveisDe(m.itens, has).map((i) => ({ title: i.titulo, href: hrefDoItem(i, has), group: m.titulo, icone: i.icone as Icone })),
+                itensVisiveisDe(m.itens, has).map((i) => ({ title: i.titulo, href: hrefDoItem(i, has), group: i.secao ? `${m.titulo} › ${i.secao}` : m.titulo, secao: i.secao || "", icone: i.icone as Icone })),
             ),
             ...menu.fixos.filter((f) => itemVisivel(f, has)).map((f) => ({ title: f.titulo, href: f.href, group: "Início", icone: f.icone as Icone })),
-            ...APELIDOS.filter((a) => has(a.slug)).map((a) => ({ title: a.title, href: a.href, group: a.group, icone: IconSearch as Icone })),
+            ...APELIDOS.filter((a) => a.slug === "*" || has(a.slug)).map((a) => ({ title: a.title, href: a.href, group: a.group, icone: IconSearch as Icone })),
         ];
         const vistos = new Set<string>();
         return base.filter((i) => {
-            if (!normalizeSearch(i.title).startsWith(q)) return false;
+            // 17/11/2026: acha pelo nome curto e pela seção (ex.: "requisições" acha Nova, Minhas, Separar)
+            if (!normalizeSearch(i.title).startsWith(q) && !(i.secao && normalizeSearch(i.secao).startsWith(q))) return false;
             const k = `${i.title}|${i.href}`;
             if (vistos.has(k)) return false;
             vistos.add(k);
@@ -312,7 +322,7 @@ export default function HomePage() {
                                                         : f.id === "minhas-solicitacoes" ? c.minhasRequisicoes
                                                             : null;
                                 const doModulo = menu.modulos.find((m) => m.itens.some((i) => i.id === f.id));
-                                return <BlocoTela key={f.id} titulo={f.titulo} href={hrefDoItem(f, has)} Icone={f.icone} tom={(doModulo && TOM_DO_MODULO[doModulo.id]) || "azul"} selo={n} dica={f.desc} />;
+                                return <BlocoTela key={f.id} titulo={f.titulo} caminho={caminhoDaTela(menu.modulos, f.id)} href={hrefDoItem(f, has)} Icone={f.icone} tom={(doModulo && TOM_DO_MODULO[doModulo.id]) || "azul"} selo={n} dica={f.desc} />;
                             })}
                             {pronto ? (
                                 <button

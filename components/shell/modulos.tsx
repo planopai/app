@@ -69,6 +69,7 @@ import { IconStars, IconCoin, IconRoute } from "@tabler/icons-react"; // 09/11/2
 import { IconReceipt, IconCreditCard, IconAdjustmentsDollar } from "@tabler/icons-react"; // 11/11/2026: financeiro da empresa
 import { IconBuildingBank } from "@tabler/icons-react"; // 12/11/2026: Tesouraria
 import { IconCash } from "@tabler/icons-react"; // 12/11/2026: Contas a receber
+import { IconReportMoney, IconChartLine, IconTargetArrow } from "@tabler/icons-react"; // 17/11/2026: DRE, Fluxo de Caixa e Provisão
 
 export type Icone = React.ElementType<any>;
 
@@ -104,8 +105,8 @@ export type Modulo = {
 
 export const FIXOS: ItemModulo[] = [
     { id: "inicio", titulo: "Início", desc: "Resumo do dia", href: "/", slugs: ["*"], icone: IconHome },
-    { id: "quadro", titulo: "Quadro de Atendimentos", desc: "Andamento em tempo real", href: "/quadro-acompanhamento", slugs: ["*"], icone: IconDeviceDesktopAnalytics },
-    { id: "minhasos", titulo: "Minhas OS", desc: "Ordens que você abriu", href: "/os/minhas", slugs: ["*"], icone: IconFileInvoice },
+    { id: "quadro", titulo: "Quadro de Atendimentos", desc: "Andamento em tempo real", href: "/quadro-acompanhamento", slugs: ["quadro-acompanhamento"], icone: IconDeviceDesktopAnalytics },
+    { id: "minhasos", titulo: "Minhas OS", desc: "Ordens que você abriu", href: "/os/minhas", slugs: ["os-minhas"], icone: IconFileInvoice },
     { id: "messenger", titulo: "Messenger", desc: "Equipe, grupos e clientes", href: "/messenger", slugs: ["messenger"], icone: IconMessages, selo: "messenger" },
     { id: "chat", titulo: "Chat", desc: "Converse com a Aurora", href: "/chat", slugs: ["*"], icone: IconMessageCircle },
 ];
@@ -175,12 +176,16 @@ export const MODULOS: Modulo[] = [
             { id: "financeiro", titulo: "Financeiro da OS", desc: "Painel, recebimentos e devoluções", href: "/os/financeiro", slugs: ["os-financeiro"], icone: IconCurrencyDollar },
             { id: "os-relatorio", titulo: "Relatório de OS", desc: "Particular, diferença e coroa", href: "/os/relatorio", slugs: ["os-relatorio"], icone: IconReportAnalytics },
             { id: "convenio", titulo: "Convênios", desc: "Planos, prefeituras e itens", href: "/convenio", slugs: ["convenio"], icone: IconShieldLock },
-            { id: "contas-pagar", titulo: "Contas a pagar", desc: "Títulos, rateio, pagamentos e alertas", href: "/contas-pagar", slugs: ["gestao"], icone: IconReceipt, secao: "Financeiro da empresa" },
-            { id: "contas-receber", titulo: "Contas a receber", desc: "Títulos, baixas, cartões e comissões", href: "/contas-receber", slugs: ["gestao"], icone: IconCash, secao: "Financeiro da empresa" },
-            { id: "cartao-credito", titulo: "Cartão de crédito", desc: "Compras, faturas e limite", href: "/cartao-credito", slugs: ["gestao"], icone: IconCreditCard, secao: "Financeiro da empresa" },
-            { id: "financeiro-config", titulo: "Configurações do financeiro", desc: "Plano de contas, contas, áreas e orçamento", href: "/financeiro-config", slugs: ["gestao"], icone: IconAdjustmentsDollar, secao: "Financeiro da empresa" },
-            { id: "tesouraria", titulo: "Tesouraria", desc: "Caixas, bancos, transferências e conciliação", href: "/tesouraria", slugs: ["tesouraria", "gestao"], icone: IconBuildingBank, secao: "Financeiro da empresa" },
-            { id: "resultados", titulo: "Resultados", desc: "DRE, fluxo de caixa, ISS retido e contador", href: "/resultados", slugs: ["gestao"], icone: IconChartBar, secao: "Financeiro da empresa" },
+            { id: "contas-pagar", titulo: "Contas a pagar", desc: "Títulos, rateio, pagamentos e alertas", href: "/contas-pagar", slugs: ["contas-pagar", "gestao"], icone: IconReceipt, secao: "Financeiro da empresa" },
+            { id: "contas-receber", titulo: "Contas a receber", desc: "Títulos, baixas, cartões e comissões", href: "/contas-receber", slugs: ["contas-receber", "contas-receber-gestao", "gestao"], icone: IconCash, secao: "Financeiro da empresa" },
+            { id: "cartao-credito", titulo: "Cartão de crédito", desc: "Compras, faturas e limite", href: "/cartao-credito", slugs: ["cartao-credito", "gestao"], icone: IconCreditCard, secao: "Financeiro da empresa" },
+            { id: "financeiro-config", titulo: "Configurações do financeiro", desc: "Plano de contas, contas, áreas e orçamento", href: "/financeiro-config", slugs: ["fin-config", "gestao"], icone: IconAdjustmentsDollar, secao: "Financeiro da empresa" },
+            { id: "tesouraria", titulo: "Tesouraria", desc: "Caixas, bancos, transferências e conciliação", href: "/tesouraria", slugs: ["tesouraria", "tesouraria-gestao", "gestao"], icone: IconBuildingBank, secao: "Financeiro da empresa" },
+            { id: "resultados", titulo: "Resultados", desc: "DRE, fluxo de caixa, ISS retido e contador", href: "/resultados", slugs: ["resultados-config", "gestao"], icone: IconChartBar, secao: "Financeiro da empresa" },
+            // 17/11/2026: Resultados dividido em DRE, Fluxo de Caixa e Fechamento e Contador (/resultados); Provisão saiu das Configurações
+            { id: "dre", titulo: "DRE", desc: "Resultado do mês por competência ou caixa", href: "/dre", slugs: ["dre", "gestao"], icone: IconReportMoney, secao: "Financeiro da empresa" },
+            { id: "fluxo-caixa", titulo: "Fluxo de Caixa", desc: "Entradas e saídas realizadas e previstas", href: "/fluxo-caixa", slugs: ["fluxo-caixa", "gestao"], icone: IconChartLine, secao: "Financeiro da empresa" },
+            { id: "fin-orcamento", titulo: "Provisão", desc: "Metas do mês e do ano; orçado × realizado", href: "/fin-orcamento", slugs: ["fin-orcamento", "gestao"], icone: IconTargetArrow, secao: "Financeiro da empresa" },
         ],
     },
     {
@@ -197,7 +202,7 @@ export const MODULOS: Modulo[] = [
             { id: "sorteios", titulo: "Sorteios", desc: "Sorteios para associados", href: "/sorteios", slugs: ["sorteios"], icone: IconGift },
             { id: "noticias", titulo: "Notícias", desc: "Mensagens para o app dos clientes", href: "/noticias", slugs: ["noticias"], icone: IconNews },
             // 06/11/2026: Propostas de adesão vieram da Comunicação.
-            { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["associados", "messenger-historico"], icone: IconClipboardPlus },
+            { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["messenger-propostas"], icone: IconClipboardPlus },
         ],
     },
     {
@@ -212,10 +217,10 @@ export const MODULOS: Modulo[] = [
             { id: "relatorio-guias", titulo: "Relatório de consultas", desc: "Consultas realizadas", href: "/relatorio-guias", slugs: ["relatorio-guias"], icone: IconStethoscope },
             { id: "historico-sepultamentos", titulo: "Histórico de sepultamentos", desc: "Todos os atendimentos", href: "/relatorio", slugs: ["relatorio"], icone: IconReportAnalytics },
             // 06/11/2026: vieram da Comunicação (decisão de 03/11/2026).
-            { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger"], icone: IconFileInvoice },
-            { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-historico"], icone: IconAlertTriangle },
-            { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger"], icone: IconUserPlus },
-            { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger"], icone: IconBell },
+            { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger-comprovantes"], icone: IconFileInvoice },
+            { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-ocorrencias"], icone: IconAlertTriangle },
+            { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger-funil"], icone: IconUserPlus },
+            { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger-disparos"], icone: IconBell },
         ],
     },
     {
@@ -225,17 +230,17 @@ export const MODULOS: Modulo[] = [
         icone: IconChartBar,
         hub: { href: "/gestao", slug: "gestao" },
         itens: [
-            { id: "usuarios", titulo: "Colaboradores/Usuários", desc: "Cadastro, login e acesso", href: "/usuarios", slugs: ["gestao"], icone: IconUserCog, secao: "Pessoas e acesso" },
+            { id: "usuarios", titulo: "Colaboradores/Usuários", desc: "Cadastro, login e acesso", href: "/usuarios", slugs: ["usuarios", "gestao"], icone: IconUserCog, secao: "Pessoas e acesso" },
             { id: "permissoes", titulo: "Permissões", desc: "Acesso por cargo", href: "/permissoes", slugs: ["permissoes"], icone: IconShieldLock, secao: "Pessoas e acesso" },
             { id: "auditoria", titulo: "Auditoria", desc: "Quem fez o quê", href: "/auditoria", slugs: ["auditoria", "permissoes"], icone: IconListDetails, secao: "Pessoas e acesso" },
             { id: "organizar-menu", titulo: "Organizar menu", desc: "Módulos, seções e telas do menu", href: "/organizar-menu", slugs: ["gestao"], icone: IconLayoutSidebar, secao: "Pessoas e acesso" },
-            { id: "folha-painel", titulo: "Painel da folha", desc: "Custo da folha por mês, equipe e pessoa", href: "/folha-painel", slugs: ["gestao"], icone: IconChartBar, secao: "Folha de pagamento" },
-            { id: "folha", titulo: "Folha do mês", desc: "Contracheques, extras, vales e pagamento", href: "/folha", slugs: ["gestao"], icone: IconReceipt2, secao: "Folha de pagamento" },
-            { id: "folha-regras", titulo: "Regras de pagamento", desc: "Extra, comissões, bônus e descontos", href: "/folha-regras", slugs: ["gestao"], icone: IconSettingsDollar, secao: "Folha de pagamento" },
-            { id: "folha-vales", titulo: "Vales e empréstimos", desc: "Vales da Unymos e empréstimos parcelados", href: "/folha-vales", slugs: ["gestao"], icone: IconWallet, secao: "Folha de pagamento" },
-            { id: "folha-avaliacao", titulo: "Avaliação dos agentes", desc: "Nota do mês que multiplica a comissão", href: "/folha-avaliacao", slugs: ["gestao"], icone: IconStars, secao: "Folha de pagamento" },
-            { id: "folha-comissoes", titulo: "Comissões", desc: "Agentes, vendas e viagens do mês", href: "/folha-comissoes", slugs: ["gestao"], icone: IconCoin, secao: "Folha de pagamento" },
-            { id: "folha-viagens", titulo: "Viagens", desc: "Viagens a outro município e valor pago", href: "/folha-viagens", slugs: ["gestao"], icone: IconRoute, secao: "Folha de pagamento" },
+            { id: "folha-painel", titulo: "Painel da folha", desc: "Custo da folha por mês, equipe e pessoa", href: "/folha-painel", slugs: ["folha", "gestao"], icone: IconChartBar, secao: "Folha de pagamento" },
+            { id: "folha", titulo: "Folha do mês", desc: "Contracheques, extras, vales e pagamento", href: "/folha", slugs: ["folha", "gestao"], icone: IconReceipt2, secao: "Folha de pagamento" },
+            { id: "folha-regras", titulo: "Regras de pagamento", desc: "Extra, comissões, bônus e descontos", href: "/folha-regras", slugs: ["folha", "gestao"], icone: IconSettingsDollar, secao: "Folha de pagamento" },
+            { id: "folha-vales", titulo: "Vales e empréstimos", desc: "Vales da Unymos e empréstimos parcelados", href: "/folha-vales", slugs: ["folha", "gestao"], icone: IconWallet, secao: "Folha de pagamento" },
+            { id: "folha-avaliacao", titulo: "Avaliação dos agentes", desc: "Nota do mês que multiplica a comissão", href: "/folha-avaliacao", slugs: ["folha", "gestao"], icone: IconStars, secao: "Folha de pagamento" },
+            { id: "folha-comissoes", titulo: "Comissões", desc: "Agentes, vendas e viagens do mês", href: "/folha-comissoes", slugs: ["folha", "gestao"], icone: IconCoin, secao: "Folha de pagamento" },
+            { id: "folha-viagens", titulo: "Viagens", desc: "Viagens a outro município e valor pago", href: "/folha-viagens", slugs: ["folha", "gestao"], icone: IconRoute, secao: "Folha de pagamento" },
             { id: "balanco", titulo: "Balanço", desc: "Custo, receita e margem", href: "/balanco", slugs: ["balanco"], icone: IconCurrencyDollar, secao: "Indicadores" },
             { id: "desempenho", titulo: "Desempenho", desc: "Painel de atendimentos", href: "/desempenho", slugs: ["desempenho"], icone: IconChartBar, secao: "Indicadores" },
             { id: "dashboard-estoque", titulo: "Dashboard do estoque", desc: "Saídas e transferências por produto", href: "/dashboard-estoque", slugs: ["dashboard-estoque"], icone: IconChartBar, secao: "Indicadores" },

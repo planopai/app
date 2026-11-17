@@ -37,6 +37,9 @@ import {
     secoesDe,
 } from "@/components/shell/menuOrganizado";
 import { menuGet, menuPost, recarregarMenu, useMenu } from "@/components/shell/useMenu";
+import { montarMenu } from "@/components/shell/menuOrganizado";
+import { MENU_APROVADO } from "@/components/shell/menuAprovado"; // 17/11/2026: organização aprovada
+import { IconListCheck } from "@tabler/icons-react";
 import { iconePorNome, nomeDoIcone } from "@/components/shell/icones";
 import {
     AvisoFaixa,
@@ -61,7 +64,7 @@ type Pergunta =
     | { tipo: "novo-modulo" }
     | { tipo: "nova-secao"; modulo: string; item: string }
     | { tipo: "renomear-secao"; modulo: string; secao: string };
-type Aviso = { tipo: "salvar" } | { tipo: "padrao" } | { tipo: "restaurar"; versao: Versao } | { tipo: "excluir"; modulo: string };
+type Aviso = { tipo: "salvar" } | { tipo: "padrao" } | { tipo: "aprovado" } | { tipo: "restaurar"; versao: Versao } | { tipo: "excluir"; modulo: string };
 
 function copiar(modulos: Modulo[]): Modulo[] {
     return modulos.map((m) => ({ ...m, hub: { ...m.hub }, itens: m.itens.map((i) => ({ ...i })) }));
@@ -250,6 +253,18 @@ export default function OrganizarMenuPage() {
             setSalvando(false);
             setAviso(null);
         }
+    };
+
+    /** 17/11/2026: põe a organização aprovada no rascunho. Só vale para todos depois de Salvar. */
+    const carregarAprovado = () => {
+        const n = montarMenu(MENU_APROVADO);
+        setModulos(copiar(n.modulos));
+        setFixos([...n.fixos]);
+        setRemovidos([...(MENU_APROVADO.removidos || [])]);
+        setSel(n.modulos[0]?.id || FIXOS_ID);
+        setAlterado(true);
+        setAviso(null);
+        setOk("Organização aprovada carregada. Confira e clique em Salvar para valer para todos.");
     };
 
     const abrirHistorico = async () => {
@@ -678,6 +693,10 @@ export default function OrganizarMenuPage() {
                         <IconHistory size={18} />
                         <span className="hidden sm:inline">Histórico</span>
                     </button>
+                    <button type="button" className={BTN} onClick={() => setAviso({ tipo: "aprovado" })} disabled={!menu.tabelasProntas || salvando}>
+                        <IconListCheck size={18} />
+                        <span className="hidden sm:inline">Carregar organização aprovada</span>
+                    </button>
                     <button type="button" className={BTN} onClick={() => setAviso({ tipo: "padrao" })} disabled={!menu.tabelasProntas || salvando}>
                         <IconRestore size={18} />
                         <span className="hidden sm:inline">Padrão do sistema</span>
@@ -738,6 +757,15 @@ export default function OrganizarMenuPage() {
                     botao="Salvar para todos"
                     aoFechar={() => setAviso(null)}
                     aoConfirmar={() => salvar(false)}
+                />
+            ) : null}
+            {aviso?.tipo === "aprovado" ? (
+                <Confirmar
+                    titulo="Carregar organização aprovada"
+                    texto="Põe no rascunho a organização aprovada em 17/11/2026: 11 módulos (Atendimento, Requisições e Estoque, Financeiro, Pessoal, Plano, Comercial, Qualidade, Indicadores, Aurora e Gestão), as seções e os nomes novos das telas. Nada muda para ninguém até você clicar em Salvar; depois de salvar, a versão de agora fica no histórico."
+                    botao="Carregar no rascunho"
+                    aoFechar={() => setAviso(null)}
+                    aoConfirmar={carregarAprovado}
                 />
             ) : null}
             {aviso?.tipo === "padrao" ? (

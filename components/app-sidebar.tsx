@@ -359,6 +359,8 @@ export function AppSidebar(
    * As listas que abriam e fechavam saem do computador; no celular o menu continua o mesmo (MenuCelular).
    */
   const NOME_CURTO: Record<string, string> = { atendimento: "Atendim.", requisicoes: "Requis.", financeiro: "Financ.", administrativo: "Admin." };
+  /* 17/11/2026: nome curto pelo nome do módulo (organização aprovada) */
+  const CURTO_PELO_NOME: Record<string, string> = { "Requisições e Estoque": "Req. e Estoque" };
 
   if (!isMobile) {
     const atual = acharModuloPorRota(pathname || "/", menu.modulos, menu.fixos).modulo?.id ?? null;
@@ -372,7 +374,7 @@ export function AppSidebar(
           .map((m) => ({
             id: m.id,
             titulo: m.titulo,
-            curto: NOME_CURTO[m.id] || m.titulo,
+            curto: CURTO_PELO_NOME[m.titulo] || NOME_CURTO[m.id] || m.titulo,
             href: destinoDoModulo(m, has),
             Icon: m.icone as any,
             pendente: itensVisiveis(m, has).some((i) => contadorDe(hrefDoItem(i, has)) > 0),

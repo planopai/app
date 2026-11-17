@@ -29,6 +29,12 @@ export const TOM_DO_MODULO: Record<string, Tom> = {
     plano: "verde",
     administrativo: "verde",
     gestao: "verde",
+    // 17/11/2026: módulos da organização aprovada
+    pessoal: "verde",
+    comercial: "verde",
+    qualidade: "azul",
+    indicadores: "verde",
+    aurora: "azul",
 };
 const FUNDO_ICONE: Record<Tom, string> = {
     azul: "bg-[#E9EFF6] dark:bg-[#3D6A99]/30",
@@ -51,6 +57,8 @@ const CARTOES: Record<string, Cartao[]> = {
     ],
     estoque: [{ rotulo: "Abaixo do mínimo", chave: "estoque", sub: "produtos", href: "/estoque", estilo: "alerta" }],
 };
+// 17/11/2026: Requisições e Estoque viraram um módulo só (id "estoque"): mostra os cartões dos dois.
+CARTOES.estoque = [...CARTOES.requisicoes, ...CARTOES.estoque];
 
 /* ---------- peças do padrão das páginas (06/11/2026), usadas também pelo Início e pela Requisição de Material ---------- */
 
@@ -98,7 +106,7 @@ export function CartaoInfo({ rotulo, valor, sub, href, estilo }: { rotulo: strin
 }
 
 /** Bloco de tela: ícone na cor do módulo, nome embaixo e o número pendente no canto. */
-export function BlocoTela({ titulo, href, Icone, tom = "azul", selo, dica }: { titulo: string; href: string; Icone: React.ElementType<any>; tom?: Tom; selo?: number | null; dica?: string }) {
+export function BlocoTela({ titulo, href, Icone, tom = "azul", selo, dica, caminho }: { titulo: string; href: string; Icone: React.ElementType<any>; tom?: Tom; selo?: number | null; dica?: string; caminho?: string }) {
     return (
         <Link
             href={href}
@@ -113,7 +121,11 @@ export function BlocoTela({ titulo, href, Icone, tom = "azul", selo, dica }: { t
             <span className={`grid size-14 place-items-center rounded-[18px] text-[#313C55] dark:text-white ${FUNDO_ICONE[tom]}`}>
                 <Icone size={28} stroke={1.8} />
             </span>
-            <span className="break-words">{titulo}</span>
+            <span className="break-words">
+                {/* 17/11/2026: caminho (módulo › seção) em cima do nome, no Acesso rápido */}
+                {caminho ? <span className="mb-0.5 block text-[11.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{caminho}</span> : null}
+                {titulo}
+            </span>
         </Link>
     );
 }

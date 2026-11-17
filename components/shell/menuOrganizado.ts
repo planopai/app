@@ -199,6 +199,18 @@ export function retratoDesatualizado(config: ConfigMenu | null | undefined): boo
     return Array.from(catalogoTelas().keys()).some((id) => !salvo[id]);
 }
 
+/**
+ * 17/11/2026: onde a tela fica no menu, para mostrar o caminho (título, Acesso rápido, barra de baixo e pesquisa):
+ * "Módulo › Seção" (sem a tela). Tela que só está nos fixos devolve "".
+ */
+export function caminhoDaTela(modulos: Modulo[], id: string): string {
+    for (const m of modulos) {
+        const i = m.itens.find((x) => x.id === id);
+        if (i) return i.secao ? `${m.titulo} › ${i.secao}` : m.titulo;
+    }
+    return "";
+}
+
 /** Converte o menu (como a tela Organizar menu edita) no formato que é salvo. */
 /** Nome original (do código) de uma tela; para os fixos vale o nome do fixo (ex.: "Chat"). */
 export function nomeOriginal(id: string, comoFixo = false): string {

@@ -432,7 +432,7 @@ export default function ContasPagarPage() {
                                         Ver
                                     </button>
                                 ) : (
-                                    <Link href="/financeiro-config?aba=orcamento" className={`${BTN_PEQ} ml-auto`}>
+                                    <Link href="/fin-orcamento" className={`${BTN_PEQ} ml-auto`}>
                                         Ver orçamento
                                     </Link>
                                 )}

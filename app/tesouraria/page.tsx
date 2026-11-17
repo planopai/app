@@ -26,6 +26,7 @@ import {
     IconX,
 } from '@tabler/icons-react';
 import { GRADE_CARTOES, TopoPagina } from '@/components/shell/ModuloHub';
+import { AbaIss } from '../resultados/components/resultados'; // 17/11/2026: ISS retido veio dos Resultados
 import {
     api,
     BotaoArquivo,
@@ -149,7 +150,7 @@ type DadosConta = {
 };
 type Cad = { naturezas: Cadastros['naturezas']; areas: Cadastros['areas']; locais: { id: number; nome: string; ativo: boolean }[]; cartoes: { id: number; nome: string }[] };
 
-type Aba = 'saldos' | 'caixas' | 'transf' | 'conc' | 'fatura' | 'aprov' | 'acessos';
+type Aba = 'saldos' | 'caixas' | 'transf' | 'iss' | 'conc' | 'fatura' | 'aprov' | 'acessos'; // 17/11/2026: + ISS retido (veio dos Resultados)
 
 const TIPO_GRUPO: [string, string][] = [
     ['BANCO', 'Bancos'],
@@ -245,6 +246,7 @@ export default function TesourariaPage() {
         ['saldos', 'Saldos'],
         ['caixas', 'Caixas'],
         ['transf', 'Transferências', d?.transferencias.filter((t) => t.situacao === 'TRANSITO').length],
+        ['iss', 'ISS retido'],
         ...(gestao
             ? ([
                   ['conc', 'Conciliação bancária', d?.pendencias.a_conciliar],
@@ -316,6 +318,7 @@ export default function TesourariaPage() {
                 {d && aba === 'saldos' ? <AbaSaldos d={d} de={de} ate={ate} setDe={setDe} setAte={setAte} abrirConta={setConta} /> : null}
                 {d && aba === 'caixas' ? <AbaCaixas d={d} abrirConta={setConta} /> : null}
                 {d && aba === 'transf' ? <AbaTransf d={d} feito={feito} /> : null}
+                {aba === 'iss' ? <AbaIss /> : null}
                 {d && gestao && aba === 'conc' ? <AbaConciliacao d={d} cad={cad} feito={feito} /> : null}
                 {d && gestao && aba === 'fatura' ? <AbaFatura cad={cad} avisar={avisar} /> : null}
                 {d && gestao && aba === 'aprov' ? <AbaAprovacoes feito={feito} /> : null}
